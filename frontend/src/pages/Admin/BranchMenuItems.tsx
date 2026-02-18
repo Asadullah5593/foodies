@@ -283,7 +283,7 @@ const BranchMenuItems: React.FC = () => {
                             : Number.isFinite(parseFloat(trimmed))
                               ? parseFloat(trimmed)
                               : undefined;
-                        if (value !== undefined) {
+                        if (value !== undefined && value !== null) {
                           updateMutation.mutate({
                             id: item.id,
                             data: { price_override: value },

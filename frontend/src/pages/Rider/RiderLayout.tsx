@@ -8,7 +8,7 @@ const RiderLayout: React.FC = () => {
   const { logout, user } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [_menuOpen, _setMenuOpen] = useState(false);
 
   const handleLogout = async () => {
     queryClient.clear();

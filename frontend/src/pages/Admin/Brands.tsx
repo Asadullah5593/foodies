@@ -18,7 +18,7 @@ function fullImageUrl(url: string | undefined): string | undefined {
   return `${API_BASE}${url}`;
 }
 
-const initialFormData = { name: '', logo_url: '', description: '', status: 'active' as const };
+const initialFormData = { name: '', logo_url: '', description: '', status: 'active' as 'active' | 'inactive' };
 
 const Brands: React.FC = () => {
   const { user } = useAuth();
@@ -27,7 +27,7 @@ const Brands: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
-  const [formData, setFormData] = useState(initialFormData);
+  const [formData, setFormData] = useState<{ name: string; logo_url: string; description: string; status: 'active' | 'inactive' }>(initialFormData);
   const [uploading, setUploading] = useState(false);
   const [filterTenantId, setFilterTenantId] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
@@ -293,7 +293,7 @@ const Brands: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
             <select
               value={formData.status}
-              onChange={(e) => setFormData({ ...formData, status: e.target.value as 'active' | 'inactive' })}
+              onChange={(e) => setFormData({ ...formData, status: (e.target.value === 'inactive' ? 'inactive' : 'active') })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="active">Active</option>

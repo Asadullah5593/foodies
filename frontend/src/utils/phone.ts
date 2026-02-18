@@ -1,8 +1,6 @@
 /**
  * Pakistani mobile: 03XXXXXXXXX (11 digits). Accepts 03001234567, 3001234567, +923001234567.
  */
-const DIGITS_ONLY = /^\d+$/;
-
 export function normalizePakistaniPhone(input: string): string | null {
   const trimmed = input.trim();
   if (!trimmed) return null;

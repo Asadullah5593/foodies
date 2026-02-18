@@ -187,6 +187,7 @@ export interface OrderItem {
   id: number;
   menu_item?: string;
   name_snapshot?: string;
+  variant_name?: string;
   quantity: number;
   unit_price: number;
   price_snapshot?: number;

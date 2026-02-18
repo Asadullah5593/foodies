@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
-import { useAuth } from '../../contexts/AuthContext';
 import { Branch, Brand, MenuItem } from '../../types';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
@@ -13,8 +12,6 @@ import Modal from '../../components/Modal';
 import { adminService } from '../../services/api/adminService';
 
 const Branches: React.FC = () => {
-  const { user } = useAuth();
-  const isSuperAdmin = user?.is_super_admin ?? false;
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [editingBranch, setEditingBranch] = useState<Branch | null>(null);
@@ -53,12 +50,6 @@ const Branches: React.FC = () => {
       return response.data;
     },
   });
-
-  const firstSelectedBrandId = formData.brand_ids[0] ?? null;
-  const selectedBrand = useMemo(() => {
-    if (!firstSelectedBrandId) return null;
-    return (brands as Brand[] | undefined)?.find((b) => b.id === firstSelectedBrandId) ?? null;
-  }, [brands, firstSelectedBrandId]);
 
   const brandIdsForMenu = formData.brand_ids?.length ? formData.brand_ids : [];
 
@@ -125,7 +116,6 @@ const Branches: React.FC = () => {
     });
   }, [branches, filterStatus, filterSearch]);
 
-  const hasActiveFilters = filterBrandId || filterStatus || filterSearch.trim();
   const clearFilters = () => {
     setFilterBrandId('');
     setFilterStatus('');

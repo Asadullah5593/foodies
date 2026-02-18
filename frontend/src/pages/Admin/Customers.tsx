@@ -167,7 +167,7 @@ const Customers: React.FC = () => {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((c) => (
+                {filtered.map((c: Customer) => (
                   <tr key={c.id} className="border-b border-gray-100">
                     <td className="py-3 text-gray-800">{c.name ?? '—'}</td>
                     <td className="py-3 font-mono text-gray-700">{c.phone}</td>

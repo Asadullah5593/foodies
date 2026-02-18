@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
-import { useAuth } from '../../contexts/AuthContext';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
@@ -33,15 +32,7 @@ interface MenuItem {
   addons?: MenuItemAddon[];
 }
 
-interface MenuCategory {
-  id: number;
-  name: string;
-  brand_id?: number;
-}
-
 const MenuItems: React.FC = () => {
-  const { user } = useAuth();
-  const isSuperAdmin = user?.is_super_admin ?? false;
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
@@ -302,7 +293,7 @@ const MenuItems: React.FC = () => {
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm min-w-[140px]"
             >
               <option value="">All categories</option>
-              {categoriesForFilter.map((c) => (
+              {categoriesForFilter.map((c: { id: number; name: string }) => (
                 <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </select>
@@ -720,7 +711,7 @@ const MenuItems: React.FC = () => {
             <p className="text-center text-gray-500 py-8">No menu items found. Create your first menu item above!</p>
           </Card>
         ) : (
-          menuItems?.map((item) => (
+          menuItems?.map((item: MenuItem) => (
             <Card key={item.id} hover>
               <div className="flex justify-between items-start">
                 <div className="flex-1">
@@ -750,10 +741,10 @@ const MenuItems: React.FC = () => {
                   {(item.variants?.length || item.addons?.length) ? (
                     <div className="text-xs text-gray-500 mt-1">
                       {item.variants?.length ? (
-                        <span className="mr-3">Variants: {item.variants.map((v) => v.name).join(', ')}</span>
+                        <span className="mr-3">Variants: {item.variants!.map((v: { name: string }) => v.name).join(', ')}</span>
                       ) : null}
                       {item.addons?.length ? (
-                        <span>Addons: {item.addons.map((a) => a.name).join(', ')}</span>
+                        <span>Addons: {item.addons!.map((a: MenuItemAddon) => a.name).join(', ')}</span>
                       ) : null}
                     </div>
                   ) : null}

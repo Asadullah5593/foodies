@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
-import { useAuth } from '../../contexts/AuthContext';
 import { Brand, MenuVariant } from '../../types';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
@@ -13,8 +12,6 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 
 const MenuVariants: React.FC = () => {
-  const { user } = useAuth();
-  const isSuperAdmin = user?.is_super_admin ?? false;
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [editingVariant, setEditingVariant] = useState<Pick<MenuVariant, 'id' | 'menu_item_id' | 'name' | 'price_modifier' | 'is_default'> | null>(null);

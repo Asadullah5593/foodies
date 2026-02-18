@@ -208,7 +208,7 @@ const OrderDetail: React.FC = () => {
               <div className="flex justify-between items-start gap-4">
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold text-gray-900">
-                    {item.name_snapshot ?? (item as any).name_snapshot} × {item.quantity}
+                    {item.name_snapshot ?? 'Item'} × {item.quantity}
                   </p>
                   {item.variant_name && (
                     <p className="text-sm text-gray-600 mt-0.5">
