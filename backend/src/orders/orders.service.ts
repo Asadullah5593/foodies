@@ -1,0 +1,1951 @@
+import {
+    Injectable,
+    NotFoundException,
+    BadRequestException,
+    ForbiddenException,
+} from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { DataSource, Repository } from 'typeorm';
+import { randomUUID } from 'crypto';
+import { Order } from '../entities/order.entity';
+import { OrderItem } from '../entities/order-item.entity';
+import { OrderItemAddon } from '../entities/order-item-addon.entity';
+import { Branch } from '../entities/branch.entity';
+import { Tenant } from '../entities/tenant.entity';
+import { Discount } from '../entities/discount.entity';
+import { MenuService } from '../menu/menu.service';
+import { LoyaltyService } from '../loyalty/loyalty.service';
+import { ShiftsService } from '../shifts/shifts.service';
+import { CustomersService } from '../customers/customers.service';
+import { normalizePakistaniPhone } from '../utils/phone';
+
+@Injectable()
+export class OrdersService {
+    constructor(
+        @InjectRepository(Order) private orderRepo: Repository<Order>,
+        @InjectRepository(OrderItem)
+        private orderItemRepo: Repository<OrderItem>,
+        @InjectRepository(OrderItemAddon)
+        private orderItemAddonRepo: Repository<OrderItemAddon>,
+        @InjectRepository(Branch) private branchRepo: Repository<Branch>,
+        @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
+        @InjectRepository(Discount) private discountRepo: Repository<Discount>,
+        private menuService: MenuService,
+        private loyaltyService: LoyaltyService,
+        private shiftsService: ShiftsService,
+        private customersService: CustomersService,
+        private dataSource: DataSource,
+    ) {}
+
+    async createOrder(
+        dto: {
+            branch_id: number;
+            order_type: string;
+            table_number?: string;
+            customer_name?: string;
+            customer_phone?: string;
+            delivery_address?: string;
+            items: {
+                menu_item_id: number;
+                quantity: number;
+                variant_id?: number;
+                addons?: { addon_id: number; quantity?: number }[];
+                notes?: string;
+                branch_id?: number;
+            }[];
+            notes?: string;
+            discount_code?: string;
+            /** Points to redeem as discount (POS only; requires customer_phone) */
+            loyalty_points_to_redeem?: number;
+        },
+        tenantId: number,
+        createdBy: number | null,
+        source: 'pos' | 'consumer_app' = 'pos',
+    ) {
+        const tenant = await this.tenantRepo.findOne({
+            where: { id: tenantId },
+        });
+        if (!tenant) throw new NotFoundException('Tenant not found');
+
+        // Resolve branch per line (for multi-branch carts). Load all involved branches and their brands.
+        const lineBranchIds = dto.items.map(
+            (line) =>
+                (line as { branch_id?: number }).branch_id ?? dto.branch_id,
+        );
+        const uniqueBranchIds = [...new Set(lineBranchIds)];
+        const branches = await this.branchRepo.find({
+            where: uniqueBranchIds.map((id) => ({ id })),
+            relations: ['branchBrands', 'branchBrands.brand'],
+        });
+        const branchMap = new Map<
+            number,
+            { branch: (typeof branches)[0]; brandIds: Set<number> }
+        >();
+        type BranchWithBrands = (typeof branches)[0] & {
+            branchBrands?: Array<{ brandId: number; brand?: { id: number } }>;
+        };
+        for (const b of branches) {
+            const raw = b as BranchWithBrands;
+            const brandIds = new Set<number>(
+                (raw.branchBrands ?? [])
+                    .map((bb) => Number(bb.brandId ?? bb.brand?.id))
+                    .filter((id: number) => Number.isFinite(id)),
+            );
+            branchMap.set(b.id, { branch: b, brandIds });
+        }
+        const primaryBranch = branchMap.get(dto.branch_id)?.branch;
+        if (!primaryBranch) throw new NotFoundException('Branch not found');
+
+        let customerPhoneNormalized: string | null = null;
+        if (source === 'pos') {
+            if (!dto.customer_name?.trim()) {
+                throw new BadRequestException(
+                    'Customer name is required for POS orders',
+                );
+            }
+            if (!dto.customer_phone?.trim()) {
+                throw new BadRequestException(
+                    'Customer phone is required for POS orders (use Pakistani format: 03XXXXXXXXX)',
+                );
+            }
+            customerPhoneNormalized = normalizePakistaniPhone(
+                dto.customer_phone.trim(),
+            );
+            if (!customerPhoneNormalized) {
+                throw new BadRequestException(
+                    'Invalid Pakistani phone number. Use format: 03XXXXXXXXX (e.g. 03001234567)',
+                );
+            }
+            if (dto.order_type === 'delivery') {
+                if (!dto.delivery_address?.trim()) {
+                    throw new BadRequestException(
+                        'Delivery address is required for delivery orders',
+                    );
+                }
+            }
+            for (const bid of uniqueBranchIds) {
+                const openShift =
+                    await this.shiftsService.findOpenByBranch(bid);
+                if (!openShift) {
+                    throw new ForbiddenException(
+                        `No shift is open for branch ID ${bid}. Open a shift in Admin → Shifts before placing POS orders.`,
+                    );
+                }
+            }
+        }
+
+        const lineDetails: {
+            menuItemId: number;
+            categoryId: number;
+            brandId: number;
+            branchId: number;
+            itemSubtotal: number;
+        }[] = [];
+        const itemBrandIds = new Set<number>();
+        let subtotal = 0;
+        type MenuItemWithAddons = {
+            addons?: Array<{ id: number; price: number }>;
+        };
+        const orderItemInputs: {
+            menuItem: MenuItemWithAddons;
+            line: (typeof dto.items)[0];
+            unitPrice: number;
+            itemSubtotal: number;
+            itemName: string;
+            brandId: number;
+            branchId: number;
+        }[] = [];
+
+        for (const line of dto.items) {
+            const lineBranchId =
+                (line as { branch_id?: number }).branch_id ?? dto.branch_id;
+            const branchInfo = branchMap.get(lineBranchId);
+            if (!branchInfo) continue;
+
+            const menuItem = await this.menuService.findMenuItem(
+                line.menu_item_id,
+            );
+            if (!menuItem) continue;
+            const menuItemBrandId = Number(
+                (menuItem as { brandId?: number; brand?: { id: number } })
+                    .brandId ??
+                    (menuItem as { brand?: { id: number } }).brand?.id,
+            );
+            if (
+                !Number.isFinite(menuItemBrandId) ||
+                !branchInfo.brandIds.has(menuItemBrandId)
+            )
+                continue;
+
+            let unitPrice = await this.menuService.getEffectiveUnitPrice(
+                lineBranchId,
+                line.menu_item_id,
+            );
+            if (line.variant_id) {
+                const variant = menuItem.variants?.find(
+                    (v) => v.id === line.variant_id,
+                );
+                if (variant) unitPrice += Number(variant.priceModifier);
+            }
+            const quantity = line.quantity ?? 1;
+            let itemSubtotal = unitPrice * quantity;
+            const itemName = menuItem.name;
+            if (line.addons?.length) {
+                for (const addonLine of line.addons) {
+                    const addon = menuItem.addons?.find(
+                        (a) => a.id === addonLine.addon_id,
+                    );
+                    if (addon)
+                        itemSubtotal +=
+                            Number(addon.price) * (addonLine.quantity ?? 1);
+                }
+            }
+
+            lineDetails.push({
+                menuItemId: menuItem.id,
+                categoryId: menuItem.categoryId,
+                brandId: menuItemBrandId,
+                branchId: lineBranchId,
+                itemSubtotal,
+            });
+            itemBrandIds.add(menuItemBrandId);
+            subtotal += itemSubtotal;
+            orderItemInputs.push({
+                menuItem,
+                line,
+                unitPrice,
+                itemSubtotal,
+                itemName,
+                brandId: menuItemBrandId,
+                branchId: lineBranchId,
+            });
+        }
+
+        if (lineDetails.length === 0)
+            throw new BadRequestException('No valid items in order');
+        const orderBrandId =
+            itemBrandIds.size === 1 ? [...itemBrandIds][0] : null;
+
+        // Resolve discounts at full-cart level and allocate to each line (use primary branch for discount context)
+        const auto = await this.resolveAutoDiscount(
+            tenantId,
+            subtotal,
+            source,
+            primaryBranch.id,
+            orderBrandId,
+            lineDetails,
+        );
+        const lineAuto = this.allocateDiscountToLines(
+            lineDetails,
+            subtotal,
+            auto.discountAmount,
+            auto.scope,
+            auto.scopeIds,
+            auto.discountableAmount,
+            orderBrandId,
+            auto.eligibilityBrandIds ?? null,
+        );
+        const afterAuto = subtotal - auto.discountAmount;
+        const lineAfterAuto = lineDetails.map(
+            (l, i) =>
+                Math.round((l.itemSubtotal - (lineAuto[i] ?? 0)) * 100) / 100,
+        );
+        const coupon = await this.resolveCouponDiscount(
+            tenantId,
+            dto.discount_code?.trim() ?? null,
+            afterAuto,
+            source,
+            primaryBranch.id,
+            orderBrandId,
+            lineDetails,
+            lineAfterAuto,
+        );
+        const lineCoupon = this.allocateDiscountToLinesUsingBase(
+            lineDetails,
+            lineAfterAuto,
+            afterAuto,
+            coupon.discountAmount,
+            coupon.scope,
+            coupon.scopeIds,
+            coupon.discountableAmount,
+            orderBrandId,
+            coupon.eligibilityBrandIds ?? null,
+        );
+        const combinedLineDiscount = lineDetails.map(
+            (_, i) => (lineAuto[i] ?? 0) + (lineCoupon[i] ?? 0),
+        );
+
+        const taxRate = Number(tenant.defaultTaxRate) || 0;
+        const serviceChargeRate = Number(tenant.defaultServiceCharge) || 0;
+        const deliveryFeeTotal =
+            dto.order_type === 'delivery'
+                ? Number(primaryBranch.deliveryFlatFee) || 0
+                : 0;
+        const orderGroupId = randomUUID();
+
+        // Group line indices by (branchId, brandId) so each branch receives its orders
+        const groupKey = (branchId: number, brandId: number) =>
+            `${branchId}-${brandId}`;
+        const groupToIndices = new Map<string, number[]>();
+        lineDetails.forEach((line, idx) => {
+            const key = groupKey(line.branchId, line.brandId);
+            if (!groupToIndices.has(key)) groupToIndices.set(key, []);
+            groupToIndices.get(key)!.push(idx);
+        });
+        const sortedGroups = [...groupToIndices.entries()]
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([key]) => key);
+
+        // Loyalty redeem (POS): apply to first order in group
+        let customerId: number | null = null;
+        if (customerPhoneNormalized) {
+            const customer = await this.customersService.findByPhone(
+                tenantId,
+                customerPhoneNormalized,
+            );
+            if (customer) customerId = customer.id;
+        }
+
+        let loyaltyDiscountAmount = 0;
+        let loyaltyPointsToRedeem = 0;
+        const firstKey = sortedGroups[0];
+        const firstIndices = groupToIndices.get(firstKey)!;
+        const firstOrderSubtotal = firstIndices.reduce(
+            (s, i) => s + lineDetails[i].itemSubtotal,
+            0,
+        );
+        const firstOrderLineDiscount = firstIndices.reduce(
+            (s, i) => s + (combinedLineDiscount[i] ?? 0),
+            0,
+        );
+        const firstOrderAfterDiscount =
+            Math.round((firstOrderSubtotal - firstOrderLineDiscount) * 100) /
+            100;
+        if (
+            source === 'pos' &&
+            dto.customer_phone?.trim() &&
+            (dto.loyalty_points_to_redeem ?? 0) > 0
+        ) {
+            const preview = await this.loyaltyService.getRedeemPreview(
+                tenantId,
+                customerPhoneNormalized ?? dto.customer_phone!.trim(),
+                firstOrderAfterDiscount,
+            );
+            if (preview) {
+                loyaltyPointsToRedeem = Math.min(
+                    dto.loyalty_points_to_redeem!,
+                    preview.redeemablePoints,
+                );
+                loyaltyDiscountAmount =
+                    loyaltyPointsToRedeem * preview.cashValuePerPoint;
+                loyaltyDiscountAmount = Math.min(
+                    loyaltyDiscountAmount,
+                    firstOrderAfterDiscount,
+                );
+                loyaltyDiscountAmount =
+                    Math.round(loyaltyDiscountAmount * 100) / 100;
+                if (loyaltyDiscountAmount > 0) {
+                    loyaltyPointsToRedeem = Math.floor(
+                        loyaltyDiscountAmount / preview.cashValuePerPoint,
+                    );
+                } else {
+                    loyaltyPointsToRedeem = 0;
+                }
+            }
+        }
+
+        // Pre-generate order numbers per branch (each branch gets sequential numbers)
+        const ordersPerBranch = new Map<number, number>();
+        for (const key of sortedGroups) {
+            const [branchIdStr] = key.split('-');
+            const branchId = Number(branchIdStr);
+            ordersPerBranch.set(
+                branchId,
+                (ordersPerBranch.get(branchId) ?? 0) + 1,
+            );
+        }
+        const orderNumbersByBranch = new Map<number, string[]>();
+        for (const [branchId, count] of ordersPerBranch) {
+            orderNumbersByBranch.set(
+                branchId,
+                await this.generateOrderNumbers(branchId, count),
+            );
+        }
+        const branchOrderIndex = new Map<number, number>();
+
+        const createdOrderIds: number[] = [];
+        let deliveryFeeAssigned = false;
+        let firstOrderIdForLoyalty: number | null = null;
+
+        for (const key of sortedGroups) {
+            const [branchIdStr, brandIdStr] = key.split('-');
+            const branchId = Number(branchIdStr);
+            const brandId = Number(brandIdStr);
+            const indices = groupToIndices.get(key)!;
+            const orderNumIdx = branchOrderIndex.get(branchId) ?? 0;
+            const orderNumber =
+                orderNumbersByBranch.get(branchId)![orderNumIdx];
+            branchOrderIndex.set(branchId, orderNumIdx + 1);
+            const brandSubtotal = indices.reduce(
+                (s, i) => s + lineDetails[i].itemSubtotal,
+                0,
+            );
+            const brandDiscountAmount = indices.reduce(
+                (s, i) => s + (combinedLineDiscount[i] ?? 0),
+                0,
+            );
+            const isFirstOrder = key === firstKey;
+            let afterDiscount =
+                Math.round((brandSubtotal - brandDiscountAmount) * 100) / 100;
+            if (isFirstOrder && loyaltyDiscountAmount > 0) {
+                afterDiscount =
+                    Math.round(
+                        (afterDiscount - loyaltyDiscountAmount) * 100,
+                    ) / 100;
+            }
+            const brandTax = Math.round(afterDiscount * taxRate * 100) / 100;
+            const brandServiceCharge =
+                Math.round(afterDiscount * serviceChargeRate * 100) / 100;
+            const brandDeliveryFee =
+                !deliveryFeeAssigned && deliveryFeeTotal > 0
+                    ? deliveryFeeTotal
+                    : 0;
+            if (brandDeliveryFee > 0) deliveryFeeAssigned = true;
+            const totalAmount =
+                Math.round(
+                    (afterDiscount +
+                        brandTax +
+                        brandServiceCharge +
+                        brandDeliveryFee) *
+                        100,
+                ) / 100;
+            const order = await this.orderRepo.save(
+                this.orderRepo.create({
+                    tenantId,
+                    brandId,
+                    orderGroupId,
+                    branchId,
+                    orderNumber,
+                    orderType: dto.order_type,
+                    tableNumber: dto.table_number ?? null,
+                    customerName: dto.customer_name ?? null,
+                    customerPhone:
+                        (customerPhoneNormalized ?? dto.customer_phone?.trim()) ??
+                        null,
+                    customerId,
+                    deliveryAddress: dto.delivery_address ?? null,
+                    status: 'placed',
+                    source,
+                    notes: dto.notes ?? null,
+                    subtotal: brandSubtotal,
+                    discountAmount: brandDiscountAmount,
+                    taxAmount: brandTax,
+                    serviceCharge: brandServiceCharge,
+                    deliveryFee: brandDeliveryFee,
+                    totalAmount,
+                    discountCode:
+                        coupon.discountCode ?? auto.discountCode ?? null,
+                    discountId: coupon.discountId ?? auto.discountId ?? null,
+                    loyaltyPointsRedeemed: isFirstOrder
+                        ? loyaltyPointsToRedeem
+                        : 0,
+                    ...(createdBy != null && {
+                        creator: { id: createdBy } as { id: number },
+                    }),
+                    placedAt: new Date(),
+                }),
+            );
+            createdOrderIds.push(order.id);
+            if (isFirstOrder && loyaltyPointsToRedeem > 0) {
+                firstOrderIdForLoyalty = order.id;
+            }
+
+            const brandInputs = indices.map((i) => orderItemInputs[i]);
+            for (const {
+                menuItem,
+                line,
+                unitPrice,
+                itemSubtotal,
+                itemName,
+                brandId: bid,
+            } of brandInputs) {
+                const orderItem = await this.orderItemRepo.save(
+                    this.orderItemRepo.create({
+                        orderId: order.id,
+                        menuItemId: line.menu_item_id,
+                        brandId: bid,
+                        variantId: line.variant_id ?? null,
+                        nameSnapshot: itemName,
+                        priceSnapshot: unitPrice,
+                        quantity: line.quantity ?? 1,
+                        unitPrice,
+                        subtotal: itemSubtotal,
+                        notes: line.notes ?? null,
+                    }),
+                );
+                if (line.addons?.length) {
+                    for (const addonLine of line.addons) {
+                        const addon = menuItem.addons?.find(
+                            (a: { id: number; price: number }) =>
+                                a.id === addonLine.addon_id,
+                        );
+                        if (addon) {
+                            const addonQty = addonLine.quantity ?? 1;
+                            await this.orderItemAddonRepo.save(
+                                this.orderItemAddonRepo.create({
+                                    orderItemId: orderItem.id,
+                                    addonId: addon.id,
+                                    quantity: addonQty,
+                                    unitPrice: Number(addon.price),
+                                    subtotal: Number(addon.price) * addonQty,
+                                }),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        if (
+            firstOrderIdForLoyalty != null &&
+            loyaltyPointsToRedeem > 0 &&
+            customerPhoneNormalized
+        ) {
+            await this.loyaltyService.redeemForOrder(
+                tenantId,
+                customerPhoneNormalized,
+                firstOrderIdForLoyalty,
+                loyaltyPointsToRedeem,
+                firstOrderAfterDiscount,
+            );
+        }
+
+        const orders = await Promise.all(
+            createdOrderIds.map((id) => this.findOne(id)),
+        );
+        return {
+            order_group_id: orderGroupId,
+            orders,
+        };
+    }
+
+    async findOne(id: number) {
+        const order = await this.orderRepo.findOne({
+            where: { id },
+            relations: [
+                'orderItems',
+                'orderItems.menuItem',
+                'orderItems.menuItem.category',
+                'orderItems.variant',
+                'orderItems.addons',
+                'orderItems.addons.addon',
+                'brand',
+            ],
+        });
+        if (!order) throw new NotFoundException('Order not found');
+        return {
+            id: order.id,
+            order_number: order.orderNumber,
+            order_type: order.orderType,
+            status: order.status,
+            order_group_id: order.orderGroupId ?? null,
+            brand_id: order.brandId ?? null,
+            brand_name: order.brand?.name ?? null,
+            subtotal: Number(order.subtotal),
+            discount_amount: Number(order.discountAmount),
+            tax_amount: Number(order.taxAmount),
+            service_charge: Number(order.serviceCharge),
+            delivery_fee: Number(order.deliveryFee),
+            total_amount: Number(order.totalAmount),
+            discount_code: order.discountCode,
+            items:
+                order.orderItems?.map((oi) => ({
+                    id: oi.id,
+                    name_snapshot: oi.nameSnapshot ?? oi.menuItem?.name,
+                    price_snapshot:
+                        oi.priceSnapshot != null
+                            ? Number(oi.priceSnapshot)
+                            : Number(oi.unitPrice),
+                    quantity: oi.quantity,
+                    unit_price: Number(oi.unitPrice),
+                    subtotal: Number(oi.subtotal),
+                    category:
+                        (oi.menuItem as { category?: { name: string } } | null)
+                            ?.category?.name ?? null,
+                })) ?? [],
+        };
+    }
+
+    /** Get all orders in a group (for viewing a customer's multi-brand order). */
+    async getOrderGroup(orderGroupId: string) {
+        const orders = await this.orderRepo.find({
+            where: { orderGroupId },
+            relations: [
+                'brand',
+                'orderItems',
+                'orderItems.menuItem',
+                'orderItems.menuItem.category',
+                'orderItems.addons',
+                'orderItems.addons.addon',
+            ],
+            order: { id: 'ASC' },
+        });
+        if (orders.length === 0)
+            throw new NotFoundException('Order group not found');
+        return {
+            order_group_id: orderGroupId,
+            orders: orders.map((o) => ({
+                id: o.id,
+                order_number: o.orderNumber,
+                brand_id: o.brandId,
+                brand_name: o.brand?.name ?? null,
+                status: o.status,
+                subtotal: Number(o.subtotal),
+                discount_amount: Number(o.discountAmount),
+                tax_amount: Number(o.taxAmount),
+                service_charge: Number(o.serviceCharge),
+                delivery_fee: Number(o.deliveryFee),
+                total_amount: Number(o.totalAmount),
+                items:
+                    o.orderItems?.map((oi) => ({
+                        id: oi.id,
+                        name_snapshot:
+                            oi.nameSnapshot ??
+                            (oi.menuItem as { name?: string } | null)?.name,
+                        quantity: oi.quantity,
+                        unit_price: Number(oi.unitPrice),
+                        subtotal: Number(oi.subtotal),
+                        category:
+                            (
+                                oi.menuItem as {
+                                    category?: { name: string };
+                                } | null
+                            )?.category?.name ?? null,
+                    })) ?? [],
+                loyalty_points_earned: o.loyaltyPointsEarned ?? 0,
+                loyalty_points_redeemed: o.loyaltyPointsRedeemed ?? 0,
+            })),
+        };
+    }
+
+    /** Per-brand invoice: brand, category, item breakdown for one order. */
+    async getOrderInvoice(orderId: number) {
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId },
+            relations: [
+                'brand',
+                'branch',
+                'orderItems',
+                'orderItems.menuItem',
+                'orderItems.menuItem.category',
+                'orderItems.variant',
+                'orderItems.addons',
+                'orderItems.addons.addon',
+            ],
+        });
+        if (!order) throw new NotFoundException('Order not found');
+        return {
+            order_id: order.id,
+            order_number: order.orderNumber,
+            order_group_id: order.orderGroupId ?? null,
+            brand: order.brand
+                ? { id: order.brand.id, name: order.brand.name }
+                : null,
+            branch: order.branch
+                ? { id: order.branch.id, name: order.branch.name }
+                : null,
+            order_type: order.orderType,
+            table_number: order.tableNumber,
+            placed_at: order.placedAt?.toISOString() ?? null,
+            items:
+                order.orderItems?.map((oi) => ({
+                    category:
+                        (oi.menuItem as { category?: { name: string } } | null)
+                            ?.category?.name ?? null,
+                    name:
+                        oi.nameSnapshot ??
+                        (oi.menuItem as { name?: string } | null)?.name,
+                    quantity: oi.quantity,
+                    unit_price: Number(oi.unitPrice),
+                    subtotal: Number(oi.subtotal),
+                    addons:
+                        oi.addons?.map((a) => ({
+                            name: (a.addon as { name?: string } | undefined)
+                                ?.name,
+                            quantity: a.quantity,
+                            unit_price: Number(a.unitPrice),
+                        })) ?? [],
+                })) ?? [],
+            subtotal: Number(order.subtotal),
+            discount_amount: Number(order.discountAmount),
+            tax_amount: Number(order.taxAmount),
+            service_charge: Number(order.serviceCharge),
+            delivery_fee: Number(order.deliveryFee),
+            total_amount: Number(order.totalAmount),
+            loyalty_points_earned: order.loyaltyPointsEarned ?? 0,
+            loyalty_points_redeemed: order.loyaltyPointsRedeemed ?? 0,
+        };
+    }
+
+    /** Main customer-facing invoice: breakdown by brand plus gross total. */
+    async getOrderGroupMainInvoice(orderGroupId: string) {
+        const group = await this.getOrderGroup(orderGroupId);
+        const grossTotal = group.orders.reduce(
+            (sum, o) => sum + Number(o.total_amount),
+            0,
+        );
+        return {
+            order_group_id: orderGroupId,
+            orders: group.orders.map((o) => ({
+                order_id: o.id,
+                order_number: o.order_number,
+                brand_name: o.brand_name,
+                items: o.items,
+                subtotal: o.subtotal,
+                discount_amount: o.discount_amount,
+                tax_amount: o.tax_amount,
+                service_charge: o.service_charge,
+                delivery_fee: o.delivery_fee,
+                total_amount: o.total_amount,
+                loyalty_points_earned: (o as { loyalty_points_earned?: number }).loyalty_points_earned ?? 0,
+                loyalty_points_redeemed: (o as { loyalty_points_redeemed?: number }).loyalty_points_redeemed ?? 0,
+            })),
+            gross_total: Math.round(grossTotal * 100) / 100,
+        };
+    }
+
+    async updateStatus(id: number, tenantId: number | null, status: string) {
+        const order = await this.orderRepo.findOne({
+            where: tenantId != null ? { id, tenantId } : { id },
+        });
+        if (!order) throw new NotFoundException('Order not found');
+
+        const wasCompleted = order.status === 'completed';
+        if (wasCompleted && status !== 'completed') {
+            await this.loyaltyService.revokeEarnedPoints(id);
+            order.completedAt = null;
+        }
+
+        order.status = status;
+        if (status === 'completed') {
+            order.completedAt = new Date();
+            await this.orderRepo.save(order);
+            await this.loyaltyService.earnOnOrderComplete(id);
+            await this.shiftsService.addCompletedOrderAmount(
+                order.branchId,
+                Number(order.totalAmount),
+            );
+        } else if (status === 'cancelled') {
+            order.cancelledAt = new Date();
+            await this.orderRepo.save(order);
+        } else {
+            await this.orderRepo.save(order);
+        }
+        return this.findForAdmin(id, tenantId);
+    }
+
+    async findForAdmin(id: number, tenantId: number | null) {
+        const order = await this.orderRepo.findOne({
+            where: tenantId != null ? { id, tenantId } : { id },
+            relations: [
+                'branch',
+                'brand',
+                'creator',
+                'rider',
+                'orderItems',
+                'orderItems.menuItem',
+                'orderItems.variant',
+                'orderItems.addons',
+                'orderItems.addons.addon',
+                'payments',
+            ],
+        });
+        if (!order) throw new NotFoundException('Order not found');
+        return {
+            id: order.id,
+            order_number: order.orderNumber,
+            order_type: order.orderType,
+            order_group_id: order.orderGroupId ?? null,
+            table_number: order.tableNumber,
+            customer_name: order.customerName,
+            customer_phone: order.customerPhone,
+            delivery_address: order.deliveryAddress,
+            status: order.status,
+            rider_id: order.riderId ?? null,
+            rider: order.rider
+                ? { id: order.rider.id, name: order.rider.name }
+                : null,
+            delivery_status: order.deliveryStatus ?? null,
+            delivery_failed_reason: order.deliveryFailedReason ?? null,
+            source: order.source,
+            subtotal: Number(order.subtotal),
+            discount_amount: Number(order.discountAmount),
+            discount_code: order.discountCode,
+            loyalty_points_earned: order.loyaltyPointsEarned ?? 0,
+            loyalty_points_redeemed: order.loyaltyPointsRedeemed ?? 0,
+            tax_amount: Number(order.taxAmount),
+            service_charge: Number(order.serviceCharge),
+            delivery_fee: Number(order.deliveryFee),
+            total_amount: Number(order.totalAmount),
+            placed_at: order.placedAt?.toISOString() ?? null,
+            completed_at: order.completedAt?.toISOString() ?? null,
+            branch: order.branch
+                ? {
+                      id: order.branch.id,
+                      name: order.branch.name,
+                      code: order.branch.code,
+                  }
+                : null,
+            brand: order.brand
+                ? { id: order.brand.id, name: order.brand.name }
+                : null,
+            creator: order.creator
+                ? { id: order.creator.id, name: order.creator.name }
+                : null,
+            brand_id: order.brandId ?? null,
+            items:
+                order.orderItems?.map((oi) => ({
+                    id: oi.id,
+                    brand_id: oi.brandId ?? null,
+                    name_snapshot: oi.nameSnapshot ?? oi.menuItem?.name,
+                    price_snapshot:
+                        oi.priceSnapshot != null
+                            ? Number(oi.priceSnapshot)
+                            : Number(oi.unitPrice),
+                    quantity: oi.quantity,
+                    unit_price: Number(oi.unitPrice),
+                    subtotal: Number(oi.subtotal),
+                    notes: oi.notes,
+                    variant_id: oi.variantId ?? null,
+                    variant_name:
+                        (oi as { variant?: { name: string } }).variant?.name ??
+                        null,
+                    addons:
+                        oi.addons?.map((a) => ({
+                            name: a.addon?.name,
+                            unit_price: Number(a.unitPrice),
+                            quantity: a.quantity,
+                        })) ?? [],
+                })) ?? [],
+            payments:
+                order.payments?.map((p) => ({
+                    id: p.id,
+                    method: p.paymentMethod,
+                    amount: Number(p.amount),
+                    status: p.status,
+                    paid_at: p.paidAt?.toISOString() ?? null,
+                })) ?? [],
+        };
+    }
+
+    async findAllAdmin(
+        tenantId: number | null,
+        filters: {
+            branch_id?: number;
+            status?: string;
+            date_from?: string;
+            date_to?: string;
+            has_rider?: boolean;
+        },
+    ) {
+        const qb = this.orderRepo
+            .createQueryBuilder('o')
+            .leftJoinAndSelect('o.branch', 'b')
+            .leftJoinAndSelect('o.brand', 'brand')
+            .leftJoinAndSelect('o.creator', 'c')
+            .leftJoinAndSelect('o.rider', 'rider')
+            .leftJoinAndSelect('o.orderItems', 'oi')
+            .leftJoinAndSelect('oi.menuItem', 'mi')
+            .orderBy('o.createdAt', 'DESC')
+            .take(50);
+
+        if (tenantId != null)
+            qb.andWhere('o.tenantId = :tenantId', { tenantId });
+        if (filters.branch_id)
+            qb.andWhere('o.branchId = :branchId', {
+                branchId: filters.branch_id,
+            });
+        if (filters.status)
+            qb.andWhere('o.status = :status', { status: filters.status });
+        if (filters.date_from)
+            qb.andWhere('date(o.placed_at) >= :dateFrom', {
+                dateFrom: filters.date_from,
+            });
+        if (filters.date_to)
+            qb.andWhere('date(o.placed_at) <= :dateTo', {
+                dateTo: filters.date_to,
+            });
+        if (filters.has_rider === true)
+            qb.andWhere('o.riderId IS NOT NULL');
+
+        return qb.getMany();
+    }
+
+    /** List users with Rider role for the tenant (from branch_users for tenant's branches). */
+    async listRiders(tenantId: number) {
+        const rows = (await this.dataSource.query(
+            `SELECT DISTINCT u.id, u.name, u.email, u.phone
+             FROM users u
+             INNER JOIN branch_users bu ON bu.user_id = u.id
+             INNER JOIN roles r ON r.id = bu.role_id AND r.slug = 'rider'
+             INNER JOIN branches b ON b.id = bu.branch_id
+             INNER JOIN branch_brands bb ON bb.branch_id = b.id
+             INNER JOIN brands br ON br.id = bb.brand_id AND br.tenant_id = $1
+             WHERE u.status = 'active'
+             ORDER BY u.name`,
+            [tenantId],
+        )) as Array<{ id: number; name: string; email: string | null; phone: string | null }>;
+        return rows;
+    }
+
+    /** Assign a rider to an order. Admin only. */
+    async assignRider(
+        orderId: number,
+        tenantId: number,
+        riderId: number,
+    ) {
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId, tenantId },
+        });
+        if (!order) throw new NotFoundException('Order not found');
+        const riders = await this.listRiders(tenantId);
+        if (!riders.some((r) => r.id === riderId)) {
+            throw new BadRequestException('Invalid rider for this tenant');
+        }
+        order.riderId = riderId;
+        order.deliveryStatus = 'assigned';
+        order.deliveryFailedReason = null;
+        await this.orderRepo.save(order);
+        return this.findForAdmin(orderId, tenantId);
+    }
+
+    /** Change rider only while delivery_status is still 'assigned' (rider has not accepted). */
+    async changeRider(
+        orderId: number,
+        tenantId: number,
+        riderId: number,
+    ) {
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId, tenantId },
+        });
+        if (!order) throw new NotFoundException('Order not found');
+        if (order.deliveryStatus !== 'assigned') {
+            throw new BadRequestException(
+                'Rider can only be changed before they have accepted the order',
+            );
+        }
+        const riders = await this.listRiders(tenantId);
+        if (!riders.some((r) => r.id === riderId)) {
+            throw new BadRequestException('Invalid rider for this tenant');
+        }
+        order.riderId = riderId;
+        await this.orderRepo.save(order);
+        return this.findForAdmin(orderId, tenantId);
+    }
+
+    /** Assign the same rider to all orders in a group. Admin only. */
+    async assignRiderToGroup(
+        orderGroupId: string,
+        tenantId: number,
+        riderId: number,
+    ) {
+        const riders = await this.listRiders(tenantId);
+        if (!riders.some((r) => r.id === riderId)) {
+            throw new BadRequestException('Invalid rider for this tenant');
+        }
+        const orders = await this.orderRepo.find({
+            where: { orderGroupId, tenantId },
+        });
+        if (orders.length === 0) {
+            throw new NotFoundException('Order group not found');
+        }
+        for (const order of orders) {
+            order.riderId = riderId;
+            order.deliveryStatus = 'assigned';
+            order.deliveryFailedReason = null;
+            await this.orderRepo.save(order);
+        }
+        return {
+            order_group_id: orderGroupId,
+            updated_count: orders.length,
+            orders: await Promise.all(
+                orders.map((o) => this.findForAdmin(o.id, tenantId)),
+            ),
+        };
+    }
+
+    /** Change rider for entire group only while all orders have delivery_status 'assigned'. */
+    async changeRiderForGroup(
+        orderGroupId: string,
+        tenantId: number,
+        riderId: number,
+    ) {
+        const orders = await this.orderRepo.find({
+            where: { orderGroupId, tenantId },
+        });
+        if (orders.length === 0) {
+            throw new NotFoundException('Order group not found');
+        }
+        const notAssigned = orders.filter((o) => o.deliveryStatus !== 'assigned');
+        if (notAssigned.length > 0) {
+            throw new BadRequestException(
+                'Rider can only be changed for the group before any order has been accepted by the rider',
+            );
+        }
+        const riders = await this.listRiders(tenantId);
+        if (!riders.some((r) => r.id === riderId)) {
+            throw new BadRequestException('Invalid rider for this tenant');
+        }
+        for (const order of orders) {
+            order.riderId = riderId;
+            await this.orderRepo.save(order);
+        }
+        return {
+            order_group_id: orderGroupId,
+            updated_count: orders.length,
+        };
+    }
+
+    /** Orders assigned to this rider (for rider app). */
+    async findAllForRider(riderUserId: number) {
+        const orders = await this.orderRepo.find({
+            where: { riderId: riderUserId },
+            relations: [
+                'branch',
+                'brand',
+                'orderItems',
+                'orderItems.menuItem',
+                'orderItems.addons',
+                'orderItems.addons.addon',
+            ],
+            order: { placedAt: 'DESC' },
+        });
+        return orders.map((o) => ({
+            id: o.id,
+            order_number: o.orderNumber,
+            order_group_id: o.orderGroupId ?? null,
+            status: o.status,
+            delivery_status: o.deliveryStatus ?? null,
+            delivery_failed_reason: o.deliveryFailedReason ?? null,
+            customer_name: o.customerName,
+            customer_phone: o.customerPhone,
+            delivery_address: o.deliveryAddress,
+            placed_at: o.placedAt?.toISOString() ?? null,
+            total_amount: Number(o.totalAmount),
+            branch: o.branch
+                ? { id: o.branch.id, name: o.branch.name, address: o.branch.address }
+                : null,
+            brand_name: o.brand?.name ?? null,
+            items:
+                o.orderItems?.map((oi) => ({
+                    id: oi.id,
+                    name_snapshot: oi.nameSnapshot ?? oi.menuItem?.name,
+                    quantity: oi.quantity,
+                    unit_price: Number(oi.unitPrice),
+                })) ?? [],
+        }));
+    }
+
+    /** Single order for rider (must be assigned to them). */
+    async findForRider(orderId: number, riderUserId: number) {
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId, riderId: riderUserId },
+            relations: [
+                'branch',
+                'brand',
+                'orderItems',
+                'orderItems.menuItem',
+                'orderItems.addons',
+                'orderItems.addons.addon',
+            ],
+        });
+        if (!order) throw new NotFoundException('Order not found');
+        return {
+            id: order.id,
+            order_number: order.orderNumber,
+            order_group_id: order.orderGroupId ?? null,
+            status: order.status,
+            delivery_status: order.deliveryStatus ?? null,
+            delivery_failed_reason: order.deliveryFailedReason ?? null,
+            customer_name: order.customerName,
+            customer_phone: order.customerPhone,
+            delivery_address: order.deliveryAddress,
+            placed_at: order.placedAt?.toISOString() ?? null,
+            total_amount: Number(order.totalAmount),
+            branch: order.branch
+                ? {
+                      id: order.branch.id,
+                      name: order.branch.name,
+                      address: order.branch.address,
+                  }
+                : null,
+            brand_name: order.brand?.name ?? null,
+            items:
+                order.orderItems?.map((oi) => ({
+                    id: oi.id,
+                    name_snapshot: oi.nameSnapshot ?? oi.menuItem?.name,
+                    quantity: oi.quantity,
+                    unit_price: Number(oi.unitPrice),
+                    addons:
+                        oi.addons?.map((a) => ({
+                            name: a.addon?.name,
+                            quantity: a.quantity,
+                        })) ?? [],
+                })) ?? [],
+        };
+    }
+
+    /** Rider updates delivery status. Allowed: accepted, picked_up, delivered, delivery_failed (reason required). */
+    async updateDeliveryStatus(
+        orderId: number,
+        riderUserId: number,
+        deliveryStatus: string,
+        deliveryFailedReason?: string | null,
+    ) {
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId, riderId: riderUserId },
+        });
+        if (!order) throw new NotFoundException('Order not found');
+        const allowed = ['accepted', 'picked_up', 'delivered', 'delivery_failed'];
+        if (!allowed.includes(deliveryStatus)) {
+            throw new BadRequestException(
+                `Invalid delivery status. Allowed: ${allowed.join(', ')}`,
+            );
+        }
+        if (deliveryStatus === 'delivery_failed') {
+            const reason =
+                typeof deliveryFailedReason === 'string'
+                    ? deliveryFailedReason.trim()
+                    : '';
+            if (!reason) {
+                throw new BadRequestException(
+                    'Delivery failed reason is required',
+                );
+            }
+            order.deliveryFailedReason = reason;
+        } else {
+            order.deliveryFailedReason = null;
+        }
+        order.deliveryStatus = deliveryStatus;
+        if (deliveryStatus === 'delivered') {
+            order.status = 'completed';
+            order.completedAt = new Date();
+            await this.orderRepo.save(order);
+            await this.loyaltyService.earnOnOrderComplete(order.id);
+            await this.shiftsService.addCompletedOrderAmount(
+                order.branchId,
+                Number(order.totalAmount),
+            );
+        } else {
+            await this.orderRepo.save(order);
+        }
+        return this.findForRider(orderId, riderUserId);
+    }
+
+    /**
+     * Quote/preview: same calculation as createOrder but no persistence.
+     * Returns original amount (subtotal), discount_amount, tax, service_charge, delivery_fee, total_amount.
+     */
+    async quote(
+        dto: {
+            branch_id: number;
+            order_type: string;
+            items: {
+                menu_item_id: number;
+                quantity: number;
+                variant_id?: number;
+                addons?: { addon_id: number; quantity?: number }[];
+            }[];
+            discount_code?: string;
+            customer_phone?: string;
+            loyalty_points_to_redeem?: number;
+        },
+        tenantId: number,
+        source: 'pos' | 'consumer_app' = 'pos',
+    ) {
+        const branch = await this.branchRepo.findOne({
+            where: { id: dto.branch_id },
+            relations: ['branchBrands', 'branchBrands.brand'],
+        });
+        type BranchWithBrands = Branch & { branchBrands?: unknown[] };
+        if (!branch || !(branch as BranchWithBrands).branchBrands?.length)
+            throw new NotFoundException('Branch not found');
+        const tenant = await this.tenantRepo.findOne({
+            where: { id: tenantId },
+        });
+        if (!tenant) throw new NotFoundException('Tenant not found');
+
+        const { subtotal, lineDetails, orderBrandId } =
+            await this.computeSubtotalAndLinesWithBrands(
+                dto.branch_id,
+                dto.items,
+            );
+
+        const auto = await this.resolveAutoDiscount(
+            tenantId,
+            subtotal,
+            source,
+            branch.id,
+            orderBrandId,
+            lineDetails,
+        );
+        const lineAuto = this.allocateDiscountToLines(
+            lineDetails,
+            subtotal,
+            auto.discountAmount,
+            auto.scope,
+            auto.scopeIds,
+            auto.discountableAmount,
+            orderBrandId,
+            auto.eligibilityBrandIds ?? null,
+        );
+        const afterAuto = subtotal - auto.discountAmount;
+        const lineAfterAuto = lineDetails.map(
+            (l, i) =>
+                Math.round((l.itemSubtotal - (lineAuto[i] ?? 0)) * 100) / 100,
+        );
+        const coupon = await this.resolveCouponDiscount(
+            tenantId,
+            dto.discount_code?.trim() ?? null,
+            afterAuto,
+            source,
+            branch.id,
+            orderBrandId,
+            lineDetails,
+            lineAfterAuto,
+        );
+        const lineCoupon = this.allocateDiscountToLinesUsingBase(
+            lineDetails,
+            lineAfterAuto,
+            afterAuto,
+            coupon.discountAmount,
+            coupon.scope,
+            coupon.scopeIds,
+            coupon.discountableAmount,
+            orderBrandId,
+            coupon.eligibilityBrandIds ?? null,
+        );
+        const totalDiscount = auto.discountAmount + coupon.discountAmount;
+        const combinedLineDiscount = lineDetails.map(
+            (_, i) => (lineAuto[i] ?? 0) + (lineCoupon[i] ?? 0),
+        );
+
+        let afterDiscount = subtotal - totalDiscount;
+        let loyaltyDiscount = 0;
+        let loyaltyPointsRedeemed = 0;
+        if (
+            source === 'pos' &&
+            dto.customer_phone?.trim() &&
+            (dto.loyalty_points_to_redeem ?? 0) > 0
+        ) {
+            const normalized = normalizePakistaniPhone(dto.customer_phone.trim());
+            if (normalized) {
+                const preview = await this.loyaltyService.getRedeemPreview(
+                    tenantId,
+                    normalized,
+                    afterDiscount,
+                );
+                if (preview) {
+                    loyaltyPointsRedeemed = Math.min(
+                        dto.loyalty_points_to_redeem!,
+                        preview.redeemablePoints,
+                    );
+                    loyaltyDiscount =
+                        loyaltyPointsRedeemed * preview.cashValuePerPoint;
+                    loyaltyDiscount = Math.min(
+                        loyaltyDiscount,
+                        afterDiscount,
+                    );
+                    loyaltyDiscount =
+                        Math.round(loyaltyDiscount * 100) / 100;
+                    afterDiscount =
+                        Math.round((afterDiscount - loyaltyDiscount) * 100) /
+                        100;
+                }
+            }
+        }
+        const taxRate = Number(tenant.defaultTaxRate) || 0;
+        const serviceChargeRate = Number(tenant.defaultServiceCharge) || 0;
+        const taxAmount = Math.round(afterDiscount * taxRate * 100) / 100;
+        const serviceCharge =
+            Math.round(afterDiscount * serviceChargeRate * 100) / 100;
+        const deliveryFee =
+            dto.order_type === 'delivery'
+                ? Number(branch.deliveryFlatFee) || 0
+                : 0;
+        const totalAmount =
+            Math.round(
+                (afterDiscount + taxAmount + serviceCharge + deliveryFee) * 100,
+            ) / 100;
+
+        const line_breakdown = lineDetails.map((line, i) => ({
+            menu_item_id: line.menuItemId,
+            brand_id: (line as { brandId?: number }).brandId ?? null,
+            subtotal: line.itemSubtotal,
+            discount_amount: combinedLineDiscount[i] ?? 0,
+            after_discount:
+                Math.round(
+                    (line.itemSubtotal - (combinedLineDiscount[i] ?? 0)) * 100,
+                ) / 100,
+        }));
+
+        return {
+            subtotal,
+            auto_discount_amount: auto.discountAmount,
+            coupon_discount_amount: coupon.discountAmount,
+            discount_amount: totalDiscount,
+            discount_code: coupon.discountCode ?? null,
+            loyalty_discount: loyaltyDiscount,
+            loyalty_points_redeemed: loyaltyPointsRedeemed,
+            tax_amount: taxAmount,
+            service_charge: serviceCharge,
+            delivery_fee: deliveryFee,
+            total_amount: totalAmount,
+            line_breakdown,
+        };
+    }
+
+    /** Compute subtotal and line details; derive orderBrandId from items (single brand or null for multi-brand). */
+    private async computeSubtotalAndLinesWithBrands(
+        branchId: number,
+        items: {
+            menu_item_id: number;
+            quantity: number;
+            variant_id?: number;
+            addons?: { addon_id: number; quantity?: number }[];
+        }[],
+    ): Promise<{
+        subtotal: number;
+        lineDetails: {
+            menuItemId: number;
+            categoryId: number;
+            brandId: number;
+            itemSubtotal: number;
+        }[];
+        orderBrandId: number | null;
+    }> {
+        const branch = (await this.branchRepo.findOne({
+            where: { id: branchId },
+            relations: ['branchBrands'],
+        })) as
+            | (Branch & {
+                  branchBrands?: Array<{
+                      brandId: number;
+                      brand?: { id: number };
+                  }>;
+              })
+            | null;
+        const branchBrandIds = new Set(
+            (branch?.branchBrands ?? [])
+                .map((bb) => Number(bb.brandId ?? bb.brand?.id))
+                .filter((id: number) => Number.isFinite(id)),
+        );
+        const lineDetails: {
+            menuItemId: number;
+            categoryId: number;
+            brandId: number;
+            itemSubtotal: number;
+        }[] = [];
+        const itemBrandIds = new Set<number>();
+        let subtotal = 0;
+        for (const line of items) {
+            const menuItem = await this.menuService.findMenuItem(
+                line.menu_item_id,
+            );
+            if (!menuItem) continue;
+            const brandId = Number(
+                (menuItem as { brandId?: number; brand?: { id: number } })
+                    .brandId ??
+                    (menuItem as { brand?: { id: number } }).brand?.id,
+            );
+            if (!Number.isFinite(brandId) || !branchBrandIds.has(brandId))
+                continue;
+            itemBrandIds.add(brandId);
+            let unitPrice = await this.menuService.getEffectiveUnitPrice(
+                branchId,
+                line.menu_item_id,
+            );
+            if (line.variant_id && menuItem.variants?.length) {
+                const variant = menuItem.variants.find(
+                    (v) => v.id === line.variant_id,
+                );
+                if (variant) unitPrice += Number(variant.priceModifier);
+            }
+            const quantity = line.quantity ?? 1;
+            let itemSubtotal = unitPrice * quantity;
+            if (line.addons?.length) {
+                for (const addonLine of line.addons) {
+                    const addon = menuItem.addons?.find(
+                        (a) => a.id === addonLine.addon_id,
+                    );
+                    if (addon)
+                        itemSubtotal +=
+                            Number(addon.price) * (addonLine.quantity ?? 1);
+                }
+            }
+            subtotal += itemSubtotal;
+            lineDetails.push({
+                menuItemId: menuItem.id,
+                categoryId: menuItem.categoryId,
+                brandId,
+                itemSubtotal,
+            });
+        }
+        const orderBrandId =
+            itemBrandIds.size === 1 ? [...itemBrandIds][0] : null;
+        return { subtotal, lineDetails, orderBrandId };
+    }
+
+    /** Compute order subtotal and per-line details (menuItemId, categoryId, itemSubtotal) for scope-based discount. */
+    private async computeSubtotalAndLines(
+        items: {
+            menu_item_id: number;
+            quantity: number;
+            variant_id?: number;
+            addons?: { addon_id: number; quantity?: number }[];
+        }[],
+    ): Promise<{
+        subtotal: number;
+        lineDetails: {
+            menuItemId: number;
+            categoryId: number;
+            itemSubtotal: number;
+        }[];
+    }> {
+        const lineDetails: {
+            menuItemId: number;
+            categoryId: number;
+            itemSubtotal: number;
+        }[] = [];
+        let subtotal = 0;
+        for (const line of items) {
+            const menuItem = await this.menuService.findMenuItem(
+                line.menu_item_id,
+            );
+            if (!menuItem) continue;
+            let unitPrice = Number(menuItem.basePrice);
+            if (line.variant_id && menuItem.variants?.length) {
+                const variant = menuItem.variants.find(
+                    (v) => v.id === line.variant_id,
+                );
+                if (variant) unitPrice += Number(variant.priceModifier);
+            }
+            const quantity = line.quantity ?? 1;
+            let itemSubtotal = unitPrice * quantity;
+            if (line.addons?.length) {
+                for (const addonLine of line.addons) {
+                    const addon = menuItem.addons?.find(
+                        (a) => a.id === addonLine.addon_id,
+                    );
+                    if (addon)
+                        itemSubtotal +=
+                            Number(addon.price) * (addonLine.quantity ?? 1);
+                }
+            }
+            subtotal += itemSubtotal;
+            lineDetails.push({
+                menuItemId: menuItem.id,
+                categoryId: menuItem.categoryId,
+                itemSubtotal,
+            });
+        }
+        return { subtotal, lineDetails };
+    }
+
+    private readonly discountResultEmpty: {
+        discountAmount: number;
+        discountCode: string | null;
+        discountId: number | null;
+        scope: string;
+        scopeIds: number[];
+        discountableAmount: number;
+        eligibilityBrandIds: number[] | null;
+    } = {
+        discountAmount: 0,
+        discountCode: null,
+        discountId: null,
+        scope: 'whole_order',
+        scopeIds: [],
+        discountableAmount: 0,
+        eligibilityBrandIds: null,
+    };
+
+    /** Line detail for discount; brandId required for multi-brand orders so brand-scoped discounts apply to eligible portion only. */
+    private lineDetailBrandId(
+        line: { brandId?: number },
+        index: number,
+        lineDetails: { brandId?: number }[],
+    ): number | undefined {
+        return line.brandId ?? lineDetails[index]?.brandId;
+    }
+
+    /** Resolve best auto-applied discount. Multi-brand: brand-scoped discounts apply to the eligible portion only. */
+    private async resolveAutoDiscount(
+        tenantId: number,
+        subtotal: number,
+        source: string,
+        branchId: number,
+        brandId: number | null,
+        lineDetails: {
+            menuItemId: number;
+            categoryId: number;
+            itemSubtotal: number;
+            brandId?: number;
+        }[],
+    ): Promise<{
+        discountAmount: number;
+        discountCode: string | null;
+        discountId: number | null;
+        scope: string;
+        scopeIds: number[];
+        discountableAmount: number;
+        eligibilityBrandIds: number[] | null;
+    }> {
+        const discounts = await this.discountRepo.find({
+            where: { tenantId, isActive: true, requiresCode: false },
+        });
+        const now = new Date();
+        let best = {
+            ...this.discountResultEmpty,
+            eligibilityBrandIds: null as number[] | null,
+        };
+        for (const discount of discounts) {
+            if (discount.validFrom && now < discount.validFrom) continue;
+            if (discount.validUntil && now > discount.validUntil) continue;
+            if (
+                discount.minOrderAmount != null &&
+                Number(discount.minOrderAmount) > subtotal
+            )
+                continue;
+            if (discount.posOnly && source !== 'pos') continue;
+            const eligibilityBranchIds = discount.eligibilityBranchIds ?? null;
+            const eligibilityBrandIds = discount.eligibilityBrandIds ?? null;
+            if (
+                eligibilityBranchIds != null &&
+                eligibilityBranchIds.length > 0 &&
+                !eligibilityBranchIds.includes(branchId)
+            )
+                continue;
+            const brandSet =
+                eligibilityBrandIds != null && eligibilityBrandIds.length > 0
+                    ? new Set(
+                          (eligibilityBrandIds as unknown[]).map(
+                              (id: unknown) => Number(id),
+                          ),
+                      )
+                    : null;
+            if (brandId != null) {
+                if (brandSet != null && !brandSet.has(Number(brandId)))
+                    continue;
+            } else {
+                if (brandSet != null) {
+                    const hasEligibleLine = lineDetails.some((l, i) => {
+                        const lineBrand = this.lineDetailBrandId(
+                            l,
+                            i,
+                            lineDetails,
+                        );
+                        return (
+                            lineBrand != null && brandSet.has(Number(lineBrand))
+                        );
+                    });
+                    if (!hasEligibleLine) continue;
+                }
+            }
+            const scope = discount.applicationScope ?? 'whole_order';
+            const scopeIds = (discount.applicationScopeIds ?? []).map(
+                (id: unknown) => Number(id),
+            );
+            const inScope = (
+                l: { menuItemId: number; categoryId: number },
+                i: number,
+            ) => {
+                if (
+                    scope === 'category' &&
+                    scopeIds.length > 0 &&
+                    !scopeIds.includes(l.categoryId)
+                )
+                    return false;
+                if (
+                    scope === 'products' &&
+                    scopeIds.length > 0 &&
+                    !scopeIds.includes(l.menuItemId)
+                )
+                    return false;
+                if (brandSet != null && brandId == null) {
+                    const lineBrand = this.lineDetailBrandId(
+                        lineDetails[i],
+                        i,
+                        lineDetails,
+                    );
+                    if (lineBrand == null || !brandSet.has(Number(lineBrand)))
+                        return false;
+                }
+                return true;
+            };
+            let discountableAmount = 0;
+            lineDetails.forEach((l, i) => {
+                if (inScope(l, i)) discountableAmount += l.itemSubtotal;
+            });
+            if (discountableAmount <= 0) continue;
+            let discountAmount = 0;
+            if (discount.type === 'flat') {
+                discountAmount = Math.min(
+                    Number(discount.value),
+                    discountableAmount,
+                );
+                if (discount.maxDiscountAmount != null)
+                    discountAmount = Math.min(
+                        discountAmount,
+                        Number(discount.maxDiscountAmount),
+                    );
+            } else {
+                discountAmount =
+                    (discountableAmount * Number(discount.value)) / 100;
+                if (discount.maxDiscountAmount != null)
+                    discountAmount = Math.min(
+                        discountAmount,
+                        Number(discount.maxDiscountAmount),
+                    );
+            }
+            if (discountAmount > best.discountAmount) {
+                best = {
+                    discountAmount,
+                    discountCode: discount.code ?? null,
+                    discountId: discount.id,
+                    scope,
+                    scopeIds,
+                    discountableAmount,
+                    eligibilityBrandIds,
+                };
+            }
+        }
+        return best;
+    }
+
+    /** Resolve coupon/promo discount (by code). Multi-brand: brand-scoped discounts apply to eligible portion only. */
+    private async resolveCouponDiscount(
+        tenantId: number,
+        code: string | null,
+        baseAmount: number,
+        source: string,
+        branchId: number,
+        brandId: number | null,
+        lineDetails: {
+            menuItemId: number;
+            categoryId: number;
+            itemSubtotal: number;
+            brandId?: number;
+        }[],
+        lineAfterAuto: number[] | null,
+    ): Promise<{
+        discountAmount: number;
+        discountCode: string | null;
+        discountId: number | null;
+        scope: string;
+        scopeIds: number[];
+        discountableAmount: number;
+        eligibilityBrandIds: number[] | null;
+    }> {
+        const empty = {
+            ...this.discountResultEmpty,
+            discountableAmount: baseAmount,
+            eligibilityBrandIds: null as number[] | null,
+        };
+        if (!code?.trim()) return empty;
+        const discount = await this.discountRepo.findOne({
+            where: { code: code.trim(), tenantId, isActive: true },
+        });
+        if (!discount) return empty;
+        const now = new Date();
+        if (discount.validFrom && now < discount.validFrom) return empty;
+        if (discount.validUntil && now > discount.validUntil) return empty;
+        if (
+            discount.minOrderAmount != null &&
+            Number(discount.minOrderAmount) > baseAmount
+        )
+            return empty;
+        if (discount.posOnly && source !== 'pos') return empty;
+        const eligibilityBranchIds = discount.eligibilityBranchIds ?? null;
+        const eligibilityBrandIds = discount.eligibilityBrandIds ?? null;
+        if (
+            eligibilityBranchIds != null &&
+            eligibilityBranchIds.length > 0 &&
+            !eligibilityBranchIds.includes(branchId)
+        )
+            return empty;
+        const brandSet =
+            eligibilityBrandIds != null && eligibilityBrandIds.length > 0
+                ? new Set(
+                      (eligibilityBrandIds as unknown[]).map((id: unknown) =>
+                          Number(id),
+                      ),
+                  )
+                : null;
+        if (brandId != null) {
+            if (brandSet != null && !brandSet.has(Number(brandId)))
+                return empty;
+        } else {
+            if (brandSet != null) {
+                const hasEligibleLine = lineDetails.some((l, i) => {
+                    const lineBrand = this.lineDetailBrandId(l, i, lineDetails);
+                    return lineBrand != null && brandSet.has(Number(lineBrand));
+                });
+                if (!hasEligibleLine) return empty;
+            }
+        }
+        const scope = discount.applicationScope ?? 'whole_order';
+        const scopeIds = (discount.applicationScopeIds ?? []).map(
+            (id: unknown) => Number(id),
+        );
+        const inScope = (
+            l: { menuItemId: number; categoryId: number },
+            i: number,
+        ) => {
+            if (
+                scope === 'category' &&
+                scopeIds.length > 0 &&
+                !scopeIds.includes(l.categoryId)
+            )
+                return false;
+            if (
+                scope === 'products' &&
+                scopeIds.length > 0 &&
+                !scopeIds.includes(l.menuItemId)
+            )
+                return false;
+            if (brandSet != null && brandId == null) {
+                const lineBrand = this.lineDetailBrandId(
+                    lineDetails[i],
+                    i,
+                    lineDetails,
+                );
+                if (lineBrand == null || !brandSet.has(Number(lineBrand)))
+                    return false;
+            }
+            return true;
+        };
+        let discountableAmount = 0;
+        if (
+            lineAfterAuto != null &&
+            lineAfterAuto.length === lineDetails.length
+        ) {
+            lineDetails.forEach((l, i) => {
+                if (inScope(l, i)) discountableAmount += lineAfterAuto[i] ?? 0;
+            });
+        } else {
+            lineDetails.forEach((l, i) => {
+                if (inScope(l, i)) discountableAmount += l.itemSubtotal;
+            });
+        }
+        discountableAmount = Math.min(discountableAmount, baseAmount);
+        if (discountableAmount <= 0) return empty;
+        let discountAmount = 0;
+        if (discount.type === 'flat') {
+            discountAmount = Math.min(
+                Number(discount.value),
+                discountableAmount,
+            );
+            if (discount.maxDiscountAmount != null)
+                discountAmount = Math.min(
+                    discountAmount,
+                    Number(discount.maxDiscountAmount),
+                );
+        } else {
+            discountAmount =
+                (discountableAmount * Number(discount.value)) / 100;
+            if (discount.maxDiscountAmount != null)
+                discountAmount = Math.min(
+                    discountAmount,
+                    Number(discount.maxDiscountAmount),
+                );
+        }
+        return {
+            discountAmount,
+            discountCode: discount.code ?? null,
+            discountId: discount.id,
+            scope,
+            scopeIds,
+            discountableAmount,
+            eligibilityBrandIds,
+        };
+    }
+
+    /** Allocate discount to lines using "after auto" amounts (for coupon stacking). When multi-brand + brand filter, only eligible lines get share. */
+    private allocateDiscountToLinesUsingBase(
+        lineDetails: {
+            menuItemId: number;
+            categoryId: number;
+            itemSubtotal: number;
+            brandId?: number;
+        }[],
+        baseAmounts: number[],
+        totalBase: number,
+        discountAmount: number,
+        scope: string,
+        scopeIds: number[],
+        discountableAmount: number,
+        orderBrandId: number | null,
+        eligibilityBrandIds: number[] | null,
+    ): number[] {
+        if (
+            discountAmount <= 0 ||
+            lineDetails.length === 0 ||
+            totalBase <= 0 ||
+            discountableAmount <= 0
+        )
+            return lineDetails.map(() => 0);
+        const brandSet =
+            eligibilityBrandIds != null && eligibilityBrandIds.length > 0
+                ? new Set(eligibilityBrandIds.map((id: number) => Number(id)))
+                : null;
+        const inScope = (i: number) => {
+            const l = lineDetails[i];
+            if (scope === 'whole_order') {
+                void 0; /* all lines in scope */
+            } else if (
+                scope === 'category' &&
+                scopeIds.length > 0 &&
+                !scopeIds.includes(l.categoryId)
+            )
+                return false;
+            else if (
+                scope === 'products' &&
+                scopeIds.length > 0 &&
+                !scopeIds.includes(l.menuItemId)
+            )
+                return false;
+            if (brandSet != null && orderBrandId == null) {
+                const lineBrand = this.lineDetailBrandId(l, i, lineDetails);
+                if (lineBrand == null || !brandSet.has(Number(lineBrand)))
+                    return false;
+            }
+            return true;
+        };
+        const allocated = lineDetails.map((_, i) =>
+            !inScope(i)
+                ? 0
+                : Math.round(
+                      discountAmount *
+                          (baseAmounts[i] / discountableAmount) *
+                          100,
+                  ) / 100,
+        );
+        const sum = allocated.reduce((a, b) => a + b, 0);
+        if (sum !== discountAmount && allocated.length > 0) {
+            const diff = Math.round((discountAmount - sum) * 100) / 100;
+            let lastIdx = -1;
+            for (let i = lineDetails.length - 1; i >= 0; i--)
+                if (inScope(i)) {
+                    lastIdx = i;
+                    break;
+                }
+            if (lastIdx >= 0)
+                allocated[lastIdx] =
+                    Math.round((allocated[lastIdx] + diff) * 100) / 100;
+        }
+        return allocated;
+    }
+
+    /** Allocate total discount to lines by scope (proportional to discountable amount). When multi-brand + brand filter, only eligible lines get share. */
+    private allocateDiscountToLines(
+        lineDetails: {
+            menuItemId: number;
+            categoryId: number;
+            itemSubtotal: number;
+            brandId?: number;
+        }[],
+        subtotal: number,
+        discountAmount: number,
+        scope: string,
+        scopeIds: number[],
+        discountableAmount: number,
+        orderBrandId: number | null,
+        eligibilityBrandIds: number[] | null,
+    ): number[] {
+        if (discountAmount <= 0 || lineDetails.length === 0)
+            return lineDetails.map(() => 0);
+        const brandSet =
+            eligibilityBrandIds != null && eligibilityBrandIds.length > 0
+                ? new Set(eligibilityBrandIds.map((id: number) => Number(id)))
+                : null;
+        const inScope = (i: number) => {
+            const l = lineDetails[i];
+            if (scope === 'whole_order') {
+                void 0; /* all lines in scope */
+            } else if (
+                scope === 'category' &&
+                scopeIds.length > 0 &&
+                !scopeIds.includes(l.categoryId)
+            )
+                return false;
+            else if (
+                scope === 'products' &&
+                scopeIds.length > 0 &&
+                !scopeIds.includes(l.menuItemId)
+            )
+                return false;
+            if (brandSet != null && orderBrandId == null) {
+                const lineBrand = this.lineDetailBrandId(l, i, lineDetails);
+                if (lineBrand == null || !brandSet.has(Number(lineBrand)))
+                    return false;
+            }
+            return true;
+        };
+        if (discountableAmount <= 0) return lineDetails.map(() => 0);
+        const allocated = lineDetails.map((l, i) => {
+            if (!inScope(i)) return 0;
+            return (
+                Math.round(
+                    discountAmount *
+                        (l.itemSubtotal / discountableAmount) *
+                        100,
+                ) / 100
+            );
+        });
+        const sum = allocated.reduce((a, b) => a + b, 0);
+        if (sum !== discountAmount && allocated.length > 0) {
+            const diff = Math.round((discountAmount - sum) * 100) / 100;
+            let lastIdx = -1;
+            for (let i = lineDetails.length - 1; i >= 0; i--)
+                if (inScope(i)) {
+                    lastIdx = i;
+                    break;
+                }
+            if (lastIdx >= 0)
+                allocated[lastIdx] =
+                    Math.round((allocated[lastIdx] + diff) * 100) / 100;
+        }
+        return allocated;
+    }
+
+    private async generateOrderNumber(branchId: number): Promise<string> {
+        const [num] = await this.generateOrderNumbers(branchId, 1);
+        return num;
+    }
+
+    /** Generate multiple order numbers in one go (e.g. for multi-brand split) so they are unique and sequential. */
+    private async generateOrderNumbers(
+        branchId: number,
+        howMany: number,
+    ): Promise<string[]> {
+        const branch = await this.branchRepo.findOne({
+            where: { id: branchId },
+        });
+        const code = branch?.code ?? 'BR';
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayNoDash = todayStr.replace(/-/g, '');
+        const count = await this.orderRepo
+            .createQueryBuilder('o')
+            .where('o.branchId = :branchId', { branchId })
+            .andWhere('date(o.placed_at) = :today', { today: todayStr })
+            .getCount();
+        const result: string[] = [];
+        for (let i = 0; i < howMany; i++) {
+            result.push(
+                `${code}-${todayNoDash}-${String(count + i + 1).padStart(4, '0')}`,
+            );
+        }
+        return result;
+    }
+}

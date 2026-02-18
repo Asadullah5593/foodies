@@ -1,0 +1,26 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment
+.env
+.env.*
+
+# Build
+dist/
+build/
+.next/
+out/
+
+# Runtime uploads / generated assets
+backend/uploads/
+
+# Logs
+logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
