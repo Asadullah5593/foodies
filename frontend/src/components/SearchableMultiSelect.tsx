@@ -1,4 +1,7 @@
 import React, { useState, useRef, useMemo } from 'react';
+import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import { useTypeaheadSuggestions } from '../hooks/useTypeaheadSuggestions';
+import TypeaheadDropdown from './TypeaheadDropdown';
 
 export interface SearchableMultiSelectOption {
   id: number;
@@ -30,17 +33,25 @@ const SearchableMultiSelect: React.FC<SearchableMultiSelectProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return options;
-    const q = search.trim().toLowerCase();
+    if (!debouncedSearch.trim()) return options;
+    const q = debouncedSearch.trim().toLowerCase();
     return options.filter(
       (o) =>
         o.name.toLowerCase().includes(q) ||
         (o.code && o.code.toLowerCase().includes(q)),
     );
-  }, [options, search]);
+  }, [options, debouncedSearch]);
+
+  const typeaheadOptions = useMemo(
+    () => options.map((o) => ({ id: String(o.id), label: getOptionLabel(o) })),
+    [options, getOptionLabel],
+  );
+  const { open: sugOpen, setOpen: setSugOpen, suggestions, activeIndex, setActiveIndex } =
+    useTypeaheadSuggestions({ query: debouncedSearch, options: typeaheadOptions, minChars: 2, limit: 8 });
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedOptions = useMemo(
@@ -53,6 +64,29 @@ const SearchableMultiSelect: React.FC<SearchableMultiSelectProps> = ({
       onChange(selectedIds.filter((x) => x !== id));
     } else {
       onChange([...selectedIds, id]);
+    }
+  };
+
+  const onKeyDownSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      if (suggestions.length > 0) {
+        e.preventDefault();
+        setActiveIndex((i) => Math.min(i + 1, suggestions.length - 1));
+      }
+    } else if (e.key === 'ArrowUp') {
+      if (suggestions.length > 0) {
+        e.preventDefault();
+        setActiveIndex((i) => Math.max(i - 1, 0));
+      }
+    } else if (e.key === 'Enter') {
+      if (suggestions.length > 0) {
+        e.preventDefault();
+        const s = suggestions[activeIndex];
+        const id = parseInt(s.id, 10);
+        if (!Number.isNaN(id)) toggle(id);
+      }
+    } else if (e.key === 'Escape') {
+      setSugOpen(false);
     }
   };
 
@@ -129,7 +163,21 @@ const SearchableMultiSelect: React.FC<SearchableMultiSelectProps> = ({
                 placeholder="Type to filter..."
                 className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 autoFocus
+                onKeyDown={onKeyDownSearch}
               />
+              <div className="relative">
+                <TypeaheadDropdown
+                  open={sugOpen && debouncedSearch.trim().length >= 2}
+                  suggestions={suggestions}
+                  activeIndex={activeIndex}
+                  onHoverIndex={setActiveIndex}
+                  onSelect={(s) => {
+                    const id = parseInt(s.id, 10);
+                    if (!Number.isNaN(id)) toggle(id);
+                  }}
+                  onClose={() => setSugOpen(false)}
+                />
+              </div>
               <div className="flex gap-2 mt-2">
                 <button
                   type="button"

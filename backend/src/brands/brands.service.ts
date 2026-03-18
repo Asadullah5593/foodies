@@ -1,13 +1,16 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Brand } from '../entities/brand.entity';
+import { BranchBrand } from '../entities/branch-brand.entity';
 
 @Injectable()
 export class BrandsService {
     constructor(
         @InjectRepository(Brand)
         private repo: Repository<Brand>,
+        @InjectRepository(BranchBrand)
+        private branchBrandRepo: Repository<BranchBrand>,
     ) {}
 
     /** Admin: tenant user sees only their tenant's brands; super admin (tenantId null) sees all with tenant_name */
@@ -39,13 +42,59 @@ export class BrandsService {
         return list.map((b) => this.toResponse(b));
     }
 
-    /** Public list for consumer app – all active brands */
-    async findAllPublic() {
+    /** Public list for consumer app – all active brands. Optional search filters by brand name (case-insensitive). */
+    async findAllPublic(search?: string) {
         const list = await this.repo.find({
             where: { isActive: true },
             order: { id: 'ASC' },
         });
+        const mapped = list.map((b) => this.toResponse(b));
+        return this.filterBrandsBySearch(mapped, search);
+    }
+
+    /** Public: active brands at a specific branch (for consumer app). Optional search filters by brand name. */
+    async findAllPublicByBranchId(branchId: number, search?: string) {
+        const branchBrands = await this.branchBrandRepo.find({
+            where: { branchId },
+            select: ['brandId'],
+        });
+        const brandIds = branchBrands.map((bb) => bb.brandId);
+        if (brandIds.length === 0) return [];
+        const list = await this.repo.find({
+            where: { id: In(brandIds), isActive: true },
+            order: { id: 'ASC' },
+        });
+        const mapped = list.map((b) => this.toResponse(b));
+        return this.filterBrandsBySearch(mapped, search);
+    }
+
+    /** Public: active brands by explicit id list (for consumer app helpers). */
+    async findAllPublicByIds(ids: number[]) {
+        if (!ids.length) return [];
+        const list = await this.repo.find({
+            where: { id: In(ids), isActive: true },
+            order: { id: 'ASC' },
+        });
         return list.map((b) => this.toResponse(b));
+    }
+
+    private filterBrandsBySearch<T extends { name?: string | null }>(
+        brands: T[],
+        search?: string,
+    ): T[] {
+        if (!search || typeof search !== 'string') return brands;
+        const q = search.trim().toLowerCase();
+        if (!q) return brands;
+        return brands.filter((b) => (b.name ?? '').toLowerCase().includes(q));
+    }
+
+    /** Public: get active brand by id (for consumer app). */
+    async findOnePublic(id: number) {
+        const brand = await this.repo.findOne({
+            where: { id, isActive: true },
+        });
+        if (!brand) throw new NotFoundException('Brand not found');
+        return this.toResponse(brand);
     }
 
     /** Admin: tenant user can only view own tenant's brand; super admin can view any */

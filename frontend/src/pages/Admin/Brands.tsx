@@ -1,14 +1,21 @@
 import React, { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
+import { AnimatePresence } from 'framer-motion';
 import apiClient from '../../utils/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
 import { Brand } from '../../types';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
+import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
+import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
 
@@ -32,6 +39,8 @@ const Brands: React.FC = () => {
   const [filterTenantId, setFilterTenantId] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [filterSearch, setFilterSearch] = useState('');
+  const debouncedFilterSearch = useDebouncedValue(filterSearch, 300);
+  const [page, setPage] = useState(1);
 
   const { data: tenants } = useQuery({
     queryKey: ['tenants'],
@@ -55,13 +64,26 @@ const Brands: React.FC = () => {
     return brands.filter((b) => {
       if (filterTenantId && b.tenant_id !== Number(filterTenantId)) return false;
       if (filterStatus && b.status !== filterStatus) return false;
-      if (filterSearch.trim()) {
-        const q = filterSearch.trim().toLowerCase();
+      if (debouncedFilterSearch.trim()) {
+        const q = debouncedFilterSearch.trim().toLowerCase();
         if (!b.name.toLowerCase().includes(q)) return false;
       }
       return true;
     });
-  }, [brands, filterTenantId, filterStatus, filterSearch]);
+  }, [brands, filterTenantId, filterStatus, debouncedFilterSearch]);
+
+  const paginatedBrands = React.useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return filteredBrands.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [filteredBrands, page]);
+  React.useEffect(() => setPage(1), [filterTenantId, filterStatus, debouncedFilterSearch]);
+
+  const brandSearchTypeahead = useTypeaheadSuggestions({
+    query: debouncedFilterSearch,
+    options: (brands ?? []).map((b: any) => ({ id: String(b.id), label: b.name ?? '' })),
+    minChars: 2,
+    limit: 8,
+  });
 
   const clearFilters = () => {
     setFilterTenantId('');
@@ -169,52 +191,83 @@ const Brands: React.FC = () => {
     },
   });
 
-  if (isLoading) return <Loader fullScreen text="Loading brands..." />;
+  const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  if (isLoading || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading brands...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Brands</h1>
-        <Button onClick={openCreate}>Add Brand</Button>
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Brands</h1>
+        <Button onClick={openCreate} variant="primary">Add Brand</Button>
       </div>
 
-      <Card className="mb-6">
+      <Card className="mb-6 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap items-end gap-4">
           {isSuperAdmin && tenants && tenants.length > 0 && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tenant</label>
-              <select
-                value={filterTenantId}
-                onChange={(e) => setFilterTenantId(e.target.value)}
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[180px]"
-              >
-                <option value="">All tenants</option>
-                {tenants.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
-            </div>
+            <SearchableSelect
+              label="Tenant"
+              value={filterTenantId}
+              onChange={setFilterTenantId}
+              options={[
+                { value: '', label: 'All tenants' },
+                ...tenants.map((t) => ({ value: String(t.id), label: t.name })),
+              ]}
+              placeholder="All tenants"
+              minWidth="min-w-[180px]"
+            />
           )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[120px]"
-            >
-              <option value="">All</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
+          <SearchableSelect
+            label="Status"
+            value={filterStatus}
+            onChange={setFilterStatus}
+            options={[
+              { value: '', label: 'All' },
+              { value: 'active', label: 'Active' },
+              { value: 'inactive', label: 'Inactive' },
+            ]}
+            placeholder="All"
+            minWidth="min-w-[120px]"
+          />
+          <div className="relative">
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Search</label>
             <input
               type="text"
               value={filterSearch}
               onChange={(e) => setFilterSearch(e.target.value)}
+              onFocus={() => brandSearchTypeahead.setOpen(true)}
+              onKeyDown={(e) => {
+                const suggestions = brandSearchTypeahead.suggestions;
+                if (!suggestions.length) return;
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  brandSearchTypeahead.setActiveIndex(Math.min(brandSearchTypeahead.activeIndex + 1, suggestions.length - 1));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  brandSearchTypeahead.setActiveIndex(Math.max(brandSearchTypeahead.activeIndex - 1, 0));
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const opt = suggestions[brandSearchTypeahead.activeIndex];
+                  if (opt?.label) setFilterSearch(opt.label);
+                  brandSearchTypeahead.setOpen(false);
+                } else if (e.key === 'Escape') {
+                  brandSearchTypeahead.setOpen(false);
+                }
+              }}
               placeholder="Brand name..."
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[200px]"
+              className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-red-500/50 bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 min-w-[200px] placeholder-gray-400 dark:placeholder-slate-500"
+            />
+            <TypeaheadDropdown
+              open={brandSearchTypeahead.open && filterSearch.trim().length >= 2}
+              suggestions={brandSearchTypeahead.suggestions}
+              activeIndex={brandSearchTypeahead.activeIndex}
+              onHoverIndex={brandSearchTypeahead.setActiveIndex}
+              onSelect={(opt) => {
+                setFilterSearch(opt.label);
+                brandSearchTypeahead.setOpen(false);
+              }}
+              onClose={() => brandSearchTypeahead.setOpen(false)}
             />
           </div>
           <ClearFiltersButton onClick={clearFilters} />
@@ -314,71 +367,60 @@ const Brands: React.FC = () => {
         </form>
       </Modal>
 
-      <div className="grid gap-4">
+      {/* Listing: accented rows — left color bar, avatar, typography, actions */}
+      <div className="w-full space-y-3">
         {brands && brands.length === 0 ? (
-          <Card>
-            <p className="text-center text-gray-500 py-8">No brands found. Create your first brand!</p>
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No brands found. Create your first brand!</p>
           </Card>
         ) : filteredBrands.length === 0 ? (
-          <Card>
-            <p className="text-center text-gray-500 py-8">No brands match the current filters.</p>
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No brands match the current filters.</p>
           </Card>
         ) : (
-          filteredBrands.map(brand => (
-            <Card key={brand.id} hover>
-              <div className="flex justify-between items-center gap-4">
-                <div className="flex items-center gap-4 min-w-0 flex-1">
-                  {brand.logo_url ? (
-                    <div className="flex-shrink-0 w-14 h-14 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
-                      <img
-                        src={fullImageUrl(brand.logo_url)}
-                        alt={brand.name}
-                        className="w-full h-full object-contain"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex-shrink-0 w-14 h-14 rounded-lg border border-gray-200 bg-gray-100 flex items-center justify-center text-gray-400 text-xl font-semibold">
-                      {brand.name.charAt(0)}
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <h3 className="text-lg font-semibold text-gray-800 mb-1">{brand.name}</h3>
-                    {brand.tenant_name && (
-                      <p className="text-sm text-gray-500 mb-1">
-                        Tenant: <span className="font-medium text-indigo-600">{brand.tenant_name}</span>
-                      </p>
-                    )}
-                    <p className="text-sm text-gray-600">
-                      Status: <span className={`font-medium ${brand.status === 'active' ? 'text-green-600' : 'text-red-600'}`}>{brand.status}</span>
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    onClick={() => openEdit(brand)}
-                    disabled={updateMutation.isPending}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="danger"
-                    onClick={() => {
-                      if (confirm(`Delete brand "${brand.name}"?`)) {
-                        deleteMutation.mutate(brand.id);
-                      }
-                    }}
-                    isLoading={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))
+          <>
+            <AccentedList>
+              <AnimatePresence mode="popLayout">
+                {paginatedBrands.map((brand, i) => (
+                  <AccentedListRow
+                    key={brand.id}
+                    accent={brand.status === 'active' ? 'active' : 'inactive'}
+                    imageUrl={brand.logo_url ? fullImageUrl(brand.logo_url) : null}
+                    initial={brand.name.charAt(0)}
+                    title={brand.name}
+                    subtitle={brand.tenant_name || undefined}
+                    statusLabel={brand.status}
+                    statusVariant={brand.status === 'active' ? 'active' : 'inactive'}
+                    animationIndex={i}
+                    actions={
+                      <>
+                        <Button size="small" variant="edit" onClick={() => openEdit(brand)} disabled={updateMutation.isPending}>
+                          Edit
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={() => {
+                            if (confirm(`Delete brand "${brand.name}"?`)) deleteMutation.mutate(brand.id);
+                          }}
+                          isLoading={deleteMutation.isPending}
+                        >
+                          Delete
+                        </Button>
+                      </>
+                    }
+                  />
+                ))}
+              </AnimatePresence>
+            </AccentedList>
+            <PaginationBar
+              totalCount={filteredBrands.length}
+              page={page}
+              pageSize={DEFAULT_PAGE_SIZE}
+              onPageChange={setPage}
+              itemLabel="brands"
+            />
+          </>
         )}
       </div>
     </div>

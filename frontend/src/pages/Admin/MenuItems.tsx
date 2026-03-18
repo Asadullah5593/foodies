@@ -7,8 +7,15 @@ import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
+import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { getImageFullUrl } from '../../utils/imageUrl';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
+import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 
 interface MenuItemAddon {
   id: number;
@@ -24,6 +31,8 @@ interface MenuItem {
   description?: string;
   base_price: number;
   is_active: boolean;
+  deal_only?: boolean;
+  image_url?: string | null;
   category?: {
     id: number;
     name: string;
@@ -47,13 +56,19 @@ const MenuItems: React.FC = () => {
     description: '',
     base_price: '',
     is_active: true,
+    deal_only: false,
+    image_url: '',
   });
+  const [imageUploading, setImageUploading] = useState(false);
+  const [editImageUploading, setEditImageUploading] = useState(false);
   const [filters, setFilters] = useState<{
     brand_id: string;
     category_id: string;
     status: string;
     search: string;
   }>({ brand_id: '', category_id: '', status: '', search: '' });
+  const debouncedMenuItemSearch = useDebouncedValue(filters.search, 300);
+  const [menuItemsPage, setMenuItemsPage] = useState(1);
 
   const { data: brands } = useQuery({
     queryKey: ['brands'],
@@ -72,14 +87,13 @@ const MenuItems: React.FC = () => {
   });
 
   const filterParams = useMemo(() => {
-    const p: { brand_id?: number; category_id?: number; is_active?: boolean; search?: string } = {};
+    const p: { brand_id?: number; category_id?: number; is_active?: boolean } = {};
     if (effectiveBrandId != null) p.brand_id = effectiveBrandId;
     if (filters.category_id) p.category_id = +filters.category_id;
     if (filters.status === 'active') p.is_active = true;
     if (filters.status === 'inactive') p.is_active = false;
-    if (filters.search.trim()) p.search = filters.search.trim();
     return p;
-  }, [effectiveBrandId, filters]);
+  }, [effectiveBrandId, filters.brand_id, filters.category_id, filters.status]);
 
   const categoriesForFilter = useMemo(() => categories ?? [], [categories]);
 
@@ -94,6 +108,31 @@ const MenuItems: React.FC = () => {
     queryKey: ['menuItems', filterParams],
     queryFn: () => adminService.getMenuItems(Object.keys(filterParams).length ? filterParams : undefined),
     enabled: true,
+  });
+
+  const filteredMenuItems = useMemo(() => {
+    const items = menuItems ?? [];
+    if (!debouncedMenuItemSearch.trim()) return items;
+    const q = debouncedMenuItemSearch.trim().toLowerCase();
+    return items.filter(
+      (item: MenuItem) =>
+        (item.name || '').toLowerCase().includes(q) ||
+        (item.description || '').toLowerCase().includes(q),
+    );
+  }, [menuItems, debouncedMenuItemSearch]);
+
+  const paginatedMenuItems = useMemo(() => {
+    const start = (menuItemsPage - 1) * DEFAULT_PAGE_SIZE;
+    return filteredMenuItems.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [filteredMenuItems, menuItemsPage]);
+
+  useEffect(() => setMenuItemsPage(1), [filters.brand_id, filters.category_id, filters.status, debouncedMenuItemSearch]);
+
+  const menuItemSearchTypeahead = useTypeaheadSuggestions({
+    query: debouncedMenuItemSearch,
+    options: (menuItems ?? []).map((i: any) => ({ id: String(i.id), label: i.name ?? '' })),
+    minChars: 2,
+    limit: 8,
   });
 
   const addonBrandId = manageAddonsItem?.brand_id ?? effectiveBrandId;
@@ -118,7 +157,7 @@ const MenuItems: React.FC = () => {
     }
   }, [filters.brand_id]);
 
-  const [editFormData, setEditFormData] = useState({ brand_id: '', category_id: '', name: '', description: '', base_price: '', is_active: true });
+  const [editFormData, setEditFormData] = useState({ brand_id: '', category_id: '', name: '', description: '', base_price: '', is_active: true, deal_only: false, image_url: '' });
   useEffect(() => {
     if (editingItem) {
       setEditFormData({
@@ -128,6 +167,8 @@ const MenuItems: React.FC = () => {
         description: editingItem.description ?? '',
         base_price: String(editingItem.base_price),
         is_active: editingItem.is_active,
+        deal_only: (editingItem as { deal_only?: boolean }).deal_only ?? false,
+        image_url: (editingItem as { image_url?: string }).image_url ?? '',
       });
     }
   }, [editingItem]);
@@ -153,7 +194,7 @@ const MenuItems: React.FC = () => {
   });
 
   const updateItemMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { name: string; description?: string; base_price: number; is_active: boolean; brand_id?: number; category_id?: number } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { name: string; description?: string; base_price: number; is_active: boolean; brand_id?: number; category_id?: number; image_url?: string | null; deal_only?: boolean } }) =>
       adminService.updateMenuItem(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['menuItems'] });
@@ -165,8 +206,38 @@ const MenuItems: React.FC = () => {
     },
   });
 
+  const uploadImageFile = async (file: File, isEdit: boolean) => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file (PNG, JPEG, GIF, WebP).');
+      return;
+    }
+    if (isEdit) setEditImageUploading(true);
+    else setImageUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const { data } = await apiClient.post<{ url: string }>('/admin/upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      if (isEdit) setEditFormData((prev) => ({ ...prev, image_url: data.url }));
+      else setFormData((prev) => ({ ...prev, image_url: data.url }));
+      toast.success('Image uploaded.');
+    } catch (err: unknown) {
+      toast.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Upload failed.');
+    } finally {
+      if (isEdit) setEditImageUploading(false);
+      else setImageUploading(false);
+    }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
+    const file = e.target.files?.[0];
+    if (file) uploadImageFile(file, isEdit);
+    e.target.value = '';
+  };
+
   const createMutation = useMutation({
-    mutationFn: async (data: { brand_id: string; category_id: string; name: string; description?: string; base_price: string; is_active: boolean }) => {
+    mutationFn: async (data: { brand_id: string; category_id: string; name: string; description?: string; base_price: string; is_active: boolean; deal_only?: boolean; image_url?: string }) => {
       if (!data.brand_id || !data.category_id) throw new Error('Select a brand and category');
       const payload = {
         brand_id: parseInt(data.brand_id),
@@ -175,6 +246,8 @@ const MenuItems: React.FC = () => {
         description: data.description?.trim() || undefined,
         base_price: parseFloat(data.base_price),
         is_active: data.is_active,
+        deal_only: data.deal_only ?? false,
+        image_url: data.image_url || undefined,
       };
       const response = await apiClient.post('/admin/menu/items', payload);
       return response.data;
@@ -190,6 +263,8 @@ const MenuItems: React.FC = () => {
         description: '',
         base_price: '',
         is_active: true,
+        deal_only: false,
+        image_url: '',
       });
       toast.success('Menu item created successfully!');
     },
@@ -251,73 +326,106 @@ const MenuItems: React.FC = () => {
     },
   });
 
-  if (isLoading) return <Loader fullScreen text="Loading menu items..." />;
+  const isSubmitting =
+    createMutation.isPending ||
+    updateItemMutation.isPending ||
+    deleteMutation.isPending ||
+    createCategoryMutation.isPending ||
+    linkAddonsMutation.isPending;
+  if (isLoading || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading menu items...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Menu Items</h1>
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Menu Items</h1>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setShowCategoryForm(true)}>
-            + New Category
-          </Button>
-          <Button onClick={() => setShowForm(!showForm)}>
-            {showForm ? 'Cancel' : 'Add Menu Item'}
-          </Button>
+          <Button variant="secondary" onClick={() => setShowCategoryForm(true)}>+ New Category</Button>
+          <Button variant="primary" onClick={() => setShowForm(!showForm)}>{showForm ? 'Cancel' : 'Add Menu Item'}</Button>
         </div>
       </div>
 
-      <Card className="mb-4 p-4">
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">Filters</h4>
+      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-3 items-end">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Brand</label>
-            <select
-              value={filters.brand_id}
-              onChange={(e) => setFilters((f) => ({ ...f, brand_id: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm min-w-[180px]"
-            >
-              <option value="">Select brand</option>
-              {brands?.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Category</label>
-            <select
-              value={filters.category_id}
-              onChange={(e) => setFilters((f) => ({ ...f, category_id: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm min-w-[140px]"
-            >
-              <option value="">All categories</option>
-              {categoriesForFilter.map((c: { id: number; name: string }) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-            <select
-              value={filters.status}
-              onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm min-w-[120px]"
-            >
-              <option value="">All</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Search by name</label>
+          <SearchableSelect
+            label="Brand"
+            value={filters.brand_id}
+            onChange={(v) => setFilters((f) => ({ ...f, brand_id: v }))}
+            options={[
+              { value: '', label: 'Select brand' },
+              ...(brands ?? []).map((b) => ({
+                value: String(b.id),
+                label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+              })),
+            ]}
+            placeholder="Select brand"
+            minWidth="min-w-[180px]"
+          />
+          <SearchableSelect
+            label="Category"
+            value={filters.category_id}
+            onChange={(v) => setFilters((f) => ({ ...f, category_id: v }))}
+            options={[
+              { value: '', label: 'All categories' },
+              ...categoriesForFilter.map((c: { id: number; name: string }) => ({
+                value: String(c.id),
+                label: c.name,
+              })),
+            ]}
+            placeholder="All categories"
+            minWidth="min-w-[140px]"
+          />
+          <SearchableSelect
+            label="Status"
+            value={filters.status}
+            onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
+            options={[
+              { value: '', label: 'All' },
+              { value: 'active', label: 'Active' },
+              { value: 'inactive', label: 'Inactive' },
+            ]}
+            placeholder="All"
+            minWidth="min-w-[120px]"
+          />
+          <div className="relative">
+            <label className="block text-xs font-medium text-gray-500 mb-1">Search item name</label>
             <input
               type="text"
               value={filters.search}
               onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+              onFocus={() => menuItemSearchTypeahead.setOpen(true)}
+              onKeyDown={(e) => {
+                const suggestions = menuItemSearchTypeahead.suggestions;
+                if (!suggestions.length) return;
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  menuItemSearchTypeahead.setActiveIndex(Math.min(menuItemSearchTypeahead.activeIndex + 1, suggestions.length - 1));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  menuItemSearchTypeahead.setActiveIndex(Math.max(menuItemSearchTypeahead.activeIndex - 1, 0));
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const opt = suggestions[menuItemSearchTypeahead.activeIndex];
+                  if (opt?.label) setFilters((f) => ({ ...f, search: opt.label }));
+                  menuItemSearchTypeahead.setOpen(false);
+                } else if (e.key === 'Escape') {
+                  menuItemSearchTypeahead.setOpen(false);
+                }
+              }}
               placeholder="Item name..."
               className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48"
+            />
+            <TypeaheadDropdown
+              open={menuItemSearchTypeahead.open && filters.search.trim().length >= 2}
+              suggestions={menuItemSearchTypeahead.suggestions}
+              activeIndex={menuItemSearchTypeahead.activeIndex}
+              onHoverIndex={menuItemSearchTypeahead.setActiveIndex}
+              onSelect={(opt) => {
+                setFilters((f) => ({ ...f, search: opt.label }));
+                menuItemSearchTypeahead.setOpen(false);
+              }}
+              onClose={() => menuItemSearchTypeahead.setOpen(false)}
             />
           </div>
           <ClearFiltersButton onClick={() => setFilters({ brand_id: '', category_id: '', status: '', search: '' })} />
@@ -487,6 +595,8 @@ const MenuItems: React.FC = () => {
                   description: editFormData.description?.trim() || undefined,
                   base_price: basePrice,
                   is_active: editFormData.is_active,
+                  deal_only: editFormData.deal_only,
+                  image_url: editFormData.image_url || null,
                 },
               });
             }}
@@ -541,6 +651,44 @@ const MenuItems: React.FC = () => {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 resize-vertical"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Image (optional)</label>
+              <input id="edit-item-image" type="file" accept="image/*" onChange={(e) => handleImageUpload(e, true)} disabled={editImageUploading} className="hidden" />
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50/50 transition-colors hover:border-gray-400 hover:bg-gray-50"
+                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-blue-400', 'bg-blue-50/50'); }}
+                onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50'); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50');
+                  const f = e.dataTransfer.files[0];
+                  if (f) uploadImageFile(f, true);
+                }}
+              >
+                {editFormData.image_url ? (
+                  <div className="flex items-start gap-3">
+                    <img src={getImageFullUrl(editFormData.image_url)} alt="" className="h-24 w-24 object-cover rounded-lg border border-gray-200 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-600 mb-2">Image uploaded.</p>
+                      <div className="flex gap-2">
+                        <Button type="button" size="small" variant="secondary" onClick={() => document.getElementById('edit-item-image')?.click()}>
+                          Replace
+                        </Button>
+                        <Button type="button" size="small" variant="outline" onClick={() => setEditFormData((f) => ({ ...f, image_url: '' }))}>
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <label htmlFor="edit-item-image" className="flex flex-col items-center justify-center py-6 cursor-pointer text-center">
+                    <span className="text-gray-500 text-sm mb-1">PNG, JPEG, GIF or WebP · max 5MB</span>
+                    <span className="text-blue-600 font-medium text-sm">Click to upload or drag and drop</span>
+                  </label>
+                )}
+              </div>
+              {editImageUploading && <p className="text-xs text-amber-600 mt-2 font-medium">Uploading...</p>}
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Price *</label>
@@ -565,6 +713,18 @@ const MenuItems: React.FC = () => {
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="edit-deal-only"
+                checked={editFormData.deal_only}
+                onChange={(e) => setEditFormData((f) => ({ ...f, deal_only: e.target.checked }))}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="edit-deal-only" className="text-sm text-gray-700">
+                Deal only (hide from POS as standalone item; use only inside deals)
+              </label>
             </div>
             <div className="flex gap-2 justify-end">
               <Button type="button" variant="outline" onClick={() => setEditingItem(null)}>Cancel</Button>
@@ -593,7 +753,7 @@ const MenuItems: React.FC = () => {
             toast.error('Please enter a valid price');
             return;
           }
-          createMutation.mutate(formData);
+          createMutation.mutate({ ...formData, image_url: formData.image_url || undefined });
         }} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
@@ -666,6 +826,45 @@ const MenuItems: React.FC = () => {
             />
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Image (optional)</label>
+            <input id="create-item-image" type="file" accept="image/*" onChange={(e) => handleImageUpload(e, false)} disabled={imageUploading} className="hidden" />
+            <div
+              className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50/50 transition-colors hover:border-gray-400 hover:bg-gray-50"
+              onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-blue-400', 'bg-blue-50/50'); }}
+              onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50'); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50');
+                const f = e.dataTransfer.files[0];
+                if (f) uploadImageFile(f, false);
+              }}
+            >
+              {formData.image_url ? (
+                <div className="flex items-start gap-3">
+                  <img src={getImageFullUrl(formData.image_url)} alt="" className="h-24 w-24 object-cover rounded-lg border border-gray-200 flex-shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-gray-600 mb-2">Image uploaded.</p>
+                    <div className="flex gap-2">
+                      <Button type="button" size="small" variant="secondary" onClick={() => document.getElementById('create-item-image')?.click()}>
+                        Replace
+                      </Button>
+                      <Button type="button" size="small" variant="outline" onClick={() => setFormData((p) => ({ ...p, image_url: '' }))}>
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <label htmlFor="create-item-image" className="flex flex-col items-center justify-center py-6 cursor-pointer text-center">
+                  <span className="text-gray-500 text-sm mb-1">PNG, JPEG, GIF or WebP · max 5MB</span>
+                  <span className="text-blue-600 font-medium text-sm">Click to upload or drag and drop</span>
+                </label>
+              )}
+            </div>
+            {imageUploading && <p className="text-xs text-amber-600 mt-2 font-medium">Uploading...</p>}
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Price: *</label>
@@ -694,6 +893,19 @@ const MenuItems: React.FC = () => {
             </div>
           </div>
 
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="create-deal-only"
+              checked={formData.deal_only}
+              onChange={(e) => setFormData({ ...formData, deal_only: e.target.checked })}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor="create-deal-only" className="text-sm text-gray-700">
+              Deal only (hide from POS as standalone item; use only inside deals)
+            </label>
+          </div>
+
           <div className="flex gap-2 justify-end">
             <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
               Cancel
@@ -705,83 +917,50 @@ const MenuItems: React.FC = () => {
         </form>
       </Modal>
 
-      <div className="grid gap-4">
+      <div className="w-full space-y-3">
         {(!menuItems || menuItems.length === 0) ? (
-          <Card>
-            <p className="text-center text-gray-500 py-8">No menu items found. Create your first menu item above!</p>
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No menu items found. Create your first menu item above!</p>
+          </Card>
+        ) : filteredMenuItems.length === 0 ? (
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No items match your search. Try a different term.</p>
           </Card>
         ) : (
-          menuItems?.map((item: MenuItem) => (
-            <Card key={item.id} hover>
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-1">{item.name}</h3>
-                  {item.description && (
-                    <p className="text-sm text-gray-600 mb-2">{item.description}</p>
-                  )}
-                  <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-2">
-                    <span>
-                      <strong>Category:</strong> {item.category?.name || 'N/A'}
-                    </span>
-                    {item.brand_id != null && (
-                      <span>
-                        <strong>Brand:</strong> {brands?.find((b) => b.id === item.brand_id)?.name ?? `#${item.brand_id}`}
-                      </span>
-                    )}
-                    <span>
-                      <strong>Price:</strong> <span className="font-semibold text-green-600">{formatCurrency(item.base_price)}</span>
-                    </span>
-                    <span>
-                      <strong>Status:</strong>{' '}
-                      <span className={`font-medium ${item.is_active ? 'text-green-600' : 'text-red-600'}`}>
-                        {item.is_active ? 'Active' : 'Inactive'}
-                      </span>
-                    </span>
-                  </div>
-                  {(item.variants?.length || item.addons?.length) ? (
-                    <div className="text-xs text-gray-500 mt-1">
-                      {item.variants?.length ? (
-                        <span className="mr-3">Variants: {item.variants!.map((v: { name: string }) => v.name).join(', ')}</span>
-                      ) : null}
-                      {item.addons?.length ? (
-                        <span>Addons: {item.addons!.map((a: MenuItemAddon) => a.name).join(', ')}</span>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    onClick={() => {
-                      setEditingItem(item);
-                    }}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    onClick={() => setManageAddonsItem(item)}
-                  >
-                    Manage addons
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="danger"
-                    onClick={() => {
-                      if (confirm(`Delete "${item.name}"? This action cannot be undone.`)) {
-                        deleteMutation.mutate(item.id);
-                      }
-                    }}
-                    isLoading={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))
+          <>
+            <AccentedList>
+              {paginatedMenuItems.map((item: MenuItem, i: number) => {
+                const imageUrl = (item as MenuItem & { image_url?: string }).image_url ? getImageFullUrl((item as MenuItem & { image_url?: string }).image_url) : null;
+                return (
+                  <AccentedListRow
+                    key={item.id}
+                    accent={item.is_active ? 'active' : 'inactive'}
+                    imageUrl={imageUrl}
+                    initial={item.name?.charAt(0) ?? 'M'}
+                    title={item.name}
+                    subtitle={
+                      <>
+                        {item.description && <p>{item.description}</p>}
+                        <p>Category: {item.category?.name || 'N/A'}{item.brand_id != null ? ` · Brand: ${brands?.find((b) => b.id === item.brand_id)?.name ?? `#${item.brand_id}`}` : ''}</p>
+                        <p>{formatCurrency(item.base_price)}{(item.variants?.length || item.addons?.length) ? ` · ${item.variants?.length ?? 0} variants, ${item.addons?.length ?? 0} addons` : ''}</p>
+                      </>
+                    }
+                    statusLabel={item.is_active ? 'Active' : 'Inactive'}
+                    statusVariant={item.is_active ? 'active' : 'inactive'}
+                    animationIndex={i}
+                    actions={
+                      <>
+                        <Button size="small" variant="edit" onClick={() => setEditingItem(item)}>Edit</Button>
+                        <Button size="small" variant="secondary" onClick={() => setManageAddonsItem(item)}>Manage addons</Button>
+                        <Button size="small" variant="danger" onClick={() => confirm(`Delete "${item.name}"? This action cannot be undone.`) && deleteMutation.mutate(item.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                      </>
+                    }
+                  />
+                );
+              })}
+            </AccentedList>
+            <PaginationBar totalCount={filteredMenuItems.length} page={menuItemsPage} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setMenuItemsPage} itemLabel="items" />
+          </>
         )}
       </div>
     </div>

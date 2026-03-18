@@ -61,6 +61,12 @@ async function seed() {
     const permissionRepo = dataSource.getRepository(Permission);
     const permissionRows = [
         {
+            name: 'dashboard:view',
+            resource: 'dashboard',
+            action: 'view',
+            description: 'View admin dashboard',
+        },
+        {
             name: 'orders:create',
             resource: 'orders',
             action: 'create',
@@ -97,6 +103,12 @@ async function seed() {
             description: 'Manage branches',
         },
         {
+            name: 'all-branches:access',
+            resource: 'branches',
+            action: 'access-all',
+            description: 'Access all branches of the tenant (General Manager)',
+        },
+        {
             name: 'branch-menu:manage',
             resource: 'branch-menu',
             action: 'manage',
@@ -121,6 +133,70 @@ async function seed() {
             action: 'update',
             description: 'Update kitchen order status',
         },
+        {
+            name: 'back-kitchen:view',
+            resource: 'back-kitchen',
+            action: 'view',
+            description: 'View and manage Back Kitchen (brand-specific orders)',
+        },
+        {
+            name: 'discounts:manage',
+            resource: 'discounts',
+            action: 'manage',
+            description: 'Manage discounts (admin module)',
+        },
+        {
+            name: 'business-settings:access',
+            resource: 'business-settings',
+            action: 'access',
+            description: 'Access business settings',
+        },
+        {
+            name: 'users:manage',
+            resource: 'users',
+            action: 'manage',
+            description: 'Manage users',
+        },
+        {
+            name: 'menu:manage',
+            resource: 'menu',
+            action: 'manage',
+            description: 'Manage menu (categories, items, variants, addons)',
+        },
+        {
+            name: 'customers:manage',
+            resource: 'customers',
+            action: 'manage',
+            description: 'Manage customers',
+        },
+        {
+            name: 'roles:manage',
+            resource: 'roles',
+            action: 'manage',
+            description: 'Manage roles and assign permissions',
+        },
+        {
+            name: 'deliveries:view',
+            resource: 'deliveries',
+            action: 'view',
+            description: 'View deliveries',
+        },
+        {
+            name: 'shifts:manage',
+            resource: 'shifts',
+            action: 'manage',
+            description: 'Manage shifts',
+        },
+        {
+            name: 'loyalty:manage',
+            resource: 'loyalty',
+            action: 'manage',
+            description: 'Manage loyalty settings',
+        },
+        { name: 'deals:view', resource: 'deals', action: 'view', description: 'View deals' },
+        { name: 'deals:create', resource: 'deals', action: 'create', description: 'Create deals' },
+        { name: 'deals:edit', resource: 'deals', action: 'edit', description: 'Edit deals' },
+        { name: 'deals:delete', resource: 'deals', action: 'delete', description: 'Delete deals' },
     ];
     const existingNames = new Set(
         (await permissionRepo.find({ select: ['name'] })).map((p) => p.name),
@@ -157,12 +233,25 @@ async function seed() {
     const kitchenRole = await roleRepo.save(
         roleRepo.create({ tenantId: null, name: 'Kitchen', slug: 'kitchen' }),
     );
+    let staffRole = await roleRepo.findOne({ where: { slug: 'staff' } });
+    if (!staffRole) {
+        staffRole = await roleRepo.save(
+            roleRepo.create({ tenantId: null, name: 'Staff', slug: 'staff' }),
+        );
+    }
     let riderRole = await roleRepo.findOne({ where: { slug: 'rider' } });
     if (!riderRole) {
         riderRole = await roleRepo.save(
             roleRepo.create({ tenantId: null, name: 'Rider', slug: 'rider' }),
         );
     }
+    const generalManagerRole = await roleRepo.save(
+        roleRepo.create({
+            tenantId: null,
+            name: 'General Manager',
+            slug: 'general_manager',
+        }),
+    );
 
     await dataSource.query(
         `INSERT INTO role_permissions (role_id, permission_id) SELECT ${superAdminRole.id}, id FROM permissions`,
@@ -171,16 +260,22 @@ async function seed() {
         `INSERT INTO role_permissions (role_id, permission_id) SELECT ${ownerRole.id}, id FROM permissions`,
     );
     await dataSource.query(
-        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${managerRole.id}, id FROM permissions WHERE name IN ('orders:create', 'orders:view', 'discounts:apply', 'branches:manage')`,
+        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${managerRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'orders:create', 'orders:view', 'discounts:apply', 'branches:manage')`,
     );
     await dataSource.query(
-        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${branchManagerRole.id}, id FROM permissions WHERE name IN ('orders:create', 'orders:view', 'discounts:apply', 'branch-menu:manage', 'reports:view')`,
+        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${branchManagerRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'orders:create', 'orders:view', 'discounts:apply', 'branch-menu:manage', 'reports:view')`,
     );
     await dataSource.query(
-        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${cashierRole.id}, id FROM permissions WHERE name IN ('orders:create', 'orders:view', 'discounts:apply')`,
+        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${cashierRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'orders:create', 'orders:view', 'discounts:apply', 'shifts:manage')`,
     );
     await dataSource.query(
-        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${kitchenRole.id}, id FROM permissions WHERE name IN ('kitchen:view', 'kitchen:update', 'orders:view')`,
+        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${kitchenRole.id}, id FROM permissions WHERE name = 'back-kitchen:view'`,
+    );
+    await dataSource.query(
+        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${riderRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'deliveries:view')`,
+    );
+    await dataSource.query(
+        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${generalManagerRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'all-branches:access', 'orders:create', 'orders:view', 'discounts:apply', 'branch-menu:manage', 'reports:view', 'shifts:manage')`,
     );
 
     // —— Super admin: no tenant_users row → tenantId null → sees all tenants/brands/branches ——
@@ -200,7 +295,7 @@ async function seed() {
             name: 'Acme Corp',
             slug: 'acme-corp',
             legalName: null,
-            defaultCurrency: 'USD',
+            defaultCurrency: 'PKR',
             defaultTimezone: 'UTC',
             defaultTaxRate: 0.1,
             defaultServiceCharge: 0,
@@ -348,7 +443,7 @@ async function seed() {
             name: 'Beta Foods',
             slug: 'beta-foods',
             legalName: null,
-            defaultCurrency: 'USD',
+            defaultCurrency: 'PKR',
             defaultTimezone: 'UTC',
             defaultTaxRate: 0.08,
             defaultServiceCharge: 0.05,

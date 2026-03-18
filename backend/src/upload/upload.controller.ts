@@ -12,6 +12,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RoleAccessGuard } from '../auth/role-access.guard';
 import { join } from 'path';
 import { existsSync, mkdirSync, createReadStream, writeFileSync } from 'fs';
 import { randomBytes } from 'crypto';
@@ -28,7 +29,7 @@ function ensureUploadDir() {
 @Controller('admin')
 export class UploadController {
     @Post('upload')
-    @UseGuards(JwtAuthGuard)
+    @UseGuards(JwtAuthGuard, RoleAccessGuard)
     @UseInterceptors(
         FileInterceptor('file', {
             limits: { fileSize: 5 * 1024 * 1024 },

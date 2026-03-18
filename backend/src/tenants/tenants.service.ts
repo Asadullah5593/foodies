@@ -39,6 +39,29 @@ export class TenantsService {
         return [this.toResponse(tenant)];
     }
 
+    /** Get current tenant's business settings (for tenant users only). Currency and timezone are hidden (fixed PKR). */
+    async getBusinessSettings(tenantId: number) {
+        const tenant = await this.repo.findOne({ where: { id: tenantId } });
+        if (!tenant) throw new NotFoundException('Tenant not found');
+        return this.toBusinessSettingsResponse(tenant);
+    }
+
+    /** Update current tenant's business settings (for tenant users only). Currency and timezone are fixed (PKR/UTC) and not updatable here. */
+    async updateBusinessSettings(
+        tenantId: number,
+        dto: {
+            name?: string;
+            legal_name?: string;
+            default_tax_rate?: number;
+            loyalty_enabled?: boolean;
+        },
+    ) {
+        const tenant = await this.repo.findOne({ where: { id: tenantId } });
+        if (!tenant) throw new NotFoundException('Tenant not found');
+        await this.update(tenantId, dto);
+        return this.getBusinessSettings(tenantId);
+    }
+
     async findAll() {
         const list = await this.repo.find({ order: { id: 'ASC' } });
         return list.map((t) => this.toResponse(t));
@@ -68,7 +91,6 @@ export class TenantsService {
         default_currency?: string;
         default_timezone?: string;
         default_tax_rate?: number;
-        default_service_charge?: number;
         loyalty_enabled?: boolean;
         owner_email: string;
         owner_password: string;
@@ -101,10 +123,10 @@ export class TenantsService {
                     slug,
                     status: dto.status ?? 'active',
                     legalName: dto.legal_name ?? null,
-                    defaultCurrency: dto.default_currency ?? 'USD',
+                    defaultCurrency: dto.default_currency ?? 'PKR',
                     defaultTimezone: dto.default_timezone ?? 'UTC',
                     defaultTaxRate: dto.default_tax_rate ?? 0,
-                    defaultServiceCharge: dto.default_service_charge ?? 0,
+                    defaultServiceCharge: 0,
                     loyaltyEnabled: dto.loyalty_enabled ?? false,
                 }),
             );
@@ -153,7 +175,6 @@ export class TenantsService {
             default_currency?: string;
             default_timezone?: string;
             default_tax_rate?: number;
-            default_service_charge?: number;
             loyalty_enabled?: boolean;
         },
     ) {
@@ -168,14 +189,15 @@ export class TenantsService {
         if (dto.name !== undefined) tenant.name = dto.name;
         if (dto.status !== undefined) tenant.status = dto.status;
         if (dto.legal_name !== undefined) tenant.legalName = dto.legal_name;
+        // default_currency and default_timezone are not updated via update() when called from business settings (PKR/UTC fixed)
         if (dto.default_currency !== undefined)
             tenant.defaultCurrency = dto.default_currency;
         if (dto.default_timezone !== undefined)
             tenant.defaultTimezone = dto.default_timezone;
         if (dto.default_tax_rate !== undefined)
             tenant.defaultTaxRate = dto.default_tax_rate;
-        if (dto.default_service_charge !== undefined)
-            tenant.defaultServiceCharge = dto.default_service_charge;
+        // defaultServiceCharge is deprecated; keep it at 0 for all tenants.
+        tenant.defaultServiceCharge = 0;
         if (dto.loyalty_enabled !== undefined)
             tenant.loyaltyEnabled = dto.loyalty_enabled;
         await this.repo.save(tenant);
@@ -287,6 +309,23 @@ export class TenantsService {
         return this.getLoyaltySettings(tenantId, requesterTenantId);
     }
 
+    private toBusinessSettingsResponse(t: Tenant) {
+        return {
+            id: t.id,
+            name: t.name,
+            slug: t.slug,
+            status: t.status,
+            legal_name: t.legalName,
+            default_tax_rate: Number(t.defaultTaxRate),
+            default_service_charge: 0,
+            loyalty_enabled: t.loyaltyEnabled,
+            loyalty_settings: t.loyaltySettings ?? null,
+            settings: t.settings ?? [],
+            created_at: t.createdAt?.toISOString() ?? null,
+            updated_at: t.updatedAt?.toISOString() ?? null,
+        };
+    }
+
     private toResponse(t: Tenant) {
         return {
             id: t.id,
@@ -297,7 +336,7 @@ export class TenantsService {
             default_currency: t.defaultCurrency,
             default_timezone: t.defaultTimezone,
             default_tax_rate: Number(t.defaultTaxRate),
-            default_service_charge: Number(t.defaultServiceCharge),
+            default_service_charge: 0,
             loyalty_enabled: t.loyaltyEnabled,
             loyalty_settings: t.loyaltySettings ?? null,
             settings: t.settings ?? [],

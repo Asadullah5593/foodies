@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
+import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -6,8 +9,11 @@ import { adminService } from '../../services/api/adminService';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
+import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 
 export interface CategoryItem {
   id: number;
@@ -27,8 +33,8 @@ const Categories: React.FC = () => {
   const [filterBrandId, setFilterBrandId] = useState<string>('');
   const [filterActive, setFilterActive] = useState<string>('');
   const [filterSearch, setFilterSearch] = useState('');
-  const [sortBy, setSortBy] = useState<string>('sort_order');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const debouncedFilterSearch = useDebouncedValue(filterSearch, 300);
+  const [page, setPage] = useState(1);
   const [formData, setFormData] = useState({
     brand_id: '',
     name: '',
@@ -37,18 +43,32 @@ const Categories: React.FC = () => {
   });
 
   const queryParams = React.useMemo(() => {
-    const p: { brand_id?: number; is_active?: boolean; search?: string; sort?: string; order?: string } = {};
+    const p: { brand_id?: number; is_active?: boolean; search?: string } = {};
     if (filterBrandId) p.brand_id = parseInt(filterBrandId, 10);
     if (filterActive !== '') p.is_active = filterActive === 'active';
-    if (filterSearch.trim()) p.search = filterSearch.trim();
-    if (sortBy) p.sort = sortBy;
-    if (sortOrder) p.order = sortOrder;
+    if (debouncedFilterSearch.trim()) p.search = debouncedFilterSearch.trim();
     return p;
-  }, [filterBrandId, filterActive, filterSearch, sortBy, sortOrder]);
+  }, [filterBrandId, filterActive, debouncedFilterSearch]);
 
-  const { data: categories, isLoading } = useQuery({
+  const { data: categories, isLoading, isFetching } = useQuery({
     queryKey: ['categories', queryParams],
     queryFn: () => adminService.getCategories(queryParams),
+    placeholderData: (prev) => prev,
+  });
+
+  const suggestionOptions = React.useMemo(
+    () =>
+      (categories ?? []).map((c: CategoryItem) => ({
+        id: String(c.id),
+        label: c.name ?? '',
+      })),
+    [categories],
+  );
+  const searchTypeahead = useTypeaheadSuggestions({
+    query: debouncedFilterSearch,
+    options: suggestionOptions,
+    minChars: 2,
+    limit: 8,
   });
 
   const { data: brands } = useQuery({
@@ -106,8 +126,6 @@ const Categories: React.FC = () => {
     setFilterBrandId('');
     setFilterActive('');
     setFilterSearch('');
-    setSortBy('sort_order');
-    setSortOrder('asc');
   };
 
   const openCreate = () => {
@@ -156,80 +174,100 @@ const Categories: React.FC = () => {
     }
   };
 
-  const hasActiveFilters = filterBrandId || filterActive !== '' || filterSearch.trim() || sortBy !== 'sort_order' || sortOrder !== 'asc';
+  const hasActiveFilters = filterBrandId || filterActive !== '' || filterSearch.trim();
 
-  if (isLoading) return <Loader fullScreen text="Loading categories..." />;
+  const categoryList = categories ?? [];
+  const paginatedCategories = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return categoryList.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [categoryList, page]);
+
+  React.useEffect(() => setPage(1), [filterBrandId, filterActive, debouncedFilterSearch]);
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  if (((categories == null || (categories as any[]).length === 0) && isLoading) || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading categories...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Categories</h1>
-        <Button onClick={openCreate}>Add Category</Button>
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Categories</h1>
+        <Button variant="primary" onClick={openCreate}>Add Category</Button>
       </div>
 
-      <Card className="mb-4 p-4">
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">Filters</h4>
+      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-3 items-end">
+          <SearchableSelect
+            label="Brand"
+            value={filterBrandId}
+            onChange={setFilterBrandId}
+            options={[
+              { value: '', label: 'All brands' },
+              ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name })),
+            ]}
+            placeholder="All brands"
+            minWidth="min-w-[200px]"
+          />
+          <SearchableSelect
+            label="Status"
+            value={filterActive}
+            onChange={setFilterActive}
+            options={[
+              { value: '', label: 'All' },
+              { value: 'active', label: 'Active' },
+              { value: 'inactive', label: 'Inactive' },
+            ]}
+            placeholder="All"
+            minWidth="min-w-[120px]"
+          />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
-            <select
-              value={filterBrandId}
-              onChange={(e) => setFilterBrandId(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[200px]"
-            >
-              <option value="">All brands</option>
-              {brands?.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Search</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={filterSearch}
+                onChange={(e) => setFilterSearch(e.target.value)}
+                onFocus={() => searchTypeahead.setOpen(true)}
+                onKeyDown={(e) => {
+                  const suggestions = searchTypeahead.suggestions;
+                  if (!suggestions.length) return;
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    searchTypeahead.setActiveIndex(Math.min(searchTypeahead.activeIndex + 1, suggestions.length - 1));
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    searchTypeahead.setActiveIndex(Math.max(searchTypeahead.activeIndex - 1, 0));
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const opt = suggestions[searchTypeahead.activeIndex];
+                    if (opt?.label) setFilterSearch(opt.label);
+                    searchTypeahead.setOpen(false);
+                  } else if (e.key === 'Escape') {
+                    searchTypeahead.setOpen(false);
+                  }
+                }}
+                placeholder="Search by name..."
+                className="px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[180px]"
+              />
+              <TypeaheadDropdown
+                open={searchTypeahead.open && filterSearch.trim().length >= 2}
+                suggestions={searchTypeahead.suggestions}
+                activeIndex={searchTypeahead.activeIndex}
+                onHoverIndex={searchTypeahead.setActiveIndex}
+                onSelect={(opt) => {
+                  setFilterSearch(opt.label);
+                  searchTypeahead.setOpen(false);
+                }}
+                onClose={() => searchTypeahead.setOpen(false)}
+              />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select
-              value={filterActive}
-              onChange={(e) => setFilterActive(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[120px]"
-            >
-              <option value="">All</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
-            <input
-              type="text"
-              value={filterSearch}
-              onChange={(e) => setFilterSearch(e.target.value)}
-              placeholder="Search by name..."
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[180px]"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Sort by</label>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[140px]"
-            >
-              <option value="sort_order">Sort order</option>
-              <option value="name">Name</option>
-              <option value="created_at">Created at</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Order</label>
-            <select
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc')}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[100px]"
-            >
-              <option value="asc">Asc</option>
-              <option value="desc">Desc</option>
-            </select>
-          </div>
+          {isFetching && (
+            <span className="text-xs text-gray-500 dark:text-slate-400 pb-1">
+              Updating…
+            </span>
+          )}
           {hasActiveFilters && <ClearFiltersButton onClick={clearFilters} />}
         </div>
       </Card>
@@ -300,55 +338,48 @@ const Categories: React.FC = () => {
         </form>
       </Modal>
 
-      <div className="grid gap-4">
-        {categories && categories.length === 0 ? (
-          <Card>
-            <p className="text-center text-gray-500 py-8">
-              No categories found. Create one or adjust filters.
-            </p>
+      <div className="w-full space-y-3">
+        {categoryList.length === 0 ? (
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No categories found. Create one or adjust filters.</p>
           </Card>
         ) : (
-          (categories ?? []).map((cat: CategoryItem) => (
-            <Card key={cat.id} hover>
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800">{cat.name}</h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Brand: {cat.brand?.name ?? `#${cat.brand_id}`}
-                    {cat.sort_order != null && cat.sort_order !== 0 && (
-                      <span className="ml-2">· Sort: {cat.sort_order}</span>
-                    )}
-                  </p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <span
-                      className={`px-2 py-0.5 text-xs font-medium rounded ${
-                        cat.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      {cat.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="small" variant="secondary" onClick={() => openEdit(cat)}>
-                    Edit
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="danger"
-                    onClick={() => {
-                      if (confirm(`Delete category "${cat.name}"?`)) {
-                        deleteMutation.mutate(cat.id);
-                      }
-                    }}
-                    isLoading={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))
+          <>
+            <AccentedList>
+              {paginatedCategories.map((cat: CategoryItem, i: number) => (
+                <AccentedListRow
+                  key={cat.id}
+                  accent={cat.is_active ? 'active' : 'inactive'}
+                  initial={cat.name.charAt(0)}
+                  title={cat.name}
+                  subtitle={`Brand: ${cat.brand?.name ?? `#${cat.brand_id}`}${cat.sort_order != null && cat.sort_order !== 0 ? ` · Sort: ${cat.sort_order}` : ''}`}
+                  statusLabel={cat.is_active ? 'Active' : 'Inactive'}
+                  statusVariant={cat.is_active ? 'active' : 'inactive'}
+                  animationIndex={i}
+                  actions={
+                    <>
+                      <Button size="small" variant="edit" onClick={() => openEdit(cat)}>Edit</Button>
+                      <Button
+                        size="small"
+                        variant="danger"
+                        onClick={() => confirm(`Delete category "${cat.name}"?`) && deleteMutation.mutate(cat.id)}
+                        isLoading={deleteMutation.isPending}
+                      >
+                        Delete
+                      </Button>
+                    </>
+                  }
+                />
+              ))}
+            </AccentedList>
+            <PaginationBar
+              totalCount={categoryList.length}
+              page={page}
+              pageSize={DEFAULT_PAGE_SIZE}
+              onPageChange={setPage}
+              itemLabel="categories"
+            />
+          </>
         )}
       </div>
     </div>

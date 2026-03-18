@@ -6,6 +6,10 @@ import { User } from '../entities/user.entity';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
+import { CustomersModule } from '../customers/customers.module';
+import { CustomerJwtStrategy } from './customer-jwt.strategy';
+import { CustomerJwtAuthGuard } from './customer-jwt-auth.guard';
+import { RoleAccessModule } from './role-access.module';
 
 @Module({
     imports: [
@@ -17,9 +21,16 @@ import { JwtStrategy } from './jwt.strategy';
                 'rough-foodie-secret-change-in-production',
             signOptions: { expiresIn: '7d' },
         }),
+        CustomersModule,
+        RoleAccessModule,
     ],
     controllers: [AuthController],
-    providers: [AuthService, JwtStrategy],
-    exports: [AuthService],
+    providers: [
+        AuthService,
+        JwtStrategy,
+        CustomerJwtStrategy,
+        CustomerJwtAuthGuard,
+    ],
+    exports: [AuthService, CustomerJwtAuthGuard, RoleAccessModule],
 })
 export class AuthModule {}

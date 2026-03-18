@@ -4,12 +4,18 @@ import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
 import { Brand, MenuVariant } from '../../types';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
+import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 
 const MenuVariants: React.FC = () => {
   const queryClient = useQueryClient();
@@ -18,6 +24,7 @@ const MenuVariants: React.FC = () => {
   const [selectedMenuItem, setSelectedMenuItem] = useState<number | null>(null);
   const [filterBrandId, setFilterBrandId] = useState<number | null>(null);
   const [searchVariant, setSearchVariant] = useState('');
+  const [page, setPage] = useState(1);
   const [formData, setFormData] = useState({
     menu_item_id: '',
     name: '',
@@ -48,12 +55,27 @@ const MenuVariants: React.FC = () => {
     enabled: true,
   });
 
+  const debouncedSearchVariant = useDebouncedValue(searchVariant, 300);
+  const variantList = Array.isArray(variants) ? variants : [];
+  const variantTypeahead = useTypeaheadSuggestions({
+    query: searchVariant,
+    options: variantList.map((v) => ({ id: String(v.id), label: v.name ?? '' })),
+    minChars: 2,
+    limit: 8,
+  });
+
   const filteredVariants = useMemo(() => {
-    if (!Array.isArray(variants)) return [];
-    if (!searchVariant.trim()) return variants;
-    const q = searchVariant.trim().toLowerCase();
-    return variants.filter((v) => (v.name || '').toLowerCase().includes(q));
-  }, [variants, searchVariant]);
+    if (!variantList.length) return [];
+    if (!debouncedSearchVariant.trim()) return variantList;
+    const q = debouncedSearchVariant.trim().toLowerCase();
+    return variantList.filter((v) => (v.name || '').toLowerCase().includes(q));
+  }, [variantList, debouncedSearchVariant]);
+
+  const paginatedVariants = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return filteredVariants.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [filteredVariants, page]);
+  React.useEffect(() => setPage(1), [filterBrandId, debouncedSearchVariant]);
 
   const prevFilterBrandIdRef = React.useRef<number | null>(filterBrandId);
   React.useEffect(() => {
@@ -129,56 +151,90 @@ const MenuVariants: React.FC = () => {
     });
   };
 
-  if (isLoading) return <Loader fullScreen text="Loading variants..." />;
+  const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  if (isLoading || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading variants...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Menu Variants</h1>
         <Button onClick={() => setShowForm(true)}>Add Variant</Button>
       </div>
 
-      <Card className="mb-4 p-4">
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">Filters</h4>
+      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-3 items-end">
+          <SearchableSelect
+            label="Brand"
+            value={filterBrandId != null ? String(filterBrandId) : ''}
+            onChange={(v) => setFilterBrandId(v ? parseInt(v, 10) : null)}
+            options={[
+              { value: '', label: 'Select brand' },
+              ...(brands ?? []).map((b: Brand & { tenant_name?: string }) => ({
+                value: String(b.id),
+                label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+              })),
+            ]}
+            placeholder="Select brand"
+            minWidth="min-w-[180px]"
+          />
+          <SearchableSelect
+            label="Menu Item"
+            value={selectedMenuItem != null ? String(selectedMenuItem) : ''}
+            onChange={(v) => setSelectedMenuItem(v ? parseInt(v, 10) : null)}
+            options={[
+              { value: '', label: 'Select a menu item' },
+              ...(menuItems ?? []).map((item: { id: number; name: string }) => ({
+                value: String(item.id),
+                label: item.name,
+              })),
+            ]}
+            placeholder="Select a menu item"
+            minWidth="min-w-[160px]"
+            disabled={!filterBrandId}
+          />
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Brand</label>
-            <select
-              value={filterBrandId ?? ''}
-              onChange={(e) => setFilterBrandId(e.target.value ? parseInt(e.target.value) : null)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm min-w-[180px]"
-            >
-              <option value="">Select brand</option>
-              {brands?.map((b: Brand & { tenant_name?: string }) => (
-                <option key={b.id} value={b.id}>
-                  {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Menu Item</label>
-            <select
-              value={selectedMenuItem || ''}
-              onChange={(e) => setSelectedMenuItem(e.target.value ? parseInt(e.target.value) : null)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm min-w-[160px]"
-              disabled={!filterBrandId}
-            >
-              <option value="">Select a menu item</option>
-              {menuItems?.map((item: any) => (
-                <option key={item.id} value={item.id}>{item.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Search variant name</label>
-            <input
-              type="text"
-              value={searchVariant}
-              onChange={(e) => setSearchVariant(e.target.value)}
-              placeholder="Variant name..."
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48"
-            />
+            <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Search variant name</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={searchVariant}
+                onChange={(e) => setSearchVariant(e.target.value)}
+                onFocus={() => variantTypeahead.setOpen(true)}
+                onKeyDown={(e) => {
+                  const suggestions = variantTypeahead.suggestions;
+                  if (!suggestions.length) return;
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    variantTypeahead.setActiveIndex(Math.min(variantTypeahead.activeIndex + 1, suggestions.length - 1));
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    variantTypeahead.setActiveIndex(Math.max(variantTypeahead.activeIndex - 1, 0));
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const opt = suggestions[variantTypeahead.activeIndex];
+                    if (opt?.label) setSearchVariant(opt.label);
+                    variantTypeahead.setOpen(false);
+                  } else if (e.key === 'Escape') {
+                    variantTypeahead.setOpen(false);
+                  }
+                }}
+                placeholder="Variant name..."
+                className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+              />
+              <TypeaheadDropdown
+                open={variantTypeahead.open && searchVariant.trim().length >= 2}
+                suggestions={variantTypeahead.suggestions}
+                activeIndex={variantTypeahead.activeIndex}
+                onHoverIndex={variantTypeahead.setActiveIndex}
+                onSelect={(opt) => {
+                  setSearchVariant(opt.label);
+                  variantTypeahead.setOpen(false);
+                }}
+                onClose={() => variantTypeahead.setOpen(false)}
+              />
+            </div>
           </div>
           <ClearFiltersButton
             onClick={() => {
@@ -344,78 +400,43 @@ const MenuVariants: React.FC = () => {
         )}
       </Modal>
 
-      <div className="grid gap-4">
+      <div className="w-full space-y-3">
         {(!filteredVariants || filteredVariants.length === 0) ? (
-          <Card>
-            <p className="text-center text-gray-500 py-8">No variants found. Adjust filters or create your first variant!</p>
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No variants found. Adjust filters or create your first variant!</p>
           </Card>
         ) : (
-          filteredVariants?.map((variant: any) => {
-            const priceMod = Number(variant.priceModifier ?? variant.price_modifier ?? 0);
-            const menuItemId = variant.menuItemId ?? variant.menu_item_id;
-            const menuItem = menuItems?.find((i: any) => i.id === menuItemId);
-            const menuItemName =
-              variant.menuItem?.name ??
-              (variant as { menu_item_name?: string }).menu_item_name ??
-              menuItem?.name ??
-              'N/A';
-            const brandId = variant.menuItem?.brand_id ?? menuItem?.brand_id;
-            const brandName = brandId != null ? (brands?.find((b) => b.id === brandId)?.name ?? `#${brandId}`) : null;
-            return (
-            <Card key={variant.id} hover>
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="text-lg font-semibold text-gray-800">{variant.name}</h3>
-                    {(variant.is_default ?? variant.isDefault) && (
-                      <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
-                        Default
-                      </span>
-                    )}
-                  </div>
-                  {brandName != null && (
-                    <p className="text-sm text-gray-600 mb-1">
-                      Brand: {brandName}
-                    </p>
-                  )}
-                  <p className="text-sm text-gray-600 mb-1">
-                    Menu Item: {menuItemName}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    Price Modifier: {priceMod >= 0 ? '+' : ''}{formatCurrency(Math.abs(priceMod))}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    onClick={() => setEditingVariant({
-                      id: variant.id,
-                      menu_item_id: menuItemId,
-                      name: variant.name,
-                      price_modifier: priceMod,
-                      is_default: variant.is_default ?? variant.isDefault ?? false,
-                    })}
-                  >
-                    Edit
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="danger"
-                    onClick={() => {
-                      if (confirm(`Delete variant "${variant.name}"?`)) {
-                        deleteMutation.mutate(variant.id);
-                      }
-                    }}
-                    isLoading={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          );
-          })
+          <>
+            <AccentedList>
+              {paginatedVariants.map((variant: any, i) => {
+                const priceMod = Number(variant.priceModifier ?? variant.price_modifier ?? 0);
+                const menuItemId = variant.menuItemId ?? variant.menu_item_id;
+                const menuItem = menuItems?.find((i: any) => i.id === menuItemId);
+                const menuItemName = variant.menuItem?.name ?? (variant as { menu_item_name?: string }).menu_item_name ?? menuItem?.name ?? 'N/A';
+                const brandId = variant.menuItem?.brand_id ?? menuItem?.brand_id;
+                const brandName = brandId != null ? (brands?.find((b) => b.id === brandId)?.name ?? `#${brandId}`) : null;
+                return (
+                  <AccentedListRow
+                    key={variant.id}
+                    accent="active"
+                    initial={variant.name?.charAt(0) ?? 'V'}
+                    title={variant.name}
+                    subtitle={<><p>{brandName != null ? `Brand: ${brandName}` : null}</p><p>Menu item: {menuItemName}</p><p>Price: {priceMod >= 0 ? '+' : ''}{formatCurrency(Math.abs(priceMod))}</p></>}
+                    statusLabel={(variant.is_default ?? variant.isDefault) ? 'Default' : undefined}
+                    statusVariant="active"
+                    animationIndex={i}
+                    actions={
+                      <>
+                        <Button size="small" variant="edit" onClick={() => setEditingVariant({ id: variant.id, menu_item_id: menuItemId, name: variant.name, price_modifier: priceMod, is_default: variant.is_default ?? variant.isDefault ?? false })}>Edit</Button>
+                        <Button size="small" variant="danger" onClick={() => confirm(`Delete variant "${variant.name}"?`) && deleteMutation.mutate(variant.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                      </>
+                    }
+                  />
+                );
+              })}
+            </AccentedList>
+            <PaginationBar totalCount={filteredVariants.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="variants" />
+          </>
         )}
       </div>
     </div>

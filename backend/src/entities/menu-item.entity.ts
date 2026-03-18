@@ -16,6 +16,7 @@ import { MenuAddon } from './menu-addon.entity';
 import { BranchMenuItem } from './branch-menu-item.entity';
 import { OrderItem } from './order-item.entity';
 import { ModifierGroup } from './modifier-group.entity';
+import { DealComponent } from './deal-component.entity';
 
 @Entity('menu_items')
 export class MenuItem {
@@ -49,6 +50,10 @@ export class MenuItem {
     @Column({ default: 0 })
     sortOrder: number;
 
+    /** If true, this item is only used inside deals and must not be shown on POS as a standalone item. */
+    @Column({ name: 'deal_only', default: false })
+    dealOnly: boolean;
+
     @CreateDateColumn()
     createdAt: Date;
 
@@ -80,4 +85,7 @@ export class MenuItem {
 
     @OneToMany(() => OrderItem, (oi) => oi.menuItem)
     orderItems: OrderItem[];
+
+    @OneToMany(() => DealComponent, (dc) => dc.menuItem)
+    dealComponents: DealComponent[];
 }

@@ -11,13 +11,15 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { UsersService } from './users.service';
+import { UpdateUserDto } from './update-user.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @ApiTags('Admin – Users')
 @ApiBearerAuth()
 @Controller('admin/users')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard)
 export class UsersController {
     constructor(private service: UsersService) {}
 
@@ -61,16 +63,7 @@ export class UsersController {
     update(
         @Param('id') id: string,
         @CurrentUser() user: { id: number; tenantId: number | null },
-        @Body()
-        dto: {
-            name?: string;
-            email?: string;
-            password?: string;
-            phone?: string;
-            status?: string;
-            branch_ids?: number[];
-            role_id?: number;
-        },
+        @Body() dto: UpdateUserDto,
     ) {
         const tenantId = user.tenantId;
         if (tenantId == null)

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -7,8 +7,11 @@ import { Branch, User } from '../../types';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
+import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 
 interface RoleOption {
   id: number;
@@ -23,6 +26,7 @@ const BranchUsers: React.FC = () => {
   const [assignBranchId, setAssignBranchId] = useState<number | null>(null);
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
   const [roleByUserId, setRoleByUserId] = useState<Record<number, number>>({});
+  const [page, setPage] = useState(1);
 
   // Fetch branches
   const { data: branches } = useQuery({
@@ -63,6 +67,12 @@ const BranchUsers: React.FC = () => {
     if (selectedBranch == null) return branchUsers as BranchUserRow[];
     return (branchUsers as BranchUserRow[]).filter((u) => u.branch_id === selectedBranch);
   }, [branchUsers, selectedBranch]);
+
+  const paginatedUsers = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return filteredUsers.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [filteredUsers, page]);
+  React.useEffect(() => setPage(1), [selectedBranch]);
 
   const defaultRoleId = roles?.[0]?.id ?? 0;
 
@@ -134,35 +144,34 @@ const BranchUsers: React.FC = () => {
     assignMutation.mutate({ branchId: assignBranchId, assignments });
   };
 
-  if (isLoading) return <Loader fullScreen text="Loading branch users..." />;
+  const isSubmitting = assignMutation.isPending || removeMutation.isPending;
+  if (isLoading || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading branch users...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Branch Users</h1>
-        <Button onClick={openAssignModal}>
-          Assign Users
-        </Button>
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Branch Users</h1>
+        <Button variant="primary" onClick={openAssignModal}>Assign Users</Button>
       </div>
 
-      <Card className="mb-4 p-4">
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">Filters</h4>
+      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-3 items-end">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Branch</label>
-            <select
-              value={selectedBranch ?? ''}
-              onChange={(e) => setSelectedBranch(e.target.value ? parseInt(e.target.value) : null)}
-              className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[200px]"
-            >
-              <option value="">All branches</option>
-          {branches?.map((branch) => (
-            <option key={branch.id} value={branch.id}>
-              {branch.name} ({branch.code})
-            </option>
-          ))}
-        </select>
-          </div>
+          <SearchableSelect
+            label="Filter by Branch"
+            value={selectedBranch != null ? String(selectedBranch) : ''}
+            onChange={(v) => setSelectedBranch(v ? parseInt(v, 10) : null)}
+            options={[
+              { value: '', label: 'All branches' },
+              ...(branches ?? []).map((branch) => ({
+                value: String(branch.id),
+                label: `${branch.name} (${branch.code})`,
+              })),
+            ]}
+            placeholder="All branches"
+            minWidth="min-w-[200px]"
+          />
           <ClearFiltersButton onClick={() => setSelectedBranch(null)} />
         </div>
       </Card>
@@ -281,38 +290,31 @@ const BranchUsers: React.FC = () => {
           </p>
         </Card>
       ) : (
-        <div className="grid gap-4">
-          {filteredUsers.map((user: BranchUserRow) => (
-            <Card key={`${user.branch_id}-${user.id}`} hover>
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800">{user.name}</h3>
-                  <p className="text-sm text-gray-600">{user.email}</p>
-                  {user.branch_name != null && (
-                    <p className="text-xs text-gray-500 mt-1">Branch: {user.branch_name}{user.branch_code ? ` (${user.branch_code})` : ''}</p>
-                  )}
-                  {user.role_name && (
-                    <p className="text-xs text-gray-500 mt-1">Role: {user.role_name}</p>
-                  )}
-                  {user.phone && <p className="text-sm text-gray-600">{user.phone}</p>}
-                </div>
-                <Button
-                  size="small"
-                  variant="danger"
-                  onClick={() => {
-                    const branchId = user.branch_id ?? selectedBranch;
-                    if (branchId != null && confirm(`Remove ${user.name} from this branch?`)) {
-                      removeMutation.mutate({ branchId, userId: user.id });
-                    }
-                  }}
-                  isLoading={removeMutation.isPending}
-                >
-                  Remove
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
+        <>
+          <AccentedList>
+            {paginatedUsers.map((user: BranchUserRow, i) => (
+              <AccentedListRow
+                key={`${user.branch_id}-${user.id}`}
+                accent="active"
+                initial={(user.name ?? 'U').charAt(0)}
+                title={user.name ?? '—'}
+                subtitle={
+                  <>
+                    <p>{user.email}</p>
+                    {user.branch_name != null && <p>Branch: {user.branch_name}{user.branch_code ? ` (${user.branch_code})` : ''}</p>}
+                    {user.role_name && <p>Role: {user.role_name}</p>}
+                    {user.phone && <p>{user.phone}</p>}
+                  </>
+                }
+                animationIndex={i}
+                actions={
+                  <Button size="small" variant="danger" onClick={() => { const branchId = user.branch_id ?? selectedBranch; if (branchId != null && confirm(`Remove ${user.name} from this branch?`)) removeMutation.mutate({ branchId, userId: user.id }); }} isLoading={removeMutation.isPending}>Remove</Button>
+                }
+              />
+            ))}
+          </AccentedList>
+          <PaginationBar totalCount={filteredUsers.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="users" />
+        </>
       )}
     </div>
   );

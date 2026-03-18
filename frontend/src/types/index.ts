@@ -11,6 +11,8 @@ export interface User {
   role?: string | null;
   /** Role id for forms */
   role_id?: number | null;
+  /** Permission names for RBAC (e.g. orders:view, kitchen:view) */
+  permissions?: string[];
 }
 
 export interface Tenant {
@@ -22,7 +24,6 @@ export interface Tenant {
   default_currency?: string;
   default_timezone?: string;
   default_tax_rate?: number;
-  default_service_charge?: number;
   loyalty_enabled?: boolean;
 }
 
@@ -51,7 +52,6 @@ export interface Branch {
   operating_hours?: Record<string, unknown>;
   supports_dine_in?: boolean;
   supports_takeaway?: boolean;
-  supports_pickup?: boolean;
   supports_delivery?: boolean;
   delivery_flat_fee?: number;
   is_active?: boolean;
@@ -78,10 +78,13 @@ export interface MenuItem {
   };
   variants?: MenuVariant[];
   addons?: MenuAddon[];
+  modifier_groups?: MenuModifierGroup[];
   // POS specific
   price?: number;
   /** Brand id (for multi-brand cart splitting). */
   brand_id?: number | null;
+  /** Image URL path (e.g. /api/admin/upload/file/xxx). */
+  image_url?: string | null;
 }
 
 export interface MenuVariant {
@@ -102,6 +105,20 @@ export interface MenuAddon {
   is_active?: boolean;
   isActive?: boolean;
   sort_order?: number;
+}
+
+export interface MenuModifier {
+  id: number;
+  name: string;
+  price: number;
+}
+
+export interface MenuModifierGroup {
+  id: number;
+  name: string;
+  min_select: number;
+  max_select: number;
+  modifiers: MenuModifier[];
 }
 
 export interface BranchMenuItem {
@@ -147,6 +164,10 @@ export interface Shift {
   opening_cash: number;
   expected_cash?: number;
   actual_cash?: number;
+  /** Sum of cash payments from completed orders in this shift. */
+  cash_collected?: number;
+  /** Sum of card payments from completed orders in this shift. */
+  card_collected?: number;
   difference?: number;
   status: 'open' | 'closed';
   opened_at: string;
@@ -162,6 +183,8 @@ export interface Order {
   order_type: 'dine_in' | 'takeaway' | 'pickup' | 'delivery';
   status: string;
   total_amount: number;
+  /** Where the order was placed from (POS vs consumer app). */
+  source?: 'pos' | 'consumer_app' | string;
   subtotal?: number;
   discount_amount?: number;
   tax_amount?: number;

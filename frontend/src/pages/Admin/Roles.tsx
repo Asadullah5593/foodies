@@ -7,6 +7,11 @@ import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
+import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 
 interface Permission {
   id: number;
@@ -46,13 +51,28 @@ function resourceLabel(resource: string): string {
 
 const SUPER_ADMIN_SLUG = 'super_admin';
 
+const isSuperAdmin = (u: { tenant_id?: number | null } | null) => u?.tenant_id == null;
+
 const Roles: React.FC = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [showForm, setShowForm] = useState(false);
   const [editingRole, setEditingRole] = useState<Role | null>(null);
   const [showAllPermissions, setShowAllPermissions] = useState(false);
+  const [permissionSearch, setPermissionSearch] = useState('');
+  const debouncedPermissionSearch = useDebouncedValue(permissionSearch, 300);
   const [formData, setFormData] = useState({ name: '', slug: '', permission_ids: [] as number[] });
+  const [page, setPage] = useState(1);
+
+  /* Super Admin: manage permissions (add / edit / delete) */
+  const [showPermissionForm, setShowPermissionForm] = useState(false);
+  const [editingPermission, setEditingPermission] = useState<Permission | null>(null);
+  const [permissionFormData, setPermissionFormData] = useState({
+    name: '',
+    resource: '',
+    action: '',
+    description: '',
+  });
 
   const { data: permissions, isLoading: permsLoading } = useQuery({
     queryKey: ['permissions'],
@@ -70,6 +90,12 @@ const Roles: React.FC = () => {
     },
   });
 
+  const roleList = roles ?? [];
+  const paginatedRoles = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return roleList.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [roleList, page]);
+
   const groupedPermissions = useMemo(
     () => (permissions ? groupByResource(permissions) : new Map<string, Permission[]>()),
     [permissions],
@@ -79,6 +105,125 @@ const Roles: React.FC = () => {
     () => Array.from(groupedPermissions.keys()).sort((a, b) => a.localeCompare(b)),
     [groupedPermissions],
   );
+
+  const permissionSearchLower = debouncedPermissionSearch.trim().toLowerCase();
+  const filteredResources = useMemo(() => {
+    if (!permissionSearchLower) return sortedResources;
+    return sortedResources.filter((resource) => {
+      const perms = groupedPermissions.get(resource) ?? [];
+      return (
+        resource.toLowerCase().includes(permissionSearchLower) ||
+        perms.some(
+          (p) =>
+            p.name.toLowerCase().includes(permissionSearchLower) ||
+            (p.description ?? '').toLowerCase().includes(permissionSearchLower)
+        )
+      );
+    });
+  }, [sortedResources, groupedPermissions, permissionSearchLower]);
+
+  const permissionTypeahead = useTypeaheadSuggestions({
+    query: debouncedPermissionSearch,
+    options: [
+      ...sortedResources.map((r) => ({ id: `r-${r}`, label: r })),
+      ...((permissions ?? []).map((p) => ({ id: `p-${p.id}`, label: p.name }))),
+    ],
+    minChars: 2,
+    limit: 8,
+  });
+
+  const createPermissionMutation = useMutation({
+    mutationFn: async (data: { name: string; resource: string; action: string; description?: string }) => {
+      const response = await apiClient.post('/admin/roles/permissions', data);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['permissions'] });
+      setShowPermissionForm(false);
+      setEditingPermission(null);
+      setPermissionFormData({ name: '', resource: '', action: '', description: '' });
+      toast.success('Permission created');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to create permission');
+    },
+  });
+
+  const updatePermissionMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: { name?: string; resource?: string; action?: string; description?: string | null } }) => {
+      const response = await apiClient.put(`/admin/roles/permissions/${id}`, data);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['permissions'] });
+      setShowPermissionForm(false);
+      setEditingPermission(null);
+      setPermissionFormData({ name: '', resource: '', action: '', description: '' });
+      toast.success('Permission updated');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to update permission');
+    },
+  });
+
+  const deletePermissionMutation = useMutation({
+    mutationFn: async (id: number) => {
+      await apiClient.delete(`/admin/roles/permissions/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['permissions'] });
+      queryClient.invalidateQueries({ queryKey: ['roles'] });
+      toast.success('Permission deleted');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to delete permission');
+    },
+  });
+
+  const openAddPermission = () => {
+    setEditingPermission(null);
+    setPermissionFormData({ name: '', resource: '', action: '', description: '' });
+    setShowPermissionForm(true);
+  };
+
+  const openEditPermission = (p: Permission) => {
+    setEditingPermission(p);
+    setPermissionFormData({
+      name: p.name,
+      resource: p.resource,
+      action: p.action,
+      description: p.description ?? '',
+    });
+    setShowPermissionForm(true);
+  };
+
+  const handlePermissionFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const { name, resource, action, description } = permissionFormData;
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      toast.error('Permission name is required');
+      return;
+    }
+    if (editingPermission) {
+      updatePermissionMutation.mutate({
+        id: editingPermission.id,
+        data: {
+          name: trimmedName,
+          resource: resource.trim() || undefined,
+          action: action.trim() || undefined,
+          description: description.trim() || null,
+        },
+      });
+    } else {
+      createPermissionMutation.mutate({
+        name: trimmedName,
+        resource: (resource || '').trim() || 'other',
+        action: (action || '').trim() || 'access',
+        description: description.trim() || undefined,
+      });
+    }
+  };
 
   const createMutation = useMutation({
     mutationFn: async (data: { name: string; slug: string; permission_ids?: number[] }) => {
@@ -182,29 +327,100 @@ const Roles: React.FC = () => {
 
   const isRoleViewOnly = editingRole?.slug === SUPER_ADMIN_SLUG;
 
-  if (permsLoading || rolesLoading) return <Loader fullScreen text="Loading..." />;
+  const isSubmitting =
+    createMutation.isPending ||
+    updateMutation.isPending ||
+    deleteMutation.isPending ||
+    deletePermissionMutation.isPending ||
+    createPermissionMutation.isPending ||
+    updatePermissionMutation.isPending;
+  if (permsLoading || rolesLoading || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-wrap justify-between items-center gap-4 mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-800">Roles & Permissions</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Roles & Permissions</h1>
           <p className="text-gray-500 text-sm mt-1">
             Assign permissions to roles. All system permissions are listed below; new permissions added in the system will appear here automatically.
           </p>
         </div>
-        {user?.tenant_id != null && (
-          <Button
-            onClick={() => {
-              setEditingRole(null);
-              resetForm();
-              setShowForm(true);
-            }}
-          >
-            Create Role
-          </Button>
-        )}
+        <div className="flex gap-2 flex-wrap">
+          {isSuperAdmin(user) && (
+            <Button variant="outline" onClick={openAddPermission}>
+              Add permission
+            </Button>
+          )}
+          {user?.tenant_id != null && (
+            <Button
+              onClick={() => {
+                setEditingRole(null);
+                resetForm();
+                setShowForm(true);
+              }}
+            >
+              Create Role
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Super Admin: Manage permissions */}
+      {isSuperAdmin(user) && (
+        <Card className="mb-6 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-800">Manage permissions</h2>
+            <Button size="small" onClick={openAddPermission}>
+              + New permission
+            </Button>
+          </div>
+          <div className="overflow-x-auto max-h-64 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr className="text-left text-gray-600 font-medium">
+                  <th className="px-4 py-2">Name</th>
+                  <th className="px-4 py-2">Resource</th>
+                  <th className="px-4 py-2">Action</th>
+                  <th className="px-4 py-2">Description</th>
+                  <th className="px-4 py-2 w-24">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {permissions?.map((p) => (
+                  <tr key={p.id} className="border-t border-gray-100 hover:bg-gray-50/50">
+                    <td className="px-4 py-2 font-mono text-blue-700">{p.name}</td>
+                    <td className="px-4 py-2 text-gray-700">{resourceLabel(p.resource)}</td>
+                    <td className="px-4 py-2 text-gray-700">{p.action}</td>
+                    <td className="px-4 py-2 text-gray-600 max-w-xs truncate" title={p.description ?? ''}>
+                      {p.description || '—'}
+                    </td>
+                    <td className="px-4 py-2">
+                      <div className="flex gap-1">
+                        <Button size="small" variant="edit" onClick={() => openEditPermission(p)}>
+                          Edit
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={() => {
+                            if (confirm(`Delete permission "${p.name}"? This will remove it from all roles.`))
+                              deletePermissionMutation.mutate(p.id);
+                          }}
+                          isLoading={deletePermissionMutation.isPending}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
 
       {/* All permissions reference */}
       <Card className="mb-6 overflow-hidden">
@@ -311,8 +527,52 @@ const Roles: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Permissions — select what this role can do
             </label>
+            <div className="relative">
+              <input
+                type="text"
+                value={permissionSearch}
+                onChange={(e) => setPermissionSearch(e.target.value)}
+                onFocus={() => permissionTypeahead.setOpen(true)}
+                onKeyDown={(e) => {
+                  const suggestions = permissionTypeahead.suggestions;
+                  if (!suggestions.length) return;
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    permissionTypeahead.setActiveIndex(Math.min(permissionTypeahead.activeIndex + 1, suggestions.length - 1));
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    permissionTypeahead.setActiveIndex(Math.max(permissionTypeahead.activeIndex - 1, 0));
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const opt = suggestions[permissionTypeahead.activeIndex];
+                    if (opt?.label) setPermissionSearch(opt.label);
+                    permissionTypeahead.setOpen(false);
+                  } else if (e.key === 'Escape') {
+                    permissionTypeahead.setOpen(false);
+                  }
+                }}
+                placeholder="Search by resource or permission name..."
+                className="w-full mb-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+              />
+              <TypeaheadDropdown
+                open={permissionTypeahead.open && permissionSearch.trim().length >= 2}
+                suggestions={permissionTypeahead.suggestions}
+                activeIndex={permissionTypeahead.activeIndex}
+                onHoverIndex={permissionTypeahead.setActiveIndex}
+                onSelect={(opt) => {
+                  setPermissionSearch(opt.label);
+                  permissionTypeahead.setOpen(false);
+                }}
+                onClose={() => permissionTypeahead.setOpen(false)}
+              />
+            </div>
             <div className="max-h-96 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
-              {sortedResources.map((resource) => {
+              {filteredResources.length === 0 ? (
+                <div className="px-4 py-6 text-center text-gray-500 text-sm">
+                  {permissionSearch ? 'No permissions match your search.' : 'No permissions available.'}
+                </div>
+              ) : (
+              filteredResources.map((resource) => {
                 const perms = groupedPermissions.get(resource) ?? [];
                 const allSelected = perms.every((p) => formData.permission_ids.includes(p.id));
                 const someSelected = perms.some((p) => formData.permission_ids.includes(p.id));
@@ -364,7 +624,8 @@ const Roles: React.FC = () => {
                     </div>
                   </div>
                 );
-              })}
+              })
+              )}
             </div>
           </div>
 
@@ -392,77 +653,113 @@ const Roles: React.FC = () => {
         </form>
       </Modal>
 
-      {/* Role cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {roles && roles.length === 0 ? (
-          <Card className="md:col-span-2 lg:col-span-3">
-            <p className="text-center text-gray-500 py-8">
-              No roles yet. Create a role or run seed for default roles.
-            </p>
+      {/* Add / Edit Permission Modal (Super Admin only) */}
+      <Modal
+        isOpen={showPermissionForm}
+        onClose={() => {
+          setShowPermissionForm(false);
+          setEditingPermission(null);
+          setPermissionFormData({ name: '', resource: '', action: '', description: '' });
+        }}
+        title={editingPermission ? 'Edit permission' : 'Add permission'}
+      >
+        <form onSubmit={handlePermissionFormSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Name * (e.g. orders:view)</label>
+            <input
+              type="text"
+              value={permissionFormData.name}
+              onChange={(e) => setPermissionFormData({ ...permissionFormData, name: e.target.value })}
+              required
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono"
+              placeholder="resource:action"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Resource</label>
+              <input
+                type="text"
+                value={permissionFormData.resource}
+                onChange={(e) => setPermissionFormData({ ...permissionFormData, resource: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g. orders"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Action</label>
+              <input
+                type="text"
+                value={permissionFormData.action}
+                onChange={(e) => setPermissionFormData({ ...permissionFormData, action: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g. view"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description (optional)</label>
+            <input
+              type="text"
+              value={permissionFormData.description}
+              onChange={(e) => setPermissionFormData({ ...permissionFormData, description: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              placeholder="Short description for admins"
+            />
+          </div>
+          <div className="flex gap-2 justify-end pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowPermissionForm(false);
+                setEditingPermission(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              isLoading={createPermissionMutation.isPending || updatePermissionMutation.isPending}
+            >
+              {editingPermission ? 'Update permission' : 'Add permission'}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <div className="w-full space-y-3">
+        {roleList.length === 0 ? (
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No roles yet. Create a role or run seed for default roles.</p>
           </Card>
         ) : (
-          roles?.map((role) => {
-            const isSuperAdminRole = role.slug === SUPER_ADMIN_SLUG;
-            return (
-              <Card key={role.id} hover className="flex flex-col">
-                <div className="flex justify-between items-start gap-2">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-lg font-semibold text-gray-800">{role.name}</h3>
-                      {isSuperAdminRole && (
-                        <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-800 rounded">
-                          System
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-500 font-mono mt-0.5">{role.slug}</p>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    <Button
-                      size="small"
-                      variant="outline"
-                      onClick={() => handleEdit(role)}
-                    >
-                      {isSuperAdminRole ? 'View' : 'Edit'}
-                    </Button>
-                    {!isSuperAdminRole && (
-                      <Button
-                        size="small"
-                        variant="danger"
-                        onClick={() => {
-                          if (confirm(`Delete role "${role.name}"?`))
-                            deleteMutation.mutate(role.id);
-                        }}
-                        isLoading={deleteMutation.isPending}
-                      >
-                        Delete
-                      </Button>
-                    )}
-                  </div>
-                </div>
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                  <p className="text-xs font-medium text-gray-500 mb-1.5">
-                    Permissions ({role.permissions?.length ?? 0})
-                  </p>
-                  <div className="flex flex-wrap gap-1">
-                    {role.permissions?.length ? (
-                      role.permissions.map((p) => (
-                        <span
-                          key={p.id}
-                          className="px-2 py-0.5 bg-blue-50 text-blue-800 rounded text-xs font-mono"
-                          title={p.description ?? p.name}
-                        >
-                          {p.name}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-gray-400 text-xs">None</span>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            );
-          })
+          <>
+            <AccentedList>
+              {paginatedRoles.map((role, i) => {
+                const isSuperAdminRole = role.slug === SUPER_ADMIN_SLUG;
+                return (
+                  <AccentedListRow
+                    key={role.id}
+                    accent="active"
+                    initial={role.name.charAt(0)}
+                    title={role.name}
+                    subtitle={<><p className="font-mono text-gray-500 dark:text-slate-400">{role.slug}</p><p>Permissions: {role.permissions?.length ?? 0}</p></>}
+                    statusLabel={isSuperAdminRole ? 'System' : undefined}
+                    statusVariant="active"
+                    animationIndex={i}
+                    actions={
+                      <>
+                        <Button size="small" variant={isSuperAdminRole ? 'view' : 'edit'} onClick={() => handleEdit(role)}>{isSuperAdminRole ? 'View' : 'Edit'}</Button>
+                        {!isSuperAdminRole && <Button size="small" variant="danger" onClick={() => confirm(`Delete role "${role.name}"?`) && deleteMutation.mutate(role.id)} isLoading={deleteMutation.isPending}>Delete</Button>}
+                      </>
+                    }
+                  />
+                );
+              })}
+            </AccentedList>
+            <PaginationBar totalCount={roleList.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="roles" />
+          </>
         )}
       </div>
     </div>

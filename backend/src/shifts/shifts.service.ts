@@ -2,24 +2,43 @@ import {
     Injectable,
     NotFoundException,
     ConflictException,
+    ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Shift } from '../entities/shift.entity';
+import { Order } from '../entities/order.entity';
+import { Payment } from '../entities/payment.entity';
 
 @Injectable()
 export class ShiftsService {
     constructor(
         @InjectRepository(Shift)
         private repo: Repository<Shift>,
+        @InjectRepository(Order)
+        private orderRepo: Repository<Order>,
+        @InjectRepository(Payment)
+        private paymentRepo: Repository<Payment>,
     ) {}
 
-    /** List shifts. When tenantId is set, only shifts for branches belonging to that tenant are returned. */
+    /** List shifts. When tenantId is set, only shifts for branches belonging to that tenant are returned. When allowedBranchIds is set, only those branches. */
     async findAll(
         branchId?: number,
         status?: string,
         tenantId?: number | null,
+        allowedBranchIds?: number[] | null,
     ) {
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0 &&
+            branchId != null &&
+            !allowedBranchIds.includes(branchId)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this branch',
+            );
+        }
         const qb = this.repo
             .createQueryBuilder('s')
             .leftJoinAndSelect('s.user', 'u')
@@ -33,14 +52,33 @@ export class ShiftsService {
                 { tenantId },
             );
         }
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0
+        ) {
+            qb.andWhere('s.branchId IN (:...allowedBranchIds)', {
+                allowedBranchIds,
+            });
+        }
         if (branchId) qb.andWhere('s.branchId = :branchId', { branchId });
         if (status) qb.andWhere('s.status = :status', { status });
         const list = await qb.getMany();
-        return list.map((s) => this.toResponse(s));
+        const collected = await Promise.all(
+            list.map((s) => this.getCollectedAmounts(s)),
+        );
+        return list.map((s, i) => ({
+            ...this.toResponse(s),
+            ...collected[i],
+        }));
     }
 
-    /** Get one shift by id. When tenantId is set, returns 403 if the shift's branch does not belong to that tenant. */
-    async findOne(id: number, tenantId?: number | null) {
+    /** Get one shift by id. When tenantId is set, returns 403 if the shift's branch does not belong to that tenant. When allowedBranchIds is set, 403 if branch not in list. */
+    async findOne(
+        id: number,
+        tenantId?: number | null,
+        allowedBranchIds?: number[] | null,
+    ) {
         const qb = this.repo
             .createQueryBuilder('s')
             .leftJoinAndSelect('s.user', 'u')
@@ -56,15 +94,39 @@ export class ShiftsService {
         }
         const shift = await qb.getOne();
         if (!shift) throw new NotFoundException('Shift not found');
-        return this.toResponse(shift);
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0 &&
+            !allowedBranchIds.includes(shift.branchId)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this branch',
+            );
+        }
+        const collected = await this.getCollectedAmounts(shift);
+        return { ...this.toResponse(shift), ...collected };
     }
 
-    async create(dto: {
-        branch_id: number;
-        user_id: number;
-        opening_cash: number;
-        notes?: string;
-    }) {
+    async create(
+        dto: {
+            branch_id: number;
+            user_id: number;
+            opening_cash: number;
+            notes?: string;
+        },
+        allowedBranchIds?: number[] | null,
+    ) {
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0 &&
+            !allowedBranchIds.includes(dto.branch_id)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this branch',
+            );
+        }
         const existingOpen = await this.repo.findOne({
             where: { branchId: dto.branch_id, status: 'open' },
         });
@@ -125,6 +187,41 @@ export class ShiftsService {
         return Array.from(ids);
     }
 
+    /**
+     * Sum cash and card collected from payments for completed orders in this shift's branch and time window.
+     */
+    async getCollectedAmounts(shift: Shift): Promise<{
+        cash_collected: number;
+        card_collected: number;
+    }> {
+        const qb = this.paymentRepo
+            .createQueryBuilder('p')
+            .innerJoin(Order, 'o', 'o.id = p.orderId')
+            .where('o.branchId = :branchId', { branchId: shift.branchId })
+            .andWhere("o.status = 'completed'")
+            .andWhere('o.completedAt >= :openedAt', {
+                openedAt: shift.openedAt,
+            });
+        if (shift.closedAt) {
+            qb.andWhere('o.completedAt <= :closedAt', {
+                closedAt: shift.closedAt,
+            });
+        }
+        const rows = await qb
+            .select('p.paymentMethod', 'method')
+            .addSelect('SUM(p.amount)', 'total')
+            .groupBy('p.paymentMethod')
+            .getRawMany<{ method: string; total: string }>();
+        let cash_collected = 0;
+        let card_collected = 0;
+        for (const row of rows) {
+            const tot = parseFloat(row.total ?? '0') || 0;
+            if (row.method === 'cash') cash_collected = tot;
+            else if (row.method === 'card') card_collected = tot;
+        }
+        return { cash_collected, card_collected };
+    }
+
     /** Add completed order amount to the open shift's expected cash (called when an order is marked completed). */
     async addCompletedOrderAmount(
         branchId: number,
@@ -147,9 +244,10 @@ export class ShiftsService {
         id: number,
         dto: { actual_cash: number; notes?: string },
         tenantId?: number | null,
+        allowedBranchIds?: number[] | null,
     ) {
         if (tenantId != null) {
-            await this.findOne(id, tenantId);
+            await this.findOne(id, tenantId, allowedBranchIds);
         }
         const shift = await this.repo.findOne({
             where: { id },

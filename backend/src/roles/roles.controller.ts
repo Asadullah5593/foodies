@@ -11,20 +11,73 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RolesService } from './roles.service';
 
 @ApiTags('Admin – Roles & Permissions')
 @ApiBearerAuth()
 @Controller('admin/roles')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard)
 export class RolesController {
     constructor(private rolesService: RolesService) {}
 
     @Get('permissions')
-    @ApiOperation({ summary: 'List all permissions (system-defined)' })
+    @ApiOperation({ summary: 'List all permissions' })
     listPermissions() {
         return this.rolesService.listPermissions();
+    }
+
+    @Post('permissions')
+    @ApiOperation({ summary: 'Create a new permission (Super Admin only)' })
+    createPermission(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Body()
+        dto: {
+            name: string;
+            resource: string;
+            action: string;
+            description?: string | null;
+        },
+    ) {
+        if (user.tenantId != null)
+            throw new ForbiddenException(
+                'Only Super Admin can create permissions',
+            );
+        return this.rolesService.createPermission(dto);
+    }
+
+    @Put('permissions/:id')
+    @ApiOperation({ summary: 'Update a permission (Super Admin only)' })
+    updatePermission(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Param('id') id: string,
+        @Body()
+        dto: {
+            name?: string;
+            resource?: string;
+            action?: string;
+            description?: string | null;
+        },
+    ) {
+        if (user.tenantId != null)
+            throw new ForbiddenException(
+                'Only Super Admin can update permissions',
+            );
+        return this.rolesService.updatePermission(+id, dto);
+    }
+
+    @Delete('permissions/:id')
+    @ApiOperation({ summary: 'Delete a permission (Super Admin only)' })
+    deletePermission(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Param('id') id: string,
+    ) {
+        if (user.tenantId != null)
+            throw new ForbiddenException(
+                'Only Super Admin can delete permissions',
+            );
+        return this.rolesService.deletePermission(+id);
     }
 
     @Get()

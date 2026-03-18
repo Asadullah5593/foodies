@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { adminService } from '../../services/api';
@@ -7,6 +7,11 @@ import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
+import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 
 type Customer = {
   id: number;
@@ -24,6 +29,8 @@ const Customers: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const [filter, setFilter] = useState('');
+  const debouncedFilter = useDebouncedValue(filter, 300);
+  const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
 
   const { data: customers, isLoading } = useQuery({
@@ -123,72 +130,116 @@ const Customers: React.FC = () => {
     }
   };
 
-  const filtered = (customers ?? []).filter((c: Customer) => {
-    if (!filter.trim()) return true;
-    const q = filter.trim().toLowerCase();
-    return (c.name ?? '').toLowerCase().includes(q) || (c.phone ?? '').toLowerCase().includes(q);
+  const filtered = React.useMemo(() => {
+    const list = (customers ?? []) as Customer[];
+    if (!debouncedFilter.trim()) return list;
+    const q = debouncedFilter.trim().toLowerCase();
+    return list.filter((c) => (c.name ?? '').toLowerCase().includes(q) || (c.phone ?? '').toLowerCase().includes(q));
+  }, [customers, debouncedFilter]);
+
+  const customerNameTypeahead = useTypeaheadSuggestions({
+    query: debouncedFilter,
+    options: ((customers ?? []) as Customer[])
+      .map((c) => ({ id: String(c.id), label: (c.name ?? '').trim() }))
+      .filter((o) => o.label !== ''),
+    minChars: 2,
+    limit: 8,
   });
 
-  if (isLoading) return <Loader fullScreen text="Loading customers..." />;
+  const paginatedFiltered = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return filtered.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [filtered, page]);
+  React.useEffect(() => setPage(1), [debouncedFilter]);
+
+  const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  if (isLoading || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading customers...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Customers</h1>
-        <Button onClick={openCreate}>Add customer</Button>
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Customers</h1>
+        <Button variant="primary" onClick={openCreate}>Add customer</Button>
       </div>
       <p className="text-gray-600 mb-4">
         Name and phone (Pakistani format 03XXXXXXXXX) are required. Phone is the unique identifier for loyalty.
       </p>
       <Card className="mb-4 p-4">
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">Filters</h4>
-        <input
-          type="text"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="Filter by name or phone..."
-          className="w-full max-w-sm px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-        />
+        <div className="relative w-full max-w-sm">
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onFocus={() => customerNameTypeahead.setOpen(true)}
+            onKeyDown={(e) => {
+              const suggestions = customerNameTypeahead.suggestions;
+              if (!suggestions.length) return;
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                customerNameTypeahead.setActiveIndex(Math.min(customerNameTypeahead.activeIndex + 1, suggestions.length - 1));
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                customerNameTypeahead.setActiveIndex(Math.max(customerNameTypeahead.activeIndex - 1, 0));
+              } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const opt = suggestions[customerNameTypeahead.activeIndex];
+                if (opt?.label) setFilter(opt.label);
+                customerNameTypeahead.setOpen(false);
+              } else if (e.key === 'Escape') {
+                customerNameTypeahead.setOpen(false);
+              }
+            }}
+            placeholder="Filter by name or phone..."
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+          />
+          <TypeaheadDropdown
+            open={customerNameTypeahead.open && filter.trim().length >= 2}
+            suggestions={customerNameTypeahead.suggestions}
+            activeIndex={customerNameTypeahead.activeIndex}
+            onHoverIndex={customerNameTypeahead.setActiveIndex}
+            onSelect={(opt) => {
+              setFilter(opt.label);
+              customerNameTypeahead.setOpen(false);
+            }}
+            onClose={() => customerNameTypeahead.setOpen(false)}
+          />
+        </div>
       </Card>
-      <Card className="p-4">
+      <div className="w-full space-y-3">
         {!customers?.length ? (
-          <p className="text-center text-gray-500 py-8">No customers yet. Add one to use in POS.</p>
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No customers yet. Add one to use in POS.</p>
+          </Card>
         ) : filtered.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">No customers match the filter.</p>
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No customers match the filter.</p>
+          </Card>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-200 text-left text-sm text-gray-600">
-                  <th className="pb-3 font-medium">Name</th>
-                  <th className="pb-3 font-medium">Phone</th>
-                  <th className="pb-3 font-medium">Loyalty balance</th>
-                  <th className="pb-3 font-medium w-40">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((c: Customer) => (
-                  <tr key={c.id} className="border-b border-gray-100">
-                    <td className="py-3 text-gray-800">{c.name ?? '—'}</td>
-                    <td className="py-3 font-mono text-gray-700">{c.phone}</td>
-                    <td className="py-3">{c.loyaltyPointsBalance ?? 0} pts</td>
-                    <td className="py-3">
-                      <div className="flex gap-2">
-                        <Button size="small" variant="outline" onClick={() => openEdit(c)}>
-                          Edit
-                        </Button>
-                        <Button size="small" variant="danger" onClick={() => setDeleteTarget(c)}>
-                          Delete
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <AccentedList>
+              {paginatedFiltered.map((c: Customer, i: number) => (
+                <AccentedListRow
+                  key={c.id}
+                  accent="active"
+                  initial={(c.name ?? 'C').charAt(0)}
+                  title={c.name ?? '—'}
+                  subtitle={<><p className="font-mono">{c.phone}</p><p>Loyalty: {c.loyaltyPointsBalance ?? 0} pts</p></>}
+                  animationIndex={i}
+                  actions={
+                    <>
+                      <Button size="small" variant="edit" onClick={() => openEdit(c)}>Edit</Button>
+                      <Button size="small" variant="danger" onClick={() => setDeleteTarget(c)}>Delete</Button>
+                    </>
+                  }
+                />
+              ))}
+            </AccentedList>
+            <PaginationBar totalCount={filtered.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="customers" />
+          </>
         )}
-      </Card>
+      </div>
 
       <Modal
         isOpen={!!deleteTarget}

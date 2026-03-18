@@ -8,6 +8,8 @@ import { MenuItem } from '../entities/menu-item.entity';
 import { MenuVariant } from '../entities/menu-variant.entity';
 import { MenuAddon } from '../entities/menu-addon.entity';
 import { OrderItemAddon } from '../entities/order-item-addon.entity';
+import { OrderItemModifier } from '../entities/order-item-modifier.entity';
+import { Modifier } from '../entities/modifier.entity';
 import { User } from '../entities/user.entity';
 import { Tenant } from '../entities/tenant.entity';
 import { Discount } from '../entities/discount.entity';
@@ -30,6 +32,8 @@ import { CustomersModule } from '../customers/customers.module';
             Order,
             OrderItem,
             OrderItemAddon,
+            OrderItemModifier,
+            Modifier,
             Branch,
             MenuItem,
             MenuVariant,

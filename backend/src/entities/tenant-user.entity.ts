@@ -21,8 +21,8 @@ export class TenantUser {
     @Column()
     userId: number;
 
-    @Column()
-    roleId: number;
+    @Column({ nullable: true })
+    roleId: number | null;
 
     @CreateDateColumn()
     createdAt: Date;

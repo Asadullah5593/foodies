@@ -13,12 +13,13 @@ import { OrdersService } from './orders.service';
 import { PaymentsService } from '../payments/payments.service';
 import { BranchesService } from '../branches/branches.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @ApiTags('POS – Orders')
 @ApiBearerAuth()
 @Controller('pos/orders')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard)
 export class PosOrdersController {
     constructor(
         private ordersService: OrdersService,
@@ -54,6 +55,7 @@ export class PosOrdersController {
                 quantity: number;
                 variant_id?: number;
                 addons?: { addon_id: number; quantity?: number }[];
+                modifiers?: { modifier_id: number; quantity?: number }[];
             }[];
             discount_code?: string;
             customer_phone?: string;
@@ -81,6 +83,7 @@ export class PosOrdersController {
                 quantity: number;
                 variant_id?: number;
                 addons?: { addon_id: number; quantity?: number }[];
+                modifiers?: { modifier_id: number; quantity?: number }[];
                 notes?: string;
                 /** If present, this line is fulfilled by this branch (for multi-branch carts). Otherwise uses request branch_id. */
                 branch_id?: number;

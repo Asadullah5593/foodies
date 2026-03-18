@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { RoleAccessModule } from '../auth/role-access.module';
 import { Branch } from '../entities/branch.entity';
 import { Brand } from '../entities/brand.entity';
 import { BranchBrand } from '../entities/branch-brand.entity';
@@ -9,6 +10,7 @@ import { BranchesService } from './branches.service';
 
 @Module({
     imports: [
+        RoleAccessModule,
         TypeOrmModule.forFeature([Branch, Brand, BranchBrand]),
         BranchMenuItemsModule,
     ],

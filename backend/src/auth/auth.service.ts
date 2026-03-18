@@ -141,15 +141,45 @@ export class AuthService {
         const rows = (await this.dataSource.query(
             `SELECT 1 FROM tenant_users tu
              INNER JOIN roles r ON r.id = tu.role_id
-             WHERE tu.user_id = $1 AND r.slug = 'rider'
+             WHERE tu.user_id = $1 AND LOWER(r.slug) = 'rider'
              UNION
              SELECT 1 FROM branch_users bu
              INNER JOIN roles r ON r.id = bu.role_id
-             WHERE bu.user_id = $1 AND r.slug = 'rider'
+             WHERE bu.user_id = $1 AND LOWER(r.slug) = 'rider'
              LIMIT 1`,
             [userId],
         )) as unknown as unknown[];
         return Array.isArray(rows) && rows.length > 0;
+    }
+
+    /** Get all permission names for user (from tenant_users role + branch_users roles). Super admin gets all. */
+    private async getPermissionsForUser(
+        userId: number,
+        tenantId: number | null,
+    ): Promise<string[]> {
+        if (tenantId == null) {
+            const rows = (await this.dataSource.query(
+                'SELECT name FROM permissions',
+            )) as unknown as { name: string }[];
+            return rows.map((r) => r.name);
+        }
+        const roleIdRows = (await this.dataSource.query(
+            `SELECT role_id FROM tenant_users WHERE user_id = $1 AND tenant_id = $2
+             UNION SELECT role_id FROM branch_users WHERE user_id = $1`,
+            [userId, tenantId],
+        )) as unknown as { role_id: number }[];
+        const roleIds = [...new Set(roleIdRows.map((r) => r.role_id))].filter(
+            (id) => id != null,
+        );
+        if (roleIds.length === 0) return [];
+        const placeholders = roleIds.map((_, i) => `$${i + 1}`).join(',');
+        const permRows = (await this.dataSource.query(
+            `SELECT p.name FROM permissions p
+             INNER JOIN role_permissions rp ON rp.permission_id = p.id
+             WHERE rp.role_id IN (${placeholders})`,
+            roleIds,
+        )) as unknown as { name: string }[];
+        return [...new Set(permRows.map((r) => r.name))];
     }
 
     async login(email: string, password: string) {
@@ -159,6 +189,10 @@ export class AuthService {
         }
         const payload = { sub: user.id, email: user.email };
         const token = this.jwtService.sign(payload);
+        const permissions = await this.getPermissionsForUser(
+            user.id,
+            user.tenantId,
+        );
         return {
             user: {
                 id: user.id,
@@ -169,6 +203,7 @@ export class AuthService {
                 tenant_id: user.tenantId,
                 is_super_admin: user.tenantId == null,
                 is_rider: user.isRider === true,
+                permissions,
             },
             token,
         };
@@ -186,6 +221,7 @@ export class AuthService {
             | undefined;
         const tenantId = tenantUsers?.[0]?.tenantId ?? null;
         const isRider = await this.checkIsRider(user.id);
+        const permissions = await this.getPermissionsForUser(user.id, tenantId);
         return {
             id: user.id,
             name: user.name,
@@ -195,6 +231,7 @@ export class AuthService {
             tenant_id: tenantId,
             is_super_admin: tenantId == null,
             is_rider: isRider,
+            permissions,
         };
     }
 }

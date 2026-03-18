@@ -8,10 +8,13 @@ import { In, Repository } from 'typeorm';
 import { Brand } from '../entities/brand.entity';
 import { Branch } from '../entities/branch.entity';
 import { BranchMenuItem } from '../entities/branch-menu-item.entity';
+import { DealComponent } from '../entities/deal-component.entity';
 import { MenuAddon } from '../entities/menu-addon.entity';
 import { MenuCategory } from '../entities/menu-category.entity';
 import { MenuItem } from '../entities/menu-item.entity';
 import { MenuVariant } from '../entities/menu-variant.entity';
+import { ModifierGroup } from '../entities/modifier-group.entity';
+import { Modifier } from '../entities/modifier.entity';
 
 @Injectable()
 export class MenuService {
@@ -26,6 +29,10 @@ export class MenuService {
         @InjectRepository(Branch) private branchRepo: Repository<Branch>,
         @InjectRepository(BranchMenuItem)
         private branchMenuItemRepo: Repository<BranchMenuItem>,
+        @InjectRepository(DealComponent)
+        private dealComponentRepo: Repository<DealComponent>,
+        @InjectRepository(ModifierGroup) private modifierGroupRepo: Repository<ModifierGroup>,
+        @InjectRepository(Modifier) private modifierRepo: Repository<Modifier>,
     ) {}
 
     /** List categories for a brand, or all categories for tenant when brandId is null. */
@@ -51,6 +58,62 @@ export class MenuService {
         return this.categoryRepo.find({
             order: { sortOrder: 'ASC', id: 'ASC' },
         });
+    }
+
+    /**
+     * Consumer API: list unique category names across all active brands for a tenant.
+     * Used to show a single "Milkshakes" category even if multiple brands define it.
+     */
+    async getConsumerCategoriesForTenant(tenantId: number) {
+        const rows = await this.categoryRepo
+            .createQueryBuilder('c')
+            .innerJoin('c.brand', 'b')
+            .where('b.tenantId = :tenantId', { tenantId })
+            .andWhere('b.isActive = :active', { active: true })
+            .andWhere('c.isActive = :cActive', { cActive: true })
+            .select([
+                'LOWER(c.name) AS key',
+                'MIN(c.sortOrder) AS sort',
+                'MIN(c.name) AS name',
+                'COUNT(DISTINCT b.id) AS brand_count',
+            ])
+            .groupBy('LOWER(c.name)')
+            .orderBy('sort', 'ASC')
+            .addOrderBy('name', 'ASC')
+            .getRawMany<{
+                key: string;
+                sort: string;
+                name: string;
+                brand_count: string;
+            }>();
+
+        return rows.map((r) => ({
+            key: r.key,
+            name: r.name,
+            brandCount: Number(r.brand_count),
+        }));
+    }
+
+    /**
+     * Consumer API: for a given category key (normalized name), return ids of active brands that have this category.
+     * The caller (e.g. BrandsService) is responsible for mapping ids to full brand responses.
+     */
+    async getConsumerBrandIdsForCategoryKey(
+        tenantId: number,
+        categoryKey: string,
+    ): Promise<number[]> {
+        const key = categoryKey.toLowerCase();
+        const rawBrandIds = await this.categoryRepo
+            .createQueryBuilder('c')
+            .innerJoin('c.brand', 'b')
+            .where('b.tenantId = :tenantId', { tenantId })
+            .andWhere('b.isActive = :active', { active: true })
+            .andWhere('c.isActive = :cActive', { cActive: true })
+            .andWhere('LOWER(c.name) = :key', { key })
+            .select('DISTINCT b.id', 'id')
+            .getRawMany<{ id: string }>();
+
+        return rawBrandIds.map((r) => Number(r.id));
     }
 
     async createCategory(dto: {
@@ -89,12 +152,17 @@ export class MenuService {
     }
 
     /** List menu items for a brand, or all items for tenant when brandId is null. */
-    async getItems(brandId: number | null, tenantId?: number | null) {
+    async getItems(
+        brandId: number | null,
+        tenantId?: number | null,
+        opts?: { category_id?: number; is_active?: boolean; search?: string },
+    ) {
         const qb = this.itemRepo
             .createQueryBuilder('i')
             .leftJoinAndSelect('i.category', 'c')
             .leftJoinAndSelect('i.variants', 'v')
             .leftJoinAndSelect('i.addons', 'a')
+            .leftJoinAndSelect('i.modifierGroups', 'mg')
             .orderBy('i.sortOrder', 'ASC')
             .addOrderBy('i.id', 'ASC');
 
@@ -110,6 +178,18 @@ export class MenuService {
             qb.where('i.brandId IN (:...brandIds)', { brandIds });
         }
 
+        if (opts?.category_id != null) {
+            qb.andWhere('i.categoryId = :categoryId', { categoryId: opts.category_id });
+        }
+        if (opts?.is_active !== undefined) {
+            qb.andWhere('i.isActive = :isActive', { isActive: opts.is_active });
+        }
+        if (opts?.search && opts.search.length > 0) {
+            qb.andWhere('(LOWER(i.name) LIKE LOWER(:search) OR LOWER(i.description) LIKE LOWER(:search))', {
+                search: `%${opts.search.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`,
+            });
+        }
+
         const items = await qb.getMany();
         return items.map((i) => ({
             id: i.id,
@@ -118,8 +198,10 @@ export class MenuService {
             name: i.name,
             slug: i.slug,
             description: i.description,
+            image_url: i.imageUrl ?? null,
             base_price: Number(i.basePrice),
             is_active: i.isActive,
+            deal_only: i.dealOnly ?? false,
             category: i.category
                 ? { id: i.category.id, name: i.category.name }
                 : null,
@@ -135,6 +217,7 @@ export class MenuService {
                 name: a.name,
                 price: Number(a.price),
             })),
+            modifier_groups: (i.modifierGroups ?? []).map((mg) => ({ id: mg.id, name: mg.name })),
         }));
     }
 
@@ -145,6 +228,8 @@ export class MenuService {
         description?: string;
         base_price: number;
         is_active?: boolean;
+        image_url?: string | null;
+        deal_only?: boolean;
     }) {
         const slug = dto.name
             .toLowerCase()
@@ -157,8 +242,10 @@ export class MenuService {
                 name: dto.name,
                 slug,
                 description: dto.description ?? null,
+                imageUrl: dto.image_url ?? null,
                 basePrice: dto.base_price,
                 isActive: dto.is_active ?? true,
+                dealOnly: dto.deal_only ?? false,
             }),
         );
     }
@@ -172,6 +259,8 @@ export class MenuService {
             is_active?: boolean;
             brand_id?: number;
             category_id?: number;
+            image_url?: string | null;
+            deal_only?: boolean;
         },
     ) {
         const item = await this.itemRepo.findOne({ where: { id } });
@@ -179,6 +268,7 @@ export class MenuService {
 
         if (dto.brand_id !== undefined) item.brandId = dto.brand_id;
         if (dto.category_id !== undefined) item.categoryId = dto.category_id;
+        if (dto.deal_only !== undefined) item.dealOnly = dto.deal_only;
         if (dto.name !== undefined) {
             item.name = dto.name;
             item.slug = dto.name
@@ -187,6 +277,7 @@ export class MenuService {
                 .replace(/[^a-z0-9-]/g, '');
         }
         if (dto.description !== undefined) item.description = dto.description;
+        if (dto.image_url !== undefined) item.imageUrl = dto.image_url;
         if (dto.base_price !== undefined) item.basePrice = dto.base_price;
         if (dto.is_active !== undefined) item.isActive = dto.is_active;
 
@@ -233,11 +324,158 @@ export class MenuService {
         return item;
     }
 
-    /** List addons for a brand, or all addons for tenant when brandId is null. */
+    /** List modifier groups for a brand, or all for tenant when brandId is null. */
+    async getModifierGroups(brandId: number | null, tenantId?: number | null) {
+        const qb = this.modifierGroupRepo
+            .createQueryBuilder('mg')
+            .leftJoinAndSelect('mg.modifiers', 'm')
+            .orderBy('mg.id', 'ASC')
+            .addOrderBy('m.id', 'ASC');
+        if (brandId != null) {
+            qb.where('mg.brandId = :brandId', { brandId });
+        } else if (tenantId != null) {
+            const brands = await this.brandRepo.find({
+                where: { tenantId },
+                select: ['id'],
+            });
+            const ids = brands.map((b) => b.id);
+            if (ids.length === 0) return [];
+            qb.where('mg.brandId IN (:...ids)', { ids });
+        }
+        const groups = await qb.getMany();
+        return groups.map((mg) => ({
+            id: mg.id,
+            brand_id: mg.brandId,
+            name: mg.name,
+            min_select: mg.minSelect,
+            max_select: mg.maxSelect,
+            modifiers: (mg.modifiers ?? []).map((m) => ({
+                id: m.id,
+                modifier_group_id: m.modifierGroupId,
+                name: m.name,
+                price: Number(m.price),
+            })),
+        }));
+    }
+
+    async createModifierGroup(dto: {
+        brand_id: number;
+        name: string;
+        min_select?: number;
+        max_select?: number;
+    }) {
+        const mg = await this.modifierGroupRepo.save(
+            this.modifierGroupRepo.create({
+                brandId: dto.brand_id,
+                name: dto.name,
+                minSelect: dto.min_select ?? 0,
+                maxSelect: dto.max_select ?? 1,
+            }),
+        );
+        return { id: mg.id, brand_id: mg.brandId, name: mg.name, min_select: mg.minSelect, max_select: mg.maxSelect, modifiers: [] };
+    }
+
+    async updateModifierGroup(
+        id: number,
+        dto: { name?: string; min_select?: number; max_select?: number },
+    ) {
+        const mg = await this.modifierGroupRepo.findOne({ where: { id } });
+        if (!mg) throw new NotFoundException('Modifier group not found');
+        if (dto.name !== undefined) mg.name = dto.name;
+        if (dto.min_select !== undefined) mg.minSelect = dto.min_select;
+        if (dto.max_select !== undefined) mg.maxSelect = dto.max_select;
+        await this.modifierGroupRepo.save(mg);
+        return mg;
+    }
+
+    async deleteModifierGroup(id: number) {
+        const mg = await this.modifierGroupRepo.findOne({ where: { id } });
+        if (!mg) throw new NotFoundException('Modifier group not found');
+        await this.modifierGroupRepo.remove(mg);
+        return { message: 'Modifier group deleted' };
+    }
+
+    /** List modifiers, optionally filtered by modifier_group_id or brand_id. */
+    async getModifiers(modifierGroupId?: number | null, brandId?: number | null, tenantId?: number | null) {
+        const qb = this.modifierRepo
+            .createQueryBuilder('m')
+            .leftJoinAndSelect('m.modifierGroup', 'mg')
+            .orderBy('m.id', 'ASC');
+        if (modifierGroupId != null) {
+            qb.where('m.modifierGroupId = :modifierGroupId', { modifierGroupId });
+        } else if (brandId != null) {
+            qb.where('mg.brandId = :brandId', { brandId });
+        } else if (tenantId != null) {
+            const brands = await this.brandRepo.find({
+                where: { tenantId },
+                select: ['id'],
+            });
+            const ids = brands.map((b) => b.id);
+            if (ids.length === 0) return [];
+            qb.where('mg.brandId IN (:...ids)', { ids });
+        }
+        const list = await qb.getMany();
+        return list.map((m) => ({
+            id: m.id,
+            modifier_group_id: m.modifierGroupId,
+            name: m.name,
+            price: Number(m.price),
+            modifier_group_name: (m as any).modifierGroup?.name,
+        }));
+    }
+
+    async createModifier(dto: { modifier_group_id: number; name: string; price?: number }) {
+        const group = await this.modifierGroupRepo.findOne({
+            where: { id: dto.modifier_group_id },
+        });
+        if (!group) throw new NotFoundException('Modifier group not found');
+        const m = await this.modifierRepo.save(
+            this.modifierRepo.create({
+                modifierGroupId: dto.modifier_group_id,
+                name: dto.name,
+                price: dto.price ?? 0,
+            }),
+        );
+        return { id: m.id, modifier_group_id: m.modifierGroupId, name: m.name, price: Number(m.price) };
+    }
+
+    async updateModifier(id: number, dto: { name?: string; price?: number }) {
+        const m = await this.modifierRepo.findOne({ where: { id } });
+        if (!m) throw new NotFoundException('Modifier not found');
+        if (dto.name !== undefined) m.name = dto.name;
+        if (dto.price !== undefined) m.price = dto.price as any;
+        await this.modifierRepo.save(m);
+        return m;
+    }
+
+    async deleteModifier(id: number) {
+        const m = await this.modifierRepo.findOne({ where: { id } });
+        if (!m) throw new NotFoundException('Modifier not found');
+        await this.modifierRepo.remove(m);
+        return { message: 'Modifier deleted' };
+    }
+
+    async linkModifierGroups(menuItemId: number, modifierGroupIds: number[]) {
+        const item = await this.itemRepo.findOne({
+            where: { id: menuItemId },
+            relations: ['modifierGroups'],
+        });
+        if (!item) throw new NotFoundException('Menu item not found');
+        const groups = await this.modifierGroupRepo.find({
+            where: { id: In(modifierGroupIds) },
+        });
+        item.modifierGroups = groups;
+        await this.itemRepo.save(item);
+        return item;
+    }
+
+    /** List addons for a brand, or all addons for tenant when brandId is null. Optional search filters by addon name (ILIKE). */
     async getAddons(
         brandId: number | null,
         categoryId?: number,
         tenantId?: number | null,
+        search?: string,
+        isActive?: boolean,
     ) {
         const qb = this.addonRepo
             .createQueryBuilder('a')
@@ -258,6 +496,13 @@ export class MenuService {
         }
         if (categoryId != null)
             qb.andWhere('a.categoryId = :categoryId', { categoryId });
+        if (search?.trim()) {
+            qb.andWhere('LOWER(a.name) LIKE LOWER(:search)', {
+                search: `%${search.trim()}%`,
+            });
+        }
+        if (isActive !== undefined)
+            qb.andWhere('a.isActive = :isActive', { isActive });
 
         const list = await qb.getMany();
         return list.map((a) => ({
@@ -430,7 +675,7 @@ export class MenuService {
      */
     async getBranchMenu(
         branchId: number,
-        options?: { includeHiddenOnline?: boolean },
+        options?: { includeHiddenOnline?: boolean; brandId?: number; search?: string },
     ) {
         const branch = await this.branchRepo.findOne({
             where: { id: branchId },
@@ -442,6 +687,8 @@ export class MenuService {
                 'branchMenuItems.menuItem.category',
                 'branchMenuItems.menuItem.variants',
                 'branchMenuItems.menuItem.addons',
+                'branchMenuItems.menuItem.modifierGroups',
+                'branchMenuItems.menuItem.modifierGroups.modifiers',
             ],
         });
         type BranchWithBrands = Branch & { branchBrands?: unknown[] };
@@ -449,18 +696,34 @@ export class MenuService {
             return [];
         if (!branch.menuEnabled) return [];
 
-        const linked = (branch.branchMenuItems ?? [])
+        let linked = (branch.branchMenuItems ?? [])
             .filter((bmi) => bmi.isAvailable !== false)
             .filter(
                 (bmi) =>
                     options?.includeHiddenOnline !== false ||
                     !bmi.isHiddenOnline,
             )
-            .sort(
-                (a, b) =>
-                    (a.menuItem?.sortOrder ?? 0) -
-                        (b.menuItem?.sortOrder ?? 0) || a.id - b.id,
+            .filter((bmi) => !(bmi.menuItem as { dealOnly?: boolean })?.dealOnly);
+        if (options?.brandId != null && Number.isFinite(options.brandId)) {
+            linked = linked.filter(
+                (bmi) => bmi.menuItem?.brandId === options.brandId,
             );
+        }
+        linked.sort(
+            (a, b) =>
+                (a.menuItem?.sortOrder ?? 0) -
+                    (b.menuItem?.sortOrder ?? 0) || a.id - b.id,
+        );
+
+        const searchQ = options?.search?.trim()?.toLowerCase();
+        if (searchQ) {
+            linked = linked.filter((bmi) => {
+                const name = (bmi.menuItem?.name ?? '').toLowerCase();
+                const desc = (bmi.menuItem?.description ?? '').toLowerCase();
+                const cat = (bmi.menuItem?.category?.name ?? '').toLowerCase();
+                return name.includes(searchQ) || desc.includes(searchQ) || cat.includes(searchQ);
+            });
+        }
 
         return linked.map((bmi) => {
             const item = bmi.menuItem;
@@ -472,6 +735,7 @@ export class MenuService {
                 id: item?.id,
                 name: item?.name,
                 description: item?.description,
+                image_url: item?.imageUrl ?? null,
                 price,
                 base_price: Number(item?.basePrice ?? 0),
                 category: item?.category?.name,
@@ -492,6 +756,18 @@ export class MenuService {
                         name: a.name,
                         price: Number(a.price),
                     })) ?? [],
+                modifier_groups:
+                    item?.modifierGroups?.map((mg) => ({
+                        id: mg.id,
+                        name: mg.name,
+                        min_select: mg.minSelect,
+                        max_select: mg.maxSelect,
+                        modifiers: (mg.modifiers ?? []).map((m) => ({
+                            id: m.id,
+                            name: m.name,
+                            price: Number(m.price),
+                        })),
+                    })) ?? [],
             };
         });
     }
@@ -499,7 +775,13 @@ export class MenuService {
     async findMenuItem(id: number) {
         return this.itemRepo.findOne({
             where: { id },
-            relations: ['variants', 'addons', 'brand'],
+            relations: [
+                'variants',
+                'addons',
+                'brand',
+                'modifierGroups',
+                'modifierGroups.modifiers',
+            ],
         });
     }
 
@@ -523,6 +805,425 @@ export class MenuService {
         return item ? Number(item.basePrice) : 0;
     }
 
+    /** List menu items that have deal_components (for admin Deals list). */
+    async listDeals(brandId: number | null, tenantId?: number | null) {
+        const qb = this.dealComponentRepo
+            .createQueryBuilder('dc')
+            .select('DISTINCT dc.menuItemId', 'menuItemId')
+            .orderBy('dc.menuItemId', 'ASC');
+        if (brandId != null) {
+            qb.innerJoin('dc.menuItem', 'mi').andWhere('mi.brandId = :brandId', { brandId });
+        } else if (tenantId != null) {
+            const brands = await this.brandRepo.find({
+                where: { tenantId },
+                select: ['id'],
+            });
+            const brandIds = brands.map((b) => b.id);
+            if (brandIds.length === 0) return [];
+            qb.innerJoin('dc.menuItem', 'mi').andWhere('mi.brandId IN (:...brandIds)', { brandIds });
+        }
+        const rows = await qb.getRawMany<{ menuItemId: string }>();
+        const menuItemIds = rows.map((r) => parseInt(r.menuItemId, 10)).filter((id) => Number.isFinite(id));
+        if (menuItemIds.length === 0) return [];
+        const items = await this.itemRepo.find({
+            where: menuItemIds.map((id) => ({ id })),
+            relations: ['category', 'brand'],
+            order: { name: 'ASC' },
+        });
+        const componentCounts = await this.dealComponentRepo
+            .createQueryBuilder('dc')
+            .select('dc.menuItemId', 'menuItemId')
+            .addSelect('COUNT(*)', 'count')
+            .where('dc.menuItemId IN (:...ids)', { ids: menuItemIds })
+            .groupBy('dc.menuItemId')
+            .getRawMany<{ menuItemId: number; count: string }>();
+        const countMap = new Map(componentCounts.map((c) => [c.menuItemId, parseInt(c.count, 10)]));
+        return items.map((i) => ({
+            id: i.id,
+            name: i.name,
+            base_price: Number(i.basePrice),
+            is_active: i.isActive,
+            brand_id: i.brandId,
+            brand: i.brand ? { id: i.brand.id, name: i.brand.name } : null,
+            category_id: i.categoryId,
+            category: i.category ? { id: i.category.id, name: i.category.name } : null,
+            slot_count: countMap.get(i.id) ?? 0,
+        }));
+    }
+
+    /** Get deal components for admin (edit form). Returns null if not a deal. */
+    async getDealForAdmin(menuItemId: number) {
+        const item = await this.itemRepo.findOne({
+            where: { id: menuItemId },
+            relations: ['category', 'brand'],
+        });
+        if (!item) return null;
+        const components = await this.dealComponentRepo.find({
+            where: { menuItemId },
+            order: { slotIndex: 'ASC' },
+            relations: ['sourceMenuItem', 'sourceCategory'],
+        });
+        if (!components.length) return null;
+        return {
+            menu_item_id: item.id,
+            brand_id: item.brandId,
+            brand: item.brand ? { id: item.brand.id, name: item.brand.name } : null,
+            name: item.name,
+            base_price: Number(item.basePrice),
+            category: item.category ? { id: item.category.id, name: item.category.name } : null,
+            slots: components.map((dc) => ({
+                id: dc.id,
+                slot_index: dc.slotIndex,
+                type: dc.type,
+                source_menu_item_id: dc.sourceMenuItemId ?? null,
+                source_category_id: dc.sourceCategoryId ?? null,
+                source_menu_item_ids: dc.sourceMenuItemIds ?? null,
+                quantity: dc.quantity,
+                allow_customization: dc.allowCustomization,
+                source_menu_item_name: (dc.sourceMenuItem as { name?: string } | null)?.name ?? null,
+                source_category_name: (dc.sourceCategory as { name?: string } | null)?.name ?? null,
+            })),
+        };
+    }
+
+    /** Replace all deal components for a menu item. */
+    async saveDealComponents(
+        menuItemId: number,
+        slots: Array<{
+            slot_index: number;
+            type: 'fixed' | 'choice_category' | 'choice_list';
+            source_menu_item_id?: number | null;
+            source_category_id?: number | null;
+            source_menu_item_ids?: number[] | null;
+            quantity: number;
+            allow_customization: boolean;
+        }>,
+    ) {
+        const item = await this.itemRepo.findOne({ where: { id: menuItemId } });
+        if (!item) throw new NotFoundException('Menu item not found');
+        await this.dealComponentRepo.delete({ menuItemId });
+        for (const s of slots) {
+            await this.dealComponentRepo.save(
+                this.dealComponentRepo.create({
+                    menuItemId,
+                    slotIndex: s.slot_index,
+                    type: s.type,
+                    sourceMenuItemId: s.source_menu_item_id ?? null,
+                    sourceCategoryId: s.source_category_id ?? null,
+                    sourceMenuItemIds: s.source_menu_item_ids ?? null,
+                    quantity: s.quantity ?? 1,
+                    allowCustomization: s.allow_customization ?? true,
+                }),
+            );
+        }
+        return this.getDealForAdmin(menuItemId);
+    }
+
+    /** Remove all deal components for a menu item (item becomes a normal menu item). */
+    async deleteDealComponents(menuItemId: number) {
+        const item = await this.itemRepo.findOne({ where: { id: menuItemId } });
+        if (!item) throw new NotFoundException('Menu item not found');
+        await this.dealComponentRepo.delete({ menuItemId });
+        return { message: 'Deal components removed' };
+    }
+
+    /**
+     * Build a single menu item in the same shape as getBranchMenu, for deal resolution.
+     * Uses branch_menu_items when present; otherwise falls back to the menu item if its brand
+     * is served at the branch (so deal-only items show in deal slot pickers even when not
+     * explicitly linked to the branch).
+     */
+    private async getMenuItemForDealResolution(
+        itemId: number,
+        branchId: number,
+    ): Promise<(Awaited<ReturnType<MenuService['getBranchMenu']>>)[0] | null> {
+        const bmi = await this.branchMenuItemRepo.findOne({
+            where: { branchId, menuItemId: itemId },
+            relations: [
+                'menuItem',
+                'menuItem.category',
+                'menuItem.variants',
+                'menuItem.addons',
+                'menuItem.modifierGroups',
+                'menuItem.modifierGroups.modifiers',
+            ],
+        });
+        let item: MenuItem | null = bmi?.menuItem ?? null;
+        if (bmi?.isAvailable === false) return null;
+
+        if (!item) {
+            item = await this.itemRepo.findOne({
+                where: { id: itemId },
+                relations: ['category', 'variants', 'addons', 'modifierGroups', 'modifierGroups.modifiers'],
+            });
+            if (!item) return null;
+            const branch = await this.branchRepo.findOne({
+                where: { id: branchId },
+                relations: ['branchBrands', 'branchBrands.brand'],
+            });
+            const branchBrandIds = new Set(
+                ((branch as { branchBrands?: Array<{ brandId?: number; brand?: { id: number } }> })?.branchBrands ?? [])
+                    .map((bb) => bb.brandId ?? bb.brand?.id)
+                    .filter((id): id is number => Number.isFinite(id)),
+            );
+            const itemBrandId = item.brandId ?? (item as { brand?: { id: number } }).brand?.id;
+            if (!Number.isFinite(itemBrandId) || !branchBrandIds.has(itemBrandId)) return null;
+        }
+
+        const price =
+            bmi?.priceOverride != null
+                ? Number(bmi.priceOverride)
+                : await this.getEffectiveUnitPrice(branchId, itemId);
+        return {
+            id: item.id,
+            name: item.name,
+            description: item.description ?? null,
+            image_url: item.imageUrl ?? null,
+            price,
+            base_price: Number(item.basePrice ?? 0),
+            category: item.category?.name ?? null,
+            category_id: item.categoryId ?? item.category?.id ?? null,
+            brand_id:
+                item.brandId ??
+                (item as { brand?: { id: number } }).brand?.id ??
+                null,
+            variants:
+                item.variants?.map((v) => ({
+                    id: v.id,
+                    name: v.name,
+                    price_modifier: Number(v.priceModifier),
+                })) ?? [],
+            addons:
+                item.addons?.map((a) => ({
+                    id: a.id,
+                    name: a.name,
+                    price: Number(a.price),
+                })) ?? [],
+            modifier_groups:
+                item.modifierGroups?.map((mg) => ({
+                    id: mg.id,
+                    name: mg.name,
+                    min_select: mg.minSelect,
+                    max_select: mg.maxSelect,
+                    modifiers: (mg.modifiers ?? []).map((m) => ({
+                        id: m.id,
+                        name: m.name,
+                        price: Number(m.price),
+                    })),
+                })) ?? [],
+        };
+    }
+
+    /**
+     * Get deal definition by deal menu item id for POS. Returns null if not a deal.
+     * Resolves choice slots to actual menu items available at the branch (same shape as getBranchMenu items).
+     * Includes deal_only items so they appear in slot pickers and fixed slots show the correct name.
+     */
+    async getDealByMenuItemId(
+        menuItemId: number,
+        branchId: number,
+    ): Promise<{
+        deal_menu_item_id: number;
+        name: string;
+        price: number;
+        slots: Array<{
+            slot_index: number;
+            type: string;
+            quantity: number;
+            allow_customization: boolean;
+            source_menu_item_id?: number | null;
+            choice_items?: Array<{
+                id: number;
+                name: string;
+                price: number;
+                base_price: number;
+                category_id: number | null;
+                brand_id: number | null;
+                variants: Array<{ id: number; name: string; price_modifier: number }>;
+                addons: Array<{ id: number; name: string; price: number }>;
+                modifier_groups: Array<{
+                    id: number;
+                    name: string;
+                    min_select: number;
+                    max_select: number;
+                    modifiers: Array<{ id: number; name: string; price: number }>;
+                }>;
+            }>;
+        }>;
+    } | null> {
+        const components = await this.dealComponentRepo.find({
+            where: { menuItemId },
+            order: { slotIndex: 'ASC' },
+        });
+        if (!components.length) return null;
+
+        const dealItem = await this.itemRepo.findOne({
+            where: { id: menuItemId },
+            relations: ['variants', 'addons', 'modifierGroups', 'modifierGroups.modifiers'],
+        });
+        if (!dealItem) return null;
+
+        const price = await this.getEffectiveUnitPrice(branchId, menuItemId);
+        const branchMenu = await this.getBranchMenu(branchId);
+        type BranchMenuItemShape = (typeof branchMenu)[0];
+        const menuById = new Map<number, BranchMenuItemShape>();
+        for (const it of branchMenu) {
+            menuById.set(it.id, it);
+        }
+
+        // Include deal_only items referenced by this deal (fixed or choice_list) so they appear in POS
+        const needIds = new Set<number>();
+        for (const dc of components) {
+            if (dc.type === 'fixed' && dc.sourceMenuItemId != null)
+                needIds.add(dc.sourceMenuItemId);
+            if (dc.type === 'choice_list' && Array.isArray(dc.sourceMenuItemIds))
+                dc.sourceMenuItemIds.forEach((id) => needIds.add(id));
+        }
+        for (const id of needIds) {
+            if (menuById.has(id)) continue;
+            const resolved = await this.getMenuItemForDealResolution(id, branchId);
+            if (resolved) menuById.set(id, resolved);
+        }
+
+        // Include deal_only items in choice_category: linked to branch and/or same brand as branch
+        const branch = await this.branchRepo.findOne({
+            where: { id: branchId },
+            relations: ['branchBrands', 'branchBrands.brand'],
+        });
+        const branchBrandIds = new Set(
+            ((branch as { branchBrands?: Array<{ brandId?: number; brand?: { id: number } }> })?.branchBrands ?? [])
+                .map((bb) => bb.brandId ?? bb.brand?.id)
+                .filter((id): id is number => Number.isFinite(id)),
+        );
+        for (const dc of components) {
+            if (dc.type !== 'choice_category' || dc.sourceCategoryId == null) continue;
+            const linkedInCategory = await this.branchMenuItemRepo.find({
+                where: { branchId },
+                relations: ['menuItem'],
+            });
+            for (const bmi of linkedInCategory) {
+                const mi = bmi.menuItem;
+                if (!mi || mi.categoryId !== dc.sourceCategoryId || menuById.has(mi.id)) continue;
+                const resolved = await this.getMenuItemForDealResolution(mi.id, branchId);
+                if (resolved) menuById.set(mi.id, resolved);
+            }
+            if (branchBrandIds.size === 0) continue;
+            const categoryItems = await this.itemRepo.find({
+                where: {
+                    categoryId: dc.sourceCategoryId,
+                    brandId: In([...branchBrandIds]),
+                },
+                select: ['id'],
+            });
+            for (const mi of categoryItems) {
+                if (menuById.has(mi.id)) continue;
+                const resolved = await this.getMenuItemForDealResolution(mi.id, branchId);
+                if (resolved) menuById.set(mi.id, resolved);
+            }
+        }
+
+        const menuByCategoryId = new Map<number, BranchMenuItemShape[]>();
+        for (const it of menuById.values()) {
+            const cid = it.category_id ?? 0;
+            if (!menuByCategoryId.has(cid)) menuByCategoryId.set(cid, []);
+            menuByCategoryId.get(cid)!.push(it);
+        }
+
+        const slots = components.map((dc) => {
+            const base = {
+                slot_index: dc.slotIndex,
+                type: dc.type,
+                quantity: dc.quantity,
+                allow_customization: dc.allowCustomization,
+            };
+            if (dc.type === 'fixed' && dc.sourceMenuItemId != null) {
+                const item = menuById.get(dc.sourceMenuItemId);
+                return {
+                    ...base,
+                    source_menu_item_id: dc.sourceMenuItemId,
+                    choice_items: item ? [item] : [],
+                };
+            }
+            if (dc.type === 'choice_category' && dc.sourceCategoryId != null) {
+                const items = menuByCategoryId.get(dc.sourceCategoryId) ?? [];
+                return { ...base, choice_items: items };
+            }
+            if (dc.type === 'choice_list' && Array.isArray(dc.sourceMenuItemIds)) {
+                const items = dc.sourceMenuItemIds
+                    .map((id) => menuById.get(id))
+                    .filter((x): x is NonNullable<typeof x> => x != null);
+                return { ...base, choice_items: items };
+            }
+            return { ...base, choice_items: [] as BranchMenuItemShape[] };
+        });
+
+        return {
+            deal_menu_item_id: menuItemId,
+            name: dealItem.name,
+            price,
+            slots,
+        };
+    }
+
+    /** Public: single menu item detail for a branch (consumer app). Includes deal structure when the item is a deal. */
+    async getPublicMenuItemDetail(menuItemId: number, branchId: number) {
+        const bmi = await this.branchMenuItemRepo.findOne({
+            where: { branchId, menuItemId },
+            relations: [
+                'menuItem',
+                'menuItem.category',
+                'menuItem.variants',
+                'menuItem.addons',
+                'menuItem.modifierGroups',
+                'menuItem.modifierGroups.modifiers',
+            ],
+        });
+        if (!bmi?.menuItem || bmi.isAvailable === false || bmi.isHiddenOnline)
+            throw new NotFoundException('Menu item not found');
+        const item = bmi.menuItem;
+        const price =
+            bmi.priceOverride != null
+                ? Number(bmi.priceOverride)
+                : Number(item.basePrice ?? 0);
+        const base = {
+            id: item.id,
+            name: item.name,
+            description: item.description ?? null,
+            price,
+            base_price: Number(item.basePrice ?? 0),
+            image_url: item.imageUrl ?? null,
+            category: item.category?.name ?? null,
+            category_id: item.categoryId ?? item.category?.id ?? null,
+            brand_id: item.brandId ?? null,
+            variants:
+                item.variants?.map((v) => ({
+                    id: v.id,
+                    name: v.name,
+                    price_modifier: Number(v.priceModifier),
+                })) ?? [],
+            addons:
+                item.addons?.map((a) => ({
+                    id: a.id,
+                    name: a.name,
+                    price: Number(a.price),
+                })) ?? [],
+            modifier_groups:
+                item.modifierGroups?.map((mg) => ({
+                    id: mg.id,
+                    name: mg.name,
+                    min_select: mg.minSelect,
+                    max_select: mg.maxSelect,
+                    modifiers: (mg.modifiers ?? []).map((m) => ({
+                        id: m.id,
+                        name: m.name,
+                        price: Number(m.price),
+                    })),
+                })) ?? [],
+        };
+        const deal = await this.getDealByMenuItemId(menuItemId, branchId);
+        return { ...base, ...(deal ? { deal } : {}) };
+    }
+
     /** Ensure brand belongs to tenant (for tenant users). */
     async assertBrandBelongsToTenant(brandId: number, tenantId: number) {
         const brand = await this.brandRepo.findOne({ where: { id: brandId } });
@@ -530,5 +1231,17 @@ export class MenuService {
             throw new ForbiddenException(
                 'Brand not found or does not belong to your tenant',
             );
+    }
+
+    async assertModifierGroupBelongsToTenant(
+        modifierGroupId: number,
+        tenantId: number,
+    ) {
+        const mg = await this.modifierGroupRepo.findOne({
+            where: { id: modifierGroupId },
+            select: ['brandId'],
+        });
+        if (!mg) throw new NotFoundException('Modifier group not found');
+        await this.assertBrandBelongsToTenant(mg.brandId, tenantId);
     }
 }

@@ -49,6 +49,14 @@ export class OrderItem {
     @Column({ type: 'text', nullable: true })
     notes: string | null;
 
+    /** When set, this line is part of a deal; value is the deal menu_item_id. */
+    @Column({ name: 'deal_id', type: 'int', nullable: true })
+    dealId: number | null;
+
+    /** Order of this line within the deal (for receipt grouping). */
+    @Column({ name: 'deal_slot_index', type: 'int', nullable: true })
+    dealSlotIndex: number | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

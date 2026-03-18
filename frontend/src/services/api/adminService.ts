@@ -1,6 +1,22 @@
 import apiClient from '../../utils/apiClient';
 import { MenuVariant, MenuAddon, BranchMenuItem, Discount, Shift, User, Order } from '../../types';
 
+export interface ModifierGroupResponse {
+  id: number;
+  brand_id: number;
+  name: string;
+  min_select: number;
+  max_select: number;
+  modifiers: { id: number; modifier_group_id: number; name: string; price: number }[];
+}
+export interface ModifierResponse {
+  id: number;
+  modifier_group_id: number;
+  name: string;
+  price: number;
+  modifier_group_name?: string;
+}
+
 export const adminService = {
   // Categories (brand-scoped; uses dedicated categories module)
   getCategories: async (params?: { brand_id?: number; is_active?: boolean; search?: string; sort?: string; order?: string }) => {
@@ -41,9 +57,29 @@ export const adminService = {
     const response = await apiClient.get(`/admin/menu/items${query ? '?' + query : ''}`);
     return response.data;
   },
-  updateMenuItem: async (id: number, data: { name?: string; description?: string; base_price?: number; is_active?: boolean; brand_id?: number; category_id?: number }) => {
+  updateMenuItem: async (id: number, data: { name?: string; description?: string; base_price?: number; is_active?: boolean; brand_id?: number; category_id?: number; image_url?: string | null; deal_only?: boolean }) => {
     const response = await apiClient.put(`/admin/menu/items/${id}`, data);
     return response.data;
+  },
+
+  // Deals (menu items with deal_components)
+  getDeals: async (params?: { brand_id?: number }) => {
+    const search = new URLSearchParams();
+    if (params?.brand_id != null) search.append('brand_id', String(params.brand_id));
+    const query = search.toString();
+    const response = await apiClient.get(`/admin/menu/deals${query ? '?' + query : ''}`);
+    return response.data;
+  },
+  getDeal: async (menuItemId: number) => {
+    const response = await apiClient.get(`/admin/menu/deals/${menuItemId}`);
+    return response.data;
+  },
+  saveDeal: async (menuItemId: number, data: { slots: Array<{ slot_index: number; type: 'fixed' | 'choice_category' | 'choice_list'; source_menu_item_id?: number | null; source_category_id?: number | null; source_menu_item_ids?: number[] | null; quantity: number; allow_customization: boolean }> }) => {
+    const response = await apiClient.put(`/admin/menu/deals/${menuItemId}`, data);
+    return response.data;
+  },
+  deleteDeal: async (menuItemId: number) => {
+    await apiClient.delete(`/admin/menu/deals/${menuItemId}`);
   },
 
   // Menu Variants (brand-scoped when no menu_item_id)
@@ -99,6 +135,58 @@ export const adminService = {
   // Link addons to menu item
   linkAddons: async (menuItemId: number, addonIds: number[]): Promise<void> => {
     await apiClient.post(`/admin/menu/items/${menuItemId}/link-addons`, { addon_ids: addonIds });
+  },
+
+  // Modifier groups (brand-scoped)
+  getModifierGroups: async (params?: { brand_id?: number }): Promise<ModifierGroupResponse[]> => {
+    const search = new URLSearchParams();
+    if (params?.brand_id != null) search.append('brand_id', String(params.brand_id));
+    const query = search.toString();
+    const response = await apiClient.get(`/admin/menu/modifier-groups${query ? '?' + query : ''}`);
+    return response.data;
+  },
+  createModifierGroup: async (data: { brand_id: number; name: string; min_select?: number; max_select?: number }) => {
+    const response = await apiClient.post('/admin/menu/modifier-groups', data);
+    return response.data;
+  },
+  updateModifierGroup: async (id: number, data: { name?: string; min_select?: number; max_select?: number }) => {
+    const response = await apiClient.put(`/admin/menu/modifier-groups/${id}`, data);
+    return response.data;
+  },
+  deleteModifierGroup: async (id: number): Promise<void> => {
+    await apiClient.delete(`/admin/menu/modifier-groups/${id}`);
+  },
+
+  // Modifiers (within a group)
+  getModifiers: async (params?: { modifier_group_id?: number; brand_id?: number }): Promise<ModifierResponse[]> => {
+    const search = new URLSearchParams();
+    if (params?.modifier_group_id != null) search.append('modifier_group_id', String(params.modifier_group_id));
+    if (params?.brand_id != null) search.append('brand_id', String(params.brand_id));
+    const query = search.toString();
+    const response = await apiClient.get(`/admin/menu/modifiers${query ? '?' + query : ''}`);
+    return response.data;
+  },
+  createModifier: async (data: { modifier_group_id: number; name: string; price?: number }) => {
+    const response = await apiClient.post('/admin/menu/modifiers', data);
+    return response.data;
+  },
+  updateModifier: async (id: number, data: { name?: string; price?: number }) => {
+    const response = await apiClient.put(`/admin/menu/modifiers/${id}`, data);
+    return response.data;
+  },
+  deleteModifier: async (id: number): Promise<void> => {
+    await apiClient.delete(`/admin/menu/modifiers/${id}`);
+  },
+
+  // Link modifier groups to menu item
+  linkModifierGroups: async (menuItemId: number, modifierGroupIds: number[]): Promise<void> => {
+    await apiClient.post(`/admin/menu/items/${menuItemId}/link-modifier-groups`, { modifier_group_ids: modifierGroupIds });
+  },
+
+  // Branches (single branch for edit page)
+  getBranch: async (id: number) => {
+    const response = await apiClient.get(`/admin/branches/${id}`);
+    return response.data;
   },
 
   // Branch Menu Items (omit branchId to get all entries; pass branchId to get filtered by branch)
@@ -200,7 +288,7 @@ export const adminService = {
     return response.data ?? [];
   },
 
-  updateUser: async (id: number, data: { name?: string; email?: string; password?: string; phone?: string; status?: string; role_id?: number }): Promise<User> => {
+  updateUser: async (id: number, data: { name?: string; email?: string; password?: string; phone?: string; status?: string; role_id?: number | null }): Promise<User> => {
     const response = await apiClient.put(`/admin/users/${id}`, data);
     return response.data;
   },
@@ -265,6 +353,22 @@ export const adminService = {
 
   getTenant: async (id: number) => {
     const response = await apiClient.get(`/admin/tenants/${id}`);
+    return response.data;
+  },
+
+  // Business settings (tenant users: get/update their own business details)
+  getBusinessSettings: async () => {
+    const response = await apiClient.get('/admin/business-settings');
+    return response.data;
+  },
+
+  updateBusinessSettings: async (data: {
+    name?: string;
+    legal_name?: string;
+    default_tax_rate?: number;
+    loyalty_enabled?: boolean;
+  }) => {
+    const response = await apiClient.put('/admin/business-settings', data);
     return response.data;
   },
 

@@ -73,8 +73,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const login = async (email: string, password: string): Promise<User | null> => {
     const response = await authService.login({ email, password });
-    setUser(response.user);
-    return response.user;
+    // Refetch user from API so we have the same shape as after refresh (tenant_id, is_super_admin, etc.)
+    try {
+      const userData = await authService.getCurrentUser();
+      setUser(userData);
+      return userData;
+    } catch (e) {
+      setUser(response.user);
+      return response.user;
+    }
   };
 
   const logout = async () => {

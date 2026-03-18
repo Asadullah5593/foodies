@@ -22,14 +22,28 @@ export interface RiderOrder {
   }>;
 }
 
+/** Axios config to bypass browser cache so we always get a full response (avoids 304 with missing body). */
+const noCache = {
+  headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' as const },
+  params: { _: Date.now() },
+};
+
+function normalizeOrdersPayload(data: unknown): RiderOrder[] {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === 'object' && 'data' in data && Array.isArray((data as { data: unknown }).data)) {
+    return (data as { data: RiderOrder[] }).data;
+  }
+  return [];
+}
+
 export const riderService = {
   getOrders: async (): Promise<RiderOrder[]> => {
-    const response = await apiClient.get<RiderOrder[]>('/rider/orders');
-    return Array.isArray(response.data) ? response.data : [];
+    const response = await apiClient.get<unknown>('/rider/orders', noCache);
+    return normalizeOrdersPayload(response.data);
   },
 
   getOrder: async (id: number): Promise<RiderOrder> => {
-    const response = await apiClient.get<RiderOrder>(`/rider/orders/${id}`);
+    const response = await apiClient.get<RiderOrder>(`/rider/orders/${id}`, noCache);
     return response.data;
   },
 

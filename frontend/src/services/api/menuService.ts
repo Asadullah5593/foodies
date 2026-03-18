@@ -9,7 +9,6 @@ export type BranchMenuResponse = {
   /** Branch order-type support (for POS order type dropdown). Omitted when branch not loaded. */
   supports_dine_in?: boolean;
   supports_takeaway?: boolean;
-  supports_pickup?: boolean;
   supports_delivery?: boolean;
   /** When branch has multiple brands, POS must send brand_id with order. */
   brands?: { id: number; name: string }[];
@@ -31,4 +30,31 @@ export const menuService = {
     const response = await apiClient.get<BranchMenuResponse>(url);
     return response.data;
   },
+
+  /** Get deal definition by menu item id for POS. Returns null if not a deal. */
+  getDeal: async (
+    menuItemId: number,
+    branchId: number,
+  ): Promise<DealDefinition | null> => {
+    const response = await apiClient.get<DealDefinition | null>(
+      `/pos/deal/${menuItemId}?branch_id=${branchId}`,
+    );
+    return response.data ?? null;
+  },
+};
+
+export type DealSlot = {
+  slot_index: number;
+  type: string;
+  quantity: number;
+  allow_customization: boolean;
+  source_menu_item_id?: number | null;
+  choice_items?: MenuItem[];
+};
+
+export type DealDefinition = {
+  deal_menu_item_id: number;
+  name: string;
+  price: number;
+  slots: DealSlot[];
 };

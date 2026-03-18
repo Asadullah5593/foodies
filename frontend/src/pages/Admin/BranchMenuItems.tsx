@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -10,6 +10,8 @@ import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 
 const BranchMenuItems: React.FC = () => {
   const queryClient = useQueryClient();
@@ -21,6 +23,7 @@ const BranchMenuItems: React.FC = () => {
     price_override: '',
     is_enabled: true,
   });
+  const [page, setPage] = useState(1);
 
   // Fetch branches
   const { data: branches } = useQuery({
@@ -68,6 +71,12 @@ const BranchMenuItems: React.FC = () => {
     return branchMenuItems.filter((item) => item.branch_id === selectedBranch);
   }, [branchMenuItems, selectedBranch]);
 
+  const paginatedItems = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return filteredItems.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [filteredItems, page]);
+  React.useEffect(() => setPage(1), [selectedBranch]);
+
   const createMutation = useMutation({
     mutationFn: adminService.createBranchMenuItem,
     onSuccess: () => {
@@ -114,11 +123,14 @@ const BranchMenuItems: React.FC = () => {
     });
   };
 
-  if (isLoading) return <Loader fullScreen text="Loading branch menu items..." />;
+  const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  if (isLoading || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading branch menu items...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Branch Menu Items</h1>
         <Button onClick={() => setShowForm(true)}>
           Add Branch Menu Item
@@ -126,7 +138,6 @@ const BranchMenuItems: React.FC = () => {
       </div>
 
       <Card className="mb-4 p-4">
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">Filters</h4>
         <div className="flex flex-wrap gap-3 items-end">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Branch</label>
@@ -225,95 +236,44 @@ const BranchMenuItems: React.FC = () => {
       </Modal>
 
       {filteredItems.length === 0 ? (
-        <Card>
-          <p className="text-center text-gray-500 py-8">
-            {branchMenuItems?.length === 0
-              ? 'No branch menu items yet. Add one above.'
-              : selectedBranch
-                ? 'No menu items for this branch. Change filter or add one.'
-                : 'No branch menu items yet. Add one above.'}
+        <Card className="dark:bg-slate-800 dark:border-slate-700">
+          <p className="text-center text-gray-500 dark:text-slate-400 py-12">
+            {branchMenuItems?.length === 0 ? 'No branch menu items yet. Add one above.' : selectedBranch ? 'No menu items for this branch. Change filter or add one.' : 'No branch menu items yet. Add one above.'}
           </p>
         </Card>
       ) : (
-        <div className="grid gap-4">
-          {filteredItems.map((item) => (
-            <Card key={item.id} hover>
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-2">
-                    {item.menu_item?.name || 'N/A'}
-                  </h3>
-                  {(item as BranchMenuItem & { branch_name?: string; branch_code?: string }).branch_name && (
-                    <p className="text-xs text-gray-500 mb-1">
-                      Branch: {(item as BranchMenuItem & { branch_name?: string; branch_code?: string }).branch_name}
-                      {(item as BranchMenuItem & { branch_code?: string }).branch_code && ` (${(item as BranchMenuItem & { branch_code?: string }).branch_code})`}
-                    </p>
-                  )}
-                  <div className="space-y-1 text-sm text-gray-600">
-                    <p>
-                      Base Price: <span className="font-medium">${item.menu_item?.base_price.toFixed(2) || '0.00'}</span>
-                    </p>
-                    {item.price_override ? (
-                      <p>
-                        Branch Price: <span className="font-medium text-green-600">
-                          {formatCurrency(item.price_override)}
-                        </span>
-                      </p>
-                    ) : (
-                      <p className="text-gray-500">Using base price</p>
-                    )}
-                    <p>
-                      Status: <span className={item.is_enabled ? 'text-green-600' : 'text-red-600'}>
-                        {item.is_enabled ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    onClick={() => {
-                      const newPrice = prompt('Enter new price override (leave empty to use base price):');
-                      if (newPrice !== null) {
-                        const trimmed = newPrice.trim();
-                        const value =
-                          trimmed === ''
-                            ? null
-                            : Number.isFinite(parseFloat(trimmed))
-                              ? parseFloat(trimmed)
-                              : undefined;
-                        if (value !== undefined && value !== null) {
-                          updateMutation.mutate({
-                            id: item.id,
-                            data: { price_override: value },
-                          });
-                        } else if (trimmed !== '') {
-                          toast.error('Enter a valid number or leave empty to use base price');
-                        }
-                      }
-                    }}
-                    isLoading={updateMutation.isPending}
-                  >
-                    Edit Price
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="danger"
-                    onClick={() => {
-                      if (confirm('Delete this branch menu item?')) {
-                        deleteMutation.mutate(item.id);
-                      }
-                    }}
-                    isLoading={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))}
-        </div>
+        <>
+          <AccentedList>
+            {paginatedItems.map((item, i) => {
+              const branchName = (item as BranchMenuItem & { branch_name?: string; branch_code?: string }).branch_name;
+              const branchCode = (item as BranchMenuItem & { branch_code?: string }).branch_code;
+              return (
+                <AccentedListRow
+                  key={item.id}
+                  accent={item.is_enabled ? 'active' : 'inactive'}
+                  initial={(item.menu_item?.name || 'M').charAt(0)}
+                  title={item.menu_item?.name || 'N/A'}
+                  subtitle={
+                    <>
+                      {branchName && <p>Branch: {branchName}{branchCode ? ` (${branchCode})` : ''}</p>}
+                      <p>Base: ${item.menu_item?.base_price?.toFixed(2) || '0.00'}{item.price_override ? ` · Branch: ${formatCurrency(item.price_override)}` : ''}</p>
+                    </>
+                  }
+                  statusLabel={item.is_enabled ? 'Enabled' : 'Disabled'}
+                  statusVariant={item.is_enabled ? 'active' : 'inactive'}
+                  animationIndex={i}
+                  actions={
+                    <>
+                      <Button size="small" variant="edit" onClick={() => { const newPrice = prompt('Enter new price override (leave empty to use base price):'); if (newPrice !== null) { const trimmed = newPrice.trim(); const value = trimmed === '' ? null : Number.isFinite(parseFloat(trimmed)) ? parseFloat(trimmed) : undefined; if (value !== undefined && value !== null) updateMutation.mutate({ id: item.id, data: { price_override: value } }); else if (trimmed !== '') toast.error('Enter a valid number or leave empty to use base price'); } }} isLoading={updateMutation.isPending}>Edit Price</Button>
+                      <Button size="small" variant="danger" onClick={() => confirm('Delete this branch menu item?') && deleteMutation.mutate(item.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                    </>
+                  }
+                />
+              );
+            })}
+          </AccentedList>
+          <PaginationBar totalCount={filteredItems.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="items" />
+        </>
       )}
     </div>
   );

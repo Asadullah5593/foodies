@@ -8,18 +8,31 @@ export interface CreateOrderRequest {
   customer_name: string;
   customer_phone: string;
   delivery_address?: string;
-  items: Array<{
-    menu_item_id: number;
-    quantity: number;
-    variant_id?: number;
-    addons?: Array<{
-      addon_id: number;
-      quantity: number;
-    }>;
-    notes?: string;
-    /** When ordering from multiple branches, set which branch fulfils this line. Omit to use request branch_id. */
-    branch_id?: number;
-  }>;
+  items: Array<
+    | {
+        menu_item_id: number;
+        quantity: number;
+        variant_id?: number;
+        addons?: Array<{ addon_id: number; quantity: number }>;
+        modifiers?: Array<{ modifier_id: number; quantity?: number }>;
+        notes?: string;
+        branch_id?: number;
+      }
+    | {
+        deal_menu_item_id: number;
+        quantity: number;
+        components: Array<{
+          slot_index: number;
+          menu_item_id: number;
+          quantity: number;
+          variant_id?: number;
+          addons?: Array<{ addon_id: number; quantity: number }>;
+          modifiers?: Array<{ modifier_id: number; quantity?: number }>;
+          notes?: string;
+        }>;
+        branch_id?: number;
+      }
+  >;
   notes?: string;
   discount_code?: string;
   loyalty_points_to_redeem?: number;
@@ -53,13 +66,17 @@ export interface OrderQuoteResponse {
   line_breakdown?: OrderQuoteLineBreakdown[];
 }
 
+export type OrderQuoteRequest = {
+  branch_id: number;
+  order_type: string;
+  items: CreateOrderRequest['items'];
+  discount_code?: string;
+  customer_phone?: string;
+  loyalty_points_to_redeem?: number;
+};
+
 export const orderService = {
-  getQuote: async (data: {
-    branch_id: number;
-    order_type: string;
-    items: Array<{ menu_item_id: number; quantity: number; variant_id?: number; addons?: Array<{ addon_id: number; quantity: number }> }>;
-    discount_code?: string;
-  }): Promise<OrderQuoteResponse> => {
+  getQuote: async (data: OrderQuoteRequest): Promise<OrderQuoteResponse> => {
     const response = await apiClient.post<OrderQuoteResponse>('/pos/orders/quote', data);
     return response.data;
   },

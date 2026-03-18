@@ -69,6 +69,18 @@ export class Discount {
     @Column({ type: 'timestamp', nullable: true })
     validUntil: Date | null;
 
+    /** Recurring time window: start time (HH:mm) in branch timezone. */
+    @Column({ type: 'time', nullable: true })
+    validTimeStart: string | null;
+
+    /** Recurring time window: end time (HH:mm) in branch timezone. */
+    @Column({ type: 'time', nullable: true })
+    validTimeEnd: string | null;
+
+    /** Recurring days: 0=Sun, 1=Mon, …, 6=Sat. When set, discount only valid on these days. */
+    @Column('simple-json', { nullable: true })
+    validDaysOfWeek: number[] | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

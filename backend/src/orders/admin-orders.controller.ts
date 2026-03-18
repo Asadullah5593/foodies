@@ -11,12 +11,13 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @ApiTags('Admin – Orders')
 @ApiBearerAuth()
 @Controller('admin/orders')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard)
 export class AdminOrdersController {
     constructor(private service: OrdersService) {}
 
@@ -35,7 +36,11 @@ export class AdminOrdersController {
     @Put('group/:orderGroupId/rider')
     assignRiderToGroup(
         @Param('orderGroupId') orderGroupId: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
         @Body() body: { rider_id: number },
     ) {
         if (user.tenantId == null) {
@@ -51,13 +56,18 @@ export class AdminOrdersController {
             orderGroupId,
             user.tenantId,
             riderId,
+            user.allowedBranchIds,
         );
     }
 
     @Put('group/:orderGroupId/rider/change')
     changeRiderForGroup(
         @Param('orderGroupId') orderGroupId: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
         @Body() body: { rider_id: number },
     ) {
         if (user.tenantId == null) {
@@ -73,51 +83,81 @@ export class AdminOrdersController {
             orderGroupId,
             user.tenantId,
             riderId,
+            user.allowedBranchIds,
         );
     }
 
     @Get()
     index(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
         @Query('branch_id') branchId: string,
         @Query('status') status: string,
         @Query('date_from') dateFrom: string,
         @Query('date_to') dateTo: string,
         @Query('has_rider') hasRider: string,
     ) {
-        return this.service.findAllAdmin(user.tenantId, {
-            branch_id: branchId ? +branchId : undefined,
-            status,
-            date_from: dateFrom,
-            date_to: dateTo,
-            has_rider:
-                hasRider === '1' || hasRider === 'true'
-                    ? true
-                    : undefined,
-        });
+        return this.service.findAllAdmin(
+            user.tenantId,
+            {
+                branch_id: branchId ? +branchId : undefined,
+                status,
+                date_from: dateFrom,
+                date_to: dateTo,
+                has_rider:
+                    hasRider === '1' || hasRider === 'true'
+                        ? true
+                        : undefined,
+            },
+            user.allowedBranchIds,
+        );
     }
 
     @Get(':id')
     show(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
     ) {
-        return this.service.findForAdmin(+id, user.tenantId);
+        return this.service.findForAdmin(
+            +id,
+            user.tenantId,
+            user.allowedBranchIds,
+        );
     }
 
     @Put(':id/status')
     updateStatus(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
         @Body() body: { status: string },
     ) {
-        return this.service.updateStatus(+id, user.tenantId, body.status);
+        return this.service.updateStatus(
+            +id,
+            user.tenantId,
+            body.status,
+            user.allowedBranchIds,
+        );
     }
 
     @Put(':id/rider')
     assignRider(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
         @Body() body: { rider_id: number },
     ) {
         if (user.tenantId == null) {
@@ -129,13 +169,22 @@ export class AdminOrdersController {
         if (riderId == null || typeof riderId !== 'number') {
             throw new BadRequestException('rider_id is required');
         }
-        return this.service.assignRider(+id, user.tenantId, riderId);
+        return this.service.assignRider(
+            +id,
+            user.tenantId,
+            riderId,
+            user.allowedBranchIds,
+        );
     }
 
     @Put(':id/rider/change')
     changeRider(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
         @Body() body: { rider_id: number },
     ) {
         if (user.tenantId == null) {
@@ -147,6 +196,11 @@ export class AdminOrdersController {
         if (riderId == null || typeof riderId !== 'number') {
             throw new BadRequestException('rider_id is required');
         }
-        return this.service.changeRider(+id, user.tenantId, riderId);
+        return this.service.changeRider(
+            +id,
+            user.tenantId,
+            riderId,
+            user.allowedBranchIds,
+        );
     }
 }

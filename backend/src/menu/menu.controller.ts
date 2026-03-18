@@ -8,16 +8,21 @@ import {
     Param,
     Query,
     UseGuards,
+    NotFoundException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { MenuService } from './menu.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – Menu')
 @ApiBearerAuth()
 @Controller('admin/menu')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard)
 export class MenuController {
     constructor(private service: MenuService) {}
 
@@ -66,6 +71,9 @@ export class MenuController {
     async items(
         @CurrentUser() user: { id: number; tenantId: number | null },
         @Query('brand_id') brandIdParam: string,
+        @Query('category_id') categoryIdParam: string,
+        @Query('is_active') isActiveParam: string,
+        @Query('search') searchParam: string,
     ) {
         const brandId = brandIdParam ? +brandIdParam : null;
         if (brandId != null && user.tenantId != null)
@@ -73,7 +81,10 @@ export class MenuController {
                 brandId,
                 user.tenantId,
             );
-        return this.service.getItems(brandId, user.tenantId);
+        const categoryId = categoryIdParam ? +categoryIdParam : undefined;
+        const isActive = isActiveParam === 'true' ? true : isActiveParam === 'false' ? false : undefined;
+        const search = searchParam?.trim() || undefined;
+        return this.service.getItems(brandId, user.tenantId, { category_id: categoryId, is_active: isActive, search });
     }
 
     @Post('items')
@@ -87,6 +98,8 @@ export class MenuController {
             description?: string;
             base_price: number;
             is_active?: boolean;
+            image_url?: string | null;
+            deal_only?: boolean;
         },
     ) {
         if (user.tenantId != null)
@@ -109,6 +122,8 @@ export class MenuController {
             is_active?: boolean;
             brand_id?: number;
             category_id?: number;
+            image_url?: string | null;
+            deal_only?: boolean;
         },
     ) {
         if (dto.brand_id != null && user.tenantId != null)
@@ -134,6 +149,8 @@ export class MenuController {
         @CurrentUser() user: { id: number; tenantId: number | null },
         @Query('brand_id') brandIdParam: string,
         @Query('category_id') categoryId: string,
+        @Query('search') searchParam: string,
+        @Query('is_active') isActiveParam: string,
     ) {
         const brandId = brandIdParam ? +brandIdParam : null;
         if (brandId != null && user.tenantId != null)
@@ -141,10 +158,14 @@ export class MenuController {
                 brandId,
                 user.tenantId,
             );
+        const search = searchParam?.trim() || undefined;
+        const isActive = isActiveParam === 'true' ? true : isActiveParam === 'false' ? false : undefined;
         return this.service.getAddons(
             brandId,
             categoryId ? +categoryId : undefined,
             user.tenantId,
+            search,
+            isActive,
         );
     }
 
@@ -240,5 +261,167 @@ export class MenuController {
     @Delete('variants/:id')
     deleteVariant(@Param('id') id: string) {
         return this.service.deleteVariant(+id);
+    }
+
+    @Get('modifier-groups')
+    async modifierGroups(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Query('brand_id') brandIdParam: string,
+    ) {
+        const brandId = brandIdParam ? +brandIdParam : null;
+        if (brandId != null && user.tenantId != null)
+            await this.service.assertBrandBelongsToTenant(
+                brandId,
+                user.tenantId,
+            );
+        return this.service.getModifierGroups(brandId, user.tenantId);
+    }
+
+    @Post('modifier-groups')
+    async createModifierGroup(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Body()
+        dto: { brand_id: number; name: string; min_select?: number; max_select?: number },
+    ) {
+        if (user.tenantId != null)
+            await this.service.assertBrandBelongsToTenant(
+                dto.brand_id,
+                user.tenantId,
+            );
+        return this.service.createModifierGroup(dto);
+    }
+
+    @Put('modifier-groups/:id')
+    async updateModifierGroup(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Param('id') id: string,
+        @Body() dto: { name?: string; min_select?: number; max_select?: number },
+    ) {
+        return this.service.updateModifierGroup(+id, dto);
+    }
+
+    @Delete('modifier-groups/:id')
+    deleteModifierGroup(@Param('id') id: string) {
+        return this.service.deleteModifierGroup(+id);
+    }
+
+    @Get('modifiers')
+    async modifiers(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Query('modifier_group_id') modifierGroupIdParam: string,
+        @Query('brand_id') brandIdParam: string,
+    ) {
+        const modifierGroupId = modifierGroupIdParam ? +modifierGroupIdParam : null;
+        const brandId = brandIdParam ? +brandIdParam : null;
+        if (brandId != null && user.tenantId != null)
+            await this.service.assertBrandBelongsToTenant(
+                brandId,
+                user.tenantId,
+            );
+        return this.service.getModifiers(
+            modifierGroupId,
+            brandId,
+            user.tenantId,
+        );
+    }
+
+    @Post('modifiers')
+    async createModifier(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Body() dto: { modifier_group_id: number; name: string; price?: number },
+    ) {
+        if (user.tenantId != null)
+            await this.service.assertModifierGroupBelongsToTenant(
+                dto.modifier_group_id,
+                user.tenantId,
+            );
+        return this.service.createModifier(dto);
+    }
+
+    @Put('modifiers/:id')
+    updateModifier(
+        @Param('id') id: string,
+        @Body() dto: { name?: string; price?: number },
+    ) {
+        return this.service.updateModifier(+id, dto);
+    }
+
+    @Delete('modifiers/:id')
+    deleteModifier(@Param('id') id: string) {
+        return this.service.deleteModifier(+id);
+    }
+
+    @Post('items/:id/link-modifier-groups')
+    async linkModifierGroups(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Param('id') id: string,
+        @Body() body: { modifier_group_ids: number[] },
+    ) {
+        return this.service.linkModifierGroups(+id, body.modifier_group_ids ?? []);
+    }
+
+    @Get('deals')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.DEALS_VIEW)
+    async listDeals(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Query('brand_id') brandIdParam: string,
+    ) {
+        const brandId = brandIdParam ? +brandIdParam : null;
+        if (brandId != null && user.tenantId != null)
+            await this.service.assertBrandBelongsToTenant(brandId, user.tenantId);
+        return this.service.listDeals(brandId, user.tenantId);
+    }
+
+    @Get('deals/:menuItemId')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.DEALS_VIEW)
+    async getDeal(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Param('menuItemId') menuItemIdParam: string,
+    ) {
+        const menuItemId = +menuItemIdParam;
+        const item = await this.service.findMenuItem(menuItemId);
+        if (!item) return null;
+        if (user.tenantId != null) {
+            const brandId = (item as { brandId?: number }).brandId ?? (item as { brand?: { id: number } }).brand?.id;
+            if (brandId != null) await this.service.assertBrandBelongsToTenant(brandId, user.tenantId);
+        }
+        return this.service.getDealForAdmin(menuItemId);
+    }
+
+    @Put('deals/:menuItemId')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.DEALS_EDIT)
+    async saveDeal(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Param('menuItemId') menuItemIdParam: string,
+        @Body() body: { slots: Array<{ slot_index: number; type: 'fixed' | 'choice_category' | 'choice_list'; source_menu_item_id?: number | null; source_category_id?: number | null; source_menu_item_ids?: number[] | null; quantity: number; allow_customization: boolean }> },
+    ) {
+        const menuItemId = +menuItemIdParam;
+        const item = await this.service.findMenuItem(menuItemId);
+        if (!item) return null;
+        if (user.tenantId != null) {
+            const brandId = (item as { brandId?: number }).brandId ?? (item as { brand?: { id: number } }).brand?.id;
+            if (brandId != null) await this.service.assertBrandBelongsToTenant(brandId, user.tenantId);
+        }
+        return this.service.saveDealComponents(menuItemId, body.slots ?? []);
+    }
+
+    @Delete('deals/:menuItemId')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.DEALS_DELETE)
+    async deleteDeal(
+        @CurrentUser() user: { id: number; tenantId: number | null },
+        @Param('menuItemId') menuItemIdParam: string,
+    ) {
+        const menuItemId = +menuItemIdParam;
+        const item = await this.service.findMenuItem(menuItemId);
+        if (!item) throw new NotFoundException('Menu item not found');
+        if (user.tenantId != null) {
+            const brandId = (item as { brandId?: number }).brandId ?? (item as { brand?: { id: number } }).brand?.id;
+            if (brandId != null) await this.service.assertBrandBelongsToTenant(brandId, user.tenantId);
+        }
+        return this.service.deleteDealComponents(menuItemId);
     }
 }

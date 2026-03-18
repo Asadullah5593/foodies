@@ -13,14 +13,16 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { BranchMenuItemsService } from './branch-menu-items.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequirePermission } from '../roles/require-permission.decorator';
 import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – Branch Menu Items')
 @ApiBearerAuth()
 @Controller('admin')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard)
 export class BranchMenuItemsController {
     constructor(private service: BranchMenuItemsService) {}
 
@@ -35,7 +37,7 @@ export class BranchMenuItemsController {
 
     @Post('branch-menu-items')
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission('branch-menu:manage')
+    @RequirePermission(Permissions.BRANCH_MENU_MANAGE)
     store(
         @CurrentUser() user: { id: number; tenantId: number | null },
         @Body()
@@ -61,7 +63,7 @@ export class BranchMenuItemsController {
 
     @Put('branch-menu-items/sync')
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission('branch-menu:manage')
+    @RequirePermission(Permissions.BRANCH_MENU_MANAGE)
     sync(
         @CurrentUser() user: { id: number; tenantId: number | null },
         @Body() dto: { branch_id: number; menu_item_ids: number[] },
@@ -73,7 +75,7 @@ export class BranchMenuItemsController {
 
     @Put('branch-menu-items/:id')
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission('branch-menu:manage')
+    @RequirePermission(Permissions.BRANCH_MENU_MANAGE)
     update(
         @Param('id') id: string,
         @CurrentUser() user: { id: number; tenantId: number | null },
@@ -91,7 +93,7 @@ export class BranchMenuItemsController {
 
     @Delete('branch-menu-items/:id')
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission('branch-menu:manage')
+    @RequirePermission(Permissions.BRANCH_MENU_MANAGE)
     destroy(
         @Param('id') id: string,
         @CurrentUser() user: { id: number; tenantId: number | null },

@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 import { Order } from '../entities/order.entity';
 import { OrderItem } from '../entities/order-item.entity';
 import { OrderItemAddon } from '../entities/order-item-addon.entity';
+import { OrderItemModifier } from '../entities/order-item-modifier.entity';
 import { Branch } from '../entities/branch.entity';
 import { Tenant } from '../entities/tenant.entity';
 import { Discount } from '../entities/discount.entity';
@@ -27,6 +28,8 @@ export class OrdersService {
         private orderItemRepo: Repository<OrderItem>,
         @InjectRepository(OrderItemAddon)
         private orderItemAddonRepo: Repository<OrderItemAddon>,
+        @InjectRepository(OrderItemModifier)
+        private orderItemModifierRepo: Repository<OrderItemModifier>,
         @InjectRepository(Branch) private branchRepo: Repository<Branch>,
         @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
         @InjectRepository(Discount) private discountRepo: Repository<Discount>,
@@ -45,14 +48,31 @@ export class OrdersService {
             customer_name?: string;
             customer_phone?: string;
             delivery_address?: string;
-            items: {
-                menu_item_id: number;
-                quantity: number;
-                variant_id?: number;
-                addons?: { addon_id: number; quantity?: number }[];
-                notes?: string;
-                branch_id?: number;
-            }[];
+            items: Array<
+                | {
+                      menu_item_id: number;
+                      quantity: number;
+                      variant_id?: number;
+                      addons?: { addon_id: number; quantity?: number }[];
+                      modifiers?: { modifier_id: number; quantity?: number }[];
+                      notes?: string;
+                      branch_id?: number;
+                  }
+                | {
+                      deal_menu_item_id: number;
+                      quantity: number;
+                      components: Array<{
+                          slot_index: number;
+                          menu_item_id: number;
+                          quantity: number;
+                          variant_id?: number;
+                          addons?: { addon_id: number; quantity?: number }[];
+                          modifiers?: { modifier_id: number; quantity?: number }[];
+                          notes?: string;
+                      }>;
+                      branch_id?: number;
+                  }
+            >;
             notes?: string;
             discount_code?: string;
             /** Points to redeem as discount (POS only; requires customer_phone) */
@@ -68,6 +88,7 @@ export class OrdersService {
         if (!tenant) throw new NotFoundException('Tenant not found');
 
         // Resolve branch per line (for multi-branch carts). Load all involved branches and their brands.
+        // Note: we will expand deal items below, so use dto.items only for initial branch list.
         const lineBranchIds = dto.items.map(
             (line) =>
                 (line as { branch_id?: number }).branch_id ?? dto.branch_id,
@@ -95,6 +116,8 @@ export class OrdersService {
         }
         const primaryBranch = branchMap.get(dto.branch_id)?.branch;
         if (!primaryBranch) throw new NotFoundException('Branch not found');
+
+        const expandedItems = await this.expandDealItems(dto.branch_id, dto.items);
 
         let customerPhoneNormalized: string | null = null;
         if (source === 'pos') {
@@ -146,9 +169,10 @@ export class OrdersService {
         type MenuItemWithAddons = {
             addons?: Array<{ id: number; price: number }>;
         };
+        type ExpandedLine = (typeof expandedItems)[number];
         const orderItemInputs: {
             menuItem: MenuItemWithAddons;
-            line: (typeof dto.items)[0];
+            line: ExpandedLine;
             unitPrice: number;
             itemSubtotal: number;
             itemName: string;
@@ -156,9 +180,8 @@ export class OrdersService {
             branchId: number;
         }[] = [];
 
-        for (const line of dto.items) {
-            const lineBranchId =
-                (line as { branch_id?: number }).branch_id ?? dto.branch_id;
+        for (const line of expandedItems) {
+            const lineBranchId = line.branch_id ?? dto.branch_id;
             const branchInfo = branchMap.get(lineBranchId);
             if (!branchInfo) continue;
 
@@ -177,10 +200,15 @@ export class OrdersService {
             )
                 continue;
 
-            let unitPrice = await this.menuService.getEffectiveUnitPrice(
-                lineBranchId,
-                line.menu_item_id,
-            );
+            let unitPrice: number;
+            if (line.deal_unit_price !== undefined) {
+                unitPrice = line.deal_unit_price;
+            } else {
+                unitPrice = await this.menuService.getEffectiveUnitPrice(
+                    lineBranchId,
+                    line.menu_item_id,
+                );
+            }
             if (line.variant_id) {
                 const variant = menuItem.variants?.find(
                     (v) => v.id === line.variant_id,
@@ -198,6 +226,21 @@ export class OrdersService {
                     if (addon)
                         itemSubtotal +=
                             Number(addon.price) * (addonLine.quantity ?? 1);
+                }
+            }
+            const menuItemWithModifiers = menuItem as {
+                modifierGroups?: Array<{ modifiers?: Array<{ id: number; name: string; price: number }> }>;
+            };
+            if (line.modifiers?.length && menuItemWithModifiers.modifierGroups) {
+                const allModifiers = (menuItemWithModifiers.modifierGroups ?? [])
+                    .flatMap((mg) => mg.modifiers ?? []);
+                for (const modLine of line.modifiers) {
+                    const mod = allModifiers.find(
+                        (m) => m.id === modLine.modifier_id,
+                    );
+                    if (mod)
+                        itemSubtotal +=
+                            Number(mod.price) * (modLine.quantity ?? 1);
                 }
             }
 
@@ -276,7 +319,7 @@ export class OrdersService {
         );
 
         const taxRate = Number(tenant.defaultTaxRate) || 0;
-        const serviceChargeRate = Number(tenant.defaultServiceCharge) || 0;
+        const serviceChargeRate = 0;
         const deliveryFeeTotal =
             dto.order_type === 'delivery'
                 ? Number(primaryBranch.deliveryFlatFee) || 0
@@ -481,6 +524,8 @@ export class OrdersService {
                         unitPrice,
                         subtotal: itemSubtotal,
                         notes: line.notes ?? null,
+                        dealId: line.deal_id ?? null,
+                        dealSlotIndex: line.deal_slot_index ?? null,
                     }),
                 );
                 if (line.addons?.length) {
@@ -498,6 +543,24 @@ export class OrdersService {
                                     quantity: addonQty,
                                     unitPrice: Number(addon.price),
                                     subtotal: Number(addon.price) * addonQty,
+                                }),
+                            );
+                        }
+                    }
+                }
+                const menuItemModGroups = (menuItem as { modifierGroups?: Array<{ modifiers?: Array<{ id: number; name: string; price: number }> }> }).modifierGroups;
+                const allMods = (menuItemModGroups ?? []).flatMap((mg) => mg.modifiers ?? []);
+                if (line.modifiers?.length && allMods.length > 0) {
+                    for (const modLine of line.modifiers) {
+                        const mod = allMods.find((m) => m.id === modLine.modifier_id);
+                        if (mod) {
+                            const qty = modLine.quantity ?? 1;
+                            await this.orderItemModifierRepo.save(
+                                this.orderItemModifierRepo.create({
+                                    orderItemId: orderItem.id,
+                                    modifierId: mod.id,
+                                    nameSnapshot: mod.name,
+                                    priceSnapshot: Number(mod.price),
                                 }),
                             );
                         }
@@ -539,6 +602,7 @@ export class OrdersService {
                 'orderItems.variant',
                 'orderItems.addons',
                 'orderItems.addons.addon',
+                'orderItems.modifiers',
                 'brand',
             ],
         });
@@ -569,11 +633,137 @@ export class OrdersService {
                     quantity: oi.quantity,
                     unit_price: Number(oi.unitPrice),
                     subtotal: Number(oi.subtotal),
+                    deal_id: oi.dealId ?? null,
+                    deal_slot_index: oi.dealSlotIndex ?? null,
+                    category:
+                        (oi.menuItem as { category?: { name: string } } | null)
+                            ?.category?.name ?? null,
+                    modifiers:
+                        (oi as { modifiers?: Array<{ nameSnapshot: string; priceSnapshot: number }> }).modifiers?.map((m) => ({
+                            name: m.nameSnapshot,
+                            price: Number(m.priceSnapshot),
+                        })) ?? [],
+                })) ?? [],
+        };
+    }
+
+    /** List orders for consumer by customer phone (order history). */
+    async findByCustomerPhone(
+        customerPhone: string,
+        options?: { branchId?: number; tenantId?: number; limit?: number },
+    ) {
+        const normalized = normalizePakistaniPhone(
+            typeof customerPhone === 'string' ? customerPhone.trim() : '',
+        );
+        if (!normalized) throw new BadRequestException('Valid phone is required');
+        const qb = this.orderRepo
+            .createQueryBuilder('o')
+            .where('o.customerPhone = :phone', { phone: normalized })
+            .andWhere('o.source = :source', { source: 'consumer_app' })
+            .orderBy('o.placedAt', 'DESC')
+            .take(options?.limit ?? 50);
+        if (options?.tenantId != null)
+            qb.andWhere('o.tenantId = :tenantId', {
+                tenantId: options.tenantId,
+            });
+        if (options?.branchId != null)
+            qb.andWhere('o.branchId = :branchId', {
+                branchId: options.branchId,
+            });
+        const orders = await qb.getMany();
+        return orders.map((o) => ({
+            id: o.id,
+            order_number: o.orderNumber,
+            status: o.status,
+            total_amount: Number(o.totalAmount),
+            placed_at: o.placedAt?.toISOString() ?? null,
+            branch_id: o.branchId,
+        }));
+    }
+
+    /** Get full order details for consumer; only if customerPhone matches. */
+    async findOneByCustomerPhone(orderId: number, customerPhone: string) {
+        const normalized = normalizePakistaniPhone(
+            typeof customerPhone === 'string' ? customerPhone.trim() : '',
+        );
+        if (!normalized) throw new BadRequestException('Valid phone is required');
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId },
+            relations: [
+                'orderItems',
+                'orderItems.menuItem',
+                'orderItems.menuItem.category',
+                'orderItems.variant',
+                'orderItems.addons',
+                'orderItems.addons.addon',
+                'brand',
+                'payments',
+            ],
+        });
+        if (!order) throw new NotFoundException('Order not found');
+        if (order.customerPhone !== normalized)
+            throw new NotFoundException('Order not found');
+        return {
+            id: order.id,
+            order_number: order.orderNumber,
+            order_type: order.orderType,
+            status: order.status,
+            order_group_id: order.orderGroupId ?? null,
+            brand_id: order.brandId ?? null,
+            brand_name: order.brand?.name ?? null,
+            subtotal: Number(order.subtotal),
+            discount_amount: Number(order.discountAmount),
+            tax_amount: Number(order.taxAmount),
+            service_charge: Number(order.serviceCharge),
+            delivery_fee: Number(order.deliveryFee),
+            total_amount: Number(order.totalAmount),
+            discount_code: order.discountCode,
+            delivery_address: order.deliveryAddress ?? null,
+            placed_at: order.placedAt?.toISOString() ?? null,
+            items:
+                order.orderItems?.map((oi) => ({
+                    id: oi.id,
+                    name_snapshot: oi.nameSnapshot ?? oi.menuItem?.name,
+                    price_snapshot:
+                        oi.priceSnapshot != null
+                            ? Number(oi.priceSnapshot)
+                            : Number(oi.unitPrice),
+                    quantity: oi.quantity,
+                    unit_price: Number(oi.unitPrice),
+                    subtotal: Number(oi.subtotal),
                     category:
                         (oi.menuItem as { category?: { name: string } } | null)
                             ?.category?.name ?? null,
                 })) ?? [],
+            payments: (order.payments ?? []).map((p) => ({
+                id: p.id,
+                payment_method: p.paymentMethod,
+                amount: Number(p.amount),
+                status: p.status,
+                reference_number: p.referenceNumber ?? null,
+                paid_at: p.paidAt?.toISOString() ?? null,
+            })),
         };
+    }
+
+    /** Cancel order by consumer; only if phone matches and status is placed. */
+    async cancelByCustomerPhone(orderId: number, customerPhone: string) {
+        const normalized = normalizePakistaniPhone(
+            typeof customerPhone === 'string' ? customerPhone.trim() : '',
+        );
+        if (!normalized) throw new BadRequestException('Valid phone is required');
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId },
+        });
+        if (!order) throw new NotFoundException('Order not found');
+        if (order.customerPhone !== normalized)
+            throw new NotFoundException('Order not found');
+        if (order.status !== 'placed')
+            throw new BadRequestException(
+                'Only orders with status "placed" can be cancelled',
+            );
+        await this.updateStatus(order.id, order.tenantId, 'cancelled');
+        return { message: 'Order cancelled' };
     }
 
     /** Get all orders in a group (for viewing a customer's multi-brand order). */
@@ -585,8 +775,11 @@ export class OrdersService {
                 'orderItems',
                 'orderItems.menuItem',
                 'orderItems.menuItem.category',
+                'orderItems.variant',
                 'orderItems.addons',
                 'orderItems.addons.addon',
+                'orderItems.modifiers',
+                'orderItems.modifiers.modifier',
             ],
             order: { id: 'ASC' },
         });
@@ -615,6 +808,42 @@ export class OrdersService {
                         quantity: oi.quantity,
                         unit_price: Number(oi.unitPrice),
                         subtotal: Number(oi.subtotal),
+                        deal_id: oi.dealId ?? null,
+                        deal_slot_index: oi.dealSlotIndex ?? null,
+                        variant_name:
+                            (oi.variant as { name?: string } | null)?.name ??
+                            null,
+                        addons:
+                            oi.addons?.map((a) => ({
+                                name: (a.addon as { name?: string } | undefined)
+                                    ?.name,
+                                quantity: a.quantity,
+                                unit_price: Number(a.unitPrice),
+                                subtotal: Number(a.subtotal),
+                            })) ?? [],
+                        modifiers:
+                            (
+                                oi as {
+                                    modifiers?: Array<{
+                                        nameSnapshot: string | null;
+                                        priceSnapshot: number | null;
+                                        modifier?: { name?: string; price?: number };
+                                    }>;
+                                }
+                            ).modifiers?.map((m) => ({
+                                name:
+                                    m.nameSnapshot ??
+                                    (m.modifier as { name?: string } | undefined)
+                                        ?.name ??
+                                    null,
+                                unit_price:
+                                    m.priceSnapshot != null
+                                        ? Number(m.priceSnapshot)
+                                        : Number(
+                                              (m.modifier as { price?: number } | undefined)
+                                                  ?.price ?? 0,
+                                          ),
+                            })) ?? [],
                         category:
                             (
                                 oi.menuItem as {
@@ -641,6 +870,8 @@ export class OrdersService {
                 'orderItems.variant',
                 'orderItems.addons',
                 'orderItems.addons.addon',
+                'orderItems.modifiers',
+                'orderItems.modifiers.modifier',
             ],
         });
         if (!order) throw new NotFoundException('Order not found');
@@ -668,12 +899,40 @@ export class OrdersService {
                     quantity: oi.quantity,
                     unit_price: Number(oi.unitPrice),
                     subtotal: Number(oi.subtotal),
+                    deal_id: oi.dealId ?? null,
+                    deal_slot_index: oi.dealSlotIndex ?? null,
+                    variant_name:
+                        (oi.variant as { name?: string } | null)?.name ?? null,
                     addons:
                         oi.addons?.map((a) => ({
                             name: (a.addon as { name?: string } | undefined)
                                 ?.name,
                             quantity: a.quantity,
                             unit_price: Number(a.unitPrice),
+                            subtotal: Number(a.subtotal),
+                        })) ?? [],
+                    modifiers:
+                        (
+                            oi as {
+                                modifiers?: Array<{
+                                    nameSnapshot: string | null;
+                                    priceSnapshot: number | null;
+                                    modifier?: { name?: string; price?: number };
+                                }>;
+                            }
+                        ).modifiers?.map((m) => ({
+                            name:
+                                m.nameSnapshot ??
+                                (m.modifier as { name?: string } | undefined)
+                                    ?.name ??
+                                null,
+                            unit_price:
+                                m.priceSnapshot != null
+                                    ? Number(m.priceSnapshot)
+                                    : Number(
+                                          (m.modifier as { price?: number } | undefined)
+                                              ?.price ?? 0,
+                                      ),
                         })) ?? [],
                 })) ?? [],
             subtotal: Number(order.subtotal),
@@ -714,11 +973,26 @@ export class OrdersService {
         };
     }
 
-    async updateStatus(id: number, tenantId: number | null, status: string) {
+    async updateStatus(
+        id: number,
+        tenantId: number | null,
+        status: string,
+        allowedBranchIds?: number[] | null,
+    ) {
         const order = await this.orderRepo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
         });
         if (!order) throw new NotFoundException('Order not found');
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0 &&
+            !allowedBranchIds.includes(order.branchId)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this branch',
+            );
+        }
 
         const wasCompleted = order.status === 'completed';
         if (wasCompleted && status !== 'completed') {
@@ -744,7 +1018,11 @@ export class OrdersService {
         return this.findForAdmin(id, tenantId);
     }
 
-    async findForAdmin(id: number, tenantId: number | null) {
+    async findForAdmin(
+        id: number,
+        tenantId: number | null,
+        allowedBranchIds?: number[] | null,
+    ) {
         const order = await this.orderRepo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
             relations: [
@@ -757,9 +1035,22 @@ export class OrdersService {
                 'orderItems.variant',
                 'orderItems.addons',
                 'orderItems.addons.addon',
+                'orderItems.modifiers',
+                'orderItems.modifiers.modifier',
                 'payments',
             ],
         });
+        if (
+            order &&
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0 &&
+            !allowedBranchIds.includes(order.branchId)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this branch',
+            );
+        }
         if (!order) throw new NotFoundException('Order not found');
         return {
             id: order.id,
@@ -825,6 +1116,30 @@ export class OrdersService {
                             name: a.addon?.name,
                             unit_price: Number(a.unitPrice),
                             quantity: a.quantity,
+                            subtotal: Number(a.subtotal),
+                        })) ?? [],
+                    modifiers:
+                        (
+                            oi as {
+                                modifiers?: Array<{
+                                    nameSnapshot: string | null;
+                                    priceSnapshot: number | null;
+                                    modifier?: { name?: string; price?: number };
+                                }>;
+                            }
+                        ).modifiers?.map((m) => ({
+                            name:
+                                m.nameSnapshot ??
+                                (m.modifier as { name?: string } | undefined)
+                                    ?.name ??
+                                null,
+                            unit_price:
+                                m.priceSnapshot != null
+                                    ? Number(m.priceSnapshot)
+                                    : Number(
+                                          (m.modifier as { price?: number } | undefined)
+                                              ?.price ?? 0,
+                                      ),
                         })) ?? [],
                 })) ?? [],
             payments:
@@ -847,7 +1162,20 @@ export class OrdersService {
             date_to?: string;
             has_rider?: boolean;
         },
+        allowedBranchIds?: number[] | null,
     ) {
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0 &&
+            filters.branch_id != null &&
+            !allowedBranchIds.includes(filters.branch_id)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this branch',
+            );
+        }
+
         const qb = this.orderRepo
             .createQueryBuilder('o')
             .leftJoinAndSelect('o.branch', 'b')
@@ -861,6 +1189,15 @@ export class OrdersService {
 
         if (tenantId != null)
             qb.andWhere('o.tenantId = :tenantId', { tenantId });
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0
+        ) {
+            qb.andWhere('o.branchId IN (:...allowedBranchIds)', {
+                allowedBranchIds,
+            });
+        }
         if (filters.branch_id)
             qb.andWhere('o.branchId = :branchId', {
                 branchId: filters.branch_id,
@@ -903,35 +1240,57 @@ export class OrdersService {
         orderId: number,
         tenantId: number,
         riderId: number,
+        allowedBranchIds?: number[] | null,
     ) {
         const order = await this.orderRepo.findOne({
             where: { id: orderId, tenantId },
         });
         if (!order) throw new NotFoundException('Order not found');
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0 &&
+            !allowedBranchIds.includes(order.branchId)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this branch',
+            );
+        }
         const riders = await this.listRiders(tenantId);
         if (!riders.some((r) => r.id === riderId)) {
             throw new BadRequestException('Invalid rider for this tenant');
         }
         order.riderId = riderId;
-        order.deliveryStatus = 'assigned';
+        order.deliveryStatus = 'accepted';
         order.deliveryFailedReason = null;
         await this.orderRepo.save(order);
-        return this.findForAdmin(orderId, tenantId);
+        return this.findForAdmin(orderId, tenantId, allowedBranchIds);
     }
 
-    /** Change rider only while delivery_status is still 'assigned' (rider has not accepted). */
+    /** Change rider only while delivery_status is still 'accepted' (rider has not yet picked up). */
     async changeRider(
         orderId: number,
         tenantId: number,
         riderId: number,
+        allowedBranchIds?: number[] | null,
     ) {
         const order = await this.orderRepo.findOne({
             where: { id: orderId, tenantId },
         });
         if (!order) throw new NotFoundException('Order not found');
-        if (order.deliveryStatus !== 'assigned') {
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0 &&
+            !allowedBranchIds.includes(order.branchId)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this branch',
+            );
+        }
+        if (order.deliveryStatus !== 'accepted') {
             throw new BadRequestException(
-                'Rider can only be changed before they have accepted the order',
+                'Rider can only be changed before they have picked up the order',
             );
         }
         const riders = await this.listRiders(tenantId);
@@ -940,7 +1299,7 @@ export class OrdersService {
         }
         order.riderId = riderId;
         await this.orderRepo.save(order);
-        return this.findForAdmin(orderId, tenantId);
+        return this.findForAdmin(orderId, tenantId, allowedBranchIds);
     }
 
     /** Assign the same rider to all orders in a group. Admin only. */
@@ -948,6 +1307,7 @@ export class OrdersService {
         orderGroupId: string,
         tenantId: number,
         riderId: number,
+        allowedBranchIds?: number[] | null,
     ) {
         const riders = await this.listRiders(tenantId);
         if (!riders.some((r) => r.id === riderId)) {
@@ -959,9 +1319,23 @@ export class OrdersService {
         if (orders.length === 0) {
             throw new NotFoundException('Order group not found');
         }
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0
+        ) {
+            const notAllowed = orders.filter(
+                (o) => !allowedBranchIds.includes(o.branchId),
+            );
+            if (notAllowed.length > 0) {
+                throw new ForbiddenException(
+                    'You do not have access to some orders in this group',
+                );
+            }
+        }
         for (const order of orders) {
             order.riderId = riderId;
-            order.deliveryStatus = 'assigned';
+            order.deliveryStatus = 'accepted';
             order.deliveryFailedReason = null;
             await this.orderRepo.save(order);
         }
@@ -969,16 +1343,19 @@ export class OrdersService {
             order_group_id: orderGroupId,
             updated_count: orders.length,
             orders: await Promise.all(
-                orders.map((o) => this.findForAdmin(o.id, tenantId)),
+                orders.map((o) =>
+                    this.findForAdmin(o.id, tenantId, allowedBranchIds),
+                ),
             ),
         };
     }
 
-    /** Change rider for entire group only while all orders have delivery_status 'assigned'. */
+    /** Change rider for entire group only while all orders have delivery_status 'accepted' (not yet picked up). */
     async changeRiderForGroup(
         orderGroupId: string,
         tenantId: number,
         riderId: number,
+        allowedBranchIds?: number[] | null,
     ) {
         const orders = await this.orderRepo.find({
             where: { orderGroupId, tenantId },
@@ -986,10 +1363,24 @@ export class OrdersService {
         if (orders.length === 0) {
             throw new NotFoundException('Order group not found');
         }
-        const notAssigned = orders.filter((o) => o.deliveryStatus !== 'assigned');
-        if (notAssigned.length > 0) {
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0
+        ) {
+            const notAllowed = orders.filter(
+                (o) => !allowedBranchIds.includes(o.branchId),
+            );
+            if (notAllowed.length > 0) {
+                throw new ForbiddenException(
+                    'You do not have access to some orders in this group',
+                );
+            }
+        }
+        const notAccepted = orders.filter((o) => o.deliveryStatus !== 'accepted');
+        if (notAccepted.length > 0) {
             throw new BadRequestException(
-                'Rider can only be changed for the group before any order has been accepted by the rider',
+                'Rider can only be changed for the group before any order has been picked up by the rider',
             );
         }
         const riders = await this.listRiders(tenantId);
@@ -1155,6 +1546,7 @@ export class OrdersService {
                 quantity: number;
                 variant_id?: number;
                 addons?: { addon_id: number; quantity?: number }[];
+                modifiers?: { modifier_id: number; quantity?: number }[];
             }[];
             discount_code?: string;
             customer_phone?: string;
@@ -1175,10 +1567,17 @@ export class OrdersService {
         });
         if (!tenant) throw new NotFoundException('Tenant not found');
 
+        const expandedQuoteItems = await this.expandDealItems(
+            dto.branch_id,
+            dto.items as Array<
+                | { menu_item_id: number; quantity?: number; variant_id?: number; addons?: { addon_id: number; quantity?: number }[]; modifiers?: { modifier_id: number; quantity?: number }[]; branch_id?: number }
+                | { deal_menu_item_id: number; quantity?: number; components: Array<{ slot_index: number; menu_item_id: number; quantity?: number; variant_id?: number; addons?: { addon_id: number; quantity?: number }[]; modifiers?: { modifier_id: number; quantity?: number }[] }>; branch_id?: number }
+            >,
+        );
         const { subtotal, lineDetails, orderBrandId } =
             await this.computeSubtotalAndLinesWithBrands(
                 dto.branch_id,
-                dto.items,
+                expandedQuoteItems,
             );
 
         const auto = await this.resolveAutoDiscount(
@@ -1265,7 +1664,7 @@ export class OrdersService {
             }
         }
         const taxRate = Number(tenant.defaultTaxRate) || 0;
-        const serviceChargeRate = Number(tenant.defaultServiceCharge) || 0;
+        const serviceChargeRate = 0;
         const taxAmount = Math.round(afterDiscount * taxRate * 100) / 100;
         const serviceCharge =
             Math.round(afterDiscount * serviceChargeRate * 100) / 100;
@@ -1305,15 +1704,133 @@ export class OrdersService {
         };
     }
 
-    /** Compute subtotal and line details; derive orderBrandId from items (single brand or null for multi-brand). */
-    private async computeSubtotalAndLinesWithBrands(
-        branchId: number,
-        items: {
+    private async expandDealItems(
+        defaultBranchId: number,
+        items: Array<
+            | {
+                  menu_item_id: number;
+                  quantity?: number;
+                  variant_id?: number;
+                  addons?: { addon_id: number; quantity?: number }[];
+                  modifiers?: { modifier_id: number; quantity?: number }[];
+                  notes?: string;
+                  branch_id?: number;
+              }
+            | {
+                  deal_menu_item_id: number;
+                  quantity?: number;
+                  components: Array<{
+                      slot_index: number;
+                      menu_item_id: number;
+                      quantity?: number;
+                      variant_id?: number;
+                      addons?: { addon_id: number; quantity?: number }[];
+                      modifiers?: { modifier_id: number; quantity?: number }[];
+                      notes?: string;
+                  }>;
+                  branch_id?: number;
+              }
+        >,
+    ): Promise<
+        Array<{
             menu_item_id: number;
             quantity: number;
             variant_id?: number;
             addons?: { addon_id: number; quantity?: number }[];
-        }[],
+            modifiers?: { modifier_id: number; quantity?: number }[];
+            notes?: string;
+            branch_id?: number;
+            deal_id?: number;
+            deal_slot_index?: number;
+            deal_unit_price?: number;
+        }>
+    > {
+        const expanded: Array<{
+            menu_item_id: number;
+            quantity: number;
+            variant_id?: number;
+            addons?: { addon_id: number; quantity?: number }[];
+            modifiers?: { modifier_id: number; quantity?: number }[];
+            notes?: string;
+            branch_id?: number;
+            deal_id?: number;
+            deal_slot_index?: number;
+            deal_unit_price?: number;
+        }> = [];
+        for (const line of items) {
+            const raw = line as {
+                deal_menu_item_id?: number;
+                quantity?: number;
+                components?: Array<{
+                    slot_index: number;
+                    menu_item_id: number;
+                    quantity?: number;
+                    variant_id?: number;
+                    addons?: { addon_id: number; quantity?: number }[];
+                    modifiers?: { modifier_id: number; quantity?: number }[];
+                    notes?: string;
+                }>;
+                branch_id?: number;
+            };
+            if (raw.deal_menu_item_id != null && raw.components?.length) {
+                const branchId = raw.branch_id ?? defaultBranchId;
+                const dealPrice =
+                    await this.menuService.getEffectiveUnitPrice(
+                        branchId,
+                        raw.deal_menu_item_id,
+                    );
+                const qty = raw.quantity ?? 1;
+                for (let q = 0; q < qty; q++) {
+                    raw.components!.forEach((comp, idx) => {
+                        expanded.push({
+                            menu_item_id: comp.menu_item_id,
+                            quantity: comp.quantity ?? 1,
+                            variant_id: comp.variant_id,
+                            addons: comp.addons,
+                            modifiers: comp.modifiers,
+                            notes: comp.notes,
+                            branch_id: raw.branch_id ?? defaultBranchId,
+                            deal_id: raw.deal_menu_item_id,
+                            deal_slot_index: comp.slot_index,
+                            deal_unit_price: idx === 0 ? dealPrice : 0,
+                        });
+                    });
+                }
+            } else {
+                const normal = line as {
+                    menu_item_id: number;
+                    quantity?: number;
+                    variant_id?: number;
+                    addons?: { addon_id: number; quantity?: number }[];
+                    modifiers?: { modifier_id: number; quantity?: number }[];
+                    notes?: string;
+                    branch_id?: number;
+                };
+                expanded.push({
+                    menu_item_id: normal.menu_item_id,
+                    quantity: normal.quantity ?? 1,
+                    variant_id: normal.variant_id,
+                    addons: normal.addons,
+                    modifiers: normal.modifiers,
+                    notes: normal.notes,
+                    branch_id: normal.branch_id,
+                });
+            }
+        }
+        return expanded;
+    }
+
+    /** Compute subtotal and line details; derive orderBrandId from items (single brand or null for multi-brand). */
+    private async computeSubtotalAndLinesWithBrands(
+        branchId: number,
+        items: Array<{
+            menu_item_id: number;
+            quantity: number;
+            variant_id?: number;
+            addons?: { addon_id: number; quantity?: number }[];
+            modifiers?: { modifier_id: number; quantity?: number }[];
+            deal_unit_price?: number;
+        }>,
     ): Promise<{
         subtotal: number;
         lineDetails: {
@@ -1361,34 +1878,57 @@ export class OrdersService {
             if (!Number.isFinite(brandId) || !branchBrandIds.has(brandId))
                 continue;
             itemBrandIds.add(brandId);
-            let unitPrice = await this.menuService.getEffectiveUnitPrice(
-                branchId,
-                line.menu_item_id,
-            );
-            if (line.variant_id && menuItem.variants?.length) {
-                const variant = menuItem.variants.find(
-                    (v) => v.id === line.variant_id,
+            let unitPrice: number;
+            if (
+                (line as { deal_unit_price?: number }).deal_unit_price !==
+                undefined
+            ) {
+                unitPrice = (line as { deal_unit_price: number }).deal_unit_price;
+            } else {
+                unitPrice = await this.menuService.getEffectiveUnitPrice(
+                    branchId,
+                    line.menu_item_id,
                 );
-                if (variant) unitPrice += Number(variant.priceModifier);
             }
-            const quantity = line.quantity ?? 1;
-            let itemSubtotal = unitPrice * quantity;
+            const isDealPriceLine = (line as { deal_unit_price?: number }).deal_unit_price !== undefined;
+            let itemSubtotalForDetail: number;
+            if (isDealPriceLine) {
+                // Deal line: base is the fixed deal price (one deal unit); still add addons and modifiers for this component.
+                itemSubtotalForDetail = (line as { deal_unit_price: number }).deal_unit_price;
+            } else {
+                if (line.variant_id && menuItem.variants?.length) {
+                    const variant = menuItem.variants.find(
+                        (v) => v.id === line.variant_id,
+                    );
+                    if (variant) unitPrice += Number(variant.priceModifier);
+                }
+                const quantity = line.quantity ?? 1;
+                itemSubtotalForDetail = unitPrice * quantity;
+            }
+            // Add addons and modifiers for both deal and non-deal lines (deal components can have addons e.g. extra dip).
             if (line.addons?.length) {
                 for (const addonLine of line.addons) {
                     const addon = menuItem.addons?.find(
                         (a) => a.id === addonLine.addon_id,
                     );
                     if (addon)
-                        itemSubtotal +=
+                        itemSubtotalForDetail +=
                             Number(addon.price) * (addonLine.quantity ?? 1);
                 }
             }
-            subtotal += itemSubtotal;
+            const allModsQuote = ((menuItem as { modifierGroups?: Array<{ modifiers?: Array<{ id: number; price: number }> }> }).modifierGroups ?? []).flatMap((mg) => mg.modifiers ?? []);
+            if (line.modifiers?.length && allModsQuote.length > 0) {
+                for (const modLine of line.modifiers) {
+                    const mod = allModsQuote.find((m) => m.id === modLine.modifier_id);
+                    if (mod) itemSubtotalForDetail += Number(mod.price) * (modLine.quantity ?? 1);
+                }
+            }
+            subtotal += itemSubtotalForDetail;
             lineDetails.push({
                 menuItemId: menuItem.id,
                 categoryId: menuItem.categoryId,
                 brandId,
-                itemSubtotal,
+                itemSubtotal: itemSubtotalForDetail,
             });
         }
         const orderBrandId =
@@ -1403,6 +1943,7 @@ export class OrdersService {
             quantity: number;
             variant_id?: number;
             addons?: { addon_id: number; quantity?: number }[];
+            modifiers?: { modifier_id: number; quantity?: number }[];
         }[],
     ): Promise<{
         subtotal: number;
@@ -1442,6 +1983,13 @@ export class OrdersService {
                             Number(addon.price) * (addonLine.quantity ?? 1);
                 }
             }
+            const allModsSub = ((menuItem as { modifierGroups?: Array<{ modifiers?: Array<{ id: number; price: number }> }> }).modifierGroups ?? []).flatMap((mg) => mg.modifiers ?? []);
+            if (line.modifiers?.length && allModsSub.length > 0) {
+                for (const modLine of line.modifiers) {
+                    const mod = allModsSub.find((m) => m.id === modLine.modifier_id);
+                    if (mod) itemSubtotal += Number(mod.price) * (modLine.quantity ?? 1);
+                }
+            }
             subtotal += itemSubtotal;
             lineDetails.push({
                 menuItemId: menuItem.id,
@@ -1479,6 +2027,68 @@ export class OrdersService {
         return line.brandId ?? lineDetails[index]?.brandId;
     }
 
+    /**
+     * Check if discount is valid for current time and day in branch timezone.
+     * validDaysOfWeek: 0=Sun, 1=Mon, …, 6=Sat.
+     */
+    private async isDiscountValidForBranchTime(
+        discount: Discount,
+        branchId: number,
+    ): Promise<boolean> {
+        const hasTime =
+            discount.validTimeStart != null || discount.validTimeEnd != null;
+        const hasDays =
+            Array.isArray(discount.validDaysOfWeek) &&
+            discount.validDaysOfWeek.length > 0;
+        if (!hasTime && !hasDays) return true;
+
+        const branch = await this.branchRepo.findOne({
+            where: { id: branchId },
+            select: ['timezone'],
+        });
+        const tz = branch?.timezone ?? 'UTC';
+
+        const now = new Date();
+        const formatter = new Intl.DateTimeFormat('en-GB', {
+            timeZone: tz,
+            hour: 'numeric',
+            minute: 'numeric',
+            hour12: false,
+            weekday: 'short',
+        });
+        const parts = formatter.formatToParts(now);
+        let hour = 0,
+            minute = 0,
+            dayOfWeek = 0;
+        for (const p of parts) {
+            if (p.type === 'hour') hour = parseInt(p.value, 10);
+            if (p.type === 'minute') minute = parseInt(p.value, 10);
+            if (p.type === 'weekday')
+                dayOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.value);
+        }
+        const currentMinutes = hour * 60 + minute;
+
+        if (hasDays) {
+            const days = discount.validDaysOfWeek as number[];
+            if (!days.includes(dayOfWeek)) return false;
+        }
+
+        if (hasTime) {
+            const parseTime = (t: string | null): number | null => {
+                if (!t) return null;
+                const s = String(t).trim();
+                const [h, m] = s.split(':').map((x) => parseInt(x, 10) || 0);
+                return h * 60 + m;
+            };
+            const startM = parseTime(discount.validTimeStart);
+            const endM = parseTime(discount.validTimeEnd);
+            if (startM != null && currentMinutes < startM) return false;
+            if (endM != null && currentMinutes > endM) return false;
+        }
+
+        return true;
+    }
+
     /** Resolve best auto-applied discount. Multi-brand: brand-scoped discounts apply to the eligible portion only. */
     private async resolveAutoDiscount(
         tenantId: number,
@@ -1512,6 +2122,10 @@ export class OrdersService {
         for (const discount of discounts) {
             if (discount.validFrom && now < discount.validFrom) continue;
             if (discount.validUntil && now > discount.validUntil) continue;
+            if (
+                !(await this.isDiscountValidForBranchTime(discount, branchId))
+            )
+                continue;
             if (
                 discount.minOrderAmount != null &&
                 Number(discount.minOrderAmount) > subtotal
@@ -1660,6 +2274,10 @@ export class OrdersService {
         const now = new Date();
         if (discount.validFrom && now < discount.validFrom) return empty;
         if (discount.validUntil && now > discount.validUntil) return empty;
+        if (
+            !(await this.isDiscountValidForBranchTime(discount, branchId))
+        )
+            return empty;
         if (
             discount.minOrderAmount != null &&
             Number(discount.minOrderAmount) > baseAmount

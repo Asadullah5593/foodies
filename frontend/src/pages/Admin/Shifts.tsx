@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -7,8 +7,11 @@ import { Shift, Branch, User } from '../../types';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
+import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 
 const Shifts: React.FC = () => {
   const queryClient = useQueryClient();
@@ -29,6 +32,7 @@ const Shifts: React.FC = () => {
     actual_cash: '',
     notes: '',
   });
+  const [page, setPage] = useState(1);
 
   // Fetch branches
   const { data: branches } = useQuery({
@@ -53,6 +57,13 @@ const Shifts: React.FC = () => {
     queryKey: ['shifts', selectedBranch, statusFilter],
     queryFn: () => adminService.getShifts(selectedBranch || undefined, statusFilter || undefined),
   });
+
+  const shiftList = shifts ?? [];
+  const paginatedShifts = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return shiftList.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [shiftList, page]);
+  React.useEffect(() => setPage(1), [selectedBranch, statusFilter]);
 
   // Fetch shift detail for modal
   const { data: shiftDetail } = useQuery({
@@ -109,44 +120,43 @@ const Shifts: React.FC = () => {
     });
   };
 
-  if (isLoading) return <Loader fullScreen text="Loading shifts..." />;
+  const isSubmitting = createMutation.isPending || closeMutation.isPending;
+  if (isLoading || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading shifts...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Shifts</h1>
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Shifts</h1>
         <Button onClick={() => setShowOpenForm(true)}>Open New Shift</Button>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-6">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Branch</label>
-          <select
-            value={selectedBranch || ''}
-            onChange={(e) => setSelectedBranch(e.target.value ? parseInt(e.target.value) : null)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Branches</option>
-            {branches?.map((branch) => (
-              <option key={branch.id} value={branch.id}>
-                {branch.name} ({branch.code})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Status</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">All Statuses</option>
-            <option value="open">Open</option>
-            <option value="closed">Closed</option>
-          </select>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+        <SearchableSelect
+          label="Filter by Branch"
+          value={selectedBranch ? String(selectedBranch) : ''}
+          onChange={(v) => setSelectedBranch(v ? parseInt(v, 10) : null)}
+          options={[
+            { value: '', label: 'All Branches' },
+            ...(branches ?? []).map((branch) => ({
+              value: String(branch.id),
+              label: `${branch.name} (${branch.code})`,
+            })),
+          ]}
+          placeholder="All Branches"
+        />
+        <SearchableSelect
+          label="Filter by Status"
+          value={statusFilter}
+          onChange={setStatusFilter}
+          options={[
+            { value: '', label: 'All Statuses' },
+            { value: 'open', label: 'Open' },
+            { value: 'closed', label: 'Closed' },
+          ]}
+          placeholder="All Statuses"
+        />
       </div>
 
       <Modal isOpen={showOpenForm} onClose={() => setShowOpenForm(false)} title="Open New Shift" size="medium">
@@ -267,73 +277,41 @@ const Shifts: React.FC = () => {
         </form>
       </Modal>
 
-      <div className="grid gap-4">
-        {shifts && shifts.length === 0 ? (
-          <Card>
-            <p className="text-center text-gray-500 py-8">No shifts found</p>
+      <div className="w-full space-y-3">
+        {shiftList.length === 0 ? (
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No shifts found</p>
           </Card>
         ) : (
-          shifts?.map((shift) => (
-            <Card key={shift.id} hover>
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="text-lg font-semibold text-gray-800">{shift.shift_number}</h3>
-                    <span className={`px-2 py-1 text-xs font-medium rounded ${
-                      shift.status === 'open' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                    }`}>
-                      {shift.status.toUpperCase()}
-                    </span>
-                  </div>
-                  <div className="space-y-1 text-sm text-gray-600">
-                    <p><strong>Branch:</strong> {shift.branch?.name || 'N/A'}</p>
-                    <p><strong>User:</strong> {shift.user?.name || 'N/A'}</p>
-                    <p><strong>Opening Cash:</strong> {formatCurrency(shift.opening_cash)}</p>
-                    {shift.expected_cash && (
-                      <p><strong>Expected Cash:</strong> {formatCurrency(shift.expected_cash)}</p>
-                    )}
-                    {shift.actual_cash && (
-                      <p><strong>Actual Cash:</strong> {formatCurrency(shift.actual_cash)}</p>
-                    )}
-                    {shift.difference !== null && shift.difference !== undefined && (
-                      <p className={shift.difference >= 0 ? 'text-green-600' : 'text-red-600'}>
-                        <strong>Difference:</strong> {formatCurrency(shift.difference)}
-                      </p>
-                    )}
-                    <p><strong>Opened:</strong> {new Date(shift.opened_at).toLocaleString()}</p>
-                    {shift.closed_at && (
-                      <p><strong>Closed:</strong> {new Date(shift.closed_at).toLocaleString()}</p>
-                    )}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button
-                    size="small"
-                    variant="outline"
-                    onClick={() => {
-                      setDetailShiftId(shift.id);
-                      setShowDetailModal(true);
-                    }}
-                  >
-                    View
-                  </Button>
-                  {shift.status === 'open' && (
-                    <Button
-                      size="small"
-                      variant="danger"
-                      onClick={() => {
-                        setSelectedShift(shift);
-                        setCloseFormData({ actual_cash: '', notes: '' });
-                        setShowCloseForm(true);
-                      }}
-                    >
-                      Close Shift
-                    </Button>
-                  )}
-                </div>
-              </div>
-            </Card>
-          ))
+          <>
+            <AccentedList>
+              {paginatedShifts.map((shift, i) => (
+                <AccentedListRow
+                  key={shift.id}
+                  accent={shift.status === 'open' ? 'active' : 'inactive'}
+                  initial={shift.shift_number?.charAt(0) ?? 'S'}
+                  title={shift.shift_number ?? `Shift #${shift.id}`}
+                  subtitle={
+                    <>
+                      <p>Branch: {shift.branch?.name || 'N/A'}</p>
+                      <p>User: {shift.user?.name || 'N/A'}</p>
+                      <p>Opening: {formatCurrency(shift.opening_cash)} · Opened: {new Date(shift.opened_at).toLocaleString()}</p>
+                    </>
+                  }
+                  statusLabel={shift.status?.toUpperCase()}
+                  statusVariant={shift.status === 'open' ? 'active' : 'inactive'}
+                  animationIndex={i}
+                  actions={
+                    <>
+                      <Button size="small" variant="view" onClick={() => { setDetailShiftId(shift.id); setShowDetailModal(true); }}>View</Button>
+                      {shift.status === 'open' && <Button size="small" variant="danger" onClick={() => { setSelectedShift(shift); setCloseFormData({ actual_cash: '', notes: '' }); setShowCloseForm(true); }}>Close Shift</Button>}
+                    </>
+                  }
+                />
+              ))}
+            </AccentedList>
+            <PaginationBar totalCount={shiftList.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="shifts" />
+          </>
         )}
       </div>
 
@@ -351,7 +329,9 @@ const Shifts: React.FC = () => {
               <p><strong>Branch:</strong> {(shiftDetail as any).branch?.name ?? 'N/A'}</p>
               <p><strong>User:</strong> {(shiftDetail as any).user?.name ?? 'N/A'}</p>
               <p><strong>Opening cash:</strong> {formatCurrency(Number(shiftDetail.opening_cash))}</p>
-              <p><strong>Expected cash:</strong> {shiftDetail.expected_cash != null ? formatCurrency(Number(shiftDetail.expected_cash)) : 'N/A'}</p>
+              <p><strong>Expected Total:</strong> {shiftDetail.expected_cash != null ? formatCurrency(Number(shiftDetail.expected_cash)) : 'N/A'}</p>
+              <p><strong>Cash collected:</strong> {shiftDetail.cash_collected != null ? formatCurrency(Number(shiftDetail.cash_collected)) : 'N/A'}</p>
+              <p><strong>Card collected:</strong> {shiftDetail.card_collected != null ? formatCurrency(Number(shiftDetail.card_collected)) : 'N/A'}</p>
               <p><strong>Actual cash:</strong> {shiftDetail.actual_cash != null ? formatCurrency(Number(shiftDetail.actual_cash)) : 'N/A'}</p>
               <p><strong>Difference:</strong> {shiftDetail.difference != null ? formatCurrency(Number(shiftDetail.difference)) : 'N/A'}</p>
               <p><strong>Opened:</strong> {new Date(shiftDetail.opened_at).toLocaleString()}</p>

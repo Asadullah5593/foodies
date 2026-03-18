@@ -12,12 +12,13 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { DiscountsService } from './discounts.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @ApiTags('Admin – Discounts')
 @ApiBearerAuth()
 @Controller('admin/discounts')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard)
 export class DiscountsController {
     constructor(private service: DiscountsService) {}
 

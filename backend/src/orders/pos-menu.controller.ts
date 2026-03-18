@@ -1,9 +1,10 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { MenuService } from '../menu/menu.service';
 import { ShiftsService } from '../shifts/shifts.service';
 import { BranchesService } from '../branches/branches.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -13,7 +14,7 @@ import { Branch } from '../entities/branch.entity';
 @ApiTags('POS – Menu')
 @ApiBearerAuth()
 @Controller('pos')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard)
 export class PosMenuController {
     constructor(
         private menuService: MenuService,
@@ -153,8 +154,9 @@ export class PosMenuController {
         ]);
         // Always return order-type flags so POS dropdown can be dynamic (strict true = show option)
         const supports_dine_in = branch?.supportsDineIn === true;
-        const supports_takeaway = branch?.supportsTakeaway === true;
-        const supports_pickup = branch?.supportsPickup === true;
+        // Pickup is deprecated; treat legacy supportsPickup as takeaway.
+        const supports_takeaway =
+            branch?.supportsTakeaway === true || branch?.supportsPickup === true;
         const supports_delivery = branch?.supportsDelivery === true;
         type BranchWithBrands = {
             branchBrands?: Array<{ brandId: number; brand?: { name: string } }>;
@@ -170,9 +172,21 @@ export class PosMenuController {
             open_shift: openShift,
             supports_dine_in,
             supports_takeaway,
-            supports_pickup,
             supports_delivery,
             brands,
         };
+    }
+
+    /** Get deal definition by menu item id for POS (slot pickers + choice items). Returns null if not a deal. */
+    @Get('deal/:menuItemId')
+    async getDeal(
+        @Param('menuItemId') menuItemIdParam: string,
+        @Query('branch_id') branchIdParam: string,
+    ) {
+        const menuItemId = +menuItemIdParam;
+        const branchId = branchIdParam ? +branchIdParam : NaN;
+        if (!Number.isFinite(menuItemId) || !Number.isFinite(branchId))
+            return null;
+        return this.menuService.getDealByMenuItemId(menuItemId, branchId);
     }
 }

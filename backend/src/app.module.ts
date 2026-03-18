@@ -28,7 +28,10 @@ import { UploadModule } from './upload/upload.module';
 
 @Module({
     imports: [
-        ConfigModule.forRoot({ isGlobal: true }),
+        ConfigModule.forRoot({
+            isGlobal: true,
+            envFilePath: join(__dirname, '..', '.env'),
+        }),
         TypeOrmModule.forRoot({
             type: 'postgres',
             host: process.env.DB_HOST || '127.0.0.1',

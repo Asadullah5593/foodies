@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -8,6 +8,8 @@ import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 
 const Tenants: React.FC = () => {
   const { user } = useAuth();
@@ -20,12 +22,12 @@ const Tenants: React.FC = () => {
     status: 'active',
     legal_name: '',
     default_tax_rate: '',
-    default_service_charge: '',
     loyalty_enabled: false,
     owner_email: '',
     owner_password: '',
     owner_name: '',
   });
+  const [page, setPage] = useState(1);
 
   const { data: tenants, isLoading } = useQuery({
     queryKey: ['tenants'],
@@ -34,6 +36,12 @@ const Tenants: React.FC = () => {
       return response.data;
     },
   });
+
+  const tenantList = tenants ?? [];
+  const paginatedTenants = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return tenantList.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [tenantList, page]);
 
   const createMutation = useMutation({
     mutationFn: async (data: Record<string, unknown>) => {
@@ -46,7 +54,6 @@ const Tenants: React.FC = () => {
       if (data.legal_name) payload.legal_name = data.legal_name;
       if (data.owner_name) payload.owner_name = data.owner_name;
       if (data.default_tax_rate !== '' && data.default_tax_rate != null) payload.default_tax_rate = Number(data.default_tax_rate);
-      if (data.default_service_charge !== '' && data.default_service_charge != null) payload.default_service_charge = Number(data.default_service_charge);
       if (data.loyalty_enabled !== undefined) payload.loyalty_enabled = data.loyalty_enabled;
       const response = await apiClient.post('/admin/tenants', payload);
       return response.data;
@@ -70,7 +77,6 @@ const Tenants: React.FC = () => {
       if (data.status !== undefined) payload.status = data.status;
       if (data.legal_name !== undefined) payload.legal_name = data.legal_name;
       if (data.default_tax_rate !== '' && data.default_tax_rate != null) payload.default_tax_rate = Number(data.default_tax_rate);
-      if (data.default_service_charge !== '' && data.default_service_charge != null) payload.default_service_charge = Number(data.default_service_charge);
       if (data.loyalty_enabled !== undefined) payload.loyalty_enabled = data.loyalty_enabled;
       const response = await apiClient.put(`/admin/tenants/${id}`, payload);
       return response.data;
@@ -93,7 +99,6 @@ const Tenants: React.FC = () => {
       status: 'active',
       legal_name: '',
       default_tax_rate: '',
-      default_service_charge: '',
       loyalty_enabled: false,
       owner_email: '',
       owner_password: '',
@@ -114,14 +119,17 @@ const Tenants: React.FC = () => {
     },
   });
 
-  if (isLoading) return <Loader fullScreen text="Loading tenants..." />;
+  const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  if (isLoading || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading tenants...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Tenants</h1>
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Tenants</h1>
         {isSuperAdmin && (
-          <Button onClick={() => setShowForm(true)}>Add Tenant</Button>
+          <Button variant="primary" onClick={() => setShowForm(true)}>Add Tenant</Button>
         )}
       </div>
 
@@ -210,19 +218,6 @@ const Tenants: React.FC = () => {
                 placeholder="0.1"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Default service charge (0–1)</label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                max="1"
-                value={formData.default_service_charge}
-                onChange={(e) => setFormData({ ...formData, default_service_charge: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                placeholder="0"
-              />
-            </div>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -257,59 +252,40 @@ const Tenants: React.FC = () => {
       </Modal>
 
       <div className="grid gap-4">
-        {tenants && tenants.length === 0 ? (
-          <Card>
-            <p className="text-center text-gray-500 py-8">No tenants found. Create your first tenant!</p>
+        {tenantList.length === 0 ? (
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No tenants found. Create your first tenant!</p>
           </Card>
         ) : (
-          tenants?.map(tenant => (
-            <Card key={tenant.id} hover>
-              <div className="flex justify-between items-center">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-1">{tenant.name}</h3>
-                  {tenant.legal_name && (
-                    <p className="text-sm text-gray-600 mb-1">Legal name: <span className="font-medium">{tenant.legal_name}</span></p>
-                  )}
-                  <div className="flex flex-wrap gap-4 text-sm text-gray-600">
-                    <span>Slug: <span className="font-mono">{tenant.slug}</span></span>
-                    <span>Status: <span className={`font-medium ${tenant.status === 'active' ? 'text-green-600' : 'text-red-600'}`}>{tenant.status}</span></span>
-                    {tenant.loyalty_enabled != null && <span>Loyalty: {tenant.loyalty_enabled ? 'Yes' : 'No'}</span>}
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="small" variant="outline" onClick={() => {
-                    setEditingTenant(tenant);
-                    setFormData({
-                      name: tenant.name,
-                      status: tenant.status,
-                      legal_name: tenant.legal_name || '',
-                      default_tax_rate: tenant.default_tax_rate != null ? String(tenant.default_tax_rate) : '',
-                      default_service_charge: tenant.default_service_charge != null ? String(tenant.default_service_charge) : '',
-                      loyalty_enabled: tenant.loyalty_enabled ?? false,
-                      owner_email: '',
-                      owner_password: '',
-                      owner_name: '',
-                    });
-                    setShowForm(true);
-                  }}>
-                    Edit
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="danger"
-                    onClick={() => {
-                      if (confirm(`Delete tenant "${tenant.name}"?`)) {
-                        deleteMutation.mutate(tenant.id);
-                      }
-                    }}
-                    isLoading={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))
+          <>
+            <AccentedList>
+              {paginatedTenants.map((tenant, i) => (
+                <AccentedListRow
+                  key={tenant.id}
+                  accent={tenant.status === 'active' ? 'active' : 'inactive'}
+                  initial={tenant.name.charAt(0)}
+                  title={tenant.name}
+                  subtitle={
+                    <>
+                      {tenant.legal_name && <p>Legal: <span className="font-medium">{tenant.legal_name}</span></p>}
+                      <p>Slug: <span className="font-mono">{tenant.slug}</span></p>
+                      {tenant.loyalty_enabled != null && <p>Loyalty: {tenant.loyalty_enabled ? 'Yes' : 'No'}</p>}
+                    </>
+                  }
+                  statusLabel={tenant.status}
+                  statusVariant={tenant.status === 'active' ? 'active' : 'inactive'}
+                  animationIndex={i}
+                  actions={
+                    <>
+                      <Button size="small" variant="edit" onClick={() => { setEditingTenant(tenant); setFormData({ name: tenant.name, status: tenant.status, legal_name: tenant.legal_name || '', default_tax_rate: tenant.default_tax_rate != null ? String(tenant.default_tax_rate) : '', loyalty_enabled: tenant.loyalty_enabled ?? false, owner_email: '', owner_password: '', owner_name: '' }); setShowForm(true); }}>Edit</Button>
+                      <Button size="small" variant="danger" onClick={() => confirm(`Delete tenant "${tenant.name}"?`) && deleteMutation.mutate(tenant.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                    </>
+                  }
+                />
+              ))}
+            </AccentedList>
+            <PaginationBar totalCount={tenantList.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="tenants" />
+          </>
         )}
       </div>
     </div>

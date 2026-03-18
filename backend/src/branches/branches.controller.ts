@@ -13,12 +13,13 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { BranchesService } from './branches.service';
 import { BranchMenuItemsService } from '../branch-menu-items/branch-menu-items.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @ApiTags('Admin – Branches')
 @ApiBearerAuth()
 @Controller('admin/branches')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard)
 export class BranchesController {
     constructor(
         private service: BranchesService,
@@ -59,12 +60,13 @@ export class BranchesController {
             operating_hours?: Record<string, unknown>;
             supports_dine_in?: boolean;
             supports_takeaway?: boolean;
-            supports_pickup?: boolean;
             supports_delivery?: boolean;
             delivery_flat_fee?: number;
             is_active?: boolean;
             menu_enabled?: boolean;
             status?: string;
+            latitude?: number | null;
+            longitude?: number | null;
             /** Tenant-level menu items to link (copy-on-link) to this new branch. */
             menu_item_ids?: number[];
         },
@@ -96,12 +98,13 @@ export class BranchesController {
             operating_hours?: Record<string, unknown>;
             supports_dine_in?: boolean;
             supports_takeaway?: boolean;
-            supports_pickup?: boolean;
             supports_delivery?: boolean;
             delivery_flat_fee?: number;
             is_active?: boolean;
             menu_enabled?: boolean;
             status?: string;
+            latitude?: number | null;
+            longitude?: number | null;
             /** Desired brand-level menu item ids to link to this branch (mapping only). */
             menu_item_ids?: number[];
         },

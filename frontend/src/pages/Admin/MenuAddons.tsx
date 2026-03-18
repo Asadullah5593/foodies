@@ -5,12 +5,18 @@ import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
 import { useAuth } from '../../contexts/AuthContext';
 import { MenuAddon } from '../../types';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
+import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 
 const MenuAddons: React.FC = () => {
   const { user } = useAuth();
@@ -29,6 +35,8 @@ const MenuAddons: React.FC = () => {
     status: string;
     search: string;
   }>({ brand_id: '', status: '', search: '' });
+  const debouncedAddonSearch = useDebouncedValue(filters.search, 300);
+  const [page, setPage] = useState(1);
 
   const { data: brands } = useQuery({
     queryKey: ['brands'],
@@ -45,15 +53,29 @@ const MenuAddons: React.FC = () => {
     if (effectiveBrandId != null) p.brand_id = effectiveBrandId;
     if (filters.status === 'active') p.is_active = true;
     if (filters.status === 'inactive') p.is_active = false;
-    if (filters.search.trim()) p.search = filters.search.trim();
+    if (debouncedAddonSearch.trim()) p.search = debouncedAddonSearch.trim();
     return p;
-  }, [effectiveBrandId, filters]);
+  }, [effectiveBrandId, filters.status, debouncedAddonSearch]);
 
-  const { data: addons, isLoading } = useQuery({
+  const { data: addons, isLoading, isFetching } = useQuery({
     queryKey: ['addons', filterParams],
     queryFn: () => adminService.getAddons(Object.keys(filterParams).length ? filterParams : undefined),
     enabled: true,
+    placeholderData: (prev) => prev,
   });
+
+  const addonList = addons ?? [];
+  const addonSearchTypeahead = useTypeaheadSuggestions({
+    query: debouncedAddonSearch,
+    options: addonList.map((a: any) => ({ id: String(a.id), label: a.name ?? '' })),
+    minChars: 2,
+    limit: 8,
+  });
+  const paginatedAddons = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return addonList.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [addonList, page]);
+  React.useEffect(() => setPage(1), [filters.brand_id, filters.status, debouncedAddonSearch]);
 
   const createMutation = useMutation({
     mutationFn: (data: Partial<MenuAddon> & { brand_id: number }) => adminService.createAddon(data),
@@ -126,11 +148,14 @@ const MenuAddons: React.FC = () => {
     }
   };
 
-  if (isLoading) return <Loader fullScreen text="Loading addons..." />;
+  const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  if (((addons == null || (addons as any[]).length === 0) && isLoading) || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading addons...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Menu Addons</h1>
         <Button
           onClick={() => {
@@ -143,46 +168,81 @@ const MenuAddons: React.FC = () => {
         </Button>
       </div>
 
-      <Card className="mb-4 p-4">
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">Filters</h4>
+      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-3 items-end">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Brand</label>
-            <select
-              value={filters.brand_id}
-              onChange={(e) => setFilters((f) => ({ ...f, brand_id: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm min-w-[180px]"
-            >
-              <option value="">Select brand</option>
-              {brands?.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Status</label>
-            <select
-              value={filters.status}
-              onChange={(e) => setFilters((f) => ({ ...f, status: e.target.value }))}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm min-w-[120px]"
-            >
-              <option value="">All</option>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-            </select>
-          </div>
+          <SearchableSelect
+            label="Brand"
+            value={filters.brand_id}
+            onChange={(v) => setFilters((f) => ({ ...f, brand_id: v }))}
+            options={[
+              { value: '', label: 'Select brand' },
+              ...(brands ?? []).map((b) => ({
+                value: String(b.id),
+                label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+              })),
+            ]}
+            placeholder="Select brand"
+            minWidth="min-w-[180px]"
+          />
+          <SearchableSelect
+            label="Status"
+            value={filters.status}
+            onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
+            options={[
+              { value: '', label: 'All' },
+              { value: 'active', label: 'Active' },
+              { value: 'inactive', label: 'Inactive' },
+            ]}
+            placeholder="All"
+            minWidth="min-w-[120px]"
+          />
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Search by name</label>
-            <input
-              type="text"
-              value={filters.search}
-              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-              placeholder="Addon name..."
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48"
-            />
+            <div className="relative">
+              <input
+                type="text"
+                value={filters.search}
+                onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+                onFocus={() => addonSearchTypeahead.setOpen(true)}
+                onKeyDown={(e) => {
+                  const suggestions = addonSearchTypeahead.suggestions;
+                  if (!suggestions.length) return;
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    addonSearchTypeahead.setActiveIndex(Math.min(addonSearchTypeahead.activeIndex + 1, suggestions.length - 1));
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    addonSearchTypeahead.setActiveIndex(Math.max(addonSearchTypeahead.activeIndex - 1, 0));
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const opt = suggestions[addonSearchTypeahead.activeIndex];
+                    if (opt?.label) setFilters((f) => ({ ...f, search: opt.label }));
+                    addonSearchTypeahead.setOpen(false);
+                  } else if (e.key === 'Escape') {
+                    addonSearchTypeahead.setOpen(false);
+                  }
+                }}
+                placeholder="Addon name..."
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48"
+              />
+              <TypeaheadDropdown
+                open={addonSearchTypeahead.open && filters.search.trim().length >= 2}
+                suggestions={addonSearchTypeahead.suggestions}
+                activeIndex={addonSearchTypeahead.activeIndex}
+                onHoverIndex={addonSearchTypeahead.setActiveIndex}
+                onSelect={(opt) => {
+                  setFilters((f) => ({ ...f, search: opt.label }));
+                  addonSearchTypeahead.setOpen(false);
+                }}
+                onClose={() => addonSearchTypeahead.setOpen(false)}
+              />
+            </div>
           </div>
+          {isFetching && (
+            <span className="text-xs text-gray-500 dark:text-slate-400 pb-1">
+              Updating…
+            </span>
+          )}
           <ClearFiltersButton onClick={() => setFilters({ brand_id: '', status: '', search: '' })} />
         </div>
       </Card>
@@ -270,64 +330,35 @@ const MenuAddons: React.FC = () => {
         </form>
       </Modal>
 
-      <div className="grid gap-4">
-        {(!addons || addons.length === 0) ? (
-          <Card>
-            <p className="text-center text-gray-500 py-8">No addons found. Create your first addon!</p>
+      <div className="w-full space-y-3">
+        {addonList.length === 0 ? (
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No addons found. Create your first addon!</p>
           </Card>
         ) : (
-          addons?.map((addon) => {
-            const addonBrandId = (addon as MenuAddon & { brand_id?: number }).brand_id;
-            const brandName = addonBrandId != null ? (brands?.find((b) => b.id === addonBrandId)?.name ?? `#${addonBrandId}`) : null;
-            return (
-            <Card key={addon.id} hover>
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
-                    <h3 className="text-lg font-semibold text-gray-800">{addon.name}</h3>
-                    {(addon.is_active ?? addon.isActive) === false && (
-                      <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
-                        Inactive
-                      </span>
-                    )}
-                  </div>
-                  {brandName != null && (
-                    <p className="text-sm text-gray-600 mb-1">
-                      <strong>Brand:</strong> {brandName}
-                    </p>
-                  )}
-                  <p className="text-lg font-semibold text-green-600">{formatCurrency(Number(addon.price ?? 0))}</p>
-                  <p className="text-sm text-gray-600 mt-1">
-                    <strong>Status:</strong>{' '}
-                    <span className={((addon.is_active ?? addon.isActive) !== false) ? 'text-green-600' : 'text-red-600'}>
-                      {((addon.is_active ?? addon.isActive) !== false) ? 'Active' : 'Inactive'}
-                    </span>
-                  </p>
-                  {isSuperAdmin && (addon as MenuAddon & { tenant_name?: string }).tenant_name && (
-                    <p className="text-xs text-gray-500 mt-1">Tenant: {(addon as MenuAddon & { tenant_name?: string }).tenant_name}</p>
-                  )}
-                </div>
-                <div className="flex gap-2">
-                  <Button size="small" variant="secondary" onClick={() => handleEdit(addon)}>
-                    Edit
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="danger"
-                    onClick={() => {
-                      if (confirm(`Delete addon "${addon.name}"?`)) {
-                        deleteMutation.mutate(addon.id);
-                      }
-                    }}
-                    isLoading={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          );
-          })
+          <>
+            <AccentedList>
+              {paginatedAddons.map((addon, i) => {
+                const addonBrandId = (addon as MenuAddon & { brand_id?: number }).brand_id;
+                const brandName = addonBrandId != null ? (brands?.find((b) => b.id === addonBrandId)?.name ?? `#${addonBrandId}`) : null;
+                const isActive = (addon.is_active ?? addon.isActive) !== false;
+                return (
+                  <AccentedListRow
+                    key={addon.id}
+                    accent={isActive ? 'active' : 'inactive'}
+                    initial={addon.name?.charAt(0) ?? 'A'}
+                    title={addon.name}
+                    subtitle={<><p>{brandName != null ? `Brand: ${brandName}` : null}</p><p>{formatCurrency(Number(addon.price ?? 0))}</p>{isSuperAdmin && (addon as MenuAddon & { tenant_name?: string }).tenant_name && <p>Tenant: {(addon as MenuAddon & { tenant_name?: string }).tenant_name}</p>}</>}
+                    statusLabel={isActive ? 'Active' : 'Inactive'}
+                    statusVariant={isActive ? 'active' : 'inactive'}
+                    animationIndex={i}
+                    actions={<><Button size="small" variant="edit" onClick={() => handleEdit(addon)}>Edit</Button><Button size="small" variant="danger" onClick={() => confirm(`Delete addon "${addon.name}"?`) && deleteMutation.mutate(addon.id)} isLoading={deleteMutation.isPending}>Delete</Button></>}
+                  />
+                );
+              })}
+            </AccentedList>
+            <PaginationBar totalCount={addonList.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="addons" />
+          </>
         )}
       </div>
     </div>

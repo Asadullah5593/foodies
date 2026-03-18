@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+    Injectable,
+    NotFoundException,
+    ForbiddenException,
+    ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
 import { Role } from '../entities/role.entity';
@@ -17,6 +22,80 @@ export class RolesService {
         return this.permissionRepo.find({
             order: { resource: 'ASC', action: 'ASC' },
         });
+    }
+
+    /** Create a new permission (Super Admin only). Name must be unique (e.g. "resource:action"). */
+    async createPermission(
+        dto: {
+            name: string;
+            resource: string;
+            action: string;
+            description?: string | null;
+        },
+    ) {
+        const trimmed = (dto.name || '').trim();
+        if (!trimmed) throw new ForbiddenException('Permission name is required');
+        const existing = await this.permissionRepo.findOne({
+            where: { name: trimmed },
+        });
+        if (existing)
+            throw new ConflictException(
+                `Permission with name "${trimmed}" already exists`,
+            );
+        const perm = this.permissionRepo.create({
+            name: trimmed,
+            resource: (dto.resource || '').trim() || 'other',
+            action: (dto.action || '').trim() || 'access',
+            description:
+                dto.description != null && dto.description !== ''
+                    ? dto.description.trim()
+                    : null,
+        });
+        return this.permissionRepo.save(perm);
+    }
+
+    /** Update a permission (Super Admin only). */
+    async updatePermission(
+        id: number,
+        dto: {
+            name?: string;
+            resource?: string;
+            action?: string;
+            description?: string | null;
+        },
+    ) {
+        const perm = await this.permissionRepo.findOne({ where: { id } });
+        if (!perm) throw new NotFoundException('Permission not found');
+        if (dto.name !== undefined) {
+            const trimmed = dto.name.trim();
+            if (!trimmed) throw new ForbiddenException('Permission name is required');
+            const existing = await this.permissionRepo.findOne({
+                where: { name: trimmed },
+            });
+            if (existing && existing.id !== id)
+                throw new ConflictException(
+                    `Permission with name "${trimmed}" already exists`,
+                );
+            perm.name = trimmed;
+        }
+        if (dto.resource !== undefined)
+            perm.resource = (dto.resource || '').trim() || perm.resource;
+        if (dto.action !== undefined)
+            perm.action = (dto.action || '').trim() || perm.action;
+        if (dto.description !== undefined)
+            perm.description =
+                dto.description != null && dto.description !== ''
+                    ? dto.description.trim()
+                    : null;
+        return this.permissionRepo.save(perm);
+    }
+
+    /** Delete a permission (Super Admin only). Removes it from all roles. */
+    async deletePermission(id: number) {
+        const perm = await this.permissionRepo.findOne({ where: { id } });
+        if (!perm) throw new NotFoundException('Permission not found');
+        await this.permissionRepo.remove(perm);
+        return { message: 'Permission deleted' };
     }
 
     async listRoles(tenantId?: number | null) {

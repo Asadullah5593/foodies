@@ -1,10 +1,23 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { riderService, RiderOrder } from '../../services/api/riderService';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
+import Button from '../../components/Button';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { formatCurrency } from '../../utils/currency';
+import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
+
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  placed: 'Placed',
+  accepted: 'Accepted',
+  preparing: 'Preparing',
+  ready: 'Ready',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
 
 const DELIVERY_STATUS_LABELS: Record<string, string> = {
   assigned: 'Assigned',
@@ -15,12 +28,23 @@ const DELIVERY_STATUS_LABELS: Record<string, string> = {
 };
 
 const RiderDashboard: React.FC = () => {
-  const { data: orders, isLoading } = useQuery({
+  const [page, setPage] = useState(1);
+  const {
+    data: orders,
+    isLoading,
+    isFetching,
+    isFetched,
+  } = useQuery({
     queryKey: ['rider-orders'],
     queryFn: () => riderService.getOrders(),
+    refetchInterval: ORDER_POLL_INTERVAL_MS,
+    refetchOnMount: 'always',
+    staleTime: 0,
+    gcTime: 1000 * 60 * 10, // 10 min so cache survives navigation
+    placeholderData: keepPreviousData, // keep showing list when navigating back while refetch runs
   });
 
-  const list = orders ?? [];
+  const list = Array.isArray(orders) ? orders : [];
 
   const displayGroups = useMemo(() => {
     const byGroup = new Map<string | null, RiderOrder[]>();
@@ -48,129 +72,131 @@ const RiderDashboard: React.FC = () => {
     return result;
   }, [list]);
 
-  if (isLoading) return <Loader fullScreen text="Loading your deliveries..." />;
+  const paginatedGroups = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return displayGroups.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [displayGroups, page]);
+
+  // Show loader when loading or when refetching with no data yet (avoids flashing empty state)
+  const showLoader = (isLoading || (isFetching && list.length === 0)) && !isFetched;
+  if (showLoader) return <Loader fullScreen text="Loading your deliveries..." />;
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-800">My Deliveries</h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Orders assigned to you. Grouped orders are from the same customer — tap to view details and update status.
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">My Deliveries</h1>
+        <p className="text-gray-500 dark:text-slate-400 text-sm mt-1">
+          Orders assigned to you. Grouped orders are from the same customer — open to view details and update status.
         </p>
       </div>
 
       {displayGroups.length === 0 ? (
-        <Card className="p-12 text-center">
-          <p className="text-gray-500">No orders assigned to you yet.</p>
-          <p className="text-gray-400 text-sm mt-2">
+        <Card className="dark:bg-slate-800 dark:border-slate-700">
+          <p className="text-center text-gray-500 dark:text-slate-300 py-12">No orders assigned to you yet.</p>
+          <p className="text-center text-gray-400 dark:text-slate-400 text-sm mt-2 pb-8">
             When an order is assigned to you, it will appear here.
           </p>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {displayGroups.map(({ orderGroupId: gid, orders: groupOrders }) => {
-            const isGroup = gid && groupOrders.length > 1;
-            const first = groupOrders[0];
-            const groupTotal = groupOrders.reduce(
-              (s, o) => s + Number(o.total_amount ?? 0),
-              0
-            );
-            const statusSet = new Set(
-              groupOrders.map((o) => o.delivery_status ?? 'assigned')
-            );
-            const statusLabel =
-              statusSet.size === 1
-                ? (DELIVERY_STATUS_LABELS[first?.delivery_status ?? ''] ??
-                    first?.delivery_status ??
-                    'Assigned')
-                : 'Mixed';
-            const deliveryAddress = first?.delivery_address ?? null;
-            const placedAt = first?.placed_at ?? null;
-
-            return (
-              <Card
-                key={gid ?? `single-${first?.id}`}
-                className="overflow-hidden border border-gray-100 shadow-sm hover:shadow-md transition-shadow"
-              >
-                <div className="bg-gradient-to-r from-gray-50 to-white px-4 py-3 border-b border-gray-100">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      {isGroup ? (
-                        <>
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                            Group · {groupOrders.length} orders
-                          </span>
-                          {gid && (
-                            <span className="text-xs font-mono text-gray-500">
-                              {gid.slice(0, 8)}…
-                            </span>
-                          )}
-                        </>
-                      ) : (
-                        <span className="font-semibold text-gray-900">
-                          #{first?.order_number}
-                          {first?.brand_name && (
-                            <span className="text-gray-500 font-normal text-sm ml-1">
-                              · {first.brand_name}
-                            </span>
-                          )}
-                        </span>
-                      )}
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                          statusLabel === 'Delivered' || statusLabel === 'delivered'
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : statusLabel === 'Delivery Failed' ||
-                              statusLabel === 'delivery_failed'
-                            ? 'bg-red-100 text-red-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}
-                      >
-                        {statusLabel}
-                      </span>
-                    </div>
-                    <span className="text-lg font-bold text-gray-900">
-                      {formatCurrency(isGroup ? groupTotal : Number(first?.total_amount ?? 0))}
-                    </span>
-                  </div>
-                  {deliveryAddress && (
-                    <p className="text-sm text-gray-600 mt-1.5 truncate">
-                      📍 {deliveryAddress}
-                    </p>
+        <>
+          <AccentedList>
+            {paginatedGroups.map(({ orderGroupId: gid, orders: groupOrders }, i) => {
+              const isGroup = gid && groupOrders.length > 1;
+              const first = groupOrders[0];
+              const groupTotal = groupOrders.reduce(
+                (s, o) => s + Number(o.total_amount ?? 0),
+                0
+              );
+              const orderStatusSet = new Set(groupOrders.map((o) => o.status ?? 'placed'));
+              const orderStatusLabel =
+                orderStatusSet.size === 1
+                  ? (ORDER_STATUS_LABELS[first?.status ?? ''] ?? first?.status ?? 'Placed')
+                  : 'Mixed';
+              const deliveryStatusSet = new Set(
+                groupOrders.map((o) => o.delivery_status ?? 'assigned')
+              );
+              const deliveryStatusLabel =
+                deliveryStatusSet.size === 1
+                  ? (DELIVERY_STATUS_LABELS[first?.delivery_status ?? ''] ??
+                      first?.delivery_status ??
+                      'Assigned')
+                  : 'Mixed';
+              const isDone =
+                deliveryStatusLabel === 'Delivered' ||
+                deliveryStatusLabel === 'Delivery Failed';
+              const title = isGroup
+                ? `Order #${first?.order_number} +${groupOrders.length - 1} more`
+                : `#${first?.order_number}`;
+              const subtitle = (
+                <>
+                  {first?.brand_name && <p>{first.brand_name}</p>}
+                  {first?.delivery_address && (
+                    <p className="truncate max-w-full" title={first.delivery_address}>📍 {first.delivery_address}</p>
                   )}
-                  {placedAt && (
-                    <p className="text-xs text-gray-500 mt-0.5">
-                      {new Date(placedAt).toLocaleString()}
-                    </p>
+                  {first?.placed_at && (
+                    <p className="text-xs text-gray-500 dark:text-slate-500">{new Date(first.placed_at).toLocaleString()}</p>
                   )}
-                </div>
-                <div className="divide-y divide-gray-50">
+                  <p className="font-semibold text-gray-900 dark:text-slate-100">{formatCurrency(isGroup ? groupTotal : Number(first?.total_amount ?? 0))}</p>
+                </>
+              );
+              const footer = (
+                <ul className="divide-y divide-gray-100 dark:divide-slate-600">
                   {groupOrders.map((order) => (
-                    <Link
-                      key={order.id}
-                      to={`/rider/orders/${order.id}`}
-                      className="block px-4 py-3 hover:bg-gray-50/70 transition-colors"
-                    >
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-blue-600 hover:underline">
-                          #{order.order_number}
-                          {order.brand_name && (
-                            <span className="text-gray-500 font-normal ml-1">
-                              · {order.brand_name}
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-sm text-gray-600">
-                          {formatCurrency(order.total_amount)}
-                        </span>
+                    <li key={order.id} className="px-4 sm:px-6 py-3 hover:bg-gray-50/50 dark:hover:bg-slate-600/30 transition-colors">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <Link
+                          to={`/rider/orders/${order.id}`}
+                          className="min-w-0 flex-1 flex flex-wrap items-center gap-x-2 gap-y-1"
+                        >
+                          <span className="font-medium text-blue-600 dark:text-blue-400 hover:underline">
+                            #{order.order_number}
+                            {order.brand_name && <span className="text-gray-500 dark:text-slate-400 font-normal text-sm ml-1">· {order.brand_name}</span>}
+                          </span>
+                          <span className="text-sm font-medium text-gray-700 dark:text-slate-200">
+                            {formatCurrency(order.total_amount)}
+                          </span>
+                        </Link>
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-shrink-0">
+                          <span className="text-xs text-gray-500 dark:text-slate-400">
+                            Order: <span className="font-medium text-gray-700 dark:text-slate-200">{ORDER_STATUS_LABELS[order.status ?? ''] ?? order.status ?? 'Placed'}</span>
+                          </span>
+                          <span className="text-xs text-gray-500 dark:text-slate-400">
+                            Delivery: <span className="font-medium text-gray-700 dark:text-slate-200">{DELIVERY_STATUS_LABELS[order.delivery_status ?? ''] ?? order.delivery_status ?? 'Assigned'}</span>
+                          </span>
+                          <Link to={`/rider/orders/${order.id}`}>
+                            <Button size="small" variant="view">View & update</Button>
+                          </Link>
+                        </div>
                       </div>
-                    </Link>
+                    </li>
                   ))}
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+                </ul>
+              );
+              return (
+                <AccentedListRow
+                  key={gid ?? `single-${first?.id}`}
+                  accent={isDone ? 'inactive' : 'active'}
+                  initial={(first?.order_number ?? '#').charAt(0)}
+                  title={title}
+                  subtitle={subtitle}
+                  orderStatusLabel={orderStatusLabel}
+                  deliveryStatusLabel={deliveryStatusLabel}
+                  statusVariant={isDone ? 'inactive' : 'active'}
+                  animationIndex={i}
+                  actions={null}
+                  footer={footer}
+                />
+              );
+            })}
+          </AccentedList>
+          <PaginationBar
+            totalCount={displayGroups.length}
+            page={page}
+            pageSize={DEFAULT_PAGE_SIZE}
+            onPageChange={setPage}
+            itemLabel="deliveries"
+          />
+        </>
       )}
     </div>
   );

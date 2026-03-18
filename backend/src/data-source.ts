@@ -1,14 +1,17 @@
 /**
  * Standalone TypeORM DataSource for CLI (migration:run, migration:revert).
  * NestJS app uses TypeOrmModule in app.module.ts; this file is for TypeORM CLI only.
+ * Uses process.cwd() so it works when run as compiled dist/data-source.js from backend dir.
  */
 import { DataSource } from 'typeorm';
 import { join } from 'path';
 import { config as dotenvConfig } from 'dotenv';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 
+const rootDir = process.cwd();
+
 // Load .env when running via CLI (Nest loads it via ConfigModule)
-dotenvConfig({ path: join(__dirname, '..', '.env') });
+dotenvConfig({ path: join(rootDir, '.env') });
 
 export default new DataSource({
     type: 'postgres',
@@ -19,6 +22,6 @@ export default new DataSource({
     database: process.env.DB_DATABASE || 'foodies',
     namingStrategy: new SnakeNamingStrategy(),
     synchronize: false,
-    migrations: [join(__dirname, 'migrations', '*.js')],
-    entities: [join(__dirname, '**', '*.entity.js')],
+    migrations: [join(rootDir, 'dist', 'migrations', '*.js')],
+    entities: [join(rootDir, 'dist', '**', '*.entity.js')],
 });

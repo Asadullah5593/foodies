@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In } from 'typeorm';
+import { DataSource, Repository, In } from 'typeorm';
 import { Branch } from '../entities/branch.entity';
 import { User } from '../entities/user.entity';
 import { BranchUser } from '../entities/branch-user.entity';
@@ -14,6 +14,7 @@ export class BranchUsersService {
         @InjectRepository(BranchUser)
         private branchUserRepo: Repository<BranchUser>,
         @InjectRepository(Role) private roleRepo: Repository<Role>,
+        private dataSource: DataSource,
     ) {}
 
     private async getDefaultCashierRoleId(): Promise<number> {
@@ -25,8 +26,11 @@ export class BranchUsersService {
         return cashier.id;
     }
 
-    /** All branch-user assignments for tenant (or all when tenantId is null). Returns flat list with branch_id, branch_name, branch_code. */
-    async findAllForAdmin(tenantId: number | null): Promise<
+    /** All branch-user assignments for tenant (or all when tenantId is null). When allowedBranchIds is set, only those branches. */
+    async findAllForAdmin(
+        tenantId: number | null,
+        allowedBranchIds?: number[] | null,
+    ): Promise<
         Array<{
             branch_id: number;
             branch_name: string;
@@ -41,29 +45,39 @@ export class BranchUsersService {
             role_slug?: string;
         }>
     > {
-        const qb = this.branchRepo
-            .createQueryBuilder('b')
-            .innerJoinAndSelect('b.branchUsers', 'bu')
+        let branchIds: number[] | null = null;
+        if (allowedBranchIds != null && Array.isArray(allowedBranchIds)) {
+            branchIds = allowedBranchIds;
+            if (branchIds.length === 0) return [];
+        } else if (tenantId != null) {
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- query returns unknown
+            const rows = (await this.dataSource.query(
+                `SELECT DISTINCT bb.branch_id
+                 FROM branch_brands bb
+                 INNER JOIN brands br ON br.id = bb.brand_id
+                 WHERE br.tenant_id = $1`,
+                [tenantId],
+            )) as { branch_id: number }[];
+            branchIds = rows.map((r) => Number(r.branch_id));
+            if (branchIds.length === 0) return [];
+        }
+
+        const branchIdSet = branchIds != null ? new Set(branchIds) : null;
+        const qb = this.branchUserRepo
+            .createQueryBuilder('bu')
+            .innerJoinAndSelect('bu.branch', 'b')
             .innerJoinAndSelect('bu.user', 'u')
             .leftJoinAndSelect('bu.role', 'r')
             .orderBy('b.name', 'ASC')
             .addOrderBy('u.name', 'ASC');
-        if (tenantId != null) {
-            qb.innerJoin('b.branchBrands', 'bb').innerJoin(
-                'bb.brand',
-                'brand',
-                'brand.tenantId = :tenantId',
-                { tenantId },
-            );
+        if (branchIds != null && branchIds.length > 0) {
+            qb.andWhere('bu.branchId IN (:...branchIds)', { branchIds });
         }
-        type BranchWithUsers = Branch & {
-            branchUsers: Array<{
-                user: User;
-                role: Role | null;
-                roleId: number;
-            }>;
-        };
-        const branches = (await qb.getMany()) as BranchWithUsers[];
+        const list = await qb.getMany();
+        const filteredList =
+            branchIdSet == null
+                ? list
+                : list.filter((bu) => branchIdSet.has(bu.branchId));
         const result: Array<{
             branch_id: number;
             branch_name: string;
@@ -77,25 +91,23 @@ export class BranchUsersService {
             role_name?: string;
             role_slug?: string;
         }> = [];
-        for (const b of branches) {
-            const branchUsers = b.branchUsers ?? [];
-            for (const bu of branchUsers) {
-                const user = bu.user;
-                const role = bu.role;
-                result.push({
-                    branch_id: b.id,
-                    branch_name: b.name,
-                    branch_code: b.code,
-                    id: user.id,
-                    name: user.name,
-                    email: user.email ?? null,
-                    phone: user.phone ?? null,
-                    status: user.status,
-                    role_id: bu.roleId,
-                    role_name: role?.name,
-                    role_slug: role?.slug,
-                });
-            }
+        for (const bu of filteredList) {
+            const branch = (bu as BranchUser & { branch: Branch }).branch;
+            const user = (bu as BranchUser & { user: User }).user;
+            const role = (bu as BranchUser & { role?: Role | null }).role;
+            result.push({
+                branch_id: branch.id,
+                branch_name: branch.name,
+                branch_code: branch.code,
+                id: user.id,
+                name: user.name,
+                email: user.email ?? null,
+                phone: user.phone ?? null,
+                status: user.status,
+                role_id: bu.roleId,
+                role_name: role?.name,
+                role_slug: role?.slug,
+            });
         }
         return result;
     }
@@ -157,7 +169,6 @@ export class BranchUsersService {
             where: { id: branchId },
         });
         if (!branch) throw new NotFoundException('Branch not found');
-        await this.branchUserRepo.delete({ branchId });
         for (const { user_id, role_id } of assignments) {
             await this.branchUserRepo.save(
                 this.branchUserRepo.create({

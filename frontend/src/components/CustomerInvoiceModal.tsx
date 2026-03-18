@@ -11,11 +11,23 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+export type MainInvoiceLine = {
+  name_snapshot?: string;
+  quantity: number;
+  unit_price: number;
+  subtotal: number;
+  variant_name?: string | null;
+  deal_id?: number | null;
+  deal_slot_index?: number | null;
+  addons?: Array<{ name?: string | null; quantity: number; unit_price: number; subtotal?: number }>;
+  modifiers?: Array<{ name?: string | null; unit_price: number }>;
+};
+
 export type MainInvoiceOrder = {
   order_id: number;
   order_number: string;
   brand_name?: string | null;
-  items: Array<{ name_snapshot?: string; quantity: number; unit_price: number; subtotal: number }>;
+  items: MainInvoiceLine[];
   subtotal: number;
   discount_amount: number;
   tax_amount: number;
@@ -70,11 +82,16 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
       order_id: singleInvoice.order_id,
       order_number: singleInvoice.order_number,
       brand_name: singleInvoice.brand?.name ?? null,
-      items: (singleInvoice.items ?? []).map((i: { name?: string; quantity: number; unit_price: number; subtotal: number }) => ({
-        name_snapshot: i.name,
+      items: (singleInvoice.items ?? []).map((i: MainInvoiceLine & { name?: string }) => ({
+        name_snapshot: i.name ?? i.name_snapshot,
         quantity: i.quantity,
         unit_price: i.unit_price,
         subtotal: i.subtotal,
+        variant_name: i.variant_name ?? null,
+        deal_id: i.deal_id ?? null,
+        deal_slot_index: i.deal_slot_index ?? null,
+        addons: i.addons ?? [],
+        modifiers: i.modifiers ?? [],
       })),
       subtotal: singleInvoice.subtotal ?? 0,
       discount_amount: singleInvoice.discount_amount ?? 0,
@@ -88,12 +105,79 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
     gross_total: singleInvoice.total_amount ?? 0,
   } : null);
 
+  const lineBaseTotal = (line: {
+    quantity: number;
+    unit_price: number;
+  }) => {
+    return Number(line.unit_price) * Number(line.quantity ?? 1);
+  };
+
+  const addonTotal = (a: { quantity: number; unit_price: number; subtotal?: number }) => {
+    if (a.subtotal != null) return Number(a.subtotal);
+    return Number(a.unit_price) * Number(a.quantity ?? 1);
+  };
+
+  /** Group invoice lines by deal_id for receipt: one row per deal (with optional component sub-rows), standalone items as-is. */
+  const groupItemsForReceipt = (items: MainInvoiceLine[]): Array<{ dealId: number | null; lines: MainInvoiceLine[] }> => {
+    const byDeal = new Map<number | 'standalone', MainInvoiceLine[]>();
+    for (const line of items ?? []) {
+      const key = line.deal_id != null ? line.deal_id : 'standalone';
+      if (!byDeal.has(key)) byDeal.set(key, []);
+      byDeal.get(key)!.push(line);
+    }
+    const result: Array<{ dealId: number | null; lines: MainInvoiceLine[] }> = [];
+    byDeal.forEach((lines, key) => {
+      if (key === 'standalone') {
+        for (const line of lines) result.push({ dealId: null, lines: [line] });
+      } else {
+        lines.sort((a, b) => (a.deal_slot_index ?? 0) - (b.deal_slot_index ?? 0));
+        result.push({ dealId: key as number, lines });
+      }
+    });
+    return result;
+  };
+
   const handlePrint = () => {
     if (!invoiceData) return;
     const ordersHtml = (invoiceData.orders ?? []).map((o: MainInvoiceOrder) => {
-      const itemsRows = (o.items ?? [])
-        .map((line: { name_snapshot?: string; quantity: number; subtotal: number }) => `<tr><td>${escapeHtml(line.name_snapshot ?? 'Item')} × ${line.quantity}</td><td class="text-right">${formatCurrency(Number(line.subtotal))}</td></tr>`)
-        .join('');
+      const groups = groupItemsForReceipt(o.items ?? []);
+      const itemsRows = groups.map((group) => {
+        if (group.dealId != null && group.lines.length > 0) {
+          const dealTotal = group.lines.reduce((s, l) => s + Number(l.subtotal), 0);
+          const subRows = group.lines
+            .map((line) => {
+              const name = line.name_snapshot ?? 'Item';
+              const variant = (line.variant_name ?? '').trim();
+              return `<tr class="sub"><td style="padding-left:14px;">${escapeHtml(name)}${variant ? ` (${escapeHtml(variant)})` : ''} × ${line.quantity}</td><td class="text-right">${Number(line.unit_price) === 0 ? '—' : formatCurrency(Number(line.subtotal))}</td></tr>`;
+            })
+            .join('');
+          return `<tr><td><strong>Deal</strong></td><td class="text-right">${formatCurrency(dealTotal)}</td></tr>${subRows}`;
+        }
+        return group.lines.map((line) => {
+          const name = line.name_snapshot ?? 'Item';
+          const variant = (line.variant_name ?? '').trim();
+          const base = lineBaseTotal(line);
+          const addons = (line.addons ?? [])
+            .map((a) => {
+              const label = a.name ? `Add-on: ${a.name}` : 'Add-on';
+              const qty = Number(a.quantity ?? 1);
+              const amount = addonTotal(a);
+              return `<tr class="sub"><td style="padding-left:14px;">${escapeHtml(label)}${qty !== 1 ? ` × ${qty}` : ''}</td><td class="text-right">${formatCurrency(amount)}</td></tr>`;
+            })
+            .join('');
+          const mods = (line.modifiers ?? [])
+            .map((m) => {
+              const label = m.name ? `Modifier: ${m.name}` : 'Modifier';
+              return `<tr class="sub"><td style="padding-left:14px;">${escapeHtml(label)}</td><td class="text-right">${formatCurrency(Number(m.unit_price))}</td></tr>`;
+            })
+            .join('');
+          const baseRow = `<tr><td>${escapeHtml(name)}${variant ? ` <span style="color:#666;">(Variant: ${escapeHtml(variant)})</span>` : ''} × ${line.quantity}</td><td class="text-right">${formatCurrency(base)}</td></tr>`;
+          const lineTotalRow = (addons || mods)
+            ? `<tr class="sub"><td style="padding-left:14px; font-style:italic; color:#666;">Line total</td><td class="text-right" style="font-style:italic; color:#666;">${formatCurrency(Number(line.subtotal))}</td></tr>`
+            : '';
+          return `${baseRow}${addons}${mods}${lineTotalRow}`;
+        }).join('');
+      }).join('');
       const pointsEarned = Number((o as MainInvoiceOrder).loyalty_points_earned ?? 0);
       const pointsRedeemed = Number((o as MainInvoiceOrder).loyalty_points_redeemed ?? 0);
       return `
@@ -102,8 +186,8 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
           <table><tbody>${itemsRows}</tbody></table>
           <p class="text-sm py-2 border-t">Subtotal: ${formatCurrency(Number(o.subtotal))}</p>
           ${Number(o.discount_amount) > 0 ? `<p class="text-sm">Discount: -${formatCurrency(Number(o.discount_amount))}</p>` : ''}
-          <p class="text-sm">Tax: ${formatCurrency(Number(o.tax_amount))} · Service: ${formatCurrency(Number(o.service_charge))}</p>
-          ${Number(o.delivery_fee) > 0 ? `<p class="text-sm">Delivery: ${formatCurrency(Number(o.delivery_fee))}</p>` : ''}
+          <p class="text-sm">Tax: ${formatCurrency(Number(o.tax_amount))}</p>
+          ${Number(o.delivery_fee) > 0 ? `<p class="text-sm">Delivery fee: ${formatCurrency(Number(o.delivery_fee))}</p>` : ''}
           ${pointsEarned > 0 ? `<p class="text-sm text-green-700">Points earned: ${pointsEarned}</p>` : ''}
           ${pointsRedeemed > 0 ? `<p class="text-sm text-gray-600">Points redeemed: ${pointsRedeemed}</p>` : ''}
           <p class="font-semibold py-2">Total: ${formatCurrency(Number(o.total_amount))}</p>
@@ -159,16 +243,93 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                 </h3>
                 <table className="w-full text-sm">
                   <tbody>
-                    {(o.items ?? []).map((line: { name_snapshot?: string; quantity: number; unit_price: number; subtotal: number }, i: number) => (
-                      <tr key={i} className="border-b border-gray-100 last:border-0">
-                        <td className="py-1.5 text-gray-700">
-                          {line.name_snapshot ?? 'Item'} × {line.quantity}
-                        </td>
-                        <td className="py-1.5 text-right font-medium text-gray-800">
-                          {formatCurrency(Number(line.subtotal))}
-                        </td>
-                      </tr>
-                    ))}
+                    {groupItemsForReceipt(o.items ?? []).map((group, gi) => {
+                      const isDeal = group.dealId != null && group.lines.length > 0;
+                      const dealTotal = group.lines.reduce((s, l) => s + Number(l.subtotal), 0);
+                      return (
+                        <React.Fragment key={gi}>
+                          {isDeal ? (
+                            <>
+                              <tr className="border-b border-gray-100 bg-gray-50/50">
+                                <td className="py-1.5 text-gray-700 font-medium">
+                                  Deal
+                                </td>
+                                <td className="py-1.5 text-right font-medium text-gray-800">
+                                  {formatCurrency(dealTotal)}
+                                </td>
+                              </tr>
+                              {group.lines.map((line, si) => (
+                                <tr key={`${gi}-${si}`} className="border-b border-gray-100">
+                                  <td className="py-1 text-gray-600 pl-4">
+                                    {line.name_snapshot ?? 'Item'}
+                                    {line.variant_name ? ` (${line.variant_name})` : ''} × {line.quantity}
+                                  </td>
+                                  <td className="py-1 text-right text-gray-500">
+                                    {Number(line.unit_price) === 0 ? '—' : formatCurrency(Number(line.subtotal))}
+                                  </td>
+                                </tr>
+                              ))}
+                            </>
+                          ) : (
+                            group.lines.map((line, i) => {
+                              const baseAmount = lineBaseTotal(line);
+                              const hasExtras = (line.addons?.length ?? 0) > 0 || (line.modifiers?.length ?? 0) > 0;
+                              return (
+                                <React.Fragment key={`${gi}-${i}`}>
+                                  <tr className="border-b border-gray-100">
+                                    <td className="py-1.5 text-gray-700">
+                                      <div className="flex flex-col">
+                                        <span>
+                                          {line.name_snapshot ?? 'Item'}
+                                          {line.variant_name ? (
+                                            <span className="text-gray-500"> (Variant: {line.variant_name})</span>
+                                          ) : null}
+                                          {' '}× {line.quantity}
+                                        </span>
+                                      </div>
+                                    </td>
+                                    <td className="py-1.5 text-right font-medium text-gray-800">
+                                      {formatCurrency(Number(baseAmount))}
+                                    </td>
+                                  </tr>
+                                  {(line.addons ?? []).map((a, ai: number) => (
+                                    <tr key={`a-${gi}-${i}-${ai}`} className="border-b border-gray-100">
+                                      <td className="py-1 text-gray-500 pl-4">
+                                        Add-on: {a.name ?? '—'}
+                                        {Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}
+                                      </td>
+                                      <td className="py-1 text-right text-gray-600">
+                                        {formatCurrency(Number(addonTotal(a)))}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                  {(line.modifiers ?? []).map((m, mi: number) => (
+                                    <tr key={`m-${gi}-${i}-${mi}`} className="border-b border-gray-100">
+                                      <td className="py-1 text-gray-500 pl-4">
+                                        Modifier: {m.name ?? '—'}
+                                      </td>
+                                      <td className="py-1 text-right text-gray-600">
+                                        {formatCurrency(Number(m.unit_price))}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                  {hasExtras && (
+                                    <tr className="border-b border-gray-100 last:border-0">
+                                      <td className="py-1 text-gray-500 pl-4 italic">
+                                        Line total
+                                      </td>
+                                      <td className="py-1 text-right text-gray-600 italic">
+                                        {formatCurrency(Number(line.subtotal))}
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
                 <div className="mt-3 pt-3 border-t border-gray-200 space-y-1 text-sm">
@@ -186,13 +347,9 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                     <span>Tax</span>
                     <span>{formatCurrency(Number(o.tax_amount))}</span>
                   </div>
-                  <div className="flex justify-between text-gray-600">
-                    <span>Service charge</span>
-                    <span>{formatCurrency(Number(o.service_charge))}</span>
-                  </div>
                   {Number(o.delivery_fee) > 0 && (
                     <div className="flex justify-between text-gray-600">
-                      <span>Delivery</span>
+                      <span>Delivery fee</span>
                       <span>{formatCurrency(Number(o.delivery_fee))}</span>
                     </div>
                   )}

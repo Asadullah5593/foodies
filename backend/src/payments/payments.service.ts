@@ -31,7 +31,14 @@ export class PaymentsService {
             }),
         );
 
-        if (amount >= Number(order.totalAmount)) {
+        const allPayments = await this.paymentRepo.find({
+            where: { orderId },
+        });
+        const totalPaid = allPayments.reduce(
+            (sum, p) => sum + Number(p.amount),
+            0,
+        );
+        if (totalPaid >= Number(order.totalAmount)) {
             order.status = 'accepted';
             await this.orderRepo.save(order);
         }

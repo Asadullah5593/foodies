@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
@@ -10,8 +10,12 @@ import { formatCurrency } from '../../utils/currency';
 import { formatOrderType } from '../../utils/format';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
+import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 
 type OrderRow = Order & {
   order_number?: string;
@@ -25,6 +29,7 @@ type OrderRow = Order & {
   order_type?: string;
   orderType?: string;
   status?: string;
+  source?: 'pos' | 'consumer_app' | string;
   rider_id?: number | null;
   rider?: { id: number; name: string } | null;
   delivery_status?: string | null;
@@ -43,8 +48,25 @@ function normalizeOrder(o: OrderRow): OrderRow {
     rider: o.rider ?? null,
     delivery_status: o.delivery_status ?? row.deliveryStatus ?? null,
     delivery_failed_reason: o.delivery_failed_reason ?? row.deliveryFailedReason ?? null,
+    source: o.source ?? 'pos',
   };
 }
+
+function formatOrderSourceLabel(source: string | null | undefined): string {
+  if (source === 'consumer_app') return 'Consumer app';
+  if (source === 'pos') return 'POS';
+  if (!source) return '—';
+  return source.replace(/_/g, ' ');
+}
+
+const ORDER_STATUS_LABELS: Record<string, string> = {
+  placed: 'Placed',
+  accepted: 'Accepted',
+  preparing: 'Preparing',
+  ready: 'Ready',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+};
 
 const DELIVERY_STATUS_LABELS: Record<string, string> = {
   assigned: 'Assigned',
@@ -54,9 +76,12 @@ const DELIVERY_STATUS_LABELS: Record<string, string> = {
   delivery_failed: 'Failed',
 };
 
+const ORDERS_PAGE_SIZE = DEFAULT_PAGE_SIZE;
+
 const Orders: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [ordersPage, setOrdersPage] = useState(1);
   const [customerInvoiceGroupId, setCustomerInvoiceGroupId] = useState<string | null>(null);
   const [customerInvoiceOrderId, setCustomerInvoiceOrderId] = useState<number | null>(null);
   const [riderModalOrderId, setRiderModalOrderId] = useState<number | null>(null);
@@ -86,6 +111,8 @@ const Orders: React.FC = () => {
       const response = await apiClient.get<OrderRow[]>(`/admin/orders?${search.toString()}`);
       return (response.data ?? []).map(normalizeOrder);
     },
+    refetchInterval: ORDER_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: true,
   });
 
   const { data: branches } = useQuery({
@@ -189,268 +216,202 @@ const Orders: React.FC = () => {
     return result;
   }, [groupedByOrderGroup]);
 
-  if (isLoading) return <Loader fullScreen text="Loading orders..." />;
+  const paginatedDisplayGroups = useMemo(() => {
+    const start = (ordersPage - 1) * ORDERS_PAGE_SIZE;
+    return displayGroups.slice(start, start + ORDERS_PAGE_SIZE);
+  }, [displayGroups, ordersPage]);
+
+  useEffect(() => {
+    setOrdersPage(1);
+  }, [branchId, status, dateFrom, dateTo]);
+
+  const isSubmitting = assignRiderMutation.isPending || updateStatusMutation.isPending;
+  if (isLoading || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading orders...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Orders</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Orders</h1>
       </div>
 
-      <Card className="mb-6 p-4">
+      <Card className="mb-6 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-4 items-end">
+          <SearchableSelect
+            label="Branch"
+            value={branchId}
+            onChange={(v) => setFilter('branch_id', v)}
+            options={[
+              { value: '', label: 'All' },
+              ...(branches ?? []).map((b) => ({ value: String(b.id), label: b.name })),
+            ]}
+            placeholder="All"
+            minWidth="min-w-[140px]"
+          />
+          <SearchableSelect
+            label="Status"
+            value={status}
+            onChange={(v) => setFilter('status', v)}
+            options={[
+              { value: '', label: 'All' },
+              { value: 'placed', label: 'Placed' },
+              { value: 'accepted', label: 'Accepted' },
+              { value: 'preparing', label: 'Preparing' },
+              { value: 'ready', label: 'Ready' },
+              { value: 'completed', label: 'Completed' },
+              { value: 'cancelled', label: 'Cancelled' },
+            ]}
+            placeholder="All"
+            minWidth="min-w-[120px]"
+          />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Branch</label>
-            <select
-              value={branchId}
-              onChange={(e) => setFilter('branch_id', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[140px]"
-            >
-              <option value="">All</option>
-              {branches?.map((b) => (
-                <option key={b.id} value={b.id}>{b.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select
-              value={status}
-              onChange={(e) => setFilter('status', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[120px]"
-            >
-              <option value="">All</option>
-              <option value="placed">Placed</option>
-              <option value="accepted">Accepted</option>
-              <option value="preparing">Preparing</option>
-              <option value="ready">Ready</option>
-              <option value="completed">Completed</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date from</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Date from</label>
             <input
               type="date"
               value={dateFrom}
               onChange={(e) => setFilter('date_from', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date to</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Date to</label>
             <input
               type="date"
               value={dateTo}
               onChange={(e) => setFilter('date_to', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <ClearFiltersButton onClick={() => setSearchParams({})} />
         </div>
       </Card>
 
-      <div className="space-y-4">
+      <div className="w-full space-y-3">
         {displayGroups.length === 0 ? (
-          <Card className="p-12 text-center">
-            <p className="text-gray-500">No orders found.</p>
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No orders found.</p>
           </Card>
         ) : (
-          displayGroups.map(({ orderGroupId: gid, orders: groupOrders }) => {
-            const isGroup = gid && groupOrders.length > 1;
-            const groupTotal = groupOrders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
-            const first = groupOrders[0];
-            const branchName = first?.branch?.name ?? '—';
-            const statusSet = new Set(groupOrders.map((o) => o.status));
-            const statusLabel = statusSet.size === 1 ? first?.status : 'Mixed';
-            const allSameRider =
-              isGroup &&
-              groupOrders.length > 0 &&
-              groupOrders.every(
-                (o) =>
-                  o.rider_id != null &&
-                  o.rider_id === groupOrders[0].rider_id
-              );
-            const groupRider = allSameRider && groupOrders[0].rider ? groupOrders[0].rider : null;
-            const groupCanChangeRider =
-              isGroup &&
-              groupRider != null &&
-              groupOrders.every((o) => o.delivery_status === 'assigned');
-            const showPerOrderRiderButton = !(isGroup && groupRider);
-
-            return (
-              <Card
-                key={gid ?? `single-${first?.id}`}
-                className="overflow-hidden shadow-md hover:shadow-lg transition-shadow border border-gray-100"
-              >
-                <div className="bg-gradient-to-r from-gray-50 to-white px-5 py-4 border-b border-gray-100">
-                  <div className="flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex flex-wrap items-center gap-3">
-                      {isGroup ? (
-                        <>
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
-                            Group · {groupOrders.length} orders
-                          </span>
-                          <span className="text-sm font-mono text-gray-500">{gid?.slice(0, 8)}…</span>
-                        </>
-                      ) : (
-                        <Link
-                          to={`/admin/orders/${first?.id}`}
-                          className="text-lg font-semibold text-gray-900 hover:text-blue-600 transition-colors"
-                        >
-                          #{first?.order_number}
-                        </Link>
-                      )}
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                        statusLabel === 'completed' ? 'bg-emerald-100 text-emerald-800' :
-                        statusLabel === 'cancelled' ? 'bg-red-100 text-red-800' :
-                        'bg-sky-100 text-sky-800'
-                      }`}>
-                        {statusLabel}
-                      </span>
-                      <span className="text-sm text-gray-500">{branchName}</span>
-                      <span className="text-sm text-gray-500">· {formatOrderType(first?.order_type ?? first?.orderType)}</span>
-                      {isGroup && groupRider && (
-                        <span className="text-xs text-gray-500">
-                          Rider: {groupRider.name}
-                          {groupOrders[0].delivery_status && (
-                            <span className="ml-1 px-1.5 py-0.5 rounded bg-gray-100">
-                              {DELIVERY_STATUS_LABELS[groupOrders[0].delivery_status ?? ''] ?? groupOrders[0].delivery_status}
-                            </span>
-                          )}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isGroup && gid && (
-                        <>
-                          {groupRider ? (
-                            groupCanChangeRider && (
-                              <Button
-                                size="small"
-                                variant="outline"
-                                onClick={() => {
-                                  setRiderModalGroupId(gid);
-                                  setRiderModalOrderId(null);
-                                  setRiderModalIsChange(true);
-                                  setSelectedRiderId(groupOrders[0].rider_id ?? null);
-                                }}
-                              >
-                                Change rider
-                              </Button>
-                            )
-                          ) : (
-                            <Button
-                              size="small"
-                              variant="outline"
-                              onClick={() => {
-                                setRiderModalGroupId(gid);
-                                setRiderModalOrderId(null);
-                                setRiderModalIsChange(false);
-                                setSelectedRiderId(null);
-                              }}
-                            >
-                              Assign rider to group
-                            </Button>
-                          )}
-                          <Button
-                            size="small"
-                            variant="outline"
-                            onClick={() => {
-                              setCustomerInvoiceGroupId(gid);
-                              setCustomerInvoiceOrderId(null);
-                            }}
-                          >
-                            Customer invoice
-                          </Button>
-                        </>
-                      )}
-                      <span className="text-xl font-bold text-gray-900">
-                        {formatCurrency(isGroup ? groupTotal : Number(first?.total_amount ?? 0))}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="divide-y divide-gray-50">
-                  {groupOrders.map((order) => (
-                    <div
-                      key={order.id}
-                      className="px-5 py-3 flex flex-wrap items-center justify-between gap-3 bg-white hover:bg-gray-50/50 transition-colors"
+          <>
+            <AccentedList>
+              {paginatedDisplayGroups.map(({ orderGroupId: gid, orders: groupOrders }, i) => {
+                const isGroup = gid && groupOrders.length > 1;
+                const groupTotal = groupOrders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
+                const first = groupOrders[0];
+                const branchName = first?.branch?.name ?? '—';
+                const sourceSet = new Set(groupOrders.map((o) => o.source ?? 'pos'));
+                const sourceLabel = sourceSet.size === 1 ? formatOrderSourceLabel(first?.source) : 'Mixed';
+                const statusSet = new Set(groupOrders.map((o) => o.status));
+                const orderStatusLabel = statusSet.size === 1
+                  ? (ORDER_STATUS_LABELS[first?.status ?? ''] ?? first?.status ?? '—')
+                  : 'Mixed';
+                const deliveryStatusSet = new Set(groupOrders.map((o) => o.delivery_status ?? '—'));
+                const deliveryStatusLabel = deliveryStatusSet.size === 1
+                  ? (groupOrders[0].delivery_status
+                      ? (DELIVERY_STATUS_LABELS[groupOrders[0].delivery_status] ?? groupOrders[0].delivery_status)
+                      : '—')
+                  : 'Mixed';
+                const allSameRider = isGroup && groupOrders.length > 0 && groupOrders.every((o) => o.rider_id != null && o.rider_id === groupOrders[0].rider_id);
+                const groupRider = allSameRider && groupOrders[0].rider ? groupOrders[0].rider : null;
+                const groupCanChangeRider = isGroup && groupRider != null && groupOrders.every((o) => o.delivery_status === 'assigned');
+                const showPerOrderRiderButton = !(isGroup && groupRider);
+                const isDone = orderStatusLabel === 'Completed' || orderStatusLabel === 'Cancelled';
+                const title = isGroup ? `Order #${first?.order_number} +${groupOrders.length - 1} more` : `#${first?.order_number}`;
+                const subtitle = (
+                  <>
+                    <p>{branchName} · {formatOrderType(first?.order_type ?? first?.orderType)}</p>
+                    {isGroup && groupRider && <p>Rider: {groupRider.name}</p>}
+                    <p className="font-semibold text-gray-900 dark:text-slate-100">{formatCurrency(isGroup ? groupTotal : Number(first?.total_amount ?? 0))}</p>
+                  </>
+                );
+                const actions = (
+                  <>
+                    <span
+                      className={[
+                        'hidden sm:inline-flex px-2 py-0.5 rounded text-xs font-medium self-center',
+                        sourceLabel === 'POS'
+                          ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200'
+                          : sourceLabel === 'Consumer app'
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200'
+                            : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100',
+                      ].join(' ')}
+                      title="Order source"
                     >
-                      <div className="flex items-center gap-3">
-                        <Link
-                          to={`/admin/orders/${order.id}`}
-                          className="font-medium text-blue-600 hover:underline"
-                        >
-                          #{order.order_number} {order.brand?.name ? `· ${order.brand.name}` : ''}
-                        </Link>
-                        <span className="text-sm text-gray-500">
-                          {formatCurrency(Number(order.total_amount ?? 0))}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap gap-2 items-center">
-                        {showPerOrderRiderButton && (order.rider_id != null && order.rider) && (
-                          <span className="text-xs text-gray-500">
-                            Rider: {order.rider.name}
-                            {order.delivery_status && (
-                              <span className="ml-1 px-1.5 py-0.5 rounded bg-gray-100">
-                                {DELIVERY_STATUS_LABELS[order.delivery_status] ?? order.delivery_status}
-                              </span>
-                            )}
+                      {sourceLabel}
+                    </span>
+                    {isGroup && gid && (
+                      <>
+                        {groupRider ? groupCanChangeRider && (
+                          <Button size="small" variant="edit" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(true); setSelectedRiderId(groupOrders[0].rider_id ?? null); }}>Change rider</Button>
+                        ) : (
+                          <Button size="small" variant="primary" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(false); setSelectedRiderId(null); }}>Assign rider to group</Button>
+                        )}
+                        <Button size="small" variant="view" onClick={() => { setCustomerInvoiceGroupId(gid); setCustomerInvoiceOrderId(null); }}>Customer invoice</Button>
+                      </>
+                    )}
+                  </>
+                );
+                const footer = (
+                  <ul className="divide-y divide-gray-100 dark:divide-slate-600">
+                    {groupOrders.map((order) => (
+                      <li key={order.id} className="px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 hover:bg-gray-50/50 dark:hover:bg-slate-600/30 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <Link to={`/admin/orders/${order.id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline">
+                            #{order.order_number} {order.brand?.name ? `· ${order.brand.name}` : ''}
+                          </Link>
+                          <span className="text-sm text-gray-500 dark:text-slate-400">{formatCurrency(Number(order.total_amount ?? 0))}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-3 items-center">
+                          {showPerOrderRiderButton && (order.rider_id != null && order.rider) && (
+                            <span className="text-xs text-gray-500 dark:text-slate-400">Rider: {order.rider.name}</span>
+                          )}
+                          {showPerOrderRiderButton && (order.delivery_status === 'assigned' || order.delivery_status == null) && (
+                            <Button size="small" variant={order.rider_id ? 'edit' : 'primary'} onClick={() => { setRiderModalOrderId(order.id); setRiderModalGroupId(null); setRiderModalIsChange(!!order.rider_id); setSelectedRiderId(order.rider_id ?? null); }}>{order.rider_id ? 'Change rider' : 'Assign rider'}</Button>
+                          )}
+                          <span className="flex items-center gap-1.5 text-sm">
+                            <span className="text-gray-500 dark:text-slate-400 font-medium">Order:</span>
+                            <select value={order.status} onChange={(e) => updateStatusMutation.mutate({ id: order.id, status: e.target.value })} className="px-3 py-1.5 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                              <option value="placed">Placed</option>
+                              <option value="accepted">Accepted</option>
+                              <option value="preparing">Preparing</option>
+                              <option value="ready">Ready</option>
+                              <option value="completed">Completed</option>
+                              <option value="cancelled">Cancelled</option>
+                            </select>
                           </span>
-                        )}
-                        {showPerOrderRiderButton && (order.delivery_status === 'assigned' || order.delivery_status == null) && (
-                          <Button
-                            size="small"
-                            variant="outline"
-                            onClick={() => {
-                              setRiderModalOrderId(order.id);
-                              setRiderModalGroupId(null);
-                              setRiderModalIsChange(!!order.rider_id);
-                              setSelectedRiderId(order.rider_id ?? null);
-                            }}
-                          >
-                            {order.rider_id ? 'Change rider' : 'Assign rider'}
-                          </Button>
-                        )}
-                        <select
-                          value={order.status}
-                          onChange={(e) => updateStatusMutation.mutate({ id: order.id, status: e.target.value })}
-                          className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="placed">Placed</option>
-                          <option value="accepted">Accepted</option>
-                          <option value="preparing">Preparing</option>
-                          <option value="ready">Ready</option>
-                          <option value="completed">Completed</option>
-                          <option value="cancelled">Cancelled</option>
-                        </select>
-                        <Link to={`/admin/orders/${order.id}`}>
-                          <Button size="small" variant="outline">View</Button>
-                        </Link>
-                        <Button
-                          size="small"
-                          variant="outline"
-                          onClick={() => {
-                            if (order.order_group_id) {
-                              setCustomerInvoiceGroupId(order.order_group_id);
-                              setCustomerInvoiceOrderId(null);
-                            } else {
-                              setCustomerInvoiceOrderId(order.id);
-                              setCustomerInvoiceGroupId(null);
-                            }
-                          }}
-                        >
-                          Customer invoice
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            );
-          })
+                          <span className="flex items-center gap-1.5 text-sm">
+                            <span className="text-gray-500 dark:text-slate-400 font-medium">Delivery:</span>
+                            <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-xs font-medium">
+                              {order.delivery_status ? (DELIVERY_STATUS_LABELS[order.delivery_status] ?? order.delivery_status) : '—'}
+                            </span>
+                          </span>
+                          <Link to={`/admin/orders/${order.id}`}><Button size="small" variant="view">View</Button></Link>
+                          <Button size="small" variant="view" onClick={() => { if (order.order_group_id) { setCustomerInvoiceGroupId(order.order_group_id); setCustomerInvoiceOrderId(null); } else { setCustomerInvoiceOrderId(order.id); setCustomerInvoiceGroupId(null); } }}>Customer invoice</Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                );
+                return (
+                  <AccentedListRow
+                    key={gid ?? `single-${first?.id}`}
+                    accent={isDone ? 'inactive' : 'active'}
+                    initial={(first?.order_number ?? '#').charAt(0)}
+                    title={title}
+                    subtitle={subtitle}
+                    orderStatusLabel={orderStatusLabel}
+                    deliveryStatusLabel={deliveryStatusLabel ?? undefined}
+                    statusVariant={isDone ? 'inactive' : 'active'}
+                    animationIndex={i}
+                    actions={actions}
+                    footer={footer}
+                  />
+                );
+              })}
+            </AccentedList>
+            <PaginationBar totalCount={displayGroups.length} page={ordersPage} pageSize={ORDERS_PAGE_SIZE} onPageChange={setOrdersPage} itemLabel="orders" />
+          </>
         )}
       </div>
 
@@ -466,24 +427,24 @@ const Orders: React.FC = () => {
 
       {(riderModalOrderId != null || riderModalGroupId != null) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <Card className="w-full max-w-md p-6">
-            <h3 className="text-lg font-semibold text-gray-800 mb-2">
+          <Card className="w-full max-w-md p-6 dark:bg-slate-800 dark:border-slate-700">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 mb-2">
               {riderModalGroupId
                 ? (riderModalIsChange ? 'Change rider for group' : 'Assign rider to group')
                 : (riderModalIsChange ? 'Change rider' : 'Assign rider')}
             </h3>
-            <p className="text-sm text-gray-500 mb-4">
+            <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
               {riderModalGroupId
                 ? `Group ${riderModalGroupId.slice(0, 8)}… (all orders in this group)`
                 : `Order #${orders.find((o) => o.id === riderModalOrderId)?.order_number ?? riderModalOrderId}`}
             </p>
             {ridersLoading ? (
-              <p className="text-gray-500">Loading riders...</p>
+              <p className="text-gray-500 dark:text-slate-400">Loading riders...</p>
             ) : (
               <select
                 value={selectedRiderId ?? ''}
                 onChange={(e) => setSelectedRiderId(e.target.value ? Number(e.target.value) : null)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 mb-4"
+                className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 mb-4"
               >
                 <option value="">Select a rider</option>
                 {(riders ?? []).map((r) => (
@@ -494,7 +455,7 @@ const Orders: React.FC = () => {
               </select>
             )}
             {riders != null && riders.length === 0 && !ridersLoading && (
-              <p className="text-amber-600 text-sm mb-4">
+              <p className="text-amber-600 dark:text-amber-400 text-sm mb-4">
                 No riders found. Add users with the Rider role in Branch Users.
               </p>
             )}
@@ -510,6 +471,7 @@ const Orders: React.FC = () => {
                 Cancel
               </Button>
               <Button
+                variant="primary"
                 disabled={selectedRiderId == null || assignRiderMutation.isPending}
                 isLoading={assignRiderMutation.isPending}
                 onClick={() => {

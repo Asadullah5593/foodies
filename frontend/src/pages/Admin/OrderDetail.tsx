@@ -8,6 +8,7 @@ import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import { formatOrderType } from '../../utils/format';
 import { printContent } from '../../utils/print';
+import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
@@ -22,10 +23,11 @@ type OrderDetailItem = {
   notes?: string;
   variant_id?: number | null;
   variant_name?: string | null;
-  addons?: Array<{ name: string; unit_price: number; quantity: number }>;
+  addons?: Array<{ name: string; unit_price: number; quantity: number; subtotal?: number }>;
+  modifiers?: Array<{ name: string | null; unit_price: number }>;
 };
 
-type OrderDetailData = Order & {
+type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   order_number?: string;
   order_type?: string;
   order_group_id?: string | null;
@@ -33,6 +35,7 @@ type OrderDetailData = Order & {
   customer_name?: string;
   customer_phone?: string;
   delivery_address?: string;
+  source?: 'pos' | 'consumer_app' | string;
   subtotal?: number;
   discount_amount?: number;
   tax_amount?: number;
@@ -46,13 +49,20 @@ type OrderDetailData = Order & {
   brand?: { id: number; name: string };
   creator?: { id: number; name: string };
   items?: OrderDetailItem[];
-  payments?: Array<{ id: number; method: string; amount: number; status: string; paid_at?: string }>;
+  payments?: Array<{ id: number; method?: string; payment_method?: string; amount: number; status: string; paid_at?: string }>;
   loyalty_points_earned?: number;
   loyalty_points_redeemed?: number;
 };
 
 function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function formatOrderSourceLabel(source: string | null | undefined): string {
+  if (source === 'consumer_app') return 'Consumer app';
+  if (source === 'pos') return 'POS';
+  if (!source) return '—';
+  return source.replace(/_/g, ' ');
 }
 
 const OrderDetail: React.FC = () => {
@@ -68,6 +78,7 @@ const OrderDetail: React.FC = () => {
       return response.data;
     },
     enabled: !!id,
+    refetchInterval: ORDER_POLL_INTERVAL_MS,
   });
 
   const updateStatusMutation = useMutation({
@@ -89,7 +100,10 @@ const OrderDetail: React.FC = () => {
     },
   });
 
-  if (isLoading || !order) return <Loader fullScreen text="Loading order..." />;
+  const isSubmitting = updateStatusMutation.isPending;
+  if (isLoading || !order || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Updating...' : 'Loading order...'} />;
+  }
 
   const o = order as OrderDetailData;
   const totalAmount = Number(o.total_amount ?? order.total_amount ?? 0);
@@ -104,13 +118,18 @@ const OrderDetail: React.FC = () => {
   const handlePrint = () => {
     const orderNum = o.order_number ?? (order as any).order_number;
     const typeLabel = formatOrderType(o.order_type ?? (order as any).order_type);
+    const addonTotal = (a: { quantity: number; unit_price: number; subtotal?: number }) =>
+      a.subtotal != null ? Number(a.subtotal) : Number(a.unit_price) * (a.quantity ?? 1);
     let itemsHtml = (o.items ?? [])
-      .map(
-        (item) =>
-          `<tr><td>${escapeHtml(String(item.name_snapshot ?? 'Item'))} × ${item.quantity}${
-            item.variant_name ? ` (${escapeHtml(item.variant_name)})` : ''
-          }${item.addons?.length ? '<br/><small>Add-ons: ' + item.addons.map((a) => `${a.name} × ${a.quantity}`).join(', ') + '</small>' : ''}</td><td class="text-right">${formatCurrency(Number(item.subtotal ?? 0))}</td></tr>`
-      )
+      .map((item) => {
+        const base = Number(item.unit_price ?? 0) * item.quantity;
+        const baseRow = `<tr><td>${escapeHtml(String(item.name_snapshot ?? 'Item'))}${item.variant_name ? ` <span style="color:#666;">(Variant: ${escapeHtml(item.variant_name)})</span>` : ''} × ${item.quantity}</td><td class="text-right">${formatCurrency(base)}</td></tr>`;
+        const addonRows = (item.addons ?? []).map((a) => `<tr class="sub"><td style="padding-left:14px;">Add-on: ${escapeHtml(a.name ?? '—')}${Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</td><td class="text-right">${formatCurrency(addonTotal(a))}</td></tr>`).join('');
+        const modRows = (item.modifiers ?? []).map((m) => `<tr class="sub"><td style="padding-left:14px;">Modifier: ${escapeHtml(m.name ?? '—')}</td><td class="text-right">${formatCurrency(Number(m.unit_price))}</td></tr>`).join('');
+        const hasExtras = (item.addons?.length ?? 0) > 0 || (item.modifiers?.length ?? 0) > 0;
+        const lineTotalRow = hasExtras ? `<tr class="sub"><td style="padding-left:14px; font-style:italic; color:#666;">Line total</td><td class="text-right" style="font-style:italic; color:#666;">${formatCurrency(Number(item.subtotal ?? 0))}</td></tr>` : '';
+        return `${baseRow}${addonRows}${modRows}${lineTotalRow}`;
+      })
       .join('');
     const html = `
       <h1>Order #${escapeHtml(String(orderNum))}</h1>
@@ -133,59 +152,75 @@ const OrderDetail: React.FC = () => {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 max-w-4xl mx-auto">
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <Button variant="outline" onClick={() => navigate('/admin/orders')}>
           ← Back to Orders
         </Button>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={handlePrint}>
+          <Button variant="secondary" onClick={handlePrint}>
             Print
           </Button>
-          <Button variant="outline" onClick={() => setShowCustomerInvoice(true)}>
+          <Button variant="view" onClick={() => setShowCustomerInvoice(true)}>
             Customer invoice
           </Button>
         </div>
       </div>
 
-      <Card className="p-6 mb-6 border border-gray-200 shadow-sm">
+      <Card className="p-6 mb-6 border border-gray-200 dark:border-slate-700 dark:bg-slate-800 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-1">
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-slate-100 mb-1">
               Order #{o.order_number ?? (order as any).order_number}
             </h1>
             {o.brand?.name && (
-              <p className="text-sm font-medium text-gray-500 uppercase tracking-wide">{o.brand.name}</p>
+              <p className="text-sm font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wide">{o.brand.name}</p>
             )}
           </div>
           <span className={`px-3 py-1.5 rounded-full text-sm font-medium ${
-            o.status === 'completed' ? 'bg-emerald-100 text-emerald-800' :
-            o.status === 'cancelled' ? 'bg-red-100 text-red-800' :
-            'bg-sky-100 text-sky-800'
+            o.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200' :
+            o.status === 'cancelled' ? 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200' :
+            'bg-sky-100 dark:bg-sky-900/50 text-sky-800 dark:text-sky-200'
           }`}>
             {o.status}
           </span>
         </div>
-        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600 mb-4">
-          <span>Type: <strong className="text-gray-800">{formatOrderType(o.order_type ?? (order as any).order_type)}</strong></span>
-          {o.branch && <span>Branch: <strong className="text-gray-800">{o.branch.name}</strong></span>}
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm text-gray-600 dark:text-slate-400 mb-4">
+          <span>Type: <strong className="text-gray-800 dark:text-slate-200">{formatOrderType(o.order_type ?? (order as any).order_type)}</strong></span>
+          <span className="flex items-center gap-2">
+            <span>Source:</span>
+            <span
+              className={[
+                'px-2 py-0.5 rounded text-xs font-medium',
+                (o.source ?? 'pos') === 'pos'
+                  ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200'
+                  : (o.source ?? 'pos') === 'consumer_app'
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200'
+                    : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100',
+              ].join(' ')}
+              title="Order source"
+            >
+              {formatOrderSourceLabel(o.source)}
+            </span>
+          </span>
+          {o.branch && <span>Branch: <strong className="text-gray-800 dark:text-slate-200">{o.branch.name}</strong></span>}
           {o.creator && <span>Created by: {o.creator.name}</span>}
           {o.placed_at && <span>Placed: {new Date(o.placed_at).toLocaleString()}</span>}
         </div>
         {(o.table_number || o.customer_name || o.customer_phone || o.delivery_address) && (
-          <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-700 space-y-1 mb-4">
-            {o.table_number && <p><span className="font-medium text-gray-500">Table:</span> {o.table_number}</p>}
-            {o.customer_name && <p><span className="font-medium text-gray-500">Customer:</span> {o.customer_name}</p>}
-            {o.customer_phone && <p><span className="font-medium text-gray-500">Phone:</span> {o.customer_phone}</p>}
-            {o.delivery_address && <p><span className="font-medium text-gray-500">Delivery:</span> {o.delivery_address}</p>}
+          <div className="rounded-lg bg-gray-50 dark:bg-slate-700/50 p-4 text-sm text-gray-700 dark:text-slate-300 space-y-1 mb-4">
+            {o.table_number && <p><span className="font-medium text-gray-500 dark:text-slate-400">Table:</span> {o.table_number}</p>}
+            {o.customer_name && <p><span className="font-medium text-gray-500 dark:text-slate-400">Customer:</span> {o.customer_name}</p>}
+            {o.customer_phone && <p><span className="font-medium text-gray-500 dark:text-slate-400">Phone:</span> {o.customer_phone}</p>}
+            {o.delivery_address && <p><span className="font-medium text-gray-500 dark:text-slate-400">Delivery:</span> {o.delivery_address}</p>}
           </div>
         )}
         <div className="flex items-center gap-3">
-          <label className="text-sm font-medium text-gray-700">Update status</label>
+          <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Update status</label>
           <select
             value={o.status}
             onChange={(e) => updateStatusMutation.mutate(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            className="px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
           >
             <option value="placed">Placed</option>
             <option value="accepted">Accepted</option>
@@ -197,131 +232,141 @@ const OrderDetail: React.FC = () => {
         </div>
       </Card>
 
-      <Card className="p-6 mb-6 border border-gray-200 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Items</h2>
+      <Card className="p-6 mb-6 border border-gray-200 dark:border-slate-700 dark:bg-slate-800 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4">Items</h2>
         <div className="space-y-4">
-          {o.items?.map((item) => (
-            <div
-              key={item.id}
-              className="rounded-xl border border-gray-100 bg-gray-50/50 p-4"
-            >
-              <div className="flex justify-between items-start gap-4">
-                <div className="flex-1 min-w-0">
-                  <p className="font-semibold text-gray-900">
-                    {item.name_snapshot ?? 'Item'} × {item.quantity}
-                  </p>
-                  {item.variant_name && (
-                    <p className="text-sm text-gray-600 mt-0.5">
-                      Variant: <span className="font-medium">{item.variant_name}</span>
+          {o.items?.map((item) => {
+            const baseAmount = Number(item.unit_price ?? 0) * (item.quantity ?? 1);
+            const addonTotal = (a: { quantity: number; unit_price: number; subtotal?: number }) =>
+              a.subtotal != null ? Number(a.subtotal) : Number(a.unit_price) * (a.quantity ?? 1);
+            const hasExtras = (item.addons?.length ?? 0) > 0 || (item.modifiers?.length ?? 0) > 0;
+            return (
+              <div
+                key={item.id}
+                className="rounded-xl border border-gray-100 dark:border-slate-600 bg-gray-50/50 dark:bg-slate-700/50 p-4"
+              >
+                <div className="flex justify-between items-start gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-gray-900 dark:text-slate-100">
+                      {item.name_snapshot ?? 'Item'}
+                      {item.variant_name && (
+                        <span className="text-gray-600 dark:text-slate-400 font-normal"> (Variant: {item.variant_name})</span>
+                      )}
+                      {' '}× {item.quantity}
                     </p>
-                  )}
-                  {item.addons && item.addons.length > 0 && (
-                    <div className="mt-2 text-sm text-gray-600">
-                      <span className="font-medium text-gray-500">Add-ons:</span>
-                      <ul className="mt-1 space-y-0.5">
-                        {item.addons.map((a, i) => (
-                          <li key={i}>
-                            {a.name} × {a.quantity}
-                            {a.unit_price != null && a.unit_price > 0 && (
-                              <span className="text-gray-500 ml-1">({formatCurrency(Number(a.unit_price))} each)</span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  {item.notes && (
-                    <p className="text-sm text-gray-500 italic mt-1">Note: {item.notes}</p>
-                  )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-sm text-gray-600 dark:text-slate-400">
+                      {formatCurrency(Number(item.unit_price ?? 0))} × {item.quantity}
+                    </p>
+                    <p className="font-semibold text-gray-900 dark:text-slate-100">{formatCurrency(baseAmount)}</p>
+                  </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-sm text-gray-500">
-                    {formatCurrency(Number(item.unit_price ?? 0))} × {item.quantity}
-                  </p>
-                  <p className="font-semibold text-gray-900">{formatCurrency(Number(item.subtotal ?? 0))}</p>
-                </div>
+                {(item.addons ?? []).map((a, i) => (
+                  <div key={`a-${i}`} className="flex justify-between items-center mt-1.5 pl-4 text-sm text-gray-600 dark:text-slate-400 border-b border-gray-100 dark:border-slate-600 pb-1">
+                    <span>Add-on: {a.name ?? '—'}{Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</span>
+                    <span>{formatCurrency(addonTotal(a))}</span>
+                  </div>
+                ))}
+                {(item.modifiers ?? []).map((m, i) => (
+                  <div key={`m-${i}`} className="flex justify-between items-center mt-1.5 pl-4 text-sm text-gray-600 dark:text-slate-400 border-b border-gray-100 dark:border-slate-600 pb-1">
+                    <span>Modifier: {m.name ?? '—'}</span>
+                    <span>{formatCurrency(Number(m.unit_price))}</span>
+                  </div>
+                ))}
+                {hasExtras && (
+                  <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-200 dark:border-slate-600 text-sm">
+                    <span className="font-medium text-gray-700 dark:text-slate-300">Line total</span>
+                    <span className="font-semibold text-gray-900 dark:text-slate-100">{formatCurrency(Number(item.subtotal ?? 0))}</span>
+                  </div>
+                )}
+                {item.notes && (
+                  <p className="text-sm text-gray-500 dark:text-slate-400 italic mt-2">Note: {item.notes}</p>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Card>
 
-      <Card className="p-6 mb-6 border border-gray-200 shadow-sm">
-        <h2 className="text-lg font-semibold text-gray-900 mb-4">Totals</h2>
+      <Card className="p-6 mb-6 border border-gray-200 dark:border-slate-700 dark:bg-slate-800 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4">Totals</h2>
         <div className="space-y-2 text-sm">
-          <div className="flex justify-between text-gray-700">
+          <div className="flex justify-between text-gray-700 dark:text-slate-300">
             <span>Subtotal</span>
             <span>{formatCurrency(subtotal)}</span>
           </div>
           {hasDiscount && (
-            <div className="flex justify-between text-emerald-600">
+            <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
               <span>
                 Discount
                 {hasCoupon && (
-                  <span className="ml-1 text-gray-500">(Coupon: <strong>{o.discount_code}</strong>)</span>
+                  <span className="ml-1 text-gray-500 dark:text-slate-400">(Coupon: <strong>{o.discount_code}</strong>)</span>
                 )}
               </span>
               <span>-{formatCurrency(discountAmount)}</span>
             </div>
           )}
           {!hasDiscount && hasCoupon && (
-            <div className="flex justify-between text-gray-500">
+            <div className="flex justify-between text-gray-500 dark:text-slate-400">
               <span>Coupon applied: {o.discount_code}</span>
               <span>—</span>
             </div>
           )}
-          <div className="flex justify-between text-gray-700">
+          <div className="flex justify-between text-gray-700 dark:text-slate-300">
             <span>Tax</span>
             <span>{formatCurrency(taxAmount)}</span>
           </div>
           {serviceCharge > 0 && (
-            <div className="flex justify-between text-gray-700">
+            <div className="flex justify-between text-gray-700 dark:text-slate-300">
               <span>Service charge</span>
               <span>{formatCurrency(serviceCharge)}</span>
             </div>
           )}
           {deliveryFee > 0 && (
-            <div className="flex justify-between text-gray-700">
+            <div className="flex justify-between text-gray-700 dark:text-slate-300">
               <span>Delivery fee</span>
               <span>{formatCurrency(deliveryFee)}</span>
             </div>
           )}
           {(o.loyalty_points_earned ?? 0) > 0 && (
-            <div className="flex justify-between text-green-700">
+            <div className="flex justify-between text-green-700 dark:text-green-400">
               <span>Points earned</span>
               <span>+{o.loyalty_points_earned}</span>
             </div>
           )}
           {(o.loyalty_points_redeemed ?? 0) > 0 && (
-            <div className="flex justify-between text-gray-600">
+            <div className="flex justify-between text-gray-600 dark:text-slate-400">
               <span>Points redeemed</span>
               <span>−{o.loyalty_points_redeemed}</span>
             </div>
           )}
-          <div className="flex justify-between font-bold text-lg pt-3 mt-3 border-t border-gray-200">
-            <span>Total</span>
-            <span className="text-gray-900">{formatCurrency(totalAmount)}</span>
+          <div className="flex justify-between font-bold text-lg pt-3 mt-3 border-t border-gray-200 dark:border-slate-600">
+            <span className="text-gray-900 dark:text-slate-100">Total</span>
+            <span className="text-gray-900 dark:text-slate-100">{formatCurrency(totalAmount)}</span>
           </div>
         </div>
       </Card>
 
-      {o.payments && o.payments.length > 0 && (
-        <Card className="p-6 border border-gray-200 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Payments</h2>
+      <Card className="p-6 border border-gray-200 dark:border-slate-700 dark:bg-slate-800 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4">Payments</h2>
+        {o.payments && o.payments.length > 0 ? (
           <div className="space-y-2">
             {o.payments.map((p) => (
-              <div key={p.id} className="flex justify-between items-center py-2 border-b border-gray-100 last:border-0">
-                <span className="font-medium text-gray-800">{p.method}</span>
-                <span className="text-gray-600">{p.status}</span>
-                <span className="font-semibold">{formatCurrency(Number(p.amount))}</span>
+              <div key={p.id} className="flex flex-wrap justify-between items-center gap-2 py-2 border-b border-gray-100 dark:border-slate-600 last:border-0">
+                <span className="font-medium text-gray-800 dark:text-slate-200 capitalize">{p.method ?? (p as any).payment_method ?? '—'}</span>
+                <span className="text-gray-600 dark:text-slate-400 text-sm">{p.status}</span>
+                <span className="font-semibold text-gray-900 dark:text-slate-100">{formatCurrency(Number(p.amount))}</span>
                 {p.paid_at && (
-                  <span className="text-sm text-gray-500">{new Date(p.paid_at).toLocaleString()}</span>
+                  <span className="text-sm text-gray-500 dark:text-slate-400">{new Date(p.paid_at).toLocaleString()}</span>
                 )}
               </div>
             ))}
           </div>
-        </Card>
-      )}
+        ) : (
+          <p className="text-gray-500 dark:text-slate-400 text-sm">No payments recorded for this order.</p>
+        )}
+      </Card>
 
       <CustomerInvoiceModal
         isOpen={showCustomerInvoice}

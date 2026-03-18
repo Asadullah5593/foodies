@@ -5,6 +5,7 @@ import { Branch } from '../../types';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
+import SearchableSelect from '../../components/SearchableSelect';
 import { formatCurrency } from '../../utils/currency';
 
 const Reports: React.FC = () => {
@@ -55,24 +56,22 @@ const Reports: React.FC = () => {
     <div className="p-6 max-w-7xl mx-auto">
       <h1 className="text-3xl font-bold text-gray-800 mb-6">Reports</h1>
 
-      <Card className="mb-6 p-4">
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">Filters</h4>
+      <Card className="mb-6 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-4 items-end">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Branch</label>
-            <select
-              value={selectedBranch || ''}
-              onChange={(e) => setSelectedBranch(e.target.value ? parseInt(e.target.value) : null)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[180px]"
-            >
-              <option value="">All Branches</option>
-              {branches?.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name} ({branch.code})
-                </option>
-              ))}
-            </select>
-          </div>
+          <SearchableSelect
+            label="Branch"
+            value={selectedBranch ? String(selectedBranch) : ''}
+            onChange={(v) => setSelectedBranch(v ? parseInt(v, 10) : null)}
+            options={[
+              { value: '', label: 'All Branches' },
+              ...(branches ?? []).map((branch) => ({
+                value: String(branch.id),
+                label: `${branch.name} (${branch.code})`,
+              })),
+            ]}
+            placeholder="All Branches"
+            minWidth="min-w-[180px]"
+          />
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">From Date</label>
             <input
@@ -121,6 +120,27 @@ const Reports: React.FC = () => {
           <h3 className="text-sm font-medium text-gray-500 mb-2">Average Order Value</h3>
           <p className="text-3xl font-bold text-purple-600">
             {formatCurrency(Number(salesSummary?.average_order_value ?? 0))}
+          </p>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+        <Card>
+          <h3 className="text-sm font-medium text-gray-500 mb-2">Total Tax</h3>
+          <p className="text-3xl font-bold text-purple-700">
+            {formatCurrency(Number(salesSummary?.total_tax ?? 0))}
+          </p>
+        </Card>
+        <Card>
+          <h3 className="text-sm font-medium text-gray-500 mb-2">Total Delivery Fees</h3>
+          <p className="text-3xl font-bold text-sky-700">
+            {formatCurrency(Number(salesSummary?.total_delivery_fee ?? 0))}
+          </p>
+        </Card>
+        <Card>
+          <h3 className="text-sm font-medium text-gray-500 mb-2">Total Discounts</h3>
+          <p className="text-3xl font-bold text-amber-700">
+            {formatCurrency(Number(salesSummary?.total_discounts ?? 0))}
           </p>
         </Card>
       </div>

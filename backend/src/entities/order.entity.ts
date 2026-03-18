@@ -109,7 +109,7 @@ export class Order {
     @Column({ nullable: true })
     riderId: number | null;
 
-    /** Delivery lifecycle: assigned (pending accept) → accepted → picked_up → delivered | delivery_failed */
+    /** Delivery lifecycle: accepted (mandatory once assigned) → picked_up → delivered | delivery_failed */
     @Column({ type: 'varchar', length: 32, nullable: true })
     deliveryStatus: string | null;
 

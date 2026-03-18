@@ -39,3 +39,91 @@ code {
 ::-webkit-scrollbar-thumb:hover {
   background: #555;
 }
+
+/* ---- Dark theme (Tailwind darkMode: 'class' on html) ---- */
+.dark body {
+  background-color: #0f172a;
+  color: #f1f5f9;
+}
+
+.dark .bg-white { background-color: #1e293b !important; }
+.dark .bg-slate-50 { background-color: #0f172a !important; }
+.dark .bg-slate-100 { background-color: #1e293b !important; }
+.dark .bg-gray-50 { background-color: #1e293b !important; }
+.dark .bg-gray-100 { background-color: #334155 !important; }
+.dark .bg-slate-800 { background-color: #1e293b !important; }
+
+.dark .text-slate-600,
+.dark .text-slate-700,
+.dark .text-gray-600,
+.dark .text-gray-700,
+.dark .text-gray-800,
+.dark .text-gray-900 { color: #e2e8f0 !important; }
+.dark .text-slate-500,
+.dark .text-gray-500 { color: #94a3b8 !important; }
+
+.dark .border-gray-200,
+.dark .border-slate-200,
+.dark .border-foodies-border { border-color: #334155 !important; }
+.dark .border-gray-100 { border-color: #475569 !important; }
+
+.dark input:not([type="checkbox"]):not([type="radio"]),
+.dark select,
+.dark textarea {
+  background-color: #1e293b !important;
+  border-color: #475569 !important;
+  color: #f1f5f9 !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder { color: #94a3b8 !important; }
+
+.dark table { border-color: #334155 !important; }
+.dark th { background-color: #334155 !important; color: #e2e8f0 !important; }
+.dark tr:hover { background-color: rgba(51, 65, 85, 0.5) !important; }
+
+.dark .shadow-md { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2); }
+.dark .hover\:bg-slate-100:hover,
+.dark .hover\:bg-gray-100:hover { background-color: #334155 !important; }
+.dark .hover\:bg-gray-50:hover { background-color: #334155 !important; }
+.dark .hover\:text-slate-700:hover,
+.dark .hover\:text-gray-700:hover { color: #f1f5f9 !important; }
+
+.dark .bg-red-50 { background-color: rgba(185, 28, 28, 0.15) !important; }
+.dark .bg-slate-200 { background-color: #475569 !important; }
+.dark .text-slate-400 { color: #94a3b8 !important; }
+.dark .divide-gray-200 > * + * { border-color: #334155 !important; }
+.dark .ring-gray-300 { --tw-ring-color: #475569 !important; }
+.dark .focus\:ring-gray-400:focus { --tw-ring-color: #64748b !important; }
+.dark .focus\:border-gray-400:focus { border-color: #64748b !important; }
+.dark [class*="bg-gray-50"] { background-color: #1e293b !important; }
+.dark .bg-white\/5 { background-color: rgba(255, 255, 255, 0.05) !important; }
+.dark .text-foodies-textPrimary { color: #f1f5f9 !important; }
+.dark .text-foodies-textSecondary { color: #94a3b8 !important; }
+.dark .border-foodies-border { border-color: #334155 !important; }
+
+/* POS / foodies surfaces */
+.dark .bg-foodies-surface { background-color: #1e293b !important; }
+.dark .bg-foodies-surfaceMuted { background-color: #0f172a !important; }
+.dark .hover\:bg-foodies-surfaceMuted:hover { background-color: #334155 !important; }
+.dark .placeholder-foodies-textSecondary::placeholder { color: #94a3b8 !important; }
+.dark .focus\:bg-foodies-surface:focus { background-color: #1e293b !important; }
+.dark .bg-foodies-surfaceMuted\/50 { background-color: rgba(15, 23, 42, 0.6) !important; }
+.dark .ring-foodies-primary { --tw-ring-color: #dc2626 !important; }
+.dark .ring-foodies-primary\/50 { --tw-ring-color: rgba(220, 38, 38, 0.5) !important; }
+.dark .focus\:ring-foodies-primary\/50:focus { --tw-ring-color: rgba(220, 38, 38, 0.5) !important; }
+.dark .focus\:border-foodies-primary:focus { border-color: #dc2626 !important; }
+.dark .bg-foodies-border { background-color: #334155 !important; }
+.dark .text-foodies-cta { color: #f87171 !important; }
+.dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.2) !important; }
+.dark .text-blue-700 { color: #93c5fd !important; }
+.dark .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.2) !important; }
+.dark .text-emerald-700 { color: #6ee7b7 !important; }
+.dark .bg-violet-100 { background-color: rgba(139, 92, 246, 0.2) !important; }
+.dark .text-violet-700 { color: #c4b5fd !important; }
+.dark .text-green-700 { color: #6ee7b7 !important; }
+.dark .text-red-600 { color: #f87171 !important; }
+
+/* Scrollbar in dark mode */
+.dark ::-webkit-scrollbar-track { background: #1e293b; }
+.dark ::-webkit-scrollbar-thumb { background: #475569; }
+.dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }

@@ -25,7 +25,7 @@ export class Tenant {
     @Column({ unique: true })
     slug: string;
 
-    @Column({ length: 3, default: 'USD' })
+    @Column({ length: 3, default: 'PKR' })
     defaultCurrency: string;
 
     @Column({ default: 'UTC' })

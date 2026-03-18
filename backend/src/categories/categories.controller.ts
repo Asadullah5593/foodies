@@ -13,12 +13,13 @@ import {
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { CategoriesService, CategoryFilters } from './categories.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
 @ApiTags('Admin – Categories')
 @ApiBearerAuth()
 @Controller('admin/categories')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard)
 export class CategoriesController {
     constructor(private service: CategoriesService) {}
 

@@ -58,6 +58,64 @@ export class BranchesService {
         return list.map((b) => this.toResponse(b));
     }
 
+    /** Haversine distance in km between two points (lat/lng in degrees). */
+    private haversineKm(
+        lat1: number,
+        lng1: number,
+        lat2: number,
+        lng2: number,
+    ): number {
+        const R = 6371;
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLng = ((lng2 - lng1) * Math.PI) / 180;
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos((lat1 * Math.PI) / 180) *
+                Math.cos((lat2 * Math.PI) / 180) *
+                Math.sin(dLng / 2) *
+                Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
+    /**
+     * Branches within radius (km) of a point. Only returns branches that have latitude and longitude set. Sorted by distance.
+     */
+    async findAllWithinRadius(
+        latitude: number,
+        longitude: number,
+        radiusKm: number = 10,
+    ) {
+        const list = await this.repo.find({
+            where: {},
+            relations: ['branchBrands', 'branchBrands.brand'],
+            order: { id: 'ASC' },
+        });
+        const withDistance = list
+            .filter(
+                (b) =>
+                    b.latitude != null &&
+                    b.longitude != null &&
+                    this.haversineKm(
+                        latitude,
+                        longitude,
+                        Number(b.latitude),
+                        Number(b.longitude),
+                    ) <= radiusKm,
+            )
+            .map((b) => ({
+                branch: b,
+                distanceKm: this.haversineKm(
+                    latitude,
+                    longitude,
+                    Number(b.latitude),
+                    Number(b.longitude),
+                ),
+            }))
+            .sort((a, b) => a.distanceKm - b.distanceKm);
+        return withDistance.map(({ branch }) => this.toResponse(branch));
+    }
+
     /** Admin: tenant user can only view own tenant's branch; super admin any */
     async findOneForAdmin(id: number, tenantId: number | null) {
         const branch = await this.repo.findOne({
@@ -137,6 +195,8 @@ export class BranchesService {
             is_active?: boolean;
             menu_enabled?: boolean;
             status?: string;
+            latitude?: number | null;
+            longitude?: number | null;
         },
         tenantId: number | null,
     ) {
@@ -198,6 +258,8 @@ export class BranchesService {
         is_active?: boolean;
         menu_enabled?: boolean;
         status?: string;
+        latitude?: number | null;
+        longitude?: number | null;
     }) {
         const brandIds = Array.isArray(dto.brand_ids)
             ? dto.brand_ids.map((id) => +id).filter((id) => Number.isFinite(id))
@@ -230,7 +292,10 @@ export class BranchesService {
                 deliveryFlatFee: dto.delivery_flat_fee ?? 0,
                 isActive: dto.is_active ?? true,
                 menuEnabled: dto.menu_enabled ?? true,
-                status: dto.status ?? 'active',
+                // Single source of truth: status derived from is_active.
+                status: (dto.is_active ?? true) ? 'active' : 'inactive',
+                latitude: dto.latitude ?? null,
+                longitude: dto.longitude ?? null,
             }),
         );
         await this.branchBrandRepo.save(
@@ -333,6 +398,8 @@ export class BranchesService {
             is_active?: boolean;
             menu_enabled?: boolean;
             status?: string;
+            latitude?: number | null;
+            longitude?: number | null;
         },
     ) {
         const branch = await this.repo.findOne({ where: { id } });
@@ -364,7 +431,10 @@ export class BranchesService {
         if (dto.is_active !== undefined) branch.isActive = dto.is_active;
         if (dto.menu_enabled !== undefined)
             branch.menuEnabled = dto.menu_enabled;
-        if (dto.status !== undefined) branch.status = dto.status;
+        // Single source of truth: status derived from isActive.
+        branch.status = branch.isActive ? 'active' : 'inactive';
+        if (dto.latitude !== undefined) branch.latitude = dto.latitude;
+        if (dto.longitude !== undefined) branch.longitude = dto.longitude;
         await this.repo.save(branch);
         const updated = await this.repo.findOne({
             where: { id },
@@ -462,6 +532,8 @@ export class BranchesService {
             is_active: b.isActive,
             menu_enabled: b.menuEnabled,
             status: b.status,
+            latitude: b.latitude != null ? Number(b.latitude) : null,
+            longitude: b.longitude != null ? Number(b.longitude) : null,
             created_at: b.createdAt?.toISOString() ?? null,
             updated_at: b.updatedAt?.toISOString() ?? null,
         };

@@ -1,10 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { adminService } from '../../services/api/adminService';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
+import ClearFiltersButton from '../../components/ClearFiltersButton';
+import SearchableSelect from '../../components/SearchableSelect';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { formatCurrency } from '../../utils/currency';
+import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 
 type OrderRow = {
   id: number;
@@ -50,6 +55,8 @@ function normalizeOrder(o: OrderRow): OrderRow {
 
 const Deliveries: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const [page, setPage] = useState(1);
+  const riderId = searchParams.get('rider_id') || '';
   const dateFrom = searchParams.get('date_from') || '';
   const dateTo = searchParams.get('date_to') || '';
 
@@ -79,13 +86,27 @@ const Deliveries: React.FC = () => {
       });
       return (Array.isArray(data) ? data : []).map(normalizeOrder) as OrderRow[];
     },
+    refetchInterval: ORDER_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: true,
+  });
+
+  const { data: riders } = useQuery({
+    queryKey: ['admin-riders'],
+    queryFn: () => adminService.getRiders(),
   });
 
   const orders = ordersRaw ?? [];
 
+  const ordersFilteredByRider = useMemo(() => {
+    if (!riderId) return orders;
+    const id = parseInt(riderId, 10);
+    if (Number.isNaN(id)) return orders;
+    return orders.filter((o) => (o.rider_id ?? o.rider?.id) === id);
+  }, [orders, riderId]);
+
   const byRider = useMemo(() => {
     const map = new Map<number, { riderName: string; orders: OrderRow[] }>();
-    for (const o of orders) {
+    for (const o of ordersFilteredByRider) {
       const riderId = o.rider_id ?? 0;
       const riderName = o.rider?.name ?? `Rider #${riderId}`;
       if (!map.has(riderId)) map.set(riderId, { riderName, orders: [] });
@@ -105,110 +126,119 @@ const Deliveries: React.FC = () => {
       return new Date(bFirst ?? 0).getTime() - new Date(aFirst ?? 0).getTime();
     });
     return result;
-  }, [orders]);
+  }, [ordersFilteredByRider]);
+
+  const paginatedByRider = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return byRider.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [byRider, page]);
+  useEffect(() => setPage(1), [riderId, dateFrom, dateTo]);
 
   if (isLoading) return <Loader fullScreen text="Loading deliveries..." />;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold text-gray-800">Deliveries</h1>
-          <p className="text-gray-500 text-sm mt-1">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Deliveries</h1>
+          <p className="text-gray-500 dark:text-slate-400 text-sm mt-1">
             See which rider is handling which orders and their delivery status.
           </p>
         </div>
-        <div className="flex gap-2 items-center">
-          <input
-            type="date"
-            value={dateFrom}
-            onChange={(e) => setFilter('date_from', e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          />
-          <span className="text-gray-400">to</span>
-          <input
-            type="date"
-            value={dateTo}
-            onChange={(e) => setFilter('date_to', e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          />
-        </div>
       </div>
 
+      <Card className="mb-6 p-4 dark:bg-slate-800 dark:border-slate-700">
+        <div className="flex flex-wrap gap-4 items-end">
+          <SearchableSelect
+            label="Rider"
+            value={riderId}
+            onChange={(v) => setFilter('rider_id', v)}
+            options={[
+              { value: '', label: 'All riders' },
+              ...(riders ?? []).map((r) => ({ value: String(r.id), label: r.name })),
+            ]}
+            placeholder="All riders"
+            minWidth="min-w-[160px]"
+          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Date from</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setFilter('date_from', e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Date to</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setFilter('date_to', e.target.value)}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <ClearFiltersButton onClick={() => setSearchParams({})} />
+        </div>
+      </Card>
+
       {byRider.length === 0 ? (
-        <Card className="p-12 text-center">
-          <p className="text-gray-500">No deliveries assigned to riders yet.</p>
-          <p className="text-gray-400 text-sm mt-2">
+        <Card className="dark:bg-slate-800 dark:border-slate-700">
+          <p className="text-center text-gray-500 dark:text-slate-300 py-12">No deliveries assigned to riders yet.</p>
+          <p className="text-center text-gray-400 dark:text-slate-400 text-sm mt-2 pb-8">
             Assign riders from the Orders page; they will appear here.
           </p>
         </Card>
       ) : (
-        <div className="space-y-6">
-          {byRider.map(({ riderId, riderName, orders: riderOrders }) => (
-            <Card
-              key={riderId}
-              className="overflow-hidden border border-gray-100 shadow-sm"
-            >
-              <div className="bg-indigo-50 px-4 py-3 border-b border-indigo-100">
-                <h2 className="text-lg font-semibold text-gray-800">
-                  🛵 {riderName}
-                </h2>
-                <p className="text-sm text-gray-500 mt-0.5">
-                  {riderOrders.length} order{riderOrders.length !== 1 ? 's' : ''} assigned
-                </p>
-              </div>
-              <ul className="divide-y divide-gray-100">
-                {riderOrders.map((order) => (
-                  <li key={order.id} className="px-4 py-3 hover:bg-gray-50/50">
-                    <Link
-                      to={`/admin/orders/${order.id}`}
-                      className="flex flex-wrap items-center justify-between gap-2"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium text-blue-600 hover:underline">
-                          #{order.order_number}
-                        </span>
-                        {order.brand?.name && (
-                          <span className="text-gray-500 text-sm">
-                            · {order.brand.name}
+        <>
+          <AccentedList>
+            {paginatedByRider.map(({ riderId, riderName, orders: riderOrders }, i) => {
+              const deliveredCount = riderOrders.filter((o) => o.delivery_status === 'delivered').length;
+              const subtitle = (
+                <>
+                  <p>{riderOrders.length} order{riderOrders.length !== 1 ? 's' : ''} assigned</p>
+                  {deliveredCount > 0 && <p className="text-emerald-600 dark:text-emerald-400">{deliveredCount} delivered</p>}
+                </>
+              );
+              const footer = (
+                <ul className="divide-y divide-gray-100 dark:divide-slate-600">
+                  {riderOrders.map((order) => (
+                    <li key={order.id} className="px-4 sm:px-6 py-3 hover:bg-gray-50/50 dark:hover:bg-slate-600/30 transition-colors">
+                      <Link to={`/admin/orders/${order.id}`} className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-blue-600 dark:text-blue-400 hover:underline">#{order.order_number}</span>
+                          {order.brand?.name && <span className="text-gray-500 dark:text-slate-400 text-sm">· {order.brand.name}</span>}
+                          {order.delivery_address && <span className="text-gray-500 dark:text-slate-400 text-sm truncate max-w-[200px]">· {order.delivery_address}</span>}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-500 dark:text-slate-400">Delivery:</span>
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${order.delivery_status === 'delivered' ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200' : order.delivery_status === 'delivery_failed' ? 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200' : 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200'}`}>
+                            {DELIVERY_STATUS_LABELS[order.delivery_status ?? ''] ?? order.delivery_status ?? 'Assigned'}
                           </span>
-                        )}
-                        {order.delivery_address && (
-                          <span className="text-gray-500 text-sm truncate max-w-[200px]">
-                            · {order.delivery_address}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                            order.delivery_status === 'delivered'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : order.delivery_status === 'delivery_failed'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {DELIVERY_STATUS_LABELS[order.delivery_status ?? ''] ??
-                            order.delivery_status ??
-                            'Assigned'}
-                        </span>
-                        <span className="text-sm font-medium text-gray-700">
-                          {formatCurrency(Number(order.total_amount ?? 0))}
-                        </span>
-                      </div>
-                    </Link>
-                    {order.placed_at && (
-                      <p className="text-xs text-gray-400 mt-1">
-                        Placed {new Date(order.placed_at).toLocaleString()}
-                      </p>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </Card>
-          ))}
-        </div>
+                          <span className="text-sm font-medium text-gray-700 dark:text-slate-200">{formatCurrency(Number(order.total_amount ?? 0))}</span>
+                        </div>
+                      </Link>
+                      {order.placed_at && <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">Placed {new Date(order.placed_at).toLocaleString()}</p>}
+                    </li>
+                  ))}
+                </ul>
+              );
+              return (
+                <AccentedListRow
+                  key={riderId}
+                  accent="active"
+                  initial={riderName.charAt(0)}
+                  title={`🛵 ${riderName}`}
+                  subtitle={subtitle}
+                  animationIndex={i}
+                  actions={<></>}
+                  footer={footer}
+                />
+              );
+            })}
+          </AccentedList>
+          <PaginationBar totalCount={byRider.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="riders" />
+        </>
       )}
     </div>
   );

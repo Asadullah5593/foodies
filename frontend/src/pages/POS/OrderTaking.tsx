@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
-import { motion, AnimatePresence } from 'framer-motion';
 import apiClient from '../../utils/apiClient';
 import { menuService, orderService, adminService, CreateOrderRequest } from '../../services/api';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import { validatePakistaniPhone, PAKISTANI_PHONE_PLACEHOLDER, normalizePakistaniPhone } from '../../utils/phone';
 import { MenuItem } from '../../types';
 import Loader from '../../components/Loader';
@@ -11,19 +12,23 @@ import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
-import CustomerSearchSelect from '../../components/CustomerSearchSelect';
+import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
 import { useQueryClient } from '@tanstack/react-query';
-
-export type OrderTypeOption = 'dine_in' | 'takeaway' | 'pickup' | 'delivery';
+import {
+  POSLayout,
+  POSFilters,
+  MenuGrid,
+  MENU_PAGE_SIZE,
+  CustomerPanel,
+  CartPanel,
+  PaymentPanel,
+  ItemConfigModal,
+  DealConfigModal,
+} from './components';
+import type { OrderTypeOption, CartLine } from './components';
 
 const OrderTaking: React.FC = () => {
-  const [selectedItems, setSelectedItems] = useState<Array<{
-    menuItem: MenuItem;
-    quantity: number;
-    variantId?: number;
-    addons: Array<{ addonId: number; quantity: number }>;
-    notes?: string;
-  }>>([]);
+  const [selectedItems, setSelectedItems] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<OrderTypeOption>('dine_in');
   const [tableNumber, setTableNumber] = useState('');
   const [discountCode, setDiscountCode] = useState('');
@@ -38,8 +43,9 @@ const OrderTaking: React.FC = () => {
   const [itemConfig, setItemConfig] = useState<{
     variantId?: number;
     addons: Array<{ addonId: number; quantity: number }>;
+    modifiers: Array<{ modifierId: number; quantity: number }>;
     notes?: string;
-  }>({ addons: [] });
+  }>({ addons: [], modifiers: [] });
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
   const [lastOrderGroupId, setLastOrderGroupId] = useState<string | null>(null);
   const [showCustomerInvoiceModal, setShowCustomerInvoiceModal] = useState(false);
@@ -47,7 +53,26 @@ const OrderTaking: React.FC = () => {
   const [addCustomerName, setAddCustomerName] = useState('');
   const [addCustomerPhone, setAddCustomerPhone] = useState('');
   const [addCustomerPhoneError, setAddCustomerPhoneError] = useState('');
+  const [orderNotes, setOrderNotes] = useState('');
+  const [selectedBrandId, setSelectedBrandId] = useState<number | null>(null);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [posSearch, setPosSearch] = useState('');
+  const debouncedPosSearch = useDebouncedValue(posSearch, 300);
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'multipay'>('cash');
+  const [paymentCashAmount, setPaymentCashAmount] = useState<string>('');
+  const [paymentCardAmount, setPaymentCardAmount] = useState<string>('');
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [currentMenuPage, setCurrentMenuPage] = useState(1);
+  const [removeConfirmIndex, setRemoveConfirmIndex] = useState<number | null>(null);
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [showDealModal, setShowDealModal] = useState(false);
+  const [selectedDeal, setSelectedDeal] = useState<import('../../services/api/menuService').DealDefinition | null>(null);
+  const [editingCartIndex, setEditingCartIndex] = useState<number | null>(null);
+  const [editingDealIndex, setEditingDealIndex] = useState<number | null>(null);
+  const [dealInitialComponents, setDealInitialComponents] = useState<import('./components/types').DealComponentLine[] | null>(null);
   const queryClient = useQueryClient();
+  const searchInputRefDesktop = useRef<HTMLInputElement>(null);
+  const searchInputRefMobile = useRef<HTMLInputElement>(null);
 
   const { data: posBranches, isLoading: loadingBranches } = useQuery({
     queryKey: ['pos-branches'],
@@ -61,19 +86,76 @@ const OrderTaking: React.FC = () => {
     queryFn: () => menuService.getBranchMenu(effectiveBranchId!),
     enabled: effectiveBranchId != null,
   });
-  const menu = branchMenu?.menu ?? [];
+  const menuAll = branchMenu?.menu ?? [];
+  const brands = branchMenu?.brands ?? [];
   const branchId = branchMenu?.branch_id ?? null;
+  const menuByBrand = selectedBrandId == null
+    ? menuAll
+    : menuAll.filter((item: MenuItem) => item.brand_id === selectedBrandId);
+  const categoriesFromMenu = React.useMemo(() => {
+    const seen = new Map<number, string>();
+    (menuByBrand as MenuItem[]).forEach((item) => {
+      const id = item.category_id ?? (typeof item.category === 'object' && item.category?.id) ?? 0;
+      const name =
+        typeof item.category === 'string'
+          ? item.category
+          : (item.category as { name?: string } | undefined)?.name ?? 'Uncategorised';
+      if (id && !seen.has(id)) seen.set(id, name);
+    });
+    return Array.from(seen.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [menuByBrand]);
+  const menu = selectedCategoryId == null
+    ? menuByBrand
+    : menuByBrand.filter((item: MenuItem) => (item.category_id ?? item.category?.id) === selectedCategoryId);
+
+  const posSearchTypeaheadOptions = React.useMemo(
+    () =>
+      (menu as MenuItem[]).map((i) => ({
+        id: String(i.id),
+        label: i.name ?? '',
+      })),
+    [menu],
+  );
+  const posSearchTypeahead = useTypeaheadSuggestions({
+    query: debouncedPosSearch,
+    options: posSearchTypeaheadOptions,
+    minChars: 2,
+    limit: 8,
+  });
+
+  const menuFilteredBySearch = React.useMemo(() => {
+    if (!debouncedPosSearch.trim()) return menu;
+    const q = debouncedPosSearch.trim().toLowerCase();
+    return menu.filter(
+      (item: MenuItem) =>
+        (item.name || '').toLowerCase().includes(q) ||
+        (item.description || '').toLowerCase().includes(q),
+    );
+  }, [menu, debouncedPosSearch]);
+
+  React.useEffect(() => setCurrentMenuPage(1), [debouncedPosSearch, selectedBrandId, selectedCategoryId]);
+
+  const paginatedMenu = React.useMemo(() => {
+    const start = (currentMenuPage - 1) * MENU_PAGE_SIZE;
+    return menuFilteredBySearch.slice(start, start + MENU_PAGE_SIZE);
+  }, [menuFilteredBySearch, currentMenuPage]);
+
   const openShift = branchMenu?.open_shift ?? null;
+
+  const getBrandName = (brandId: number | null | undefined): string | null =>
+    brandId != null ? (brands.find((b) => b.id === brandId)?.name ?? null) : null;
 
   // Only show order types the selected branch explicitly supports (use strict true; no defaults so dropdown is dynamic)
   const orderTypeOptions = React.useMemo((): { value: OrderTypeOption; label: string }[] => {
     const list: { value: OrderTypeOption; label: string }[] = [];
     if (branchMenu?.supports_dine_in === true) list.push({ value: 'dine_in', label: 'Dine In' });
-    if (branchMenu?.supports_takeaway === true) list.push({ value: 'takeaway', label: 'Takeaway' });
-    if (branchMenu?.supports_pickup === true) list.push({ value: 'pickup', label: 'Pickup' });
+    // Takeaway and pickup are the same concept; standardize on "Takeaway".
+    // Backend maps legacy pickup to supports_takeaway.
+    if (branchMenu?.supports_takeaway === true)
+      list.push({ value: 'takeaway', label: 'Takeaway' });
     if (branchMenu?.supports_delivery === true) list.push({ value: 'delivery', label: 'Delivery' });
     return list.length ? list : [{ value: 'dine_in', label: 'Dine In' }];
-  }, [branchMenu?.supports_dine_in, branchMenu?.supports_takeaway, branchMenu?.supports_pickup, branchMenu?.supports_delivery]);
+  }, [branchMenu?.supports_dine_in, branchMenu?.supports_takeaway, branchMenu?.supports_delivery]);
 
   const defaultOrderType = orderTypeOptions[0]?.value ?? 'dine_in';
   const effectiveOrderType = orderTypeOptions.some((o) => o.value === orderType) ? orderType : defaultOrderType;
@@ -85,12 +167,29 @@ const OrderTaking: React.FC = () => {
     ? {
         branch_id: branchId,
         order_type: effectiveOrderType,
-        items: selectedItems.map(item => ({
-          menu_item_id: item.menuItem.id,
-          quantity: item.quantity,
-          variant_id: item.variantId,
-          addons: item.addons.map(a => ({ addon_id: a.addonId, quantity: a.quantity })),
-        })),
+        items: selectedItems.map((item) => {
+          if (item.dealId != null && item.components?.length) {
+            return {
+              deal_menu_item_id: item.dealId,
+              quantity: item.quantity,
+              components: item.components.map((c) => ({
+                slot_index: c.slot_index ?? 0,
+                menu_item_id: c.menuItem.id,
+                quantity: c.quantity,
+                variant_id: c.variantId,
+                addons: c.addons.map((a) => ({ addon_id: a.addonId, quantity: a.quantity })),
+                modifiers: c.modifiers?.length ? c.modifiers.map((m) => ({ modifier_id: m.modifierId, quantity: m.quantity })) : undefined,
+              })),
+            };
+          }
+          return {
+            menu_item_id: item.menuItem.id,
+            quantity: item.quantity,
+            variant_id: item.variantId,
+            addons: item.addons.map((a) => ({ addon_id: a.addonId, quantity: a.quantity })),
+            modifiers: item.modifiers?.length ? item.modifiers.map((m) => ({ modifier_id: m.modifierId, quantity: m.quantity })) : undefined,
+          };
+        }),
         discount_code: discountCode.trim() || undefined,
         customer_phone: customerPhone.trim() || undefined,
         loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
@@ -141,9 +240,33 @@ const OrderTaking: React.FC = () => {
   });
 
   const createOrderMutation = useMutation({
-    mutationFn: orderService.createOrder,
-    onSuccess: (data: { order_group_id: string; orders: Array<{ order_number: string; total_amount?: number }> }) => {
+    mutationFn: async (arg: {
+      order: CreateOrderRequest;
+      payments: Array<{ method: 'cash' | 'card'; amount: number }>;
+    }) => orderService.createOrder(arg.order),
+    onSuccess: async (
+      data: { order_group_id: string; orders: Array<{ id: number; order_number: string; total_amount?: number }> },
+      variables: { order: CreateOrderRequest; payments: Array<{ method: 'cash' | 'card'; amount: number }> }
+    ) => {
       const orders = data?.orders ?? [];
+      const payments = variables?.payments ?? [];
+      const grandTotal = orders.reduce((sum, o) => sum + Number(o?.total_amount ?? 0), 0);
+      if (orders.length > 0 && payments.length > 0 && grandTotal > 0) {
+        for (const order of orders) {
+          const orderTotal = Number(order.total_amount ?? 0);
+          if (orderTotal <= 0) continue;
+          const ratio = orderTotal / grandTotal;
+          for (const p of payments) {
+            const amount = Math.round(p.amount * ratio * 100) / 100;
+            if (amount > 0) {
+              await orderService.processPayment(order.id, {
+                payment_method: p.method,
+                amount,
+              });
+            }
+          }
+        }
+      }
       const grossTotal = orders.reduce((sum, o) => sum + Number(o?.total_amount ?? 0), 0);
       const groupId = data?.order_group_id ?? '';
       if (groupId) {
@@ -157,6 +280,11 @@ const OrderTaking: React.FC = () => {
       } else {
         toast.success(`${orders.length} orders created. Group: ${groupId.slice(0, 8)}… | Gross total: ${formatCurrency(grossTotal)}`);
       }
+      queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['kitchen-display-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      setShowCheckoutModal(false);
+      setDrawerOpen(false);
       setSelectedItems([]);
       setTableNumber('');
       setDiscountCode('');
@@ -165,57 +293,253 @@ const OrderTaking: React.FC = () => {
       setDeliveryAddress('');
       setLoyaltyPointsToRedeem('');
       setPhoneError('');
+      setPaymentCashAmount('');
+      setPaymentCardAmount('');
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to create order');
     },
   });
 
-  const { data: mainInvoice, isLoading: mainInvoiceLoading } = useQuery({
-    queryKey: ['order-group-main-invoice', lastOrderGroupId],
-    queryFn: () => orderService.getOrderGroupMainInvoice(lastOrderGroupId!),
-    enabled: showCustomerInvoiceModal && !!lastOrderGroupId,
-  });
 
-  const addItem = (item: MenuItem) => {
+  const lineConfigMatch = (
+    a: { menu_item_id: number; variantId?: number; addons: Array<{ addonId: number; quantity: number }>; modifiers?: Array<{ modifierId: number; quantity: number }>; notes?: string },
+    b: { menuItem: MenuItem; variantId?: number; addons: Array<{ addonId: number; quantity: number }>; modifiers?: Array<{ modifierId: number; quantity: number }>; notes?: string }
+  ) => {
+    if (a.menu_item_id !== b.menuItem.id) return false;
+    if ((a.variantId ?? null) !== (b.variantId ?? null)) return false;
+    if ((a.notes ?? '').trim() !== (b.notes ?? '').trim()) return false;
+    const addonsA = [...a.addons].sort((x, y) => x.addonId - y.addonId);
+    const addonsB = [...(b.addons ?? [])].sort((x, y) => x.addonId - y.addonId);
+    if (addonsA.length !== addonsB.length) return false;
+    if (addonsA.some((x, i) => x.addonId !== addonsB[i].addonId || x.quantity !== addonsB[i].quantity)) return false;
+    const modsA = [...(a.modifiers ?? [])].sort((x, y) => x.modifierId - y.modifierId);
+    const modsB = [...(b.modifiers ?? [])].sort((x, y) => x.modifierId - y.modifierId);
+    if (modsA.length !== modsB.length) return false;
+    if (modsA.some((x, i) => x.modifierId !== modsB[i].modifierId || x.quantity !== modsB[i].quantity)) return false;
+    return true;
+  };
+
+  const addItem = async (item: MenuItem) => {
     if (!openShift) {
       toast.error('Open a shift in Admin → Shifts before adding items to the order');
       return;
     }
-    // If item has variants or addons, show modal for configuration
-    if ((item.variants && item.variants.length > 0) || (item.addons && item.addons.length > 0)) {
+    if (branchId != null) {
+      try {
+        const deal = await menuService.getDeal(item.id, branchId);
+        if (deal?.slots?.length) {
+          setSelectedDeal(deal);
+          setShowDealModal(true);
+          return;
+        }
+      } catch {
+        // Not a deal or API error — fall through to normal item
+      }
+    }
+    const hasOptions = (item.variants && item.variants.length > 0) ||
+      (item.addons && item.addons.length > 0) ||
+      (item.modifier_groups && item.modifier_groups.length > 0);
+    if (hasOptions) {
       setSelectedItemForConfig(item);
-      setItemConfig({ addons: [] });
+      setItemConfig({ addons: [], modifiers: [] });
       setShowItemModal(true);
     } else {
-      // Add directly if no variants/addons
-      setSelectedItems([...selectedItems, {
-        menuItem: item,
-        quantity: 1,
-        addons: [],
-      }]);
+      const newLine: CartLine = { menuItem: item, quantity: 1, addons: [], modifiers: [] };
+      const idx = selectedItems.findIndex((existing) =>
+        !existing.dealId && lineConfigMatch(
+          { menu_item_id: item.id, variantId: undefined, addons: [], modifiers: [] },
+          existing
+        )
+      );
+      if (idx >= 0) {
+        const updated = [...selectedItems];
+        updated[idx] = { ...updated[idx], quantity: updated[idx].quantity + 1 };
+        setSelectedItems(updated);
+      } else {
+        setSelectedItems([...selectedItems, newLine]);
+      }
       setJustAddedItem(item.id);
       setTimeout(() => setJustAddedItem(null), 500);
-      toast.success(`${item.name} added to order`);
+      toast.success(idx >= 0 ? `${item.name} quantity updated` : `${item.name} added to order`);
     }
+  };
+
+  const editCartLine = async (index: number) => {
+    const line = selectedItems[index];
+    if (!line) return;
+    if (line.dealId != null && branchId != null) {
+      try {
+        const deal = await menuService.getDeal(line.dealId, branchId);
+        if (deal?.slots?.length) {
+          setEditingDealIndex(index);
+          setDealInitialComponents(line.components ?? []);
+          setSelectedDeal(deal);
+          setShowDealModal(true);
+          return;
+        }
+      } catch {
+        // fall through
+      }
+    }
+    // Non-deal line: open item config modal (if it has any options) or allow notes/variant/addons editing anyway.
+    setEditingCartIndex(index);
+    setSelectedItemForConfig(line.menuItem);
+    setItemConfig({
+      variantId: line.variantId,
+      addons: line.addons ?? [],
+      modifiers: line.modifiers ?? [],
+      notes: line.notes,
+    });
+    setShowItemModal(true);
+  };
+
+  const handleDealConfirm = (params: {
+    dealId: number;
+    dealName: string;
+    dealPrice: number;
+    components: import('./components/types').DealComponentLine[];
+  }) => {
+    const syntheticMenuItem: MenuItem = {
+      id: params.dealId,
+      name: params.dealName,
+      base_price: params.dealPrice,
+      category_id: 0,
+      is_active: true,
+      price: params.dealPrice,
+      addons: [],
+      variants: [],
+    };
+    const newLine: CartLine = {
+      menuItem: syntheticMenuItem,
+      quantity: 1,
+      addons: [],
+      modifiers: [],
+      dealId: params.dealId,
+      dealName: params.dealName,
+      dealPrice: params.dealPrice,
+      components: params.components,
+    };
+    setSelectedItems((prev) => {
+      if (editingDealIndex != null && prev[editingDealIndex]) {
+        const updated = [...prev];
+        const keepQty = updated[editingDealIndex].quantity ?? 1;
+        updated[editingDealIndex] = { ...newLine, quantity: keepQty };
+        return updated;
+      }
+      return [...prev, newLine];
+    });
+    setJustAddedItem(params.dealId);
+    setTimeout(() => setJustAddedItem(null), 500);
+    toast.success(editingDealIndex != null ? `${params.dealName} updated` : `${params.dealName} added to order`);
+    setShowDealModal(false);
+    setSelectedDeal(null);
+    setEditingDealIndex(null);
+    setDealInitialComponents(null);
   };
 
   const confirmAddItem = () => {
     if (!selectedItemForConfig) return;
-    
-    setSelectedItems([...selectedItems, {
+    const groups = selectedItemForConfig.modifier_groups ?? [];
+    for (const group of groups) {
+      if ((group.min_select ?? 0) > 0) {
+        const selectedInGroup = (itemConfig.modifiers ?? []).filter(m =>
+          group.modifiers.some(mod => mod.id === m.modifierId)
+        );
+        if (selectedInGroup.length < group.min_select) {
+          toast.error(`Please select at least ${group.min_select} for "${group.name}"`);
+          return;
+        }
+      }
+    }
+    const newLine = {
       menuItem: selectedItemForConfig,
       quantity: 1,
       variantId: itemConfig.variantId,
       addons: itemConfig.addons,
+      modifiers: itemConfig.modifiers ?? [],
       notes: itemConfig.notes,
-    }]);
+    };
+    const toMatch = {
+      menu_item_id: selectedItemForConfig.id,
+      variantId: itemConfig.variantId,
+      addons: itemConfig.addons,
+      modifiers: itemConfig.modifiers ?? [],
+      notes: itemConfig.notes,
+    };
+    if (editingCartIndex != null && selectedItems[editingCartIndex]) {
+      const updated = [...selectedItems];
+      const keepQty = updated[editingCartIndex].quantity ?? 1;
+      updated[editingCartIndex] = { ...newLine, quantity: keepQty };
+      setSelectedItems(updated);
+      toast.success(`${selectedItemForConfig.name} updated`);
+      setEditingCartIndex(null);
+    } else {
+      const idx = selectedItems.findIndex((existing) => lineConfigMatch(toMatch, existing));
+      if (idx >= 0) {
+        const updated = [...selectedItems];
+        updated[idx] = { ...updated[idx], quantity: updated[idx].quantity + 1 };
+        setSelectedItems(updated);
+        toast.success(`${selectedItemForConfig.name} quantity updated`);
+      } else {
+        setSelectedItems([...selectedItems, newLine]);
+        toast.success(`${selectedItemForConfig.name} added to order`);
+      }
+    }
     setJustAddedItem(selectedItemForConfig.id);
     setTimeout(() => setJustAddedItem(null), 500);
-    toast.success(`${selectedItemForConfig.name} added to order`);
     setShowItemModal(false);
     setSelectedItemForConfig(null);
-    setItemConfig({ addons: [] });
+    setItemConfig({ addons: [], modifiers: [] });
+  };
+
+  const toggleModifier = (modifierId: number) => {
+    const existing = (itemConfig.modifiers ?? []).find((m) => m.modifierId === modifierId);
+    const groupForModifier = selectedItemForConfig?.modifier_groups?.find((g) =>
+      g.modifiers.some((m) => m.id === modifierId),
+    );
+    const currentInGroup = (itemConfig.modifiers ?? []).filter((m) => {
+      const g = selectedItemForConfig?.modifier_groups?.find((gr) =>
+        gr.modifiers.some((mod) => mod.id === m.modifierId),
+      );
+      return g?.id === groupForModifier?.id;
+    });
+
+    // If already selected, just unselect.
+    if (existing) {
+      setItemConfig({
+        ...itemConfig,
+        modifiers: (itemConfig.modifiers ?? []).filter((m) => m.modifierId !== modifierId),
+      });
+      return;
+    }
+
+    // For single-select groups (min/max 1), behave like radio buttons:
+    // clicking a new option unselects any previous one in this group and selects the new one.
+    if (groupForModifier && (groupForModifier.max_select ?? 0) === 1) {
+      const clearedOthers = (itemConfig.modifiers ?? []).filter((m) => {
+        const g = selectedItemForConfig?.modifier_groups?.find((gr) =>
+          gr.modifiers.some((mod) => mod.id === m.modifierId),
+        );
+        return g?.id !== groupForModifier.id;
+      });
+      setItemConfig({
+        ...itemConfig,
+        modifiers: [...clearedOthers, { modifierId, quantity: 1 }],
+      });
+      return;
+    }
+
+    // Multi-select groups: enforce max_select and show a friendly error.
+    if (groupForModifier && currentInGroup.length >= (groupForModifier.max_select || 99)) {
+      toast.error(`Maximum ${groupForModifier.max_select} allowed for ${groupForModifier.name}`);
+      return;
+    }
+
+    setItemConfig({
+      ...itemConfig,
+      modifiers: [...(itemConfig.modifiers ?? []), { modifierId, quantity: 1 }],
+    });
   };
 
   const toggleAddon = (addonId: number) => {
@@ -289,6 +613,31 @@ const OrderTaking: React.FC = () => {
       toast.error('No shift is open for this branch. Open a shift in Admin → Shifts before placing orders.');
       return;
     }
+    const orderTotal = Number(quote?.total_amount ?? total ?? 0);
+    if (orderTotal <= 0) {
+      toast.error('Order total must be greater than zero');
+      return;
+    }
+    const payments: Array<{ method: 'cash' | 'card'; amount: number }> = [];
+    if (paymentMode === 'cash') {
+      payments.push({ method: 'cash', amount: orderTotal });
+    } else if (paymentMode === 'card') {
+      payments.push({ method: 'card', amount: orderTotal });
+    } else {
+      const cash = parseFloat(paymentCashAmount || '0') || 0;
+      const card = parseFloat(paymentCardAmount || '0') || 0;
+      const sum = Math.round((cash + card) * 100) / 100;
+      if (Math.abs(sum - orderTotal) > 0.01) {
+        toast.error(`Cash + Card (${formatCurrency(sum)}) must equal total (${formatCurrency(orderTotal)})`);
+        return;
+      }
+      if (cash > 0) payments.push({ method: 'cash', amount: cash });
+      if (card > 0) payments.push({ method: 'card', amount: card });
+    }
+    if (payments.length === 0) {
+      toast.error('Please select payment method and ensure payment covers the total');
+      return;
+    }
     const payload: CreateOrderRequest = {
       branch_id: branchId,
       order_type: effectiveOrderType,
@@ -298,21 +647,54 @@ const OrderTaking: React.FC = () => {
       delivery_address: effectiveOrderType === 'delivery' ? deliveryAddress.trim() : undefined,
       discount_code: discountCode.trim() || undefined,
       loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
-      items: selectedItems.map(item => ({
-        menu_item_id: item.menuItem.id,
-        quantity: item.quantity,
-        variant_id: item.variantId,
-        addons: item.addons.map(a => ({
-          addon_id: a.addonId,
-          quantity: a.quantity,
-        })),
-        notes: item.notes,
-      })),
+      items: selectedItems.map((item) => {
+        if (item.dealId != null && item.components?.length) {
+          return {
+            deal_menu_item_id: item.dealId,
+            quantity: item.quantity,
+            components: item.components.map((c) => ({
+              slot_index: c.slot_index ?? 0,
+              menu_item_id: c.menuItem.id,
+              quantity: c.quantity,
+              variant_id: c.variantId,
+              addons: c.addons.map((a) => ({ addon_id: a.addonId, quantity: a.quantity })),
+              modifiers: c.modifiers?.length ? c.modifiers.map((m) => ({ modifier_id: m.modifierId, quantity: m.quantity })) : undefined,
+              notes: c.notes,
+            })),
+          };
+        }
+        return {
+          menu_item_id: item.menuItem.id,
+          quantity: item.quantity,
+          variant_id: item.variantId,
+          addons: item.addons.map((a) => ({ addon_id: a.addonId, quantity: a.quantity })),
+          modifiers: item.modifiers?.length ? item.modifiers.map((m) => ({ modifier_id: m.modifierId, quantity: m.quantity })) : undefined,
+          notes: item.notes,
+        };
+      }),
+      notes: orderNotes.trim() || undefined,
     };
-    createOrderMutation.mutate(payload);
+    createOrderMutation.mutate({ order: payload, payments });
   };
 
   const total = selectedItems.reduce((sum, item) => {
+    if (item.dealPrice != null && item.components?.length) {
+      const componentExtras = item.components.reduce((s, c) => {
+        const addonsPrice = (c.addons ?? []).reduce((aSum, a) => {
+          const addonItem = c.menuItem.addons?.find(ad => ad.id === a.addonId);
+          return aSum + (addonItem?.price || 0) * a.quantity;
+        }, 0);
+        const modifiersPrice = (c.modifiers ?? []).reduce((mSum, m) => {
+          const mod = c.menuItem.modifier_groups?.flatMap(g => g.modifiers).find(mo => mo.id === m.modifierId);
+          return mSum + (mod?.price || 0) * m.quantity;
+        }, 0);
+        return s + addonsPrice + modifiersPrice;
+      }, 0);
+      return sum + (item.dealPrice + componentExtras) * item.quantity;
+    }
+    if (item.dealPrice != null) {
+      return sum + item.dealPrice * item.quantity;
+    }
     const basePrice = item.menuItem.price || item.menuItem.base_price || 0;
     const variantPrice = item.variantId && item.menuItem.variants
       ? item.menuItem.variants.find(v => v.id === item.variantId)?.price_modifier || 0
@@ -321,8 +703,60 @@ const OrderTaking: React.FC = () => {
       const addonItem = item.menuItem.addons?.find(a => a.id === addon.addonId);
       return addonSum + (addonItem?.price || 0) * addon.quantity;
     }, 0);
-    return sum + (basePrice + variantPrice + addonsPrice) * item.quantity;
+    const modifiersPrice = (item.modifiers ?? []).reduce((modSum, mod) => {
+      const modObj = item.menuItem.modifier_groups
+        ?.flatMap(g => g.modifiers)
+        .find(m => m.id === mod.modifierId);
+      return modSum + (modObj?.price || 0) * mod.quantity;
+    }, 0);
+    return sum + (basePrice + variantPrice + addonsPrice + modifiersPrice) * item.quantity;
   }, 0);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = document.activeElement;
+      const isInput = target && (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement);
+      if (e.key === '/') {
+        if (!isInput) {
+          e.preventDefault();
+          (searchInputRefDesktop.current ?? searchInputRefMobile.current)?.focus();
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowItemModal(false);
+        setSelectedItemForConfig(null);
+        setItemConfig({ addons: [], modifiers: [] });
+        setShowDealModal(false);
+        setSelectedDeal(null);
+        setShowAddCustomerModal(false);
+        setShowCustomerInvoiceModal(false);
+        setShowCheckoutModal(false);
+        setDrawerOpen(false);
+        return;
+      }
+      if (e.key === 'Enter' && e.ctrlKey) {
+        if (!isInput) {
+          e.preventDefault();
+          if (!showCheckoutModal && selectedItems.length > 0) {
+            setShowCheckoutModal(true);
+            setDrawerOpen(false);
+          } else {
+            handleCreateOrder();
+          }
+        }
+        return;
+      }
+      if (e.key === 'Enter' && !e.ctrlKey && !isInput) {
+        if (menuFilteredBySearch?.length > 0) {
+          e.preventDefault();
+          addItem(menuFilteredBySearch[0]);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [addItem, handleCreateOrder, menuFilteredBySearch, showCheckoutModal, selectedItems.length]);
 
   if (loadingBranches) {
     return <Loader fullScreen text="Loading..." />;
@@ -330,11 +764,11 @@ const OrderTaking: React.FC = () => {
 
   if (posBranches && posBranches.length === 0) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
         <Card>
           <div className="text-center py-8 max-w-md">
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">No branches available for POS</h2>
-            <p className="text-gray-600">No branch has an open shift. Open a shift in Admin → Shifts. If you are not a super admin, you also need to be assigned to a branch in Admin → Branch Users.</p>
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-slate-100 mb-2">No branches available for POS</h2>
+            <p className="text-gray-600 dark:text-slate-400">No branch has an open shift. Open a shift in Admin → Shifts. If you are not a super admin, you also need to be assigned to a branch in Admin → Branch Users.</p>
           </div>
         </Card>
       </div>
@@ -345,40 +779,51 @@ const OrderTaking: React.FC = () => {
     return <Loader fullScreen text="Loading menu..." />;
   }
 
-  const BranchSelector = (
-    <div className="flex flex-wrap items-center gap-2 text-sm">
-      <span className="text-gray-600">Branch</span>
-      <select
-        value={effectiveBranchId ?? ''}
-        onChange={(e) => {
-          const id = e.target.value ? +e.target.value : null;
-          setSelectedBranchId(id);
-          setSelectedItems([]);
-        }}
-        className="px-2 py-1.5 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 bg-white min-w-[140px] text-gray-800"
-      >
-        {posBranches?.map((b) => (
-          <option key={b.id} value={b.id}>
-            {b.name} ({b.code})
-          </option>
-        ))}
-      </select>
-      {branchId && openShift && (
-        <span className="text-green-600 font-medium">
-          · Shift: {openShift.shift_number ?? openShift.id} (open)
-        </span>
-      )}
-    </div>
-  );
+  const isSubmitting = createOrderMutation.isPending || addCustomerMutation.isPending;
+  if (isSubmitting) {
+    return <Loader fullScreen text="Submitting..." />;
+  }
+
+  const filtersProps = {
+    brands,
+    selectedBrandId,
+    onBrandChange: (id: number | null) => {
+      setSelectedBrandId(id);
+      setSelectedCategoryId(null);
+    },
+    categories: categoriesFromMenu,
+    selectedCategoryId,
+    onCategoryChange: setSelectedCategoryId,
+    effectiveBranchId,
+    posBranches,
+    onBranchChange: (id: number | null) => {
+      setSelectedBranchId(id);
+      setSelectedItems([]);
+      setSelectedBrandId(null);
+      setSelectedCategoryId(null);
+    },
+    openShift,
+    branchId,
+    search: posSearch,
+    onSearchChange: setPosSearch,
+    searchSuggestions: posSearchTypeahead.suggestions,
+    searchSuggestionsOpen: posSearchTypeahead.open,
+    setSearchSuggestionsOpen: posSearchTypeahead.setOpen,
+    searchSuggestionsActiveIndex: posSearchTypeahead.activeIndex,
+    setSearchSuggestionsActiveIndex: posSearchTypeahead.setActiveIndex,
+    onPickSearchSuggestion: (label: string) => setPosSearch(label),
+  };
 
   if (effectiveBranchId != null && branchId != null && !openShift) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 p-6">
+      <div className="flex items-center justify-center h-[calc(100vh-4rem)] bg-foodies-surfaceMuted dark:bg-slate-900 p-6">
         <Card className="w-full max-w-md">
-          <div className="mb-4">{BranchSelector}</div>
+          <div className="mb-4">
+            <POSFilters {...filtersProps} />
+          </div>
           <div className="text-center py-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">No shift open for this branch</h2>
-            <p className="text-gray-600">Open a shift in Admin → Shifts before using POS. Only one shift can be open per branch at a time. You can switch branch above.</p>
+            <h2 className="text-2xl font-bold text-foodies-textPrimary dark:text-slate-100 mb-2">No shift open for this branch</h2>
+            <p className="text-foodies-textSecondary dark:text-slate-400">Open a shift in Admin → Shifts before using POS. Only one shift can be open per branch at a time. You can switch branch above.</p>
           </div>
         </Card>
       </div>
@@ -387,376 +832,214 @@ const OrderTaking: React.FC = () => {
 
   if (!menu || menu.length === 0) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 p-6">
+      <div className="flex items-center justify-center h-[calc(100vh-4rem)] bg-foodies-surfaceMuted dark:bg-slate-900 p-6">
         <Card className="w-full max-w-md">
-          <div className="mb-4">{BranchSelector}</div>
+          <div className="mb-4">
+            <POSFilters {...filtersProps} />
+          </div>
           <div className="text-center py-8">
-            <h2 className="text-2xl font-bold text-gray-800 mb-2">No menu items for this branch</h2>
-            <p className="text-gray-600">Add menu items and enable the menu for this branch in the admin panel. You can switch branch above.</p>
+            <h2 className="text-2xl font-bold text-foodies-textPrimary dark:text-slate-100 mb-2">No menu items for this branch</h2>
+            <p className="text-foodies-textSecondary dark:text-slate-400">Add menu items and enable the menu for this branch in the admin panel. You can switch branch above.</p>
           </div>
         </Card>
       </div>
     );
   }
 
-  return (
-    <div className="flex h-screen bg-gray-50">
-      {/* Menu Section – compact header and grid */}
-      <div className="flex-1 flex flex-col overflow-hidden bg-white">
-        <div className="flex-shrink-0 px-4 py-2 border-b border-gray-200 flex items-center justify-between gap-2">
-          {BranchSelector}
-          <h2 className="text-sm font-semibold text-gray-600 hidden sm:block">Menu · click item to add</h2>
+  const checkoutSectionContent = (
+      <>
+        <div className="flex-shrink-0 px-6 py-4 bg-foodies-surface dark:bg-slate-800 border-b border-foodies-border dark:border-slate-700">
+          <h2 className="text-xl font-bold text-foodies-textPrimary dark:text-slate-100 tracking-tight">Cart</h2>
+          <p className="text-sm text-foodies-textSecondary dark:text-slate-400 mt-0.5">Review items here, then checkout</p>
         </div>
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-3">
-            <AnimatePresence>
-              {menu.map(item => (
-                <motion.div
-                  key={item.id}
-                  initial={{ opacity: 0, scale: 0.96 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.96 }}
-                  whileHover={{ y: -2 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => addItem(item)}
-                  className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
-                    justAddedItem === item.id
-                      ? 'border-green-500 bg-green-50 shadow-md'
-                      : 'border-gray-200 bg-white hover:border-green-400 hover:shadow-sm'
-                  }`}
-                >
-                  <h3 className="font-semibold text-gray-800 text-sm sm:text-base mb-0.5 line-clamp-2">{item.name}</h3>
-                  {item.description && (
-                    <p className="text-xs text-gray-500 mb-1 line-clamp-1">{item.description}</p>
-                  )}
-                  <p className="text-base sm:text-lg font-bold text-green-600">
-                    {formatCurrency(item.price || item.base_price || 0)}
-                  </p>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {item.category && (
-                      <span className="inline-block px-1.5 py-0.5 text-xs bg-gray-100 text-gray-600 rounded">
-                        {typeof item.category === 'object' ? item.category.name : String(item.category)}
-                      </span>
-                    )}
-                    {((item.variants && item.variants.length > 0) || (item.addons && item.addons.length > 0)) && (
-                      <span className="text-xs text-blue-600">⚙️</span>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        </div>
-      </div>
-
-      {/* Order Section – fixed width, more room for items list */}
-      <div className="w-[26rem] min-w-[26rem] max-w-[28rem] flex-shrink-0 flex flex-col border-l-2 border-gray-200 bg-gray-50 overflow-hidden">
-        <div className="p-4 border-b border-gray-200 bg-white">
-          <h2 className="text-lg font-bold text-gray-800">Current Order</h2>
-        </div>
-        <div className="flex-1 flex flex-col min-h-0 p-4 overflow-y-auto">
-        
-        {orderTypeOptions.length > 0 && (
-          <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Order Type</label>
-            <select
-              value={effectiveOrderType}
-              onChange={(e) => setOrderType(e.target.value as OrderTypeOption)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              {orderTypeOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {effectiveOrderType === 'dine_in' && (
-          <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Table Number</label>
-            <input
-              type="text"
-              value={tableNumber}
-              onChange={(e) => setTableNumber(e.target.value)}
-              placeholder="Enter table number"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        )}
-
-        <div className="mb-3">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Customer *</label>
-          <CustomerSearchSelect
-            value={{ name: customerName, phone: customerPhone }}
-            onChange={({ name, phone }) => {
-              setCustomerName(name);
-              setCustomerPhone(phone);
-              setPhoneError('');
-            }}
-            onAddClick={() => setShowAddCustomerModal(true)}
-            placeholder="Search by name or phone..."
+        <div className="flex-1 min-h-0 overflow-y-auto p-6">
+          <CartPanel
+            items={selectedItems}
+            onUpdateQuantity={updateQuantity}
+            onRemoveItem={removeItem}
+            onRequestRemoveItem={setRemoveConfirmIndex}
+            onConfigureItem={editCartLine}
+            getBrandName={getBrandName}
+            lineBreakdown={quote?.line_breakdown ?? undefined}
           />
-          {phoneError && <p className="mt-1 text-sm text-red-600">{phoneError}</p>}
-          {loyaltyBalance != null && (
-            <p className="mt-1 text-sm text-green-700">
-              {loyaltyBalance.displayName ?? 'Points'} balance: <strong>{loyaltyBalance.balance}</strong>
-            </p>
-          )}
         </div>
-        {effectiveOrderType === 'delivery' && (
-          <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Delivery address *</label>
-            <textarea
-              value={deliveryAddress}
-              onChange={(e) => setDeliveryAddress(e.target.value)}
-              placeholder="Street, area, city"
-              rows={2}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        )}
-        <div className="mb-3">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Loyalty points to redeem{loyaltyBalance != null ? ` (max ${loyaltyBalance.balance})` : ' (optional)'}
-          </label>
-          <input
-            type="number"
-            min={0}
-            max={loyaltyBalance?.balance ?? undefined}
-            value={loyaltyPointsToRedeem === '' ? '' : loyaltyPointsToRedeem}
-            onChange={(e) => {
-              const raw = e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0);
-              if (raw === '') {
-                setLoyaltyPointsToRedeem('');
-                return;
-              }
-              const maxAllowed = loyaltyBalance?.balance ?? Infinity;
-              setLoyaltyPointsToRedeem(Math.min(raw as number, maxAllowed));
-            }}
-            placeholder="0"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          />
-          {quote?.loyalty_discount != null && quote.loyalty_discount > 0 && (
-            <p className="mt-1 text-sm text-green-600">Discount: {formatCurrency(quote.loyalty_discount)}</p>
-          )}
-        </div>
-
-        <div className="mb-3">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Discount code</label>
-          <input
-            type="text"
-            value={discountCode}
-            onChange={(e) => setDiscountCode(e.target.value.toUpperCase())}
-            placeholder="Optional"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          />
-          {discountCode.trim() && quote && (quote.coupon_discount_amount ?? 0) === 0 && (
-            <p className="mt-1 text-xs text-amber-700">
-              Coupon not applied. Check: code is correct, this branch is allowed, and min order is met.
-            </p>
-          )}
-        </div>
-
-        <div className="flex-1 min-h-[120px] overflow-y-auto mb-3">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Items ({selectedItems.length})</h3>
-          {selectedItems.length === 0 ? (
-            <Card>
-              <p className="text-center text-gray-500 py-8">No items added yet</p>
-            </Card>
-          ) : (
-            <div className="space-y-3">
-              <AnimatePresence>
-                {selectedItems.map((item, index) => {
-                  const itemPrice = item.menuItem.price || item.menuItem.base_price || 0;
-                  const variantPrice = item.variantId && item.menuItem.variants
-                    ? item.menuItem.variants.find(v => v.id === item.variantId)?.price_modifier || 0
-                    : 0;
-                  const addonsPrice = item.addons.reduce((sum, addon) => {
-                    const addonItem = item.menuItem.addons?.find(a => a.id === addon.addonId);
-                    return sum + (addonItem?.price || 0) * addon.quantity;
-                  }, 0);
-                  const itemTotal = (itemPrice + variantPrice + addonsPrice) * item.quantity;
-                  const lineBreakdown = quote?.line_breakdown?.[index];
-                  const originalAmount = lineBreakdown?.subtotal ?? itemTotal;
-                  const lineDiscount = lineBreakdown?.discount_amount ?? 0;
-                  const afterDiscount = lineBreakdown?.after_discount ?? itemTotal;
-
-                  return (
-                    <motion.div
-                      key={index}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, x: 20 }}
-                      className="bg-white p-4 rounded-lg border border-gray-200 shadow-sm"
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex-1">
-                          <h4 className="font-semibold text-gray-800">{item.menuItem.name}</h4>
-                          {item.variantId && (
-                            <p className="text-xs text-gray-600">
-                              Variant: {item.menuItem.variants?.find(v => v.id === item.variantId)?.name}
-                            </p>
-                          )}
-                          {item.addons.length > 0 && (
-                            <p className="text-xs text-gray-600">
-                              Addons: {item.addons.map(a => {
-                                const addon = item.menuItem.addons?.find(ad => ad.id === a.addonId);
-                                return `${addon?.name} (x${a.quantity})`;
-                              }).join(', ')}
-                            </p>
-                          )}
-                          {item.notes && (
-                            <p className="text-xs text-gray-500 italic">Note: {item.notes}</p>
-                          )}
-                        </div>
-                        <Button
-                          size="small"
-                          variant="danger"
-                          onClick={() => removeItem(index)}
-                        >
-                          ×
-                        </Button>
-                      </div>
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <label className="text-sm text-gray-600">Qty:</label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={item.quantity}
-                            onChange={(e) => updateQuantity(index, parseInt(e.target.value) || 1)}
-                            className="w-16 px-2 py-1 border border-gray-300 rounded text-center"
-                          />
-                        </div>
-                        <div className="text-right">
-                          {lineDiscount > 0 ? (
-                            <>
-                              <div className="text-sm text-gray-500 line-through">{formatCurrency(originalAmount)}</div>
-                              <div className="text-xs text-green-600">−{formatCurrency(lineDiscount)}</div>
-                              <div className="text-lg font-bold text-green-600">{formatCurrency(afterDiscount)}</div>
-                            </>
-                          ) : (
-                            <span className="text-lg font-bold text-green-600">{formatCurrency(itemTotal)}</span>
-                          )}
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-auto rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-          <div className="space-y-1.5 text-sm">
-            <div className="flex justify-between text-gray-700">
-              <span>Original amount</span>
-              <span>{formatCurrency(quote?.subtotal ?? total)}</span>
-            </div>
-            {(quote?.auto_discount_amount ?? 0) > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span>Discount (auto)</span>
-                <span>-{formatCurrency(quote!.auto_discount_amount!)}</span>
-              </div>
-            )}
-            {(quote?.coupon_discount_amount ?? 0) > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span>Coupon{quote?.discount_code ? ` (${quote.discount_code})` : ''}</span>
-                <span>-{formatCurrency(quote!.coupon_discount_amount!)}</span>
-              </div>
-            )}
-            {(quote?.loyalty_discount ?? 0) > 0 && (
-              <div className="flex justify-between text-green-600">
-                <span>Loyalty points</span>
-                <span>-{formatCurrency(quote!.loyalty_discount!)}</span>
-              </div>
-            )}
-            {((quote?.auto_discount_amount ?? 0) > 0 || (quote?.coupon_discount_amount ?? 0) > 0 || (quote?.loyalty_discount ?? 0) > 0) ? null : (
-              <div className={`flex justify-between ${(quote?.discount_amount ?? 0) > 0 ? 'text-green-600' : 'text-gray-500'}`}>
-                <span>Discount{quote?.discount_code ? ` (${quote.discount_code})` : ''}</span>
-                <span>{(quote?.discount_amount ?? 0) > 0 ? `-${formatCurrency(quote!.discount_amount)}` : formatCurrency(0)}</span>
-              </div>
-            )}
-            <div className="flex justify-between font-bold pt-2 mt-2 border-t border-gray-200 text-gray-800">
-              <span>Total payable</span>
-              <span className="text-green-600">{formatCurrency(quote?.total_amount ?? total)}</span>
-            </div>
+        <div className="flex-shrink-0 p-6 border-t border-foodies-border dark:border-slate-700 bg-foodies-surface dark:bg-slate-800">
+          <div className="flex items-center justify-between text-sm text-foodies-textSecondary dark:text-slate-400">
+            <span>Total</span>
+            <span className="font-bold text-foodies-textPrimary dark:text-slate-100">{formatCurrency(quote?.total_amount ?? total)}</span>
           </div>
           <Button
-            onClick={handleCreateOrder}
-            disabled={createOrderMutation.isPending || selectedItems.length === 0}
-            isLoading={createOrderMutation.isPending}
-            className="w-full"
+            variant="gradient"
+            className="w-full mt-3 font-semibold py-3 rounded-xl"
             size="large"
+            disabled={selectedItems.length === 0}
+            onClick={() => {
+              setShowCheckoutModal(true);
+              setDrawerOpen(false);
+            }}
           >
-            Create Order
+            Checkout
           </Button>
-          {lastOrderGroupId && (
-            <Button
-              variant="outline"
-              className="w-full mt-2"
-              onClick={() => setShowCustomerInvoiceModal(true)}
-            >
-              View customer invoice
-            </Button>
-          )}
+          <p className="mt-2 text-xs text-foodies-textSecondary">
+            Checkout to select customer, apply discount/loyalty, and take payment.
+          </p>
         </div>
-        </div>
-      </div>
+      </>
+    );
 
-      {/* Customer invoice (unified) modal */}
-      <Modal
+  return (
+    <>
+      <POSLayout
+        centerSection={
+          <>
+            {/* Top bar (desktop + mobile): branch/order type/brand/category + search */}
+            <div className="flex-shrink-0 px-4 py-3 bg-foodies-surface border-b border-foodies-border dark:bg-slate-800 dark:border-slate-700">
+              <div className="lg:hidden">
+                <POSFilters
+                  {...filtersProps}
+                  variant="bar"
+                  searchInputRef={searchInputRefMobile}
+                />
+              </div>
+              <div className="hidden lg:block">
+                <POSFilters
+                  {...filtersProps}
+                  variant="bar"
+                  searchInputRef={searchInputRefDesktop}
+                />
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+              <MenuGrid
+                menu={paginatedMenu}
+                justAddedItemId={justAddedItem}
+                onAddItem={addItem}
+                getBrandName={getBrandName}
+                totalCount={menuFilteredBySearch.length}
+                page={currentMenuPage}
+                pageSize={MENU_PAGE_SIZE}
+                onPageChange={setCurrentMenuPage}
+              />
+            </div>
+          </>
+        }
+        checkoutSection={checkoutSectionContent}
+        cartItemCount={selectedItems.length}
+        isDrawerOpen={drawerOpen}
+        onDrawerOpen={() => setDrawerOpen(true)}
+        onDrawerClose={() => setDrawerOpen(false)}
+      />
+
+      <CustomerInvoiceModal
         isOpen={showCustomerInvoiceModal}
         onClose={() => setShowCustomerInvoiceModal(false)}
-        title="Customer invoice"
+        orderGroupId={lastOrderGroupId}
+      />
+
+      {/* Checkout modal (customer, discounts/loyalty, payment) */}
+      <Modal
+        isOpen={showCheckoutModal}
+        onClose={() => setShowCheckoutModal(false)}
+        title="Checkout"
         size="large"
       >
-        {mainInvoiceLoading ? (
-          <div className="py-8 text-center text-gray-500">Loading invoice…</div>
-        ) : mainInvoice ? (
-          <div className="p-2 space-y-4 max-h-[70vh] overflow-y-auto">
-            <p className="text-sm text-gray-600">Order group: <span className="font-mono">{mainInvoice.order_group_id}</span></p>
-            {(mainInvoice.orders ?? []).map((o: { order_number: string; brand_name?: string; items?: Array<{ name_snapshot?: string; quantity: number; unit_price: number; subtotal: number }>; subtotal: number; discount_amount: number; tax_amount: number; service_charge: number; delivery_fee: number; total_amount: number }) => (
-              <div key={o.order_number} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-                <h3 className="font-semibold text-gray-800 mb-2">
-                  {o.brand_name ? `${o.brand_name} — ` : ''}Order #{o.order_number}
-                </h3>
-                <ul className="text-sm text-gray-700 space-y-1 mb-3">
-                  {(o.items ?? []).map((line: { name_snapshot?: string; quantity: number; unit_price: number; subtotal: number }, i: number) => (
-                    <li key={i} className="flex justify-between">
-                      <span>{line.name_snapshot ?? 'Item'} × {line.quantity}</span>
-                      <span>{formatCurrency(Number(line.subtotal))}</span>
-                    </li>
-                  ))}
-                </ul>
-                <div className="text-sm space-y-1 border-t border-gray-200 pt-2">
-                  <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(Number(o.subtotal))}</span></div>
-                  {Number(o.discount_amount) > 0 && <div className="flex justify-between text-green-600"><span>Discount</span><span>-{formatCurrency(Number(o.discount_amount))}</span></div>}
-                  <div className="flex justify-between"><span>Tax</span><span>{formatCurrency(Number(o.tax_amount))}</span></div>
-                  <div className="flex justify-between"><span>Service charge</span><span>{formatCurrency(Number(o.service_charge))}</span></div>
-                  {Number(o.delivery_fee) > 0 && <div className="flex justify-between"><span>Delivery</span><span>{formatCurrency(Number(o.delivery_fee))}</span></div>}
-                  {((o as { loyalty_points_earned?: number }).loyalty_points_earned ?? 0) > 0 && (
-                    <div className="flex justify-between text-green-700"><span>Points earned</span><span>+{((o as { loyalty_points_earned?: number }).loyalty_points_earned ?? 0)}</span></div>
-                  )}
-                  {((o as { loyalty_points_redeemed?: number }).loyalty_points_redeemed ?? 0) > 0 && (
-                    <div className="flex justify-between text-gray-600"><span>Points redeemed</span><span>−{((o as { loyalty_points_redeemed?: number }).loyalty_points_redeemed ?? 0)}</span></div>
-                  )}
-                  <div className="flex justify-between font-semibold"><span>Total</span><span>{formatCurrency(Number(o.total_amount))}</span></div>
-                </div>
-              </div>
-            ))}
-            <div className="border-t-2 border-gray-300 pt-3 flex justify-between text-lg font-bold">
-              <span>Gross total</span>
-              <span>{formatCurrency(Number(mainInvoice.gross_total ?? 0))}</span>
+        <div className="max-h-[75vh] overflow-y-auto space-y-6 p-1">
+          <div className="rounded-xl border border-foodies-border bg-foodies-surface p-4">
+            <div className="flex items-center justify-between text-sm text-foodies-textSecondary">
+              <span>Items</span>
+              <span className="font-semibold text-foodies-textPrimary">{selectedItems.length}</span>
             </div>
-            <div className="flex justify-end">
-              <Button variant="outline" onClick={() => setShowCustomerInvoiceModal(false)}>Close</Button>
+            <div className="flex items-center justify-between text-sm text-foodies-textSecondary mt-2">
+              <span>Total</span>
+              <span className="font-bold text-foodies-textPrimary">{formatCurrency(quote?.total_amount ?? total)}</span>
             </div>
           </div>
-        ) : (
-          <div className="py-4 text-gray-500">No invoice data. Close and try again.</div>
-        )}
+
+          <div className="rounded-xl border border-foodies-border dark:border-slate-600 bg-foodies-surface dark:bg-slate-800 p-4">
+            <h3 className="text-sm font-semibold text-foodies-textPrimary dark:text-slate-100 mb-3">Customer &amp; details</h3>
+            <CustomerPanel
+              orderTypeOptions={orderTypeOptions}
+              orderType={effectiveOrderType}
+              onOrderTypeChange={setOrderType}
+              tableNumber={tableNumber}
+              onTableNumberChange={setTableNumber}
+              customerName={customerName}
+              customerPhone={customerPhone}
+              onCustomerChange={({ name, phone }) => {
+                setCustomerName(name);
+                setCustomerPhone(phone);
+                setPhoneError('');
+              }}
+              phoneError={phoneError}
+              onAddCustomerClick={() => setShowAddCustomerModal(true)}
+              loyaltyBalance={loyaltyBalance}
+              deliveryAddress={deliveryAddress}
+              onDeliveryAddressChange={setDeliveryAddress}
+              loyaltyPointsToRedeem={loyaltyPointsToRedeem}
+              onLoyaltyPointsToRedeemChange={setLoyaltyPointsToRedeem}
+              discountCode={discountCode}
+              onDiscountCodeChange={setDiscountCode}
+              orderNotes={orderNotes}
+              onOrderNotesChange={setOrderNotes}
+              quote={quote}
+            />
+          </div>
+
+          <div className="rounded-xl border border-foodies-border dark:border-slate-600 bg-foodies-surface dark:bg-slate-800 p-4">
+            <h3 className="text-sm font-semibold text-foodies-textPrimary dark:text-slate-100 mb-3">Payment</h3>
+            <PaymentPanel
+              subtotal={total}
+              quote={quote}
+              paymentMode={paymentMode}
+              onPaymentModeChange={setPaymentMode}
+              paymentCashAmount={paymentCashAmount}
+              paymentCardAmount={paymentCardAmount}
+              onPaymentCashAmountChange={setPaymentCashAmount}
+              onPaymentCardAmountChange={setPaymentCardAmount}
+              onCreateOrder={handleCreateOrder}
+              isSubmitting={createOrderMutation.isPending}
+              itemCount={selectedItems.length}
+              lastOrderGroupId={lastOrderGroupId}
+              onViewInvoice={() => setShowCustomerInvoiceModal(true)}
+            />
+            <div className="flex justify-end mt-3">
+              <Button variant="outline" onClick={() => setShowCheckoutModal(false)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Remove item from cart confirmation */}
+      <Modal
+        isOpen={removeConfirmIndex !== null}
+        onClose={() => setRemoveConfirmIndex(null)}
+        title="Remove item?"
+      >
+        <div className="space-y-4">
+          <p className="text-foodies-textPrimary">
+            {removeConfirmIndex !== null && selectedItems[removeConfirmIndex] && (
+              <>Remove &ldquo;{selectedItems[removeConfirmIndex].menuItem.name}&rdquo; from the order?</>
+            )}
+          </p>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => setRemoveConfirmIndex(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (removeConfirmIndex !== null) {
+                  removeItem(removeConfirmIndex);
+                  setRemoveConfirmIndex(null);
+                }
+              }}
+            >
+              Remove
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       {/* Add customer modal */}
@@ -838,124 +1121,36 @@ const OrderTaking: React.FC = () => {
         </form>
       </Modal>
 
-      {/* Item Configuration Modal */}
-      <Modal
+      <ItemConfigModal
         isOpen={showItemModal}
         onClose={() => {
           setShowItemModal(false);
           setSelectedItemForConfig(null);
-          setItemConfig({ addons: [] });
+          setEditingCartIndex(null);
+          setItemConfig({ addons: [], modifiers: [] });
         }}
-        title={selectedItemForConfig?.name || 'Configure Item'}
-        size="medium"
-      >
-        {selectedItemForConfig && (
-          <div className="space-y-4">
-            {selectedItemForConfig.variants && selectedItemForConfig.variants.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Select Variant</label>
-                <div className="space-y-2">
-                  {selectedItemForConfig.variants.map((variant) => (
-                    <label
-                      key={variant.id}
-                      className={`flex items-center p-3 border-2 rounded-lg cursor-pointer transition-colors ${
-                        itemConfig.variantId === variant.id
-                          ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="variant"
-                        checked={itemConfig.variantId === variant.id}
-                        onChange={() => setItemConfig({ ...itemConfig, variantId: variant.id })}
-                        className="mr-3"
-                      />
-                      <div className="flex-1">
-                        <span className="font-medium">{variant.name}</span>
-                        <span className={`ml-2 ${variant.price_modifier >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {variant.price_modifier >= 0 ? '+' : ''}{formatCurrency(Math.abs(variant.price_modifier))}
-                        </span>
-                      </div>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
+        item={selectedItemForConfig}
+        config={itemConfig}
+        onConfigChange={setItemConfig}
+        onConfirm={confirmAddItem}
+        onToggleAddon={toggleAddon}
+        onToggleModifier={toggleModifier}
+        onUpdateAddonQuantity={updateAddonQuantity}
+      />
 
-            {selectedItemForConfig.addons && selectedItemForConfig.addons.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Addons</label>
-                <div className="space-y-2 max-h-64 overflow-y-auto">
-                  {selectedItemForConfig.addons.map((addon) => {
-                    const isSelected = itemConfig.addons.some(a => a.addonId === addon.id);
-                    const selectedAddon = itemConfig.addons.find(a => a.addonId === addon.id);
-
-                    return (
-                      <div
-                        key={addon.id}
-                        className={`p-3 border-2 rounded-lg ${
-                          isSelected ? 'border-blue-500 bg-blue-50' : 'border-gray-200'
-                        }`}
-                      >
-                        <label className="flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleAddon(addon.id)}
-                            className="mr-3"
-                          />
-                          <div className="flex-1">
-                            <span className="font-medium">{addon.name}</span>
-                            <span className="ml-2 text-green-600">+ {formatCurrency(addon.price)}</span>
-                          </div>
-                        </label>
-                        {isSelected && (
-                          <div className="mt-2 ml-6 flex items-center gap-2">
-                            <label className="text-sm">Quantity:</label>
-                            <input
-                              type="number"
-                              min="1"
-                              value={selectedAddon?.quantity || 1}
-                              onChange={(e) => updateAddonQuantity(addon.id, parseInt(e.target.value) || 1)}
-                              className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Special Instructions (Optional)</label>
-              <textarea
-                value={itemConfig.notes || ''}
-                onChange={(e) => setItemConfig({ ...itemConfig, notes: e.target.value })}
-                rows={3}
-                placeholder="e.g., No onions, extra spicy"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
-            <div className="flex gap-2 justify-end">
-              <Button variant="outline" onClick={() => {
-                setShowItemModal(false);
-                setSelectedItemForConfig(null);
-                setItemConfig({ addons: [] });
-              }}>
-                Cancel
-              </Button>
-              <Button onClick={confirmAddItem}>
-                Add to Order
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
-    </div>
+      <DealConfigModal
+        isOpen={showDealModal}
+        onClose={() => {
+          setShowDealModal(false);
+          setSelectedDeal(null);
+          setEditingDealIndex(null);
+          setDealInitialComponents(null);
+        }}
+        deal={selectedDeal}
+        initialComponents={dealInitialComponents}
+        onConfirm={handleDealConfirm}
+      />
+    </>
   );
 };
 

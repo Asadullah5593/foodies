@@ -10,6 +10,12 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
+import SearchableSelect from '../../components/SearchableSelect';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
+import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 
 interface RoleOption {
   id: number;
@@ -35,7 +41,6 @@ const Users: React.FC = () => {
     email: '',
     password: '',
     phone: '',
-    role: 'cashier',
     tenant_id: '',
   });
   const [editData, setEditData] = useState({
@@ -43,10 +48,11 @@ const Users: React.FC = () => {
     email: '',
     password: '',
     phone: '',
-    role_id: 0,
   });
   const [filterRole, setFilterRole] = useState('');
   const [filterSearch, setFilterSearch] = useState('');
+  const debouncedFilterSearch = useDebouncedValue(filterSearch, 300);
+  const [page, setPage] = useState(1);
 
   const { data: roles } = useQuery({
     queryKey: ['roles'],
@@ -75,8 +81,8 @@ const Users: React.FC = () => {
     if (filterRole) {
       list = list.filter((u) => (u.role ?? '').toLowerCase() === filterRole.toLowerCase());
     }
-    if (filterSearch.trim()) {
-      const q = filterSearch.trim().toLowerCase();
+    if (debouncedFilterSearch.trim()) {
+      const q = debouncedFilterSearch.trim().toLowerCase();
       list = list.filter(
         (u) =>
           (u.name ?? '').toLowerCase().includes(q) ||
@@ -84,7 +90,21 @@ const Users: React.FC = () => {
       );
     }
     return list;
-  }, [users, filterRole, filterSearch]);
+  }, [users, filterRole, debouncedFilterSearch]);
+
+  const paginatedUsers = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return filteredUsers.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [filteredUsers, page]);
+
+  React.useEffect(() => setPage(1), [filterRole, debouncedFilterSearch]);
+
+  const userSearchTypeahead = useTypeaheadSuggestions({
+    query: debouncedFilterSearch,
+    options: (users ?? []).map((u: any) => ({ id: String(u.id), label: u.name ?? '' })),
+    minChars: 2,
+    limit: 8,
+  });
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof createData) => {
@@ -93,7 +113,6 @@ const Users: React.FC = () => {
         email: data.email,
         password: data.password,
         phone: data.phone || undefined,
-        role: data.role,
       };
       if (isSuperAdmin && data.tenant_id) payload.tenant_id = Number(data.tenant_id);
       const response = await apiClient.post('/admin/users', payload);
@@ -102,7 +121,7 @@ const Users: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setShowCreate(false);
-      setCreateData({ name: '', email: '', password: '', phone: '', role: 'cashier', tenant_id: '' });
+      setCreateData({ name: '', email: '', password: '', phone: '', tenant_id: '' });
       toast.success('User created successfully!');
     },
     onError: (error: any) => {
@@ -116,12 +135,20 @@ const Users: React.FC = () => {
         name: data.name,
         email: data.email,
         phone: data.phone || undefined,
-        role_id: data.role_id,
       };
       if (data.password && data.password.trim()) payload.password = data.password.trim();
       return adminService.updateUser(id, payload);
     },
-    onSuccess: () => {
+    onSuccess: (updatedUser) => {
+      // Update list cache with API response so role (and other fields) show immediately
+      queryClient.setQueryData<User[]>(['users'], (old) => {
+        if (!old) return old;
+        return old.map((u) =>
+          u.id === updatedUser.id
+            ? { ...u, ...updatedUser, role: updatedUser.role ?? u.role }
+            : u
+        );
+      });
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setEditingUser(null);
       toast.success('User updated successfully!');
@@ -144,50 +171,77 @@ const Users: React.FC = () => {
 
   const openEdit = (u: User) => {
     setEditingUser(u);
-    const roleId = u.role_id ?? roles?.find((r) => r.slug === u.role)?.id ?? 0;
     setEditData({
       name: u.name ?? '',
       email: u.email ?? '',
       password: '',
       phone: u.phone ?? '',
-      role_id: roleId,
     });
   };
 
-  if (isLoading) return <Loader fullScreen text="Loading users..." />;
+  const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  if (isLoading || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading users...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-3xl font-bold text-gray-800">Users</h1>
-        <Button onClick={() => setShowCreate(true)}>Add User</Button>
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Users</h1>
+        <Button variant="primary" onClick={() => setShowCreate(true)}>Add User</Button>
       </div>
 
-      <Card className="mb-6 p-4">
+      <Card className="mb-6 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-4 items-end">
-          <div className="min-w-[180px]">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-            <select
-              value={filterRole}
-              onChange={(e) => setFilterRole(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">All roles</option>
-              {roles?.map((r) => (
-                <option key={r.id} value={r.slug}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex-1 min-w-[200px]">
+          <SearchableSelect
+            label="Role"
+            value={filterRole}
+            onChange={setFilterRole}
+            options={[
+              { value: '', label: 'All roles' },
+              ...(roles ?? []).map((r) => ({ value: r.slug, label: r.name })),
+            ]}
+            placeholder="All roles"
+            minWidth="min-w-[180px]"
+          />
+          <div className="flex-1 min-w-[200px] relative">
             <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
             <input
               type="text"
               value={filterSearch}
               onChange={(e) => setFilterSearch(e.target.value)}
+              onFocus={() => userSearchTypeahead.setOpen(true)}
+              onKeyDown={(e) => {
+                const suggestions = userSearchTypeahead.suggestions;
+                if (!suggestions.length) return;
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault();
+                  userSearchTypeahead.setActiveIndex(Math.min(userSearchTypeahead.activeIndex + 1, suggestions.length - 1));
+                } else if (e.key === 'ArrowUp') {
+                  e.preventDefault();
+                  userSearchTypeahead.setActiveIndex(Math.max(userSearchTypeahead.activeIndex - 1, 0));
+                } else if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const opt = suggestions[userSearchTypeahead.activeIndex];
+                  if (opt?.label) setFilterSearch(opt.label);
+                  userSearchTypeahead.setOpen(false);
+                } else if (e.key === 'Escape') {
+                  userSearchTypeahead.setOpen(false);
+                }
+              }}
               placeholder="Name or email..."
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+            <TypeaheadDropdown
+              open={userSearchTypeahead.open && filterSearch.trim().length >= 2}
+              suggestions={userSearchTypeahead.suggestions}
+              activeIndex={userSearchTypeahead.activeIndex}
+              onHoverIndex={userSearchTypeahead.setActiveIndex}
+              onSelect={(opt) => {
+                setFilterSearch(opt.label);
+                userSearchTypeahead.setOpen(false);
+              }}
+              onClose={() => userSearchTypeahead.setOpen(false)}
             />
           </div>
           <ClearFiltersButton
@@ -258,39 +312,14 @@ const Users: React.FC = () => {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-              <input
-                type="tel"
-                value={createData.phone}
-                onChange={(e) => setCreateData({ ...createData, phone: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-              <select
-                value={createData.role}
-                onChange={(e) => setCreateData({ ...createData, role: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                {roles?.length
-                  ? roles.map((r) => (
-                      <option key={r.id} value={r.slug}>{r.name}</option>
-                    ))
-                  : (
-                      <>
-                        <option value="owner">Owner</option>
-                        <option value="manager">Manager</option>
-                        <option value="branch_manager">Branch Manager</option>
-                        <option value="cashier">Cashier</option>
-                        <option value="kitchen">Kitchen</option>
-                        <option value="rider">Rider</option>
-                      </>
-                    )}
-              </select>
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+            <input
+              type="tel"
+              value={createData.phone}
+              onChange={(e) => setCreateData({ ...createData, phone: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
           </div>
           <div className="flex gap-2 justify-end">
             <Button type="button" variant="outline" onClick={() => setShowCreate(false)}>
@@ -357,18 +386,6 @@ const Users: React.FC = () => {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-              <select
-                value={editData.role_id}
-                onChange={(e) => setEditData({ ...editData, role_id: Number(e.target.value) })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                {roles?.map((r) => (
-                  <option key={r.id} value={r.id}>{r.name}</option>
-                ))}
-              </select>
-            </div>
             <div className="flex gap-2 justify-end">
               <Button type="button" variant="outline" onClick={() => setEditingUser(null)}>
                 Cancel
@@ -381,60 +398,43 @@ const Users: React.FC = () => {
         )}
       </Modal>
 
-      <div className="grid gap-4">
+      <div className="w-full space-y-3">
         {filteredUsers.length === 0 ? (
-          <Card>
-            <p className="text-center text-gray-500 py-8">
-              {users?.length === 0
-                ? 'No users found. Create your first user!'
-                : 'No users match the current filters.'}
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">
+              {users?.length === 0 ? 'No users found. Create your first user!' : 'No users match the current filters.'}
             </p>
           </Card>
         ) : (
-          filteredUsers.map((u) => (
-            <Card key={u.id} hover>
-              <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-800 mb-1">{u.name}</h3>
-                  <div className="text-sm text-gray-600 space-y-1">
-                    <p>Email: {u.email}</p>
-                    {u.phone && <p>Phone: {u.phone}</p>}
-                    <p>
-                      Role:{' '}
-                      <span className="font-medium text-indigo-600">
-                        {u.role ? roleSlugToLabel(u.role) : '—'}
-                      </span>
-                    </p>
-                    <p>
-                      Status:{' '}
-                      <span
-                        className={`font-medium ${
-                          u.status === 'active' ? 'text-green-600' : 'text-red-600'
-                        }`}
-                      >
-                        {u.status}
-                      </span>
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="small" variant="outline" onClick={() => openEdit(u)}>
-                    Edit
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="danger"
-                    onClick={() => {
-                      if (confirm(`Delete user "${u.name}"?`)) deleteMutation.mutate(u.id);
-                    }}
-                    isLoading={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))
+          <>
+            <AccentedList>
+              {paginatedUsers.map((u, i) => (
+                <AccentedListRow
+                  key={u.id}
+                  accent={u.status === 'active' ? 'active' : 'inactive'}
+                  initial={(u.name || 'U').charAt(0)}
+                  title={u.name || '—'}
+                  subtitle={
+                    <>
+                      <p>Email: {u.email}</p>
+                      {u.phone && <p>Phone: {u.phone}</p>}
+                      <p>Role: <span className="font-medium text-indigo-600 dark:text-indigo-400">{u.role ? roleSlugToLabel(u.role) : '—'}</span></p>
+                    </>
+                  }
+                  statusLabel={u.status}
+                  statusVariant={u.status === 'active' ? 'active' : 'inactive'}
+                  animationIndex={i}
+                  actions={
+                    <>
+                      <Button size="small" variant="edit" onClick={() => openEdit(u)}>Edit</Button>
+                      <Button size="small" variant="danger" onClick={() => confirm(`Delete user "${u.name}"?`) && deleteMutation.mutate(u.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                    </>
+                  }
+                />
+              ))}
+            </AccentedList>
+            <PaginationBar totalCount={filteredUsers.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="users" />
+          </>
         )}
       </div>
     </div>

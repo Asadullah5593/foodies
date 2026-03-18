@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -9,6 +9,8 @@ import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import SearchableMultiSelect, {
   SearchableMultiSelectOption,
 } from '../../components/SearchableMultiSelect';
@@ -21,6 +23,7 @@ interface Option {
 
 const Discounts: React.FC = () => {
   const queryClient = useQueryClient();
+  const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
   const [formData, setFormData] = useState({
@@ -73,6 +76,12 @@ const Discounts: React.FC = () => {
       return res.data;
     },
   });
+
+  const discountList = discounts ?? [];
+  const paginatedDiscounts = useMemo(() => {
+    const start = (page - 1) * DEFAULT_PAGE_SIZE;
+    return discountList.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [discountList, page]);
 
   const createMutation = useMutation({
     mutationFn: adminService.createDiscount,
@@ -230,11 +239,14 @@ const Discounts: React.FC = () => {
     (m) => ({ id: m.id, name: m.name }),
   );
 
-  if (isLoading) return <Loader fullScreen text="Loading discounts..." />;
+  const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
+  if (isLoading || isSubmitting) {
+    return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading discounts...'} />;
+  }
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      <div className="flex justify-between items-center mb-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Discounts</h1>
         <Button onClick={() => {
           setEditingDiscount(null);
@@ -529,104 +541,41 @@ const Discounts: React.FC = () => {
         </form>
       </Modal>
 
-      <div className="grid gap-4">
-        {discounts && discounts.length === 0 ? (
-          <Card>
-            <p className="text-center text-gray-500 py-8">No discounts found. Create your first discount!</p>
+      <div className="w-full space-y-3">
+        {discountList.length === 0 ? (
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No discounts found. Create your first discount!</p>
           </Card>
         ) : (
-          discounts?.map((discount) => (
-            <Card key={discount.id} hover>
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <div className="flex flex-wrap items-center gap-2 mb-2">
-                    <h3 className="text-lg font-semibold text-gray-800">
-                      {discount.name}
-                    </h3>
-                    {discount.requires_code && discount.code ? (
-                      <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-100 text-blue-800 rounded-lg font-mono font-semibold text-sm">
-                        <span>{discount.code}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(discount.code!);
-                            toast.success('Code copied to clipboard');
-                          }}
-                          className="p-0.5 rounded hover:bg-blue-200 transition-colors"
-                          title="Copy code"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h2m0 0h10a2 2 0 012 2v2m0 0V6a2 2 0 00-2-2h-2m0 0H8"
-                            />
-                          </svg>
-                        </button>
-                      </div>
-                    ) : discount.requires_code === false ? (
-                      <span className="px-2 py-1 text-xs font-medium bg-amber-100 text-amber-800 rounded">
-                        Auto-apply
-                      </span>
-                    ) : (
-                      <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-600 rounded">
-                        No code set
-                      </span>
-                    )}
-                    {!discount.is_active && (
-                      <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
-                        Inactive
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-1 text-sm text-gray-600">
-                    <p>
-                      Type: <span className="font-medium">{discount.type === 'flat' ? 'Flat' : 'Percentage'}</span>
-                    </p>
-                    <p>
-                      Value: <span className="font-medium">
-                        {discount.type === 'percentage' ? `${discount.value}%` : formatCurrency(discount.value)}
-                      </span>
-                    </p>
-                    {discount.min_order_amount && (
-                      <p>Min Order: {formatCurrency(discount.min_order_amount)}</p>
-                    )}
-                    {discount.valid_from && (
-                      <p>Valid: {new Date(discount.valid_from).toLocaleDateString()} - {discount.valid_until ? new Date(discount.valid_until).toLocaleDateString() : 'No expiry'}</p>
-                    )}
-                    <p className="text-xs text-gray-500">
-                      Apply to: {discount.application_scope === 'category' ? `${(discount.application_scope_ids ?? []).length} categories` : discount.application_scope === 'products' ? `${(discount.application_scope_ids ?? []).length} products` : 'Whole order'}
-                      {' · '}
-                      Valid at: {(discount.eligibility_brand_ids ?? []).length > 0 ? `${discount.eligibility_brand_ids!.length} brands` : (discount.eligibility_branch_ids ?? []).length > 0 ? `${discount.eligibility_branch_ids!.length} branches` : 'All'}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Button size="small" variant="secondary" onClick={() => handleEdit(discount)}>
-                    Edit
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="danger"
-                    onClick={() => {
-                      if (confirm(`Delete discount "${discount.name}"?`)) {
-                        deleteMutation.mutate(discount.id);
-                      }
-                    }}
-                    isLoading={deleteMutation.isPending}
-                  >
-                    Delete
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))
+          <>
+            <AccentedList>
+              {paginatedDiscounts.map((discount, i) => (
+                <AccentedListRow
+                  key={discount.id}
+                  accent={discount.is_active ? 'active' : 'inactive'}
+                  initial={discount.name.charAt(0)}
+                  title={discount.name}
+                  subtitle={
+                    <>
+                      <p>Type: <span className="font-medium">{discount.type === 'flat' ? 'Flat' : 'Percentage'}</span> · Value: <span className="font-medium">{discount.type === 'percentage' ? `${discount.value}%` : formatCurrency(discount.value)}</span></p>
+                      {discount.requires_code && discount.code && <p className="font-mono text-xs">{discount.code}</p>}
+                      {discount.min_order_amount && <p>Min order: {formatCurrency(discount.min_order_amount)}</p>}
+                    </>
+                  }
+                  statusLabel={discount.is_active ? 'Active' : 'Inactive'}
+                  statusVariant={discount.is_active ? 'active' : 'inactive'}
+                  animationIndex={i}
+                  actions={
+                    <>
+                      <Button size="small" variant="edit" onClick={() => handleEdit(discount)}>Edit</Button>
+                      <Button size="small" variant="danger" onClick={() => confirm(`Delete discount "${discount.name}"?`) && deleteMutation.mutate(discount.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                    </>
+                  }
+                />
+              ))}
+            </AccentedList>
+            <PaginationBar totalCount={discountList.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="discounts" />
+          </>
         )}
       </div>
     </div>

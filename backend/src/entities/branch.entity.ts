@@ -67,6 +67,12 @@ export class Branch {
     @Column('simple-json', { nullable: true })
     settings: Record<string, unknown> | null;
 
+    @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+    latitude: number | null;
+
+    @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+    longitude: number | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

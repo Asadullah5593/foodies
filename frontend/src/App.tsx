@@ -1,18 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import Login from './pages/Admin/Login';
 import Dashboard from './pages/Admin/Dashboard';
 import Tenants from './pages/Admin/Tenants';
 import Brands from './pages/Admin/Brands';
 import Branches from './pages/Admin/Branches';
+import BranchEdit from './pages/Admin/BranchEdit';
 import Users from './pages/Admin/Users';
 import Categories from './pages/Admin/Categories';
 import MenuItems from './pages/Admin/MenuItems';
+import Deals from './pages/Admin/Deals';
 import MenuVariants from './pages/Admin/MenuVariants';
 import MenuAddons from './pages/Admin/MenuAddons';
+import Modifiers from './pages/Admin/Modifiers';
 import BranchMenuItems from './pages/Admin/BranchMenuItems';
 import BranchUsers from './pages/Admin/BranchUsers';
 import Discounts from './pages/Admin/Discounts';
@@ -23,18 +27,94 @@ import Orders from './pages/Admin/Orders';
 import OrderDetail from './pages/Admin/OrderDetail';
 import Deliveries from './pages/Admin/Deliveries';
 import LoyaltySettings from './pages/Admin/LoyaltySettings';
+import BusinessSettings from './pages/Admin/BusinessSettings';
 import Customers from './pages/Admin/Customers';
 import OrderTaking from './pages/POS/OrderTaking';
+import KitchenDisplay from './pages/Kitchen/KitchenDisplay';
 import KDS from './pages/Kitchen/KDS';
 import RiderLayout from './pages/Rider/RiderLayout';
 import RiderDashboard from './pages/Rider/RiderDashboard';
 import RiderOrderDetail from './pages/Rider/RiderOrderDetail';
+import ButtonDemo from './pages/Admin/ButtonDemo';
+
+const PageLoader: React.FC = () => (
+  <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="flex flex-col items-center gap-4"
+    >
+      <motion.div
+        className="w-10 h-10 border-2 border-red-500 border-t-transparent rounded-full"
+        animate={{ rotate: 360 }}
+        transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
+      />
+      <span className="text-sm text-slate-500 dark:text-slate-400">Loading...</span>
+    </motion.div>
+  </div>
+);
+
+const NAV_LOADER_FADE_IN_MS = 250;
+const NAV_LOADER_MIN_VISIBLE_MS = 500;
+const NAV_LOADER_FADE_OUT_MS = 250;
+
+/** Full-screen spinner when navigating between routes. Visible at least 1s with smooth fade in/out. */
+const NavigationLoaderOverlay: React.FC<{ show: boolean }> = ({ show }) => (
+  <AnimatePresence>
+    {show && (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0, transition: { duration: NAV_LOADER_FADE_OUT_MS / 1000, ease: 'easeInOut' } }}
+        transition={{ duration: NAV_LOADER_FADE_IN_MS / 1000, ease: 'easeInOut' }}
+        className="fixed inset-0 z-[100] flex items-center justify-center bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm"
+        role="status"
+        aria-live="polite"
+        aria-label="Loading"
+      >
+        <div className="flex flex-col items-center gap-3">
+          <motion.div
+            className="w-8 h-8 border-4 border-blue-200 border-t-blue-600 dark:border-slate-600 dark:border-t-blue-400 rounded-full"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+          />
+          <span className="text-sm font-medium text-gray-600 dark:text-slate-300">Loading...</span>
+        </div>
+      </motion.div>
+    )}
+  </AnimatePresence>
+);
+
+/** Wraps app content and shows full-screen loader on route change (min 1s, smooth transition). */
+const NavigationLoader: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const location = useLocation();
+  const [showLoader, setShowLoader] = useState(false);
+  const prevPathRef = useRef(location.pathname);
+
+  useEffect(() => {
+    if (prevPathRef.current === location.pathname) return;
+    prevPathRef.current = location.pathname;
+    setShowLoader(true);
+    const t = setTimeout(
+      () => setShowLoader(false),
+      NAV_LOADER_FADE_IN_MS + NAV_LOADER_MIN_VISIBLE_MS
+    );
+    return () => clearTimeout(t);
+  }, [location.pathname]);
+
+  return (
+    <>
+      <NavigationLoaderOverlay show={showLoader} />
+      {children}
+    </>
+  );
+};
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
-    return <div>Loading...</div>;
+    return <PageLoader />;
   }
 
   if (!isAuthenticated) {
@@ -47,8 +127,19 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 /** Redirect riders away from admin area. */
 const AdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  if (user?.is_rider) {
+  if (isRiderForAccess(user)) {
     return <Navigate to="/rider" replace />;
+  }
+  return <>{children}</>;
+};
+
+import { canAccessPath, isRiderForAccess, getDefaultLandingPath } from './lib/pathPermissions';
+
+/** Only super admin can access (e.g. Tenants module). Tenant users are redirected to first accessible module. */
+const SuperAdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useAuth();
+  if (user && !user.is_super_admin) {
+    return <Navigate to={getDefaultLandingPath(user)} replace />;
   }
   return <>{children}</>;
 };
@@ -56,145 +147,372 @@ const AdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 /** Redirect non-riders away from rider area. */
 const RiderOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
-  if (user && !user.is_rider) {
-    return <Navigate to="/admin/dashboard" replace />;
+  if (user && !isRiderForAccess(user)) {
+    return <Navigate to={getDefaultLandingPath(user)} replace />;
   }
   return <>{children}</>;
 };
 
 const DefaultRedirect: React.FC = () => {
   const { isAuthenticated, loading, user } = useAuth();
-  if (loading) return <div>Loading...</div>;
+  if (loading) return <PageLoader />;
   if (!isAuthenticated) return <Navigate to="/login" replace />;
-  if (user?.is_rider) return <Navigate to="/rider" replace />;
-  return <Navigate to="/admin/dashboard" replace />;
+  return <Navigate to={getDefaultLandingPath(user)} replace />;
 };
+
+const SIDEBAR_WIDTH = 280;
+const SIDEBAR_COLLAPSED_WIDTH = 72;
+const SIDEBAR_COLLAPSED_KEY = 'foodies-sidebar-collapsed';
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { logout, user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [routeChanging, setRouteChanging] = useState(false);
+
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    setRouteChanging(true);
+    const t = setTimeout(() => setRouteChanging(false), 400);
+    return () => clearTimeout(t);
+  }, [location.pathname]);
 
   const handleLogout = async () => {
-    // Clear cached data so the next user never sees this user's data
     queryClient.clear();
     await logout();
     navigate('/login');
   };
 
-  const isActive = (path: string) => location.pathname === path;
+  const isSuperAdmin = user?.is_super_admin === true;
+  const isTenantUser = user?.tenant_id != null;
 
-  const menuLinks = [
-    { path: '/admin/dashboard', label: 'Dashboard', icon: '📊' },
-    { path: '/admin/tenants', label: 'Tenants', icon: '🏢' },
-    { path: '/admin/brands', label: 'Brands', icon: '🏪' },
-    { path: '/admin/branches', label: 'Branches', icon: '📍' },
-    { path: '/admin/users', label: 'Users', icon: '👥' },
-    { path: '/admin/categories', label: 'Categories', icon: '📁' },
-    { path: '/admin/menu-items', label: 'Menu Items', icon: '🍽️' },
-    { path: '/admin/menu-variants', label: 'Variants', icon: '🔀' },
-    { path: '/admin/menu-addons', label: 'Addons', icon: '➕' },
-    { path: '/admin/branch-menu-items', label: 'Branch Pricing', icon: '💰' },
-    { path: '/admin/branch-users', label: 'Branch Users', icon: '👤' },
-    { path: '/admin/discounts', label: 'Discounts', icon: '🎫' },
-    { path: '/admin/loyalty-settings', label: 'Loyalty Settings', icon: '⭐' },
-    { path: '/admin/customers', label: 'Customers', icon: '👤' },
-    { path: '/admin/roles', label: 'Roles', icon: '🔐' },
-    { path: '/admin/orders', label: 'Orders', icon: '📋' },
-    { path: '/admin/deliveries', label: 'Deliveries', icon: '🛵' },
-    { path: '/admin/shifts', label: 'Shifts', icon: '⏰' },
-    { path: '/admin/reports', label: 'Reports', icon: '📈' },
-    { path: '/pos/orders', label: 'POS', icon: '🛒' },
-    { path: '/kitchen', label: 'KDS', icon: '🍳' },
+  const allMenuLinks = [
+    { path: '/admin/dashboard', label: 'Dashboard', icon: '📊' as const },
+    ...(isSuperAdmin ? [{ path: '/admin/tenants', label: 'Tenants', icon: '🏢' as const }] : []),
+    ...(isTenantUser ? [{ path: '/admin/business-settings', label: 'Business Settings', icon: '⚙️' as const }] : []),
+    { path: '/admin/brands', label: 'Brands', icon: '🏪' as const },
+    { path: '/admin/branches', label: 'Branches', icon: '📍' as const },
+    { path: '/admin/users', label: 'Users', icon: '👥' as const },
+    { path: '/admin/categories', label: 'Categories', icon: '📁' as const },
+    { path: '/admin/menu-items', label: 'Menu Items', icon: '🍽️' as const },
+    { path: '/admin/deals', label: 'Deals', icon: '🎁' as const },
+    { path: '/admin/menu-variants', label: 'Variants', icon: '🔀' as const },
+    { path: '/admin/menu-addons', label: 'Addons', icon: '➕' as const },
+    { path: '/admin/modifiers', label: 'Modifiers', icon: '🔧' as const },
+    { path: '/admin/branch-menu-items', label: 'Branch Pricing', icon: '💰' as const },
+    { path: '/admin/branch-users', label: 'Branch Users', icon: '👤' as const },
+    { path: '/admin/discounts', label: 'Discounts', icon: '🎫' as const },
+    { path: '/admin/loyalty-settings', label: 'Loyalty Settings', icon: '⭐' as const },
+    { path: '/admin/customers', label: 'Customers', icon: '👤' as const },
+    { path: '/admin/roles', label: 'Roles', icon: '🔐' as const },
+    { path: '/admin/orders', label: 'Orders', icon: '📋' as const },
+    { path: '/admin/deliveries', label: 'Deliveries', icon: '🛵' as const },
+    { path: '/admin/shifts', label: 'Shifts', icon: '⏰' as const },
+    { path: '/admin/reports', label: 'Reports', icon: '📈' as const },
+    { path: '/pos/orders', label: 'POS', icon: '🛒' as const },
+    { path: '/kitchen', label: 'Kitchen Display', icon: '📺' as const },
+    { path: '/kitchen/back', label: 'Back Kitchen', icon: '🍳' as const },
+    { path: '/admin/button-demo', label: 'Button demo', icon: '🎨' as const },
   ];
+  const menuLinks = isRiderForAccess(user)
+    ? [{ path: '/rider', label: 'Deliveries', icon: '🛵' as const }]
+    : allMenuLinks.filter((link) => canAccessPath(user, link.path));
+
+  const pathname = location.pathname;
+  const matchingPaths = menuLinks.filter(
+    (l) => pathname === l.path || pathname.startsWith(l.path + '/')
+  );
+  const activePath =
+    matchingPaths.length > 0
+      ? matchingPaths.sort((a, b) => b.path.length - a.path.length)[0].path
+      : null;
+  const isActive = (path: string) => path === activePath;
+  const isPOS = pathname === '/pos' || pathname.startsWith('/pos/');
+  const basePath = pathname.startsWith('/admin/orders/') ? '/admin/orders' : pathname.startsWith('/admin/branches/') ? '/admin/branches' : pathname;
+  if (!canAccessPath(user, basePath)) {
+    return <Navigate to={getDefaultLandingPath(user)} replace />;
+  }
+
+  const isDarkSidebar = theme === 'dark';
+  const sidebarBorder = isDarkSidebar ? 'border-white/10' : 'border-slate-200';
+  const sidebarMuted = isDarkSidebar ? 'text-slate-400' : 'text-slate-500';
+  const sidebarInactive = isDarkSidebar ? 'text-slate-300 hover:bg-white/10 hover:text-white' : 'text-slate-600 hover:bg-slate-200 hover:text-slate-900';
+  const sidebarLogoText = isDarkSidebar ? 'text-white' : 'text-slate-800';
+
+  const renderSidebarContent = (collapsed: boolean) => (
+    <>
+      {/* Logo — top of sidebar */}
+      <div className={`flex-shrink-0 border-b ${sidebarBorder} ${collapsed ? 'px-0 py-4 flex justify-center' : 'px-4 pt-6 pb-5'}`}>
+        <Link
+          to="/admin/dashboard"
+          className={`flex items-center ${collapsed ? 'justify-center' : 'justify-center gap-3'}`}
+          onClick={() => setSidebarOpen(false)}
+          title={collapsed ? 'Foodies' : undefined}
+        >
+          <img
+            src="/foodies-logo.png"
+            alt="Foodies"
+            className={`rounded-full object-contain flex-shrink-0 ${collapsed ? 'h-10 w-10' : 'h-12 w-12'}`}
+          />
+          {!collapsed && (
+            <span className={`text-xl font-semibold ${sidebarLogoText} tracking-tight`}>Foodies</span>
+          )}
+        </Link>
+      </div>
+
+      {/* Nav links — scrollable */}
+      <nav className={`flex-1 overflow-y-auto py-4 space-y-0.5 ${collapsed ? 'px-2' : 'px-3'}`}>
+        {menuLinks.map((link) => (
+          <Link
+            key={link.path}
+            to={link.path}
+            onClick={() => setSidebarOpen(false)}
+            title={collapsed ? link.label : undefined}
+            className={`flex items-center rounded-lg text-sm font-medium transition-all duration-200 ${
+              collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'
+            } ${
+              isActive(link.path)
+                ? 'bg-red-600 text-white shadow-lg shadow-red-600/30'
+                : sidebarInactive
+            }`}
+          >
+            <span className="text-lg w-6 text-center flex-shrink-0">{link.icon}</span>
+            {!collapsed && <span className="truncate">{link.label}</span>}
+          </Link>
+        ))}
+      </nav>
+
+      {/* Collapse/expand toggle — same position in both states so sequence stays consistent */}
+      <div className={`flex-shrink-0 ${collapsed ? 'px-2 pb-2' : 'px-3 pb-2'}`}>
+        <button
+          type="button"
+          onClick={toggleSidebarCollapsed}
+          className={`w-full flex items-center rounded-lg font-medium text-sm transition-colors ${sidebarMuted} ${isDarkSidebar ? 'hover:bg-white/10 hover:text-white' : 'hover:bg-slate-200 hover:text-slate-800'} ${
+            collapsed ? 'justify-center p-2.5' : 'justify-center gap-2 px-3 py-2'
+          }`}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? (
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+            </svg>
+          ) : (
+            <>
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+              </svg>
+              <span className="text-xs font-medium">Collapse</span>
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Theme toggle — above user/logout */}
+      <div className={`flex-shrink-0 ${collapsed ? 'px-2 pb-2' : 'px-3 pb-2'}`}>
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className={`w-full flex items-center rounded-lg font-medium text-sm transition-colors ${sidebarMuted} ${isDarkSidebar ? 'hover:bg-white/10 hover:text-white' : 'hover:bg-slate-200 hover:text-slate-800'} ${
+            collapsed ? 'justify-center p-2.5' : 'justify-center gap-2 px-3 py-2.5'
+          }`}
+          title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        >
+          {theme === 'dark' ? (
+            <svg className="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+          ) : (
+            <svg className="h-5 w-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+            </svg>
+          )}
+          {!collapsed && <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>}
+        </button>
+      </div>
+
+      {/* User & logout — bottom of sidebar */}
+      <div className={`flex-shrink-0 border-t ${sidebarBorder} space-y-2 ${collapsed ? 'p-2' : 'p-4'}`}>
+        {!collapsed && (
+          <p className={`px-3 text-xs font-medium ${sidebarMuted} truncate`} title={user?.name}>
+            {user?.name}
+          </p>
+        )}
+        <button
+          onClick={handleLogout}
+          title={collapsed ? 'Logout' : undefined}
+          className={`w-full flex items-center rounded-lg font-medium text-sm transition-all duration-200 text-white border-0 !bg-[linear-gradient(90deg,#000000_0%,#B91C1C_50%,#000000_100%)] hover:brightness-110 active:brightness-95 ${
+            collapsed ? 'justify-center p-2.5' : 'justify-center gap-2 px-3 py-2.5'
+          }`}
+        >
+          <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          {!collapsed && <span>Logout</span>}
+        </button>
+      </div>
+    </>
+  );
+
+  const desktopSidebarWidth = sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-md border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <button
-                onClick={() => setMenuOpen(!menuOpen)}
-                className="md:hidden p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100"
-              >
-                <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              </button>
-              <h1 className="ml-2 text-xl font-bold text-gray-800">Restaurant Management</h1>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-700">{user?.name}</span>
-              <button
-                onClick={handleLogout}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-              >
-                Logout
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Mobile Menu */}
-        {menuOpen && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="md:hidden border-t border-gray-200"
-          >
-            <div className="px-2 pt-2 pb-3 space-y-1">
-              {menuLinks.map((link) => (
-                <Link
-                  key={link.path}
-                  to={link.path}
-                  onClick={() => setMenuOpen(false)}
-                  className={`block px-3 py-2 rounded-md text-base font-medium transition-colors ${
-                    isActive(link.path)
-                      ? 'bg-blue-100 text-blue-700'
-                      : 'text-gray-700 hover:bg-gray-100'
-                  }`}
-                >
-                  <span className="mr-2">{link.icon}</span>
-                  {link.label}
-                </Link>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Desktop Menu */}
-        <div className="hidden md:block border-t border-gray-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex space-x-1 overflow-x-auto">
-              {menuLinks.map((link) => (
-                <Link
-                  key={link.path}
-                  to={link.path}
-                  className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                    isActive(link.path)
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-600 hover:text-gray-900 hover:border-gray-300'
-                  }`}
-                >
-                  <span className="mr-1">{link.icon}</span>
-                  {link.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-        </div>
-      </nav>
-      <motion.main
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3 }}
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex">
+      {/* Desktop: fixed vertical sidebar (collapsible, theme-aware) */}
+      <motion.aside
+        initial={false}
+        animate={{ width: desktopSidebarWidth }}
+        transition={{ type: 'tween', duration: 0.2 }}
+        className={`hidden lg:flex flex-col fixed top-0 left-0 h-screen z-30 shadow-xl overflow-hidden ${
+          theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'
+        }`}
       >
-        {children}
-      </motion.main>
+        {renderSidebarContent(sidebarCollapsed)}
+      </motion.aside>
+
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Mobile: slide-in drawer (always expanded, theme-aware) */}
+      <motion.aside
+        initial={false}
+        animate={{ x: sidebarOpen ? 0 : -SIDEBAR_WIDTH }}
+        transition={{ type: 'tween', duration: 0.25 }}
+        className={`flex flex-col fixed top-0 left-0 h-screen w-[280px] max-w-[85vw] z-50 shadow-2xl lg:hidden ${
+          theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'
+        }`}
+        style={{ width: SIDEBAR_WIDTH }}
+      >
+        {renderSidebarContent(false)}
+      </motion.aside>
+
+      {/* Main content — margin matches desktop sidebar width (mobile: no sidebar) */}
+      <div
+        className={`flex-1 flex flex-col min-w-0 transition-[margin] duration-200 ${
+          sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-[280px]'
+        }`}
+      >
+        {/* Route change loader — thin progress bar at top of content area */}
+        <div className="w-full h-1 flex-shrink-0 overflow-hidden">
+          <div
+            className="h-full w-full bg-red-500 origin-left"
+            style={{
+              transform: routeChanging ? 'scaleX(1)' : 'scaleX(0)',
+              transition: 'transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+            }}
+          />
+        </div>
+        <div className="flex-1 flex flex-col min-h-0">
+          {/* Top bar: mobile menu + POS back */}
+          <header className="flex-shrink-0 flex items-center justify-between h-14 px-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 lg:px-6">
+            <div className="flex items-center gap-3">
+              {!isPOS && (
+                <>
+                  <button
+                    onClick={() => setSidebarOpen(true)}
+                    className="lg:hidden p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                    aria-label="Open menu"
+                  >
+                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                    </svg>
+                  </button>
+                  {sidebarCollapsed && (
+                    <button
+                      onClick={toggleSidebarCollapsed}
+                      className="hidden lg:flex items-center gap-2 p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                      aria-label="Expand sidebar"
+                      title="Expand sidebar"
+                    >
+                      <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                      </svg>
+                      <span className="text-sm font-medium">Menu</span>
+                    </button>
+                  )}
+                </>
+              )}
+              {isPOS && (
+                <Link
+                  to="/admin/orders"
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                  </svg>
+                  Back to Orders
+                </Link>
+              )}
+              <span className="text-slate-600 dark:text-slate-300 font-medium lg:hidden">
+                {isPOS ? 'POS' : 'Foodies'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleTheme}
+                className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              >
+                {theme === 'dark' ? (
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
+                ) : (
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                  </svg>
+                )}
+              </button>
+              <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[120px] lg:hidden">{user?.name}</span>
+            </div>
+          </header>
+
+          <main className="flex-1 p-4 lg:p-6 min-h-0 overflow-auto">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={location.pathname}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.2 }}
+                className="h-full"
+              >
+                {children}
+              </motion.div>
+            </AnimatePresence>
+          </main>
+        </div>
+      </div>
     </div>
   );
 };
@@ -217,7 +535,19 @@ const AppRoutes: React.FC = () => {
         path="/admin/tenants"
         element={
           <ProtectedRoute>
-            <AdminOnlyRoute><Layout><Tenants /></Layout></AdminOnlyRoute>
+            <AdminOnlyRoute>
+              <SuperAdminOnlyRoute>
+                <Layout><Tenants /></Layout>
+              </SuperAdminOnlyRoute>
+            </AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/business-settings"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><BusinessSettings /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />
@@ -226,6 +556,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><Brands /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/branches/:id"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><BranchEdit /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />
@@ -262,6 +600,14 @@ const AppRoutes: React.FC = () => {
         }
       />
       <Route
+        path="/admin/deals"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><Deals /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/admin/menu-variants"
         element={
           <ProtectedRoute>
@@ -274,6 +620,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><MenuAddons /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/modifiers"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><Modifiers /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />
@@ -365,8 +719,17 @@ const AppRoutes: React.FC = () => {
           </ProtectedRoute>
         }
       />
+      <Route path="/admin/button-demo" element={<ProtectedRoute><AdminOnlyRoute><Layout><ButtonDemo /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route
         path="/kitchen"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><KitchenDisplay /></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/kitchen/back"
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><KDS /></Layout></AdminOnlyRoute>
@@ -407,9 +770,13 @@ const App: React.FC = () => {
         v7_relativeSplatPath: true,
       }}
     >
-      <AuthProvider>
-        <AppRoutes />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <NavigationLoader>
+            <AppRoutes />
+          </NavigationLoader>
+        </AuthProvider>
+      </ThemeProvider>
     </BrowserRouter>
   );
 };
