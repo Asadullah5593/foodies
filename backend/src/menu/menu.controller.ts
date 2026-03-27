@@ -239,6 +239,7 @@ export class MenuController {
             name: string;
             price_modifier?: number;
             is_default?: boolean;
+            sort_order?: number;
         },
     ) {
         return this.service.createVariant(dto);
@@ -253,6 +254,7 @@ export class MenuController {
             price_modifier?: number;
             is_default?: boolean;
             menu_item_id?: number;
+            sort_order?: number;
         },
     ) {
         return this.service.updateVariant(+id, dto);

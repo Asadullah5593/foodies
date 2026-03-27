@@ -256,7 +256,10 @@ const BranchMenuItems: React.FC = () => {
                   subtitle={
                     <>
                       {branchName && <p>Branch: {branchName}{branchCode ? ` (${branchCode})` : ''}</p>}
-                      <p>Base: ${item.menu_item?.base_price?.toFixed(2) || '0.00'}{item.price_override ? ` · Branch: ${formatCurrency(item.price_override)}` : ''}</p>
+                      <p>
+                        Base: {formatCurrency(Number(item.menu_item?.base_price ?? 0))}
+                        {item.price_override ? ` · Branch: ${formatCurrency(item.price_override)}` : ''}
+                      </p>
                     </>
                   }
                   statusLabel={item.is_enabled ? 'Enabled' : 'Disabled'}

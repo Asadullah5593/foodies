@@ -196,7 +196,19 @@ const MenuItems: React.FC = () => {
   const updateItemMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: { name: string; description?: string; base_price: number; is_active: boolean; brand_id?: number; category_id?: number; image_url?: string | null; deal_only?: boolean } }) =>
       adminService.updateMenuItem(id, data),
-    onSuccess: () => {
+    onSuccess: (_updated: unknown, variables) => {
+      queryClient.setQueryData(['menuItems', filterParams], (prev: MenuItem[] | undefined) => {
+        if (!Array.isArray(prev)) return prev;
+        return prev.map((item) =>
+          item.id === variables.id
+            ? {
+                ...item,
+                ...variables.data,
+                image_url: variables.data.image_url ?? item.image_url,
+              }
+            : item,
+        );
+      });
       queryClient.invalidateQueries({ queryKey: ['menuItems'] });
       setEditingItem(null);
       toast.success('Menu item updated!');
@@ -216,6 +228,7 @@ const MenuItems: React.FC = () => {
     try {
       const fd = new FormData();
       fd.append('file', file);
+      fd.append('folder', 'menu-items');
       const { data } = await apiClient.post<{ url: string }>('/admin/upload', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });

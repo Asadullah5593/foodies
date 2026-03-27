@@ -26,6 +26,7 @@ import {
   DealConfigModal,
 } from './components';
 import type { OrderTypeOption, CartLine } from './components';
+import { defaultVariantIdForItem } from './components/types';
 
 const OrderTaking: React.FC = () => {
   const [selectedItems, setSelectedItems] = useState<CartLine[]>([]);
@@ -342,7 +343,11 @@ const OrderTaking: React.FC = () => {
       (item.modifier_groups && item.modifier_groups.length > 0);
     if (hasOptions) {
       setSelectedItemForConfig(item);
-      setItemConfig({ addons: [], modifiers: [] });
+      setItemConfig({
+        addons: [],
+        modifiers: [],
+        variantId: defaultVariantIdForItem(item),
+      });
       setShowItemModal(true);
     } else {
       const newLine: CartLine = { menuItem: item, quantity: 1, addons: [], modifiers: [] };

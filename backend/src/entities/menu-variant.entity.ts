@@ -27,6 +27,9 @@ export class MenuVariant {
     @Column({ default: false })
     isDefault: boolean;
 
+    @Column({ default: 0 })
+    sortOrder: number;
+
     @CreateDateColumn()
     createdAt: Date;
 

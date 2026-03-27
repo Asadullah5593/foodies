@@ -19,9 +19,6 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiConsumes, ApiBody, ApiOperation, ApiQuery, ApiParam } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
-import { join } from 'path';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import { randomBytes } from 'crypto';
 import { BrandsService } from '../brands/brands.service';
 import { BranchesService } from '../branches/branches.service';
 import { MenuService } from '../menu/menu.service';
@@ -38,6 +35,7 @@ import { Customer } from '../entities/customer.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RegisterDto } from './dto/register.dto';
+import { MediaStorageService } from '../media/media-storage.service';
 
 type BranchWithBrands = Branch & {
     branchBrands: Array<{ brand: { tenantId: number } }>;
@@ -60,6 +58,7 @@ export class ConsumerController {
         private otpService: OtpService,
         private cartService: CartService,
         private mailService: MailService,
+        private mediaStorage: MediaStorageService,
         @InjectRepository(Branch) private branchRepo: Repository<Branch>,
     ) {}
 
@@ -346,24 +345,24 @@ export class ConsumerController {
         );
         if (!allowed)
             throw new BadRequestException('Only image files are allowed');
-        const UPLOAD_DIR = join(process.cwd(), 'uploads');
-        if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
-        const ext =
-            file.originalname && file.originalname.includes('.')
-                ? file.originalname
-                      .slice(file.originalname.lastIndexOf('.'))
-                      .toLowerCase()
-                : '.png';
-        const safe = ext.match(/^\.(png|jpe?g|gif|webp|svg)$/) ? ext : '.png';
-        const filename = randomBytes(8).toString('hex') + safe;
-        writeFileSync(join(UPLOAD_DIR, filename), file.buffer);
-        const url = `/api/admin/upload/file/${filename}`;
+        const { url } = await this.mediaStorage.uploadImage(
+            file,
+            'customer-profiles',
+        );
         const customer = req.user;
+        const oldProfileImageUrl =
+            (customer as { profileImageUrl?: string }).profileImageUrl ?? null;
         await this.customersService.update(
             customer.id,
             customer.tenantId,
             { profile_image_url: url },
         );
+        if (oldProfileImageUrl && oldProfileImageUrl !== url) {
+            await this.mediaStorage.deleteManagedObjectByUrl(
+                oldProfileImageUrl,
+                'customer-profiles',
+            );
+        }
         return { url };
     }
 

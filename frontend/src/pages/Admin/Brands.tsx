@@ -125,6 +125,7 @@ const Brands: React.FC = () => {
     try {
       const formDataUpload = new FormData();
       formDataUpload.append('file', file);
+      formDataUpload.append('folder', 'brands');
       const { data } = await apiClient.post<{ url: string }>('/admin/upload', formDataUpload, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -168,7 +169,11 @@ const Brands: React.FC = () => {
       });
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (updatedBrand: Brand) => {
+      queryClient.setQueryData(['brands'], (prev: Brand[] | undefined) => {
+        if (!Array.isArray(prev)) return prev;
+        return prev.map((b) => (b.id === updatedBrand.id ? { ...b, ...updatedBrand } : b));
+      });
       queryClient.invalidateQueries({ queryKey: ['brands'] });
       closeForm();
       toast.success('Brand updated successfully!');

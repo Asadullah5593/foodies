@@ -5,7 +5,7 @@ import { formatCurrency } from '../../../utils/currency';
 import { MenuItem } from '../../../types';
 import type { DealDefinition, DealSlot } from '../../../services/api/menuService';
 import type { DealComponentLine } from './types';
-import type { ItemConfig } from './types';
+import { defaultVariantIdForItem, type ItemConfig } from './types';
 import ItemConfigModal from './ItemConfigModal';
 import CollapsibleSection, { type SectionStatus } from './CollapsibleSection';
 
@@ -40,16 +40,25 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
 
   const initSlotState = (slot: DealSlot): SlotState => {
     if (slot.type === 'fixed' && slot.choice_items?.length === 1) {
+      const selected = slot.choice_items[0] ?? null;
       return {
-        selectedItem: slot.choice_items[0] ?? null,
-        config: { addons: [], modifiers: [] },
+        selectedItem: selected,
+        config: {
+          addons: [],
+          modifiers: [],
+          variantId: defaultVariantIdForItem(selected),
+        },
       };
     }
     if (slot.type === 'choice_category' || slot.type === 'choice_list') {
       const first = slot.choice_items?.[0] ?? null;
       return {
         selectedItem: first,
-        config: { addons: [], modifiers: [] },
+        config: {
+          addons: [],
+          modifiers: [],
+          variantId: defaultVariantIdForItem(first),
+        },
       };
     }
     return { selectedItem: null, config: { addons: [], modifiers: [] } };
@@ -197,7 +206,11 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
                               onClick={() =>
                                 setSlotState(slot.slot_index, {
                                   selectedItem: item,
-                                  config: { addons: [], modifiers: [] },
+                                  config: {
+                                    addons: [],
+                                    modifiers: [],
+                                    variantId: defaultVariantIdForItem(item),
+                                  },
                                 })
                               }
                               className={`p-3 rounded-lg border-2 text-left transition-colors ${

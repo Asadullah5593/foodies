@@ -13,6 +13,7 @@ import { AuthModule } from '../auth/auth.module';
 import { OtpModule } from '../otp/otp.module';
 import { CartModule } from '../cart/cart.module';
 import { MailModule } from '../mail/mail.module';
+import { MediaModule } from '../media/media.module';
 import { ConsumerController } from './consumer.controller';
 
 @Module({
@@ -35,6 +36,7 @@ import { ConsumerController } from './consumer.controller';
         OtpModule,
         CartModule,
         MailModule,
+        MediaModule,
     ],
     controllers: [ConsumerController],
 })

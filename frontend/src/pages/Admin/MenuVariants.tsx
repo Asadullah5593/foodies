@@ -20,7 +20,7 @@ import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 const MenuVariants: React.FC = () => {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
-  const [editingVariant, setEditingVariant] = useState<Pick<MenuVariant, 'id' | 'menu_item_id' | 'name' | 'price_modifier' | 'is_default'> | null>(null);
+  const [editingVariant, setEditingVariant] = useState<Pick<MenuVariant, 'id' | 'menu_item_id' | 'name' | 'price_modifier' | 'is_default' | 'sort_order'> | null>(null);
   const [selectedMenuItem, setSelectedMenuItem] = useState<number | null>(null);
   const [filterBrandId, setFilterBrandId] = useState<number | null>(null);
   const [searchVariant, setSearchVariant] = useState('');
@@ -116,7 +116,7 @@ const MenuVariants: React.FC = () => {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { name?: string; price_modifier?: number; is_default?: boolean; menu_item_id?: number } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { name?: string; price_modifier?: number; is_default?: boolean; menu_item_id?: number; sort_order?: number } }) =>
       adminService.updateVariant(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['variants'] });
@@ -128,7 +128,7 @@ const MenuVariants: React.FC = () => {
     },
   });
 
-  const [editVariantForm, setEditVariantForm] = useState({ menu_item_id: '', name: '', price_modifier: '', is_default: false });
+  const [editVariantForm, setEditVariantForm] = useState({ menu_item_id: '', name: '', price_modifier: '', is_default: false, sort_order: '0' });
   React.useEffect(() => {
     if (editingVariant) {
       setEditVariantForm({
@@ -136,6 +136,7 @@ const MenuVariants: React.FC = () => {
         name: editingVariant.name,
         price_modifier: String(editingVariant.price_modifier ?? 0),
         is_default: editingVariant.is_default ?? false,
+        sort_order: String(editingVariant.sort_order ?? 0),
       });
     }
   }, [editingVariant]);
@@ -342,6 +343,7 @@ const MenuVariants: React.FC = () => {
                   name: editVariantForm.name.trim(),
                   price_modifier: parseFloat(editVariantForm.price_modifier),
                   is_default: editVariantForm.is_default,
+                  sort_order: parseInt(editVariantForm.sort_order, 10),
                 },
               });
             }}
@@ -392,6 +394,15 @@ const MenuVariants: React.FC = () => {
               />
               <label htmlFor="edit_is_default" className="ml-2 text-sm text-gray-700">Default variant</label>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
+              <input
+                type="number"
+                value={editVariantForm.sort_order}
+                onChange={(e) => setEditVariantForm((f) => ({ ...f, sort_order: e.target.value }))}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
             <div className="flex gap-2 justify-end">
               <Button type="button" variant="outline" onClick={() => setEditingVariant(null)}>Cancel</Button>
               <Button type="submit" isLoading={updateMutation.isPending}>Update</Button>
@@ -410,6 +421,7 @@ const MenuVariants: React.FC = () => {
             <AccentedList>
               {paginatedVariants.map((variant: any, i) => {
                 const priceMod = Number(variant.priceModifier ?? variant.price_modifier ?? 0);
+                const sortOrder = Number(variant.sortOrder ?? variant.sort_order ?? 0);
                 const menuItemId = variant.menuItemId ?? variant.menu_item_id;
                 const menuItem = menuItems?.find((i: any) => i.id === menuItemId);
                 const menuItemName = variant.menuItem?.name ?? (variant as { menu_item_name?: string }).menu_item_name ?? menuItem?.name ?? 'N/A';
@@ -421,13 +433,13 @@ const MenuVariants: React.FC = () => {
                     accent="active"
                     initial={variant.name?.charAt(0) ?? 'V'}
                     title={variant.name}
-                    subtitle={<><p>{brandName != null ? `Brand: ${brandName}` : null}</p><p>Menu item: {menuItemName}</p><p>Price: {priceMod >= 0 ? '+' : ''}{formatCurrency(Math.abs(priceMod))}</p></>}
+                    subtitle={<><p>{brandName != null ? `Brand: ${brandName}` : null}</p><p>Menu item: {menuItemName}</p><p>Price: {priceMod >= 0 ? '+' : ''}{formatCurrency(Math.abs(priceMod))}</p><p>Sort: {sortOrder}</p></>}
                     statusLabel={(variant.is_default ?? variant.isDefault) ? 'Default' : undefined}
                     statusVariant="active"
                     animationIndex={i}
                     actions={
                       <>
-                        <Button size="small" variant="edit" onClick={() => setEditingVariant({ id: variant.id, menu_item_id: menuItemId, name: variant.name, price_modifier: priceMod, is_default: variant.is_default ?? variant.isDefault ?? false })}>Edit</Button>
+                        <Button size="small" variant="edit" onClick={() => setEditingVariant({ id: variant.id, menu_item_id: menuItemId, name: variant.name, price_modifier: priceMod, is_default: variant.is_default ?? variant.isDefault ?? false, sort_order: sortOrder })}>Edit</Button>
                         <Button size="small" variant="danger" onClick={() => confirm(`Delete variant "${variant.name}"?`) && deleteMutation.mutate(variant.id)} isLoading={deleteMutation.isPending}>Delete</Button>
                       </>
                     }

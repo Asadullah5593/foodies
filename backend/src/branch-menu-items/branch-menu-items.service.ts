@@ -83,14 +83,19 @@ export class BranchMenuItemsService {
                                 name: item.menuItem.category.name,
                             }
                           : null,
-                      variants: (item.menuItem.variants ?? []).map(
-                          (v: MenuVariant) => ({
+                      variants: [...(item.menuItem.variants ?? [])]
+                          .sort(
+                              (a, b) =>
+                                  (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+                                  a.id - b.id,
+                          )
+                          .map((v: MenuVariant) => ({
                               id: v.id,
                               name: v.name,
                               price_modifier: Number(v.priceModifier),
                               is_default: v.isDefault,
-                          }),
-                      ),
+                              sort_order: v.sortOrder ?? 0,
+                          })),
                       addons: (item.menuItem.addons ?? []).map(
                           (a: MenuAddon) => ({
                               id: a.id,
@@ -254,12 +259,19 @@ export class BranchMenuItemsService {
                                 name: item.menuItem.category.name,
                             }
                           : null,
-                      variants: (item.menuItem.variants ?? []).map((v) => ({
-                          id: v.id,
-                          name: v.name,
-                          price_modifier: Number(v.priceModifier),
-                          is_default: v.isDefault,
-                      })),
+                      variants: [...(item.menuItem.variants ?? [])]
+                          .sort(
+                              (a, b) =>
+                                  (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+                                  a.id - b.id,
+                          )
+                          .map((v) => ({
+                              id: v.id,
+                              name: v.name,
+                              price_modifier: Number(v.priceModifier),
+                              is_default: v.isDefault,
+                              sort_order: v.sortOrder ?? 0,
+                          })),
                       addons: (item.menuItem.addons ?? []).map((a) => ({
                           id: a.id,
                           name: a.name,

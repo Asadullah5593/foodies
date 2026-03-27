@@ -11,12 +11,14 @@ import { BranchMenuItem } from '../entities/branch-menu-item.entity';
 import { DealComponent } from '../entities/deal-component.entity';
 import { ModifierGroup } from '../entities/modifier-group.entity';
 import { Modifier } from '../entities/modifier.entity';
+import { MediaModule } from '../media/media.module';
 import { MenuController } from './menu.controller';
 import { MenuService } from './menu.service';
 
 @Module({
     imports: [
         RoleAccessModule,
+        MediaModule,
         TypeOrmModule.forFeature([
             MenuCategory,
             MenuItem,

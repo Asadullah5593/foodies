@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Brand } from '../entities/brand.entity';
 import { BranchBrand } from '../entities/branch-brand.entity';
+import { MediaStorageService } from '../media/media-storage.service';
 
 @Injectable()
 export class BrandsService {
@@ -11,6 +12,7 @@ export class BrandsService {
         private repo: Repository<Brand>,
         @InjectRepository(BranchBrand)
         private branchBrandRepo: Repository<BranchBrand>,
+        private mediaStorage: MediaStorageService,
     ) {}
 
     /** Admin: tenant user sees only their tenant's brands; super admin (tenantId null) sees all with tenant_name */
@@ -164,6 +166,7 @@ export class BrandsService {
     ) {
         const brand = await this.repo.findOne({ where: { id, tenantId } });
         if (!brand) throw new NotFoundException('Brand not found');
+        const oldLogoUrl = brand.logoUrl ?? null;
         if (dto.name !== undefined) {
             brand.name = dto.name;
             brand.slug = dto.name
@@ -177,6 +180,13 @@ export class BrandsService {
         if (dto.status !== undefined)
             brand.isActive = dto.status !== 'inactive';
         await this.repo.save(brand);
+        if (
+            dto.logo_url !== undefined &&
+            oldLogoUrl &&
+            oldLogoUrl !== brand.logoUrl
+        ) {
+            await this.mediaStorage.deleteManagedObjectByUrl(oldLogoUrl, 'brands');
+        }
         return this.toResponse(brand);
     }
 
@@ -195,6 +205,7 @@ export class BrandsService {
         const where = tenantId != null ? { id, tenantId } : { id };
         const brand = await this.repo.findOne({ where });
         if (!brand) throw new NotFoundException('Brand not found');
+        const oldLogoUrl = brand.logoUrl ?? null;
         if (dto.name !== undefined) {
             brand.name = dto.name;
             brand.slug = dto.name
@@ -208,6 +219,13 @@ export class BrandsService {
         if (dto.status !== undefined)
             brand.isActive = dto.status !== 'inactive';
         await this.repo.save(brand);
+        if (
+            dto.logo_url !== undefined &&
+            oldLogoUrl &&
+            oldLogoUrl !== brand.logoUrl
+        ) {
+            await this.mediaStorage.deleteManagedObjectByUrl(oldLogoUrl, 'brands');
+        }
         return this.toResponse(brand);
     }
 

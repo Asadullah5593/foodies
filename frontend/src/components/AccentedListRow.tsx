@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 
 export type AccentVariant = 'active' | 'inactive';
@@ -43,6 +43,56 @@ const statusPillClass: Record<AccentVariant, string> = {
 const statusDotClass: Record<AccentVariant, string> = {
   active: 'bg-emerald-500',
   inactive: 'bg-rose-500',
+};
+
+const AvatarImage: React.FC<{ imageUrl?: string | null; initial: string }> = ({
+  imageUrl,
+  initial,
+}) => {
+  const [isLoading, setIsLoading] = useState(Boolean(imageUrl));
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setIsLoading(Boolean(imageUrl));
+    setHasError(false);
+  }, [imageUrl]);
+
+  const showImage = Boolean(imageUrl) && !hasError;
+  const showInitial = !showImage || (!isLoading && hasError);
+
+  return (
+    <div className="relative flex-shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden ring-2 ring-white dark:ring-slate-800 shadow-sm">
+      {showInitial && (
+        <span className="text-xl sm:text-2xl font-bold text-gray-500 dark:text-slate-400 uppercase tracking-tight">
+          {initial}
+        </span>
+      )}
+      {showImage && (
+        <>
+          {isLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-slate-700">
+              <div
+                className="h-6 w-6 rounded-full border-2 border-gray-300 border-t-transparent dark:border-slate-500 dark:border-t-transparent animate-spin"
+                aria-label="Loading image"
+              />
+            </div>
+          )}
+          <img
+            src={imageUrl as string}
+            alt=""
+            className={`absolute inset-0 w-full h-full object-contain p-1.5 bg-gray-100 dark:bg-slate-700 transition-opacity duration-150 ${
+              isLoading ? 'opacity-0' : 'opacity-100'
+            }`}
+            onLoad={() => setIsLoading(false)}
+            onError={() => {
+              setIsLoading(false);
+              setHasError(true);
+            }}
+          />
+        </>
+      )}
+    </div>
+  );
 };
 
 /**
@@ -99,19 +149,7 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
           className={`flex-shrink-0 w-1.5 sm:w-2 self-stretch min-h-[4rem] ${accentBarClass[accent]}`}
           aria-hidden
         />
-        <div className="relative flex-shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden ring-2 ring-white dark:ring-slate-800 shadow-sm">
-          <span className="text-xl sm:text-2xl font-bold text-gray-500 dark:text-slate-400 uppercase tracking-tight">
-            {initial}
-          </span>
-          {imageUrl && (
-            <img
-              src={imageUrl}
-              alt=""
-              className="absolute inset-0 w-full h-full object-contain p-1.5 bg-gray-100 dark:bg-slate-700"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-            />
-          )}
-        </div>
+        <AvatarImage imageUrl={imageUrl} initial={initial} />
         <div className="flex-1 min-w-0 py-4">
           <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-base sm:text-lg truncate" title={title}>
             {title}

@@ -231,7 +231,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { path: '/pos/orders', label: 'POS', icon: '🛒' as const },
     { path: '/kitchen', label: 'Kitchen Display', icon: '📺' as const },
     { path: '/kitchen/back', label: 'Back Kitchen', icon: '🍳' as const },
-    { path: '/admin/button-demo', label: 'Button demo', icon: '🎨' as const },
+    // { path: '/admin/button-demo', label: 'Button demo', icon: '🎨' as const },
   ];
   const menuLinks = isRiderForAccess(user)
     ? [{ path: '/rider', label: 'Deliveries', icon: '🛵' as const }]

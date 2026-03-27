@@ -5,9 +5,12 @@
     "frontend": "cd frontend && npm run dev",
     "dev": "concurrently -k \"npm run backend\" \"npm run frontend\"",
     "build": "cd backend && npm run build && cd ../frontend && npm run build",
-    "install:all": "npm install && cd backend && npm install --legacy-peer-deps && cd ../frontend && npm install"
+    "install:all": "npm install && cd backend && npm install --legacy-peer-deps && cd ../frontend && npm install",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "concurrently": "^9.0.1"
+    "concurrently": "^9.0.1",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0"
   }
 }

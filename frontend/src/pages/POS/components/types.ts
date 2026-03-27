@@ -32,3 +32,14 @@ export type ItemConfig = {
   modifiers: Array<{ modifierId: number; quantity: number }>;
   notes?: string;
 };
+
+/** Pre-select the admin-marked default variant when opening configure/add flows. */
+export function defaultVariantIdForItem(item: MenuItem | null | undefined): number | undefined {
+  if (!item?.variants?.length) return undefined;
+  const def = item.variants.find(
+    (v) =>
+      v.is_default === true ||
+      (v as { isDefault?: boolean }).isDefault === true,
+  );
+  return def?.id;
+}

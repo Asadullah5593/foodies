@@ -15,6 +15,7 @@ import { MenuItem } from '../entities/menu-item.entity';
 import { MenuVariant } from '../entities/menu-variant.entity';
 import { ModifierGroup } from '../entities/modifier-group.entity';
 import { Modifier } from '../entities/modifier.entity';
+import { MediaStorageService } from '../media/media-storage.service';
 
 @Injectable()
 export class MenuService {
@@ -33,6 +34,7 @@ export class MenuService {
         private dealComponentRepo: Repository<DealComponent>,
         @InjectRepository(ModifierGroup) private modifierGroupRepo: Repository<ModifierGroup>,
         @InjectRepository(Modifier) private modifierRepo: Repository<Modifier>,
+        private mediaStorage: MediaStorageService,
     ) {}
 
     /** List categories for a brand, or all categories for tenant when brandId is null. */
@@ -211,6 +213,7 @@ export class MenuService {
                 name: v.name,
                 price_modifier: Number(v.priceModifier),
                 is_default: v.isDefault,
+                sort_order: v.sortOrder ?? 0,
             })),
             addons: (i.addons ?? []).map((a) => ({
                 id: a.id,
@@ -265,6 +268,7 @@ export class MenuService {
     ) {
         const item = await this.itemRepo.findOne({ where: { id } });
         if (!item) throw new NotFoundException('Menu item not found');
+        const oldImageUrl = item.imageUrl ?? null;
 
         if (dto.brand_id !== undefined) item.brandId = dto.brand_id;
         if (dto.category_id !== undefined) item.categoryId = dto.category_id;
@@ -282,6 +286,16 @@ export class MenuService {
         if (dto.is_active !== undefined) item.isActive = dto.is_active;
 
         await this.itemRepo.save(item);
+        if (
+            dto.image_url !== undefined &&
+            oldImageUrl &&
+            oldImageUrl !== item.imageUrl
+        ) {
+            await this.mediaStorage.deleteManagedObjectByUrl(
+                oldImageUrl,
+                'menu-items',
+            );
+        }
 
         // When menu item's brand is changed, revoke addons that belong to other brands
         if (dto.brand_id !== undefined) {
@@ -598,7 +612,7 @@ export class MenuService {
     async getVariants(menuItemId: number) {
         return this.variantRepo.find({
             where: { menuItemId },
-            order: { id: 'ASC' },
+            order: { sortOrder: 'ASC', id: 'ASC' },
             relations: ['menuItem'],
         });
     }
@@ -611,7 +625,8 @@ export class MenuService {
         const qb = this.variantRepo
             .createQueryBuilder('v')
             .leftJoinAndSelect('v.menuItem', 'i')
-            .orderBy('v.id', 'ASC');
+            .orderBy('v.sortOrder', 'ASC')
+            .addOrderBy('v.id', 'ASC');
         if (brandId != null) {
             qb.where('i.brandId = :brandId', { brandId });
         } else if (tenantId != null) {
@@ -631,6 +646,7 @@ export class MenuService {
         name: string;
         price_modifier?: number;
         is_default?: boolean;
+        sort_order?: number;
     }) {
         return this.variantRepo.save(
             this.variantRepo.create({
@@ -638,6 +654,7 @@ export class MenuService {
                 name: dto.name,
                 priceModifier: dto.price_modifier ?? 0,
                 isDefault: dto.is_default ?? false,
+                sortOrder: dto.sort_order ?? 0,
             }),
         );
     }
@@ -649,6 +666,7 @@ export class MenuService {
             price_modifier?: number;
             is_default?: boolean;
             menu_item_id?: number;
+            sort_order?: number;
         },
     ) {
         const v = await this.variantRepo.findOne({ where: { id } });
@@ -658,6 +676,7 @@ export class MenuService {
         if (dto.price_modifier !== undefined)
             v.priceModifier = dto.price_modifier;
         if (dto.is_default !== undefined) v.isDefault = dto.is_default;
+        if (dto.sort_order !== undefined) v.sortOrder = dto.sort_order;
         await this.variantRepo.save(v);
         return v;
     }
@@ -745,11 +764,15 @@ export class MenuService {
                     (item?.brand as { id: number } | undefined)?.id ??
                     null,
                 variants:
-                    item?.variants?.map((v) => ({
+                    [...(item?.variants ?? [])]
+                        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id)
+                        .map((v) => ({
                         id: v.id,
                         name: v.name,
                         price_modifier: Number(v.priceModifier),
-                    })) ?? [],
+                        is_default: v.isDefault,
+                        sort_order: v.sortOrder ?? 0,
+                    })),
                 addons:
                     item?.addons?.map((a) => ({
                         id: a.id,
@@ -988,11 +1011,15 @@ export class MenuService {
                 (item as { brand?: { id: number } }).brand?.id ??
                 null,
             variants:
-                item.variants?.map((v) => ({
+                [...(item.variants ?? [])]
+                    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id)
+                    .map((v) => ({
                     id: v.id,
                     name: v.name,
                     price_modifier: Number(v.priceModifier),
-                })) ?? [],
+                    is_default: v.isDefault,
+                    sort_order: v.sortOrder ?? 0,
+                })),
             addons:
                 item.addons?.map((a) => ({
                     id: a.id,
@@ -1196,11 +1223,15 @@ export class MenuService {
             category_id: item.categoryId ?? item.category?.id ?? null,
             brand_id: item.brandId ?? null,
             variants:
-                item.variants?.map((v) => ({
+                [...(item.variants ?? [])]
+                    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id)
+                    .map((v) => ({
                     id: v.id,
                     name: v.name,
                     price_modifier: Number(v.priceModifier),
-                })) ?? [],
+                    is_default: v.isDefault,
+                    sort_order: v.sortOrder ?? 0,
+                })),
             addons:
                 item.addons?.map((a) => ({
                     id: a.id,
