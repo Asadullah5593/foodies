@@ -17,7 +17,14 @@ import {
     Logger,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiConsumes, ApiBody, ApiOperation, ApiQuery, ApiParam } from '@nestjs/swagger';
+import {
+    ApiTags,
+    ApiConsumes,
+    ApiBody,
+    ApiOperation,
+    ApiQuery,
+    ApiParam,
+} from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
 import { BrandsService } from '../brands/brands.service';
 import { BranchesService } from '../branches/branches.service';
@@ -81,16 +88,57 @@ export class ConsumerController {
         return (brand as { tenant_id: number }).tenant_id;
     }
 
+    private resolveOrderSourceFromRequest(req: {
+        headers?: Record<string, string | string[] | undefined>;
+    }): 'consumer_app' | 'consumer_web' {
+        const headerVal = req?.headers?.['x-client-platform'];
+        const raw = Array.isArray(headerVal) ? headerVal[0] : headerVal;
+        const platform = (raw ?? '').toString().trim().toLowerCase();
+        return platform === 'web' || platform === 'consumer_web'
+            ? 'consumer_web'
+            : 'consumer_app';
+    }
+
+    private async resolveCartCustomerOrThrow(phone: string) {
+        const customer = await this.customersService.findConsumerByPhone(
+            phone.trim(),
+        );
+        if (!customer) {
+            throw new NotFoundException(
+                'Customer not found. Please login or register before using cart.',
+            );
+        }
+        return customer;
+    }
+
     @Get('brands')
-    @ApiOperation({ summary: 'List brands (optional: filter by branch_id, search by name)' })
-    @ApiQuery({ name: 'branch_id', required: false, example: '1', description: 'Return only brands at this branch' })
-    @ApiQuery({ name: 'search', required: false, example: 'peri', description: 'Filter brands by name (case-insensitive)' })
+    @ApiOperation({
+        summary: 'List brands (optional: filter by branch_id, search by name)',
+    })
+    @ApiQuery({
+        name: 'branch_id',
+        required: false,
+        example: '1',
+        description: 'Return only brands at this branch',
+    })
+    @ApiQuery({
+        name: 'search',
+        required: false,
+        example: 'peri',
+        description: 'Filter brands by name (case-insensitive)',
+    })
     listBrands(
         @Query('branch_id') branchIdParam: string,
         @Query('search') searchParam: string,
     ) {
-        const branchId = branchIdParam != null && branchIdParam !== '' ? +branchIdParam : null;
-        const search = searchParam != null && searchParam.trim() !== '' ? searchParam.trim() : undefined;
+        const branchId =
+            branchIdParam != null && branchIdParam !== ''
+                ? +branchIdParam
+                : null;
+        const search =
+            searchParam != null && searchParam.trim() !== ''
+                ? searchParam.trim()
+                : undefined;
         if (branchId != null && Number.isFinite(branchId)) {
             return this.brandsService.findAllPublicByBranchId(branchId, search);
         }
@@ -103,7 +151,10 @@ export class ConsumerController {
     }
 
     @Get('branches')
-    @ApiOperation({ summary: 'List branches (optional: brand_id, or lat/lng/radius_km for near me)' })
+    @ApiOperation({
+        summary:
+            'List branches (optional: brand_id, or lat/lng/radius_km for near me)',
+    })
     @ApiQuery({ name: 'brand_id', required: false, example: '1' })
     @ApiQuery({ name: 'latitude', required: false, example: '31.5204' })
     @ApiQuery({ name: 'longitude', required: false, example: '74.3587' })
@@ -114,10 +165,24 @@ export class ConsumerController {
         @Query('longitude') longitudeParam: string,
         @Query('radius_km') radiusKmParam: string,
     ) {
-        const lat = latitudeParam != null && latitudeParam !== '' ? +latitudeParam : null;
-        const lng = longitudeParam != null && longitudeParam !== '' ? +longitudeParam : null;
-        if (lat != null && lng != null && Number.isFinite(lat) && Number.isFinite(lng)) {
-            const radiusKm = (radiusKmParam != null && radiusKmParam !== '' ? +radiusKmParam : 10) || 10;
+        const lat =
+            latitudeParam != null && latitudeParam !== ''
+                ? +latitudeParam
+                : null;
+        const lng =
+            longitudeParam != null && longitudeParam !== ''
+                ? +longitudeParam
+                : null;
+        if (
+            lat != null &&
+            lng != null &&
+            Number.isFinite(lat) &&
+            Number.isFinite(lng)
+        ) {
+            const radiusKm =
+                (radiusKmParam != null && radiusKmParam !== ''
+                    ? +radiusKmParam
+                    : 10) || 10;
             return this.branchesService.findAllWithinRadius(lat, lng, radiusKm);
         }
         return this.branchesService.findAll(brandId ? +brandId : undefined);
@@ -143,7 +208,9 @@ export class ConsumerController {
     })
     async register(@Body() dto: RegisterDto) {
         if (dto.password !== dto.confirm_password) {
-            throw new BadRequestException('password and confirm_password do not match');
+            throw new BadRequestException(
+                'password and confirm_password do not match',
+            );
         }
         const customer = await this.customersService.createForConsumer(null, {
             phone: dto.phone,
@@ -168,15 +235,15 @@ export class ConsumerController {
         schema: {
             type: 'object',
             required: ['email', 'password'],
-            properties: { email: { type: 'string' }, password: { type: 'string' } },
+            properties: {
+                email: { type: 'string' },
+                password: { type: 'string' },
+            },
             example: { email: 'john@example.com', password: 'secret123' },
         },
     })
-    async customerLogin(
-        @Body() dto: { email: string; password: string },
-    ) {
-        const email =
-            typeof dto?.email === 'string' ? dto.email.trim() : '';
+    async customerLogin(@Body() dto: { email: string; password: string }) {
+        const email = typeof dto?.email === 'string' ? dto.email.trim() : '';
         const password = typeof dto?.password === 'string' ? dto.password : '';
         if (!email || !password)
             throw new NotFoundException('email and password are required');
@@ -221,17 +288,25 @@ export class ConsumerController {
     })
     async forgotPassword(@Body() dto: { email: string }) {
         const email =
-            typeof dto?.email === 'string' ? dto.email.trim().toLowerCase() : '';
+            typeof dto?.email === 'string'
+                ? dto.email.trim().toLowerCase()
+                : '';
         if (!email) throw new NotFoundException('email is required');
         const customer = await this.customersService.findByEmail(email);
         if (!customer) {
-            this.logger.log(`Forgot password: no customer found for email ${email}`);
-            return { message: 'If an account exists, a code was sent to your email' };
+            this.logger.log(
+                `Forgot password: no customer found for email ${email}`,
+            );
+            return {
+                message: 'If an account exists, a code was sent to your email',
+            };
         }
         const { code } = await this.otpService.create(email, 'password_reset');
         this.logger.log(`Forgot password: sending OTP to ${email}`);
         await this.mailService.sendPasswordResetOtp(email, code);
-        return { message: 'If an account exists, a code was sent to your email' };
+        return {
+            message: 'If an account exists, a code was sent to your email',
+        };
     }
 
     /** Verify OTP and optionally set new password (for password reset). */
@@ -246,14 +321,17 @@ export class ConsumerController {
                 code: { type: 'string' },
                 new_password: { type: 'string' },
             },
-            example: { email: 'john@example.com', code: '123456', new_password: 'newSecret123' },
+            example: {
+                email: 'john@example.com',
+                code: '123456',
+                new_password: 'newSecret123',
+            },
         },
     })
     async verifyOtp(
         @Body() dto: { email: string; code: string; new_password?: string },
     ) {
-        const email =
-            typeof dto?.email === 'string' ? dto.email.trim() : '';
+        const email = typeof dto?.email === 'string' ? dto.email.trim() : '';
         const code = typeof dto?.code === 'string' ? dto.code.trim() : '';
         if (!email || !code)
             throw new NotFoundException('email and code are required');
@@ -271,7 +349,7 @@ export class ConsumerController {
     /** Get current customer profile (requires customer JWT). */
     @Get('profile/me')
     @UseGuards(CustomerJwtAuthGuard)
-    async getProfileMe(@Req() req: { user: Customer }) {
+    getProfileMe(@Req() req: { user: Customer }) {
         const customer = req.user;
         return {
             id: customer.id,
@@ -281,8 +359,10 @@ export class ConsumerController {
             email: customer.email ?? null,
             loyalty_points_balance: customer.loyaltyPointsBalance,
             profile_image_url: customer.profileImageUrl ?? null,
-            latitude: customer.latitude != null ? Number(customer.latitude) : null,
-            longitude: customer.longitude != null ? Number(customer.longitude) : null,
+            latitude:
+                customer.latitude != null ? Number(customer.latitude) : null,
+            longitude:
+                customer.longitude != null ? Number(customer.longitude) : null,
         };
     }
 
@@ -305,10 +385,18 @@ export class ConsumerController {
         @Req() req: { user: Customer },
         @Body() dto: { latitude: number; longitude: number },
     ) {
-        const lat = typeof dto.latitude === 'number' ? dto.latitude : Number(dto.latitude);
-        const lng = typeof dto.longitude === 'number' ? dto.longitude : Number(dto.longitude);
+        const lat =
+            typeof dto.latitude === 'number'
+                ? dto.latitude
+                : Number(dto.latitude);
+        const lng =
+            typeof dto.longitude === 'number'
+                ? dto.longitude
+                : Number(dto.longitude);
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-            throw new BadRequestException('latitude and longitude must be valid numbers');
+            throw new BadRequestException(
+                'latitude and longitude must be valid numbers',
+            );
         }
         await this.customersService.updateLocation(req.user.id, lat, lng);
         return { message: 'Location updated', latitude: lat, longitude: lng };
@@ -352,11 +440,9 @@ export class ConsumerController {
         const customer = req.user;
         const oldProfileImageUrl =
             (customer as { profileImageUrl?: string }).profileImageUrl ?? null;
-        await this.customersService.update(
-            customer.id,
-            customer.tenantId,
-            { profile_image_url: url },
-        );
+        await this.customersService.update(customer.id, customer.tenantId, {
+            profile_image_url: url,
+        });
         if (oldProfileImageUrl && oldProfileImageUrl !== url) {
             await this.mediaStorage.deleteManagedObjectByUrl(
                 oldProfileImageUrl,
@@ -378,7 +464,9 @@ export class ConsumerController {
         const branchId = branchIdParam ? +branchIdParam : undefined;
         if (!branchId || !phone?.trim())
             throw new NotFoundException('branch_id and phone are required');
-        const customer = await this.customersService.findConsumerByPhone(phone.trim());
+        const customer = await this.customersService.findConsumerByPhone(
+            phone.trim(),
+        );
         if (!customer) throw new NotFoundException('Customer not found');
         return {
             id: customer.id,
@@ -403,7 +491,12 @@ export class ConsumerController {
                 name: { type: 'string' },
                 email: { type: 'string' },
             },
-            example: { phone: '03001234567', branch_id: 1, name: 'John Doe', email: 'john@example.com' },
+            example: {
+                phone: '03001234567',
+                branch_id: 1,
+                name: 'John Doe',
+                email: 'john@example.com',
+            },
         },
     })
     async updateProfile(
@@ -417,13 +510,14 @@ export class ConsumerController {
     ) {
         if (!dto.phone?.trim() || !dto.branch_id)
             throw new NotFoundException('phone and branch_id are required');
-        const customer = await this.customersService.findConsumerByPhone(dto.phone.trim());
-        if (!customer) throw new NotFoundException('Customer not found');
-        const updated = await this.customersService.update(
-            customer.id,
-            null,
-            { name: dto.name, email: dto.email },
+        const customer = await this.customersService.findConsumerByPhone(
+            dto.phone.trim(),
         );
+        if (!customer) throw new NotFoundException('Customer not found');
+        const updated = await this.customersService.update(customer.id, null, {
+            name: dto.name,
+            email: dto.email,
+        });
         return {
             id: updated.id,
             tenant_id: updated.tenantId ?? null,
@@ -436,22 +530,53 @@ export class ConsumerController {
     }
 
     @Get('menu')
-    @ApiOperation({ summary: 'Get branch menu (optional: filter by brand_id, search by item/category name)' })
+    @ApiOperation({
+        summary:
+            'Get branch menu (optional: filter by brand_id, search by item/category name)',
+    })
     @ApiQuery({ name: 'branch_id', required: true, example: '1' })
     @ApiQuery({ name: 'brand_id', required: false, example: '1' })
-    @ApiQuery({ name: 'search', required: false, example: 'burger', description: 'Filter menu items by name, description or category (case-insensitive)' })
+    @ApiQuery({
+        name: 'search',
+        required: false,
+        example: 'burger',
+        description:
+            'Filter menu items by name, description or category (case-insensitive)',
+    })
+    @ApiQuery({
+        name: 'order_type',
+        required: false,
+        example: 'delivery',
+        description:
+            'Optional. When set, only menu items available for this channel are returned. Use the same values as POST /orders `order_type`: `delivery`, `pickup` (consumer), or `takeaway` (POS alias for pickup), `dine_in`. Each item also includes `available_for_order_types` when omitted.',
+    })
     getMenu(
         @Query('branch_id') branchIdParam: string,
         @Query('brand_id') brandIdParam: string,
         @Query('search') searchParam: string,
+        @Query('order_type') orderTypeParam: string,
     ) {
         const branchId = branchIdParam ? +branchIdParam : undefined;
         if (!branchId) throw new NotFoundException('branch_id is required');
-        const brandId = brandIdParam != null && brandIdParam !== '' ? +brandIdParam : undefined;
-        const search = searchParam != null && searchParam.trim() !== '' ? searchParam.trim() : undefined;
+        const brandId =
+            brandIdParam != null && brandIdParam !== ''
+                ? +brandIdParam
+                : undefined;
+        const search =
+            searchParam != null && searchParam.trim() !== ''
+                ? searchParam.trim()
+                : undefined;
+        const orderType =
+            orderTypeParam != null && orderTypeParam.trim() !== ''
+                ? orderTypeParam.trim()
+                : undefined;
         return this.menuService.getBranchMenu(branchId, {
-            brandId: brandId != null && Number.isFinite(brandId) ? brandId : undefined,
+            brandId:
+                brandId != null && Number.isFinite(brandId)
+                    ? brandId
+                    : undefined,
             search,
+            orderType,
         });
     }
 
@@ -468,7 +593,10 @@ export class ConsumerController {
      * { key: "milkshakes", name: "Milkshakes", brandCount: 3 }
      */
     @Get('categories/global')
-    @ApiOperation({ summary: 'List unique categories across all brands for a branch (consumer app)' })
+    @ApiOperation({
+        summary:
+            'List unique categories across all brands for a branch (consumer app)',
+    })
     @ApiQuery({ name: 'branch_id', required: true, example: '1' })
     async getGlobalCategories(@Query('branch_id') branchIdParam: string) {
         const branchId = branchIdParam ? +branchIdParam : undefined;
@@ -481,8 +609,14 @@ export class ConsumerController {
      * Consumer: for a given category key (e.g. "milkshakes"), list brands that offer it for the branch's tenant.
      */
     @Get('categories/:categoryKey/brands')
-    @ApiOperation({ summary: 'List brands for a given category (consumer app)' })
-    @ApiParam({ name: 'categoryKey', example: 'milkshakes', description: 'Category key from /categories/global (lowercased name)' })
+    @ApiOperation({
+        summary: 'List brands for a given category (consumer app)',
+    })
+    @ApiParam({
+        name: 'categoryKey',
+        example: 'milkshakes',
+        description: 'Category key from /categories/global (lowercased name)',
+    })
     @ApiQuery({ name: 'branch_id', required: true, example: '1' })
     async getBrandsForCategory(
         @Param('categoryKey') categoryKey: string,
@@ -502,13 +636,29 @@ export class ConsumerController {
     @Get('menu/items/:id')
     @ApiOperation({ summary: 'Get menu item detail' })
     @ApiQuery({ name: 'branch_id', required: true, example: '1' })
+    @ApiQuery({
+        name: 'order_type',
+        required: false,
+        example: 'pickup',
+        description:
+            'Optional. If the item is not available for this order channel, returns 404. Align with checkout `order_type`.',
+    })
     getMenuItemDetail(
         @Param('id') id: string,
         @Query('branch_id') branchIdParam: string,
+        @Query('order_type') orderTypeParam: string,
     ) {
         const branchId = branchIdParam ? +branchIdParam : undefined;
         if (!branchId) throw new NotFoundException('branch_id is required');
-        return this.menuService.getPublicMenuItemDetail(+id, branchId);
+        const orderType =
+            orderTypeParam != null && orderTypeParam.trim() !== ''
+                ? orderTypeParam.trim()
+                : undefined;
+        return this.menuService.getPublicMenuItemDetail(
+            +id,
+            branchId,
+            orderType,
+        );
     }
 
     @Post('orders')
@@ -519,7 +669,12 @@ export class ConsumerController {
             required: ['branch_id', 'order_type', 'items'],
             properties: {
                 branch_id: { type: 'number' },
-                order_type: { type: 'string' },
+                order_type: {
+                    type: 'string',
+                    description:
+                        "Must match each line item's `available_for_order_types` from the menu. Typical values: `delivery`, `pickup` (website), `takeaway` (POS; treated like pickup), `dine_in`. Ordering an item that does not support this channel returns 400.",
+                    enum: ['delivery', 'pickup', 'takeaway', 'dine_in'],
+                },
                 customer_name: { type: 'string' },
                 customer_phone: { type: 'string' },
                 delivery_address: { type: 'string' },
@@ -531,27 +686,79 @@ export class ConsumerController {
                             menu_item_id: { type: 'number' },
                             quantity: { type: 'number' },
                             variant_id: { type: 'number' },
-                            addons: { type: 'array', items: { type: 'object', properties: { addon_id: { type: 'number' }, quantity: { type: 'number' } } } },
+                            addons: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        addon_id: { type: 'number' },
+                                        quantity: { type: 'number' },
+                                    },
+                                },
+                            },
+                            modifiers: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        modifier_id: { type: 'number' },
+                                        quantity: { type: 'number' },
+                                    },
+                                },
+                            },
                             notes: { type: 'string' },
                         },
                     },
                 },
                 notes: { type: 'string' },
                 discount_code: { type: 'string' },
+                loyalty_points_to_redeem: {
+                    type: 'number',
+                    description:
+                        'Points to redeem (requires customer_phone; supported for consumer_app and consumer_web)',
+                },
+                customer_id: {
+                    type: 'number',
+                    description:
+                        'Optional registered customer id; must match customer_phone for this tenant',
+                },
+                latitude: {
+                    type: 'number',
+                    description: 'Optional drop-off latitude (e.g. map picker)',
+                },
+                longitude: {
+                    type: 'number',
+                    description: 'Optional drop-off longitude',
+                },
             },
             example: {
                 branch_id: 1,
                 order_type: 'delivery',
                 customer_name: 'John Doe',
                 customer_phone: '03001234567',
+                customer_id: 42,
                 delivery_address: '123 Main St',
-                items: [{ menu_item_id: 5, quantity: 2, variant_id: 3, addons: [{ addon_id: 1, quantity: 1 }], notes: 'No onions' }],
+                latitude: 24.8607,
+                longitude: 67.0011,
+                items: [
+                    {
+                        menu_item_id: 5,
+                        quantity: 2,
+                        variant_id: 3,
+                        addons: [{ addon_id: 1, quantity: 1 }],
+                        modifiers: [{ modifier_id: 7, quantity: 1 }],
+                        notes: 'No onions',
+                    },
+                ],
                 notes: '',
                 discount_code: 'SAVE10',
+                loyalty_points_to_redeem: 50,
             },
         },
     })
     async placeOrder(
+        @Req()
+        req: { headers?: Record<string, string | string[] | undefined> },
         @Body()
         dto: {
             branch_id: number;
@@ -564,19 +771,20 @@ export class ConsumerController {
                 quantity: number;
                 variant_id?: number;
                 addons?: { addon_id: number; quantity?: number }[];
+                modifiers?: { modifier_id: number; quantity?: number }[];
                 notes?: string;
             }[];
             notes?: string;
             discount_code?: string;
+            loyalty_points_to_redeem?: number;
+            customer_id?: number;
+            latitude?: number;
+            longitude?: number;
         },
     ) {
         const tenantId = await this.getTenantIdFromBranch(dto.branch_id);
-        return this.ordersService.createOrder(
-            dto,
-            tenantId,
-            null,
-            'consumer_app',
-        );
+        const source = this.resolveOrderSourceFromRequest(req);
+        return this.ordersService.createOrder(dto, tenantId, null, source);
     }
 
     @Get('orders')
@@ -586,19 +794,62 @@ export class ConsumerController {
     @ApiQuery({ name: 'tenant_id', required: false })
     @ApiQuery({ name: 'limit', required: false })
     async getOrderHistory(
+        @Req()
+        req: { headers?: Record<string, string | string[] | undefined> },
         @Query('phone') phone: string,
         @Query('branch_id') branchIdParam: string,
         @Query('tenant_id') tenantIdParam: string,
         @Query('limit') limitParam: string,
     ) {
-        if (!phone?.trim())
-            throw new NotFoundException('phone is required');
-        const options: { branchId?: number; tenantId?: number; limit?: number } =
-            {};
+        if (!phone?.trim()) throw new NotFoundException('phone is required');
+        const options: {
+            branchId?: number;
+            tenantId?: number;
+            limit?: number;
+            sources?: Array<'consumer_app' | 'consumer_web'>;
+        } = {};
         if (branchIdParam) options.branchId = +branchIdParam;
         if (tenantIdParam) options.tenantId = +tenantIdParam;
         if (limitParam) options.limit = +limitParam;
-        return this.ordersService.findByCustomerPhone(phone.trim(), options);
+        options.sources = [this.resolveOrderSourceFromRequest(req)];
+
+        const orders = await this.ordersService.findByCustomerPhone(
+            phone.trim(),
+            options,
+        );
+
+        let resolvedTenantId: number | null = null;
+        if (options.tenantId != null && Number.isFinite(options.tenantId)) {
+            resolvedTenantId = options.tenantId;
+        } else if (
+            options.branchId != null &&
+            Number.isFinite(options.branchId)
+        ) {
+            resolvedTenantId = await this.getTenantIdFromBranch(
+                options.branchId,
+            );
+        } else if (orders.length > 0) {
+            const firstBranchId =
+                (orders[0] as { branch_id?: number | null }).branch_id ?? null;
+            if (firstBranchId != null && Number.isFinite(firstBranchId)) {
+                resolvedTenantId =
+                    await this.getTenantIdFromBranch(firstBranchId);
+            }
+        }
+
+        const loyalty =
+            resolvedTenantId != null
+                ? await this.loyaltyService.getBalanceByPhone(
+                      resolvedTenantId,
+                      phone.trim(),
+                  )
+                : null;
+        const loyaltyPointsBalance = loyalty?.balance ?? 0;
+
+        return orders.map((o) => ({
+            ...o,
+            loyalty_points_balance: loyaltyPointsBalance,
+        }));
     }
 
     @Get('orders/:id/status')
@@ -617,8 +868,7 @@ export class ConsumerController {
         @Param('id') id: string,
         @Query('phone') phone: string,
     ) {
-        if (!phone?.trim())
-            throw new NotFoundException('phone is required');
+        if (!phone?.trim()) throw new NotFoundException('phone is required');
         const order = await this.ordersService.findOneByCustomerPhone(
             +id,
             phone.trim(),
@@ -631,12 +881,8 @@ export class ConsumerController {
         @Param('id') id: string,
         @Query('phone') phone: string,
     ) {
-        if (!phone?.trim())
-            throw new NotFoundException('phone is required');
-        return this.ordersService.findOneByCustomerPhone(
-            +id,
-            phone.trim(),
-        );
+        if (!phone?.trim()) throw new NotFoundException('phone is required');
+        return this.ordersService.findOneByCustomerPhone(+id, phone.trim());
     }
 
     @Patch('orders/:id/cancel')
@@ -654,8 +900,7 @@ export class ConsumerController {
         @Body() body: { phone: string },
     ) {
         const phone = body?.phone ?? (body as { phone?: string }).phone;
-        if (!phone?.trim())
-            throw new NotFoundException('phone is required');
+        if (!phone?.trim()) throw new NotFoundException('phone is required');
         return this.ordersService.cancelByCustomerPhone(+id, phone.trim());
     }
 
@@ -671,7 +916,12 @@ export class ConsumerController {
                 amount: { type: 'number' },
                 reference_number: { type: 'string' },
             },
-            example: { phone: '03001234567', payment_method: 'cash', amount: 2500, reference_number: 'REF123' },
+            example: {
+                phone: '03001234567',
+                payment_method: 'cash',
+                amount: 2500,
+                reference_number: 'REF123',
+            },
         },
     })
     async createPayment(
@@ -727,7 +977,16 @@ export class ConsumerController {
             tenantId,
             phone.trim(),
         );
-        return result ?? { balance: 0, displayName: 'Reward Points', spendPerPoint: 1000, cashValuePerPoint: 10, minOrderToEarn: 1, minOrderToRedeem: 1 };
+        return (
+            result ?? {
+                balance: 0,
+                displayName: 'Reward Points',
+                spendPerPoint: 1000,
+                cashValuePerPoint: 10,
+                minOrderToEarn: 1,
+                minOrderToRedeem: 1,
+            }
+        );
     }
 
     @Get('cart')
@@ -740,8 +999,7 @@ export class ConsumerController {
     ) {
         if (!phone?.trim() || !branchIdParam)
             throw new NotFoundException('phone and branch_id are required');
-        const customer = await this.customersService.findConsumerByPhone(phone.trim());
-        if (!customer) throw new NotFoundException('Customer not found');
+        const customer = await this.resolveCartCustomerOrThrow(phone);
         return this.cartService.getCart(customer.id, +branchIdParam);
     }
 
@@ -757,7 +1015,26 @@ export class ConsumerController {
                 menu_item_id: { type: 'number' },
                 quantity: { type: 'number' },
                 variant_id: { type: 'number' },
-                addons: { type: 'array', items: { type: 'object', properties: { addon_id: { type: 'number' }, quantity: { type: 'number' } } } },
+                addons: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            addon_id: { type: 'number' },
+                            quantity: { type: 'number' },
+                        },
+                    },
+                },
+                modifiers: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            modifier_id: { type: 'number' },
+                            quantity: { type: 'number' },
+                        },
+                    },
+                },
                 notes: { type: 'string' },
             },
             example: {
@@ -767,6 +1044,7 @@ export class ConsumerController {
                 quantity: 2,
                 variant_id: 3,
                 addons: [{ addon_id: 1, quantity: 1 }],
+                modifiers: [{ modifier_id: 7, quantity: 1 }],
                 notes: 'No ice',
             },
         },
@@ -780,48 +1058,81 @@ export class ConsumerController {
             quantity: number;
             variant_id?: number;
             addons?: { addon_id: number; quantity?: number }[];
+            modifiers?: { modifier_id: number; quantity?: number }[];
             notes?: string;
         },
     ) {
         if (!dto.phone?.trim() || !dto.branch_id)
             throw new NotFoundException('phone and branch_id are required');
-        const customer = await this.customersService.findConsumerByPhone(dto.phone.trim());
-        if (!customer) throw new NotFoundException('Customer not found');
+        const customer = await this.resolveCartCustomerOrThrow(dto.phone);
         return this.cartService.addItem(customer.id, dto.branch_id, {
             menu_item_id: dto.menu_item_id,
             quantity: dto.quantity,
             variant_id: dto.variant_id,
             addons: dto.addons,
+            modifiers: dto.modifiers,
             notes: dto.notes,
         });
     }
 
     @Patch('cart/items/:id')
-    @ApiOperation({ summary: 'Update cart item quantity' })
+    @ApiOperation({ summary: 'Update cart item details' })
     @ApiQuery({ name: 'phone', required: true, example: '03001234567' })
     @ApiQuery({ name: 'branch_id', required: true, example: '1' })
     @ApiBody({
         schema: {
             type: 'object',
-            properties: { quantity: { type: 'number' } },
-            example: { quantity: 3 },
+            properties: {
+                quantity: { type: 'number' },
+                variant_id: { type: 'number', nullable: true },
+                addons: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            addon_id: { type: 'number' },
+                            quantity: { type: 'number' },
+                        },
+                    },
+                },
+                modifiers: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            modifier_id: { type: 'number' },
+                            quantity: { type: 'number' },
+                        },
+                    },
+                },
+                notes: { type: 'string', nullable: true },
+            },
+            example: {
+                quantity: 3,
+                variant_id: 2,
+                addons: [{ addon_id: 1, quantity: 1 }],
+                modifiers: [{ modifier_id: 7, quantity: 1 }],
+                notes: 'Less spicy',
+            },
         },
     })
     async updateCartItem(
         @Param('id') id: string,
         @Query('phone') phone: string,
         @Query('branch_id') branchIdParam: string,
-        @Body() body: { quantity: number },
+        @Body()
+        body: {
+            quantity?: number;
+            variant_id?: number | null;
+            addons?: { addon_id: number; quantity?: number }[] | null;
+            modifiers?: { modifier_id: number; quantity?: number }[] | null;
+            notes?: string | null;
+        },
     ) {
         if (!phone?.trim() || !branchIdParam)
             throw new NotFoundException('phone and branch_id are required');
-        const customer = await this.customersService.findConsumerByPhone(phone.trim());
-        if (!customer) throw new NotFoundException('Customer not found');
-        return this.cartService.updateItem(
-            +id,
-            customer.id,
-            body?.quantity ?? 1,
-        );
+        const customer = await this.resolveCartCustomerOrThrow(phone);
+        return this.cartService.updateItem(+id, customer.id, body ?? {});
     }
 
     @Delete('cart/items/:id')
@@ -832,8 +1143,7 @@ export class ConsumerController {
     ) {
         if (!phone?.trim() || !branchIdParam)
             throw new NotFoundException('phone and branch_id are required');
-        const customer = await this.customersService.findConsumerByPhone(phone.trim());
-        if (!customer) throw new NotFoundException('Customer not found');
+        const customer = await this.resolveCartCustomerOrThrow(phone);
         return this.cartService.removeItem(+id, customer.id);
     }
 
@@ -844,8 +1154,7 @@ export class ConsumerController {
     ) {
         if (!phone?.trim() || !branchIdParam)
             throw new NotFoundException('phone and branch_id are required');
-        const customer = await this.customersService.findConsumerByPhone(phone.trim());
-        if (!customer) throw new NotFoundException('Customer not found');
+        const customer = await this.resolveCartCustomerOrThrow(phone);
         return this.cartService.clearCart(customer.id, +branchIdParam);
     }
 }

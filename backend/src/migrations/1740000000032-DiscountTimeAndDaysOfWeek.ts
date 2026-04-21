@@ -5,9 +5,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * valid_time_start / valid_time_end: TIME, interpreted in branch timezone.
  * valid_days_of_week: JSON array of 0–6 (0=Sunday, 1=Monday, …, 6=Saturday).
  */
-export class DiscountTimeAndDaysOfWeek1740000000032
-    implements MigrationInterface
-{
+export class DiscountTimeAndDaysOfWeek1740000000032 implements MigrationInterface {
     name = 'DiscountTimeAndDaysOfWeek1740000000032';
 
     public async up(queryRunner: QueryRunner): Promise<void> {

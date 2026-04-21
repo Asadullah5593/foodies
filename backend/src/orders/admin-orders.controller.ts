@@ -22,9 +22,7 @@ export class AdminOrdersController {
     constructor(private service: OrdersService) {}
 
     @Get('riders')
-    listRiders(
-        @CurrentUser() user: { id: number; tenantId: number | null },
-    ) {
+    listRiders(@CurrentUser() user: { id: number; tenantId: number | null }) {
         if (user.tenantId == null) {
             throw new BadRequestException(
                 'Riders are listed per tenant; super admin must specify tenant context',
@@ -36,7 +34,8 @@ export class AdminOrdersController {
     @Put('group/:orderGroupId/rider')
     assignRiderToGroup(
         @Param('orderGroupId') orderGroupId: string,
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -63,7 +62,8 @@ export class AdminOrdersController {
     @Put('group/:orderGroupId/rider/change')
     changeRiderForGroup(
         @Param('orderGroupId') orderGroupId: string,
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -89,7 +89,8 @@ export class AdminOrdersController {
 
     @Get()
     index(
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -108,9 +109,7 @@ export class AdminOrdersController {
                 date_from: dateFrom,
                 date_to: dateTo,
                 has_rider:
-                    hasRider === '1' || hasRider === 'true'
-                        ? true
-                        : undefined,
+                    hasRider === '1' || hasRider === 'true' ? true : undefined,
             },
             user.allowedBranchIds,
         );
@@ -119,7 +118,8 @@ export class AdminOrdersController {
     @Get(':id')
     show(
         @Param('id') id: string,
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -135,7 +135,8 @@ export class AdminOrdersController {
     @Put(':id/status')
     updateStatus(
         @Param('id') id: string,
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -153,7 +154,8 @@ export class AdminOrdersController {
     @Put(':id/rider')
     assignRider(
         @Param('id') id: string,
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -180,7 +182,8 @@ export class AdminOrdersController {
     @Put(':id/rider/change')
     changeRider(
         @Param('id') id: string,
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;

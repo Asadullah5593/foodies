@@ -26,10 +26,7 @@ export class RiderOrdersController {
     }
 
     @Get(':id')
-    show(
-        @Param('id') id: string,
-        @CurrentUser() user: { id: number },
-    ) {
+    show(@Param('id') id: string, @CurrentUser() user: { id: number }) {
         return this.service.findForRider(+id, user.id);
     }
 
@@ -37,7 +34,8 @@ export class RiderOrdersController {
     updateDeliveryStatus(
         @Param('id') id: string,
         @CurrentUser() user: { id: number },
-        @Body() body: { delivery_status: string; delivery_failed_reason?: string },
+        @Body()
+        body: { delivery_status: string; delivery_failed_reason?: string },
     ) {
         const deliveryStatus = body?.delivery_status;
         if (!deliveryStatus || typeof deliveryStatus !== 'string') {

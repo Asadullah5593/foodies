@@ -1,8 +1,4 @@
-import {
-    Injectable,
-    BadRequestException,
-    NotFoundException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Tenant } from '../entities/tenant.entity';
@@ -31,7 +27,8 @@ export class LoyaltyService {
         return {
             spendPerPoint: s.spendPerPoint ?? DEFAULT_SPEND_PER_POINT,
             minOrderToEarn: s.minOrderToEarn ?? DEFAULT_MIN_ORDER_TO_EARN,
-            cashValuePerPoint: s.cashValuePerPoint ?? DEFAULT_CASH_VALUE_PER_POINT,
+            cashValuePerPoint:
+                s.cashValuePerPoint ?? DEFAULT_CASH_VALUE_PER_POINT,
             minOrderToRedeem: s.minOrderToRedeem ?? DEFAULT_MIN_ORDER_TO_REDEEM,
             displayName: s.displayName ?? 'Reward Points',
         };
@@ -160,10 +157,11 @@ export class LoyaltyService {
         if (orderTotalAfterOtherDiscounts < settings.minOrderToRedeem)
             return null;
         const balance = customer.loyaltyPointsBalance ?? 0;
-        const maxDiscount = balance * settings.cashValuePerPoint;
         const redeemablePoints = Math.min(
             balance,
-            Math.floor(orderTotalAfterOtherDiscounts / settings.cashValuePerPoint),
+            Math.floor(
+                orderTotalAfterOtherDiscounts / settings.cashValuePerPoint,
+            ),
         );
         const discountAmount = redeemablePoints * settings.cashValuePerPoint;
         return {

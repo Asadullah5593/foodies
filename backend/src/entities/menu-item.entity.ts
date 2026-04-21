@@ -54,6 +54,17 @@ export class MenuItem {
     @Column({ name: 'deal_only', default: false })
     dealOnly: boolean;
 
+    /**
+     * Which order channels this item can be sold on: `delivery`, `pickup`, `dine_in`.
+     * Null or empty (legacy) means all channels. POS `takeaway` maps to `pickup` when checking orders.
+     */
+    @Column({
+        name: 'available_for_order_types',
+        type: 'jsonb',
+        nullable: true,
+    })
+    availableForOrderTypes: string[] | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

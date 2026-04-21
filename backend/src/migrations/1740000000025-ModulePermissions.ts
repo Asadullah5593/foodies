@@ -9,15 +9,61 @@ export class ModulePermissions1740000000025 implements MigrationInterface {
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         const newPermissions = [
-            { name: 'discounts:manage', resource: 'discounts', action: 'manage', description: 'Manage discounts (admin module)' },
-            { name: 'business-settings:access', resource: 'business-settings', action: 'access', description: 'Access business settings' },
-            { name: 'users:manage', resource: 'users', action: 'manage', description: 'Manage users' },
-            { name: 'menu:manage', resource: 'menu', action: 'manage', description: 'Manage menu (categories, items, variants, addons)' },
-            { name: 'customers:manage', resource: 'customers', action: 'manage', description: 'Manage customers' },
-            { name: 'roles:manage', resource: 'roles', action: 'manage', description: 'Manage roles and assign permissions' },
-            { name: 'deliveries:view', resource: 'deliveries', action: 'view', description: 'View deliveries' },
-            { name: 'shifts:manage', resource: 'shifts', action: 'manage', description: 'Manage shifts' },
-            { name: 'loyalty:manage', resource: 'loyalty', action: 'manage', description: 'Manage loyalty settings' },
+            {
+                name: 'discounts:manage',
+                resource: 'discounts',
+                action: 'manage',
+                description: 'Manage discounts (admin module)',
+            },
+            {
+                name: 'business-settings:access',
+                resource: 'business-settings',
+                action: 'access',
+                description: 'Access business settings',
+            },
+            {
+                name: 'users:manage',
+                resource: 'users',
+                action: 'manage',
+                description: 'Manage users',
+            },
+            {
+                name: 'menu:manage',
+                resource: 'menu',
+                action: 'manage',
+                description:
+                    'Manage menu (categories, items, variants, addons)',
+            },
+            {
+                name: 'customers:manage',
+                resource: 'customers',
+                action: 'manage',
+                description: 'Manage customers',
+            },
+            {
+                name: 'roles:manage',
+                resource: 'roles',
+                action: 'manage',
+                description: 'Manage roles and assign permissions',
+            },
+            {
+                name: 'deliveries:view',
+                resource: 'deliveries',
+                action: 'view',
+                description: 'View deliveries',
+            },
+            {
+                name: 'shifts:manage',
+                resource: 'shifts',
+                action: 'manage',
+                description: 'Manage shifts',
+            },
+            {
+                name: 'loyalty:manage',
+                resource: 'loyalty',
+                action: 'manage',
+                description: 'Manage loyalty settings',
+            },
         ];
 
         for (const p of newPermissions) {
@@ -31,9 +77,15 @@ export class ModulePermissions1740000000025 implements MigrationInterface {
 
         // Assign new permissions to owner and super_admin (idempotent)
         const ownerAdminPerms = [
-            'discounts:manage', 'business-settings:access', 'users:manage',
-            'menu:manage', 'customers:manage', 'roles:manage', 'deliveries:view',
-            'shifts:manage', 'loyalty:manage',
+            'discounts:manage',
+            'business-settings:access',
+            'users:manage',
+            'menu:manage',
+            'customers:manage',
+            'roles:manage',
+            'deliveries:view',
+            'shifts:manage',
+            'loyalty:manage',
         ];
         for (const permName of ownerAdminPerms) {
             await queryRunner.query(
@@ -64,15 +116,20 @@ export class ModulePermissions1740000000025 implements MigrationInterface {
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         const names = [
-            'discounts:manage', 'business-settings:access', 'users:manage',
-            'menu:manage', 'customers:manage', 'roles:manage', 'deliveries:view',
-            'shifts:manage', 'loyalty:manage',
+            'discounts:manage',
+            'business-settings:access',
+            'users:manage',
+            'menu:manage',
+            'customers:manage',
+            'roles:manage',
+            'deliveries:view',
+            'shifts:manage',
+            'loyalty:manage',
         ];
         for (const name of names) {
-            await queryRunner.query(
-                'DELETE FROM permissions WHERE name = $1',
-                [name],
-            );
+            await queryRunner.query('DELETE FROM permissions WHERE name = $1', [
+                name,
+            ]);
         }
     }
 }

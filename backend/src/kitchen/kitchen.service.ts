@@ -41,7 +41,8 @@ export class KitchenService {
         },
     ) {
         const includeCompleted =
-            filters.include_completed === true || filters.status === 'completed';
+            filters.include_completed === true ||
+            filters.status === 'completed';
         const statuses = includeCompleted
             ? KITCHEN_STATUSES
             : KITCHEN_STATUSES.filter((s) => s !== 'completed');
@@ -140,9 +141,12 @@ export class KitchenService {
             ],
         });
         if (!order) throw new NotFoundException('Order not found');
-        type OI = (typeof order.orderItems)[0] & { menuItem?: { name: string; brand?: { name: string } } };
+        type OI = (typeof order.orderItems)[0] & {
+            menuItem?: { name: string; brand?: { name: string } };
+        };
         return {
             order_number: order.orderNumber,
+            source: order.source,
             order_type: order.orderType,
             table_number: order.tableNumber,
             customer_name: order.customerName,
@@ -154,10 +158,6 @@ export class KitchenService {
                     return {
                         name: oi.nameSnapshot ?? oi.menuItem?.name,
                         quantity: oi.quantity,
-                        price:
-                            oi.priceSnapshot != null
-                                ? Number(oi.priceSnapshot)
-                                : Number(oi.unitPrice),
                         notes: oi.notes,
                         variant_name: oi.variant?.name ?? null,
                         brand_name: mi?.brand?.name ?? null,
@@ -179,6 +179,7 @@ export class KitchenService {
             order_number: order.orderNumber,
             order_group_id: order.orderGroupId ?? null,
             brand_id: order.brandId ?? null,
+            source: order.source,
             order_type: order.orderType,
             table_number: order.tableNumber,
             customer_name: order.customerName,

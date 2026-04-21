@@ -16,6 +16,11 @@ import { MenuVariant } from '../entities/menu-variant.entity';
 import { ModifierGroup } from '../entities/modifier-group.entity';
 import { Modifier } from '../entities/modifier.entity';
 import { MediaStorageService } from '../media/media-storage.service';
+import {
+    effectiveMenuOrderChannels,
+    isMenuItemAvailableForOrderType,
+    parseMenuOrderChannelsInput,
+} from '../utils/menu-order-type';
 
 @Injectable()
 export class MenuService {
@@ -32,7 +37,8 @@ export class MenuService {
         private branchMenuItemRepo: Repository<BranchMenuItem>,
         @InjectRepository(DealComponent)
         private dealComponentRepo: Repository<DealComponent>,
-        @InjectRepository(ModifierGroup) private modifierGroupRepo: Repository<ModifierGroup>,
+        @InjectRepository(ModifierGroup)
+        private modifierGroupRepo: Repository<ModifierGroup>,
         @InjectRepository(Modifier) private modifierRepo: Repository<Modifier>,
         private mediaStorage: MediaStorageService,
     ) {}
@@ -181,15 +187,20 @@ export class MenuService {
         }
 
         if (opts?.category_id != null) {
-            qb.andWhere('i.categoryId = :categoryId', { categoryId: opts.category_id });
+            qb.andWhere('i.categoryId = :categoryId', {
+                categoryId: opts.category_id,
+            });
         }
         if (opts?.is_active !== undefined) {
             qb.andWhere('i.isActive = :isActive', { isActive: opts.is_active });
         }
         if (opts?.search && opts.search.length > 0) {
-            qb.andWhere('(LOWER(i.name) LIKE LOWER(:search) OR LOWER(i.description) LIKE LOWER(:search))', {
-                search: `%${opts.search.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`,
-            });
+            qb.andWhere(
+                '(LOWER(i.name) LIKE LOWER(:search) OR LOWER(i.description) LIKE LOWER(:search))',
+                {
+                    search: `%${opts.search.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`,
+                },
+            );
         }
 
         const items = await qb.getMany();
@@ -204,6 +215,9 @@ export class MenuService {
             base_price: Number(i.basePrice),
             is_active: i.isActive,
             deal_only: i.dealOnly ?? false,
+            available_for_order_types: effectiveMenuOrderChannels(
+                i.availableForOrderTypes,
+            ),
             category: i.category
                 ? { id: i.category.id, name: i.category.name }
                 : null,
@@ -220,7 +234,10 @@ export class MenuService {
                 name: a.name,
                 price: Number(a.price),
             })),
-            modifier_groups: (i.modifierGroups ?? []).map((mg) => ({ id: mg.id, name: mg.name })),
+            modifier_groups: (i.modifierGroups ?? []).map((mg) => ({
+                id: mg.id,
+                name: mg.name,
+            })),
         }));
     }
 
@@ -233,6 +250,8 @@ export class MenuService {
         is_active?: boolean;
         image_url?: string | null;
         deal_only?: boolean;
+        /** Omit or null = available on all channels (delivery, pickup, dine_in). */
+        available_for_order_types?: string[] | null;
     }) {
         const slug = dto.name
             .toLowerCase()
@@ -249,6 +268,12 @@ export class MenuService {
                 basePrice: dto.base_price,
                 isActive: dto.is_active ?? true,
                 dealOnly: dto.deal_only ?? false,
+                availableForOrderTypes:
+                    dto.available_for_order_types != null
+                        ? parseMenuOrderChannelsInput(
+                              dto.available_for_order_types,
+                          )
+                        : null,
             }),
         );
     }
@@ -264,6 +289,7 @@ export class MenuService {
             category_id?: number;
             image_url?: string | null;
             deal_only?: boolean;
+            available_for_order_types?: string[] | null;
         },
     ) {
         const item = await this.itemRepo.findOne({ where: { id } });
@@ -273,6 +299,14 @@ export class MenuService {
         if (dto.brand_id !== undefined) item.brandId = dto.brand_id;
         if (dto.category_id !== undefined) item.categoryId = dto.category_id;
         if (dto.deal_only !== undefined) item.dealOnly = dto.deal_only;
+        if (dto.available_for_order_types !== undefined) {
+            item.availableForOrderTypes =
+                dto.available_for_order_types === null
+                    ? null
+                    : parseMenuOrderChannelsInput(
+                          dto.available_for_order_types,
+                      );
+        }
         if (dto.name !== undefined) {
             item.name = dto.name;
             item.slug = dto.name
@@ -386,7 +420,14 @@ export class MenuService {
                 maxSelect: dto.max_select ?? 1,
             }),
         );
-        return { id: mg.id, brand_id: mg.brandId, name: mg.name, min_select: mg.minSelect, max_select: mg.maxSelect, modifiers: [] };
+        return {
+            id: mg.id,
+            brand_id: mg.brandId,
+            name: mg.name,
+            min_select: mg.minSelect,
+            max_select: mg.maxSelect,
+            modifiers: [],
+        };
     }
 
     async updateModifierGroup(
@@ -410,13 +451,19 @@ export class MenuService {
     }
 
     /** List modifiers, optionally filtered by modifier_group_id or brand_id. */
-    async getModifiers(modifierGroupId?: number | null, brandId?: number | null, tenantId?: number | null) {
+    async getModifiers(
+        modifierGroupId?: number | null,
+        brandId?: number | null,
+        tenantId?: number | null,
+    ) {
         const qb = this.modifierRepo
             .createQueryBuilder('m')
             .leftJoinAndSelect('m.modifierGroup', 'mg')
             .orderBy('m.id', 'ASC');
         if (modifierGroupId != null) {
-            qb.where('m.modifierGroupId = :modifierGroupId', { modifierGroupId });
+            qb.where('m.modifierGroupId = :modifierGroupId', {
+                modifierGroupId,
+            });
         } else if (brandId != null) {
             qb.where('mg.brandId = :brandId', { brandId });
         } else if (tenantId != null) {
@@ -434,11 +481,15 @@ export class MenuService {
             modifier_group_id: m.modifierGroupId,
             name: m.name,
             price: Number(m.price),
-            modifier_group_name: (m as any).modifierGroup?.name,
+            modifier_group_name: m.modifierGroup?.name,
         }));
     }
 
-    async createModifier(dto: { modifier_group_id: number; name: string; price?: number }) {
+    async createModifier(dto: {
+        modifier_group_id: number;
+        name: string;
+        price?: number;
+    }) {
         const group = await this.modifierGroupRepo.findOne({
             where: { id: dto.modifier_group_id },
         });
@@ -450,14 +501,19 @@ export class MenuService {
                 price: dto.price ?? 0,
             }),
         );
-        return { id: m.id, modifier_group_id: m.modifierGroupId, name: m.name, price: Number(m.price) };
+        return {
+            id: m.id,
+            modifier_group_id: m.modifierGroupId,
+            name: m.name,
+            price: Number(m.price),
+        };
     }
 
     async updateModifier(id: number, dto: { name?: string; price?: number }) {
         const m = await this.modifierRepo.findOne({ where: { id } });
         if (!m) throw new NotFoundException('Modifier not found');
         if (dto.name !== undefined) m.name = dto.name;
-        if (dto.price !== undefined) m.price = dto.price as any;
+        if (dto.price !== undefined) m.price = dto.price;
         await this.modifierRepo.save(m);
         return m;
     }
@@ -694,7 +750,13 @@ export class MenuService {
      */
     async getBranchMenu(
         branchId: number,
-        options?: { includeHiddenOnline?: boolean; brandId?: number; search?: string },
+        options?: {
+            includeHiddenOnline?: boolean;
+            brandId?: number;
+            search?: string;
+            /** When set, only items that support this order channel are returned (delivery, pickup, dine_in; takeaway → pickup). */
+            orderType?: string;
+        },
     ) {
         const branch = await this.branchRepo.findOne({
             where: { id: branchId },
@@ -722,7 +784,9 @@ export class MenuService {
                     options?.includeHiddenOnline !== false ||
                     !bmi.isHiddenOnline,
             )
-            .filter((bmi) => !(bmi.menuItem as { dealOnly?: boolean })?.dealOnly);
+            .filter(
+                (bmi) => !(bmi.menuItem as { dealOnly?: boolean })?.dealOnly,
+            );
         if (options?.brandId != null && Number.isFinite(options.brandId)) {
             linked = linked.filter(
                 (bmi) => bmi.menuItem?.brandId === options.brandId,
@@ -730,8 +794,8 @@ export class MenuService {
         }
         linked.sort(
             (a, b) =>
-                (a.menuItem?.sortOrder ?? 0) -
-                    (b.menuItem?.sortOrder ?? 0) || a.id - b.id,
+                (a.menuItem?.sortOrder ?? 0) - (b.menuItem?.sortOrder ?? 0) ||
+                a.id - b.id,
         );
 
         const searchQ = options?.search?.trim()?.toLowerCase();
@@ -740,8 +804,22 @@ export class MenuService {
                 const name = (bmi.menuItem?.name ?? '').toLowerCase();
                 const desc = (bmi.menuItem?.description ?? '').toLowerCase();
                 const cat = (bmi.menuItem?.category?.name ?? '').toLowerCase();
-                return name.includes(searchQ) || desc.includes(searchQ) || cat.includes(searchQ);
+                return (
+                    name.includes(searchQ) ||
+                    desc.includes(searchQ) ||
+                    cat.includes(searchQ)
+                );
             });
+        }
+
+        const orderTypeFilter = options?.orderType?.trim();
+        if (orderTypeFilter) {
+            linked = linked.filter((bmi) =>
+                isMenuItemAvailableForOrderType(
+                    bmi.menuItem?.availableForOrderTypes ?? null,
+                    orderTypeFilter,
+                ),
+            );
         }
 
         return linked.map((bmi) => {
@@ -763,10 +841,16 @@ export class MenuService {
                     item?.brandId ??
                     (item?.brand as { id: number } | undefined)?.id ??
                     null,
-                variants:
-                    [...(item?.variants ?? [])]
-                        .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id)
-                        .map((v) => ({
+                available_for_order_types: effectiveMenuOrderChannels(
+                    item?.availableForOrderTypes ?? null,
+                ),
+                variants: [...(item?.variants ?? [])]
+                    .sort(
+                        (a, b) =>
+                            (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+                            a.id - b.id,
+                    )
+                    .map((v) => ({
                         id: v.id,
                         name: v.name,
                         price_modifier: Number(v.priceModifier),
@@ -835,7 +919,10 @@ export class MenuService {
             .select('DISTINCT dc.menuItemId', 'menuItemId')
             .orderBy('dc.menuItemId', 'ASC');
         if (brandId != null) {
-            qb.innerJoin('dc.menuItem', 'mi').andWhere('mi.brandId = :brandId', { brandId });
+            qb.innerJoin('dc.menuItem', 'mi').andWhere(
+                'mi.brandId = :brandId',
+                { brandId },
+            );
         } else if (tenantId != null) {
             const brands = await this.brandRepo.find({
                 where: { tenantId },
@@ -843,10 +930,15 @@ export class MenuService {
             });
             const brandIds = brands.map((b) => b.id);
             if (brandIds.length === 0) return [];
-            qb.innerJoin('dc.menuItem', 'mi').andWhere('mi.brandId IN (:...brandIds)', { brandIds });
+            qb.innerJoin('dc.menuItem', 'mi').andWhere(
+                'mi.brandId IN (:...brandIds)',
+                { brandIds },
+            );
         }
         const rows = await qb.getRawMany<{ menuItemId: string }>();
-        const menuItemIds = rows.map((r) => parseInt(r.menuItemId, 10)).filter((id) => Number.isFinite(id));
+        const menuItemIds = rows
+            .map((r) => parseInt(r.menuItemId, 10))
+            .filter((id) => Number.isFinite(id));
         if (menuItemIds.length === 0) return [];
         const items = await this.itemRepo.find({
             where: menuItemIds.map((id) => ({ id })),
@@ -860,7 +952,9 @@ export class MenuService {
             .where('dc.menuItemId IN (:...ids)', { ids: menuItemIds })
             .groupBy('dc.menuItemId')
             .getRawMany<{ menuItemId: number; count: string }>();
-        const countMap = new Map(componentCounts.map((c) => [c.menuItemId, parseInt(c.count, 10)]));
+        const countMap = new Map(
+            componentCounts.map((c) => [c.menuItemId, parseInt(c.count, 10)]),
+        );
         return items.map((i) => ({
             id: i.id,
             name: i.name,
@@ -869,7 +963,12 @@ export class MenuService {
             brand_id: i.brandId,
             brand: i.brand ? { id: i.brand.id, name: i.brand.name } : null,
             category_id: i.categoryId,
-            category: i.category ? { id: i.category.id, name: i.category.name } : null,
+            category: i.category
+                ? { id: i.category.id, name: i.category.name }
+                : null,
+            available_for_order_types: effectiveMenuOrderChannels(
+                i.availableForOrderTypes,
+            ),
             slot_count: countMap.get(i.id) ?? 0,
         }));
     }
@@ -890,10 +989,14 @@ export class MenuService {
         return {
             menu_item_id: item.id,
             brand_id: item.brandId,
-            brand: item.brand ? { id: item.brand.id, name: item.brand.name } : null,
+            brand: item.brand
+                ? { id: item.brand.id, name: item.brand.name }
+                : null,
             name: item.name,
             base_price: Number(item.basePrice),
-            category: item.category ? { id: item.category.id, name: item.category.name } : null,
+            category: item.category
+                ? { id: item.category.id, name: item.category.name }
+                : null,
             slots: components.map((dc) => ({
                 id: dc.id,
                 slot_index: dc.slotIndex,
@@ -903,8 +1006,12 @@ export class MenuService {
                 source_menu_item_ids: dc.sourceMenuItemIds ?? null,
                 quantity: dc.quantity,
                 allow_customization: dc.allowCustomization,
-                source_menu_item_name: (dc.sourceMenuItem as { name?: string } | null)?.name ?? null,
-                source_category_name: (dc.sourceCategory as { name?: string } | null)?.name ?? null,
+                source_menu_item_name:
+                    (dc.sourceMenuItem as { name?: string } | null)?.name ??
+                    null,
+                source_category_name:
+                    (dc.sourceCategory as { name?: string } | null)?.name ??
+                    null,
             })),
         };
     }
@@ -959,7 +1066,7 @@ export class MenuService {
     private async getMenuItemForDealResolution(
         itemId: number,
         branchId: number,
-    ): Promise<(Awaited<ReturnType<MenuService['getBranchMenu']>>)[0] | null> {
+    ): Promise<Awaited<ReturnType<MenuService['getBranchMenu']>>[0] | null> {
         const bmi = await this.branchMenuItemRepo.findOne({
             where: { branchId, menuItemId: itemId },
             relations: [
@@ -977,7 +1084,13 @@ export class MenuService {
         if (!item) {
             item = await this.itemRepo.findOne({
                 where: { id: itemId },
-                relations: ['category', 'variants', 'addons', 'modifierGroups', 'modifierGroups.modifiers'],
+                relations: [
+                    'category',
+                    'variants',
+                    'addons',
+                    'modifierGroups',
+                    'modifierGroups.modifiers',
+                ],
             });
             if (!item) return null;
             const branch = await this.branchRepo.findOne({
@@ -985,12 +1098,26 @@ export class MenuService {
                 relations: ['branchBrands', 'branchBrands.brand'],
             });
             const branchBrandIds = new Set(
-                ((branch as { branchBrands?: Array<{ brandId?: number; brand?: { id: number } }> })?.branchBrands ?? [])
+                (
+                    (
+                        branch as {
+                            branchBrands?: Array<{
+                                brandId?: number;
+                                brand?: { id: number };
+                            }>;
+                        }
+                    )?.branchBrands ?? []
+                )
                     .map((bb) => bb.brandId ?? bb.brand?.id)
                     .filter((id): id is number => Number.isFinite(id)),
             );
-            const itemBrandId = item.brandId ?? (item as { brand?: { id: number } }).brand?.id;
-            if (!Number.isFinite(itemBrandId) || !branchBrandIds.has(itemBrandId)) return null;
+            const itemBrandId =
+                item.brandId ?? (item as { brand?: { id: number } }).brand?.id;
+            if (
+                !Number.isFinite(itemBrandId) ||
+                !branchBrandIds.has(itemBrandId)
+            )
+                return null;
         }
 
         const price =
@@ -1010,10 +1137,15 @@ export class MenuService {
                 item.brandId ??
                 (item as { brand?: { id: number } }).brand?.id ??
                 null,
-            variants:
-                [...(item.variants ?? [])]
-                    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id)
-                    .map((v) => ({
+            available_for_order_types: effectiveMenuOrderChannels(
+                item.availableForOrderTypes,
+            ),
+            variants: [...(item.variants ?? [])]
+                .sort(
+                    (a, b) =>
+                        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id,
+                )
+                .map((v) => ({
                     id: v.id,
                     name: v.name,
                     price_modifier: Number(v.priceModifier),
@@ -1049,6 +1181,7 @@ export class MenuService {
     async getDealByMenuItemId(
         menuItemId: number,
         branchId: number,
+        orderType?: string,
     ): Promise<{
         deal_menu_item_id: number;
         name: string;
@@ -1066,14 +1199,22 @@ export class MenuService {
                 base_price: number;
                 category_id: number | null;
                 brand_id: number | null;
-                variants: Array<{ id: number; name: string; price_modifier: number }>;
+                variants: Array<{
+                    id: number;
+                    name: string;
+                    price_modifier: number;
+                }>;
                 addons: Array<{ id: number; name: string; price: number }>;
                 modifier_groups: Array<{
                     id: number;
                     name: string;
                     min_select: number;
                     max_select: number;
-                    modifiers: Array<{ id: number; name: string; price: number }>;
+                    modifiers: Array<{
+                        id: number;
+                        name: string;
+                        price: number;
+                    }>;
                 }>;
             }>;
         }>;
@@ -1086,7 +1227,12 @@ export class MenuService {
 
         const dealItem = await this.itemRepo.findOne({
             where: { id: menuItemId },
-            relations: ['variants', 'addons', 'modifierGroups', 'modifierGroups.modifiers'],
+            relations: [
+                'variants',
+                'addons',
+                'modifierGroups',
+                'modifierGroups.modifiers',
+            ],
         });
         if (!dealItem) return null;
 
@@ -1103,12 +1249,18 @@ export class MenuService {
         for (const dc of components) {
             if (dc.type === 'fixed' && dc.sourceMenuItemId != null)
                 needIds.add(dc.sourceMenuItemId);
-            if (dc.type === 'choice_list' && Array.isArray(dc.sourceMenuItemIds))
+            if (
+                dc.type === 'choice_list' &&
+                Array.isArray(dc.sourceMenuItemIds)
+            )
                 dc.sourceMenuItemIds.forEach((id) => needIds.add(id));
         }
         for (const id of needIds) {
             if (menuById.has(id)) continue;
-            const resolved = await this.getMenuItemForDealResolution(id, branchId);
+            const resolved = await this.getMenuItemForDealResolution(
+                id,
+                branchId,
+            );
             if (resolved) menuById.set(id, resolved);
         }
 
@@ -1118,20 +1270,38 @@ export class MenuService {
             relations: ['branchBrands', 'branchBrands.brand'],
         });
         const branchBrandIds = new Set(
-            ((branch as { branchBrands?: Array<{ brandId?: number; brand?: { id: number } }> })?.branchBrands ?? [])
+            (
+                (
+                    branch as {
+                        branchBrands?: Array<{
+                            brandId?: number;
+                            brand?: { id: number };
+                        }>;
+                    }
+                )?.branchBrands ?? []
+            )
                 .map((bb) => bb.brandId ?? bb.brand?.id)
                 .filter((id): id is number => Number.isFinite(id)),
         );
         for (const dc of components) {
-            if (dc.type !== 'choice_category' || dc.sourceCategoryId == null) continue;
+            if (dc.type !== 'choice_category' || dc.sourceCategoryId == null)
+                continue;
             const linkedInCategory = await this.branchMenuItemRepo.find({
                 where: { branchId },
                 relations: ['menuItem'],
             });
             for (const bmi of linkedInCategory) {
                 const mi = bmi.menuItem;
-                if (!mi || mi.categoryId !== dc.sourceCategoryId || menuById.has(mi.id)) continue;
-                const resolved = await this.getMenuItemForDealResolution(mi.id, branchId);
+                if (
+                    !mi ||
+                    mi.categoryId !== dc.sourceCategoryId ||
+                    menuById.has(mi.id)
+                )
+                    continue;
+                const resolved = await this.getMenuItemForDealResolution(
+                    mi.id,
+                    branchId,
+                );
                 if (resolved) menuById.set(mi.id, resolved);
             }
             if (branchBrandIds.size === 0) continue;
@@ -1144,7 +1314,10 @@ export class MenuService {
             });
             for (const mi of categoryItems) {
                 if (menuById.has(mi.id)) continue;
-                const resolved = await this.getMenuItemForDealResolution(mi.id, branchId);
+                const resolved = await this.getMenuItemForDealResolution(
+                    mi.id,
+                    branchId,
+                );
                 if (resolved) menuById.set(mi.id, resolved);
             }
         }
@@ -1156,6 +1329,17 @@ export class MenuService {
             menuByCategoryId.get(cid)!.push(it);
         }
 
+        const ot = orderType?.trim();
+        const filterChoices = (items: BranchMenuItemShape[]) =>
+            ot
+                ? items.filter((it) =>
+                      isMenuItemAvailableForOrderType(
+                          it.available_for_order_types ?? null,
+                          ot,
+                      ),
+                  )
+                : items;
+
         const slots = components.map((dc) => {
             const base = {
                 slot_index: dc.slotIndex,
@@ -1164,21 +1348,29 @@ export class MenuService {
                 allow_customization: dc.allowCustomization,
             };
             if (dc.type === 'fixed' && dc.sourceMenuItemId != null) {
-                const item = menuById.get(dc.sourceMenuItemId);
+                const slotItem = menuById.get(dc.sourceMenuItemId);
+                const choiceItems = filterChoices(slotItem ? [slotItem] : []);
                 return {
                     ...base,
                     source_menu_item_id: dc.sourceMenuItemId,
-                    choice_items: item ? [item] : [],
+                    choice_items: choiceItems,
                 };
             }
             if (dc.type === 'choice_category' && dc.sourceCategoryId != null) {
-                const items = menuByCategoryId.get(dc.sourceCategoryId) ?? [];
+                const items = filterChoices(
+                    menuByCategoryId.get(dc.sourceCategoryId) ?? [],
+                );
                 return { ...base, choice_items: items };
             }
-            if (dc.type === 'choice_list' && Array.isArray(dc.sourceMenuItemIds)) {
-                const items = dc.sourceMenuItemIds
-                    .map((id) => menuById.get(id))
-                    .filter((x): x is NonNullable<typeof x> => x != null);
+            if (
+                dc.type === 'choice_list' &&
+                Array.isArray(dc.sourceMenuItemIds)
+            ) {
+                const items = filterChoices(
+                    dc.sourceMenuItemIds
+                        .map((id) => menuById.get(id))
+                        .filter((x): x is NonNullable<typeof x> => x != null),
+                );
                 return { ...base, choice_items: items };
             }
             return { ...base, choice_items: [] as BranchMenuItemShape[] };
@@ -1193,7 +1385,11 @@ export class MenuService {
     }
 
     /** Public: single menu item detail for a branch (consumer app). Includes deal structure when the item is a deal. */
-    async getPublicMenuItemDetail(menuItemId: number, branchId: number) {
+    async getPublicMenuItemDetail(
+        menuItemId: number,
+        branchId: number,
+        orderType?: string,
+    ) {
         const bmi = await this.branchMenuItemRepo.findOne({
             where: { branchId, menuItemId },
             relations: [
@@ -1208,6 +1404,15 @@ export class MenuService {
         if (!bmi?.menuItem || bmi.isAvailable === false || bmi.isHiddenOnline)
             throw new NotFoundException('Menu item not found');
         const item = bmi.menuItem;
+        if (
+            orderType?.trim() &&
+            !isMenuItemAvailableForOrderType(
+                item.availableForOrderTypes,
+                orderType,
+            )
+        ) {
+            throw new NotFoundException('Menu item not found');
+        }
         const price =
             bmi.priceOverride != null
                 ? Number(bmi.priceOverride)
@@ -1222,10 +1427,15 @@ export class MenuService {
             category: item.category?.name ?? null,
             category_id: item.categoryId ?? item.category?.id ?? null,
             brand_id: item.brandId ?? null,
-            variants:
-                [...(item.variants ?? [])]
-                    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id)
-                    .map((v) => ({
+            available_for_order_types: effectiveMenuOrderChannels(
+                item.availableForOrderTypes,
+            ),
+            variants: [...(item.variants ?? [])]
+                .sort(
+                    (a, b) =>
+                        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id,
+                )
+                .map((v) => ({
                     id: v.id,
                     name: v.name,
                     price_modifier: Number(v.priceModifier),
@@ -1251,7 +1461,11 @@ export class MenuService {
                     })),
                 })) ?? [],
         };
-        const deal = await this.getDealByMenuItemId(menuItemId, branchId);
+        const deal = await this.getDealByMenuItemId(
+            menuItemId,
+            branchId,
+            orderType,
+        );
         return { ...base, ...(deal ? { deal } : {}) };
     }
 

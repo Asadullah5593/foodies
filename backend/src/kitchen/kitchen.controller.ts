@@ -23,7 +23,8 @@ export class KitchenController {
 
     @Get('orders')
     listOrders(
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -68,7 +69,8 @@ export class KitchenController {
     @Get('orders/:id')
     getOrder(
         @Param('id') id: string,
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -93,7 +95,8 @@ export class KitchenController {
     @Patch('orders/:id/status')
     updateStatus(
         @Param('id') id: string,
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -118,7 +121,8 @@ export class KitchenController {
     @Get('orders/:id/kot')
     getKot(
         @Param('id') id: string,
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;

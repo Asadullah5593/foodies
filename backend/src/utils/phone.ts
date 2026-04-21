@@ -2,8 +2,6 @@
  * Pakistani mobile format: 03XXXXXXXXX (11 digits) or +92 3XX XXXXXXX.
  * Accepts: 03001234567, 3001234567, +923001234567, +92 300 1234567
  */
-const PAKISTANI_MOBILE_REGEX = /^(\+92|0)?\s*3[0-9]{9}$/;
-
 function digitsOnly(phone: string): string {
     return phone.replace(/\D/g, '');
 }

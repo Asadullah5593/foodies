@@ -185,7 +185,10 @@ export class BrandsService {
             oldLogoUrl &&
             oldLogoUrl !== brand.logoUrl
         ) {
-            await this.mediaStorage.deleteManagedObjectByUrl(oldLogoUrl, 'brands');
+            await this.mediaStorage.deleteManagedObjectByUrl(
+                oldLogoUrl,
+                'brands',
+            );
         }
         return this.toResponse(brand);
     }
@@ -224,7 +227,10 @@ export class BrandsService {
             oldLogoUrl &&
             oldLogoUrl !== brand.logoUrl
         ) {
-            await this.mediaStorage.deleteManagedObjectByUrl(oldLogoUrl, 'brands');
+            await this.mediaStorage.deleteManagedObjectByUrl(
+                oldLogoUrl,
+                'brands',
+            );
         }
         return this.toResponse(brand);
     }

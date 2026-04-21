@@ -4,9 +4,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Add rider assignment and delivery status to orders.
  * Rider role is created with no permissions (rider-only app access).
  */
-export class OrderRiderAndDeliveryStatus1740000000015
-    implements MigrationInterface
-{
+export class OrderRiderAndDeliveryStatus1740000000015 implements MigrationInterface {
     name = 'OrderRiderAndDeliveryStatus1740000000015';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
@@ -45,9 +43,7 @@ export class OrderRiderAndDeliveryStatus1740000000015
         await queryRunner.query(
             `ALTER TABLE "orders" DROP CONSTRAINT IF EXISTS "FK_orders_rider"`,
         );
-        await queryRunner.query(
-            `DROP INDEX IF EXISTS "IDX_orders_rider_id"`,
-        );
+        await queryRunner.query(`DROP INDEX IF EXISTS "IDX_orders_rider_id"`);
         await queryRunner.query(
             `ALTER TABLE "orders" DROP COLUMN IF EXISTS "delivery_failed_reason"`,
         );
@@ -57,8 +53,6 @@ export class OrderRiderAndDeliveryStatus1740000000015
         await queryRunner.query(
             `ALTER TABLE "orders" DROP COLUMN IF EXISTS "rider_id"`,
         );
-        await queryRunner.query(
-            `DELETE FROM "roles" WHERE slug = 'rider'`,
-        );
+        await queryRunner.query(`DELETE FROM "roles" WHERE slug = 'rider'`);
     }
 }

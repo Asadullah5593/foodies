@@ -27,10 +27,11 @@ import {
 } from './components';
 import type { OrderTypeOption, CartLine } from './components';
 import { defaultVariantIdForItem } from './components/types';
+import { isMenuItemAvailableForOrderType } from '../../utils/menu-order-type';
 
 const OrderTaking: React.FC = () => {
   const [selectedItems, setSelectedItems] = useState<CartLine[]>([]);
-  const [orderType, setOrderType] = useState<OrderTypeOption>('dine_in');
+  const [orderType, setOrderType] = useState<OrderTypeOption | null>(null);
   const [tableNumber, setTableNumber] = useState('');
   const [discountCode, setDiscountCode] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -87,9 +88,36 @@ const OrderTaking: React.FC = () => {
     queryFn: () => menuService.getBranchMenu(effectiveBranchId!),
     enabled: effectiveBranchId != null,
   });
-  const menuAll = branchMenu?.menu ?? [];
+
+  const rawMenu = branchMenu?.menu ?? [];
   const brands = branchMenu?.brands ?? [];
   const branchId = branchMenu?.branch_id ?? null;
+
+  const orderTypeOptions = React.useMemo((): { value: OrderTypeOption; label: string }[] => {
+    const list: { value: OrderTypeOption; label: string }[] = [];
+    if (branchMenu?.supports_dine_in === true) list.push({ value: 'dine_in', label: 'Dine In' });
+    if (branchMenu?.supports_takeaway === true)
+      list.push({ value: 'takeaway', label: 'Takeaway' });
+    if (branchMenu?.supports_delivery === true) list.push({ value: 'delivery', label: 'Delivery' });
+    return list.length ? list : [{ value: 'dine_in', label: 'Dine In' }];
+  }, [branchMenu?.supports_dine_in, branchMenu?.supports_takeaway, branchMenu?.supports_delivery]);
+
+  const effectiveOrderType: OrderTypeOption | null =
+    orderType != null && orderTypeOptions.some((o) => o.value === orderType) ? orderType : null;
+
+  React.useEffect(() => {
+    if (orderType != null && !orderTypeOptions.some((o) => o.value === orderType)) {
+      setOrderType(null);
+    }
+  }, [orderType, orderTypeOptions]);
+
+  /** When an order type is selected, filter by `available_for_order_types` (runtime; full menu is loaded once). */
+  const menuAll = React.useMemo(() => {
+    if (effectiveOrderType == null) return rawMenu;
+    return rawMenu.filter((item: MenuItem) =>
+      isMenuItemAvailableForOrderType(item.available_for_order_types ?? null, effectiveOrderType),
+    );
+  }, [rawMenu, effectiveOrderType]);
   const menuByBrand = selectedBrandId == null
     ? menuAll
     : menuAll.filter((item: MenuItem) => item.brand_id === selectedBrandId);
@@ -134,7 +162,7 @@ const OrderTaking: React.FC = () => {
     );
   }, [menu, debouncedPosSearch]);
 
-  React.useEffect(() => setCurrentMenuPage(1), [debouncedPosSearch, selectedBrandId, selectedCategoryId]);
+  React.useEffect(() => setCurrentMenuPage(1), [debouncedPosSearch, selectedBrandId, selectedCategoryId, effectiveOrderType]);
 
   const paginatedMenu = React.useMemo(() => {
     const start = (currentMenuPage - 1) * MENU_PAGE_SIZE;
@@ -146,25 +174,13 @@ const OrderTaking: React.FC = () => {
   const getBrandName = (brandId: number | null | undefined): string | null =>
     brandId != null ? (brands.find((b) => b.id === brandId)?.name ?? null) : null;
 
-  // Only show order types the selected branch explicitly supports (use strict true; no defaults so dropdown is dynamic)
-  const orderTypeOptions = React.useMemo((): { value: OrderTypeOption; label: string }[] => {
-    const list: { value: OrderTypeOption; label: string }[] = [];
-    if (branchMenu?.supports_dine_in === true) list.push({ value: 'dine_in', label: 'Dine In' });
-    // Takeaway and pickup are the same concept; standardize on "Takeaway".
-    // Backend maps legacy pickup to supports_takeaway.
-    if (branchMenu?.supports_takeaway === true)
-      list.push({ value: 'takeaway', label: 'Takeaway' });
-    if (branchMenu?.supports_delivery === true) list.push({ value: 'delivery', label: 'Delivery' });
-    return list.length ? list : [{ value: 'dine_in', label: 'Dine In' }];
-  }, [branchMenu?.supports_dine_in, branchMenu?.supports_takeaway, branchMenu?.supports_delivery]);
-
-  const defaultOrderType = orderTypeOptions[0]?.value ?? 'dine_in';
-  const effectiveOrderType = orderTypeOptions.some((o) => o.value === orderType) ? orderType : defaultOrderType;
+  /** Changing order channel invalidates cart lines (items may not be valid for the new type). */
   React.useEffect(() => {
-    if (effectiveOrderType !== orderType) setOrderType(effectiveOrderType);
-  }, [effectiveOrderType]);
+    setSelectedItems([]);
+  }, [orderType]);
 
-  const quotePayload = branchId != null && selectedItems.length > 0
+  const quotePayload =
+    branchId != null && selectedItems.length > 0 && effectiveOrderType != null
     ? {
         branch_id: branchId,
         order_type: effectiveOrderType,
@@ -296,6 +312,7 @@ const OrderTaking: React.FC = () => {
       setPhoneError('');
       setPaymentCashAmount('');
       setPaymentCardAmount('');
+      setOrderType(null);
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to create order');
@@ -326,9 +343,17 @@ const OrderTaking: React.FC = () => {
       toast.error('Open a shift in Admin → Shifts before adding items to the order');
       return;
     }
+    if (orderType == null || !orderTypeOptions.some((o) => o.value === orderType)) {
+      toast.error('Select an order type before adding items');
+      return;
+    }
     if (branchId != null) {
       try {
-        const deal = await menuService.getDeal(item.id, branchId);
+        const deal = await menuService.getDeal(
+          item.id,
+          branchId,
+          effectiveOrderType ?? undefined,
+        );
         if (deal?.slots?.length) {
           setSelectedDeal(deal);
           setShowDealModal(true);
@@ -375,7 +400,11 @@ const OrderTaking: React.FC = () => {
     if (!line) return;
     if (line.dealId != null && branchId != null) {
       try {
-        const deal = await menuService.getDeal(line.dealId, branchId);
+        const deal = await menuService.getDeal(
+          line.dealId,
+          branchId,
+          effectiveOrderType ?? undefined,
+        );
         if (deal?.slots?.length) {
           setEditingDealIndex(index);
           setDealInitialComponents(line.components ?? []);
@@ -405,6 +434,10 @@ const OrderTaking: React.FC = () => {
     dealPrice: number;
     components: import('./components/types').DealComponentLine[];
   }) => {
+    if (orderType == null || !orderTypeOptions.some((o) => o.value === orderType)) {
+      toast.error('Select an order type before adding items');
+      return;
+    }
     const syntheticMenuItem: MenuItem = {
       id: params.dealId,
       name: params.dealName,
@@ -445,6 +478,10 @@ const OrderTaking: React.FC = () => {
 
   const confirmAddItem = () => {
     if (!selectedItemForConfig) return;
+    if (orderType == null || !orderTypeOptions.some((o) => o.value === orderType)) {
+      toast.error('Select an order type before adding items');
+      return;
+    }
     const groups = selectedItemForConfig.modifier_groups ?? [];
     for (const group of groups) {
       if ((group.min_select ?? 0) > 0) {
@@ -582,6 +619,10 @@ const OrderTaking: React.FC = () => {
   };
 
   const handleCreateOrder = () => {
+    if (effectiveOrderType == null) {
+      toast.error('Select an order type before checkout');
+      return;
+    }
     if (selectedItems.length === 0) {
       toast.error('Please add items to the order');
       return;
@@ -743,7 +784,7 @@ const OrderTaking: React.FC = () => {
       if (e.key === 'Enter' && e.ctrlKey) {
         if (!isInput) {
           e.preventDefault();
-          if (!showCheckoutModal && selectedItems.length > 0) {
+          if (!showCheckoutModal && selectedItems.length > 0 && effectiveOrderType != null) {
             setShowCheckoutModal(true);
             setDrawerOpen(false);
           } else {
@@ -761,7 +802,7 @@ const OrderTaking: React.FC = () => {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [addItem, handleCreateOrder, menuFilteredBySearch, showCheckoutModal, selectedItems.length]);
+  }, [addItem, handleCreateOrder, menuFilteredBySearch, showCheckoutModal, selectedItems.length, effectiveOrderType]);
 
   if (loadingBranches) {
     return <Loader fullScreen text="Loading..." />;
@@ -806,6 +847,7 @@ const OrderTaking: React.FC = () => {
       setSelectedItems([]);
       setSelectedBrandId(null);
       setSelectedCategoryId(null);
+      setOrderType(null);
     },
     openShift,
     branchId,
@@ -817,6 +859,9 @@ const OrderTaking: React.FC = () => {
     searchSuggestionsActiveIndex: posSearchTypeahead.activeIndex,
     setSearchSuggestionsActiveIndex: posSearchTypeahead.setActiveIndex,
     onPickSearchSuggestion: (label: string) => setPosSearch(label),
+    orderTypeOptions,
+    orderType,
+    onOrderTypeChange: setOrderType,
   };
 
   if (effectiveBranchId != null && branchId != null && !openShift) {
@@ -835,7 +880,7 @@ const OrderTaking: React.FC = () => {
     );
   }
 
-  if (!menu || menu.length === 0) {
+  if (rawMenu.length === 0) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-4rem)] bg-foodies-surfaceMuted dark:bg-slate-900 p-6">
         <Card className="w-full max-w-md">
@@ -845,6 +890,24 @@ const OrderTaking: React.FC = () => {
           <div className="text-center py-8">
             <h2 className="text-2xl font-bold text-foodies-textPrimary dark:text-slate-100 mb-2">No menu items for this branch</h2>
             <p className="text-foodies-textSecondary dark:text-slate-400">Add menu items and enable the menu for this branch in the admin panel. You can switch branch above.</p>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (effectiveOrderType != null && menuAll.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-[calc(100vh-4rem)] bg-foodies-surfaceMuted dark:bg-slate-900 p-6">
+        <Card className="w-full max-w-md">
+          <div className="mb-4">
+            <POSFilters {...filtersProps} />
+          </div>
+          <div className="text-center py-8">
+            <h2 className="text-2xl font-bold text-foodies-textPrimary dark:text-slate-100 mb-2">No menu items for this order type</h2>
+            <p className="text-foodies-textSecondary dark:text-slate-400">
+              No items are configured for {orderTypeOptions.find((o) => o.value === effectiveOrderType)?.label ?? effectiveOrderType} at this branch. Try another order type or add availability in Admin → Menu Items.
+            </p>
           </div>
         </Card>
       </div>
@@ -877,7 +940,7 @@ const OrderTaking: React.FC = () => {
             variant="gradient"
             className="w-full mt-3 font-semibold py-3 rounded-xl"
             size="large"
-            disabled={selectedItems.length === 0}
+            disabled={selectedItems.length === 0 || effectiveOrderType == null}
             onClick={() => {
               setShowCheckoutModal(true);
               setDrawerOpen(false);
@@ -914,6 +977,11 @@ const OrderTaking: React.FC = () => {
                 />
               </div>
             </div>
+            {effectiveOrderType == null && (
+              <div className="flex-shrink-0 px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/80 dark:border-amber-800/50 text-sm text-amber-900 dark:text-amber-100">
+                Select an order type above before adding items to the cart.
+              </div>
+            )}
             <div className="flex-1 overflow-y-auto p-4 sm:p-5">
               <MenuGrid
                 menu={paginatedMenu}
@@ -958,14 +1026,20 @@ const OrderTaking: React.FC = () => {
               <span>Total</span>
               <span className="font-bold text-foodies-textPrimary">{formatCurrency(quote?.total_amount ?? total)}</span>
             </div>
+            {effectiveOrderType != null && (
+              <div className="flex items-center justify-between text-sm text-foodies-textSecondary mt-2 pt-2 border-t border-foodies-border/60">
+                <span>Order type</span>
+                <span className="font-semibold text-foodies-textPrimary">
+                  {orderTypeOptions.find((o) => o.value === effectiveOrderType)?.label ?? effectiveOrderType}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="rounded-xl border border-foodies-border dark:border-slate-600 bg-foodies-surface dark:bg-slate-800 p-4">
             <h3 className="text-sm font-semibold text-foodies-textPrimary dark:text-slate-100 mb-3">Customer &amp; details</h3>
             <CustomerPanel
-              orderTypeOptions={orderTypeOptions}
-              orderType={effectiveOrderType}
-              onOrderTypeChange={setOrderType}
+              orderType={effectiveOrderType!}
               tableNumber={tableNumber}
               onTableNumberChange={setTableNumber}
               customerName={customerName}

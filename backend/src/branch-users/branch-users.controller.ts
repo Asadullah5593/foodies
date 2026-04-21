@@ -26,7 +26,8 @@ export class BranchUsersController {
 
     @Get(':branchId/users')
     index(
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
         },
@@ -55,7 +56,8 @@ export class BranchUsersController {
     @UseGuards(RequirePermissionGuard)
     @RequirePermission(Permissions.BRANCH_USERS_ASSIGN)
     store(
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
         },
@@ -81,18 +83,15 @@ export class BranchUsersController {
         if (body.assignments?.length) {
             return this.service.assignUsersWithRoles(bid, body.assignments);
         }
-        return this.service.assignUsers(
-            bid,
-            body.user_ids ?? [],
-            body.role_id,
-        );
+        return this.service.assignUsers(bid, body.user_ids ?? [], body.role_id);
     }
 
     @Delete(':branchId/users/:userId')
     @UseGuards(RequirePermissionGuard)
     @RequirePermission(Permissions.BRANCH_USERS_ASSIGN)
     destroy(
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
         },

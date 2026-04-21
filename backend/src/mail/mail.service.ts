@@ -16,8 +16,13 @@ export class MailService {
 
         if (host && user && pass) {
             let portNum = port ? parseInt(port, 10) : 2525;
-            if (host.includes('mailtrap') && ![25, 465, 587, 2525].includes(portNum)) {
-                this.logger.warn(`Mailtrap requires port 25, 465, 587 or 2525; using 2525 instead of ${portNum}`);
+            if (
+                host.includes('mailtrap') &&
+                ![25, 465, 587, 2525].includes(portNum)
+            ) {
+                this.logger.warn(
+                    `Mailtrap requires port 25, 465, 587 or 2525; using 2525 instead of ${portNum}`,
+                );
                 portNum = 2525;
             }
             const secure = this.config.get<string>('MAIL_SECURE') === 'true';
@@ -30,9 +35,7 @@ export class MailService {
                     ? { tls: { rejectUnauthorized: false } }
                     : {}),
             });
-            this.logger.log(
-                `Mail transporter configured (${host}:${portNum})`,
-            );
+            this.logger.log(`Mail transporter configured (${host}:${portNum})`);
         } else {
             this.logger.warn(
                 'Mail not configured (set MAIL_HOST, MAIL_USER, MAIL_PASSWORD in .env). OTP will be logged to console only.',

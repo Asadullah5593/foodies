@@ -48,7 +48,8 @@ const KDS: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [brandId, setBrandId] = useState<string>('');
   const [updatingOrderId, setUpdatingOrderId] = useState<number | null>(null);
-  const [date, setDate] = useState<string>(todayIsoDate());
+  const [dateFrom, setDateFrom] = useState<string>(todayIsoDate());
+  const [dateTo, setDateTo] = useState<string>(todayIsoDate());
   const [showCompleted, setShowCompleted] = useState(false);
 
   const { data: branches } = useQuery({
@@ -68,16 +69,14 @@ const KDS: React.FC = () => {
   const brands = branchMenu?.brands ?? [];
 
   const { data: orders, isLoading } = useQuery({
-    queryKey: ['kitchen-orders', branchId, statusFilter, brandId, date, showCompleted],
+    queryKey: ['kitchen-orders', branchId, statusFilter, brandId, dateFrom, dateTo, showCompleted],
     queryFn: async () => {
       if (!branchId) return [];
       const params = new URLSearchParams({ branch_id: branchId });
       if (statusFilter) params.append('status', statusFilter);
       if (brandId) params.append('brand_id', brandId);
-      if (date) {
-        params.append('date_from', date);
-        params.append('date_to', date);
-      }
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
       if (showCompleted || statusFilter === 'completed') params.append('include_completed', '1');
       const response = await apiClient.get<KitchenOrder[]>(`/kitchen/orders?${params.toString()}`);
       return response.data;
@@ -99,6 +98,7 @@ const KDS: React.FC = () => {
     },
     onSuccess: (_data, { status }) => {
       queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['foh-packing-orders'] });
       if (status === 'completed') {
         queryClient.invalidateQueries({ queryKey: ['salesSummary'] });
         queryClient.invalidateQueries({ queryKey: ['topItems'] });
@@ -182,7 +182,6 @@ const KDS: React.FC = () => {
     placed: 'accepted',
     accepted: 'preparing',
     preparing: 'ready',
-    ready: 'completed',
   };
 
   useEffect(() => {
@@ -209,11 +208,20 @@ const KDS: React.FC = () => {
           </div>
           <div className="flex flex-wrap gap-4 items-end">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Date</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">From date</label>
               <input
                 type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">To date</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -371,15 +379,9 @@ const KDS: React.FC = () => {
                     </Button>
                   )}
                   {order.status === 'ready' && (
-                    <Button
-                      size="small"
-                      variant="secondary"
-                      onClick={() => updateStatusMutation.mutate({ orderId: order.id, status: 'completed' })}
-                      isLoading={updatingOrderId === order.id}
-                      disabled={updatingOrderId === order.id}
-                    >
-                      Complete
-                    </Button>
+                    <span className="text-xs text-gray-600 dark:text-gray-300">
+                      Ready — completion happens in <span className="font-semibold">FOH Packing</span>.
+                    </span>
                   )}
                 </div>
               </Card>

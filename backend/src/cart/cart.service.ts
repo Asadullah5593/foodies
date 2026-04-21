@@ -1,8 +1,4 @@
-import {
-    Injectable,
-    NotFoundException,
-    BadRequestException,
-} from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cart } from '../entities/cart.entity';
@@ -47,6 +43,7 @@ export class CartService {
                 quantity: i.quantity,
                 notes: i.notes ?? null,
                 addons: i.addons ?? [],
+                modifiers: i.modifiers ?? [],
             })),
         };
     }
@@ -59,6 +56,7 @@ export class CartService {
             quantity: number;
             variant_id?: number;
             addons?: { addon_id: number; quantity?: number }[];
+            modifiers?: { modifier_id: number; quantity?: number }[];
             notes?: string;
         },
     ) {
@@ -72,6 +70,7 @@ export class CartService {
                 quantity,
                 notes: dto.notes?.trim() || null,
                 addons: dto.addons ?? null,
+                modifiers: dto.modifiers ?? null,
             }),
         );
         return {
@@ -81,13 +80,20 @@ export class CartService {
             quantity: item.quantity,
             notes: item.notes,
             addons: item.addons,
+            modifiers: item.modifiers,
         };
     }
 
     async updateItem(
         cartItemId: number,
         customerId: number,
-        quantity: number,
+        updates: {
+            quantity?: number;
+            variant_id?: number | null;
+            addons?: { addon_id: number; quantity?: number }[] | null;
+            modifiers?: { modifier_id: number; quantity?: number }[] | null;
+            notes?: string | null;
+        },
     ) {
         const item = await this.cartItemRepo.findOne({
             where: { id: cartItemId },
@@ -95,14 +101,41 @@ export class CartService {
         });
         if (!item || item.cart.customerId !== customerId)
             throw new NotFoundException('Cart item not found');
-        const q = Math.max(0, Math.floor(quantity));
-        if (q === 0) {
-            await this.cartItemRepo.remove(item);
-            return { message: 'Item removed', quantity: 0 };
+
+        const hasQuantityUpdate =
+            updates.quantity !== undefined && updates.quantity !== null;
+        if (hasQuantityUpdate) {
+            const q = Math.max(0, Math.floor(updates.quantity ?? 1));
+            if (q === 0) {
+                await this.cartItemRepo.remove(item);
+                return { message: 'Item removed', quantity: 0 };
+            }
+            item.quantity = q;
         }
-        item.quantity = q;
+
+        if (updates.variant_id !== undefined) {
+            item.variantId = updates.variant_id ?? null;
+        }
+        if (updates.addons !== undefined) {
+            item.addons = updates.addons ?? null;
+        }
+        if (updates.modifiers !== undefined) {
+            item.modifiers = updates.modifiers ?? null;
+        }
+        if (updates.notes !== undefined) {
+            item.notes = updates.notes?.trim() || null;
+        }
+
         await this.cartItemRepo.save(item);
-        return { id: item.id, quantity: item.quantity };
+        return {
+            id: item.id,
+            menu_item_id: item.menuItemId,
+            variant_id: item.variantId,
+            quantity: item.quantity,
+            notes: item.notes,
+            addons: item.addons ?? [],
+            modifiers: item.modifiers ?? [],
+        };
     }
 
     async removeItem(cartItemId: number, customerId: number) {

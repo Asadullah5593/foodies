@@ -51,7 +51,9 @@ export class DealComponent {
     @UpdateDateColumn()
     updatedAt: Date;
 
-    @ManyToOne(() => MenuItem, (mi) => mi.dealComponents, { onDelete: 'CASCADE' })
+    @ManyToOne(() => MenuItem, (mi) => mi.dealComponents, {
+        onDelete: 'CASCADE',
+    })
     menuItem: MenuItem;
 
     @ManyToOne(() => MenuItem, { onDelete: 'CASCADE', nullable: true })

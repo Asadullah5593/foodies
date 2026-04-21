@@ -246,7 +246,10 @@ export class TenantsService {
     }
 
     /** Get loyalty settings for a tenant (admin). */
-    async getLoyaltySettings(tenantId: number, requesterTenantId: number | null) {
+    async getLoyaltySettings(
+        tenantId: number,
+        requesterTenantId: number | null,
+    ) {
         const tenant = await this.repo.findOne({ where: { id: tenantId } });
         if (!tenant) throw new NotFoundException('Tenant not found');
         if (requesterTenantId != null && tenant.id !== requesterTenantId) {
@@ -294,14 +297,17 @@ export class TenantsService {
         if (requesterTenantId != null && tenant.id !== requesterTenantId) {
             throw new ForbiddenException('You can only update your own tenant');
         }
-        if (dto.loyalty_enabled !== undefined) tenant.loyaltyEnabled = dto.loyalty_enabled;
+        if (dto.loyalty_enabled !== undefined)
+            tenant.loyaltyEnabled = dto.loyalty_enabled;
         const def = tenant.loyaltySettings ?? {};
         tenant.loyaltySettings = {
             displayName: dto.display_name ?? def.displayName ?? 'Reward Points',
             spendPerPoint: dto.spend_per_point ?? def.spendPerPoint ?? 1000,
             minOrderToEarn: dto.min_order_to_earn ?? def.minOrderToEarn ?? 1,
-            cashValuePerPoint: dto.cash_value_per_point ?? def.cashValuePerPoint ?? 10,
-            minOrderToRedeem: dto.min_order_to_redeem ?? def.minOrderToRedeem ?? 1,
+            cashValuePerPoint:
+                dto.cash_value_per_point ?? def.cashValuePerPoint ?? 10,
+            minOrderToRedeem:
+                dto.min_order_to_redeem ?? def.minOrderToRedeem ?? 1,
             expiryPeriod: dto.expiry_period ?? def.expiryPeriod ?? 365,
             expiryUnit: dto.expiry_unit ?? def.expiryUnit ?? 'day',
         };

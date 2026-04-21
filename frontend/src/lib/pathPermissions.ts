@@ -28,6 +28,7 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/pos/orders': ['orders:create'],
   '/kitchen': ['kitchen:view', 'kitchen:update'],
   '/kitchen/back': ['back-kitchen:view'],
+  '/foh/packing': ['kitchen:view', 'kitchen:update'],
 };
 
 export type UserForAccess = {
@@ -84,6 +85,7 @@ const ORDERED_LANDING_PATHS = [
   '/pos/orders',
   '/kitchen',
   '/kitchen/back',
+  '/foh/packing',
 ];
 
 /** First path the user can access; used as post-login and default redirect. Riders get /rider. */

@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import apiClient from '../../utils/apiClient';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
-import { formatOrderType } from '../../utils/format';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 
 interface KitchenOrderItem {
@@ -70,6 +69,7 @@ const NAV_LINKS = [
   { path: '/admin/deliveries', label: 'Deliveries', icon: '🛵' },
   { path: '/pos/orders', label: 'POS', icon: '🛒' },
   { path: '/kitchen/back', label: 'Back Kitchen', icon: '🍳' },
+  { path: '/foh/packing', label: 'FOH Packing', icon: '📦' },
   { path: '/admin/brands', label: 'Brands', icon: '🏪' },
   { path: '/admin/menu-items', label: 'Menu Items', icon: '🍽️' },
 ];
@@ -80,7 +80,8 @@ const KitchenDisplay: React.FC = () => {
   const [branchId, setBranchId] = useState<string>(branchFromUrl);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [date, setDate] = useState<string>(todayIsoDate());
+  const [dateFrom, setDateFrom] = useState<string>(todayIsoDate());
+  const [dateTo, setDateTo] = useState<string>(todayIsoDate());
   const [showCompleted, setShowCompleted] = useState(false);
 
   const { data: branches } = useQuery({
@@ -92,14 +93,12 @@ const KitchenDisplay: React.FC = () => {
   });
 
   const { data: orders = [], isLoading } = useQuery({
-    queryKey: ['kitchen-display-orders', branchId, date, showCompleted],
+    queryKey: ['kitchen-display-orders', branchId, dateFrom, dateTo, showCompleted],
     queryFn: async () => {
       if (!branchId) return [];
       const params = new URLSearchParams({ branch_id: branchId });
-      if (date) {
-        params.append('date_from', date);
-        params.append('date_to', date);
-      }
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
       if (showCompleted) params.append('include_completed', '1');
       const response = await apiClient.get<KitchenOrder[]>(`/kitchen/orders?${params.toString()}`);
       return response.data;
@@ -206,19 +205,28 @@ const KitchenDisplay: React.FC = () => {
             </svg>
           </button>
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-100">Your order status</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-100">Customer Display</h1>
             <p className="text-slate-400 dark:text-slate-500 text-sm mt-0.5">
-              Oldest first. New orders appear at the end.
+              Order number and status only.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <div className="flex items-center gap-2 bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2">
-            <label className="text-xs text-slate-300 font-medium">Date</label>
+            <label className="text-xs text-slate-300 font-medium">From</label>
             <input
               type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="bg-slate-900/40 border border-slate-700 text-slate-100 rounded-md px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+          <div className="flex items-center gap-2 bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2">
+            <label className="text-xs text-slate-300 font-medium">To</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
               className="bg-slate-900/40 border border-slate-700 text-slate-100 rounded-md px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500"
             />
           </div>
@@ -263,34 +271,20 @@ const KitchenDisplay: React.FC = () => {
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-            {displayGroups.map(({ groupId, orders: groupOrders }, groupIndex) => {
+            {displayGroups.map(({ groupId, orders: groupOrders }) => {
               const isGroup = groupId && groupOrders.length > 1;
               const first = groupOrders[0];
               const statusSet = new Set(groupOrders.map((o) => o.status));
               const statusLabel = statusSet.size === 1 ? first?.status : 'Mixed';
-              const allItems = groupOrders.flatMap((o) =>
-                (o.items ?? []).map((item) => ({ ...item, brand_name: item.brand_name ?? null }))
-              );
 
               return (
                 <Card key={groupId ?? `single-${first?.id}`} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden">
                   <div className="px-4 py-3 bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-600">
                     <div className="flex items-center gap-3">
-                      <span
-                        className="flex items-center justify-center w-10 h-10 rounded-xl bg-slate-900 dark:bg-slate-600 text-white font-bold text-lg shrink-0"
-                        title="Queue position"
-                      >
-                        {groupIndex + 1}
-                      </span>
-                      <div>
+                      <div className="flex-1">
                         {isGroup ? (
                           <span className="text-lg font-bold text-slate-900 dark:text-slate-100">
                             Order #{first?.order_number}
-                            {groupOrders.length > 1 && (
-                              <span className="text-slate-500 dark:text-slate-400 font-normal ml-1">
-                                +{groupOrders.length - 1} more
-                              </span>
-                            )}
                           </span>
                         ) : (
                           <span className="text-lg font-bold text-slate-900 dark:text-slate-100">#{first?.order_number}</span>
@@ -300,49 +294,6 @@ const KitchenDisplay: React.FC = () => {
                         </span>
                       </div>
                     </div>
-                  </div>
-                  <div className="px-4 py-2.5 border-b border-slate-100 dark:border-slate-600">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
-                      <span className="font-semibold text-slate-900 dark:text-slate-100">
-                        {formatOrderType(first?.order_type ?? '')}
-                      </span>
-                      {first?.table_number && (
-                        <span className="text-slate-600 dark:text-slate-300">Table {first.table_number}</span>
-                      )}
-                      {first?.placed_at && (
-                        <span className="text-slate-500 dark:text-slate-400">
-                          {new Date(first.placed_at).toLocaleTimeString()}
-                        </span>
-                      )}
-                    </div>
-                    {first?.customer_name && (
-                      <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">Customer: {first.customer_name}</p>
-                    )}
-                  </div>
-                  <div className="px-4 py-3 space-y-3">
-                    {allItems.map((item, idx) => (
-                      <div key={`${item.id}-${idx}`} className="border-l-2 border-slate-200 dark:border-slate-600 pl-3">
-                        {item.brand_name && (
-                          <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-0.5">{item.brand_name}</p>
-                        )}
-                        <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                          {item.quantity}× {item.name ?? item.name_snapshot ?? 'Item'}
-                          {item.variant_name && (
-                            <span className="font-normal text-slate-600 dark:text-slate-400"> — {item.variant_name}</span>
-                          )}
-                        </p>
-                        {item.addons?.length ? (
-                          <p className="text-sm text-slate-700 dark:text-slate-300 mt-0.5">
-                            Add-ons: {item.addons.map((a) => `${a.name} ×${a.quantity ?? 1}`).join(', ')}
-                          </p>
-                        ) : null}
-                        {item.notes && (
-                          <p className="text-sm mt-0.5 text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/40 px-2 py-1 rounded border border-amber-200 dark:border-amber-700">
-                            Note: {item.notes}
-                          </p>
-                        )}
-                      </div>
-                    ))}
                   </div>
                 </Card>
               );

@@ -25,16 +25,15 @@ export class RolesService {
     }
 
     /** Create a new permission (Super Admin only). Name must be unique (e.g. "resource:action"). */
-    async createPermission(
-        dto: {
-            name: string;
-            resource: string;
-            action: string;
-            description?: string | null;
-        },
-    ) {
+    async createPermission(dto: {
+        name: string;
+        resource: string;
+        action: string;
+        description?: string | null;
+    }) {
         const trimmed = (dto.name || '').trim();
-        if (!trimmed) throw new ForbiddenException('Permission name is required');
+        if (!trimmed)
+            throw new ForbiddenException('Permission name is required');
         const existing = await this.permissionRepo.findOne({
             where: { name: trimmed },
         });
@@ -68,7 +67,8 @@ export class RolesService {
         if (!perm) throw new NotFoundException('Permission not found');
         if (dto.name !== undefined) {
             const trimmed = dto.name.trim();
-            if (!trimmed) throw new ForbiddenException('Permission name is required');
+            if (!trimmed)
+                throw new ForbiddenException('Permission name is required');
             const existing = await this.permissionRepo.findOne({
                 where: { name: trimmed },
             });

@@ -20,9 +20,14 @@ export class CustomersService {
         @InjectRepository(Customer) private repo: Repository<Customer>,
     ) {}
 
-    /** Returns all customers regardless of tenant_id (tenant support removed for customers). */
-    async findAll(_tenantId: number | null) {
+    /**
+     * Admin listing must be tenant-scoped.
+     * - tenant users: only their tenant's customers
+     * - super admin (tenantId null): all customers
+     */
+    async findAll(tenantId: number | null) {
         return this.repo.find({
+            where: tenantId != null ? { tenantId } : {},
             order: { id: 'ASC' },
         });
     }
@@ -41,7 +46,8 @@ export class CustomersService {
     }
 
     async findByEmail(email: string): Promise<Customer | null> {
-        const trimmed = typeof email === 'string' ? email.trim().toLowerCase() : '';
+        const trimmed =
+            typeof email === 'string' ? email.trim().toLowerCase() : '';
         if (!trimmed) return null;
         return this.repo.findOne({ where: { email: trimmed } });
     }
@@ -94,7 +100,9 @@ export class CustomersService {
                 'Customer with this phone already exists',
             );
         const email =
-            typeof dto.email === 'string' ? dto.email.trim().toLowerCase() || null : null;
+            typeof dto.email === 'string'
+                ? dto.email.trim().toLowerCase() || null
+                : null;
         if (email) {
             const existingEmail = await this.repo.findOne({
                 where: { email },
@@ -134,11 +142,13 @@ export class CustomersService {
         if (!name) {
             throw new BadRequestException('Customer name is required');
         }
-        const email = typeof dto.email === 'string' ? dto.email.trim().toLowerCase() : '';
+        const email =
+            typeof dto.email === 'string' ? dto.email.trim().toLowerCase() : '';
         if (!email) {
             throw new BadRequestException('Email is required');
         }
-        const password = typeof dto.password === 'string' ? dto.password.trim() : '';
+        const password =
+            typeof dto.password === 'string' ? dto.password.trim() : '';
         if (!password) {
             throw new BadRequestException('Password is required');
         }
@@ -173,10 +183,7 @@ export class CustomersService {
     }
 
     /** Validate customer by email and password; return customer or throw. */
-    async validateCustomer(
-        email: string,
-        password: string,
-    ): Promise<Customer> {
+    async validateCustomer(email: string, password: string): Promise<Customer> {
         const customer = await this.findByEmail(email);
         if (!customer || !customer.password) {
             throw new UnauthorizedException('Invalid email or password');
@@ -255,8 +262,7 @@ export class CustomersService {
         if (!customer) throw new NotFoundException('Customer not found');
         const trimmed =
             typeof newPassword === 'string' ? newPassword.trim() : '';
-        if (!trimmed)
-            throw new BadRequestException('Password is required');
+        if (!trimmed) throw new BadRequestException('Password is required');
         customer.password = await bcrypt.hash(trimmed, 10);
         await this.repo.save(customer);
         return { message: 'Password updated' };

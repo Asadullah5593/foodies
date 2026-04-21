@@ -32,6 +32,7 @@ import Customers from './pages/Admin/Customers';
 import OrderTaking from './pages/POS/OrderTaking';
 import KitchenDisplay from './pages/Kitchen/KitchenDisplay';
 import KDS from './pages/Kitchen/KDS';
+import FOHPacking from './pages/FOH/Packing';
 import RiderLayout from './pages/Rider/RiderLayout';
 import RiderDashboard from './pages/Rider/RiderDashboard';
 import RiderOrderDetail from './pages/Rider/RiderOrderDetail';
@@ -229,8 +230,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { path: '/admin/shifts', label: 'Shifts', icon: '⏰' as const },
     { path: '/admin/reports', label: 'Reports', icon: '📈' as const },
     { path: '/pos/orders', label: 'POS', icon: '🛒' as const },
-    { path: '/kitchen', label: 'Kitchen Display', icon: '📺' as const },
+    { path: '/kitchen', label: 'Customer Display', icon: '📺' as const },
     { path: '/kitchen/back', label: 'Back Kitchen', icon: '🍳' as const },
+    { path: '/foh/packing', label: 'FOH Packing', icon: '📦' as const },
     // { path: '/admin/button-demo', label: 'Button demo', icon: '🎨' as const },
   ];
   const menuLinks = isRiderForAccess(user)
@@ -733,6 +735,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><KDS /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/foh/packing"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><FOHPacking /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />

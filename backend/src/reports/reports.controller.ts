@@ -14,7 +14,8 @@ export class ReportsController {
 
     @Get('day-overview')
     dayOverview(
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -36,7 +37,8 @@ export class ReportsController {
 
     @Get('sales-summary')
     salesSummary(
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -58,7 +60,8 @@ export class ReportsController {
 
     @Get('top-items')
     topItems(
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -82,7 +85,8 @@ export class ReportsController {
 
     @Get('shift-summary')
     shiftSummary(
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;

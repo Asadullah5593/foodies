@@ -34,6 +34,10 @@ export class CartItem {
     @Column({ type: 'jsonb', nullable: true })
     addons: { addon_id: number; quantity?: number }[] | null;
 
+    /** JSON array of { modifier_id: number, quantity?: number } */
+    @Column({ type: 'jsonb', nullable: true })
+    modifiers: { modifier_id: number; quantity?: number }[] | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

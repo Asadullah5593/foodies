@@ -1,5 +1,5 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { MenuService } from '../menu/menu.service';
 import { ShiftsService } from '../shifts/shifts.service';
 import { BranchesService } from '../branches/branches.service';
@@ -85,10 +85,17 @@ export class PosMenuController {
     }
 
     @Get('menu')
+    @ApiQuery({
+        name: 'order_type',
+        required: false,
+        description:
+            'Optional filter: only items available for this channel (delivery, pickup, dine_in; takeaway maps to pickup).',
+    })
     async index(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
         @Query('branch_id') branchIdParam: string,
+        @Query('order_type') orderTypeParam: string,
     ) {
         let allowedBranchIds: number[] | null = null;
         if (user.isSuperAdmin === true) {
@@ -149,14 +156,20 @@ export class PosMenuController {
                 where: { id: branchId },
                 relations: ['branchBrands', 'branchBrands.brand'],
             }),
-            this.menuService.getBranchMenu(branchId),
+            this.menuService.getBranchMenu(branchId, {
+                orderType:
+                    orderTypeParam != null && orderTypeParam.trim() !== ''
+                        ? orderTypeParam.trim()
+                        : undefined,
+            }),
             this.shiftsService.findOpenByBranch(branchId),
         ]);
         // Always return order-type flags so POS dropdown can be dynamic (strict true = show option)
         const supports_dine_in = branch?.supportsDineIn === true;
         // Pickup is deprecated; treat legacy supportsPickup as takeaway.
         const supports_takeaway =
-            branch?.supportsTakeaway === true || branch?.supportsPickup === true;
+            branch?.supportsTakeaway === true ||
+            branch?.supportsPickup === true;
         const supports_delivery = branch?.supportsDelivery === true;
         type BranchWithBrands = {
             branchBrands?: Array<{ brandId: number; brand?: { name: string } }>;
@@ -179,14 +192,29 @@ export class PosMenuController {
 
     /** Get deal definition by menu item id for POS (slot pickers + choice items). Returns null if not a deal. */
     @Get('deal/:menuItemId')
+    @ApiQuery({
+        name: 'order_type',
+        required: false,
+        description:
+            'Optional. Filters deal slot choice items to those available for this channel.',
+    })
     async getDeal(
         @Param('menuItemId') menuItemIdParam: string,
         @Query('branch_id') branchIdParam: string,
+        @Query('order_type') orderTypeParam: string,
     ) {
         const menuItemId = +menuItemIdParam;
         const branchId = branchIdParam ? +branchIdParam : NaN;
         if (!Number.isFinite(menuItemId) || !Number.isFinite(branchId))
             return null;
-        return this.menuService.getDealByMenuItemId(menuItemId, branchId);
+        const orderType =
+            orderTypeParam != null && orderTypeParam.trim() !== ''
+                ? orderTypeParam.trim()
+                : undefined;
+        return this.menuService.getDealByMenuItemId(
+            menuItemId,
+            branchId,
+            orderType,
+        );
     }
 }

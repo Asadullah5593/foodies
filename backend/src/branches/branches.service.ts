@@ -84,7 +84,7 @@ export class BranchesService {
     async findAllWithinRadius(
         latitude: number,
         longitude: number,
-        radiusKm: number = 10,
+        radiusKm: number = 100000,
     ) {
         const list = await this.repo.find({
             where: {},

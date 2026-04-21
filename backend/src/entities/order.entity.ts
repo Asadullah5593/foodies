@@ -63,6 +63,13 @@ export class Order {
     @Column({ type: 'text', nullable: true })
     deliveryAddress: string | null;
 
+    /** Drop-off / customer location for delivery or pickup (consumer app). */
+    @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+    deliveryLatitude: number | null;
+
+    @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+    deliveryLongitude: number | null;
+
     @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
     subtotal: number;
 

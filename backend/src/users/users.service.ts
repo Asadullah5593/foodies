@@ -88,7 +88,7 @@ export class UsersService {
                 tu.role?.slug ??
                 (tu.roleId == null && tu.tenantId != null
                     ? (fallbackByTenant.get(tu.tenantId)?.get(tu.userId) ??
-                        null)
+                      null)
                     : null);
             const out = this.toResponse(
                 tu.user,
@@ -117,10 +117,12 @@ export class UsersService {
             (tenantUser as TenantUser & { role?: { slug: string } }).role
                 ?.slug ??
             (tenantUser.roleId == null && tenantUser.tenantId != null
-                ? (await this.getBranchRoleSlugByUserIds(
-                      [tenantUser.userId],
-                      tenantUser.tenantId,
-                  )).get(tenantUser.userId) ?? null
+                ? ((
+                      await this.getBranchRoleSlugByUserIds(
+                          [tenantUser.userId],
+                          tenantUser.tenantId,
+                      )
+                  ).get(tenantUser.userId) ?? null)
                 : null);
         const out = this.toResponse(
             tenantUser.user,
@@ -147,10 +149,12 @@ export class UsersService {
             (tenantUser as TenantUser & { role?: { slug: string } }).role
                 ?.slug ??
             (tenantUser.roleId == null
-                ? (await this.getBranchRoleSlugByUserIds(
-                      [tenantUser.userId],
-                      tenantId,
-                  )).get(tenantUser.userId) ?? null
+                ? ((
+                      await this.getBranchRoleSlugByUserIds(
+                          [tenantUser.userId],
+                          tenantId,
+                      )
+                  ).get(tenantUser.userId) ?? null)
                 : null);
         const out = this.toResponse(
             tenantUser.user,
@@ -300,8 +304,7 @@ export class UsersService {
              WHERE bu.user_id = ANY($2::int[])
              ORDER BY bu.user_id`,
             [tenantId, userIds],
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion -- DataSource.query returns unknown
-        )) as { user_id: number; slug: string }[];
+        )) as unknown as Array<{ user_id: number; slug: string }>;
         return new Map(rows.map((r) => [r.user_id, r.slug]));
     }
 
