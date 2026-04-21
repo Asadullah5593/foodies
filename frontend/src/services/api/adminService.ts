@@ -57,7 +57,21 @@ export const adminService = {
     const response = await apiClient.get(`/admin/menu/items${query ? '?' + query : ''}`);
     return response.data;
   },
-  updateMenuItem: async (id: number, data: { name?: string; description?: string; base_price?: number; is_active?: boolean; brand_id?: number; category_id?: number; image_url?: string | null; deal_only?: boolean }) => {
+  updateMenuItem: async (
+    id: number,
+    data: {
+      name?: string;
+      description?: string;
+      base_price?: number;
+      is_active?: boolean;
+      brand_id?: number;
+      category_id?: number;
+      image_url?: string | null;
+      deal_only?: boolean;
+      /** Subset of delivery, pickup, dine_in. Omit or null = all channels. */
+      available_for_order_types?: string[] | null;
+    },
+  ) => {
     const response = await apiClient.put(`/admin/menu/items/${id}`, data);
     return response.data;
   },

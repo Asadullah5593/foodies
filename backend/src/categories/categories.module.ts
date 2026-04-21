@@ -7,7 +7,10 @@ import { CategoriesController } from './categories.controller';
 import { CategoriesService } from './categories.service';
 
 @Module({
-    imports: [RoleAccessModule, TypeOrmModule.forFeature([MenuCategory, Brand])],
+    imports: [
+        RoleAccessModule,
+        TypeOrmModule.forFeature([MenuCategory, Brand]),
+    ],
     controllers: [CategoriesController],
     providers: [CategoriesService],
     exports: [CategoriesService],

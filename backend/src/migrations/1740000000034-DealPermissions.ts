@@ -9,10 +9,30 @@ export class DealPermissions1740000000034 implements MigrationInterface {
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         const permissions = [
-            { name: 'deals:view', resource: 'deals', action: 'view', description: 'View deals' },
-            { name: 'deals:create', resource: 'deals', action: 'create', description: 'Create deals' },
-            { name: 'deals:edit', resource: 'deals', action: 'edit', description: 'Edit deals' },
-            { name: 'deals:delete', resource: 'deals', action: 'delete', description: 'Delete deals' },
+            {
+                name: 'deals:view',
+                resource: 'deals',
+                action: 'view',
+                description: 'View deals',
+            },
+            {
+                name: 'deals:create',
+                resource: 'deals',
+                action: 'create',
+                description: 'Create deals',
+            },
+            {
+                name: 'deals:edit',
+                resource: 'deals',
+                action: 'edit',
+                description: 'Edit deals',
+            },
+            {
+                name: 'deals:delete',
+                resource: 'deals',
+                action: 'delete',
+                description: 'Delete deals',
+            },
         ];
         for (const p of permissions) {
             await queryRunner.query(

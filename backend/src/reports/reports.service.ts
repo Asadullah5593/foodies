@@ -1,7 +1,4 @@
-import {
-    Injectable,
-    ForbiddenException,
-} from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Order } from '../entities/order.entity';
@@ -189,9 +186,12 @@ export class ReportsService {
             Array.isArray(allowedBranchIds) &&
             allowedBranchIds.length > 0
         ) {
-            paymentsByMethodQb.andWhere('o.branchId IN (:...allowedBranchIds)', {
-                allowedBranchIds,
-            });
+            paymentsByMethodQb.andWhere(
+                'o.branchId IN (:...allowedBranchIds)',
+                {
+                    allowedBranchIds,
+                },
+            );
         }
         if (filters.branch_id)
             paymentsByMethodQb.andWhere('o.branchId = :branchId', {
@@ -260,8 +260,7 @@ export class ReportsService {
         return {
             date_from:
                 filters.date_from ?? new Date().toISOString().slice(0, 10),
-            date_to:
-                filters.date_to ?? new Date().toISOString().slice(0, 10),
+            date_to: filters.date_to ?? new Date().toISOString().slice(0, 10),
             branch_id: filters.branch_id ?? null,
             orders_by_status,
             orders_by_status_by_source,

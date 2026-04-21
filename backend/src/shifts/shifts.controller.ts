@@ -23,7 +23,8 @@ export class ShiftsController {
 
     @Get()
     index(
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -41,23 +42,21 @@ export class ShiftsController {
 
     @Get(':id')
     show(
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
         },
         @Param('id') id: string,
     ) {
-        return this.service.findOne(
-            +id,
-            user.tenantId,
-            user.allowedBranchIds,
-        );
+        return this.service.findOne(+id, user.tenantId, user.allowedBranchIds);
     }
 
     @Post()
     store(
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
@@ -78,7 +77,8 @@ export class ShiftsController {
     @Post(':id/close')
     close(
         @Param('id') id: string,
-        @CurrentUser() user: {
+        @CurrentUser()
+        user: {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;

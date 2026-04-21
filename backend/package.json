@@ -14,6 +14,7 @@
     "start:prod": "node dist/main",
     "seed": "ts-node -r tsconfig-paths/register src/seed.ts",
     "seed:menu": "ts-node -r tsconfig-paths/register src/seed-menu.ts",
+    "seed:export-items": "ts-node -r tsconfig-paths/register src/seed-export-items.ts",
     "seed:wok-and-go": "ts-node -r tsconfig-paths/register src/seed-wok-and-go.ts",
     "seed:peri-peri-co": "ts-node -r tsconfig-paths/register src/seed-peri-peri-co.ts",
     "seed:fireaway": "ts-node -r tsconfig-paths/register src/seed-fireaway.ts",

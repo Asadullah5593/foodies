@@ -26,7 +26,9 @@ export class TenantsController {
     @Get()
     index(@CurrentUser() user: { id: number; tenantId: number | null }) {
         if (user.tenantId != null) {
-            throw new ForbiddenException('Only super admin can access the tenants list');
+            throw new ForbiddenException(
+                'Only super admin can access the tenants list',
+            );
         }
         return this.service.findAllForAdmin(user.tenantId);
     }
@@ -38,7 +40,9 @@ export class TenantsController {
         @CurrentUser() user: { id: number; tenantId: number | null },
     ) {
         if (user.tenantId != null) {
-            throw new ForbiddenException('Only super admin can view tenants. Use Business Settings to view your business details.');
+            throw new ForbiddenException(
+                'Only super admin can view tenants. Use Business Settings to view your business details.',
+            );
         }
         return this.service.findOneForAdmin(+id, user.tenantId);
     }
@@ -81,7 +85,7 @@ export class TenantsController {
             default_currency?: string;
             default_timezone?: string;
             default_tax_rate?: number;
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                loyalty_enabled?: boolean;
+            loyalty_enabled?: boolean;
             owner_email: string;
             owner_password: string;
             owner_name?: string;
@@ -110,7 +114,9 @@ export class TenantsController {
         @CurrentUser() user: { id: number; tenantId: number | null },
     ) {
         if (user.tenantId != null) {
-            throw new ForbiddenException('Only super admin can update tenants. Use Business Settings to update your business details.');
+            throw new ForbiddenException(
+                'Only super admin can update tenants. Use Business Settings to update your business details.',
+            );
         }
         return this.service.updateForAdmin(+id, user.tenantId, dto);
     }

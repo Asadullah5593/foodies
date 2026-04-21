@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0f172a;
+  --foreground: #f4f4f5;
+  --surface: #101014;
+  --surface-2: #18181b;
+  --muted: #a1a1aa;
+  --border-soft: #27272a;
+  --foodies-red: #dc2626;
+}
+
+[data-theme="light"] {
+  --background: #f7f7f8;
+  --foreground: #111113;
+  --surface: #ffffff;
+  --surface-2: #f1f1f3;
+  --muted: #52525b;
+  --border-soft: #d4d4d8;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+}
+
+a {
+  color: inherit;
+}
+
+/* Theme-aware image overlays:
+   Keep cinematic gradients in dark mode, remove in light mode. */
+.foodies-media-overlay {
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.55) 0%,
+    rgba(0, 0, 0, 0.18) 45%,
+    rgba(0, 0, 0, 0) 100%
+  );
+}
+
+[data-theme="light"] .foodies-media-overlay {
+  background: transparent;
+}

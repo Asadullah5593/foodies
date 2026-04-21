@@ -1,11 +1,23 @@
 # How to Start the Application
 
-## Start Both Servers
+## Start Servers
 
-### Option 1: From project root (both at once)
+### Option 1: From project root (admin frontend + backend)
 
 ```bash
 npm run dev
+```
+
+### Option 1B: From project root (consumer web + backend)
+
+```bash
+npm run dev:consumer
+```
+
+### Option 1C: From project root (all three apps)
+
+```bash
+npm run dev:all
 ```
 
 ### Option 2: Separate terminals
@@ -17,12 +29,19 @@ npm run start:dev
 ```
 Backend runs on: http://127.0.0.1:3001 (API at http://127.0.0.1:3001/api)
 
-**Terminal 2 – React Frontend**
+**Terminal 2 – Admin React Frontend**
 ```bash
 cd frontend
 npm run dev
 ```
 Frontend runs on: http://localhost:3000
+
+**Terminal 3 – Consumer Web (Next.js)**
+```bash
+cd consumer-web
+npm run dev
+```
+Consumer web runs on: http://localhost:3002
 
 ## First-time setup: PostgreSQL and seed demo user
 
@@ -62,6 +81,16 @@ Expected response:
 - Ensure the NestJS backend is running: `cd backend && npm run start:dev`
 - Test: `curl http://127.0.0.1:3001/api/`
 - Frontend expects the API at `http://127.0.0.1:3001/api` by default (set `VITE_API_URL` in frontend if your backend uses another URL/port).
+- Consumer web expects the API at `http://127.0.0.1:3001/api` by default (set `NEXT_PUBLIC_API_BASE_URL` in `consumer-web/.env.local` if needed).
+
+### EADDRINUSE on backend port 3001
+- This means another backend process is already running.
+- Find and stop it:
+  ```bash
+  lsof -i :3001
+  kill -9 <PID>
+  ```
+- Then restart backend once: `cd backend && npm run start:dev`
 
 ### Token / refresh
 - The auth token is stored in `localStorage` and persists across refreshes.

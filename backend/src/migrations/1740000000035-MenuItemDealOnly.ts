@@ -15,6 +15,8 @@ export class MenuItemDealOnly1740000000035 implements MigrationInterface {
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`ALTER TABLE "menu_items" DROP COLUMN IF EXISTS "deal_only"`);
+        await queryRunner.query(
+            `ALTER TABLE "menu_items" DROP COLUMN IF EXISTS "deal_only"`,
+        );
     }
 }

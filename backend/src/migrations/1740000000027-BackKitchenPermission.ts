@@ -11,7 +11,12 @@ export class BackKitchenPermission1740000000027 implements MigrationInterface {
             `INSERT INTO permissions (name, resource, action, description)
              VALUES ($1, $2, $3, $4)
              ON CONFLICT (name) DO NOTHING`,
-            ['back-kitchen:view', 'back-kitchen', 'view', 'View and manage Back Kitchen (brand-specific orders)'],
+            [
+                'back-kitchen:view',
+                'back-kitchen',
+                'view',
+                'View and manage Back Kitchen (brand-specific orders)',
+            ],
         );
 
         await queryRunner.query(

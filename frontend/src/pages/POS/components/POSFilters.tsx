@@ -28,9 +28,9 @@ export type POSFiltersProps = {
   searchSuggestionsActiveIndex?: number;
   setSearchSuggestionsActiveIndex?: (idx: number) => void;
   onPickSearchSuggestion?: (label: string) => void;
-  /** Optional: show order type selector in the top bar */
+  /** Optional: order type toggle buttons in the top bar (single selection; null = none chosen yet) */
   orderTypeOptions?: Array<{ value: OrderTypeOption; label: string }>;
-  orderType?: OrderTypeOption;
+  orderType?: OrderTypeOption | null;
   onOrderTypeChange?: (value: OrderTypeOption) => void;
   /** 'bar' = horizontal top bar (default), 'rail' = vertical left rail */
   variant?: 'bar' | 'rail';
@@ -71,14 +71,33 @@ const POSFilters: React.FC<POSFiltersProps> = ({
 
   const filtersContent = (
     <>
-      {orderTypeOptions && orderType && onOrderTypeChange && (
-        <SearchableSelect
-          label="Order type"
-          value={orderType}
-          onChange={(v) => onOrderTypeChange(v as OrderTypeOption)}
-          options={orderTypeOptions.map((opt) => ({ value: opt.value, label: opt.label }))}
-          minWidth="min-w-[140px]"
-        />
+      {orderTypeOptions && orderTypeOptions.length > 0 && onOrderTypeChange && (
+        <div className={isRail ? 'space-y-1' : ''}>
+          <span className="text-foodies-textSecondary font-medium text-xs uppercase tracking-wide block mb-1">
+            Order type
+          </span>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Order type">
+            {orderTypeOptions.map((opt) => {
+              const selected = orderType === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => onOrderTypeChange(opt.value)}
+                  className={`px-3 py-2 rounded-xl text-sm font-semibold border transition-colors min-h-[40px] ${
+                    selected
+                      ? 'bg-foodies-primary text-white border-foodies-primary shadow-sm'
+                      : 'bg-foodies-surface border-foodies-border text-foodies-textPrimary hover:border-foodies-primary/60'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       )}
       {brands.length > 1 && (
         <SearchableSelect

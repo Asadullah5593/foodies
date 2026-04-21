@@ -12,12 +12,19 @@ export class RegisterDto {
     @IsNotEmpty()
     email: string;
 
-    @ApiProperty({ example: '03001234567', description: 'Phone (Pakistani format)' })
+    @ApiProperty({
+        example: '03001234567',
+        description: 'Phone (Pakistani format)',
+    })
     @IsString()
     @IsNotEmpty()
     phone: string;
 
-    @ApiProperty({ example: 'secret123', description: 'Password', minLength: 6 })
+    @ApiProperty({
+        example: 'secret123',
+        description: 'Password',
+        minLength: 6,
+    })
     @IsString()
     @IsNotEmpty()
     @MinLength(6, { message: 'Password must be at least 6 characters' })

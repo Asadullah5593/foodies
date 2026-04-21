@@ -4,9 +4,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Add deal_components table for composable deals (slots: fixed / choice_category / choice_list)
  * and order_items.deal_id, deal_slot_index for grouping deal lines.
  */
-export class DealComponentsAndOrderItemDealId1740000000033
-    implements MigrationInterface
-{
+export class DealComponentsAndOrderItemDealId1740000000033 implements MigrationInterface {
     name = 'DealComponentsAndOrderItemDealId1740000000033';
 
     public async up(queryRunner: QueryRunner): Promise<void> {

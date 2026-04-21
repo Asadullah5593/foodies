@@ -1,4 +1,11 @@
-import { Controller, Get, Put, Body, UseGuards, ForbiddenException } from '@nestjs/common';
+import {
+    Controller,
+    Get,
+    Put,
+    Body,
+    UseGuards,
+    ForbiddenException,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { TenantsService } from './tenants.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -16,7 +23,9 @@ export class BusinessSettingsController {
     @Get()
     get(@CurrentUser() user: { id: number; tenantId: number | null }) {
         if (user.tenantId == null) {
-            throw new ForbiddenException('Business settings are for tenant users only');
+            throw new ForbiddenException(
+                'Business settings are for tenant users only',
+            );
         }
         return this.service.getBusinessSettings(user.tenantId);
     }
@@ -34,7 +43,9 @@ export class BusinessSettingsController {
         },
     ) {
         if (user.tenantId == null) {
-            throw new ForbiddenException('Business settings are for tenant users only');
+            throw new ForbiddenException(
+                'Business settings are for tenant users only',
+            );
         }
         return this.service.updateBusinessSettings(user.tenantId, dto);
     }

@@ -8,7 +8,10 @@ import { BranchMenuItemsController } from './branch-menu-items.controller';
 import { BranchMenuItemsService } from './branch-menu-items.service';
 
 @Module({
-    imports: [RoleAccessModule, TypeOrmModule.forFeature([BranchMenuItem, Branch, MenuItem])],
+    imports: [
+        RoleAccessModule,
+        TypeOrmModule.forFeature([BranchMenuItem, Branch, MenuItem]),
+    ],
     controllers: [BranchMenuItemsController],
     providers: [BranchMenuItemsService],
     exports: [BranchMenuItemsService],

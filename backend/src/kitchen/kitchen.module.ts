@@ -7,7 +7,11 @@ import { KitchenService } from './kitchen.service';
 import { ShiftsModule } from '../shifts/shifts.module';
 
 @Module({
-    imports: [RoleAccessModule, TypeOrmModule.forFeature([Order]), ShiftsModule],
+    imports: [
+        RoleAccessModule,
+        TypeOrmModule.forFeature([Order]),
+        ShiftsModule,
+    ],
     controllers: [KitchenController],
     providers: [KitchenService],
     exports: [KitchenService],

@@ -10,7 +10,10 @@ import { BusinessSettingsController } from './business-settings.controller';
 import { TenantsService } from './tenants.service';
 
 @Module({
-    imports: [RoleAccessModule, TypeOrmModule.forFeature([Tenant, User, TenantUser, Role])],
+    imports: [
+        RoleAccessModule,
+        TypeOrmModule.forFeature([Tenant, User, TenantUser, Role]),
+    ],
     controllers: [TenantsController, BusinessSettingsController],
     providers: [TenantsService],
     exports: [TenantsService],

@@ -9,7 +9,10 @@ import { BranchUsersController } from './branch-users.controller';
 import { BranchUsersService } from './branch-users.service';
 
 @Module({
-    imports: [RoleAccessModule, TypeOrmModule.forFeature([Branch, User, BranchUser, Role])],
+    imports: [
+        RoleAccessModule,
+        TypeOrmModule.forFeature([Branch, User, BranchUser, Role]),
+    ],
     controllers: [BranchUsersController],
     providers: [BranchUsersService],
 })

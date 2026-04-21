@@ -4,9 +4,7 @@ import { formatCurrency } from '../../../utils/currency';
 import { OrderTypeOption } from './types';
 
 export type CustomerPanelProps = {
-  orderTypeOptions: Array<{ value: OrderTypeOption; label: string }>;
   orderType: OrderTypeOption;
-  onOrderTypeChange: (v: OrderTypeOption) => void;
   tableNumber: string;
   onTableNumberChange: (v: string) => void;
   customerName: string;
@@ -32,9 +30,7 @@ export type CustomerPanelProps = {
 };
 
 const CustomerPanel: React.FC<CustomerPanelProps> = ({
-  orderTypeOptions,
   orderType,
-  onOrderTypeChange,
   tableNumber,
   onTableNumberChange,
   customerName,
@@ -56,21 +52,6 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
   const effectiveOrderType = orderType;
   return (
     <>
-      {orderTypeOptions.length > 0 && (
-        <div>
-          <label className="block text-sm font-medium text-foodies-textPrimary mb-1.5">Order type</label>
-          <select
-            value={effectiveOrderType}
-            onChange={(e) => onOrderTypeChange(e.target.value as OrderTypeOption)}
-            className="w-full px-4 py-2.5 border border-foodies-border rounded-xl bg-foodies-surface text-foodies-textPrimary focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
-          >
-            {orderTypeOptions.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-      )}
-
       {effectiveOrderType === 'dine_in' && (
         <div>
           <label className="block text-sm font-medium text-foodies-textPrimary mb-1.5">Table number</label>

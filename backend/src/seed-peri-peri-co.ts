@@ -38,7 +38,10 @@ const dataSource = new DataSource({
 });
 
 function slug(name: string, brandSlug: string) {
-    return `${name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}-${brandSlug}`;
+    return `${name
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9-]/g, '')}-${brandSlug}`;
 }
 
 async function seedPeriPeriCo() {
@@ -101,11 +104,13 @@ async function seedPeriPeriCo() {
     ];
     const categories: Record<string, MenuCategory> = {};
     for (const c of categoriesData) {
-        let cat = await categoryRepo.findOne({ where: { brandId: brand!.id, name: c.name } });
+        let cat = await categoryRepo.findOne({
+            where: { brandId: brand.id, name: c.name },
+        });
         if (!cat) {
             cat = await categoryRepo.save(
                 categoryRepo.create({
-                    brandId: brand!.id,
+                    brandId: brand.id,
                     name: c.name,
                     sortOrder: c.sortOrder,
                     isActive: true,
@@ -157,7 +162,13 @@ async function seedPeriPeriCo() {
         }),
     );
     for (const name of ['Chicken Kebab', 'Donner Kebab', 'Mixed Kebab']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: chooseKebabGroup.id, name, price: 0 }));
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: chooseKebabGroup.id,
+                name,
+                price: 0,
+            }),
+        );
     }
 
     const choosePattyGroup = await modifierGroupRepo.save(
@@ -169,7 +180,13 @@ async function seedPeriPeriCo() {
         }),
     );
     for (const name of ['Double Chicken', 'Beef']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: choosePattyGroup.id, name, price: 0 }));
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: choosePattyGroup.id,
+                name,
+                price: 0,
+            }),
+        );
     }
 
     const flavourGroup = await modifierGroupRepo.save(
@@ -180,8 +197,20 @@ async function seedPeriPeriCo() {
             maxSelect: 1,
         }),
     );
-    for (const name of ['Lemon & Herb', 'Mango Lime', 'Mild', 'Medium', 'Hot']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: flavourGroup.id, name, price: 0 }));
+    for (const name of [
+        'Lemon & Herb',
+        'Mango Lime',
+        'Mild',
+        'Medium',
+        'Hot',
+    ]) {
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: flavourGroup.id,
+                name,
+                price: 0,
+            }),
+        );
     }
 
     const riceBoxProteinGroup = await modifierGroupRepo.save(
@@ -193,7 +222,13 @@ async function seedPeriPeriCo() {
         }),
     );
     for (const name of ['Peri Peri Chicken', 'Chicken Shawarma', 'Mixed']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: riceBoxProteinGroup.id, name, price: 0 }));
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: riceBoxProteinGroup.id,
+                name,
+                price: 0,
+            }),
+        );
     }
 
     // ——— HELPERS ———
@@ -210,7 +245,9 @@ async function seedPeriPeriCo() {
         },
     ): Promise<MenuItem> {
         const s = slug(name, BRAND_SLUG);
-        let item = await menuItemRepo.findOne({ where: { brandId: brand!.id, slug: s } });
+        let item = await menuItemRepo.findOne({
+            where: { brandId: brand!.id, slug: s },
+        });
         if (!item) {
             item = await menuItemRepo.save(
                 menuItemRepo.create({
@@ -228,9 +265,14 @@ async function seedPeriPeriCo() {
             );
         }
         if (opts?.linkAddons?.length) {
-            const withAddons = await menuItemRepo.findOne({ where: { id: item.id }, relations: ['addons'] });
+            const withAddons = await menuItemRepo.findOne({
+                where: { id: item.id },
+                relations: ['addons'],
+            });
             if (withAddons) {
-                const existing = new Set((withAddons.addons ?? []).map((a) => a.id));
+                const existing = new Set(
+                    (withAddons.addons ?? []).map((a) => a.id),
+                );
                 for (const a of opts.linkAddons) {
                     if (!existing.has(a.id)) {
                         withAddons.addons = [...(withAddons.addons ?? []), a];
@@ -241,12 +283,20 @@ async function seedPeriPeriCo() {
             }
         }
         if (opts?.linkModifierGroups?.length) {
-            const withMod = await menuItemRepo.findOne({ where: { id: item.id }, relations: ['modifierGroups'] });
+            const withMod = await menuItemRepo.findOne({
+                where: { id: item.id },
+                relations: ['modifierGroups'],
+            });
             if (withMod) {
-                const existing = new Set((withMod.modifierGroups ?? []).map((g) => g.id));
+                const existing = new Set(
+                    (withMod.modifierGroups ?? []).map((g) => g.id),
+                );
                 for (const g of opts.linkModifierGroups) {
                     if (!existing.has(g.id)) {
-                        withMod.modifierGroups = [...(withMod.modifierGroups ?? []), g];
+                        withMod.modifierGroups = [
+                            ...(withMod.modifierGroups ?? []),
+                            g,
+                        ];
                         existing.add(g.id);
                     }
                 }
@@ -256,13 +306,23 @@ async function seedPeriPeriCo() {
         return item;
     }
 
-    async function ensureVariant(menuItemId: number, name: string, priceModifier: number, isDefault: boolean) {
+    async function ensureVariant(
+        menuItemId: number,
+        name: string,
+        priceModifier: number,
+        isDefault: boolean,
+    ) {
         const existing = await dataSource.getRepository(MenuVariant).findOne({
             where: { menuItemId, name },
         });
         if (!existing) {
             await variantRepo.save(
-                variantRepo.create({ menuItemId, name, priceModifier, isDefault }),
+                variantRepo.create({
+                    menuItemId,
+                    name,
+                    priceModifier,
+                    isDefault,
+                }),
             );
         }
     }
@@ -283,11 +343,26 @@ async function seedPeriPeriCo() {
 
     // 2. Wraps
     const wrapItems = [
-        { name: 'Chicken Shawarma Wrap', desc: 'Chicken shawarma wrapped with mixed salad leaves and pickles.' },
-        { name: 'Veggie Supreme Wrap', desc: 'Veggie wrap with mixed salad leaves, grilled onion, tomato and pickles.' },
-        { name: 'Fajita Chicken Wrap', desc: 'Chicken fajita wrap with mixed salad leaves and grilled onion & pepper mix.' },
-        { name: 'Peri Peri Chicken Wrap', desc: 'Grilled peri peri chicken wrap with mixed salad leaves, grilled onion and pickles.' },
-        { name: 'Crispy Chicken Wrap', desc: 'Crispy chicken wrap with mixed salad leaves, grilled onion and tomato.' },
+        {
+            name: 'Chicken Shawarma Wrap',
+            desc: 'Chicken shawarma wrapped with mixed salad leaves and pickles.',
+        },
+        {
+            name: 'Veggie Supreme Wrap',
+            desc: 'Veggie wrap with mixed salad leaves, grilled onion, tomato and pickles.',
+        },
+        {
+            name: 'Fajita Chicken Wrap',
+            desc: 'Chicken fajita wrap with mixed salad leaves and grilled onion & pepper mix.',
+        },
+        {
+            name: 'Peri Peri Chicken Wrap',
+            desc: 'Grilled peri peri chicken wrap with mixed salad leaves, grilled onion and pickles.',
+        },
+        {
+            name: 'Crispy Chicken Wrap',
+            desc: 'Crispy chicken wrap with mixed salad leaves, grilled onion and tomato.',
+        },
     ];
     for (let i = 0; i < wrapItems.length; i++) {
         const w = await ensureItem(
@@ -323,16 +398,56 @@ async function seedPeriPeriCo() {
 
     // 4. Burger Meals
     const burgerItems = [
-        { name: 'Supreme Burger', desc: 'Double chicken or beef burger with lettuce, tomato and onion. Served as a meal with fries and a drink.', linkPatty: true },
-        { name: 'Combo Supreme Burger', desc: 'Chicken and beef burger with lettuce, tomato and onion. Served with fries and a drink.', linkPatty: false },
-        { name: 'Saucy Pine Burger', desc: 'Beef burger with grilled pineapple, lettuce, tomato and onion. Served with fries and a drink.', linkPatty: false },
-        { name: 'Kiwi Kick Burger', desc: 'Beef burger with beetroot, fried egg, cheese, mustard sauce, lettuce, tomato and onion. Served with fries and a drink.', linkPatty: false },
-        { name: 'Classic Beef Burger', desc: 'Beef burger with lettuce, grilled onion and pickles. Served with fries and a drink.', linkPatty: false },
-        { name: 'Zinger Burger', desc: 'Crispy chicken burger with lettuce and mayo. Served with fries and a drink.', linkPatty: false },
-        { name: 'Wild Buffalo Burger', desc: 'Chicken burger with lettuce, tomato and jalapenos. Served with fries and a drink.', linkPatty: false },
-        { name: 'Hot Dynamite Burger', desc: 'Chicken burger with lettuce, red onion and jalapenos. Served with fries and a drink.', linkPatty: false },
-        { name: 'Veggie Burger', desc: 'Veggie patty with lettuce, tomato, grilled onion and pickles. Served with fries and a drink.', linkPatty: false },
-        { name: 'Peri Peri Chicken Burger', desc: 'Grilled peri-peri chicken with lettuce, tomatoes, red onion and peri-peri sauce. Served with fries and a drink.', linkPatty: false },
+        {
+            name: 'Supreme Burger',
+            desc: 'Double chicken or beef burger with lettuce, tomato and onion. Served as a meal with fries and a drink.',
+            linkPatty: true,
+        },
+        {
+            name: 'Combo Supreme Burger',
+            desc: 'Chicken and beef burger with lettuce, tomato and onion. Served with fries and a drink.',
+            linkPatty: false,
+        },
+        {
+            name: 'Saucy Pine Burger',
+            desc: 'Beef burger with grilled pineapple, lettuce, tomato and onion. Served with fries and a drink.',
+            linkPatty: false,
+        },
+        {
+            name: 'Kiwi Kick Burger',
+            desc: 'Beef burger with beetroot, fried egg, cheese, mustard sauce, lettuce, tomato and onion. Served with fries and a drink.',
+            linkPatty: false,
+        },
+        {
+            name: 'Classic Beef Burger',
+            desc: 'Beef burger with lettuce, grilled onion and pickles. Served with fries and a drink.',
+            linkPatty: false,
+        },
+        {
+            name: 'Zinger Burger',
+            desc: 'Crispy chicken burger with lettuce and mayo. Served with fries and a drink.',
+            linkPatty: false,
+        },
+        {
+            name: 'Wild Buffalo Burger',
+            desc: 'Chicken burger with lettuce, tomato and jalapenos. Served with fries and a drink.',
+            linkPatty: false,
+        },
+        {
+            name: 'Hot Dynamite Burger',
+            desc: 'Chicken burger with lettuce, red onion and jalapenos. Served with fries and a drink.',
+            linkPatty: false,
+        },
+        {
+            name: 'Veggie Burger',
+            desc: 'Veggie patty with lettuce, tomato, grilled onion and pickles. Served with fries and a drink.',
+            linkPatty: false,
+        },
+        {
+            name: 'Peri Peri Chicken Burger',
+            desc: 'Grilled peri-peri chicken with lettuce, tomatoes, red onion and peri-peri sauce. Served with fries and a drink.',
+            linkPatty: false,
+        },
     ];
     const burgerItemRefs: MenuItem[] = [];
     for (let i = 0; i < burgerItems.length; i++) {
@@ -345,7 +460,9 @@ async function seedPeriPeriCo() {
             i,
             {
                 linkAddons: [addonBacon, addonExtraDip],
-                linkModifierGroups: b.linkPatty ? [choosePattyGroup] : undefined,
+                linkModifierGroups: b.linkPatty
+                    ? [choosePattyGroup]
+                    : undefined,
             },
         );
         burgerItemRefs.push(item);
@@ -364,24 +481,60 @@ async function seedPeriPeriCo() {
     await ensureVariant(periItem.id, 'Full Chicken', 0, true);
 
     // 6. Peri Peri Wings
-    const wings6 = await ensureItem('Peri Peri Wings 6 pcs', 'Grilled peri peri chicken wings.', PRICE, categories['Peri Peri Wings'], 0);
+    const wings6 = await ensureItem(
+        'Peri Peri Wings 6 pcs',
+        'Grilled peri peri chicken wings.',
+        PRICE,
+        categories['Peri Peri Wings'],
+        0,
+    );
     await ensureVariant(wings6.id, 'Own', 0, true);
     await ensureVariant(wings6.id, 'Meal', 0, false);
-    const wings12 = await ensureItem('Peri Peri Wings 12 pcs', 'Grilled peri peri chicken wings.', PRICE, categories['Peri Peri Wings'], 1);
+    const wings12 = await ensureItem(
+        'Peri Peri Wings 12 pcs',
+        'Grilled peri peri chicken wings.',
+        PRICE,
+        categories['Peri Peri Wings'],
+        1,
+    );
     await ensureVariant(wings12.id, 'Own', 0, true);
     await ensureVariant(wings12.id, 'Meal', 0, false);
-    const wings18 = await ensureItem('Peri Peri Wings 18 pcs', 'Grilled peri peri chicken wings.', PRICE, categories['Peri Peri Wings'], 2);
+    const wings18 = await ensureItem(
+        'Peri Peri Wings 18 pcs',
+        'Grilled peri peri chicken wings.',
+        PRICE,
+        categories['Peri Peri Wings'],
+        2,
+    );
     await ensureVariant(wings18.id, 'Own', 0, true);
     await ensureVariant(wings18.id, 'Meal', 0, false);
 
     // 7. Peri Peri Strips
-    const strips6 = await ensureItem('Peri Peri Chicken Strips 6 pcs', 'Grilled peri peri chicken strips.', PRICE, categories['Peri Peri Strips'], 0);
+    const strips6 = await ensureItem(
+        'Peri Peri Chicken Strips 6 pcs',
+        'Grilled peri peri chicken strips.',
+        PRICE,
+        categories['Peri Peri Strips'],
+        0,
+    );
     await ensureVariant(strips6.id, 'Own', 0, true);
     await ensureVariant(strips6.id, 'Meal', 0, false);
-    const strips12 = await ensureItem('Peri Peri Chicken Strips 12 pcs', 'Grilled peri peri chicken strips.', PRICE, categories['Peri Peri Strips'], 1);
+    const strips12 = await ensureItem(
+        'Peri Peri Chicken Strips 12 pcs',
+        'Grilled peri peri chicken strips.',
+        PRICE,
+        categories['Peri Peri Strips'],
+        1,
+    );
     await ensureVariant(strips12.id, 'Own', 0, true);
     await ensureVariant(strips12.id, 'Meal', 0, false);
-    const strips18 = await ensureItem('Peri Peri Chicken Strips 18 pcs', 'Grilled peri peri chicken strips.', PRICE, categories['Peri Peri Strips'], 2);
+    const strips18 = await ensureItem(
+        'Peri Peri Chicken Strips 18 pcs',
+        'Grilled peri peri chicken strips.',
+        PRICE,
+        categories['Peri Peri Strips'],
+        2,
+    );
     await ensureVariant(strips18.id, 'Own', 0, true);
     await ensureVariant(strips18.id, 'Meal', 0, false);
 
@@ -405,15 +558,51 @@ async function seedPeriPeriCo() {
     await ensureItem('Peri Peri Rice Box', null, PRICE, categories['Sides'], 4);
 
     // 11. Kids Meals
-    await ensureItem('Kids Chicken Burger', null, PRICE, categories['Kids Meals'], 0);
-    await ensureItem('Kids Chicken Wrap', null, PRICE, categories['Kids Meals'], 1);
-    await ensureItem('Kids Chicken Goujons', null, PRICE, categories['Kids Meals'], 2);
-    await ensureItem('Kids Chicken Nuggets (4 pieces)', null, PRICE, categories['Kids Meals'], 3);
+    await ensureItem(
+        'Kids Chicken Burger',
+        null,
+        PRICE,
+        categories['Kids Meals'],
+        0,
+    );
+    await ensureItem(
+        'Kids Chicken Wrap',
+        null,
+        PRICE,
+        categories['Kids Meals'],
+        1,
+    );
+    await ensureItem(
+        'Kids Chicken Goujons',
+        null,
+        PRICE,
+        categories['Kids Meals'],
+        2,
+    );
+    await ensureItem(
+        'Kids Chicken Nuggets (4 pieces)',
+        null,
+        PRICE,
+        categories['Kids Meals'],
+        3,
+    );
 
     // 12. Milkshakes
-    const milkshakes = ['Vanilla', 'Chocolate', 'Strawberry', 'Oreo', 'Biscoff'];
+    const milkshakes = [
+        'Vanilla',
+        'Chocolate',
+        'Strawberry',
+        'Oreo',
+        'Biscoff',
+    ];
     for (let i = 0; i < milkshakes.length; i++) {
-        await ensureItem(`${milkshakes[i]} Milkshake`, null, PRICE, categories['Milkshakes'], i);
+        await ensureItem(
+            `${milkshakes[i]} Milkshake`,
+            null,
+            PRICE,
+            categories['Milkshakes'],
+            i,
+        );
     }
 
     // 13. Drinks
@@ -425,14 +614,24 @@ async function seedPeriPeriCo() {
     await ensureItem('Sprite', null, PRICE, categories['Drinks'], 5);
 
     // 14. Dips
-    const dips = ['Garlic Mayo', 'Peri Peri Mayo', 'BBQ Sauce', 'Hot Chilli Sauce', 'Sweet Chilli Sauce'];
+    const dips = [
+        'Garlic Mayo',
+        'Peri Peri Mayo',
+        'BBQ Sauce',
+        'Hot Chilli Sauce',
+        'Sweet Chilli Sauce',
+    ];
     for (let i = 0; i < dips.length; i++) {
         await ensureItem(dips[i], null, PRICE, categories['Dips'], i);
     }
 
     // Resolve items needed for deal components
-    const friesItem = await menuItemRepo.findOne({ where: { brandId: brand.id, name: 'Fries' } });
-    const periRiceItem = await menuItemRepo.findOne({ where: { brandId: brand.id, name: 'Peri Peri Rice Box' } });
+    const friesItem = await menuItemRepo.findOne({
+        where: { brandId: brand.id, name: 'Fries' },
+    });
+    const periRiceItem = await menuItemRepo.findOne({
+        where: { brandId: brand.id, name: 'Peri Peri Rice Box' },
+    });
     const zingerBurger = burgerItemRefs.find((b) => b.name === 'Zinger Burger');
     const wrapItemRefs = await menuItemRepo.find({
         where: { brandId: brand.id, categoryId: categories['Wraps'].id },
@@ -479,7 +678,13 @@ async function seedPeriPeriCo() {
         ...wrapItemRefs.map((w) => w.id),
         riceBoxMealItem.id,
     ];
-    if (await dealComponentRepo.count({ where: { menuItemId: burgerBoxDealItem.id } }) === 0 && friesItem && wings6) {
+    if (
+        (await dealComponentRepo.count({
+            where: { menuItemId: burgerBoxDealItem.id },
+        })) === 0 &&
+        friesItem &&
+        wings6
+    ) {
         await dealComponentRepo.save([
             dealComponentRepo.create({
                 menuItemId: burgerBoxDealItem.id,
@@ -518,29 +723,97 @@ async function seedPeriPeriCo() {
     }
 
     // Lunch Deal: 1× half peri chicken, 1× fries, 1× drink
-    if (await dealComponentRepo.count({ where: { menuItemId: lunchDealItem.id } }) === 0 && friesItem) {
+    if (
+        (await dealComponentRepo.count({
+            where: { menuItemId: lunchDealItem.id },
+        })) === 0 &&
+        friesItem
+    ) {
         await dealComponentRepo.save([
-            dealComponentRepo.create({ menuItemId: lunchDealItem.id, slotIndex: 0, type: 'fixed', sourceMenuItemId: periItem.id, quantity: 1, allowCustomization: true }),
-            dealComponentRepo.create({ menuItemId: lunchDealItem.id, slotIndex: 1, type: 'fixed', sourceMenuItemId: friesItem.id, quantity: 1, allowCustomization: false }),
-            dealComponentRepo.create({ menuItemId: lunchDealItem.id, slotIndex: 2, type: 'choice_category', sourceCategoryId: categories['Drinks'].id, quantity: 1, allowCustomization: false }),
+            dealComponentRepo.create({
+                menuItemId: lunchDealItem.id,
+                slotIndex: 0,
+                type: 'fixed',
+                sourceMenuItemId: periItem.id,
+                quantity: 1,
+                allowCustomization: true,
+            }),
+            dealComponentRepo.create({
+                menuItemId: lunchDealItem.id,
+                slotIndex: 1,
+                type: 'fixed',
+                sourceMenuItemId: friesItem.id,
+                quantity: 1,
+                allowCustomization: false,
+            }),
+            dealComponentRepo.create({
+                menuItemId: lunchDealItem.id,
+                slotIndex: 2,
+                type: 'choice_category',
+                sourceCategoryId: categories['Drinks'].id,
+                quantity: 1,
+                allowCustomization: false,
+            }),
         ]);
         console.log('Lunch Deal: 3 slots; fixed price 100.');
     }
 
     // Family Meal Deal: 4× Zinger Burger, 4× fries, 4× drinks
-    if (await dealComponentRepo.count({ where: { menuItemId: familyMealDealItem.id } }) === 0 && zingerBurger && friesItem) {
+    if (
+        (await dealComponentRepo.count({
+            where: { menuItemId: familyMealDealItem.id },
+        })) === 0 &&
+        zingerBurger &&
+        friesItem
+    ) {
         await dealComponentRepo.save([
-            dealComponentRepo.create({ menuItemId: familyMealDealItem.id, slotIndex: 0, type: 'fixed', sourceMenuItemId: zingerBurger.id, quantity: 4, allowCustomization: true }),
-            dealComponentRepo.create({ menuItemId: familyMealDealItem.id, slotIndex: 1, type: 'fixed', sourceMenuItemId: friesItem.id, quantity: 4, allowCustomization: false }),
-            dealComponentRepo.create({ menuItemId: familyMealDealItem.id, slotIndex: 2, type: 'choice_category', sourceCategoryId: categories['Drinks'].id, quantity: 4, allowCustomization: false }),
+            dealComponentRepo.create({
+                menuItemId: familyMealDealItem.id,
+                slotIndex: 0,
+                type: 'fixed',
+                sourceMenuItemId: zingerBurger.id,
+                quantity: 4,
+                allowCustomization: true,
+            }),
+            dealComponentRepo.create({
+                menuItemId: familyMealDealItem.id,
+                slotIndex: 1,
+                type: 'fixed',
+                sourceMenuItemId: friesItem.id,
+                quantity: 4,
+                allowCustomization: false,
+            }),
+            dealComponentRepo.create({
+                menuItemId: familyMealDealItem.id,
+                slotIndex: 2,
+                type: 'choice_category',
+                sourceCategoryId: categories['Drinks'].id,
+                quantity: 4,
+                allowCustomization: false,
+            }),
         ]);
-        console.log('Family Meal Deal: 4 Zinger burgers, 4 fries, 4 drinks; fixed price 100.');
+        console.log(
+            'Family Meal Deal: 4 Zinger burgers, 4 fries, 4 drinks; fixed price 100.',
+        );
     }
 
     // Full Chicken Meal: 1× full peri chicken, 2× sides (chips or rice), 2× drink
-    if (await dealComponentRepo.count({ where: { menuItemId: fullChickenMealItem.id } }) === 0 && friesItem && periRiceItem) {
+    if (
+        (await dealComponentRepo.count({
+            where: { menuItemId: fullChickenMealItem.id },
+        })) === 0 &&
+        friesItem &&
+        periRiceItem
+    ) {
         await dealComponentRepo.save([
-            dealComponentRepo.create({ menuItemId: fullChickenMealItem.id, slotIndex: 0, type: 'fixed', sourceMenuItemId: periItem.id, quantity: 1, allowCustomization: true }),
+            dealComponentRepo.create({
+                menuItemId: fullChickenMealItem.id,
+                slotIndex: 0,
+                type: 'fixed',
+                sourceMenuItemId: periItem.id,
+                quantity: 1,
+                allowCustomization: true,
+            }),
             dealComponentRepo.create({
                 menuItemId: fullChickenMealItem.id,
                 slotIndex: 1,
@@ -549,15 +822,26 @@ async function seedPeriPeriCo() {
                 quantity: 2,
                 allowCustomization: false,
             }),
-            dealComponentRepo.create({ menuItemId: fullChickenMealItem.id, slotIndex: 2, type: 'choice_category', sourceCategoryId: categories['Drinks'].id, quantity: 2, allowCustomization: false }),
+            dealComponentRepo.create({
+                menuItemId: fullChickenMealItem.id,
+                slotIndex: 2,
+                type: 'choice_category',
+                sourceCategoryId: categories['Drinks'].id,
+                quantity: 2,
+                allowCustomization: false,
+            }),
         ]);
         console.log('Full Chicken Meal: 3 slots; fixed price 100.');
     }
 
     // ——— 7. BRANCH LINKING ———
-    const branchId = process.env.BRANCH_ID ? parseInt(process.env.BRANCH_ID, 10) : null;
+    const branchId = process.env.BRANCH_ID
+        ? parseInt(process.env.BRANCH_ID, 10)
+        : null;
     if (branchId != null && Number.isFinite(branchId)) {
-        const allItems = await menuItemRepo.find({ where: { brandId: brand.id } });
+        const allItems = await menuItemRepo.find({
+            where: { brandId: brand.id },
+        });
         for (const item of allItems) {
             const exists = await branchMenuItemRepo.findOne({
                 where: { branchId, menuItemId: item.id },
@@ -577,7 +861,9 @@ async function seedPeriPeriCo() {
         console.log(`Linked items to branch ${branchId}`);
     }
 
-    console.log(`Peri Peri Co: ${categoriesData.length} categories, addons, modifier groups, menu items, deals. All prices ${PRICE} pence.`);
+    console.log(
+        `Peri Peri Co: ${categoriesData.length} categories, addons, modifier groups, menu items, deals. All prices ${PRICE} pence.`,
+    );
     await dataSource.destroy();
 }
 

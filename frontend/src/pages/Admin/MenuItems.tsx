@@ -33,12 +33,49 @@ interface MenuItem {
   is_active: boolean;
   deal_only?: boolean;
   image_url?: string | null;
+  /** Effective channels from API (delivery, pickup, dine_in). */
+  available_for_order_types?: string[];
   category?: {
     id: number;
     name: string;
   };
   variants?: { id: number; menu_item_id: number; name: string; price_modifier: number; is_default?: boolean }[];
   addons?: MenuItemAddon[];
+}
+
+const ORDER_CHANNELS = [
+  { key: 'delivery', label: 'Delivery' },
+  { key: 'pickup', label: 'Pickup / Takeaway' },
+  { key: 'dine_in', label: 'Dine-in' },
+] as const;
+
+function channelsFromApiList(channels: string[] | undefined | null): {
+  delivery: boolean;
+  pickup: boolean;
+  dine_in: boolean;
+} {
+  if (!channels?.length) {
+    return { delivery: true, pickup: true, dine_in: true };
+  }
+  return {
+    delivery: channels.includes('delivery'),
+    pickup: channels.includes('pickup'),
+    dine_in: channels.includes('dine_in'),
+  };
+}
+
+/** Create: omit field when all channels (backend default). Update: send `null` when all channels. */
+function buildOrderChannelsPayload(
+  ch: { delivery: boolean; pickup: boolean; dine_in: boolean },
+  forUpdate: boolean,
+): string[] | null | undefined {
+  const keys: string[] = [];
+  if (ch.delivery) keys.push('delivery');
+  if (ch.pickup) keys.push('pickup');
+  if (ch.dine_in) keys.push('dine_in');
+  if (keys.length === 0) return undefined;
+  if (keys.length === 3) return forUpdate ? null : undefined;
+  return keys;
 }
 
 const MenuItems: React.FC = () => {
@@ -58,6 +95,9 @@ const MenuItems: React.FC = () => {
     is_active: true,
     deal_only: false,
     image_url: '',
+    channel_delivery: true,
+    channel_pickup: true,
+    channel_dine_in: true,
   });
   const [imageUploading, setImageUploading] = useState(false);
   const [editImageUploading, setEditImageUploading] = useState(false);
@@ -157,9 +197,22 @@ const MenuItems: React.FC = () => {
     }
   }, [filters.brand_id]);
 
-  const [editFormData, setEditFormData] = useState({ brand_id: '', category_id: '', name: '', description: '', base_price: '', is_active: true, deal_only: false, image_url: '' });
+  const [editFormData, setEditFormData] = useState({
+    brand_id: '',
+    category_id: '',
+    name: '',
+    description: '',
+    base_price: '',
+    is_active: true,
+    deal_only: false,
+    image_url: '',
+    channel_delivery: true,
+    channel_pickup: true,
+    channel_dine_in: true,
+  });
   useEffect(() => {
     if (editingItem) {
+      const ch = channelsFromApiList(editingItem.available_for_order_types);
       setEditFormData({
         brand_id: editingItem.brand_id != null ? String(editingItem.brand_id) : '',
         category_id: editingItem.category_id != null ? String(editingItem.category_id) : '',
@@ -169,6 +222,9 @@ const MenuItems: React.FC = () => {
         is_active: editingItem.is_active,
         deal_only: (editingItem as { deal_only?: boolean }).deal_only ?? false,
         image_url: (editingItem as { image_url?: string }).image_url ?? '',
+        channel_delivery: ch.delivery,
+        channel_pickup: ch.pickup,
+        channel_dine_in: ch.dine_in,
       });
     }
   }, [editingItem]);
@@ -194,8 +250,23 @@ const MenuItems: React.FC = () => {
   });
 
   const updateItemMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { name: string; description?: string; base_price: number; is_active: boolean; brand_id?: number; category_id?: number; image_url?: string | null; deal_only?: boolean } }) =>
-      adminService.updateMenuItem(id, data),
+    mutationFn: ({
+      id,
+      data,
+    }: {
+      id: number;
+      data: {
+        name: string;
+        description?: string;
+        base_price: number;
+        is_active: boolean;
+        brand_id?: number;
+        category_id?: number;
+        image_url?: string | null;
+        deal_only?: boolean;
+        available_for_order_types?: string[] | null;
+      };
+    }) => adminService.updateMenuItem(id, data),
     onSuccess: (_updated: unknown, variables) => {
       queryClient.setQueryData(['menuItems', filterParams], (prev: MenuItem[] | undefined) => {
         if (!Array.isArray(prev)) return prev;
@@ -250,9 +321,29 @@ const MenuItems: React.FC = () => {
   };
 
   const createMutation = useMutation({
-    mutationFn: async (data: { brand_id: string; category_id: string; name: string; description?: string; base_price: string; is_active: boolean; deal_only?: boolean; image_url?: string }) => {
+    mutationFn: async (data: {
+      brand_id: string;
+      category_id: string;
+      name: string;
+      description?: string;
+      base_price: string;
+      is_active: boolean;
+      deal_only?: boolean;
+      image_url?: string;
+      channel_delivery: boolean;
+      channel_pickup: boolean;
+      channel_dine_in: boolean;
+    }) => {
       if (!data.brand_id || !data.category_id) throw new Error('Select a brand and category');
-      const payload = {
+      const channels = buildOrderChannelsPayload(
+        {
+          delivery: data.channel_delivery,
+          pickup: data.channel_pickup,
+          dine_in: data.channel_dine_in,
+        },
+        false,
+      );
+      const payload: Record<string, unknown> = {
         brand_id: parseInt(data.brand_id),
         category_id: parseInt(data.category_id),
         name: data.name.trim(),
@@ -262,6 +353,7 @@ const MenuItems: React.FC = () => {
         deal_only: data.deal_only ?? false,
         image_url: data.image_url || undefined,
       };
+      if (channels !== undefined) payload.available_for_order_types = channels;
       const response = await apiClient.post('/admin/menu/items', payload);
       return response.data;
     },
@@ -278,6 +370,9 @@ const MenuItems: React.FC = () => {
         is_active: true,
         deal_only: false,
         image_url: '',
+        channel_delivery: true,
+        channel_pickup: true,
+        channel_dine_in: true,
       });
       toast.success('Menu item created successfully!');
     },
@@ -594,9 +689,29 @@ const MenuItems: React.FC = () => {
                 toast.error('Name is required');
                 return;
               }
+              if (
+                !editFormData.channel_delivery &&
+                !editFormData.channel_pickup &&
+                !editFormData.channel_dine_in
+              ) {
+                toast.error('Select at least one order type (delivery, pickup, or dine-in)');
+                return;
+              }
               const basePrice = parseFloat(editFormData.base_price);
               if (isNaN(basePrice) || basePrice < 0) {
                 toast.error('Enter a valid price');
+                return;
+              }
+              const av = buildOrderChannelsPayload(
+                {
+                  delivery: editFormData.channel_delivery,
+                  pickup: editFormData.channel_pickup,
+                  dine_in: editFormData.channel_dine_in,
+                },
+                true,
+              );
+              if (av === undefined) {
+                toast.error('Select at least one order type');
                 return;
               }
               updateItemMutation.mutate({
@@ -610,6 +725,7 @@ const MenuItems: React.FC = () => {
                   is_active: editFormData.is_active,
                   deal_only: editFormData.deal_only,
                   image_url: editFormData.image_url || null,
+                  available_for_order_types: av,
                 },
               });
             }}
@@ -739,6 +855,36 @@ const MenuItems: React.FC = () => {
                 Deal only (hide from POS as standalone item; use only inside deals)
               </label>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Available for order types</label>
+              <p className="text-xs text-gray-500 mb-2">
+                Limit where this item can be ordered. Leave all checked for every channel (same as backend default).
+              </p>
+              <div className="flex flex-wrap gap-4">
+                {ORDER_CHANNELS.map((c) => (
+                  <label key={c.key} className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={
+                        c.key === 'delivery'
+                          ? editFormData.channel_delivery
+                          : c.key === 'pickup'
+                            ? editFormData.channel_pickup
+                            : editFormData.channel_dine_in
+                      }
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        if (c.key === 'delivery') setEditFormData((f) => ({ ...f, channel_delivery: checked }));
+                        else if (c.key === 'pickup') setEditFormData((f) => ({ ...f, channel_pickup: checked }));
+                        else setEditFormData((f) => ({ ...f, channel_dine_in: checked }));
+                      }}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-800">{c.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-2 justify-end">
               <Button type="button" variant="outline" onClick={() => setEditingItem(null)}>Cancel</Button>
               <Button type="submit" isLoading={updateItemMutation.isPending}>Update</Button>
@@ -764,6 +910,14 @@ const MenuItems: React.FC = () => {
           }
           if (!formData.base_price || parseFloat(formData.base_price) <= 0) {
             toast.error('Please enter a valid price');
+            return;
+          }
+          if (
+            !formData.channel_delivery &&
+            !formData.channel_pickup &&
+            !formData.channel_dine_in
+          ) {
+            toast.error('Select at least one order type (delivery, pickup, or dine-in)');
             return;
           }
           createMutation.mutate({ ...formData, image_url: formData.image_url || undefined });
@@ -919,6 +1073,37 @@ const MenuItems: React.FC = () => {
             </label>
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Available for order types</label>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mb-2">
+              Limit where this item can be ordered. All checked = available on delivery, pickup/takeaway, and dine-in.
+            </p>
+            <div className="flex flex-wrap gap-4">
+              {ORDER_CHANNELS.map((c) => (
+                <label key={c.key} className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={
+                      c.key === 'delivery'
+                        ? formData.channel_delivery
+                        : c.key === 'pickup'
+                          ? formData.channel_pickup
+                          : formData.channel_dine_in
+                    }
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      if (c.key === 'delivery') setFormData((f) => ({ ...f, channel_delivery: checked }));
+                      else if (c.key === 'pickup') setFormData((f) => ({ ...f, channel_pickup: checked }));
+                      else setFormData((f) => ({ ...f, channel_dine_in: checked }));
+                    }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-800 dark:text-slate-200">{c.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
           <div className="flex gap-2 justify-end">
             <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
               Cancel
@@ -955,6 +1140,16 @@ const MenuItems: React.FC = () => {
                       <>
                         {item.description && <p>{item.description}</p>}
                         <p>Category: {item.category?.name || 'N/A'}{item.brand_id != null ? ` · Brand: ${brands?.find((b) => b.id === item.brand_id)?.name ?? `#${item.brand_id}`}` : ''}</p>
+                        <p className="text-gray-600 dark:text-slate-400">
+                          Order types:{' '}
+                          {item.available_for_order_types?.length
+                            ? ORDER_CHANNELS.filter((o) =>
+                                item.available_for_order_types!.includes(o.key),
+                              )
+                                .map((o) => o.label)
+                                .join(' · ')
+                            : 'All (delivery, pickup, dine-in)'}
+                        </p>
                         <p>{formatCurrency(item.base_price)}{(item.variants?.length || item.addons?.length) ? ` · ${item.variants?.length ?? 0} variants, ${item.addons?.length ?? 0} addons` : ''}</p>
                       </>
                     }

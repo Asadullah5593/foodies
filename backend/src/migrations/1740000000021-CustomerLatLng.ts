@@ -18,7 +18,11 @@ export class CustomerLatLng1740000000021 implements MigrationInterface {
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`ALTER TABLE "customers" DROP COLUMN IF EXISTS "latitude"`);
-        await queryRunner.query(`ALTER TABLE "customers" DROP COLUMN IF EXISTS "longitude"`);
+        await queryRunner.query(
+            `ALTER TABLE "customers" DROP COLUMN IF EXISTS "latitude"`,
+        );
+        await queryRunner.query(
+            `ALTER TABLE "customers" DROP COLUMN IF EXISTS "longitude"`,
+        );
     }
 }

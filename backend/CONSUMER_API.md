@@ -4,6 +4,13 @@ Base URL: **`/api/public/consumer`**
 
 All endpoints are prefixed with the base URL. Example: `GET /api/public/consumer/brands`.
 
+### Source routing for mobile vs web
+
+`POST /orders` and `GET /orders` read optional header **`x-client-platform`**:
+
+- `web` or `consumer_web` -> order source is stored/read as `consumer_web`
+- any other value (or missing header) -> defaults to `consumer_app` (mobile-compatible behavior)
+
 ### Sending the customer JWT (profile/me, profile/avatar)
 
 Endpoints that require auth expect the **Bearer token** in the **Authorization** header:
@@ -223,34 +230,48 @@ In Postman: use the **Authorization** tab, set Type to **Bearer Token**, and pas
 ### Place order
 - **Endpoint:** `POST /api/public/consumer/orders`
 - **Auth:** None
+- **Headers (optional):** `x-client-platform: web` or `consumer_web` classifies the source as `consumer_web`; omit or use another value for native app (`consumer_app`). Used for loyalty and order-history filtering.
 - **Body:**
 ```json
 {
   "branch_id": 1,
-  "order_type": "dine_in",
+  "order_type": "delivery",
   "customer_name": "John",
-  "customer_phone": "+1234567890",
+  "customer_phone": "03001234567",
+  "customer_id": 42,
   "delivery_address": "123 Main St",
+  "latitude": 24.8607,
+  "longitude": 67.0011,
   "items": [
     {
       "menu_item_id": 1,
       "quantity": 2,
       "variant_id": 1,
       "addons": [{ "addon_id": 1, "quantity": 1 }],
+      "modifiers": [{ "modifier_id": 7, "quantity": 1 }],
       "notes": "No onions"
     }
   ],
-  "notes": "Table 5",
-  "discount_code": "SAVE10"
+  "notes": "Ring doorbell",
+  "discount_code": "SAVE10",
+  "loyalty_points_to_redeem": 50
 }
 ```
+- **Field notes:**
+  - `customer_phone`: Pakistani format `03XXXXXXXXX`. If sent, it must be valid. Required when `loyalty_points_to_redeem` &gt; 0 or when `customer_id` is set.
+  - `loyalty_points_to_redeem`: Applied for both **`consumer_app`** and **`consumer_web`** (and POS). Requires `customer_phone`; points are capped by balance and order rules server-side.
+  - `customer_id`: Optional. When set, must match the customer row for this tenant and the **same** normalized `customer_phone` (prevents attaching orders to another account).
+  - `latitude` / `longitude`: Optional drop-off coordinates; stored on the order for delivery/pickup flows.
+  - **Payment:** placing an order does not take payment. Use **`POST /api/public/consumer/orders/:id/pay`** with `phone` and `payment_method` after the order exists.
 - **Response (201):** Created order object (structure depends on `OrdersService.createOrder`).
 
 ### Get order history
 - **Endpoint:** `GET /api/public/consumer/orders`
 - **Auth:** None
 - **Query:** `phone` (required), `branch_id`, `tenant_id`, `limit`
-- **Response (200):** Array of orders.
+- **Response (200):** Array of orders. Each item also includes:
+  - `loyalty_points_balance`: current remaining loyalty points for this customer (for the resolved tenant)
+  - `loyalty_points_redeemed`: points used in that order (0 when none)
 
 ### Get order status
 - **Endpoint:** `GET /api/public/consumer/orders/:id/status`
@@ -278,7 +299,7 @@ In Postman: use the **Authorization** tab, set Type to **Bearer Token**, and pas
 - **Auth:** None
 - **Params:** `id` – order ID
 - **Query:** `phone` (required)
-- **Response (200):** Full order object.
+- **Response (200):** Full order object, including when applicable: `customer_id`, `delivery_latitude`, `delivery_longitude`, `loyalty_points_redeemed`, line items, payments.
 
 ### Cancel order
 - **Endpoint:** `PATCH /api/public/consumer/orders/:id/cancel`
@@ -330,6 +351,7 @@ In Postman: use the **Authorization** tab, set Type to **Bearer Token**, and pas
 - **Endpoint:** `GET /api/public/consumer/cart`
 - **Auth:** None
 - **Query:** `phone`, `branch_id` (both required)
+- **Important:** phone must belong to an existing customer. Recommended website flow: login/register first, then use cart APIs.
 - **Response (200):** Cart with items (structure from `CartService.getCart`).
 
 ### Add cart item
@@ -344,6 +366,7 @@ In Postman: use the **Authorization** tab, set Type to **Bearer Token**, and pas
   "quantity": 2,
   "variant_id": 1,
   "addons": [{ "addon_id": 1, "quantity": 1 }],
+  "modifiers": [{ "modifier_id": 7, "quantity": 1 }],
   "notes": "No ice"
 }
 ```
@@ -354,7 +377,7 @@ In Postman: use the **Authorization** tab, set Type to **Bearer Token**, and pas
 - **Auth:** None
 - **Params:** `id` – cart item ID
 - **Query:** `phone`, `branch_id` (both required)
-- **Body:** `{ "quantity": 3 }`
+- **Body:** supports `quantity`, `variant_id`, `addons`, `modifiers`, `notes`
 - **Response (200):** Updated cart/item.
 
 ### Remove cart item

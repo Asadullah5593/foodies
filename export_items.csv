@@ -1,0 +1,83 @@
+Handle,SKU,Name,Category,Description,Sold by weight,Option 1 name,Option 1 value,Option 2 name,Option 2 value,Option 3 name,Option 3 value,Cost,Barcode,SKU of included item,Quantity of included item,Track stock,Use production,Supplier,Purchase cost,Available for sale [Retrograde],Price [Retrograde],In stock [Retrograde],Low stock [Retrograde],Optimal stock [Retrograde],"Modifier - ""Beans""","Modifier - ""Flavours""","Modifier - ""Sauce""","Modifier - ""Hot or Iced""","Modifier - ""Water Temp""","Tax - ""Cash Tax"" (16%)","Tax - ""Card Tax"" (5%)"
+12oz-cup,10031,12oz cup,Packaging,,N,,,,,,,0,,,,Y,,,,N,variable,3000.000,,,N,N,N,N,N,Y,Y
+12oz-lid,10032,12oz lid,Packaging,,N,,,,,,,0,,,,Y,,,,N,variable,3000.000,,,N,N,N,N,N,Y,Y
+12oz-pet-cup,10022,12oz pet cup,Packaging,,N,,,,,,,0,,,,Y,,,,N,variable,18952.000,,,N,N,N,N,N,Y,Y
+12oz-pet-lid,10024,12oz pet lid,Packaging,,N,,,,,,,0,,,,Y,,,,N,variable,500.000,,,N,N,N,N,N,Y,Y
+6oz-takeaway-cup,10025,6oz cup,Packaging,,N,,,,,,,0,,,,Y,,,0,N,variable,16670.000,,,N,N,N,N,N,Y,Y
+6oz-lid,10026,6oz lid,Packaging,,N,,,,,,,0,,,,Y,,,,N,variable,1800.000,,,N,N,N,N,N,Y,Y
+8oz-takeaway-cup-(wo),10027,8oz cup,Packaging,,N,,,,,,,0,,,,Y,,,0,N,variable,10975.000,,,N,N,N,N,N,Y,Y
+8oz-cup-(art),10028,8oz cup (art),Packaging,,N,,,,,,,0,,,,Y,,,,N,variable,25500.000,,,N,N,N,N,N,Y,Y
+8oz-lid,10029,8oz lid,Packaging,,N,,,,,,,0,,,,Y,,,,N,variable,199950.000,,,N,N,N,N,N,Y,Y
+almond-milk,10038,Almond milk,Raw materials,,N,,,,,,,0,,,,Y,,,,N,variable,48.000,,,N,N,N,N,N,Y,Y
+almond-milk-1,10042,Almond Milk,Add ons,,N,,,,,,,0,,,,N,,,,Y,900,,,,N,N,N,N,N,Y,Y
+amaretti,10012,Amaretti (GF),Dessert,<p>delicate almond meringue cookies with a crisp shell and chewy center.</p>,N,,,,,,,160,,,,Y,,,0,Y,200,36.000,,,N,N,N,N,N,Y,Y
+americano,10001,Americano,Coffee,,N,,,,,,,240,,,,N,,,,Y,625,,,,Y,N,N,Y,N,Y,Y
+banana-bread,10070,Banana Date Loaf,Dessert,,N,,,,,,,600,,,,Y,,,0,Y,750,0.000,10.000,,N,N,N,N,N,Y,Y
+cap,10060,Beenie,Merch,,N,,,,,,,0,,,,N,,,,Y,3200,,,,N,N,N,N,N,Y,Y
+biscotti,10009,Biscotti,Dessert,,N,,,,,,,100,,,,Y,,,0,Y,125,18.000,10.000,,N,N,N,N,N,Y,Y
+blt-sando,10087,BLT Sando,Savoury,,N,,,,,,,0,,,,Y,,,,Y,1350,0.000,,,N,N,N,N,N,Y,Y
+cap-1,10068,Cap,Merch,,N,,,,,,,0,,,,N,,,,Y,3200,,,,N,N,N,N,N,Y,Y
+cappuccino,10005,Cappuccino,Coffee,,N,,,,,,,0,,,,N,,,,Y,700,,,,Y,N,N,Y,N,Y,Y
+caramel-latte,10052,Caramel Latte,Coffee,,N,,,,,,,0,,,,N,,,,Y,825,,,,Y,N,N,Y,N,Y,Y
+caramel-syrup,10035,Caramel syrup,Raw materials,,N,,,,,,,0,,,,Y,,,,N,variable,18.000,,,N,N,N,N,N,Y,Y
+chocolate-cake,10043,Chocolate Cake,Dessert,,N,,,,,,,1080,,,,Y,,,0,Y,1350,7.000,0.000,,N,N,N,N,N,Y,Y
+chocolate-chip-cookie,10061,Chocolate Chip Cookie,Dessert,,N,,,,,,,560,,,,Y,,,0,Y,700,2.000,0.000,,N,N,N,N,N,Y,Y
+hot-chocolate,10007,Chocolate Latte,Coffee,,N,,,,,,,0,,,,N,,,,Y,900,,,,N,N,N,Y,N,Y,Y
+coconut-milk,10039,Coconut milk,Raw materials,,N,,,,,,,0,,,,Y,,,,N,variable,46.000,,,N,N,N,N,N,Y,Y
+coconut-milk-1,10059,Coconut Milk,Add ons,,N,,,,,,,0,,,,N,,,,Y,900,,,,N,N,N,N,N,Y,Y
+coffee-bag-(1kg),10000,Coffee Bag (1KG),Coffee Bag,,N,,,,,,,12000,,,,N,,,,N,12000,,,,N,N,N,N,N,Y,Y
+condensed-milk,10040,Condensed milk,Raw materials,,N,,,,,,,0,,,,Y,,,,N,variable,1.000,,,N,N,N,N,N,Y,Y
+cortdao,10002,Cortado,Coffee,,N,,,,,,,0,,,,N,,,,Y,650,,,,Y,N,N,Y,N,Y,Y
+cottage-cheese-sandwich,10045,Cottage Cheese Sando,Savoury,,N,,,,,,,1030,,,,Y,,,0,Y,1250,9.000,3.000,,N,N,N,N,N,Y,Y
+cup-holder,10030,Cup holder,Packaging,,N,,,,,,,0,,,,Y,,,,N,variable,3195.000,,,N,N,N,N,N,Y,Y
+egg-sando,10018,Egg Sando,Savoury,,N,,,,,,,0,,,,Y,,,,Y,1500,0.000,,,N,N,N,N,N,Y,Y
+espresso-1,10058,Espresso,Coffee,,N,,,,,,,,,10000,0.020,N,N,,,Y,595,,,,Y,N,N,N,N,Y,Y
+extra-flavor,10076,Extra flavor,Add ons,,N,,,,,,,0,,,,N,,,,Y,100,,,,N,Y,N,N,N,Y,Y
+extra-milk,10056,Extra Milk,Add ons,,N,,,,,,,0,,,,N,,,,Y,100,,,,N,N,N,N,N,Y,Y
+extra-espresso-shot,10055,Extra shot,Add ons,,N,,,,,,,0,,,,N,,,,Y,350,,,,N,N,N,N,N,Y,Y
+flat-white,10003,Flat White,Coffee,,N,,,,,,,0,,,,N,,,,Y,700,,,,Y,N,N,Y,N,Y,Y
+chocolate-cake-(gf),10014,Flourless Cake,Dessert,,N,,,,,,,600,,,,Y,,,0,Y,950,15.000,0.000,,N,N,N,N,N,Y,Y
+cheese-sandwich,10048,Four Cheese Sando,Savoury,,N,,,,,,,0,,,,Y,,,0,Y,1650,-1.000,5.000,,N,N,N,N,N,Y,Y
+hazelnut-latte,10051,Hazelnut Latte,Coffee,,N,,,,,,,401,,,,N,,,,Y,825,,,,Y,N,N,Y,N,Y,Y
+hazelnut-syrup,10036,Hazelnut syrup,Raw materials,,N,,,,,,,0,,,,Y,,,,N,variable,20.000,,,N,N,N,N,N,Y,Y
+honey,10037,Honey,Raw materials,,N,,,,,,,0,,,,Y,,,0,N,variable,15.000,,,N,N,N,N,N,Y,Y
+honey-latte,10064,Honey Latte,Coffee,,N,,,,,,,0,,,,N,,,,Y,825,,,,Y,N,N,Y,N,Y,Y
+hoodie,10065,Hoodie,Merch,,N,,,,,,,0,,,,N,,,,Y,6500,,,,N,N,N,N,N,Y,Y
+chicken-hummus-wrap-1,10050,Hummus Wrap,Savoury,,N,,,,,,,650,,,,Y,,,0,Y,950,8.000,2.000,,N,N,N,N,N,Y,Y
+kids-merch,10069,Kids Merch,Merch,,N,,,,,,,0,,,,N,,,,Y,3000,,,,N,N,N,N,N,Y,Y
+lactose-free,10062,Lactose free Milk,Add ons,,N,,,,,,,0,,,,N,,,,Y,100,,,,N,N,N,N,N,Y,Y
+cafe-latte,10004,Latte,Coffee,,N,,,,,,,316,,,,N,,,,Y,750,,,,Y,N,N,Y,N,Y,Y
+lemon-cake,10013,Lemon Citron Cake,Dessert,,N,,,,,,,680,,,,Y,,,0,Y,850,11.000,0.000,,N,N,N,N,N,Y,Y
+matcha,10008,Matcha,Coffee,,N,,,,,,,0,,,,N,,,,Y,850,,,,N,Y,N,Y,N,Y,Y
+matcha-1,10049,Matcha,Raw materials,,N,,,,,,,0,,,,Y,,,0,N,variable,1.000,,,N,N,N,N,N,Y,Y
+mocca-latte,10081,Mocha Latte,Coffee,,N,,,,,,,0,,,,N,,,,Y,950,,,,Y,Y,N,Y,N,Y,Y
+nutty-professor,10071,Nutty Professor 250g,Coffee Bag,,N,,,,,,,0,,,,N,,,,Y,4500,,,,N,N,N,N,N,Y,Y
+oat-milk,10078,Oat milk,Add ons,,N,,,,,,,0,,,,Y,,,,Y,900,-73.000,2.000,,N,N,N,N,N,Y,Y
+oatmeal-cookie,10010,Oatmeal Cookie,Dessert,,N,,,,,,,280,,,,Y,,,0,Y,350,9.000,0.000,,N,N,N,N,N,Y,Y
+paper-bag,10041,Paper bag,Packaging,,N,,,,,,,0,,,,Y,,,,N,variable,5000.000,,,N,N,N,N,N,Y,Y
+plain-croissant,10047,Plain Croissant,Dessert,,N,,,,,,,0,,,,Y,,,,Y,699,2.000,,,N,N,N,N,N,Y,Y
+prema-milk,10063,Prema milk,Raw materials,,N,,,,,,,380,,,,Y,,Prema,380,N,380,-70.600,,,N,N,N,N,N,Y,Y
+purple-haze,10073,Purple Haze 250g,Coffee Bag,,N,,,,,,,0,,,,N,,,,Y,6700,,,,N,N,N,N,N,Y,Y
+riddle-cake,10017,Riddle Cake,Dessert,,N,,,,,,,1000,,,,Y,,,0,Y,1250,4.000,0.000,,N,N,N,N,N,Y,Y
+roast-beef-sando,10011,Roast Beef Sando,Savoury,,N,,,,,,,0,,,,Y,,,0,Y,1950,-2.000,,,N,N,N,N,N,Y,Y
+roast-chicken-sando,10083,Roast Chicken Sando,Savoury,,N,,,,,,,1100,,,,Y,,,0,Y,1500,14.000,,,N,N,N,N,N,Y,Y
+skimmed/-lactose-free,10057,Skim Milk,Add ons,,N,,,,,,,0,,,,N,,,,Y,100,,,,N,N,N,N,N,Y,Y
+spanish-latte,10006,Spanish Latte,Coffee,,N,,,,,,,0,,,,N,,,,Y,825,,,,Y,N,N,Y,N,Y,Y
+sparkling-water,10077,Sparkling Water,Drink,,N,,,,,,,0,,,,N,,,,Y,200,,,,N,N,N,N,N,Y,Y
+ss-plate,10044,SS Plate,,,N,,,,,,,5000,,,,N,,,,Y,6500,,,,N,N,N,N,N,Y,Y
+straw,10023,Straw,Packaging,,N,,,,,,,0,,,,Y,,,,N,variable,89720.000,,,N,N,N,N,N,Y,Y
+sweatshirt,10074,Sweatshirt,Merch,,N,,,,,,,0,,,,N,,,,Y,6500,,,,N,N,N,N,N,Y,Y
+shirt,10075,T-Shirt,Merch,,N,,,,,,,0,,,,N,,,,Y,3500,,,,N,N,N,N,N,Y,Y
+takeaway-bag-pr,10033,Takeaway bag PR,Packaging,,N,,,,,,,0,,,,Y,,,,N,variable,6600.000,,,N,N,N,N,N,Y,Y
+takeaway-boxes-(l),10021,takeaway boxes (L),Packaging,,N,,,,,,,0,,,,Y,,,0,N,variable,2000.000,,,N,N,N,N,N,Y,Y
+takeaway-boxes-(m),10020,takeaway boxes (m),Packaging,,N,,,,,,,0,,,,Y,,,0,N,variable,2000.000,,,N,N,N,N,N,Y,Y
+takeaway-boxes-(s),10019,takeaway boxes (s),Packaging,,N,,,,,,,0,,,,Y,,,0,N,variable,2000.000,,,N,N,N,N,N,Y,Y
+toote-bag,10066,Tote Bags,Merch,,N,,,,,,,0,,,,Y,,,,Y,2500,2.000,,,N,N,N,N,N,Y,Y
+tumbler,10072,Tumbler,Merch,,N,,,,,,,0,,,,N,,,,Y,6500,,,,N,N,N,N,N,Y,Y
+tuna-cheese-toastie,10053,Tuna Toastie,Savoury,,N,,,,,,,1050,,,,Y,,,0,Y,1900,5.000,,,N,N,N,N,N,Y,Y
+upsize,10067,Upsize,Add ons,,N,,,,,,,0,,,,N,,,,Y,350,,,,N,N,N,N,N,Y,Y
+vanilla-cheesecake,10016,Vanilla Cheesecake,Dessert,,N,,,,,,,650,,,,Y,,,0,Y,1250,0.000,0.000,,N,N,Y,N,N,Y,Y
+vanilla-latte,10054,Vanilla Latte,Coffee,,N,,,,,,,0,,,,N,,,,Y,825,,,,Y,N,N,Y,N,Y,Y
+vanilla-syrup,10034,Vanilla syrup,Raw materials,,N,,,,,,,0,,,,Y,,,0,N,variable,2.000,,,N,N,N,N,N,Y,Y
+walnut-tart,10015,Walnut Tart,Dessert,,N,,,,,,,920,,,,Y,,,0,Y,1150,4.000,,,N,N,N,N,N,Y,Y
+water-500ml,10046,Water 500ml,Drink,,N,,,,,,,0,,,,N,,,,Y,120,,,,N,N,N,N,Y,Y,Y

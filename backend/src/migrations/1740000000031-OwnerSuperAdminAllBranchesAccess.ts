@@ -4,9 +4,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Assign all-branches:access to Owner and Super Admin so they can see and manage
  * all branch users (otherwise allowedBranchIds is empty and the list is blank).
  */
-export class OwnerSuperAdminAllBranchesAccess1740000000031
-    implements MigrationInterface
-{
+export class OwnerSuperAdminAllBranchesAccess1740000000031 implements MigrationInterface {
     name = 'OwnerSuperAdminAllBranchesAccess1740000000031';
 
     public async up(queryRunner: QueryRunner): Promise<void> {

@@ -37,7 +37,10 @@ const dataSource = new DataSource({
 });
 
 function slug(name: string, brandSlug: string) {
-    return `${name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}-${brandSlug}`;
+    return `${name
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9-]/g, '')}-${brandSlug}`;
 }
 
 async function seedWokAndGo() {
@@ -96,11 +99,13 @@ async function seedWokAndGo() {
     ];
     const categories: Record<string, MenuCategory> = {};
     for (const c of categoriesData) {
-        let cat = await categoryRepo.findOne({ where: { brandId: brand!.id, name: c.name } });
+        let cat = await categoryRepo.findOne({
+            where: { brandId: brand.id, name: c.name },
+        });
         if (!cat) {
             cat = await categoryRepo.save(
                 categoryRepo.create({
-                    brandId: brand!.id,
+                    brandId: brand.id,
                     name: c.name,
                     sortOrder: c.sortOrder,
                     isActive: true,
@@ -111,10 +116,18 @@ async function seedWokAndGo() {
     }
 
     // ——— 2. ADDONS (extra sauces, price 100) ———
-    const extraSauceNames = ['Soy Sauce', 'Sweet Chilli Sauce', 'Hot Chilli Sauce', 'Hoisin Sauce', 'Teriyaki Spicy Mayo'];
+    const extraSauceNames = [
+        'Soy Sauce',
+        'Sweet Chilli Sauce',
+        'Hot Chilli Sauce',
+        'Hoisin Sauce',
+        'Teriyaki Spicy Mayo',
+    ];
     const sauceAddons: MenuAddon[] = [];
     for (let i = 0; i < extraSauceNames.length; i++) {
-        let addon = await addonRepo.findOne({ where: { brandId: brand.id, name: extraSauceNames[i] } });
+        let addon = await addonRepo.findOne({
+            where: { brandId: brand.id, name: extraSauceNames[i] },
+        });
         if (!addon) {
             addon = await addonRepo.save(
                 addonRepo.create({
@@ -139,8 +152,21 @@ async function seedWokAndGo() {
             maxSelect: 1,
         }),
     );
-    for (const name of ['Egg Noodles', 'Vermicelli Noodles', 'Rice Stick Noodles', 'Yaki Soba Noodles', 'Udon Noodles', 'Fried Rice']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: riceNoodlesGroup.id, name, price: 0 }));
+    for (const name of [
+        'Egg Noodles',
+        'Vermicelli Noodles',
+        'Rice Stick Noodles',
+        'Yaki Soba Noodles',
+        'Udon Noodles',
+        'Fried Rice',
+    ]) {
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: riceNoodlesGroup.id,
+                name,
+                price: 0,
+            }),
+        );
     }
 
     const fillingsGroup = await modifierGroupRepo.save(
@@ -152,11 +178,36 @@ async function seedWokAndGo() {
         }),
     );
     const fillingNames = [
-        'Chicken', 'Crispy Shredded Chicken', 'Beef', 'Duck', 'Prawn', 'Shrimp', 'Squid', 'Tofu', 'Vegan Duck', 'Vegan Chicken',
-        'Extra Asian Vegetables', 'Broccoli', 'Baby Corn', 'Mangetout', 'Mushroom', 'Garden Peas', 'Mixed Peppers', 'Pineapple', 'Tomato', 'Water Chestnuts', 'Bamboo Shoots',
+        'Chicken',
+        'Crispy Shredded Chicken',
+        'Beef',
+        'Duck',
+        'Prawn',
+        'Shrimp',
+        'Squid',
+        'Tofu',
+        'Vegan Duck',
+        'Vegan Chicken',
+        'Extra Asian Vegetables',
+        'Broccoli',
+        'Baby Corn',
+        'Mangetout',
+        'Mushroom',
+        'Garden Peas',
+        'Mixed Peppers',
+        'Pineapple',
+        'Tomato',
+        'Water Chestnuts',
+        'Bamboo Shoots',
     ];
     for (const name of fillingNames) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: fillingsGroup.id, name, price: 0 }));
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: fillingsGroup.id,
+                name,
+                price: 0,
+            }),
+        );
     }
 
     const sauceGroup = await modifierGroupRepo.save(
@@ -167,8 +218,28 @@ async function seedWokAndGo() {
             maxSelect: 1,
         }),
     );
-    for (const name of ['Black Bean Sauce', 'Oyster Sauce', 'Hoisin Sauce', 'Hot Chilli Sauce', 'Indonesian Nasi Sauce', 'Pad Thai Sauce', 'Soy Sauce', 'Sweet Chilli Sauce', 'Sweet N Sour Sauce', 'Teriyaki Sauce', 'Thai Green Curry Sauce', 'Katsu Curry Sauce', 'Sing-a Sauce']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: sauceGroup.id, name, price: 0 }));
+    for (const name of [
+        'Black Bean Sauce',
+        'Oyster Sauce',
+        'Hoisin Sauce',
+        'Hot Chilli Sauce',
+        'Indonesian Nasi Sauce',
+        'Pad Thai Sauce',
+        'Soy Sauce',
+        'Sweet Chilli Sauce',
+        'Sweet N Sour Sauce',
+        'Teriyaki Sauce',
+        'Thai Green Curry Sauce',
+        'Katsu Curry Sauce',
+        'Sing-a Sauce',
+    ]) {
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: sauceGroup.id,
+                name,
+                price: 0,
+            }),
+        );
     }
 
     const toppingsGroup = await modifierGroupRepo.save(
@@ -179,8 +250,21 @@ async function seedWokAndGo() {
             maxSelect: 6,
         }),
     );
-    for (const name of ['Fried Shallots', 'Fried Garlic', 'Coriander', 'Fresh Chillies', 'Mixed Sesame Seeds', 'Crushed Peanuts']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: toppingsGroup.id, name, price: 0 }));
+    for (const name of [
+        'Fried Shallots',
+        'Fried Garlic',
+        'Coriander',
+        'Fresh Chillies',
+        'Mixed Sesame Seeds',
+        'Crushed Peanuts',
+    ]) {
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: toppingsGroup.id,
+                name,
+                price: 0,
+            }),
+        );
     }
 
     const chooseRiceGroup = await modifierGroupRepo.save(
@@ -192,7 +276,13 @@ async function seedWokAndGo() {
         }),
     );
     for (const name of ['Boiled Rice', 'Fried Rice']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: chooseRiceGroup.id, name, price: 0 }));
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: chooseRiceGroup.id,
+                name,
+                price: 0,
+            }),
+        );
     }
 
     // ——— HELPERS ———
@@ -209,7 +299,9 @@ async function seedWokAndGo() {
         },
     ): Promise<MenuItem> {
         const s = slug(name, BRAND_SLUG);
-        let item = await menuItemRepo.findOne({ where: { brandId: brand!.id, slug: s } });
+        let item = await menuItemRepo.findOne({
+            where: { brandId: brand!.id, slug: s },
+        });
         if (!item) {
             item = await menuItemRepo.save(
                 menuItemRepo.create({
@@ -227,9 +319,14 @@ async function seedWokAndGo() {
             );
         }
         if (opts?.linkAddons?.length) {
-            const withAddons = await menuItemRepo.findOne({ where: { id: item.id }, relations: ['addons'] });
+            const withAddons = await menuItemRepo.findOne({
+                where: { id: item.id },
+                relations: ['addons'],
+            });
             if (withAddons) {
-                const existing = new Set((withAddons.addons ?? []).map((a) => a.id));
+                const existing = new Set(
+                    (withAddons.addons ?? []).map((a) => a.id),
+                );
                 for (const a of opts.linkAddons) {
                     if (!existing.has(a.id)) {
                         withAddons.addons = [...(withAddons.addons ?? []), a];
@@ -240,12 +337,20 @@ async function seedWokAndGo() {
             }
         }
         if (opts?.linkModifierGroups?.length) {
-            const withMod = await menuItemRepo.findOne({ where: { id: item.id }, relations: ['modifierGroups'] });
+            const withMod = await menuItemRepo.findOne({
+                where: { id: item.id },
+                relations: ['modifierGroups'],
+            });
             if (withMod) {
-                const existing = new Set((withMod.modifierGroups ?? []).map((g) => g.id));
+                const existing = new Set(
+                    (withMod.modifierGroups ?? []).map((g) => g.id),
+                );
                 for (const g of opts.linkModifierGroups) {
                     if (!existing.has(g.id)) {
-                        withMod.modifierGroups = [...(withMod.modifierGroups ?? []), g];
+                        withMod.modifierGroups = [
+                            ...(withMod.modifierGroups ?? []),
+                            g,
+                        ];
                         existing.add(g.id);
                     }
                 }
@@ -255,13 +360,23 @@ async function seedWokAndGo() {
         return item;
     }
 
-    async function ensureVariant(menuItemId: number, name: string, priceModifier: number, isDefault: boolean) {
+    async function ensureVariant(
+        menuItemId: number,
+        name: string,
+        priceModifier: number,
+        isDefault: boolean,
+    ) {
         const existing = await dataSource.getRepository(MenuVariant).findOne({
             where: { menuItemId, name },
         });
         if (!existing) {
             await variantRepo.save(
-                variantRepo.create({ menuItemId, name, priceModifier, isDefault }),
+                variantRepo.create({
+                    menuItemId,
+                    name,
+                    priceModifier,
+                    isDefault,
+                }),
             );
         }
     }
@@ -277,24 +392,65 @@ async function seedWokAndGo() {
         0,
         {
             linkAddons: sauceAddons,
-            linkModifierGroups: [riceNoodlesGroup, fillingsGroup, sauceGroup, toppingsGroup],
+            linkModifierGroups: [
+                riceNoodlesGroup,
+                fillingsGroup,
+                sauceGroup,
+                toppingsGroup,
+            ],
         },
     );
 
     // 2. Classic Wok Boxes (size variants)
     const classicBoxes = [
-        { name: 'Hotbox', desc: 'Chicken, beef and broccoli with egg noodles in hot chilli sauce.' },
-        { name: 'Sweet Chilli Box', desc: 'Chicken, beef, broccoli, pineapple and tomato with egg noodles in sweet chilli sauce.' },
-        { name: 'Combo Box', desc: 'Chicken, beef, shrimp and broccoli with egg noodles in oyster sauce.' },
-        { name: 'Pad Thai Box', desc: 'Chicken and broccoli with rice stick noodles in pad thai sauce. Peanuts optional.' },
-        { name: 'Black Bean Box', desc: 'Crispy shredded chicken with mixed peppers and broccoli in black bean sauce.' },
-        { name: 'Sweet N Sour Box', desc: 'Crispy shredded chicken with mixed peppers and broccoli in sweet and sour sauce.' },
-        { name: 'Mee Gee Seafood Box', desc: 'Squid, shrimp and tofu with broccoli in egg noodles with spicy Malaysian style sauce.' },
-        { name: 'Green Curry Box', desc: 'Chicken and broccoli with egg noodles in Thai green curry sauce.' },
-        { name: 'Nasi Seafood Box', desc: 'Squid, shrimp, mixed peppers, peas and broccoli with fried rice in Indonesian nasi sauce.' },
-        { name: 'Hoisin Duck Box', desc: 'Shredded duck with broccoli and spring onion in egg noodles with hoisin sauce.' },
-        { name: 'Sing A Box', desc: 'Chicken and broccoli with vermicelli noodles in sing-a curry sauce.' },
-        { name: 'Chicken Teriyaki Box', desc: 'Chicken and broccoli with egg noodles in teriyaki sauce.' },
+        {
+            name: 'Hotbox',
+            desc: 'Chicken, beef and broccoli with egg noodles in hot chilli sauce.',
+        },
+        {
+            name: 'Sweet Chilli Box',
+            desc: 'Chicken, beef, broccoli, pineapple and tomato with egg noodles in sweet chilli sauce.',
+        },
+        {
+            name: 'Combo Box',
+            desc: 'Chicken, beef, shrimp and broccoli with egg noodles in oyster sauce.',
+        },
+        {
+            name: 'Pad Thai Box',
+            desc: 'Chicken and broccoli with rice stick noodles in pad thai sauce. Peanuts optional.',
+        },
+        {
+            name: 'Black Bean Box',
+            desc: 'Crispy shredded chicken with mixed peppers and broccoli in black bean sauce.',
+        },
+        {
+            name: 'Sweet N Sour Box',
+            desc: 'Crispy shredded chicken with mixed peppers and broccoli in sweet and sour sauce.',
+        },
+        {
+            name: 'Mee Gee Seafood Box',
+            desc: 'Squid, shrimp and tofu with broccoli in egg noodles with spicy Malaysian style sauce.',
+        },
+        {
+            name: 'Green Curry Box',
+            desc: 'Chicken and broccoli with egg noodles in Thai green curry sauce.',
+        },
+        {
+            name: 'Nasi Seafood Box',
+            desc: 'Squid, shrimp, mixed peppers, peas and broccoli with fried rice in Indonesian nasi sauce.',
+        },
+        {
+            name: 'Hoisin Duck Box',
+            desc: 'Shredded duck with broccoli and spring onion in egg noodles with hoisin sauce.',
+        },
+        {
+            name: 'Sing A Box',
+            desc: 'Chicken and broccoli with vermicelli noodles in sing-a curry sauce.',
+        },
+        {
+            name: 'Chicken Teriyaki Box',
+            desc: 'Chicken and broccoli with egg noodles in teriyaki sauce.',
+        },
     ];
     for (let i = 0; i < classicBoxes.length; i++) {
         const item = await ensureItem(
@@ -378,13 +534,34 @@ async function seedWokAndGo() {
 
     // 4. Vegan Boxes (size variants)
     const veganBoxes = [
-        { name: 'Vegan Sweet N Sour Box', desc: 'Pineapple, mixed peppers and broccoli with yakisoba noodles in sweet and sour sauce.' },
-        { name: 'Vegan Teriyaki Box', desc: 'Mangetout, baby corn and broccoli with yakisoba noodles in teriyaki sauce.' },
-        { name: 'Tofu Hot Box', desc: 'Tofu with mixed peppers and broccoli with yakisoba noodles in hot chilli sauce.' },
-        { name: 'Vegan Thai Green Box', desc: 'Vegan chicken with broccoli and fried rice in Thai green curry sauce.' },
-        { name: 'Vegan Katsu Curry Box', desc: 'Boiled rice with vegan chicken and broccoli in katsu curry sauce.' },
-        { name: 'Sweet Duck N Chilli Box', desc: 'Rice stick noodles with vegan duck and broccoli in sweet chilli sauce.' },
-        { name: 'Vegan Hoisin Duck Box', desc: 'Vegan duck with rice stick noodles and broccoli in hoisin and soy sauce.' },
+        {
+            name: 'Vegan Sweet N Sour Box',
+            desc: 'Pineapple, mixed peppers and broccoli with yakisoba noodles in sweet and sour sauce.',
+        },
+        {
+            name: 'Vegan Teriyaki Box',
+            desc: 'Mangetout, baby corn and broccoli with yakisoba noodles in teriyaki sauce.',
+        },
+        {
+            name: 'Tofu Hot Box',
+            desc: 'Tofu with mixed peppers and broccoli with yakisoba noodles in hot chilli sauce.',
+        },
+        {
+            name: 'Vegan Thai Green Box',
+            desc: 'Vegan chicken with broccoli and fried rice in Thai green curry sauce.',
+        },
+        {
+            name: 'Vegan Katsu Curry Box',
+            desc: 'Boiled rice with vegan chicken and broccoli in katsu curry sauce.',
+        },
+        {
+            name: 'Sweet Duck N Chilli Box',
+            desc: 'Rice stick noodles with vegan duck and broccoli in sweet chilli sauce.',
+        },
+        {
+            name: 'Vegan Hoisin Duck Box',
+            desc: 'Vegan duck with rice stick noodles and broccoli in hoisin and soy sauce.',
+        },
     ];
     for (let i = 0; i < veganBoxes.length; i++) {
         const item = await ensureItem(
@@ -428,16 +605,46 @@ async function seedWokAndGo() {
 
     // 6. Sides
     const sides = [
-        { name: 'Vegetable Spring Rolls', desc: 'Crispy vegetable spring rolls served with sweet chilli dip.' },
-        { name: 'Vegetable Crispy Dumplings', desc: 'Vegetable dumplings served with hoisin sauce.' },
-        { name: 'Panko Prawns', desc: 'King prawns coated in panko breadcrumbs.' },
-        { name: 'Firecracker Prawns', desc: 'King prawns in curry sauce wrapped in wonton pastry.' },
-        { name: 'Mini Platter', desc: 'Spring roll, crispy dumplings, firecracker prawns and panko prawns.' },
-        { name: 'Mixed Platter', desc: 'Spring rolls, crispy dumplings, firecracker prawns and panko prawns.' },
-        { name: 'Hot N Kickin Chicken Wings', desc: 'Chicken wings coated in hot and spicy seasoning.' },
-        { name: 'Popcorn Chicken', desc: 'Crispy breadcrumb chicken fillet bites served with sweet chilli dip.' },
-        { name: 'Sweet N Sour Chicken Balls', desc: 'Battered chicken balls served with sweet and sour dipping sauce.' },
-        { name: 'Salt N Pepper Combo Box', desc: 'Fries with onions, peppers, spring onion and chilli with vegetable spring rolls and vegetable dumplings fried in salt and pepper seasoning. Served with chilli sauce.' },
+        {
+            name: 'Vegetable Spring Rolls',
+            desc: 'Crispy vegetable spring rolls served with sweet chilli dip.',
+        },
+        {
+            name: 'Vegetable Crispy Dumplings',
+            desc: 'Vegetable dumplings served with hoisin sauce.',
+        },
+        {
+            name: 'Panko Prawns',
+            desc: 'King prawns coated in panko breadcrumbs.',
+        },
+        {
+            name: 'Firecracker Prawns',
+            desc: 'King prawns in curry sauce wrapped in wonton pastry.',
+        },
+        {
+            name: 'Mini Platter',
+            desc: 'Spring roll, crispy dumplings, firecracker prawns and panko prawns.',
+        },
+        {
+            name: 'Mixed Platter',
+            desc: 'Spring rolls, crispy dumplings, firecracker prawns and panko prawns.',
+        },
+        {
+            name: 'Hot N Kickin Chicken Wings',
+            desc: 'Chicken wings coated in hot and spicy seasoning.',
+        },
+        {
+            name: 'Popcorn Chicken',
+            desc: 'Crispy breadcrumb chicken fillet bites served with sweet chilli dip.',
+        },
+        {
+            name: 'Sweet N Sour Chicken Balls',
+            desc: 'Battered chicken balls served with sweet and sour dipping sauce.',
+        },
+        {
+            name: 'Salt N Pepper Combo Box',
+            desc: 'Fries with onions, peppers, spring onion and chilli with vegetable spring rolls and vegetable dumplings fried in salt and pepper seasoning. Served with chilli sauce.',
+        },
     ];
     for (let i = 0; i < sides.length; i++) {
         await ensureItem(
@@ -451,35 +658,98 @@ async function seedWokAndGo() {
     }
 
     // 7. Fries
-    await ensureItem('Plain Fries', null, PRICE, categories['Fries'], 0, { linkAddons: sauceAddons });
-    await ensureItem('Salt N Pepper Fries', null, PRICE, categories['Fries'], 1, { linkAddons: sauceAddons });
+    await ensureItem('Plain Fries', null, PRICE, categories['Fries'], 0, {
+        linkAddons: sauceAddons,
+    });
+    await ensureItem(
+        'Salt N Pepper Fries',
+        null,
+        PRICE,
+        categories['Fries'],
+        1,
+        { linkAddons: sauceAddons },
+    );
 
     // 8. Noodle / Rice Sides
-    await ensureItem('Boiled Rice', null, PRICE, categories['Noodle / Rice Sides'], 0, { linkAddons: sauceAddons });
-    await ensureItem('Egg Fried Rice', null, PRICE, categories['Noodle / Rice Sides'], 1, { linkAddons: sauceAddons });
-    await ensureItem('Egg Fried Noodles', null, PRICE, categories['Noodle / Rice Sides'], 2, { linkAddons: sauceAddons });
+    await ensureItem(
+        'Boiled Rice',
+        null,
+        PRICE,
+        categories['Noodle / Rice Sides'],
+        0,
+        { linkAddons: sauceAddons },
+    );
+    await ensureItem(
+        'Egg Fried Rice',
+        null,
+        PRICE,
+        categories['Noodle / Rice Sides'],
+        1,
+        { linkAddons: sauceAddons },
+    );
+    await ensureItem(
+        'Egg Fried Noodles',
+        null,
+        PRICE,
+        categories['Noodle / Rice Sides'],
+        2,
+        { linkAddons: sauceAddons },
+    );
 
     // 9. Extra Sauces (standalone items)
     for (let i = 0; i < extraSauceNames.length; i++) {
-        await ensureItem(extraSauceNames[i], null, PRICE, categories['Extra Sauces'], i);
+        await ensureItem(
+            extraSauceNames[i],
+            null,
+            PRICE,
+            categories['Extra Sauces'],
+            i,
+        );
     }
 
     // 10. Drinks
-    const drinks = ['Coca Cola', 'Diet Coke', 'Coke Zero', 'Fanta', 'Sprite', 'Slushie', 'Water', 'FruitShoot', 'Red Bull', 'Heineken 0%', 'Corona Zero 0%'];
+    const drinks = [
+        'Coca Cola',
+        'Diet Coke',
+        'Coke Zero',
+        'Fanta',
+        'Sprite',
+        'Slushie',
+        'Water',
+        'FruitShoot',
+        'Red Bull',
+        'Heineken 0%',
+        'Corona Zero 0%',
+    ];
     for (let i = 0; i < drinks.length; i++) {
         await ensureItem(drinks[i], null, PRICE, categories['Drinks'], i);
     }
 
     // 11. Milkshakes
-    const milkshakes = ['Bubblegum Milkshake', 'Vanilla Milkshake', 'Chocolate Milkshake', 'Strawberry Milkshake'];
+    const milkshakes = [
+        'Bubblegum Milkshake',
+        'Vanilla Milkshake',
+        'Chocolate Milkshake',
+        'Strawberry Milkshake',
+    ];
     for (let i = 0; i < milkshakes.length; i++) {
-        await ensureItem(milkshakes[i], null, PRICE, categories['Milkshakes'], i);
+        await ensureItem(
+            milkshakes[i],
+            null,
+            PRICE,
+            categories['Milkshakes'],
+            i,
+        );
     }
 
     // ——— 5. BRANCH LINKING ———
-    const branchId = process.env.BRANCH_ID ? parseInt(process.env.BRANCH_ID, 10) : null;
+    const branchId = process.env.BRANCH_ID
+        ? parseInt(process.env.BRANCH_ID, 10)
+        : null;
     if (branchId != null && Number.isFinite(branchId)) {
-        const allItems = await menuItemRepo.find({ where: { brandId: brand.id } });
+        const allItems = await menuItemRepo.find({
+            where: { brandId: brand.id },
+        });
         for (const item of allItems) {
             const exists = await branchMenuItemRepo.findOne({
                 where: { branchId, menuItemId: item.id },
@@ -499,7 +769,9 @@ async function seedWokAndGo() {
         console.log(`Linked items to branch ${branchId}`);
     }
 
-    console.log(`Wok & Go: ${categoriesData.length} categories, addons, modifier groups, menu items. All prices ${PRICE} pence.`);
+    console.log(
+        `Wok & Go: ${categoriesData.length} categories, addons, modifier groups, menu items. All prices ${PRICE} pence.`,
+    );
     await dataSource.destroy();
 }
 

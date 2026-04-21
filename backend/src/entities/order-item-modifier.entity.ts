@@ -26,6 +26,9 @@ export class OrderItemModifier {
     @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
     priceSnapshot: number | null;
 
+    @Column({ default: 1 })
+    quantity: number;
+
     @CreateDateColumn()
     createdAt: Date;
 

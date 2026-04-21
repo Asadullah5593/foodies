@@ -36,7 +36,10 @@ const dataSource = new DataSource({
 });
 
 function slug(name: string, brandSlug: string) {
-    return `${name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}-${brandSlug}`;
+    return `${name
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9-]/g, '')}-${brandSlug}`;
 }
 
 async function seedPizzaPasta() {
@@ -118,46 +121,133 @@ async function seedPizzaPasta() {
     );
 
     const baseGroup = await modifierGroupRepo.save(
-        modifierGroupRepo.create({ brandId: brand.id, name: 'Base', minSelect: 1, maxSelect: 1 }),
+        modifierGroupRepo.create({
+            brandId: brand.id,
+            name: 'Base',
+            minSelect: 1,
+            maxSelect: 1,
+        }),
     );
     for (const name of ['Regular', 'Thin']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: baseGroup.id, name, price: 0 }));
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: baseGroup.id,
+                name,
+                price: 0,
+            }),
+        );
     }
 
     const sauceGroup = await modifierGroupRepo.save(
-        modifierGroupRepo.create({ brandId: brand.id, name: 'Sauce', minSelect: 1, maxSelect: 1 }),
+        modifierGroupRepo.create({
+            brandId: brand.id,
+            name: 'Sauce',
+            minSelect: 1,
+            maxSelect: 1,
+        }),
     );
     for (const name of ['Tomato', 'BBQ', 'Spicy Tomato', 'White Garlic']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: sauceGroup.id, name, price: 0 }));
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: sauceGroup.id,
+                name,
+                price: 0,
+            }),
+        );
     }
 
     const cheeseGroup = await modifierGroupRepo.save(
-        modifierGroupRepo.create({ brandId: brand.id, name: 'Cheese', minSelect: 1, maxSelect: 1 }),
+        modifierGroupRepo.create({
+            brandId: brand.id,
+            name: 'Cheese',
+            minSelect: 1,
+            maxSelect: 1,
+        }),
     );
-    await modifierRepo.save(modifierRepo.create({ modifierGroupId: cheeseGroup.id, name: 'Mozzarella', price: 0 }));
-    await modifierRepo.save(modifierRepo.create({ modifierGroupId: cheeseGroup.id, name: 'Vegan Cheese', price: 1.5 }));
+    await modifierRepo.save(
+        modifierRepo.create({
+            modifierGroupId: cheeseGroup.id,
+            name: 'Mozzarella',
+            price: 0,
+        }),
+    );
+    await modifierRepo.save(
+        modifierRepo.create({
+            modifierGroupId: cheeseGroup.id,
+            name: 'Vegan Cheese',
+            price: 1.5,
+        }),
+    );
 
     const proteinGroup = await modifierGroupRepo.save(
-        modifierGroupRepo.create({ brandId: brand.id, name: 'Proteins', minSelect: 0, maxSelect: 5 }),
+        modifierGroupRepo.create({
+            brandId: brand.id,
+            name: 'Proteins',
+            minSelect: 0,
+            maxSelect: 5,
+        }),
     );
     for (const name of ['Chicken', 'Pepperoni', 'Ham', 'Spicy Beef', 'Bacon']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: proteinGroup.id, name, price: 1 }));
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: proteinGroup.id,
+                name,
+                price: 1,
+            }),
+        );
     }
 
     const vegGroup = await modifierGroupRepo.save(
-        modifierGroupRepo.create({ brandId: brand.id, name: 'Veggies', minSelect: 0, maxSelect: 8 }),
+        modifierGroupRepo.create({
+            brandId: brand.id,
+            name: 'Veggies',
+            minSelect: 0,
+            maxSelect: 8,
+        }),
     );
-    for (const name of ['Peppers', 'Mushrooms', 'Olives', 'Sweetcorn', 'Onion', 'Tomatoes', 'Pineapple', 'Jalapeños']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: vegGroup.id, name, price: 0.5 }));
+    for (const name of [
+        'Peppers',
+        'Mushrooms',
+        'Olives',
+        'Sweetcorn',
+        'Onion',
+        'Tomatoes',
+        'Pineapple',
+        'Jalapeños',
+    ]) {
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: vegGroup.id,
+                name,
+                price: 0.5,
+            }),
+        );
     }
 
     const drizzleGroup = await modifierGroupRepo.save(
-        modifierGroupRepo.create({ brandId: brand.id, name: 'Drizzle', minSelect: 0, maxSelect: 1 }),
+        modifierGroupRepo.create({
+            brandId: brand.id,
+            name: 'Drizzle',
+            minSelect: 0,
+            maxSelect: 1,
+        }),
     );
     for (const name of ['Garlic', 'BBQ', 'Spicy']) {
-        await modifierRepo.save(modifierRepo.create({ modifierGroupId: drizzleGroup.id, name, price: 0 }));
+        await modifierRepo.save(
+            modifierRepo.create({
+                modifierGroupId: drizzleGroup.id,
+                name,
+                price: 0,
+            }),
+        );
     }
-    await modifierRepo.save(modifierRepo.create({ modifierGroupId: drizzleGroup.id, name: 'Hot Honey', price: 0.5 }));
+    await modifierRepo.save(
+        modifierRepo.create({
+            modifierGroupId: drizzleGroup.id,
+            name: 'Hot Honey',
+            price: 0.5,
+        }),
+    );
 
     const byoItem = await menuItemRepo.save(
         menuItemRepo.create({
@@ -165,7 +255,8 @@ async function seedPizzaPasta() {
             categoryId: byoCat.id,
             name: 'Build Your Own Pizza',
             slug: `build-your-own-pizza-${BRAND_SLUG}`,
-            description: 'Choose base, sauce, cheese, proteins, veggies and drizzle.',
+            description:
+                'Choose base, sauce, cheese, proteins, veggies and drizzle.',
             imageUrl: null,
             basePrice: 7,
             isActive: true,
@@ -177,18 +268,58 @@ async function seedPizzaPasta() {
         relations: ['modifierGroups', 'addons'],
     });
     if (byoWithMod) {
-        byoWithMod.modifierGroups = [baseGroup, sauceGroup, cheeseGroup, proteinGroup, vegGroup, drizzleGroup];
+        byoWithMod.modifierGroups = [
+            baseGroup,
+            sauceGroup,
+            cheeseGroup,
+            proteinGroup,
+            vegGroup,
+            drizzleGroup,
+        ];
         byoWithMod.addons = [addonGF];
         await menuItemRepo.save(byoWithMod);
     }
-    await variantRepo.save(variantRepo.create({ menuItemId: byoItem.id, name: '9"', priceModifier: 0, isDefault: true }));
-    await variantRepo.save(variantRepo.create({ menuItemId: byoItem.id, name: '12"', priceModifier: 6, isDefault: false }));
-    await variantRepo.save(variantRepo.create({ menuItemId: byoItem.id, name: '14"', priceModifier: 9, isDefault: false }));
+    await variantRepo.save(
+        variantRepo.create({
+            menuItemId: byoItem.id,
+            name: '9"',
+            priceModifier: 0,
+            isDefault: true,
+        }),
+    );
+    await variantRepo.save(
+        variantRepo.create({
+            menuItemId: byoItem.id,
+            name: '12"',
+            priceModifier: 6,
+            isDefault: false,
+        }),
+    );
+    await variantRepo.save(
+        variantRepo.create({
+            menuItemId: byoItem.id,
+            name: '14"',
+            priceModifier: 9,
+            isDefault: false,
+        }),
+    );
 
     const sigItems = [
-        { name: 'King Pepperoni', description: 'Pepperoni, mozzarella, tomato', basePrice: 9 },
-        { name: 'Meat Feast', description: 'Pepperoni, ham, beef, bacon', basePrice: 10 },
-        { name: 'Veggie Supreme', description: 'Peppers, mushrooms, olives, onion', basePrice: 9 },
+        {
+            name: 'King Pepperoni',
+            description: 'Pepperoni, mozzarella, tomato',
+            basePrice: 9,
+        },
+        {
+            name: 'Meat Feast',
+            description: 'Pepperoni, ham, beef, bacon',
+            basePrice: 10,
+        },
+        {
+            name: 'Veggie Supreme',
+            description: 'Peppers, mushrooms, olives, onion',
+            basePrice: 9,
+        },
     ];
     const createdSig: MenuItem[] = [];
     for (let i = 0; i < sigItems.length; i++) {
@@ -207,9 +338,30 @@ async function seedPizzaPasta() {
             }),
         );
         createdSig.push(item);
-        await variantRepo.save(variantRepo.create({ menuItemId: item.id, name: '7"', priceModifier: -3, isDefault: false }));
-        await variantRepo.save(variantRepo.create({ menuItemId: item.id, name: '9"', priceModifier: 0, isDefault: true }));
-        await variantRepo.save(variantRepo.create({ menuItemId: item.id, name: '12"', priceModifier: 3, isDefault: false }));
+        await variantRepo.save(
+            variantRepo.create({
+                menuItemId: item.id,
+                name: '7"',
+                priceModifier: -3,
+                isDefault: false,
+            }),
+        );
+        await variantRepo.save(
+            variantRepo.create({
+                menuItemId: item.id,
+                name: '9"',
+                priceModifier: 0,
+                isDefault: true,
+            }),
+        );
+        await variantRepo.save(
+            variantRepo.create({
+                menuItemId: item.id,
+                name: '12"',
+                priceModifier: 3,
+                isDefault: false,
+            }),
+        );
     }
 
     const sidesItems = [
@@ -256,7 +408,7 @@ async function seedPizzaPasta() {
         );
     }
 
-    const kidsItem = await menuItemRepo.save(
+    await menuItemRepo.save(
         menuItemRepo.create({
             brandId: brand.id,
             categoryId: kidsCat.id,
@@ -270,15 +422,14 @@ async function seedPizzaPasta() {
         }),
     );
 
-    const allItems = [byoItem, ...createdSig];
-    const sidesCount = sidesItems.length;
-    const pastaCount = pastaItems.length;
     const allMenuItems = await menuItemRepo.find({
         where: { brandId: brand.id },
         order: { sortOrder: 'ASC' },
     });
 
-    const branchId = process.env.BRANCH_ID ? parseInt(process.env.BRANCH_ID, 10) : null;
+    const branchId = process.env.BRANCH_ID
+        ? parseInt(process.env.BRANCH_ID, 10)
+        : null;
     if (branchId && Number.isFinite(branchId)) {
         for (const item of allMenuItems) {
             const exists = await branchMenuItemRepo.findOne({
@@ -296,10 +447,14 @@ async function seedPizzaPasta() {
                 );
             }
         }
-        console.log(`Linked ${allMenuItems.length} items to branch ${branchId}`);
+        console.log(
+            `Linked ${allMenuItems.length} items to branch ${branchId}`,
+        );
     }
 
-    console.log(`Pizza & Pasta: Build Your Own Pizza (modifier groups), ${createdSig.length} signature pizzas, sides, pasta, kids treat.`);
+    console.log(
+        `Pizza & Pasta: Build Your Own Pizza (modifier groups), ${createdSig.length} signature pizzas, sides, pasta, kids treat.`,
+    );
     await dataSource.destroy();
 }
 

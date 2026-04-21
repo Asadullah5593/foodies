@@ -85,6 +85,8 @@ export interface MenuItem {
   brand_id?: number | null;
   /** Image URL path (e.g. /api/admin/upload/file/xxx). */
   image_url?: string | null;
+  /** When set, limits which order channels can include this item (delivery, pickup, dine_in). Omit/null = all. */
+  available_for_order_types?: string[] | null;
 }
 
 export interface MenuVariant {

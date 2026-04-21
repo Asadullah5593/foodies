@@ -193,10 +193,30 @@ async function seed() {
             action: 'manage',
             description: 'Manage loyalty settings',
         },
-        { name: 'deals:view', resource: 'deals', action: 'view', description: 'View deals' },
-        { name: 'deals:create', resource: 'deals', action: 'create', description: 'Create deals' },
-        { name: 'deals:edit', resource: 'deals', action: 'edit', description: 'Edit deals' },
-        { name: 'deals:delete', resource: 'deals', action: 'delete', description: 'Delete deals' },
+        {
+            name: 'deals:view',
+            resource: 'deals',
+            action: 'view',
+            description: 'View deals',
+        },
+        {
+            name: 'deals:create',
+            resource: 'deals',
+            action: 'create',
+            description: 'Create deals',
+        },
+        {
+            name: 'deals:edit',
+            resource: 'deals',
+            action: 'edit',
+            description: 'Edit deals',
+        },
+        {
+            name: 'deals:delete',
+            resource: 'deals',
+            action: 'delete',
+            description: 'Delete deals',
+        },
     ];
     const existingNames = new Set(
         (await permissionRepo.find({ select: ['name'] })).map((p) => p.name),

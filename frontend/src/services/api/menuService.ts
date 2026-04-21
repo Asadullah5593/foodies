@@ -24,9 +24,21 @@ export const menuService = {
     return response.data;
   },
 
-  /** Get menu for POS. Pass branchId to use a specific branch, or omit to use the current user's first assigned branch. */
-  getBranchMenu: async (branchId?: number): Promise<BranchMenuResponse> => {
-    const url = branchId != null ? `/pos/menu?branch_id=${branchId}` : '/pos/menu';
+  /**
+   * Get menu for POS. Pass branchId to use a specific branch, or omit to use the current user's first assigned branch.
+   * When `orderType` is set, only items that support that channel are returned (delivery, pickup, dine_in; takeaway → pickup).
+   */
+  getBranchMenu: async (
+    branchId?: number,
+    orderType?: string | null,
+  ): Promise<BranchMenuResponse> => {
+    const params = new URLSearchParams();
+    if (branchId != null) params.set('branch_id', String(branchId));
+    if (orderType != null && orderType.trim() !== '') {
+      params.set('order_type', orderType.trim());
+    }
+    const qs = params.toString();
+    const url = qs ? `/pos/menu?${qs}` : '/pos/menu';
     const response = await apiClient.get<BranchMenuResponse>(url);
     return response.data;
   },
@@ -35,9 +47,15 @@ export const menuService = {
   getDeal: async (
     menuItemId: number,
     branchId: number,
+    orderType?: string | null,
   ): Promise<DealDefinition | null> => {
+    const params = new URLSearchParams();
+    params.set('branch_id', String(branchId));
+    if (orderType != null && orderType.trim() !== '') {
+      params.set('order_type', orderType.trim());
+    }
     const response = await apiClient.get<DealDefinition | null>(
-      `/pos/deal/${menuItemId}?branch_id=${branchId}`,
+      `/pos/deal/${menuItemId}?${params.toString()}`,
     );
     return response.data ?? null;
   },

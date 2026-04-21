@@ -36,12 +36,14 @@ export type MainInvoiceOrder = {
   total_amount: number;
   loyalty_points_earned?: number;
   loyalty_points_redeemed?: number;
+  loyalty_points_remaining?: number;
 };
 
 export type MainInvoiceData = {
   order_group_id: string;
   orders: MainInvoiceOrder[];
   gross_total: number;
+  loyalty_points_remaining?: number;
 };
 
 interface CustomerInvoiceModalProps {
@@ -101,8 +103,10 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
       total_amount: singleInvoice.total_amount ?? 0,
       loyalty_points_earned: singleInvoice.loyalty_points_earned ?? 0,
       loyalty_points_redeemed: singleInvoice.loyalty_points_redeemed ?? 0,
+      loyalty_points_remaining: singleInvoice.loyalty_points_remaining ?? 0,
     }],
     gross_total: singleInvoice.total_amount ?? 0,
+    loyalty_points_remaining: singleInvoice.loyalty_points_remaining ?? 0,
   } : null);
 
   const lineBaseTotal = (line: {
@@ -180,6 +184,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
       }).join('');
       const pointsEarned = Number((o as MainInvoiceOrder).loyalty_points_earned ?? 0);
       const pointsRedeemed = Number((o as MainInvoiceOrder).loyalty_points_redeemed ?? 0);
+      const pointsRemaining = Number((o as MainInvoiceOrder).loyalty_points_remaining ?? invoiceData.loyalty_points_remaining ?? 0);
       return `
         <div class="section">
           <h2>${o.brand_name ? escapeHtml(o.brand_name) + ' — ' : ''}Order #${escapeHtml(o.order_number)}</h2>
@@ -188,8 +193,9 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
           ${Number(o.discount_amount) > 0 ? `<p class="text-sm">Discount: -${formatCurrency(Number(o.discount_amount))}</p>` : ''}
           <p class="text-sm">Tax: ${formatCurrency(Number(o.tax_amount))}</p>
           ${Number(o.delivery_fee) > 0 ? `<p class="text-sm">Delivery fee: ${formatCurrency(Number(o.delivery_fee))}</p>` : ''}
-          ${pointsEarned > 0 ? `<p class="text-sm text-green-700">Points earned: ${pointsEarned}</p>` : ''}
-          ${pointsRedeemed > 0 ? `<p class="text-sm text-gray-600">Points redeemed: ${pointsRedeemed}</p>` : ''}
+          <p class="text-sm text-green-700">Earned points: ${pointsEarned}</p>
+          <p class="text-sm text-gray-600">Redeemed points: ${pointsRedeemed}</p>
+          <p class="text-sm text-gray-800">Remaining points: ${pointsRemaining}</p>
           <p class="font-semibold py-2">Total: ${formatCurrency(Number(o.total_amount))}</p>
         </div>
       `;
@@ -353,22 +359,18 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                       <span>{formatCurrency(Number(o.delivery_fee))}</span>
                     </div>
                   )}
-                  {(Number((o as MainInvoiceOrder).loyalty_points_earned) > 0 || Number((o as MainInvoiceOrder).loyalty_points_redeemed) > 0) && (
-                    <>
-                      {Number((o as MainInvoiceOrder).loyalty_points_earned) > 0 && (
-                        <div className="flex justify-between text-green-700">
-                          <span>Points earned</span>
-                          <span>+{(o as MainInvoiceOrder).loyalty_points_earned}</span>
-                        </div>
-                      )}
-                      {Number((o as MainInvoiceOrder).loyalty_points_redeemed) > 0 && (
-                        <div className="flex justify-between text-gray-600">
-                          <span>Points redeemed</span>
-                          <span>−{(o as MainInvoiceOrder).loyalty_points_redeemed}</span>
-                        </div>
-                      )}
-                    </>
-                  )}
+                  <div className="flex justify-between text-green-700">
+                    <span>Earned points</span>
+                    <span>{Number((o as MainInvoiceOrder).loyalty_points_earned ?? 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-600">
+                    <span>Redeemed points</span>
+                    <span>{Number((o as MainInvoiceOrder).loyalty_points_redeemed ?? 0)}</span>
+                  </div>
+                  <div className="flex justify-between text-gray-800">
+                    <span>Remaining points</span>
+                    <span>{Number((o as MainInvoiceOrder).loyalty_points_remaining ?? invoiceData.loyalty_points_remaining ?? 0)}</span>
+                  </div>
                   <div className="flex justify-between font-semibold text-gray-800 pt-1">
                     <span>Total</span>
                     <span>{formatCurrency(Number(o.total_amount))}</span>
