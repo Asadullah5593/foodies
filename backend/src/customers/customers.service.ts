@@ -275,4 +275,45 @@ export class CustomersService {
         if (!customer) throw new NotFoundException('Customer not found');
         await this.repo.remove(customer);
     }
+
+    /**
+     * One-time consumer tenant linking:
+     * - If customer already has tenantId, returns it (idempotent) unless different tenant requested.
+     * - Otherwise sets tenantId, after ensuring (tenantId, phone) is not already in use by another customer.
+     */
+    async syncTenantForCustomer(
+        customerId: number,
+        tenantId: number,
+    ): Promise<Customer> {
+        const customer = await this.repo.findOne({ where: { id: customerId } });
+        if (!customer) throw new NotFoundException('Customer not found');
+
+        if (customer.tenantId != null) {
+            if (customer.tenantId === tenantId) return customer;
+            throw new BadRequestException(
+                'Customer is already linked to a different tenant',
+            );
+        }
+
+        const phone = normalizePakistaniPhone(customer.phone);
+        if (!phone) {
+            throw new BadRequestException(
+                'Invalid customer phone number (expected Pakistani format: 03XXXXXXXXX)',
+            );
+        }
+
+        const existing = await this.repo.findOne({
+            where: { tenantId, phone },
+        });
+        if (existing && existing.id !== customer.id) {
+            throw new ConflictException(
+                'Another customer already exists for this phone in the selected tenant',
+            );
+        }
+
+        customer.tenantId = tenantId;
+        customer.phone = phone;
+        await this.repo.save(customer);
+        return (await this.repo.findOne({ where: { id: customerId } })) as Customer;
+    }
 }

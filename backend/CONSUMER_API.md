@@ -83,6 +83,34 @@ In Postman: use the **Authorization** tab, set Type to **Bearer Token**, and pas
 }
 ```
 
+### Sync tenant (one-time, after first branch selection)
+- **Endpoint:** `POST /api/public/consumer/customers/sync-tenant`
+- **Auth:** Bearer token (customer JWT from login)
+- **When to call:** after the customer selects a branch for the first time (mobile will do this silently). This links the logged-in customer to the tenant for that branch so the customer appears in the tenant dashboard.
+- **Body:**
+```json
+{
+  "branch_id": 10
+}
+```
+- **Response (200):**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "customer": {
+    "id": 1,
+    "tenant_id": 6,
+    "phone": "03001234567",
+    "name": "John Doe",
+    "email": "john@example.com",
+    "loyalty_points_balance": 0
+  }
+}
+```
+- **Notes:**
+  - Idempotent: if the customer is already linked to a tenant, the API returns success.
+  - If the same phone already exists under the selected tenant, the API returns a conflict error (no silent merge).
+
 ### Login
 - **Endpoint:** `POST /api/public/consumer/auth/login`
 - **Auth:** None
@@ -207,7 +235,7 @@ In Postman: use the **Authorization** tab, set Type to **Bearer Token**, and pas
 ### Get menu (by branch)
 - **Endpoint:** `GET /api/public/consumer/menu`
 - **Auth:** None
-- **Query:** `branch_id` (required); `brand_id` (optional) – filter by brand; `search` (optional) – filter menu items by name, description or category (case-insensitive).
+- **Query:** `branch_id` (required); `brand_id` (optional) – filter by brand; `search` (optional) – filter menu items by name, description or category (case-insensitive); `order_type` (optional but recommended) – when set, only items available for that order channel are returned.
 - **Response (200):** Branch menu (categories and items).
 
 ### Get categories
@@ -220,7 +248,7 @@ In Postman: use the **Authorization** tab, set Type to **Bearer Token**, and pas
 - **Endpoint:** `GET /api/public/consumer/menu/items/:id`
 - **Auth:** None
 - **Params:** `id` – menu item ID
-- **Query:** `branch_id` (required)
+- **Query:** `branch_id` (required); `order_type` (optional but recommended) – if the item is not available for that order channel, the API returns 404.
 - **Response (200):** Menu item with variants, addons, modifier_groups. When the item is a deal (has deal components), the response includes a `deal` object with `deal_menu_item_id`, `name`, `price`, and `slots` (each slot has `slot_index`, `type`, `quantity`, `allow_customization`, `choice_items`, etc.) so the consumer can render the deal builder (e.g. pick choices per slot).
 
 ---
