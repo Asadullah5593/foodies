@@ -10,6 +10,7 @@ import {
     Query,
     Req,
     BadRequestException,
+    ConflictException,
     NotFoundException,
     UseGuards,
     UseInterceptors,
@@ -24,6 +25,7 @@ import {
     ApiOperation,
     ApiQuery,
     ApiParam,
+    ApiBearerAuth,
 } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
 import { BrandsService } from '../brands/brands.service';
@@ -226,6 +228,75 @@ export class ConsumerController {
             email: customer.email ?? null,
             loyalty_points_balance: customer.loyaltyPointsBalance,
         };
+    }
+
+    /** One-time tenant linking: called after first branch selection. */
+    @Post('customers/sync-tenant')
+    @UseGuards(CustomerJwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({
+        summary:
+            'Link logged-in customer to tenant (one-time) using branch_id',
+    })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            required: ['branch_id'],
+            properties: {
+                branch_id: { type: 'number', example: 10 },
+                phone: {
+                    type: 'string',
+                    example: '03001234567',
+                    description:
+                        'Optional safety check: must match the logged-in customer phone when provided',
+                },
+            },
+        },
+    })
+    async syncTenant(
+        @Req() req: { user: Customer },
+        @Body() body: { branch_id: number; phone?: string },
+    ) {
+        const branchId = Number(body?.branch_id);
+        if (!Number.isFinite(branchId) || branchId <= 0) {
+            throw new BadRequestException('branch_id is required');
+        }
+        if (body?.phone?.trim()) {
+            const reqPhone = (req.user.phone ?? '').trim();
+            if (reqPhone && reqPhone !== body.phone.trim()) {
+                throw new BadRequestException(
+                    'phone does not match logged-in customer',
+                );
+            }
+        }
+
+        const tenantId = await this.getTenantIdFromBranch(branchId);
+        try {
+            const updated = await this.customersService.syncTenantForCustomer(
+                req.user.id,
+                tenantId,
+            );
+            const token = this.jwtService.sign({
+                sub: updated.id,
+                type: 'customer',
+                tenantId: updated.tenantId,
+            });
+            return {
+                token,
+                customer: {
+                    id: updated.id,
+                    tenant_id: updated.tenantId ?? null,
+                    phone: updated.phone,
+                    name: updated.name,
+                    email: updated.email ?? null,
+                    loyalty_points_balance: updated.loyaltyPointsBalance,
+                },
+            };
+        } catch (e) {
+            // normalize known conflict into a consistent message
+            if (e instanceof ConflictException) throw e;
+            throw e;
+        }
     }
 
     /** Customer login (email + password). Returns JWT and customer. */
@@ -548,7 +619,7 @@ export class ConsumerController {
         required: false,
         example: 'delivery',
         description:
-            'Optional. When set, only menu items available for this channel are returned. Use the same values as POST /orders `order_type`: `delivery`, `pickup` (consumer), or `takeaway` (POS alias for pickup), `dine_in`. Each item also includes `available_for_order_types` when omitted.',
+            'Optional but recommended. When set, only menu items available for this channel are returned. Use the same values as POST /orders `order_type`: `delivery`, `pickup` (consumer), or `takeaway` (POS alias for pickup), `dine_in`. Each item also includes `available_for_order_types` when omitted.',
     })
     getMenu(
         @Query('branch_id') branchIdParam: string,
@@ -641,7 +712,7 @@ export class ConsumerController {
         required: false,
         example: 'pickup',
         description:
-            'Optional. If the item is not available for this order channel, returns 404. Align with checkout `order_type`.',
+            'Optional but recommended. If the item is not available for this order channel, returns 404. Align with checkout `order_type`.',
     })
     getMenuItemDetail(
         @Param('id') id: string,

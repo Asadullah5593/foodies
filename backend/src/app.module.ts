@@ -25,6 +25,9 @@ import { CustomersModule } from './customers/customers.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
 import { ConsumerModule } from './consumer/consumer.module';
 import { UploadModule } from './upload/upload.module';
+import { InventoryModule } from './inventory/inventory.module';
+import { ProcurementModule } from './procurement/procurement.module';
+import { RecipesModule } from './recipes/recipes.module';
 
 @Module({
     imports: [
@@ -68,6 +71,9 @@ import { UploadModule } from './upload/upload.module';
         LoyaltyModule,
         ConsumerModule,
         UploadModule,
+        InventoryModule,
+        ProcurementModule,
+        RecipesModule,
     ],
     controllers: [AppController],
     providers: [AppService],

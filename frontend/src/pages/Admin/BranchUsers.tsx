@@ -12,6 +12,7 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { confirmDialog } from '../../utils/sweetAlert';
 
 interface RoleOption {
   id: number;
@@ -308,7 +309,26 @@ const BranchUsers: React.FC = () => {
                 }
                 animationIndex={i}
                 actions={
-                  <Button size="small" variant="danger" onClick={() => { const branchId = user.branch_id ?? selectedBranch; if (branchId != null && confirm(`Remove ${user.name} from this branch?`)) removeMutation.mutate({ branchId, userId: user.id }); }} isLoading={removeMutation.isPending}>Remove</Button>
+                  <Button
+                    size="small"
+                    variant="danger"
+                    onClick={() => {
+                      (async () => {
+                        const branchId = user.branch_id ?? selectedBranch;
+                        if (branchId == null) return;
+                        const ok = await confirmDialog({
+                          title: `Remove ${user.name} from this branch?`,
+                          text: 'They will lose access to this branch.',
+                          confirmText: 'Remove',
+                        });
+                        if (!ok) return;
+                        removeMutation.mutate({ branchId, userId: user.id });
+                      })();
+                    }}
+                    isLoading={removeMutation.isPending}
+                  >
+                    Remove
+                  </Button>
                 }
               />
             ))}

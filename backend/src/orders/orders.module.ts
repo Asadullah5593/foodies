@@ -24,6 +24,7 @@ import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { ShiftsModule } from '../shifts/shifts.module';
 import { BranchesModule } from '../branches/branches.module';
 import { CustomersModule } from '../customers/customers.module';
+import { InventoryModule } from '../inventory/inventory.module';
 
 @Module({
     imports: [
@@ -48,6 +49,7 @@ import { CustomersModule } from '../customers/customers.module';
         ShiftsModule,
         BranchesModule,
         CustomersModule,
+        InventoryModule,
     ],
     controllers: [
         PosMenuController,

@@ -16,6 +16,7 @@ import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
+import { confirmDialog } from '../../utils/sweetAlert';
 
 const MenuVariants: React.FC = () => {
   const queryClient = useQueryClient();
@@ -440,7 +441,24 @@ const MenuVariants: React.FC = () => {
                     actions={
                       <>
                         <Button size="small" variant="edit" onClick={() => setEditingVariant({ id: variant.id, menu_item_id: menuItemId, name: variant.name, price_modifier: priceMod, is_default: variant.is_default ?? variant.isDefault ?? false, sort_order: sortOrder })}>Edit</Button>
-                        <Button size="small" variant="danger" onClick={() => confirm(`Delete variant "${variant.name}"?`) && deleteMutation.mutate(variant.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={() => {
+                            (async () => {
+                              const ok = await confirmDialog({
+                                title: `Delete variant "${variant.name}"?`,
+                                text: 'This action cannot be undone.',
+                                confirmText: 'Delete',
+                              });
+                              if (!ok) return;
+                              deleteMutation.mutate(variant.id);
+                            })();
+                          }}
+                          isLoading={deleteMutation.isPending}
+                        >
+                          Delete
+                        </Button>
                       </>
                     }
                   />

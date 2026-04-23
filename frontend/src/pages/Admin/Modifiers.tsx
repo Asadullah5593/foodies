@@ -13,6 +13,7 @@ import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { confirmDialog } from '../../utils/sweetAlert';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 
 const Modifiers: React.FC = () => {
@@ -641,7 +642,15 @@ const Modifiers: React.FC = () => {
                             size="small"
                             variant="danger"
                             onClick={() => {
-                              if (confirm(`Delete modifier "${m.name}"?`)) deleteModifierMutation.mutate(m.id);
+                              (async () => {
+                                const ok = await confirmDialog({
+                                  title: `Delete modifier "${m.name}"?`,
+                                  text: 'This action cannot be undone.',
+                                  confirmText: 'Delete',
+                                });
+                                if (!ok) return;
+                                deleteModifierMutation.mutate(m.id);
+                              })();
                             }}
                             isLoading={deleteModifierMutation.isPending}
                           >
@@ -675,7 +684,15 @@ const Modifiers: React.FC = () => {
                     size="small"
                     variant="danger"
                     onClick={() => {
-                      if (confirm(`Delete group "${group.name}" and all its modifiers?`)) deleteGroupMutation.mutate(group.id);
+                      (async () => {
+                        const ok = await confirmDialog({
+                          title: `Delete group "${group.name}"?`,
+                          text: 'This will also delete all modifiers inside this group.',
+                          confirmText: 'Delete group',
+                        });
+                        if (!ok) return;
+                        deleteGroupMutation.mutate(group.id);
+                      })();
                     }}
                     isLoading={deleteGroupMutation.isPending}
                   >

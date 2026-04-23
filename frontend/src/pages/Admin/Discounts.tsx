@@ -11,6 +11,7 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { confirmDialog } from '../../utils/sweetAlert';
 import SearchableMultiSelect, {
   SearchableMultiSelectOption,
 } from '../../components/SearchableMultiSelect';
@@ -568,7 +569,24 @@ const Discounts: React.FC = () => {
                   actions={
                     <>
                       <Button size="small" variant="edit" onClick={() => handleEdit(discount)}>Edit</Button>
-                      <Button size="small" variant="danger" onClick={() => confirm(`Delete discount "${discount.name}"?`) && deleteMutation.mutate(discount.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                      <Button
+                        size="small"
+                        variant="danger"
+                        onClick={() => {
+                          (async () => {
+                            const ok = await confirmDialog({
+                              title: `Delete discount "${discount.name}"?`,
+                              text: 'This action cannot be undone.',
+                              confirmText: 'Delete',
+                            });
+                            if (!ok) return;
+                            deleteMutation.mutate(discount.id);
+                          })();
+                        }}
+                        isLoading={deleteMutation.isPending}
+                      >
+                        Delete
+                      </Button>
                     </>
                   }
                 />

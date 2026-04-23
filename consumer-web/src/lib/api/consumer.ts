@@ -27,16 +27,30 @@ export async function getBrandsByBranch(branchId: number) {
   return data;
 }
 
-export async function getMenu(branchId: number, brandId: number, search?: string) {
+export async function getMenu(
+  branchId: number,
+  brandId: number,
+  search?: string,
+  orderType?: "delivery" | "pickup" | "dine_in" | "takeaway",
+) {
   const { data } = await apiClient.get<MenuItem[]>("/public/consumer/menu", {
-    params: { branch_id: branchId, brand_id: brandId, search: search?.trim() || undefined },
+    params: {
+      branch_id: branchId,
+      brand_id: brandId,
+      search: search?.trim() || undefined,
+      order_type: orderType,
+    },
   });
   return data;
 }
 
-export async function getMenuItemDetail(itemId: number, branchId: number) {
+export async function getMenuItemDetail(
+  itemId: number,
+  branchId: number,
+  orderType?: "delivery" | "pickup" | "dine_in" | "takeaway",
+) {
   const { data } = await apiClient.get<MenuItem>(`/public/consumer/menu/items/${itemId}`, {
-    params: { branch_id: branchId },
+    params: { branch_id: branchId, order_type: orderType },
   });
   return data;
 }
