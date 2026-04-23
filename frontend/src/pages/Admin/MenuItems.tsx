@@ -16,6 +16,7 @@ import { getImageFullUrl } from '../../utils/imageUrl';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
+import { confirmDialog } from '../../utils/sweetAlert';
 
 interface MenuItemAddon {
   id: number;
@@ -1160,7 +1161,24 @@ const MenuItems: React.FC = () => {
                       <>
                         <Button size="small" variant="edit" onClick={() => setEditingItem(item)}>Edit</Button>
                         <Button size="small" variant="secondary" onClick={() => setManageAddonsItem(item)}>Manage addons</Button>
-                        <Button size="small" variant="danger" onClick={() => confirm(`Delete "${item.name}"? This action cannot be undone.`) && deleteMutation.mutate(item.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={() => {
+                            (async () => {
+                              const ok = await confirmDialog({
+                                title: `Delete "${item.name}"?`,
+                                text: 'This action cannot be undone.',
+                                confirmText: 'Delete',
+                              });
+                              if (!ok) return;
+                              deleteMutation.mutate(item.id);
+                            })();
+                          }}
+                          isLoading={deleteMutation.isPending}
+                        >
+                          Delete
+                        </Button>
                       </>
                     }
                   />

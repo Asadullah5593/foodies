@@ -16,6 +16,7 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { confirmDialog } from '../../utils/sweetAlert';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 
 const MenuAddons: React.FC = () => {
@@ -352,7 +353,29 @@ const MenuAddons: React.FC = () => {
                     statusLabel={isActive ? 'Active' : 'Inactive'}
                     statusVariant={isActive ? 'active' : 'inactive'}
                     animationIndex={i}
-                    actions={<><Button size="small" variant="edit" onClick={() => handleEdit(addon)}>Edit</Button><Button size="small" variant="danger" onClick={() => confirm(`Delete addon "${addon.name}"?`) && deleteMutation.mutate(addon.id)} isLoading={deleteMutation.isPending}>Delete</Button></>}
+                    actions={
+                      <>
+                        <Button size="small" variant="edit" onClick={() => handleEdit(addon)}>Edit</Button>
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={() => {
+                            (async () => {
+                              const ok = await confirmDialog({
+                                title: `Delete addon "${addon.name}"?`,
+                                text: 'This action cannot be undone.',
+                                confirmText: 'Delete',
+                              });
+                              if (!ok) return;
+                              deleteMutation.mutate(addon.id);
+                            })();
+                          }}
+                          isLoading={deleteMutation.isPending}
+                        >
+                          Delete
+                        </Button>
+                      </>
+                    }
                   />
                 );
               })}

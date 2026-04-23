@@ -88,6 +88,30 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
     },
     { prefix: '/admin/shifts', permissionNames: [Permissions.SHIFTS_MANAGE] },
     { prefix: '/admin/reports', permissionNames: [Permissions.REPORTS_VIEW] },
+    {
+        prefix: '/admin/inventory',
+        permissionNames: [
+            Permissions.INVENTORY_VIEW,
+            Permissions.INVENTORY_RECEIVE,
+            Permissions.INVENTORY_ADJUST,
+            Permissions.INVENTORY_WASTE,
+            Permissions.INVENTORY_STOCKTAKE,
+            Permissions.INVENTORY_TRANSFER,
+        ],
+    },
+    {
+        prefix: '/admin/procurement',
+        permissionNames: [
+            Permissions.PROCUREMENT_PR_CREATE,
+            Permissions.PROCUREMENT_PR_APPROVE,
+            Permissions.PROCUREMENT_PO_MANAGE,
+            Permissions.PROCUREMENT_GRN_POST,
+        ],
+    },
+    {
+        prefix: '/admin/recipes',
+        permissionNames: [Permissions.RECIPES_MANAGE, Permissions.COSTING_VIEW],
+    },
     { prefix: '/pos', permissionNames: [Permissions.ORDERS_CREATE] },
     {
         prefix: '/kitchen/back',

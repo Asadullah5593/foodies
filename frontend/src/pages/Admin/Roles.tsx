@@ -8,6 +8,7 @@ import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { confirmDialog } from '../../utils/sweetAlert';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
@@ -405,8 +406,15 @@ const Roles: React.FC = () => {
                           size="small"
                           variant="danger"
                           onClick={() => {
-                            if (confirm(`Delete permission "${p.name}"? This will remove it from all roles.`))
+                            (async () => {
+                              const ok = await confirmDialog({
+                                title: `Delete permission "${p.name}"?`,
+                                text: 'This will remove it from all roles.',
+                                confirmText: 'Delete',
+                              });
+                              if (!ok) return;
                               deletePermissionMutation.mutate(p.id);
+                            })();
                           }}
                           isLoading={deletePermissionMutation.isPending}
                         >
@@ -751,7 +759,26 @@ const Roles: React.FC = () => {
                     actions={
                       <>
                         <Button size="small" variant={isSuperAdminRole ? 'view' : 'edit'} onClick={() => handleEdit(role)}>{isSuperAdminRole ? 'View' : 'Edit'}</Button>
-                        {!isSuperAdminRole && <Button size="small" variant="danger" onClick={() => confirm(`Delete role "${role.name}"?`) && deleteMutation.mutate(role.id)} isLoading={deleteMutation.isPending}>Delete</Button>}
+                        {!isSuperAdminRole && (
+                          <Button
+                            size="small"
+                            variant="danger"
+                            onClick={() => {
+                              (async () => {
+                                const ok = await confirmDialog({
+                                  title: `Delete role "${role.name}"?`,
+                                  text: 'This action cannot be undone.',
+                                  confirmText: 'Delete',
+                                });
+                                if (!ok) return;
+                                deleteMutation.mutate(role.id);
+                              })();
+                            }}
+                            isLoading={deleteMutation.isPending}
+                          >
+                            Delete
+                          </Button>
+                        )}
                       </>
                     }
                   />

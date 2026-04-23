@@ -39,6 +39,24 @@ export const Permissions = {
     DEALS_CREATE: 'deals:create',
     DEALS_EDIT: 'deals:edit',
     DEALS_DELETE: 'deals:delete',
+
+    // Inventory / procurement / recipes
+    INVENTORY_VIEW: 'inventory:view',
+    INVENTORY_RECEIVE: 'inventory:receive',
+    INVENTORY_ADJUST: 'inventory:adjust',
+    INVENTORY_WASTE: 'inventory:waste',
+    INVENTORY_STOCKTAKE: 'inventory:stocktake',
+    INVENTORY_TRANSFER: 'inventory:transfer',
+    INVENTORY_OVERRIDE_NEGATIVE: 'inventory:override_negative',
+    INVENTORY_OVERRIDE_FEFO: 'inventory:override_fefo',
+
+    PROCUREMENT_PR_CREATE: 'procurement:pr:create',
+    PROCUREMENT_PR_APPROVE: 'procurement:pr:approve',
+    PROCUREMENT_PO_MANAGE: 'procurement:po:manage',
+    PROCUREMENT_GRN_POST: 'procurement:grn:post',
+
+    RECIPES_MANAGE: 'recipes:manage',
+    COSTING_VIEW: 'costing:view',
 } as const;
 
 export type PermissionName = (typeof Permissions)[keyof typeof Permissions];

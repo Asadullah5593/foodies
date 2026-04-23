@@ -12,6 +12,7 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { confirmDialog } from '../../utils/sweetAlert';
 
 const BranchMenuItems: React.FC = () => {
   const queryClient = useQueryClient();
@@ -268,7 +269,24 @@ const BranchMenuItems: React.FC = () => {
                   actions={
                     <>
                       <Button size="small" variant="edit" onClick={() => { const newPrice = prompt('Enter new price override (leave empty to use base price):'); if (newPrice !== null) { const trimmed = newPrice.trim(); const value = trimmed === '' ? null : Number.isFinite(parseFloat(trimmed)) ? parseFloat(trimmed) : undefined; if (value !== undefined && value !== null) updateMutation.mutate({ id: item.id, data: { price_override: value } }); else if (trimmed !== '') toast.error('Enter a valid number or leave empty to use base price'); } }} isLoading={updateMutation.isPending}>Edit Price</Button>
-                      <Button size="small" variant="danger" onClick={() => confirm('Delete this branch menu item?') && deleteMutation.mutate(item.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                      <Button
+                        size="small"
+                        variant="danger"
+                        onClick={() => {
+                          (async () => {
+                            const ok = await confirmDialog({
+                              title: 'Delete this branch menu item?',
+                              text: 'This action cannot be undone.',
+                              confirmText: 'Delete',
+                            });
+                            if (!ok) return;
+                            deleteMutation.mutate(item.id);
+                          })();
+                        }}
+                        isLoading={deleteMutation.isPending}
+                      >
+                        Delete
+                      </Button>
                     </>
                   }
                 />

@@ -12,6 +12,7 @@ import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
@@ -209,7 +210,24 @@ const Branches: React.FC = () => {
                   actions={
                     <>
                       <Button size="small" variant="edit" onClick={() => navigate(`/admin/branches/${branch.id}`)}>Edit</Button>
-                      <Button size="small" variant="danger" onClick={() => confirm(`Delete branch "${branch.name}"?`) && deleteMutation.mutate(branch.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                      <Button
+                        size="small"
+                        variant="danger"
+                        onClick={() => {
+                          (async () => {
+                            const ok = await confirmDialog({
+                              title: `Delete branch "${branch.name}"?`,
+                              text: 'This action cannot be undone.',
+                              confirmText: 'Delete',
+                            });
+                            if (!ok) return;
+                            deleteMutation.mutate(branch.id);
+                          })();
+                        }}
+                        isLoading={deleteMutation.isPending}
+                      >
+                        Delete
+                      </Button>
                     </>
                   }
                 />

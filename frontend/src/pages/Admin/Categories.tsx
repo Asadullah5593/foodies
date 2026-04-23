@@ -14,6 +14,7 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { confirmDialog } from '../../utils/sweetAlert';
 
 export interface CategoryItem {
   id: number;
@@ -352,7 +353,17 @@ const Categories: React.FC = () => {
                       <Button
                         size="small"
                         variant="danger"
-                        onClick={() => confirm(`Delete category "${cat.name}"?`) && deleteMutation.mutate(cat.id)}
+                        onClick={() => {
+                          (async () => {
+                            const ok = await confirmDialog({
+                              title: `Delete category "${cat.name}"?`,
+                              text: 'This action cannot be undone.',
+                              confirmText: 'Delete',
+                            });
+                            if (!ok) return;
+                            deleteMutation.mutate(cat.id);
+                          })();
+                        }}
                         isLoading={deleteMutation.isPending}
                       >
                         Delete

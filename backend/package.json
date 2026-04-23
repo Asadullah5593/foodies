@@ -19,6 +19,7 @@
     "seed:peri-peri-co": "ts-node -r tsconfig-paths/register src/seed-peri-peri-co.ts",
     "seed:fireaway": "ts-node -r tsconfig-paths/register src/seed-fireaway.ts",
     "seed:pizza-pasta": "ts-node -r tsconfig-paths/register src/seed-pizza-pasta.ts",
+    "seed:inventory": "ts-node -r tsconfig-paths/register src/seed-inventory.ts",
     "seed:reset-password": "ts-node -r tsconfig-paths/register src/reset-demo-password.ts",
     "typeorm": "node --loader ts-node/esm ./node_modules/typeorm/cli.js -d src/data-source.ts",
     "migration:run": "npm run build && node ./node_modules/typeorm/cli.js migration:run -d dist/data-source.js",

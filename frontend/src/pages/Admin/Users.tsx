@@ -13,6 +13,7 @@ import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
@@ -427,7 +428,24 @@ const Users: React.FC = () => {
                   actions={
                     <>
                       <Button size="small" variant="edit" onClick={() => openEdit(u)}>Edit</Button>
-                      <Button size="small" variant="danger" onClick={() => confirm(`Delete user "${u.name}"?`) && deleteMutation.mutate(u.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                      <Button
+                        size="small"
+                        variant="danger"
+                        onClick={() => {
+                          (async () => {
+                            const ok = await confirmDialog({
+                              title: `Delete user "${u.name}"?`,
+                              text: 'This action cannot be undone.',
+                              confirmText: 'Delete',
+                            });
+                            if (!ok) return;
+                            deleteMutation.mutate(u.id);
+                          })();
+                        }}
+                        isLoading={deleteMutation.isPending}
+                      >
+                        Delete
+                      </Button>
                     </>
                   }
                 />

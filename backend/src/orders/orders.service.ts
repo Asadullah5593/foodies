@@ -18,6 +18,7 @@ import { MenuService } from '../menu/menu.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { ShiftsService } from '../shifts/shifts.service';
 import { CustomersService } from '../customers/customers.service';
+import { InventoryConsumptionService } from '../inventory/inventory-consumption.service';
 import { normalizePakistaniPhone } from '../utils/phone';
 import { assertMenuItemAvailableForOrderType } from '../utils/menu-order-type';
 
@@ -38,6 +39,7 @@ export class OrdersService {
         private loyaltyService: LoyaltyService,
         private shiftsService: ShiftsService,
         private customersService: CustomersService,
+        private inventoryConsumptionService: InventoryConsumptionService,
         private dataSource: DataSource,
     ) {}
 
@@ -668,6 +670,28 @@ export class OrdersService {
             loyaltyPointsToRedeem > 0 &&
             customerPhoneNormalized
         ) {
+            // Deduct inventory (FEFO) for all created orders before applying loyalty redemption,
+            // so we never redeem points for an order that later fails stock deduction.
+            try {
+                for (const id of createdOrderIds) {
+                    await this.inventoryConsumptionService.consumeForOrder(id);
+                }
+            } catch (e) {
+                // Best-effort rollback: reverse any consumption already posted and cancel the created orders.
+                for (const id of createdOrderIds) {
+                    try {
+                        await this.inventoryConsumptionService.reverseConsumptionForOrder(
+                            id,
+                            createdBy,
+                        );
+                    } catch {}
+                    try {
+                        await this.updateStatus(id, tenantId, 'cancelled');
+                    } catch {}
+                }
+                throw e;
+            }
+
             await this.loyaltyService.redeemForOrder(
                 tenantId,
                 customerPhoneNormalized,
@@ -675,6 +699,28 @@ export class OrdersService {
                 loyaltyPointsToRedeem,
                 firstOrderAfterDiscount,
             );
+        }
+
+        // If no loyalty redemption block ran, still deduct inventory now.
+        if (!(firstOrderIdForLoyalty != null && loyaltyPointsToRedeem > 0 && customerPhoneNormalized)) {
+            try {
+                for (const id of createdOrderIds) {
+                    await this.inventoryConsumptionService.consumeForOrder(id);
+                }
+            } catch (e) {
+                for (const id of createdOrderIds) {
+                    try {
+                        await this.inventoryConsumptionService.reverseConsumptionForOrder(
+                            id,
+                            createdBy,
+                        );
+                    } catch {}
+                    try {
+                        await this.updateStatus(id, tenantId, 'cancelled');
+                    } catch {}
+                }
+                throw e;
+            }
         }
 
         const orders = await Promise.all(
@@ -1207,6 +1253,13 @@ export class OrdersService {
         } else if (status === 'cancelled') {
             order.cancelledAt = new Date();
             await this.orderRepo.save(order);
+            // Reverse inventory consumption allocations (if any).
+            try {
+                await this.inventoryConsumptionService.reverseConsumptionForOrder(
+                    order.id,
+                    null,
+                );
+            } catch {}
         } else {
             await this.orderRepo.save(order);
         }

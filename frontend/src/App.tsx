@@ -29,6 +29,20 @@ import Deliveries from './pages/Admin/Deliveries';
 import LoyaltySettings from './pages/Admin/LoyaltySettings';
 import BusinessSettings from './pages/Admin/BusinessSettings';
 import Customers from './pages/Admin/Customers';
+import InventoryOnHand from './pages/Admin/Inventory/InventoryOnHand';
+import InventoryLedger from './pages/Admin/Inventory/InventoryLedger';
+import InventoryAlerts from './pages/Admin/Inventory/InventoryAlerts';
+import InventoryWastage from './pages/Admin/Inventory/InventoryWastage';
+import InventoryStocktake from './pages/Admin/Inventory/InventoryStocktake';
+import InventoryWeeklyUsage from './pages/Admin/Inventory/InventoryWeeklyUsage';
+import InventoryItems from './pages/Admin/Inventory/InventoryItems';
+import InventoryVendors from './pages/Admin/Inventory/InventoryVendors';
+import InventoryUoms from './pages/Admin/Inventory/InventoryUoms';
+import ProcurementPRs from './pages/Admin/Procurement/ProcurementPRs';
+import ProcurementPOs from './pages/Admin/Procurement/ProcurementPOs';
+import ProcurementGRNs from './pages/Admin/Procurement/ProcurementGRNs';
+import RecipesManage from './pages/Admin/Recipes/RecipesManage';
+import RecipesCosting from './pages/Admin/Recipes/RecipesCosting';
 import OrderTaking from './pages/POS/OrderTaking';
 import KitchenDisplay from './pages/Kitchen/KitchenDisplay';
 import KDS from './pages/Kitchen/KDS';
@@ -206,7 +220,17 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isSuperAdmin = user?.is_super_admin === true;
   const isTenantUser = user?.tenant_id != null;
 
-  const allMenuLinks = [
+  type MenuLink = { type: 'link'; path: string; label: string; icon: string };
+  type MenuGroup = {
+    type: 'group';
+    id: 'inventory' | 'procurement' | 'recipes';
+    label: string;
+    icon: string;
+    children: Array<{ path: string; label: string }>;
+  };
+  type MenuItem = MenuLink | MenuGroup;
+
+  const allMenuItems: MenuItem[] = [
     { path: '/admin/dashboard', label: 'Dashboard', icon: '📊' as const },
     ...(isSuperAdmin ? [{ path: '/admin/tenants', label: 'Tenants', icon: '🏢' as const }] : []),
     ...(isTenantUser ? [{ path: '/admin/business-settings', label: 'Business Settings', icon: '⚙️' as const }] : []),
@@ -229,24 +253,84 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { path: '/admin/deliveries', label: 'Deliveries', icon: '🛵' as const },
     { path: '/admin/shifts', label: 'Shifts', icon: '⏰' as const },
     { path: '/admin/reports', label: 'Reports', icon: '📈' as const },
+    {
+      type: 'group',
+      id: 'inventory',
+      label: 'Inventory',
+      icon: '📦',
+      children: [
+        { path: '/admin/inventory/on-hand', label: 'On-hand inventory' },
+        { path: '/admin/inventory/ledger', label: 'Stock movement ledger' },
+        { path: '/admin/inventory/alerts', label: 'Alerts (low stock & expiry)' },
+        { path: '/admin/inventory/wastage', label: 'Record wastage' },
+        { path: '/admin/inventory/stocktake', label: 'Weekly stock count (Finance Day)' },
+        { path: '/admin/inventory/weekly-usage', label: 'Weekly usage report' },
+        { path: '/admin/inventory/items', label: 'Inventory items (ingredients, packaging)' },
+        { path: '/admin/inventory/vendors', label: 'Vendors (suppliers / warehouse)' },
+        { path: '/admin/inventory/uoms', label: 'Units of measure' },
+      ],
+    },
+    {
+      type: 'group',
+      id: 'procurement',
+      label: 'Procurement',
+      icon: '🧾',
+      children: [
+        { path: '/admin/procurement/prs', label: 'Purchase requisitions' },
+        { path: '/admin/procurement/pos', label: 'Purchase orders' },
+        { path: '/admin/procurement/grns', label: 'Goods receipt notes' },
+      ],
+    },
+    {
+      type: 'group',
+      id: 'recipes',
+      label: 'Recipes',
+      icon: '🧪',
+      children: [
+        { path: '/admin/recipes/manage', label: 'Recipe builder' },
+        { path: '/admin/recipes/costing', label: 'Costing & margin' },
+      ],
+    },
     { path: '/pos/orders', label: 'POS', icon: '🛒' as const },
     { path: '/kitchen', label: 'Customer Display', icon: '📺' as const },
     { path: '/kitchen/back', label: 'Back Kitchen', icon: '🍳' as const },
     { path: '/foh/packing', label: 'FOH Packing', icon: '📦' as const },
     // { path: '/admin/button-demo', label: 'Button demo', icon: '🎨' as const },
-  ];
-  const menuLinks = isRiderForAccess(user)
-    ? [{ path: '/rider', label: 'Deliveries', icon: '🛵' as const }]
-    : allMenuLinks.filter((link) => canAccessPath(user, link.path));
+  ].map((it: any) => (it.type ? it : ({ ...it, type: 'link' } as MenuLink)));
+
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
+    inventory: location.pathname.startsWith('/admin/inventory'),
+    procurement: location.pathname.startsWith('/admin/procurement'),
+    recipes: location.pathname.startsWith('/admin/recipes'),
+  });
+
+  useEffect(() => {
+    setExpandedGroups((prev) => ({
+      ...prev,
+      inventory: location.pathname.startsWith('/admin/inventory') ? true : prev.inventory,
+      procurement: location.pathname.startsWith('/admin/procurement') ? true : prev.procurement,
+      recipes: location.pathname.startsWith('/admin/recipes') ? true : prev.recipes,
+    }));
+  }, [location.pathname]);
+
+  const menuItems: MenuItem[] = isRiderForAccess(user)
+    ? [{ type: 'link', path: '/rider', label: 'Deliveries', icon: '🛵' }]
+    : allMenuItems
+        .map((item) => {
+          if (item.type === 'link') return canAccessPath(user, item.path) ? item : null;
+          const allowedChildren = item.children.filter((c) => canAccessPath(user, c.path));
+          return allowedChildren.length ? { ...item, children: allowedChildren } : null;
+        })
+        .filter(Boolean) as MenuItem[];
 
   const pathname = location.pathname;
-  const matchingPaths = menuLinks.filter(
-    (l) => pathname === l.path || pathname.startsWith(l.path + '/')
+  const flatLinks: MenuLink[] = menuItems.flatMap((item) =>
+    item.type === 'link'
+      ? [item]
+      : item.children.map((c) => ({ type: 'link', path: c.path, label: c.label, icon: item.icon })),
   );
-  const activePath =
-    matchingPaths.length > 0
-      ? matchingPaths.sort((a, b) => b.path.length - a.path.length)[0].path
-      : null;
+  const matchingPaths = flatLinks.filter((l) => pathname === l.path || pathname.startsWith(l.path + '/'));
+  const activePath = matchingPaths.length > 0 ? matchingPaths.sort((a, b) => b.path.length - a.path.length)[0].path : null;
   const isActive = (path: string) => path === activePath;
   const isPOS = pathname === '/pos' || pathname.startsWith('/pos/');
   const basePath = pathname.startsWith('/admin/orders/') ? '/admin/orders' : pathname.startsWith('/admin/branches/') ? '/admin/branches' : pathname;
@@ -283,24 +367,100 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
       {/* Nav links — scrollable */}
       <nav className={`flex-1 overflow-y-auto py-4 space-y-0.5 ${collapsed ? 'px-2' : 'px-3'}`}>
-        {menuLinks.map((link) => (
-          <Link
-            key={link.path}
-            to={link.path}
-            onClick={() => setSidebarOpen(false)}
-            title={collapsed ? link.label : undefined}
-            className={`flex items-center rounded-lg text-sm font-medium transition-all duration-200 ${
-              collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'
-            } ${
-              isActive(link.path)
-                ? 'bg-red-600 text-white shadow-lg shadow-red-600/30'
-                : sidebarInactive
-            }`}
-          >
-            <span className="text-lg w-6 text-center flex-shrink-0">{link.icon}</span>
-            {!collapsed && <span className="truncate">{link.label}</span>}
-          </Link>
-        ))}
+        {menuItems.map((item) => {
+          if (item.type === 'link') {
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={() => setSidebarOpen(false)}
+                title={collapsed ? item.label : undefined}
+                className={`flex items-center rounded-lg text-sm font-medium transition-all duration-200 ${
+                  collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'
+                } ${
+                  isActive(item.path) ? 'bg-red-600 text-white shadow-lg shadow-red-600/30' : sidebarInactive
+                }`}
+              >
+                <span className="text-lg w-6 text-center flex-shrink-0">{item.icon}</span>
+                {!collapsed && <span className="truncate">{item.label}</span>}
+              </Link>
+            );
+          }
+
+          const firstChild = item.children[0];
+          const groupActive = item.children.some((c) => isActive(c.path));
+          const expanded = !!expandedGroups[item.id];
+
+          if (collapsed) {
+            return (
+              <Link
+                key={item.id}
+                to={firstChild?.path ?? '/admin/dashboard'}
+                onClick={() => setSidebarOpen(false)}
+                title={item.label}
+                className={`flex items-center rounded-lg text-sm font-medium transition-all duration-200 justify-center px-0 py-2.5 ${
+                  groupActive ? 'bg-red-600 text-white shadow-lg shadow-red-600/30' : sidebarInactive
+                }`}
+              >
+                <span className="text-lg w-6 text-center flex-shrink-0">{item.icon}</span>
+              </Link>
+            );
+          }
+
+          return (
+            <div key={item.id} className="space-y-1">
+              <button
+                type="button"
+                onClick={() => setExpandedGroups((p) => ({ ...p, [item.id]: !p[item.id] }))}
+                className={`w-full flex items-center rounded-lg text-sm font-medium transition-all duration-200 gap-3 px-3 py-2.5 ${
+                  groupActive ? 'bg-red-600 text-white shadow-lg shadow-red-600/30' : sidebarInactive
+                }`}
+              >
+                <span className="text-lg w-6 text-center flex-shrink-0">{item.icon}</span>
+                <span className="truncate flex-1 text-left">{item.label}</span>
+                <svg
+                  className={`h-4 w-4 flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : 'rotate-0'}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+
+              <AnimatePresence initial={false}>
+                {expanded && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.18 }}
+                    className="overflow-hidden pl-10 pr-2"
+                  >
+                    <div className="space-y-1 py-1">
+                      {item.children.map((c) => (
+                        <Link
+                          key={c.path}
+                          to={c.path}
+                          onClick={() => setSidebarOpen(false)}
+                          className={`block rounded-lg text-sm font-medium px-3 py-2 transition-colors ${
+                            isActive(c.path)
+                              ? theme === 'dark'
+                                ? 'bg-white/15 text-white'
+                                : 'bg-slate-200 text-slate-900'
+                              : 'text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-white/10'
+                          }`}
+                        >
+                          {c.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        })}
       </nav>
 
       {/* Collapse/expand toggle — same position in both states so sequence stays consistent */}
@@ -721,6 +881,44 @@ const AppRoutes: React.FC = () => {
           </ProtectedRoute>
         }
       />
+      <Route
+        path="/admin/inventory"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><Navigate to="/admin/inventory/on-hand" replace /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/admin/inventory/on-hand" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryOnHand /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/inventory/ledger" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryLedger /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/inventory/alerts" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryAlerts /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/inventory/wastage" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryWastage /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/inventory/stocktake" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryStocktake /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/inventory/weekly-usage" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryWeeklyUsage /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/inventory/items" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryItems /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/inventory/vendors" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryVendors /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/inventory/uoms" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryUoms /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route
+        path="/admin/procurement"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><Navigate to="/admin/procurement/prs" replace /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/admin/procurement/prs" element={<ProtectedRoute><AdminOnlyRoute><Layout><ProcurementPRs /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/procurement/pos" element={<ProtectedRoute><AdminOnlyRoute><Layout><ProcurementPOs /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/procurement/grns" element={<ProtectedRoute><AdminOnlyRoute><Layout><ProcurementGRNs /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route
+        path="/admin/recipes"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><Navigate to="/admin/recipes/manage" replace /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route path="/admin/recipes/manage" element={<ProtectedRoute><AdminOnlyRoute><Layout><RecipesManage /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/recipes/costing" element={<ProtectedRoute><AdminOnlyRoute><Layout><RecipesCosting /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/button-demo" element={<ProtectedRoute><AdminOnlyRoute><Layout><ButtonDemo /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route
         path="/kitchen"

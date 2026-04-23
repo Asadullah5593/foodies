@@ -13,6 +13,7 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
@@ -406,7 +407,15 @@ const Brands: React.FC = () => {
                           size="small"
                           variant="danger"
                           onClick={() => {
-                            if (confirm(`Delete brand "${brand.name}"?`)) deleteMutation.mutate(brand.id);
+                            (async () => {
+                              const ok = await confirmDialog({
+                                title: `Delete brand "${brand.name}"?`,
+                                text: 'This action cannot be undone.',
+                                confirmText: 'Delete',
+                              });
+                              if (!ok) return;
+                              deleteMutation.mutate(brand.id);
+                            })();
                           }}
                           isLoading={deleteMutation.isPending}
                         >

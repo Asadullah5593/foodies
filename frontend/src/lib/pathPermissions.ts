@@ -25,6 +25,21 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/deliveries': ['deliveries:view'],
   '/admin/shifts': ['shifts:manage'],
   '/admin/reports': ['reports:view'],
+  '/admin/inventory': [
+    'inventory:view',
+    'inventory:receive',
+    'inventory:adjust',
+    'inventory:waste',
+    'inventory:stocktake',
+    'inventory:transfer',
+  ],
+  '/admin/procurement': [
+    'procurement:pr:create',
+    'procurement:pr:approve',
+    'procurement:po:manage',
+    'procurement:grn:post',
+  ],
+  '/admin/recipes': ['recipes:manage', 'costing:view'],
   '/pos/orders': ['orders:create'],
   '/kitchen': ['kitchen:view', 'kitchen:update'],
   '/kitchen/back': ['back-kitchen:view'],
@@ -46,13 +61,23 @@ export function isRiderForAccess(user: UserForAccess): boolean {
   return perms.length > 0 && perms.every((p) => p === 'deliveries:view');
 }
 
+function getRequiredPermissionsForPath(path: string): string[] | null | undefined {
+  // Match by longest prefix (mirrors backend RoleAccessGuard prefix matching)
+  const keys = Object.keys(PATH_PERMISSIONS);
+  const matches = keys
+    .filter((k) => path === k || path.startsWith(k + '/'))
+    .sort((a, b) => b.length - a.length);
+  const best = matches[0];
+  return best ? PATH_PERMISSIONS[best] : undefined;
+}
+
 export function canAccessPath(user: UserForAccess, path: string): boolean {
   if (!user) return false;
   if (user.is_super_admin) return true;
   // Riders only have access to the rider app (deliveries); no admin modules
   if (isRiderForAccess(user)) return path === '/rider' || path.startsWith('/rider/');
   if (path === '/admin/tenants') return false;
-  const perms = PATH_PERMISSIONS[path];
+  const perms = getRequiredPermissionsForPath(path);
   if (perms === null || !perms?.length) return false;
   if (!perms?.length) return false;
   return perms.some((p) => user.permissions?.includes(p));
@@ -82,6 +107,9 @@ const ORDERED_LANDING_PATHS = [
   '/admin/deliveries',
   '/admin/shifts',
   '/admin/reports',
+  '/admin/inventory',
+  '/admin/procurement',
+  '/admin/recipes',
   '/pos/orders',
   '/kitchen',
   '/kitchen/back',

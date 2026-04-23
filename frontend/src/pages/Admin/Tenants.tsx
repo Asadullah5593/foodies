@@ -10,6 +10,7 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { confirmDialog } from '../../utils/sweetAlert';
 
 const Tenants: React.FC = () => {
   const { user } = useAuth();
@@ -278,7 +279,24 @@ const Tenants: React.FC = () => {
                   actions={
                     <>
                       <Button size="small" variant="edit" onClick={() => { setEditingTenant(tenant); setFormData({ name: tenant.name, status: tenant.status, legal_name: tenant.legal_name || '', default_tax_rate: tenant.default_tax_rate != null ? String(tenant.default_tax_rate) : '', loyalty_enabled: tenant.loyalty_enabled ?? false, owner_email: '', owner_password: '', owner_name: '' }); setShowForm(true); }}>Edit</Button>
-                      <Button size="small" variant="danger" onClick={() => confirm(`Delete tenant "${tenant.name}"?`) && deleteMutation.mutate(tenant.id)} isLoading={deleteMutation.isPending}>Delete</Button>
+                      <Button
+                        size="small"
+                        variant="danger"
+                        onClick={() => {
+                          (async () => {
+                            const ok = await confirmDialog({
+                              title: `Delete tenant "${tenant.name}"?`,
+                              text: 'This action cannot be undone.',
+                              confirmText: 'Delete',
+                            });
+                            if (!ok) return;
+                            deleteMutation.mutate(tenant.id);
+                          })();
+                        }}
+                        isLoading={deleteMutation.isPending}
+                      >
+                        Delete
+                      </Button>
                     </>
                   }
                 />
