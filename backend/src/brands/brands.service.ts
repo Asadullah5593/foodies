@@ -54,6 +54,16 @@ export class BrandsService {
         return this.filterBrandsBySearch(mapped, search);
     }
 
+    /** Public list for web home – active brands scoped to a tenant id. Optional search filters by brand name. */
+    async findAllPublicByTenantId(tenantId: number, search?: string) {
+        const list = await this.repo.find({
+            where: { isActive: true, tenantId },
+            order: { id: 'ASC' },
+        });
+        const mapped = list.map((b) => this.toResponse(b));
+        return this.filterBrandsBySearch(mapped, search);
+    }
+
     /** Public: active brands at a specific branch (for consumer app). Optional search filters by brand name. */
     async findAllPublicByBranchId(branchId: number, search?: string) {
         const branchBrands = await this.branchBrandRepo.find({
