@@ -684,10 +684,14 @@ export class OrdersService {
                             id,
                             createdBy,
                         );
-                    } catch {}
+                    } catch {
+                        void 0;
+                    }
                     try {
                         await this.updateStatus(id, tenantId, 'cancelled');
-                    } catch {}
+                    } catch {
+                        void 0;
+                    }
                 }
                 throw e;
             }
@@ -702,7 +706,13 @@ export class OrdersService {
         }
 
         // If no loyalty redemption block ran, still deduct inventory now.
-        if (!(firstOrderIdForLoyalty != null && loyaltyPointsToRedeem > 0 && customerPhoneNormalized)) {
+        if (
+            !(
+                firstOrderIdForLoyalty != null &&
+                loyaltyPointsToRedeem > 0 &&
+                customerPhoneNormalized
+            )
+        ) {
             try {
                 for (const id of createdOrderIds) {
                     await this.inventoryConsumptionService.consumeForOrder(id);
@@ -714,10 +724,14 @@ export class OrdersService {
                             id,
                             createdBy,
                         );
-                    } catch {}
+                    } catch {
+                        void 0;
+                    }
                     try {
                         await this.updateStatus(id, tenantId, 'cancelled');
-                    } catch {}
+                    } catch {
+                        void 0;
+                    }
                 }
                 throw e;
             }
@@ -773,6 +787,23 @@ export class OrdersService {
             delivery_fee: Number(order.deliveryFee),
             total_amount: Number(order.totalAmount),
             discount_code: order.discountCode,
+            delivery_address: order.deliveryAddress ?? null,
+            delivery_latitude:
+                order.deliveryLatitude != null
+                    ? Number(order.deliveryLatitude)
+                    : null,
+            delivery_longitude:
+                order.deliveryLongitude != null
+                    ? Number(order.deliveryLongitude)
+                    : null,
+            customer_latitude:
+                order.deliveryLatitude != null
+                    ? Number(order.deliveryLatitude)
+                    : null,
+            customer_longitude:
+                order.deliveryLongitude != null
+                    ? Number(order.deliveryLongitude)
+                    : null,
             loyalty_points_redeemed: order.loyaltyPointsRedeemed ?? 0,
             items:
                 order.orderItems?.map((oi) => ({
@@ -1259,7 +1290,9 @@ export class OrdersService {
                     order.id,
                     null,
                 );
-            } catch {}
+            } catch {
+                void 0;
+            }
         } else {
             await this.orderRepo.save(order);
         }
@@ -1681,6 +1714,12 @@ export class OrdersService {
             customer_name: o.customerName,
             customer_phone: o.customerPhone,
             delivery_address: o.deliveryAddress,
+            delivery_latitude:
+                o.deliveryLatitude != null ? Number(o.deliveryLatitude) : null,
+            delivery_longitude:
+                o.deliveryLongitude != null
+                    ? Number(o.deliveryLongitude)
+                    : null,
             placed_at: o.placedAt?.toISOString() ?? null,
             total_amount: Number(o.totalAmount),
             branch: o.branch
@@ -1688,6 +1727,15 @@ export class OrdersService {
                       id: o.branch.id,
                       name: o.branch.name,
                       address: o.branch.address,
+                      // Backward-compatible keys (existing clients may use them)
+                      latitude:
+                          o.branch.latitude != null
+                              ? Number(o.branch.latitude)
+                              : null,
+                      longitude:
+                          o.branch.longitude != null
+                              ? Number(o.branch.longitude)
+                              : null,
                   }
                 : null,
             brand_name: o.brand?.name ?? null,
@@ -1725,6 +1773,14 @@ export class OrdersService {
             customer_name: order.customerName,
             customer_phone: order.customerPhone,
             delivery_address: order.deliveryAddress,
+            delivery_latitude:
+                order.deliveryLatitude != null
+                    ? Number(order.deliveryLatitude)
+                    : null,
+            delivery_longitude:
+                order.deliveryLongitude != null
+                    ? Number(order.deliveryLongitude)
+                    : null,
             placed_at: order.placedAt?.toISOString() ?? null,
             total_amount: Number(order.totalAmount),
             branch: order.branch
@@ -1732,6 +1788,15 @@ export class OrdersService {
                       id: order.branch.id,
                       name: order.branch.name,
                       address: order.branch.address,
+                      // Backward-compatible keys (existing clients may use them)
+                      latitude:
+                          order.branch.latitude != null
+                              ? Number(order.branch.latitude)
+                              : null,
+                      longitude:
+                          order.branch.longitude != null
+                              ? Number(order.branch.longitude)
+                              : null,
                   }
                 : null,
             brand_name: order.brand?.name ?? null,

@@ -2,298 +2,339 @@
 
 import { motion } from "framer-motion";
 import Image from "next/image";
-import Link from "next/link";
-import { TopNav } from "@/components/top-nav";
-import { AppShell, Button, Card, Loader, SectionTitle } from "@/components/ui";
-import { BranchMap } from "@/components/home/branch-map-dynamic";
-import { HOME_IMAGE, useHomePage } from "@/lib/hooks/use-home-page";
-import type { Branch } from "@/lib/api/types";
+import { useMemo } from "react";
+import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
+import { AppShell, Button, Card, Loader } from "@/components/ui";
+import { getTenantBrands } from "@/lib/api/consumer";
+import { toImageUrl } from "@/lib/api/client";
+import type { Brand } from "@/lib/api/types";
+import { useSessionStore } from "@/lib/store/session-store";
+
+const HOME_FEATURE_BLURBS: Array<{ icon: string; title: string; body: string; detail?: string }> = [
+  {
+    icon: "/Icons (2).svg",
+    title: "Wide Variety",
+    body: "Multiple cuisines under one roof",
+  },
+  {
+    icon: "/Icons (3).svg",
+    title: "Quality",
+    body: "Fresh ingredients, great taste",
+  },
+  {
+    icon: "/Icons (1).svg",
+    title: "Best Experience",
+    body: "Fast service and happy moments",
+  },
+];
 
 export default function Home() {
-  const h = useHomePage();
-  const {
-    router,
-    queryCoords,
-    locationStatus,
-    requestLocation,
-    viewMode,
-    setViewMode,
-    mapSectionRef,
-    branchesQuery,
-    selectedBranchBrandsQuery,
-    sortedBranches,
-    selectedBranchId,
-    setSelectedBranch,
-    distanceKmForBranch,
-    branchCoverForBranch,
-    getBranchTags,
-    distanceSubLabel,
-    selectedBranchHasBrands,
-  } = h;
+  const router = useRouter();
+  const setBrandId = useSessionStore((s) => s.setBrandId);
+
+  const brandsQuery = useQuery({
+    queryKey: ["tenant-brands"],
+    queryFn: () => getTenantBrands(),
+    // Avoid showing cached empty/error results after client-side navigation.
+    refetchOnMount: "always",
+    refetchOnReconnect: true,
+    staleTime: 0,
+  });
+
+  const brands = useMemo(() => brandsQuery.data ?? [], [brandsQuery.data]);
+  const topBrands = useMemo(() => brands.slice(0, 3), [brands]);
+
+  const enterBrand = (brand: Brand) => {
+    setBrandId(brand.id);
+    router.push("/menu");
+  };
 
   return (
     <AppShell>
-      <TopNav />
-      <motion.section
-        initial={false}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.25 }}
-      >
-        <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-black">
+      <motion.section initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+        <SiteHeader />
+
+        <section className="relative overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] shadow-sm">
           <div className="absolute inset-0">
             <Image
-              src={HOME_IMAGE.hero}
+              src="/Banner.jpg.jpeg"
               alt=""
               fill
               priority
               sizes="(max-width: 1280px) 100vw, 1280px"
-              className="object-cover opacity-80"
+              className="object-cover"
             />
-            <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/55 to-black/20" />
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_25%,rgba(220,38,38,0.25),transparent_45%)]" />
+            <div className="absolute inset-0 bg-gradient-to-r from-white/50 via-white/40 to-white/10" />
           </div>
 
-          <div className="relative z-10 px-6 py-10 md:px-10 md:py-16">
-            <div className="max-w-2xl">
-              <p className="mb-3 text-xs font-bold uppercase tracking-[0.22em] text-white/70">
-                We are open for experience
-              </p>
-              <h1 className="text-4xl font-black leading-[0.98] tracking-tight text-white md:text-6xl">
-                TASTE THE <span className="text-red-500">UNEXPECTED</span>.
-              </h1>
-              <p className="mt-4 max-w-xl text-sm text-white/70 md:text-base">
-                A curated collection of culinary destinations designed for the discerning
-                palate. Select your locale, then explore what’s cooking tonight.
-              </p>
-
-              <div className="mt-7 flex flex-wrap items-center gap-3">
-                <Button onClick={requestLocation} disabled={locationStatus === "loading"}>
-                  {locationStatus === "loading"
-                    ? "Finding your location..."
-                    : "Choose your location"}
-                </Button>
-                <Link
-                  href="/login"
-                  className="inline-flex items-center justify-center rounded-lg border border-[var(--border-soft)] bg-[var(--surface)]/65 px-4 py-2 text-sm font-semibold text-[var(--foreground)] transition hover:bg-[var(--surface-2)]"
-                >
-                  Member login
-                </Link>
+          <div className="relative z-10 px-6 py-10 md:px-10 md:py-14">
+            <div className="max-w-xl">
+              <div className="flex items-center gap-3">
+                <span className="h-[2px] w-10 rounded-full bg-red-600" aria-hidden="true" />
+                <p className="text-xs font-black uppercase tracking-[0.24em] text-red-600">Welcome to</p>
               </div>
-
-              {locationStatus === "denied" ? (
-                <p className="mt-4 text-sm text-red-300">
-                  Location access is blocked. Please allow location to show nearby
-                  branches.
-                </p>
-              ) : null}
-              {queryCoords ? (
-                <p className="mt-4 text-sm text-emerald-300">
-                  Location enabled successfully.
-                  {queryCoords
-                    ? ` (${queryCoords.latitude.toFixed(6)}, ${queryCoords.longitude.toFixed(6)})`
-                    : ""}
-                </p>
-              ) : null}
+              <h1 className="mt-3 text-4xl font-black leading-[0.92] tracking-tight text-[var(--foreground)] md:text-6xl">
+                FOODIES
+                <br />
+                <span className="text-red-600">FOOD COURT</span>
+              </h1>
+              <p className="mt-4 text-sm text-[var(--muted)] md:text-base">
+                A world of flavors, under one roof. Choose your favorite brand and enjoy a delicious experience.
+              </p>
+              <div className="mt-7">
+                <Button
+                  type="button"
+                  className="rounded-full bg-zinc-900 px-6 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-zinc-800"
+                  onClick={() => document.getElementById("choose-brand")?.scrollIntoView({ behavior: "smooth" })}
+                >
+                  <span className="inline-flex items-center gap-3">
+                    <span className="grid h-10 w-10 place-items-center rounded-full border border-white/20 bg-white/10">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="22"
+                        height="22"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                        className="text-white"
+                      >
+                        <path d="M16.5 7.5 14.25 14.25 7.5 16.5l2.25-6.75z" />
+                        <circle cx="12" cy="12" r="10" />
+                      </svg>
+                    </span>
+                    Choose your brand
+                  </span>
+                </Button>
+              </div>
             </div>
           </div>
         </section>
 
-        {queryCoords ? (
-          <section className="mt-8">
-            <div className="mb-4 flex items-center justify-between">
-              <SectionTitle
-                title="Our branches"
-                subtitle="Only branches are shown here. Continue to menu after selecting one."
-              />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                    viewMode === "list"
-                      ? "bg-red-600 text-white"
-                      : "border border-white/10 bg-black/40 text-white/70"
-                  }`}
-                  onClick={() => setViewMode("list")}
-                >
-                  List view
-                </button>
-                <button
-                  type="button"
-                  className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
-                    viewMode === "map"
-                      ? "bg-red-600 text-white"
-                      : "border border-white/10 bg-black/40 text-white/70"
-                  }`}
-                  onClick={() => setViewMode("map")}
-                >
-                  Map view
-                </button>
-              </div>
+        <section id="choose-brand" className="mt-12">
+          <div className="text-center">
+            <div className="mx-auto grid h-14 w-14 place-items-center">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="54"
+                height="54"
+                viewBox="0 0 48 48"
+                fill="none"
+                aria-hidden="true"
+              >
+                {/* rays */}
+                <path
+                  d="M24 5v5M14.5 7.5l2.5 4.3M33.5 7.5 31 11.8M7.5 16l4.3 2.5M40.5 16 36.2 18.5"
+                  stroke="#dc2626"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                />
+                {/* cloche */}
+                <path
+                  d="M12 28c1.8-8.6 8.1-14 12-14s10.2 5.4 12 14"
+                  stroke="#dc2626"
+                  strokeWidth="2.4"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <path
+                  d="M9 30h30"
+                  stroke="#dc2626"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M14 34h20"
+                  stroke="#dc2626"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M24 12.2c1.3 0 2.3-1 2.3-2.3S25.3 7.6 24 7.6s-2.3 1-2.3 2.3 1 2.3 2.3 2.3Z"
+                  fill="#dc2626"
+                />
+              </svg>
             </div>
+            <p className="mt-3 text-xs font-black uppercase tracking-[0.24em] text-red-600">Choose your favorite</p>
+            <h2 className="mt-2 text-4xl font-black tracking-tight text-[var(--foreground)]">BRAND</h2>
+            <div className="mx-auto mt-2 h-[3px] w-12 rounded-full bg-red-600" aria-hidden="true" />
+            <p className="mt-3 text-sm text-[var(--muted)]">Select a brand below to explore the menu and place your order</p>
+          </div>
 
-            {branchesQuery.isLoading ? <Loader label="Finding nearby branches..." /> : null}
+          {brandsQuery.isLoading ? (
+            <div className="mt-8">
+              <Loader label="Loading brands..." />
+            </div>
+          ) : null}
 
-            {!branchesQuery.isLoading && !sortedBranches.length ? (
+          {!brandsQuery.isLoading && !brands.length ? (
+            <div className="mt-8">
               <Card>
-                <p className="text-sm text-[var(--muted)]">
-                  No branches found nearby. Try again with a different location.
-                </p>
+                <p className="text-sm text-[var(--muted)]">No brands available yet.</p>
               </Card>
-            ) : null}
+            </div>
+          ) : null}
 
-            {sortedBranches.length ? (
-              viewMode === "map" ? (
-                <div ref={mapSectionRef}>
-                  <BranchMap
-                    userLocation={queryCoords}
-                    branches={sortedBranches}
-                    onSelectBranch={(branch: Branch) => setSelectedBranch(branch)}
-                    height="72vh"
-                  />
-                </div>
-              ) : (
-                <div className="grid gap-4 lg:grid-cols-6">
-                  {sortedBranches.map((branch, index) => {
-                    const selected = selectedBranchId === branch.id;
-                    const km = distanceKmForBranch(branch);
-                    const spanClass =
-                      index === 0
-                        ? "lg:col-span-4"
-                        : index === 1
-                          ? "lg:col-span-2"
-                          : index === 2
-                            ? "lg:col-span-2"
-                            : index === 3
-                              ? "lg:col-span-4"
-                              : "lg:col-span-2";
-                    return (
-                      <button
-                        key={branch.id}
-                        type="button"
-                        onClick={() => setSelectedBranch(branch)}
-                        className={`group relative overflow-hidden rounded-2xl border text-left transition ${spanClass} ${
-                          selected
-                            ? "border-red-500/60 ring-1 ring-red-500/30"
-                            : "border-white/10 hover:border-white/20"
-                        }`}
+          {topBrands.length ? (
+            <div className="mt-10 grid gap-5 md:grid-cols-3">
+              {topBrands.map((b) => (
+                <div
+                  key={b.id}
+                  className="overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] shadow-sm"
+                >
+                  <div className="relative h-44 bg-[var(--surface-2)]">
+                    <Image
+                      src="/Banner_02.jpg.jpeg"
+                      alt=""
+                      fill
+                      sizes="(max-width: 768px) 100vw, 33vw"
+                      className="object-cover opacity-90"
+                    />
+                  </div>
+                  <div className="relative -mt-10 px-6 pb-6">
+                    <div className="relative mx-auto h-40 w-40 rounded-full border border-[var(--border-soft)] bg-white p-3 shadow-sm">
+                      {b.logo_url ? (
+                        <Image
+                          src={toImageUrl(b.logo_url)}
+                          alt={b.name}
+                          fill
+                          unoptimized
+                          sizes="160px"
+                          className="object-contain p-1"
+                        />
+                      ) : (
+                        <span className="flex h-full items-center justify-center text-3xl font-black text-red-600">
+                          {(b.name || "?").slice(0, 1)}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="mt-4 text-center text-lg font-black text-[var(--foreground)]">{b.name}</h3>
+                    <button
+                      type="button"
+                      onClick={() => enterBrand(b)}
+                      className="mx-auto mt-4 flex items-center justify-center gap-2.5 text-sm font-black text-red-600 hover:underline"
+                    >
+                      View Menu
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="22"
+                        height="22"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.25"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                        className="shrink-0 text-red-600"
                       >
-                        <div className="absolute inset-0">
-                          <Image
-                            src={branchCoverForBranch(branch)}
-                            alt=""
-                            fill
-                            sizes="(max-width: 1280px) 100vw, 720px"
-                            className="object-cover opacity-80 transition duration-300 group-hover:scale-[1.02]"
-                          />
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/65 to-black/45" />
-                          <div className="absolute inset-0 bg-black/25" />
-                        </div>
-
-                        <div className="relative z-10 flex h-full min-h-[328px] flex-col justify-between p-5">
-                          <div className="flex items-center justify-between gap-3">
-                            <span className="rounded-full border border-white/25 bg-black/65 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-white">
-                              {selected ? "Selected" : "Open now"}
-                            </span>
-                            <span className="rounded-full border border-white/20 bg-black/65 px-3 py-1 text-[11px] font-semibold text-white">
-                              {km != null ? `${km.toFixed(1)} km away` : "Nearby"}
-                            </span>
-                          </div>
-
-                          <div>
-                            <p className="text-2xl font-extrabold text-white [text-shadow:0_2px_10px_rgba(0,0,0,0.95)]">
-                              {branch.name}
-                            </p>
-                            <p className="mt-1 text-xs uppercase tracking-[0.18em] text-white/90 [text-shadow:0_2px_8px_rgba(0,0,0,0.9)]">
-                              {branch.address || branch.code || "Branch location"}
-                            </p>
-                            <div className="mt-4 flex flex-wrap items-center gap-2">
-                              {getBranchTags(branch).map((tag) => (
-                                <span
-                                  key={`${branch.id}-${tag}`}
-                                  className="rounded-full border border-white/25 bg-black/65 px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-white"
-                                >
-                                  {tag}
-                                </span>
-                              ))}
-                            </div>
-                            <div className="mt-5 flex items-center justify-between gap-3">
-                              <span className="inline-flex items-center gap-2 text-xs font-semibold text-white [text-shadow:0_2px_8px_rgba(0,0,0,0.9)]">
-                                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-black/70 ring-1 ring-white/20">
-                                  <svg
-                                    width="16"
-                                    height="16"
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    aria-hidden="true"
-                                  >
-                                    <path
-                                      d="M12 22s7-4.5 7-12a7 7 0 1 0-14 0c0 7.5 7 12 7 12Z"
-                                      stroke="currentColor"
-                                      strokeWidth="1.6"
-                                      strokeLinejoin="round"
-                                    />
-                                    <path
-                                      d="M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-                                      stroke="currentColor"
-                                      strokeWidth="1.6"
-                                      strokeLinejoin="round"
-                                    />
-                                  </svg>
-                                </span>
-                                {km != null ? distanceSubLabel(km) : "View on map"}
-                              </span>
-                              <span className="rounded-lg border border-white/25 bg-black/70 px-3 py-2 text-xs font-semibold text-white transition group-hover:bg-black/80">
-                                {selected ? "Selected" : "Select Branch"}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
+                        <path d="M5 12h14M13 6l6 6-6 6" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
-              )
-            ) : null}
-          </section>
-        ) : null}
+              ))}
+            </div>
+          ) : null}
 
-        {selectedBranchId ? (
-          <Card className="mt-6">
-            {selectedBranchBrandsQuery.isLoading ? (
-              <Loader label="Checking brands for selected branch..." />
-            ) : selectedBranchHasBrands ? (
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm text-[var(--muted)]">
-                  Branch selected. Explore curated brands for this branch.
-                </p>
-                <Button onClick={() => router.push("/brands")}>Go to brands</Button>
-              </div>
-            ) : (
-              <p className="text-sm text-[var(--muted)]">
-                This branch has no brands yet. Please choose another branch to continue.
-              </p>
-            )}
-          </Card>
-        ) : null}
-
-        <footer className="mt-12 border-t border-white/10 py-8 text-xs text-white/55">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <p className="tracking-wide">
-              © {new Date().getFullYear()} Culinary Hub. All rights reserved.
-            </p>
-            <div className="flex flex-wrap items-center gap-4">
-              <Link href="/" className="hover:text-white/80">
-                Experience
-              </Link>
-              <Link href="/" className="hover:text-white/80">
-                Company
-              </Link>
-              <Link href="/" className="hover:text-white/80">
-                Legal
-              </Link>
+          <div className="mt-8 flex items-center justify-center">
+            <div className="inline-flex items-center gap-3 rounded-full border border-[var(--border-soft)] bg-[var(--surface)] px-6 py-3 text-xs font-black tracking-wide text-[var(--muted)]">
+              <span className="grid h-11 w-11 place-items-center rounded-lg bg-[var(--surface-2)] text-[var(--muted)]">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                  <path
+                    d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+              More brands coming soon
             </div>
           </div>
-        </footer>
+        </section>
+
+        <section className="mt-14 overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] shadow-sm">
+          {/* <div className="border-b border-[var(--border-soft)] px-6 py-5 md:px-10 md:py-7">
+            <p className="text-xs font-black uppercase tracking-[0.2em] text-red-600">Why Foodies?</p>
+            <p className="mt-2 max-w-4xl text-sm leading-relaxed text-[var(--muted)] md:text-base">
+              One destination for curated brands, dependable quality, and service that keeps pace with your day. Explore menus,
+              compare favorites, and order with confidence — all from a food court experience built around you.
+            </p>
+          </div> */}
+
+          <div className="grid gap-0 md:grid-cols-[minmax(0,2fr)_auto_minmax(0,1.25fr)]">
+            <div className="grid gap-6 p-6 sm:grid-cols-3 sm:gap-4 md:gap-0 md:p-0">
+              {HOME_FEATURE_BLURBS.map((x) => (
+                <div
+                  key={x.title}
+                  className="flex w-full flex-col items-center text-center md:min-h-[260px] md:justify-center md:px-8 md:py-10 lg:px-10 md:not-last:border-r md:not-last:border-[var(--border-soft)]"
+                >
+                  <div className="mx-auto grid h-20 w-20 shrink-0 place-items-center rounded-full border border-red-200 bg-white shadow-sm">
+                    <Image src={x.icon} alt="" width={46} height={46} unoptimized />
+                  </div>
+                  <div className="mt-3 w-full max-w-md px-1 sm:px-0">
+                    <p className="text-sm font-black text-[var(--foreground)] md:text-base">{x.title}</p>
+                    <p className="mt-1 text-sm leading-relaxed text-[var(--foreground)]">{x.body}</p>
+                    {x.detail ? (
+                      <p className="mt-2 text-xs leading-relaxed text-[var(--muted)] md:text-sm">{x.detail}</p>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="hidden w-px bg-[var(--border-soft)] md:block" aria-hidden="true" />
+
+            <div className="relative min-h-[240px] overflow-hidden bg-rose-50 p-6 md:min-h-[280px] md:p-10 lg:p-12">
+              <div className="relative z-10 max-w-lg pr-0 md:max-w-xl md:pr-[42%] lg:pr-[44%]">
+                <p className="text-3xl font-black leading-[0.95] tracking-tight text-[var(--foreground)] md:text-4xl">
+                  CRAVING <span className="text-red-600">SOMETHING?</span>
+                </p>
+                <div className="mt-3 h-1 w-10 rounded-full bg-[var(--border-soft)]" aria-hidden="true" />
+                <p className="mt-3 text-sm leading-relaxed text-[var(--muted)] md:text-base">
+                  Good food is just a click away! Pick a brand, explore the menu, and place your order in minutes 
+                  {/* — whether
+                  you&apos;re dining in or grabbing something on the go. */}
+                </p>
+                {/* <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--muted)] md:text-sm">
+                  New brands join regularly — check back often for fresh menus and limited-time favorites.
+                </p> */}
+                <div className="mt-5">
+                  <Button
+                    type="button"
+                    className="rounded-full bg-zinc-900 px-7 py-3 text-sm font-black text-white hover:bg-zinc-800"
+                    onClick={() => (topBrands[0] ? enterBrand(topBrands[0]) : null)}
+                    disabled={!topBrands.length}
+                  >
+                    Order Now →
+                  </Button>
+                </div>
+              </div>
+
+              <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[52%] md:block">
+                <div className="absolute inset-0 bg-gradient-to-l from-rose-50 via-rose-50/70 to-transparent" />
+                <div className="relative h-full w-full">
+                  <Image
+                    src="/Banner_02.jpg.jpeg"
+                    alt=""
+                    fill
+                    sizes="(max-width: 768px) 100vw, (max-width: 1536px) 42vw, 600px"
+                    className="object-contain object-right scale-[1.08]"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <SiteFooter />
       </motion.section>
     </AppShell>
   );

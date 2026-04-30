@@ -23,7 +23,7 @@ export function RouteTransition({ children }: { children: React.ReactNode }) {
       setSplashVisible(true);
       hideTimer = window.setTimeout(() => {
         setSplashVisible(false);
-      }, 1900);
+      }, 520);
     });
 
     return () => {
@@ -37,10 +37,10 @@ export function RouteTransition({ children }: { children: React.ReactNode }) {
       <AnimatePresence mode="wait">
         <motion.div
           key={pathname}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.22, ease: "easeInOut" }}
+          initial={{ opacity: 0, y: 10, filter: "blur(6px)" }}
+          animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
+          exit={{ opacity: 0, y: -10, filter: "blur(6px)" }}
+          transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
         >
           {children}
         </motion.div>
@@ -54,22 +54,34 @@ export function RouteTransition({ children }: { children: React.ReactNode }) {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.18, ease: "easeInOut" }}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/55 backdrop-blur-sm"
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-[6px]"
           >
-            <div className="flex flex-col items-center gap-4">
-              <div className="relative h-14 w-14">
-                <Image
-                  src="/foodies-logo.svg"
-                  alt="Foodies"
-                  fill
-                  className="object-contain"
-                  priority
-                />
-              </div>
-              <div className="text-xs font-bold uppercase tracking-[0.22em] text-white/70">
+            <motion.div
+              initial={{ scale: 0.96, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.985, opacity: 0 }}
+              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+              className="flex flex-col items-center gap-3"
+            >
+              <motion.div
+                animate={{ scale: [1, 1.06, 1], rotate: [0, -2, 0] }}
+                transition={{ duration: 0.52, ease: "easeInOut" }}
+                className="relative h-12 w-12"
+              >
+                <Image src="/foodies-logo.png" alt="Foodies" fill className="object-contain" priority />
+              </motion.div>
+              <div className="text-[11px] font-black uppercase tracking-[0.28em] text-white/70">
                 FOODIES
               </div>
-            </div>
+              <div className="h-1 w-28 overflow-hidden rounded-full bg-white/10">
+                <motion.div
+                  initial={{ x: "-60%" }}
+                  animate={{ x: "120%" }}
+                  transition={{ duration: 0.52, ease: [0.22, 1, 0.36, 1] }}
+                  className="h-full w-1/2 rounded-full bg-white/40"
+                />
+              </div>
+            </motion.div>
           </motion.div>
         ) : null}
       </AnimatePresence>

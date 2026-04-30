@@ -81,6 +81,7 @@ function BranchMarkers({
       {branches
         .filter(
           (branch) =>
+            (branch.brand_ids?.length ?? 0) > 0 &&
             typeof branch.latitude === "number" &&
             typeof branch.longitude === "number",
         )
@@ -133,6 +134,8 @@ export function BranchMap({ userLocation, branches, onSelectBranch, height = 640
     ? [userLocation.latitude, userLocation.longitude]
     : [31.5204, 74.3587];
 
+  const markersKey = branches.map((b) => b.id).join("|");
+
   return (
     <div className="overflow-hidden rounded-2xl border border-zinc-800">
       <MapContainer
@@ -164,7 +167,7 @@ export function BranchMap({ userLocation, branches, onSelectBranch, height = 640
           </Marker>
         ) : null}
 
-        <BranchMarkers branches={branches} onSelectBranch={onSelectBranch} />
+        <BranchMarkers key={markersKey} branches={branches} onSelectBranch={onSelectBranch} />
       </MapContainer>
     </div>
   );

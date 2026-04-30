@@ -113,6 +113,18 @@ export class ConsumerController {
         return customer;
     }
 
+    /** Tenant-scoped consumer web: infer tenant id from env (TENANT_ID). */
+    private getTenantIdFromEnv(): number {
+        const raw = process.env.TENANT_ID;
+        const tenantId = raw != null && raw.trim() !== '' ? Number(raw) : NaN;
+        if (!Number.isFinite(tenantId) || tenantId <= 0) {
+            throw new BadRequestException(
+                'TENANT_ID is not configured on the server',
+            );
+        }
+        return tenantId;
+    }
+
     @Get('brands')
     @ApiOperation({
         summary: 'List brands (optional: filter by branch_id, search by name)',
@@ -145,6 +157,26 @@ export class ConsumerController {
             return this.brandsService.findAllPublicByBranchId(branchId, search);
         }
         return this.brandsService.findAllPublic(search);
+    }
+
+    @Get('tenant/brands')
+    @ApiOperation({
+        summary:
+            'List brands for the configured tenant (consumer web; tenant inferred from TENANT_ID)',
+    })
+    @ApiQuery({
+        name: 'search',
+        required: false,
+        example: 'peri',
+        description: 'Filter brands by name (case-insensitive)',
+    })
+    listTenantBrands(@Query('search') searchParam: string) {
+        const tenantId = this.getTenantIdFromEnv();
+        const search =
+            searchParam != null && searchParam.trim() !== ''
+                ? searchParam.trim()
+                : undefined;
+        return this.brandsService.findAllPublicByTenantId(tenantId, search);
     }
 
     @Get('brands/:id')
@@ -649,6 +681,33 @@ export class ConsumerController {
             search,
             orderType,
         });
+    }
+
+    @Get('tenant/menu')
+    @ApiOperation({
+        summary:
+            'Get brand menu for the configured tenant (consumer web; no branch_id/order_type)',
+    })
+    @ApiQuery({ name: 'brand_id', required: true, example: '1' })
+    @ApiQuery({
+        name: 'search',
+        required: false,
+        example: 'burger',
+        description:
+            'Filter menu items by name, description or category (case-insensitive)',
+    })
+    getTenantBrandMenu(
+        @Query('brand_id') brandIdParam: string,
+        @Query('search') searchParam: string,
+    ) {
+        const tenantId = this.getTenantIdFromEnv();
+        const brandId = brandIdParam ? +brandIdParam : undefined;
+        if (!brandId) throw new NotFoundException('brand_id is required');
+        const search =
+            searchParam != null && searchParam.trim() !== ''
+                ? searchParam.trim()
+                : undefined;
+        return this.menuService.getTenantBrandMenu(tenantId, brandId, { search });
     }
 
     @Get('categories')

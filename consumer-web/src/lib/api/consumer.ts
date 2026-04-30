@@ -13,16 +13,54 @@ import type {
   PlaceOrderResponse,
 } from "./types";
 
-export async function getNearbyBranches(latitude: number, longitude: number) {
+/** Nearby branches when lat/lng provided; otherwise all branches (manual browse). */
+export async function getConsumerBranches(params?: {
+  latitude?: number;
+  longitude?: number;
+  radiusKm?: number;
+  brandId?: number;
+}) {
+  const { latitude, longitude, radiusKm = 10, brandId } = params ?? {};
+  const hasCoords =
+    typeof latitude === "number" &&
+    typeof longitude === "number" &&
+    Number.isFinite(latitude) &&
+    Number.isFinite(longitude);
+
+  const query: Record<string, string | number> = {};
+  if (hasCoords) {
+    query.latitude = latitude;
+    query.longitude = longitude;
+    query.radius_km = radiusKm;
+  }
+  if (typeof brandId === "number" && Number.isFinite(brandId)) {
+    query.brand_id = brandId;
+  }
+
   const { data } = await apiClient.get<Branch[]>("/public/consumer/branches", {
-    params: { latitude, longitude, radius_km: 10 },
+    params: query,
   });
   return data;
+}
+
+export async function getNearbyBranches(latitude: number, longitude: number) {
+  return getConsumerBranches({ latitude, longitude, radiusKm: 10 });
 }
 
 export async function getBrandsByBranch(branchId: number) {
   const { data } = await apiClient.get<Brand[]>("/public/consumer/brands", {
     params: { branch_id: branchId },
+  });
+  return data;
+}
+
+export async function getTenantBrands(search?: string) {
+  const tenantId = process.env.NEXT_PUBLIC_TENANT_ID;
+  const { data } = await apiClient.get<Brand[]>("/public/consumer/tenant/brands", {
+    params: {
+      tenant_id: tenantId || undefined,
+      search: search?.trim() || undefined,
+    },
   });
   return data;
 }
@@ -39,6 +77,18 @@ export async function getMenu(
       brand_id: brandId,
       search: search?.trim() || undefined,
       order_type: orderType,
+    },
+  });
+  return data;
+}
+
+export async function getTenantMenuByBrand(brandId: number, search?: string) {
+  const tenantId = process.env.NEXT_PUBLIC_TENANT_ID;
+  const { data } = await apiClient.get<MenuItem[]>("/public/consumer/tenant/menu", {
+    params: {
+      tenant_id: tenantId || undefined,
+      brand_id: brandId,
+      search: search?.trim() || undefined,
     },
   });
   return data;

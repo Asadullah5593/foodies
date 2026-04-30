@@ -1,27 +1,44 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "next/navigation";
-import { ItemConfigModal } from "@/components/item-config-modal";
-import { TopNav } from "@/components/top-nav";
-import { AppShell, Button, Card, Input, Loader, Select } from "@/components/ui";
 import {
-  addCartItem,
-  getBrandsByBranch,
-  getCart,
-  getMenu,
-  getMenuItemDetail,
-} from "@/lib/api/consumer";
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+} from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
+import Image from "next/image";
+import Link from "next/link";
+import { SiteFooter } from "@/components/site-footer";
+import { SiteHeader } from "@/components/site-header";
+import { AppShell, Card } from "@/components/ui";
+import { getTenantBrands, getTenantMenuByBrand } from "@/lib/api/consumer";
 import type { MenuItem } from "@/lib/api/types";
 import { toImageUrl } from "@/lib/api/client";
 import { useSessionStore } from "@/lib/store/session-store";
+import { orderRedirectConfig } from "@/lib/config/order-redirect";
+import clsx from "clsx";
+
+/** Design tokens — match FOODXCOURT reference (KFC-adjacent red, light greys). */
+const R = {
+  brand: "#E4002B",
+  page: "#F9F9F9",
+  sidebar: "#F5F5F5",
+  line: "#EBEBEB",
+  cardBorder: "#E8E8E8",
+  text: "#000000",
+  muted: "#666666",
+  iconIdle: "#757575",
+} as const;
+
+const ALL_NAV_ID = "all";
+const ITEMS_PER_PAGE = 9;
 
 const MENU_ITEM_PLACEHOLDER = (label: string) => {
   const safe = (label || "Food").replace(/[<>&"]/g, "");
-
-  // Split into up to 2 lines so long names don't get cut.
   const words = safe.split(/\s+/).filter(Boolean);
   let line1 = "";
   let line2 = "";
@@ -51,659 +68,639 @@ const MENU_ITEM_PLACEHOLDER = (label: string) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="750" viewBox="0 0 1200 750">
   <defs>
     <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#dc2626" stop-opacity="0.22" />
-      <stop offset="0.55" stop-color="#0f172a" stop-opacity="0.9" />
-      <stop offset="1" stop-color="#000000" stop-opacity="1" />
+      <stop offset="0" stop-color="#fecaca" stop-opacity="0.9" />
+      <stop offset="0.55" stop-color="#f4f4f5" stop-opacity="1" />
+      <stop offset="1" stop-color="#e4e4e7" stop-opacity="1" />
     </linearGradient>
   </defs>
   <rect width="1200" height="750" fill="url(#g)"/>
-  <g opacity="0.6">
-    <circle cx="220" cy="220" r="160" fill="#dc2626"/>
-    <circle cx="980" cy="520" r="220" fill="#dc2626"/>
+  <g opacity="0.35">
+    <circle cx="220" cy="220" r="160" fill="${R.brand}"/>
+    <circle cx="980" cy="520" r="220" fill="${R.brand}"/>
   </g>
-  <text
-    x="600"
-    y="${y1}"
-    text-anchor="middle"
-    font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto"
-    font-size="${fontSize}"
-    font-weight="900"
-    fill="#f4f4f5"
-    letter-spacing="1"
-  >
-    ${line1}
-  </text>
+  <text x="600" y="${y1}" text-anchor="middle" font-family="ui-sans-serif, system-ui" font-size="${fontSize}" font-weight="900" fill="#18181b" letter-spacing="1">${line1}</text>
   ${
     line2
-      ? `<text x="600" y="${y2}" text-anchor="middle" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto" font-size="${fontSize}" font-weight="900" fill="#f4f4f5" letter-spacing="1">${line2}</text>`
+      ? `<text x="600" y="${y2}" text-anchor="middle" font-family="ui-sans-serif, system-ui" font-size="${fontSize}" font-weight="900" fill="#18181b" letter-spacing="1">${line2}</text>`
       : ""
   }
 </svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 };
 
+function categorySectionId(index: number, raw: string) {
+  const base = (raw.trim() || "menu").toLowerCase().replace(/\s+/g, "-");
+  const safe = base.replace(/[^a-z0-9-]/gi, "") || "menu";
+  return `menu-section-${index}-${safe}`;
+}
+
+type NavIconProps = { className?: string };
+
+function MenuGridSkeleton({ count = 9 }: { count?: number }) {
+  return (
+    <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={`sk-${i}`}
+          className="animate-pulse overflow-hidden rounded-2xl border bg-white"
+          style={{ borderColor: "rgba(0,0,0,0.08)" }}
+        >
+          <div className="aspect-[4/3] bg-neutral-100" />
+          <div className="space-y-2 p-4">
+            <div className="h-4 w-3/4 rounded bg-neutral-100" />
+            <div className="h-3 w-full rounded bg-neutral-100" />
+            <div className="h-3 w-24 rounded bg-neutral-100" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function IconGrid({ className }: NavIconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconStar({ className }: NavIconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M12 3.5 14.2 9l5.8.5-4.4 3.8 1.4 5.7L12 16.9 6.9 19l1.4-5.7L4 9.5l5.8-.5L12 3.5z" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconBucket({ className }: NavIconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M7 10h10l-1 10a2 2 0 0 1-2 2H10a2 2 0 0 1-2-2L7 10z" strokeLinejoin="round" />
+      <path d="M9 10V8a3 3 0 0 1 6 0v2" strokeLinecap="round" />
+      <path d="M6 10h12" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconChicken({ className }: NavIconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path
+        d="M12 20c-2.5-1.5-4-4-4-7 0-3 2-6 4-8 2 2 4 5 4 8 0 3-1.5 5.5-4 7z"
+        strokeLinejoin="round"
+      />
+      <path d="M12 13v-3M10 11h4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconBurger({ className }: NavIconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M5 12h14M5 8h14a1 1 0 0 0 1-1V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v1a1 1 0 0 0 1 1z" strokeLinejoin="round" />
+      <path d="M5 16h14v1a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-1z" strokeLinejoin="round" />
+      <path d="M5 12v4M19 12v4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconFries({ className }: NavIconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M8 20V10l2-6 2 6v10M12 20V8l2-5 2 5v12M16 20V11l2-4 2 4v9" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconDrink({ className }: NavIconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M8 4h8l-1 16a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2L8 4z" strokeLinejoin="round" />
+      <path d="M7 8h10M10 4v4M14 4v4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconCake({ className }: NavIconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M4 16h16v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3z" strokeLinejoin="round" />
+      <path d="M8 16V9a4 4 0 0 1 8 0v7" strokeLinejoin="round" />
+      <path d="M4 12c2 2 4 2 6 0s4-2 6 0 4 2 6 0" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconChevronDown({ className }: NavIconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function IconCheckBadge({ className }: NavIconProps) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="10" fill={R.brand} />
+      <path
+        d="M8.5 12.2 10.8 14.5 15.5 9.5"
+        stroke="white"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function categoryIconForLabel(label: string) {
+  const l = label.toLowerCase();
+  if (l.includes("best")) return IconStar;
+  if (l.includes("bucket")) return IconBucket;
+  if (l.includes("chicken") || l.includes("meal")) return IconChicken;
+  if (l.includes("burger")) return IconBurger;
+  if (l.includes("snack") || l.includes("fries") || l.includes("side")) return IconFries;
+  if (l.includes("beverage") || l.includes("drink")) return IconDrink;
+  if (l.includes("dessert") || l.includes("cake") || l.includes("sweet")) return IconCake;
+  return IconGrid;
+}
+
 export default function MenuPage() {
-  const router = useRouter();
-  const queryClient = useQueryClient();
-  const customer = useSessionStore((s) => s.customer);
-  const selectedBranchId = useSessionStore((s) => s.selectedBranchId);
-  const selectedBranch = useSessionStore((s) => s.selectedBranch);
   const selectedBrandId = useSessionStore((s) => s.selectedBrandId);
   const setBrandId = useSessionStore((s) => s.setBrandId);
 
-  const [page, setPage] = useState(1);
-  const pageSize = 9;
-
-  const [searchInput, setSearchInput] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [searchHighlightIndex, setSearchHighlightIndex] = useState(0);
-  const [sortBy, setSortBy] = useState<"popular" | "price-asc" | "price-desc">(
-    "popular",
-  );
-  const [activeCategory, setActiveCategory] = useState<string>("all");
-  const [openConfig, setOpenConfig] = useState(false);
-  const [activeItem, setActiveItem] = useState<MenuItem | null>(null);
+  const [activeNavId, setActiveNavId] = useState<string>(ALL_NAV_ID);
+  const [visibleCount, setVisibleCount] = useState<number>(ITEMS_PER_PAGE);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isSwitching, setIsSwitching] = useState(false);
+  const switchTimerRef = useRef<number | null>(null);
 
   const brandsQuery = useQuery({
-    queryKey: ["brands-by-branch", selectedBranchId],
-    queryFn: () => getBrandsByBranch(selectedBranchId!),
-    enabled: Boolean(selectedBranchId),
+    queryKey: ["tenant-brands"],
+    queryFn: () => getTenantBrands(),
+    enabled: true,
+    // Avoid showing cached empty/error results after client-side navigation.
+    refetchOnMount: "always",
+    refetchOnReconnect: true,
+    staleTime: 0,
   });
 
   const menuQuery = useQuery({
-    // Fetch full menu once for this branch+brand. Apply search/category filtering client-side.
-    // This prevents layout jitter while the user types.
-    queryKey: ["menu", selectedBranchId, selectedBrandId],
-    queryFn: () => getMenu(selectedBranchId!, selectedBrandId!),
-    enabled: Boolean(selectedBranchId && selectedBrandId),
+    queryKey: ["tenant-menu", selectedBrandId],
+    queryFn: () => getTenantMenuByBrand(selectedBrandId!),
+    enabled: Boolean(selectedBrandId),
   });
 
-  const cartQuery = useQuery({
-    queryKey: ["cart", customer?.phone, selectedBranchId],
-    queryFn: () => getCart(customer!.phone, selectedBranchId!),
-    enabled: Boolean(customer?.phone && selectedBranchId),
-  });
+  const beginSwitch = useCallback(() => {
+    setIsSwitching(true);
+    if (switchTimerRef.current != null) window.clearTimeout(switchTimerRef.current);
+    // Hard fallback so we never get stuck showing skeleton.
+    switchTimerRef.current = window.setTimeout(() => setIsSwitching(false), 900);
+  }, []);
 
-  const addCartMutation = useMutation({
-    mutationFn: addCartItem,
-    onSuccess: () => {
-      if (customer?.phone && selectedBranchId) {
-        queryClient.invalidateQueries({
-          queryKey: ["cart", customer.phone, selectedBranchId],
-        });
-      }
-      setOpenConfig(false);
-    },
-  });
-
-  const categories = useMemo(() => {
-    const values = (menuQuery.data ?? [])
-      .map((m) => m.category || "")
-      .filter(Boolean) as string[];
-    return ["all", ...new Set(values)];
-  }, [menuQuery.data]);
-
-  const effectiveCategory = useMemo(() => {
-    return categories.includes(activeCategory) ? activeCategory : "all";
-  }, [activeCategory, categories]);
-
-  const filteredMenu = useMemo(() => {
-    let list = [...(menuQuery.data ?? [])];
-    const q = debouncedSearch.trim().toLowerCase();
-    if (q) {
-      list = list.filter((m) => {
-        const name = (m.name ?? "").toLowerCase();
-        const desc = (m.description ?? "").toLowerCase();
-        return name.includes(q) || desc.includes(q);
-      });
-    }
-    if (effectiveCategory !== "all") {
-      list = list.filter(
-        (m) => (m.category || "").toLowerCase() === effectiveCategory.toLowerCase(),
-      );
-    }
-    if (sortBy === "price-asc") {
-      list.sort((a, b) => a.price - b.price);
-    } else if (sortBy === "price-desc") {
-      list.sort((a, b) => b.price - a.price);
-    }
-    return list;
-  }, [effectiveCategory, debouncedSearch, menuQuery.data, sortBy]);
-
-  const searchSuggestions = useMemo(() => {
-    const q = searchInput.trim().toLowerCase();
-    if (!q) return [];
-
-    type Suggestion = {
-      key: string;
-      type: "category" | "item";
-      label: string;
-      value: string;
-    };
-
-    const catMatches = categories
-      .filter((c) => c !== "all")
-      .filter((c) => c.toLowerCase().includes(q))
-      .slice(0, 4);
-
-    const scoredItems = (menuQuery.data ?? [])
-      .map((m) => {
-        const name = (m.name ?? "").toLowerCase();
-        const desc = (m.description ?? "").toLowerCase();
-        const starts = name.startsWith(q);
-        const includes = name.includes(q) || desc.includes(q);
-        return { m, starts, includes };
-      })
-      .filter((x) => x.includes)
-      .sort((a, b) => Number(b.starts) - Number(a.starts))
-      .slice(0, 6)
-      .map((x) => x.m);
-
-    const catSuggestions: Suggestion[] = catMatches.map((c) => ({
-      key: `cat:${c}`,
-      type: "category",
-      label: c,
-      value: c,
-    }));
-
-    const itemSuggestions: Suggestion[] = scoredItems.map((m) => ({
-      key: `item:${m.id}`,
-      type: "item",
-      label: m.name,
-      value: m.name,
-    }));
-
-    return [...catSuggestions, ...itemSuggestions];
-  }, [categories, menuQuery.data, searchInput]);
-
-  const suggestionsOpen = searchFocused && searchSuggestions.length > 0;
-
-  const selectedBrand = useMemo(
-    () => brandsQuery.data?.find((b) => b.id === selectedBrandId) ?? null,
-    [brandsQuery.data, selectedBrandId],
-  );
-
-  const totalPages = useMemo(() => {
-    return Math.max(1, Math.ceil(filteredMenu.length / pageSize));
-  }, [filteredMenu.length, pageSize]);
+  const endSwitchSoon = useCallback(() => {
+    if (switchTimerRef.current != null) window.clearTimeout(switchTimerRef.current);
+    switchTimerRef.current = window.setTimeout(() => setIsSwitching(false), 220);
+  }, []);
 
   useEffect(() => {
-    const t = window.setTimeout(() => {
-      setDebouncedSearch(searchInput);
-    }, 250);
-    return () => window.clearTimeout(t);
-  }, [searchInput]);
+    // When the brand menu finishes fetching, stop showing the "switching" skeleton.
+    if (!menuQuery.isFetching) {
+      const t = window.setTimeout(() => setIsSwitching(false), 180);
+      return () => window.clearTimeout(t);
+    }
+    return;
+  }, [menuQuery.isFetching]);
 
-  const clampedPage = useMemo(() => {
-    return Math.min(Math.max(1, page), totalPages);
-  }, [page, totalPages]);
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", "light");
+  }, []);
 
-  const pagedMenu = useMemo(() => {
-    const start = (clampedPage - 1) * pageSize;
-    return filteredMenu.slice(start, start + pageSize);
-  }, [filteredMenu, clampedPage, pageSize]);
+  useEffect(() => {
+    const brands = brandsQuery.data;
+    if (!brands?.length) return;
+    const current = selectedBrandId;
+    if (current != null && brands.some((b) => b.id === current)) return;
+    setBrandId(brands[0]!.id);
+  }, [brandsQuery.data, selectedBrandId, setBrandId]);
 
-  const visiblePages = useMemo(() => {
-    const radius = 2;
-    const start = Math.max(1, clampedPage - radius);
-    const end = Math.min(totalPages, clampedPage + radius);
-    return Array.from({ length: end - start + 1 }, (_, i) => start + i);
-  }, [clampedPage, totalPages]);
+  const menuList = useMemo(() => menuQuery.data ?? [], [menuQuery.data]);
 
-  const openItemConfig = async (itemId: number) => {
-    if (!selectedBranchId) return;
-    const detail = await getMenuItemDetail(itemId, selectedBranchId);
-    setActiveItem(detail);
-    setOpenConfig(true);
-  };
+  const categoryBlocks = useMemo(() => {
+    const blocks: { id: string; label: string; items: MenuItem[] }[] = [];
+    const indexByLabel = new Map<string, number>();
+    for (const item of menuList) {
+      const label = (item.category || "Other").trim() || "Other";
+      let idx = indexByLabel.get(label);
+      if (idx === undefined) {
+        const id = categorySectionId(blocks.length, label);
+        idx = blocks.length;
+        indexByLabel.set(label, idx);
+        blocks.push({ id, label, items: [] });
+      }
+      blocks[idx]!.items.push(item);
+    }
+    return blocks;
+  }, [menuList]);
 
-  if (!selectedBranchId) {
-    return (
-      <AppShell>
-        <TopNav cartCount={cartQuery.data?.items?.length ?? 0} />
-        <Card>
-          <p className="text-sm text-zinc-300">
-            Please choose a branch first to browse menu.
-          </p>
-          <div className="mt-3">
-            <Button onClick={() => router.push("/")}>Go to branches</Button>
+  const navRows = useMemo(() => {
+    const rows: { id: string; label: string; Icon: (p: NavIconProps) => ReactElement }[] = [
+      { id: ALL_NAV_ID, label: "All", Icon: IconGrid },
+    ];
+    for (const c of categoryBlocks) {
+      const Icon = categoryIconForLabel(c.label);
+      rows.push({ id: c.id, label: c.label, Icon });
+    }
+    return rows;
+  }, [categoryBlocks]);
+
+  const selectCategory = useCallback(
+    (id: string) => {
+      // Ensure the skeleton renders for at least one frame before the grid swaps.
+      beginSwitch();
+      window.requestAnimationFrame(() => {
+        setActiveNavId(id);
+        setVisibleCount(ITEMS_PER_PAGE);
+        endSwitchSoon();
+      });
+    },
+    [beginSwitch, endSwitchSoon],
+  );
+
+  const orderInfoHref = "/order-info";
+  const brandsOnBranch = brandsQuery.data ?? [];
+  /** Few brands: equal-width row fills the container; many brands: horizontal scroll with sensible min width. */
+  const brandRowScroll = brandsOnBranch.length > 5;
+
+  const locationSub = null;
+
+  const renderNavButton = (compact: boolean) =>
+    navRows.map((row) => {
+      const active = activeNavId === row.id;
+      const Icon = row.Icon;
+      if (compact) {
+        return (
+          <button
+            key={row.id}
+            type="button"
+            onClick={() => selectCategory(row.id)}
+            className={clsx(
+              "flex shrink-0 items-center gap-2 rounded-full border px-3.5 py-2 text-left text-xs font-semibold transition",
+              active
+                ? "bg-white shadow-sm"
+                : "border-transparent bg-white/80 hover:bg-white",
+            )}
+            style={
+              active
+                ? { borderColor: R.brand, color: R.brand }
+                : { borderColor: R.cardBorder, color: R.muted }
+            }
+          >
+            <Icon className="h-4 w-4 shrink-0 text-current" />
+            <span className="max-w-[140px] truncate">{row.label}</span>
+          </button>
+        );
+      }
+      return (
+        <button
+          key={row.id}
+          type="button"
+          onClick={() => selectCategory(row.id)}
+          className={clsx(
+            "relative flex w-full items-center gap-3 py-3 pl-5 pr-3 text-left text-[15px] font-semibold transition",
+          )}
+          style={{
+            color: active ? R.brand : R.muted,
+            borderLeft: active ? `3px solid ${R.brand}` : "3px solid transparent",
+          }}
+        >
+          <Icon className="h-[22px] w-[22px] shrink-0 text-current" />
+          <span className="truncate">{row.label}</span>
+        </button>
+      );
+    });
+
+  const sidebarNav = (
+    <nav className="flex flex-col pt-4" aria-label="Menu categories">
+      {renderNavButton(false)}
+    </nav>
+  );
+
+  const sidebarSkeleton = (
+    <div className="px-6 py-4">
+      <div className="animate-pulse space-y-3">
+        {Array.from({ length: 11 }).map((_, i) => (
+          <div key={`nav-sk-${i}`} className="flex items-center gap-3">
+            <div className="h-5 w-5 rounded-md bg-neutral-200" />
+            <div className="h-3 w-40 rounded bg-neutral-200" />
           </div>
-        </Card>
-      </AppShell>
-    );
-  }
+        ))}
+      </div>
+    </div>
+  );
+
+  const mobileCategoryStrip = (
+    <nav
+      className="mb-6 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] lg:hidden [&::-webkit-scrollbar]:hidden"
+      aria-label="Menu categories"
+    >
+      {menuQuery.isLoading || menuQuery.isFetching || isSwitching ? (
+        <div className="flex gap-2">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div
+              key={`mobile-nav-sk-${i}`}
+              className="h-9 w-28 animate-pulse rounded-full bg-white/90"
+              style={{ border: `1px solid ${R.line}` }}
+            />
+          ))}
+        </div>
+      ) : (
+        renderNavButton(true)
+      )}
+    </nav>
+  );
+
+  // Branch selection is no longer required (tenant menu browsing).
+
+  const activeItems = useMemo(() => {
+    if (activeNavId === ALL_NAV_ID) return menuList;
+    const block = categoryBlocks.find((b) => b.id === activeNavId);
+    return block?.items ?? [];
+  }, [activeNavId, categoryBlocks, menuList]);
+
+  const visibleItems = useMemo(
+    () => activeItems.slice(0, Math.max(0, visibleCount)),
+    [activeItems, visibleCount],
+  );
+
+  const canLoadMore = visibleItems.length < activeItems.length;
+
+  const loadMore = useCallback(() => {
+    if (!canLoadMore || isLoadingMore) return;
+    setIsLoadingMore(true);
+    window.setTimeout(() => {
+      setVisibleCount((c) => c + ITEMS_PER_PAGE);
+      setIsLoadingMore(false);
+    }, 350);
+  }, [canLoadMore, isLoadingMore]);
+
+  const gridKey = `${selectedBrandId ?? "none"}-${activeNavId}`;
+  const listStagger = {
+    hidden: { opacity: 0 },
+    show: { opacity: 1, transition: { staggerChildren: 0.045, delayChildren: 0.04 } },
+  } as const;
+  const itemIn = {
+    hidden: { opacity: 0, scale: 0.992 },
+    show: { opacity: 1, scale: 1, transition: { duration: 0.24, ease: [0.22, 1, 0.36, 1] } },
+  } as const;
 
   return (
     <AppShell>
-      <TopNav cartCount={cartQuery.data?.items?.length ?? 0} />
-      <motion.section initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
-        <div className="grid gap-6 lg:grid-cols-[1fr_360px] lg:items-start">
-          <div className="space-y-6">
-            <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-black/50 p-4 sm:p-6">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_28%,rgba(220,38,38,0.35),transparent_55%),radial-gradient(circle_at_78%_12%,rgba(220,38,38,0.18),transparent_50%)] opacity-80" />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent" />
+      <div className="font-[family-name:var(--font-geist-sans),system-ui,sans-serif]" style={{ color: R.text }}>
+        <SiteHeader />
 
-              <div className="relative z-10 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                <div className="min-w-[260px]">
-                  <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/60">
-                    {selectedBranch?.address || selectedBranch?.code || "Downtown branch"}
-                  </p>
-                  <h1 className="mt-2 text-4xl font-black leading-[0.95] tracking-tight text-white sm:text-5xl">
-                    {(selectedBrand?.name ?? "Brand").toUpperCase()}{" "}
-                    <span className="text-red-500">MENU</span>
-                  </h1>
-                  <p className="mt-3 max-w-xl text-sm text-white/70 sm:text-base">
-                    Smooth ordering, fast customization, and curated flavor.
+        <section
+          className="rounded-2xl border bg-white shadow-sm"
+          style={{ borderColor: R.line, backgroundColor: R.page }}
+        >
+          <div className="flex min-h-0">
+            <aside
+              className="hidden w-[280px] shrink-0 border-r lg:block"
+              style={{ backgroundColor: R.sidebar, borderColor: R.line }}
+            >
+              <div className="sticky top-6 flex max-h-[calc(100vh-3rem)] flex-col self-start">
+                <div className="px-6 pt-6">
+                  <p className="text-[11px] font-black uppercase tracking-[0.14em]" style={{ color: R.brand }}>
+                    Categories
                   </p>
                 </div>
-
-                <div className="w-full sm:w-[420px]">
-                  <Card className="border-white/10 bg-black/35 p-4 shadow-[0_0_0_1px_rgba(0,0,0,0.1)] backdrop-blur">
-                    <div className="relative">
-                      <Input
-                        placeholder="POS search..."
-                        value={searchInput}
-                        onChange={(e) => {
-                          setSearchHighlightIndex(0);
-                          setSearchInput(e.target.value);
-                        }}
-                        className="pr-10"
-                        onFocus={() => setSearchFocused(true)}
-                        onBlur={() => {
-                          window.setTimeout(() => setSearchFocused(false), 120);
-                        }}
-                        onKeyDown={(e) => {
-                          if (!suggestionsOpen) return;
-                          if (e.key === "ArrowDown") {
-                            e.preventDefault();
-                            setSearchHighlightIndex((i) =>
-                              Math.min(searchSuggestions.length - 1, i + 1),
-                            );
-                          } else if (e.key === "ArrowUp") {
-                            e.preventDefault();
-                            setSearchHighlightIndex((i) => Math.max(0, i - 1));
-                          } else if (e.key === "Enter") {
-                            const s = searchSuggestions[searchHighlightIndex];
-                            if (!s) return;
-                            e.preventDefault();
-                            if (s.type === "category") {
-                              setActiveCategory(s.value);
-                              setSearchInput("");
-                              setDebouncedSearch("");
-                              setPage(1);
-                            } else {
-                              setSearchInput(s.value);
-                              setPage(1);
-                            }
-                          }
-                        }}
-                      />
-                      <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-white/40">
-                        ⌕
-                      </div>
-
-                      {suggestionsOpen ? (
-                        <div className="absolute left-0 right-0 top-full z-10 mt-2 rounded-xl border border-white/10 bg-black/80 p-2 backdrop-blur">
-                          <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-[0.22em] text-white/50">
-                            Suggestions
-                          </p>
-                          <div className="max-h-56 overflow-y-auto">
-                            {searchSuggestions.map((s, idx) => {
-                              const active = idx === searchHighlightIndex;
-                              return (
-                                <button
-                                  key={s.key}
-                                  type="button"
-                                  onMouseDown={(e) => e.preventDefault()}
-                                  onClick={() => {
-                                    if (s.type === "category") {
-                                      setActiveCategory(s.value);
-                                      setSearchInput("");
-                                      setDebouncedSearch("");
-                                      setPage(1);
-                                      return;
-                                    }
-                                    setSearchInput(s.value);
-                                    setPage(1);
-                                  }}
-                                  className={`flex w-full items-center justify-between gap-3 rounded-lg px-2 py-2 text-left transition ${
-                                    active
-                                      ? "bg-red-600/25 text-white"
-                                      : "text-white/70 hover:bg-white/5 hover:text-white"
-                                  }`}
-                                >
-                                  <span className="truncate text-sm font-semibold">{s.label}</span>
-                                  {s.type === "category" ? (
-                                    <span className="shrink-0 rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white/60">
-                                      CAT
-                                    </span>
-                                  ) : null}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <div className="mt-3">
-                      <Select
-                        value={sortBy}
-                        onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-                      >
-                        <option value="popular">Featured</option>
-                        <option value="price-asc">Price: Low to high</option>
-                        <option value="price-desc">Price: High to low</option>
-                      </Select>
-                    </div>
-
-                    <div className="mt-4">
-                      <p className="mb-2 text-xs font-bold uppercase tracking-[0.18em] text-white/50">
-                        Categories
-                      </p>
-                      <Select
-                        value={effectiveCategory}
-                        onChange={(e) => {
-                          setActiveCategory(e.target.value);
-                          setPage(1);
-                        }}
-                      >
-                        {categories.map((c) => (
-                          <option key={c} value={c}>
-                            {c === "all" ? "All" : c}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                  </Card>
+                <div className="min-h-0 flex-1 overflow-y-auto pb-6 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {menuQuery.isLoading || menuQuery.isFetching || isSwitching ? sidebarSkeleton : sidebarNav}
                 </div>
               </div>
+            </aside>
 
-              {brandsQuery.isLoading ? (
-                <div className="relative z-10 mt-4">
-                  <Loader label="Loading brands..." />
-                </div>
-              ) : !brandsQuery.data?.length ? (
-                <div className="relative z-10 mt-4">
-                  <p className="text-sm text-zinc-300">No brands linked to this branch yet.</p>
-                </div>
-              ) : (
-                <div className="relative z-10 mt-4">
-                  <div className="flex items-center gap-2 overflow-x-auto pb-2">
-                    <span className="shrink-0 text-xs font-bold uppercase tracking-wide text-white/50">
-                      Brand
-                    </span>
-                    {brandsQuery.data?.map((brand) => (
-                      <button
-                        key={brand.id}
-                        type="button"
-                        onClick={() => {
-                          setBrandId(brand.id);
-                          setPage(1);
-                        }}
-                        className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold transition ${
-                          selectedBrandId === brand.id
-                            ? "bg-red-600 text-white"
-                            : "border border-white/10 bg-black/30 text-white/80 hover:bg-black/45"
-                        }`}
-                      >
-                        {brand.name}
-                      </button>
-                    ))}
-                    <Button
-                      variant="secondary"
-                      className="shrink-0"
-                      onClick={() => router.push("/")}
+            <div className="min-w-0 flex-1 px-4 py-7 sm:px-8 sm:py-9 lg:px-10 lg:py-10">
+              <div
+                className={clsx(
+                  "mt-2 flex gap-5 sm:gap-6",
+                  brandRowScroll
+                    ? "overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                    : "w-full",
+                )}
+              >
+              {brandsOnBranch.map((b) => {
+                const selected = b.id === selectedBrandId;
+                return (
+                  <motion.button
+                    key={b.id}
+                    type="button"
+                    onClick={() => {
+                      // Smooth brand switch: immediate skeleton, then fetch, then fade to content.
+                      beginSwitch();
+                      setBrandId(b.id);
+                      setActiveNavId(ALL_NAV_ID);
+                      setVisibleCount(ITEMS_PER_PAGE);
+                    }}
+                    className={clsx(
+                      "relative flex min-h-[118px] items-center gap-5 rounded-2xl px-8 py-6 text-left transition will-change-transform",
+                      brandRowScroll
+                        ? "w-[min(100%,28rem)] shrink-0 sm:w-[29rem]"
+                        : "min-w-0 flex-1",
+                    )}
+                    style={{
+                      borderWidth: selected ? 2 : 1,
+                      borderStyle: "solid",
+                      borderColor: selected ? R.brand : R.line,
+                      boxShadow: selected
+                        ? "0 10px 30px rgba(228, 0, 43, 0.16)"
+                        : "0 8px 22px rgba(0,0,0,0.08)",
+                      background: selected
+                        ? "linear-gradient(180deg, rgba(228,0,43,0.06), rgba(255,255,255,0.96))"
+                        : "linear-gradient(180deg, #ffffff, #fafafa)",
+                    }}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                  >
+                    {selected ? (
+                      <IconCheckBadge className="absolute right-4 top-4 h-7 w-7" />
+                    ) : null}
+                    <div
+                      className="flex h-[84px] w-[84px] shrink-0 items-center justify-center overflow-hidden rounded-full"
+                      style={{
+                        backgroundColor: "#FFFFFF",
+                        border: `1px solid ${selected ? R.brand : R.cardBorder}`,
+                      }}
                     >
-                      Change branch
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-              {/* Category tabs moved into the POS-style filter card above */}
+                      {b.logo_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={toImageUrl(b.logo_url)}
+                          alt=""
+                          className="h-full w-full object-contain p-1"
+                        />
+                      ) : (
+                        <span className="text-sm font-black" style={{ color: R.muted }}>
+                          {(b.name || "?").slice(0, 2).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className="line-clamp-2 w-full pr-3 text-[18px] font-black leading-tight sm:text-[20px]"
+                      style={{ color: R.text }}
+                    >
+                      {b.name}
+                    </span>
+                  </motion.button>
+                );
+              })}
             </div>
 
-            {!selectedBrandId ? (
-              <Card>
-                <p className="text-sm text-zinc-300">Choose a brand to load its menu.</p>
-              </Card>
-            ) : null}
+              {!selectedBrandId ? (
+                <Card className="mt-8">
+                  <p className="text-sm text-[var(--muted)]">Choose a brand to load its menu.</p>
+                </Card>
+              ) : null}
 
-            {selectedBrandId ? (
-              <>
-                {menuQuery.isLoading ? (
-                  <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                    {Array.from({ length: pageSize }).map((_, idx) => (
+              {mobileCategoryStrip}
+
+              {selectedBrandId && menuQuery.isLoading ? (
+                <div className="mt-10">
+                  <MenuGridSkeleton count={9} />
+                </div>
+              ) : null}
+
+              {selectedBrandId && !menuQuery.isLoading ? (
+                <div className="mt-10">
+                  <AnimatePresence initial={false}>
+                    {menuQuery.isFetching || isSwitching ? (
                       <motion.div
-                        key={`s-${idx}`}
-                        initial={{ opacity: 0.6 }}
+                        key="grid-skeleton"
+                        initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
-                        transition={{ duration: 0.2 }}
-                        className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950"
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.16, ease: "easeInOut" }}
                       >
-                        <div className="relative aspect-[1/1] w-full bg-zinc-900 animate-pulse" />
-                        <div className="space-y-3 p-5">
-                          <div className="h-5 w-3/4 rounded bg-zinc-900 animate-pulse" />
-                          <div className="h-4 w-full rounded bg-zinc-900 animate-pulse" />
-                          <div className="mt-2 h-10 w-1/2 rounded bg-zinc-900 animate-pulse" />
-                        </div>
+                        <MenuGridSkeleton count={9} />
                       </motion.div>
-                    ))}
-                  </div>
-                ) : (
-                  <AnimatePresence mode="wait">
-                    <motion.div
-                      key={`page-${page}`}
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -10 }}
-                      transition={{ duration: 0.22 }}
-                    >
-                      {pagedMenu.length ? (
-                        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                          {pagedMenu.map((item) => (
-                            <motion.div
-                              key={item.id}
-                              layout
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              whileHover={{ y: -3 }}
-                              transition={{ duration: 0.2 }}
-                              onClick={() => {
-                                // Whole card opens product detail modal.
-                                if (openConfig) return;
-                                openItemConfig(item.id);
-                              }}
-                              role="button"
-                              tabIndex={0}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter" || e.key === " ") {
-                                  e.preventDefault();
-                                  if (openConfig) return;
-                                  openItemConfig(item.id);
+                    ) : (
+                      <motion.div
+                        key={gridKey}
+                        variants={listStagger}
+                        initial="hidden"
+                        animate="show"
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                        className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
+                      >
+                        {visibleItems.map((item) => (
+                          <motion.article
+                            key={item.id}
+                            variants={itemIn}
+                            className="group overflow-hidden rounded-2xl border transition will-change-transform"
+                            style={{
+                              borderColor: "rgba(0,0,0,0.08)",
+                              background: "linear-gradient(180deg, rgba(255,255,255,0.96), rgba(244,244,245,0.95))",
+                              boxShadow: "0 10px 30px rgba(0,0,0,0.06)",
+                            }}
+                            whileHover={{ scale: 1.01 }}
+                          >
+                            <div className="relative aspect-[4/3] w-full overflow-hidden bg-white">
+                              <Image
+                                src={item.image_url ? toImageUrl(item.image_url) : MENU_ITEM_PLACEHOLDER(item.name)}
+                                alt={item.name}
+                                fill
+                                unoptimized={!item.image_url}
+                                className={
+                                  item.image_url
+                                    ? "object-cover transition duration-300 group-hover:scale-[1.03]"
+                                    : "object-contain"
                                 }
-                              }}
-                              className="group cursor-pointer rounded-2xl border border-zinc-800 bg-zinc-950"
-                            >
-                              <div className="relative aspect-[1/1] w-full bg-zinc-900 overflow-hidden rounded-t-2xl">
-                                <img
-                                  src={item.image_url ? toImageUrl(item.image_url) : MENU_ITEM_PLACEHOLDER(item.name)}
-                                  alt={item.name}
-                                  className={`h-full w-full opacity-95 transition duration-300 group-hover:scale-[1.02] ${
-                                    item.image_url ? "object-cover" : "object-contain bg-zinc-950"
-                                  }`}
-                                />
-                                <div className="absolute inset-0 foodies-media-overlay" />
-                              </div>
-
-                              <div className="space-y-3 p-5">
-                                <div>
-                                  <h3 className="break-words text-xl font-bold leading-snug text-white">
-                                    {item.name}
-                                  </h3>
-                                  <p className="mt-1 line-clamp-2 text-sm text-zinc-400">
-                                    {item.description || "No description"}
-                                  </p>
-                                </div>
-
-                                <div className="flex flex-wrap gap-1">
-                                  {item.variants?.length ? (
-                                    <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs">
-                                      Variants
-                                    </span>
-                                  ) : null}
-                                  {item.addons?.length ? (
-                                    <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs">
-                                      Addons
-                                    </span>
-                                  ) : null}
-                                  {item.modifier_groups?.length ? (
-                                    <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs">
-                                      Modifiers
-                                    </span>
-                                  ) : null}
-                                </div>
-
-                                <div className="flex items-center justify-between gap-3">
-                                  <span className="text-base font-semibold text-red-400">
-                                    Rs. {item.price}
-                                  </span>
-                                  <Button
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (openConfig) return;
-                                      openItemConfig(item.id);
-                                    }}
-                                    className="bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-500"
-                                  >
-                                    Add to cart
-                                  </Button>
-                                </div>
-                              </div>
-                            </motion.div>
-                          ))}
-                        </div>
-                      ) : (
-                        <Card>
-                          <p className="text-sm text-zinc-300">
-                            No items found for this brand/category.
-                          </p>
-                        </Card>
-                      )}
-
-                      {filteredMenu.length ? (
-                        <div className="mt-6 flex flex-col items-center justify-between gap-4 md:flex-row">
-                          <div className="text-xs text-white/60">
-                            Page {clampedPage} of {totalPages}
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="secondary"
-                              onClick={() => setPage((p) => Math.max(1, p - 1))}
-                              disabled={clampedPage === 1}
-                            >
-                              Prev
-                            </Button>
-
-                            <div className="flex max-w-[280px] items-center gap-1 overflow-x-auto">
-                              {visiblePages.map((p) => (
-                                <button
-                                  key={p}
-                                  type="button"
-                                  onClick={() => setPage(p)}
-                                  className={`h-9 min-w-9 rounded-full px-3 text-xs font-semibold transition ${
-                                    p === clampedPage
-                                      ? "bg-red-600 text-white"
-                                      : "border border-white/10 bg-black/30 text-white/70 hover:bg-black/45"
-                                  }`}
-                                >
-                                  {p}
-                                </button>
-                              ))}
+                                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                              />
+                              <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/6 via-transparent to-transparent opacity-0 transition group-hover:opacity-100" />
                             </div>
+                            <div className="space-y-1.5 p-4">
+                              <h4
+                                className="line-clamp-2 text-[15px] font-bold leading-snug"
+                                style={{ color: R.text }}
+                              >
+                                {item.name}
+                              </h4>
+                              <p className="line-clamp-2 text-[12px] leading-relaxed" style={{ color: R.muted }}>
+                                {item.description?.trim() || "\u00a0"}
+                              </p>
+                              <p className="pt-1 text-[14px] font-black" style={{ color: R.brand }}>
+                                Rs. {item.price}
+                              </p>
+                            </div>
+                          </motion.article>
+                        ))}
 
-                            <Button
-                              variant="secondary"
-                              onClick={() =>
-                                setPage((p) => Math.min(totalPages, p + 1))
-                              }
-                              disabled={clampedPage === totalPages}
-                            >
-                              Next
-                            </Button>
-                          </div>
-                        </div>
-                      ) : null}
-                    </motion.div>
+                        {isLoadingMore
+                          ? Array.from({ length: 3 }).map((_, i) => (
+                              <motion.div
+                                key={`more-sk-${i}`}
+                                variants={itemIn}
+                                className="animate-pulse overflow-hidden rounded-2xl border bg-white"
+                                style={{ borderColor: "rgba(0,0,0,0.08)" }}
+                              >
+                                <div className="aspect-[4/3] bg-neutral-100" />
+                                <div className="space-y-2 p-4">
+                                  <div className="h-4 w-3/4 rounded bg-neutral-100" />
+                                  <div className="h-3 w-full rounded bg-neutral-100" />
+                                  <div className="h-3 w-24 rounded bg-neutral-100" />
+                                </div>
+                              </motion.div>
+                            ))
+                          : null}
+                      </motion.div>
+                    )}
                   </AnimatePresence>
-                )}
-              </>
-            ) : null}
-          </div>
 
-          <div className="lg:sticky lg:top-24">
-            <Card className="border-white/10 bg-black/40 p-4">
-              <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/60">
-                Current Order
+                  <div className="mt-10 flex justify-center">
+                    {canLoadMore ? (
+                      <button
+                        type="button"
+                        onClick={loadMore}
+                        className="inline-flex items-center gap-2 rounded-full border bg-white px-6 py-3 text-sm font-semibold transition hover:bg-neutral-50 disabled:opacity-60"
+                        style={{ borderColor: R.line, color: R.text }}
+                        disabled={isLoadingMore}
+                      >
+                        View more items
+                        <IconChevronDown className="h-4 w-4" />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
+              <p className="mt-10 text-center text-[11px]" style={{ color: R.muted }}>
+                <Link
+                  href={orderInfoHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  prefetch={false}
+                  className="font-semibold hover:underline"
+                  style={{ color: R.brand }}
+                >
+                  {orderRedirectConfig.ctaLabel}
+                </Link>
+                {locationSub ? (
+                  <>
+                    <span style={{ color: R.line }}> · </span>
+                    <span>{locationSub}</span>
+                  </>
+                ) : null}
               </p>
-              <p className="mt-2 text-3xl font-black text-white">
-                {cartQuery.data?.items?.length ?? 0}
-                <span className="ml-2 text-sm font-semibold text-white/60">items</span>
-              </p>
-
-              <div className="mt-4 rounded-xl border border-white/10 bg-black/30 p-3">
-                <p className="text-sm text-white/70">
-                  {customer
-                    ? "Ready when you are. Add items, then checkout."
-                    : "Login is required to add items and checkout."}
-                </p>
-              </div>
-
-              <Button
-                className="mt-4 w-full"
-                onClick={() => router.push("/checkout")}
-                disabled={!customer || !(cartQuery.data?.items?.length ?? 0)}
-              >
-                Proceed to checkout
-              </Button>
-
-              <Button
-                variant="secondary"
-                className="mt-2 w-full"
-                onClick={() => router.push("/")}
-              >
-                Change branch
-              </Button>
-            </Card>
+            </div>
           </div>
-        </div>
-      </motion.section>
+        </section>
 
-      <ItemConfigModal
-        key={`${activeItem?.id ?? "none"}-${openConfig ? "open" : "closed"}`}
-        item={activeItem}
-        open={openConfig}
-        onClose={() => setOpenConfig(false)}
-        onConfirm={(value) => {
-          if (!customer?.phone || !selectedBranchId || !activeItem) {
-            router.push("/login?redirect=/menu");
-            return;
-          }
-          addCartMutation.mutate({
-            phone: customer.phone,
-            branch_id: selectedBranchId,
-            menu_item_id: activeItem.id,
-            quantity: value.quantity,
-            variant_id: value.variant_id,
-            addons: value.addons,
-            modifiers: value.modifiers,
-            notes: value.notes,
-          });
-        }}
-      />
+        <SiteFooter />
+      </div>
     </AppShell>
   );
 }

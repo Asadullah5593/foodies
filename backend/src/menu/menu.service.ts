@@ -879,6 +879,94 @@ export class MenuService {
         });
     }
 
+    /**
+     * Consumer web home/menu: return menu items for a brand scoped to a tenant,
+     * independent of branch availability and order type.
+     *
+     * Pricing uses the menu item's base_price (no branch overrides).
+     */
+    async getTenantBrandMenu(
+        tenantId: number,
+        brandId: number,
+        opts?: { search?: string },
+    ) {
+        await this.assertBrandBelongsToTenant(brandId, tenantId);
+
+        const qb = this.itemRepo
+            .createQueryBuilder('i')
+            .leftJoinAndSelect('i.category', 'c')
+            .leftJoinAndSelect('i.variants', 'v')
+            .leftJoinAndSelect('i.addons', 'a')
+            .leftJoinAndSelect('i.modifierGroups', 'mg')
+            .leftJoinAndSelect('mg.modifiers', 'm')
+            .where('i.brandId = :brandId', { brandId })
+            .andWhere('i.isActive = :active', { active: true })
+            .andWhere('(i.dealOnly IS NULL OR i.dealOnly = false)')
+            .orderBy('i.sortOrder', 'ASC')
+            .addOrderBy('i.id', 'ASC');
+
+        const searchQ = opts?.search?.trim();
+        if (searchQ) {
+            qb.andWhere(
+                '(LOWER(i.name) LIKE LOWER(:search) OR LOWER(i.description) LIKE LOWER(:search) OR LOWER(c.name) LIKE LOWER(:search))',
+                {
+                    search: `%${searchQ.replace(/%/g, '\\%').replace(/_/g, '\\_')}%`,
+                },
+            );
+        }
+
+        const items = await qb.getMany();
+
+        return items.map((item) => {
+            const base = Number(item.basePrice ?? 0);
+            return {
+                id: item.id,
+                name: item.name,
+                description: item.description,
+                image_url: item.imageUrl ?? null,
+                price: base,
+                base_price: base,
+                category: item.category?.name ?? null,
+                category_id: item.categoryId ?? item.category?.id ?? null,
+                brand_id: item.brandId ?? null,
+                available_for_order_types: effectiveMenuOrderChannels(
+                    item.availableForOrderTypes ?? null,
+                ),
+                variants: [...(item.variants ?? [])]
+                    .sort(
+                        (a, b) =>
+                            (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+                            a.id - b.id,
+                    )
+                    .map((v) => ({
+                        id: v.id,
+                        name: v.name,
+                        price_modifier: Number(v.priceModifier),
+                        is_default: v.isDefault,
+                        sort_order: v.sortOrder ?? 0,
+                    })),
+                addons:
+                    item.addons?.map((a) => ({
+                        id: a.id,
+                        name: a.name,
+                        price: Number(a.price),
+                    })) ?? [],
+                modifier_groups:
+                    item.modifierGroups?.map((mg) => ({
+                        id: mg.id,
+                        name: mg.name,
+                        min_select: mg.minSelect,
+                        max_select: mg.maxSelect,
+                        modifiers: (mg.modifiers ?? []).map((m) => ({
+                            id: m.id,
+                            name: m.name,
+                            price: Number(m.price),
+                        })),
+                    })) ?? [],
+            };
+        });
+    }
+
     async findMenuItem(id: number) {
         return this.itemRepo.findOne({
             where: { id },

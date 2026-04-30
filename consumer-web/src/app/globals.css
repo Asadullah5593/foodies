@@ -1,22 +1,23 @@
 @import "tailwindcss";
 
+/* Light-first: single theme for consumer browse experience */
 :root {
-  --background: #0f172a;
-  --foreground: #f4f4f5;
-  --surface: #101014;
-  --surface-2: #18181b;
-  --muted: #a1a1aa;
-  --border-soft: #27272a;
+  --background: #fafafa;
+  --foreground: #111113;
+  --surface: #ffffff;
+  --surface-2: #f4f4f5;
+  --muted: #52525b;
+  --border-soft: #e4e4e7;
   --foodies-red: #dc2626;
 }
 
 [data-theme="light"] {
-  --background: #f7f7f8;
+  --background: #fafafa;
   --foreground: #111113;
   --surface: #ffffff;
-  --surface-2: #f1f1f3;
+  --surface-2: #f4f4f5;
   --muted: #52525b;
-  --border-soft: #d4d4d8;
+  --border-soft: #e4e4e7;
 }
 
 @theme inline {
@@ -24,6 +25,12 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+html,
+body {
+  /* Prevent horizontal scrollbar caused by full-bleed sections (`w-screen`, negative margins). */
+  overflow-x: clip;
 }
 
 body {
@@ -36,17 +43,21 @@ a {
   color: inherit;
 }
 
-/* Theme-aware image overlays:
-   Keep cinematic gradients in dark mode, remove in light mode. */
+/* Subtle overlay on imagery for readability without dark-dominant UI */
 .foodies-media-overlay {
   background: linear-gradient(
     to top,
-    rgba(0, 0, 0, 0.55) 0%,
-    rgba(0, 0, 0, 0.18) 45%,
+    rgba(0, 0, 0, 0.12) 0%,
+    rgba(0, 0, 0, 0.04) 50%,
     rgba(0, 0, 0, 0) 100%
   );
 }
 
 [data-theme="light"] .foodies-media-overlay {
-  background: transparent;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, 0.1) 0%,
+    rgba(0, 0, 0, 0.03) 45%,
+    rgba(0, 0, 0, 0) 100%
+  );
 }
