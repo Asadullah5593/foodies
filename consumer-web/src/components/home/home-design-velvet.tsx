@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { Button, Loader } from "@/components/ui";
 import { BranchMap } from "@/components/home/branch-map-dynamic";
 import { HomeContinueCard } from "@/components/home/home-continue-card";
@@ -20,7 +19,7 @@ export function HomeDesignVelvet() {
     branchesQuery,
     sortedBranches,
     selectedBranchId,
-    setSelectedBranch,
+    selectBranchAndGoToMenu,
     distanceKmForBranch,
     branchCoverForBranch,
     getBranchTags,
@@ -62,12 +61,6 @@ export function HomeDesignVelvet() {
             >
               {locationStatus === "loading" ? "Finding you…" : "Allow location"}
             </Button>
-            <Link
-              href="/login"
-              className="inline-flex items-center justify-center rounded-full border border-red-500/30 bg-black/40 px-8 py-2 text-sm font-semibold text-red-100 transition hover:border-red-400/50 hover:bg-red-950/30"
-            >
-              Login
-            </Link>
           </div>
           {locationStatus === "denied" ? (
             <p className="mt-4 text-sm text-red-300/90">We need location to show nearby rooms.</p>
@@ -136,7 +129,7 @@ export function HomeDesignVelvet() {
                 <BranchMap
                   userLocation={queryCoords}
                   branches={sortedBranches}
-                  onSelectBranch={(b: Branch) => setSelectedBranch(b)}
+                  onSelectBranch={(b: Branch) => selectBranchAndGoToMenu(b)}
                   height="68vh"
                 />
               </div>
@@ -151,7 +144,7 @@ export function HomeDesignVelvet() {
                     <button
                       key={branch.id}
                       type="button"
-                      onClick={() => setSelectedBranch(branch)}
+                      onClick={() => selectBranchAndGoToMenu(branch)}
                       className={`relative overflow-hidden rounded-3xl border text-left transition ${
                         selected
                           ? "border-red-400/60 shadow-[0_0_60px_rgba(220,38,38,0.22)]"

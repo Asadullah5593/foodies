@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { Button, Loader } from "@/components/ui";
 import { BranchMap } from "@/components/home/branch-map-dynamic";
 import { HomeContinueCard } from "@/components/home/home-continue-card";
@@ -20,7 +19,7 @@ export function HomeDesignNeoGrid() {
     branchesQuery,
     sortedBranches,
     selectedBranchId,
-    setSelectedBranch,
+    selectBranchAndGoToMenu,
     distanceKmForBranch,
     branchCoverForBranch,
     getBranchTags,
@@ -48,12 +47,6 @@ export function HomeDesignNeoGrid() {
             >
               {locationStatus === "loading" ? "…" : "Locate"}
             </Button>
-            <Link
-              href="/login"
-              className="inline-flex items-center justify-center border border-white/25 bg-transparent px-4 py-2 font-mono text-xs font-semibold uppercase tracking-widest text-white transition hover:bg-white hover:text-black"
-            >
-              Login
-            </Link>
           </div>
         </div>
         {locationStatus === "denied" ? (
@@ -130,7 +123,7 @@ export function HomeDesignNeoGrid() {
               <BranchMap
                 userLocation={queryCoords}
                 branches={sortedBranches}
-                onSelectBranch={(b: Branch) => setSelectedBranch(b)}
+                onSelectBranch={(b: Branch) => selectBranchAndGoToMenu(b)}
                 height="68vh"
               />
             </div>
@@ -145,7 +138,7 @@ export function HomeDesignNeoGrid() {
                   <button
                     key={branch.id}
                     type="button"
-                    onClick={() => setSelectedBranch(branch)}
+                    onClick={() => selectBranchAndGoToMenu(branch)}
                     className={`group relative border-b border-white/15 text-left sm:border-r sm:[&:nth-child(2n)]:border-r-0 lg:[&:nth-child(3n)]:border-r-0 lg:[&:nth-child(3n+1)]:border-r lg:[&:nth-child(3n+2)]:border-r lg:[&:nth-child(3n+3)]:border-r-0 ${
                       selected ? "bg-red-950/25" : "hover:bg-white/[0.02]"
                     }`}

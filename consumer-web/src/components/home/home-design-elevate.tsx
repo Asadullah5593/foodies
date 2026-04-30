@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { Button, Loader } from "@/components/ui";
 import { BranchMap } from "@/components/home/branch-map-dynamic";
 import { HomeContinueCard } from "@/components/home/home-continue-card";
@@ -20,7 +19,7 @@ export function HomeDesignElevate() {
     branchesQuery,
     sortedBranches,
     selectedBranchId,
-    setSelectedBranch,
+    selectBranchAndGoToMenu,
     distanceKmForBranch,
     branchCoverForBranch,
     getBranchTags,
@@ -57,12 +56,6 @@ export function HomeDesignElevate() {
               <Button onClick={requestLocation} disabled={locationStatus === "loading"}>
                 {locationStatus === "loading" ? "Locating…" : "Enable location"}
               </Button>
-              <Link
-                href="/login"
-                className="inline-flex items-center justify-center rounded-lg border border-white/20 bg-black/30 px-4 py-2 text-sm font-semibold text-white backdrop-blur transition hover:bg-black/45"
-              >
-                Login
-              </Link>
             </div>
             {locationStatus === "denied" ? (
               <p className="mt-4 text-sm text-red-200">Location blocked — allow access to browse.</p>
@@ -113,7 +106,7 @@ export function HomeDesignElevate() {
               <BranchMap
                 userLocation={queryCoords}
                 branches={sortedBranches}
-                onSelectBranch={(b: Branch) => setSelectedBranch(b)}
+                onSelectBranch={(b: Branch) => selectBranchAndGoToMenu(b)}
                 height="70vh"
               />
             </div>
@@ -129,7 +122,7 @@ export function HomeDesignElevate() {
                   <button
                     key={branch.id}
                     type="button"
-                    onClick={() => setSelectedBranch(branch)}
+                    onClick={() => selectBranchAndGoToMenu(branch)}
                     className={`relative overflow-hidden rounded-2xl border text-left transition ${
                       large ? "md:col-span-2" : ""
                     } ${

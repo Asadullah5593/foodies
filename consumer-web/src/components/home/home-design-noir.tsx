@@ -2,7 +2,6 @@
 
 import { motion } from "framer-motion";
 import Image from "next/image";
-import Link from "next/link";
 import { Button, Loader } from "@/components/ui";
 import { BranchMap } from "@/components/home/branch-map-dynamic";
 import { HomeContinueCard } from "@/components/home/home-continue-card";
@@ -21,7 +20,7 @@ export function HomeDesignNoir() {
     branchesQuery,
     sortedBranches,
     selectedBranchId,
-    setSelectedBranch,
+    selectBranchAndGoToMenu,
     distanceKmForBranch,
     branchCoverForBranch,
     getBranchTags,
@@ -53,12 +52,6 @@ export function HomeDesignNoir() {
           <Button onClick={requestLocation} disabled={locationStatus === "loading"}>
             {locationStatus === "loading" ? "Locating…" : "Reveal nearby branches"}
           </Button>
-          <Link
-            href="/login"
-            className="inline-flex items-center justify-center rounded-lg border border-white/15 px-4 py-2 text-sm font-semibold text-white/85 transition hover:bg-white/5"
-          >
-            Member access
-          </Link>
         </div>
         {locationStatus === "denied" ? (
           <p className="mt-4 text-sm text-red-300">Location permission is required.</p>
@@ -107,7 +100,7 @@ export function HomeDesignNoir() {
               <BranchMap
                 userLocation={queryCoords}
                 branches={sortedBranches}
-                onSelectBranch={(b: Branch) => setSelectedBranch(b)}
+                onSelectBranch={(b: Branch) => selectBranchAndGoToMenu(b)}
                 height="70vh"
               />
             </div>
@@ -122,7 +115,7 @@ export function HomeDesignNoir() {
                   <button
                     key={branch.id}
                     type="button"
-                    onClick={() => setSelectedBranch(branch)}
+                    onClick={() => selectBranchAndGoToMenu(branch)}
                     className={`relative h-[420px] w-[min(88vw,340px)] shrink-0 overflow-hidden rounded-2xl border text-left transition ${
                       selected
                         ? "border-red-500 shadow-[0_0_0_1px_rgba(239,68,68,0.35)]"

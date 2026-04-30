@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { getBrandsByBranch, getNearbyBranches } from "@/lib/api/consumer";
+import { getConsumerBranches } from "@/lib/api/consumer";
 import { useSessionStore } from "@/lib/store/session-store";
 import type { Branch } from "@/lib/api/types";
 
@@ -34,19 +34,37 @@ export function useHomePage() {
     "idle",
   );
   const [viewMode, setViewMode] = useState<"list" | "map">("list");
+  const [branchListFilter, setBranchListFilter] = useState("");
   const mapSectionRef = useRef<HTMLDivElement | null>(null);
 
   const branchesQuery = useQuery({
-    queryKey: ["branches-nearby", queryCoords?.latitude, queryCoords?.longitude],
-    queryFn: () => getNearbyBranches(queryCoords!.latitude, queryCoords!.longitude),
-    enabled: Boolean(queryCoords),
+    queryKey: ["consumer-branches", queryCoords?.latitude ?? "all", queryCoords?.longitude ?? "all"],
+    queryFn: () =>
+      queryCoords
+        ? getConsumerBranches({
+            latitude: queryCoords.latitude,
+            longitude: queryCoords.longitude,
+            radiusKm: 10,
+          })
+        : getConsumerBranches(),
+    // Smooth UI updates when switching from "all branches" to "near me".
+    placeholderData: (prev) => prev,
   });
 
-  const selectedBranchBrandsQuery = useQuery({
-    queryKey: ["home-branch-brands", selectedBranchId],
-    queryFn: () => getBrandsByBranch(selectedBranchId!),
-    enabled: Boolean(selectedBranchId),
-  });
+  /** Branches with at least one linked brand (browse/menu is useless otherwise). */
+  const branches = useMemo(
+    () =>
+      (branchesQuery.data ?? []).filter((b) => (b.brand_ids?.length ?? 0) > 0),
+    [branchesQuery.data],
+  );
+
+  const selectBranchAndGoToMenu = useCallback(
+    (branch: Branch) => {
+      setSelectedBranch(branch);
+      router.push("/menu");
+    },
+    [setSelectedBranch, router],
+  );
 
   const requestLocation = () => {
     setLocationStatus("loading");
@@ -83,8 +101,6 @@ export function useHomePage() {
     );
   };
 
-  const branches = useMemo(() => branchesQuery.data ?? [], [branchesQuery.data]);
-
   const haversineKm = useCallback(
     (
       a: { latitude: number; longitude: number },
@@ -117,18 +133,42 @@ export function useHomePage() {
           longitude: branch.longitude,
         });
       }
+      if (
+        queryCoords &&
+        typeof branch.latitude === "number" &&
+        typeof branch.longitude === "number"
+      ) {
+        return haversineKm(queryCoords, {
+          latitude: branch.latitude,
+          longitude: branch.longitude,
+        });
+      }
       if (typeof branch.distance_km === "number") return branch.distance_km;
       return null;
     },
-    [haversineKm, userLocation],
+    [haversineKm, queryCoords, userLocation],
   );
 
   const sortedBranches = useMemo(() => {
-    const withDist = branches.map((b) => ({ b, d: distanceKmForBranch(b) }));
-    return withDist
-      .sort((x, y) => (x.d ?? Number.MAX_SAFE_INTEGER) - (y.d ?? Number.MAX_SAFE_INTEGER))
-      .map((x) => x.b);
-  }, [branches, distanceKmForBranch]);
+    const q = branchListFilter.trim().toLowerCase();
+    const filtered = q
+      ? branches.filter((b) => {
+          const blob = `${b.name ?? ""} ${b.address ?? ""} ${b.code ?? ""}`.toLowerCase();
+          return blob.includes(q);
+        })
+      : branches;
+
+    const withDist = filtered.map((b) => ({ b, d: distanceKmForBranch(b) }));
+    const anyDist = withDist.some((x) => x.d != null);
+    if (anyDist) {
+      return withDist
+        .sort((x, y) => (x.d ?? Number.MAX_SAFE_INTEGER) - (y.d ?? Number.MAX_SAFE_INTEGER))
+        .map((x) => x.b);
+    }
+    return [...filtered].sort((a, b) =>
+      (a.name ?? "").localeCompare(b.name ?? "", undefined, { sensitivity: "base" }),
+    );
+  }, [branchListFilter, branches, distanceKmForBranch]);
 
   const branchCoverForBranch = useCallback((branch: Branch) => {
     const id = typeof branch.id === "number" ? branch.id : 0;
@@ -146,8 +186,6 @@ export function useHomePage() {
     if (branch.supports_takeaway) tags.push("Takeaway");
     return tags.slice(0, 3);
   }, []);
-
-  const selectedBranchHasBrands = (selectedBranchBrandsQuery.data?.length ?? 0) > 0;
 
   useEffect(() => {
     if (viewMode !== "map") return;
@@ -185,17 +223,19 @@ export function useHomePage() {
     setViewMode,
     mapSectionRef,
     branchesQuery,
-    selectedBranchBrandsQuery,
     branches,
     sortedBranches,
+    branchListFilter,
+    setBranchListFilter,
     selectedBranchId,
     setSelectedBranch,
+    selectBranchAndGoToMenu,
     distanceKmForBranch,
     branchCoverForBranch,
     getBranchTags,
     distanceSubLabel,
-    selectedBranchHasBrands,
     userAddress,
+    userLocation,
   };
 }
 

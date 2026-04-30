@@ -15,7 +15,6 @@ function kmToMi(km: number) {
 export function HomeDesignBranchLocator() {
   const h = useHomePage();
   const {
-    router,
     queryCoords,
     locationStatus,
     requestLocation,
@@ -24,13 +23,11 @@ export function HomeDesignBranchLocator() {
     branchesQuery,
     sortedBranches,
     selectedBranchId,
-    setSelectedBranch,
+    selectBranchAndGoToMenu,
     distanceKmForBranch,
     branchCoverForBranch,
     getBranchTags,
     userAddress,
-    selectedBranchBrandsQuery,
-    selectedBranchHasBrands,
   } = h;
 
   const locationTitle =
@@ -66,12 +63,6 @@ export function HomeDesignBranchLocator() {
               />
             </svg>
           </button>
-          <Link
-            href="/login"
-            className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-500"
-          >
-            Login
-          </Link>
         </div>
       </nav>
 
@@ -155,7 +146,7 @@ export function HomeDesignBranchLocator() {
           <BranchMap
             userLocation={queryCoords}
             branches={sortedBranches}
-            onSelectBranch={(branch: Branch) => setSelectedBranch(branch)}
+            onSelectBranch={(branch: Branch) => selectBranchAndGoToMenu(branch)}
             height="72vh"
           />
         </div>
@@ -172,7 +163,7 @@ export function HomeDesignBranchLocator() {
                 <button
                   key={branch.id}
                   type="button"
-                  onClick={() => setSelectedBranch(branch)}
+                  onClick={() => selectBranchAndGoToMenu(branch)}
                   className={`relative overflow-hidden rounded-2xl border text-left transition ${
                     selected
                       ? "border-red-500/70 ring-2 ring-red-500/25"
@@ -225,28 +216,11 @@ export function HomeDesignBranchLocator() {
                           </span>
                         ))}
                       </div>
-                      {featured ? (
-                        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                          <p className="text-xs text-white/55">Est. wait varies by evening volume</p>
-                          <Button
-                            type="button"
-                            disabled={
-                              !selected ||
-                              selectedBranchBrandsQuery.isLoading ||
-                              !selectedBranchHasBrands
-                            }
-                            onClick={() => router.push("/menu")}
-                            className="gap-2"
-                          >
-                            View menu
-                            <span aria-hidden="true">→</span>
-                          </Button>
-                        </div>
-                      ) : (
-                        <p className="mt-4 text-xs font-semibold text-red-400/90">
-                          Select branch
-                        </p>
-                      )}
+                      <p className="mt-4 text-xs text-white/70">
+                        {featured
+                          ? "Tap this card to open the menu."
+                          : "Tap to open the menu."}
+                      </p>
                     </div>
                   </div>
                 </button>
@@ -262,7 +236,7 @@ export function HomeDesignBranchLocator() {
             <BranchMap
               userLocation={queryCoords}
               branches={sortedBranches}
-              onSelectBranch={(branch: Branch) => setSelectedBranch(branch)}
+              onSelectBranch={(branch: Branch) => selectBranchAndGoToMenu(branch)}
               height="min(72vh, 640px)"
             />
             <div className="pointer-events-none absolute left-4 top-16 z-[500] max-w-[220px] rounded-lg border border-white/10 bg-black/80 p-3 text-[11px] text-white/70 shadow-xl backdrop-blur">

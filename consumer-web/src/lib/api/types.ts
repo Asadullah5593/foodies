@@ -12,6 +12,8 @@ export type Branch = {
   latitude?: number | null;
   longitude?: number | null;
   distance_km?: number | null;
+  /** Linked brands at this branch from API; home list only shows branches with a non-empty list. */
+  brand_ids?: number[];
 };
 
 export type Brand = {

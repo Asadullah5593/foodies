@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { Button, Loader } from "@/components/ui";
 import { BranchMap } from "@/components/home/branch-map-dynamic";
 import { HomeContinueCard } from "@/components/home/home-continue-card";
@@ -20,7 +19,7 @@ export function HomeDesignAurora() {
     branchesQuery,
     sortedBranches,
     selectedBranchId,
-    setSelectedBranch,
+    selectBranchAndGoToMenu,
     distanceKmForBranch,
     branchCoverForBranch,
     getBranchTags,
@@ -47,12 +46,6 @@ export function HomeDesignAurora() {
             <Button onClick={requestLocation} disabled={locationStatus === "loading"}>
               {locationStatus === "loading" ? "Pinpointing…" : "Share location"}
             </Button>
-            <Link
-              href="/login"
-              className="inline-flex items-center justify-center rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-sm font-semibold text-white/90 backdrop-blur transition hover:bg-white/10"
-            >
-              Login
-            </Link>
           </div>
           {locationStatus === "denied" ? (
             <p className="mt-4 text-sm text-red-300">Allow location in your browser settings.</p>
@@ -123,7 +116,7 @@ export function HomeDesignAurora() {
                 <BranchMap
                   userLocation={queryCoords}
                   branches={sortedBranches}
-                  onSelectBranch={(b: Branch) => setSelectedBranch(b)}
+                  onSelectBranch={(b: Branch) => selectBranchAndGoToMenu(b)}
                   height="68vh"
                 />
               </div>
@@ -138,7 +131,7 @@ export function HomeDesignAurora() {
                     <button
                       key={branch.id}
                       type="button"
-                      onClick={() => setSelectedBranch(branch)}
+                      onClick={() => selectBranchAndGoToMenu(branch)}
                       className={`group relative overflow-hidden rounded-2xl border text-left transition ${
                         selected
                           ? "border-red-500/60 bg-red-950/20 shadow-[0_0_40px_rgba(220,38,38,0.18)]"

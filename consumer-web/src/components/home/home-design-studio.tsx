@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { Button, Loader } from "@/components/ui";
 import { BranchMap } from "@/components/home/branch-map-dynamic";
 import { HomeContinueCard } from "@/components/home/home-continue-card";
@@ -20,7 +19,7 @@ export function HomeDesignStudio() {
     branchesQuery,
     sortedBranches,
     selectedBranchId,
-    setSelectedBranch,
+    selectBranchAndGoToMenu,
     distanceKmForBranch,
     branchCoverForBranch,
     getBranchTags,
@@ -52,12 +51,6 @@ export function HomeDesignStudio() {
             >
               {locationStatus === "loading" ? "Working…" : "Use location"}
             </Button>
-            <Link
-              href="/login"
-              className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-red-500 underline-offset-4 hover:underline"
-            >
-              Sign in
-            </Link>
           </div>
           {locationStatus === "denied" ? (
             <p className="text-sm text-red-400/90">Location unavailable.</p>
@@ -126,7 +119,7 @@ export function HomeDesignStudio() {
               <BranchMap
                 userLocation={queryCoords}
                 branches={sortedBranches}
-                onSelectBranch={(b: Branch) => setSelectedBranch(b)}
+                onSelectBranch={(b: Branch) => selectBranchAndGoToMenu(b)}
                 height="64vh"
               />
             </div>
@@ -141,7 +134,7 @@ export function HomeDesignStudio() {
                   <li key={branch.id}>
                     <button
                       type="button"
-                      onClick={() => setSelectedBranch(branch)}
+                      onClick={() => selectBranchAndGoToMenu(branch)}
                       className={`flex w-full gap-6 p-6 text-left transition hover:bg-white/[0.02] ${
                         selected ? "bg-red-950/10" : ""
                       }`}
