@@ -24,7 +24,11 @@ export class InventoryItemsAdminController {
     @Get()
     async index(
         @CurrentUser()
-        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        user: {
+            id: number;
+            tenantId: number | null;
+            isSuperAdmin?: boolean;
+        },
     ) {
         const tenantId = await this.inventoryService.resolveTenantId(user);
         return this.inventoryService.listItems(tenantId);
@@ -40,6 +44,7 @@ export class InventoryItemsAdminController {
             code: string;
             type?: string;
             base_uom_id: number;
+            base_uom_ids?: number[];
             track_expiry?: boolean;
             track_lot?: boolean;
             default_reorder_point?: number | null;
@@ -62,6 +67,7 @@ export class InventoryItemsAdminController {
             code?: string;
             type?: string;
             base_uom_id?: number;
+            base_uom_ids?: number[];
             track_expiry?: boolean;
             track_lot?: boolean;
             default_reorder_point?: number | null;
@@ -90,7 +96,10 @@ export class InventoryItemsAdminController {
         @Param('id') id: string,
         @Param('branchId') branchId: string,
         @Body()
-        dto: { reorder_point?: number | null; near_expiry_days?: number | null },
+        dto: {
+            reorder_point?: number | null;
+            near_expiry_days?: number | null;
+        },
     ) {
         const tenantId = await this.inventoryService.resolveTenantId(
             user,
@@ -104,4 +113,3 @@ export class InventoryItemsAdminController {
         );
     }
 }
-

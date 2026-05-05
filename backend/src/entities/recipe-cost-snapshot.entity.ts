@@ -1,4 +1,10 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import {
+    Column,
+    Entity,
+    JoinColumn,
+    ManyToOne,
+    PrimaryGeneratedColumn,
+} from 'typeorm';
 import { Recipe } from './recipe.entity';
 
 @Entity('recipe_cost_snapshots')
@@ -25,4 +31,3 @@ export class RecipeCostSnapshot {
     @JoinColumn({ name: 'recipe_id' })
     recipe: Recipe;
 }
-

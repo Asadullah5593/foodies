@@ -267,8 +267,7 @@ export class ConsumerController {
     @UseGuards(CustomerJwtAuthGuard)
     @ApiBearerAuth()
     @ApiOperation({
-        summary:
-            'Link logged-in customer to tenant (one-time) using branch_id',
+        summary: 'Link logged-in customer to tenant (one-time) using branch_id',
     })
     @ApiBody({
         schema: {
@@ -707,7 +706,9 @@ export class ConsumerController {
             searchParam != null && searchParam.trim() !== ''
                 ? searchParam.trim()
                 : undefined;
-        return this.menuService.getTenantBrandMenu(tenantId, brandId, { search });
+        return this.menuService.getTenantBrandMenu(tenantId, brandId, {
+            search,
+        });
     }
 
     @Get('categories')

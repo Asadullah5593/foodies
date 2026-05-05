@@ -17,7 +17,10 @@ import { PosMenuController } from './pos-menu.controller';
 import { PosOrdersController } from './pos-orders.controller';
 import { AdminOrdersController } from './admin-orders.controller';
 import { RiderOrdersController } from './rider-orders.controller';
+import { RiderOrderLocationController } from './rider-order-location.controller';
+import { RiderOrderLocation } from '../entities/rider-order-location.entity';
 import { OrdersService } from './orders.service';
+import { RiderOrderLocationService } from './rider-order-location.service';
 import { MenuModule } from '../menu/menu.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
@@ -42,6 +45,7 @@ import { InventoryModule } from '../inventory/inventory.module';
             User,
             Tenant,
             Discount,
+            RiderOrderLocation,
         ]),
         MenuModule,
         PaymentsModule,
@@ -56,8 +60,9 @@ import { InventoryModule } from '../inventory/inventory.module';
         PosOrdersController,
         AdminOrdersController,
         RiderOrdersController,
+        RiderOrderLocationController,
     ],
-    providers: [OrdersService],
-    exports: [OrdersService],
+    providers: [OrdersService, RiderOrderLocationService],
+    exports: [OrdersService, RiderOrderLocationService],
 })
 export class OrdersModule {}

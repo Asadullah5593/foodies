@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    Delete,
+    Get,
+    Param,
+    Patch,
+    Post,
+    UseGuards,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
@@ -15,7 +24,11 @@ export class VendorsAdminController {
     @Get()
     async index(
         @CurrentUser()
-        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        user: {
+            id: number;
+            tenantId: number | null;
+            isSuperAdmin?: boolean;
+        },
     ) {
         const tenantId = await this.inventoryService.resolveTenantId(user);
         return this.inventoryService.listVendors(tenantId);
@@ -76,4 +89,3 @@ export class VendorsAdminController {
         return this.inventoryService.deactivateVendor(tenantId, Number(id));
     }
 }
-

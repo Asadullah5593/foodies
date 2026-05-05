@@ -28,6 +28,9 @@ export class PurchaseRequisition {
     @Column()
     requestedFromVendorId: number;
 
+    @Column({ type: 'varchar', nullable: true })
+    prNumber: string | null;
+
     /** draft | submitted | approved | rejected | cancelled */
     @Column({ default: 'draft' })
     status: string;
@@ -73,4 +76,3 @@ export class PurchaseRequisition {
     @OneToMany(() => PurchaseRequisitionLine, (l) => l.purchaseRequisition)
     lines: PurchaseRequisitionLine[];
 }
-

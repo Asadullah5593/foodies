@@ -53,4 +53,3 @@ export class RecipeLine {
     @JoinColumn({ name: 'uom_id' })
     uom: Uom;
 }
-

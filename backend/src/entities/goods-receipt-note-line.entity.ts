@@ -30,6 +30,21 @@ export class GoodsReceiptNoteLine {
     @Column({ type: 'decimal', precision: 18, scale: 6 })
     receivedQty: number;
 
+    @Column({ type: 'decimal', precision: 18, scale: 6, nullable: true })
+    acceptedQty: number | null;
+
+    @Column({ type: 'decimal', precision: 18, scale: 6, nullable: true })
+    rejectedQty: number | null;
+
+    @Column({ type: 'text', nullable: true })
+    rejectionReason: string | null;
+
+    @Column({ type: 'boolean', default: false })
+    isOverReceived: boolean;
+
+    @Column({ type: 'boolean', default: false })
+    isMismatchedItem: boolean;
+
     @Column()
     receivedUomId: number;
 
@@ -57,7 +72,10 @@ export class GoodsReceiptNoteLine {
     @JoinColumn({ name: 'goods_receipt_note_id' })
     goodsReceiptNote: GoodsReceiptNote;
 
-    @ManyToOne(() => PurchaseOrderLine, { onDelete: 'SET NULL', nullable: true })
+    @ManyToOne(() => PurchaseOrderLine, {
+        onDelete: 'SET NULL',
+        nullable: true,
+    })
     @JoinColumn({ name: 'purchase_order_line_id' })
     purchaseOrderLine: PurchaseOrderLine | null;
 
@@ -69,8 +87,10 @@ export class GoodsReceiptNoteLine {
     @JoinColumn({ name: 'received_uom_id' })
     receivedUom: Uom;
 
-    @ManyToOne(() => InventoryLocation, { onDelete: 'SET NULL', nullable: true })
+    @ManyToOne(() => InventoryLocation, {
+        onDelete: 'SET NULL',
+        nullable: true,
+    })
     @JoinColumn({ name: 'location_id' })
     location: InventoryLocation | null;
 }
-

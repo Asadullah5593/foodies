@@ -55,4 +55,3 @@ export class PurchaseOrderLine {
     @JoinColumn({ name: 'ordered_uom_id' })
     orderedUom: Uom;
 }
-

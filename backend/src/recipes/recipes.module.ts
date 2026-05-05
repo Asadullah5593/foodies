@@ -35,4 +35,3 @@ import { RecipesAdminController } from './recipes.admin.controller';
     exports: [RecipesService],
 })
 export class RecipesModule {}
-

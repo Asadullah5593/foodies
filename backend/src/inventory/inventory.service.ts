@@ -5,7 +5,7 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, EntityManager, Repository } from 'typeorm';
 import { BranchesService } from '../branches/branches.service';
 import { Uom } from '../entities/uom.entity';
 import { Vendor } from '../entities/vendor.entity';
@@ -20,6 +20,7 @@ import { WastageEvent } from '../entities/wastage-event.entity';
 import { InventoryItemCost } from '../entities/inventory-item-cost.entity';
 import { Stocktake } from '../entities/stocktake.entity';
 import { StocktakeLine } from '../entities/stocktake-line.entity';
+import { BranchBrand } from '../entities/branch-brand.entity';
 
 type TenantContextUser = {
     id: number;
@@ -56,6 +57,8 @@ export class InventoryService {
         private stocktakesRepo: Repository<Stocktake>,
         @InjectRepository(StocktakeLine)
         private stocktakeLinesRepo: Repository<StocktakeLine>,
+        @InjectRepository(BranchBrand)
+        private branchBrandsRepo: Repository<BranchBrand>,
     ) {}
 
     async resolveTenantId(user: TenantContextUser, branchId?: number) {
@@ -66,10 +69,10 @@ export class InventoryService {
                     'Branch context required for super admin',
                 );
             }
-            const tenantId = await this.branchesService.getPrimaryTenantId(
-                branchId,
-            );
-            if (tenantId == null) throw new NotFoundException('No tenant found');
+            const tenantId =
+                await this.branchesService.getPrimaryTenantId(branchId);
+            if (tenantId == null)
+                throw new NotFoundException('No tenant found');
             return tenantId;
         }
         throw new ForbiddenException('Tenant context required');
@@ -220,13 +223,14 @@ export class InventoryService {
         });
     }
 
-    createItem(
+    async createItem(
         tenantId: number,
         dto: {
             name: string;
             code: string;
             type?: string;
             base_uom_id: number;
+            base_uom_ids?: number[];
             track_expiry?: boolean;
             track_lot?: boolean;
             default_reorder_point?: number | null;
@@ -235,17 +239,27 @@ export class InventoryService {
     ) {
         const name = String(dto.name ?? '').trim();
         const code = String(dto.code ?? '').trim();
-        const baseUomId = dto.base_uom_id;
+        const normalizedBaseUomId = Number(dto.base_uom_id);
+        const baseUomId = Number.isInteger(normalizedBaseUomId)
+            ? normalizedBaseUomId
+            : 0;
         if (!name) throw new BadRequestException('Name is required');
         if (!code) throw new BadRequestException('Code is required');
         if (!baseUomId) throw new BadRequestException('Base unit is required');
+        await this.ensureUniqueItemCode(tenantId, code);
+        const validatedBaseUoms = await this.normalizeAndValidateItemBaseUoms(
+            tenantId,
+            baseUomId,
+            dto.base_uom_ids,
+        );
 
         const item = this.itemsRepo.create({
             tenantId,
             name,
             code,
             type: dto.type ?? 'ingredient',
-            baseUomId,
+            baseUomId: validatedBaseUoms.baseUomId,
+            baseUomIds: validatedBaseUoms.baseUomIds,
             trackExpiry: dto.track_expiry ?? true,
             trackLot: dto.track_lot ?? true,
             defaultReorderPoint: dto.default_reorder_point ?? null,
@@ -263,6 +277,7 @@ export class InventoryService {
             code?: string;
             type?: string;
             base_uom_id?: number;
+            base_uom_ids?: number[];
             track_expiry?: boolean;
             track_lot?: boolean;
             default_reorder_point?: number | null;
@@ -282,19 +297,69 @@ export class InventoryService {
         if (dto.code !== undefined) {
             const code = String(dto.code).trim();
             if (!code) throw new BadRequestException('Code is required');
+            await this.ensureUniqueItemCode(tenantId, code, item.id);
             item.code = code;
         }
-        if (dto.type !== undefined) item.type = String(dto.type || 'ingredient').trim() || 'ingredient';
+        if (dto.type !== undefined)
+            item.type = String(dto.type || 'ingredient').trim() || 'ingredient';
         if (dto.base_uom_id !== undefined) {
-            if (!dto.base_uom_id) throw new BadRequestException('Base unit is required');
-            item.baseUomId = dto.base_uom_id;
+            if (!dto.base_uom_id)
+                throw new BadRequestException('Base unit is required');
+            const validatedBaseUoms =
+                await this.normalizeAndValidateItemBaseUoms(
+                    tenantId,
+                    Number(dto.base_uom_id),
+                    [Number(dto.base_uom_id)],
+                );
+            item.baseUomId = validatedBaseUoms.baseUomId;
+            item.baseUomIds = validatedBaseUoms.baseUomIds;
         }
-        if (dto.track_expiry !== undefined) item.trackExpiry = !!dto.track_expiry;
+        if (dto.base_uom_ids !== undefined) {
+            const canonicalBaseUomId =
+                dto.base_uom_id !== undefined
+                    ? Number(dto.base_uom_id)
+                    : Number(
+                          dto.base_uom_ids.find((id) => Number(id) > 0) ??
+                              item.baseUomId,
+                      );
+            const validatedBaseUoms =
+                await this.normalizeAndValidateItemBaseUoms(
+                    tenantId,
+                    canonicalBaseUomId,
+                    dto.base_uom_ids,
+                );
+            item.baseUomIds = validatedBaseUoms.baseUomIds;
+            item.baseUomId = validatedBaseUoms.baseUomId;
+        }
+        if (dto.track_expiry !== undefined)
+            item.trackExpiry = !!dto.track_expiry;
         if (dto.track_lot !== undefined) item.trackLot = !!dto.track_lot;
-        if (dto.default_reorder_point !== undefined) item.defaultReorderPoint = dto.default_reorder_point ?? null;
-        if (dto.default_near_expiry_days !== undefined) item.defaultNearExpiryDays = dto.default_near_expiry_days ?? null;
+        if (dto.default_reorder_point !== undefined)
+            item.defaultReorderPoint = dto.default_reorder_point ?? null;
+        if (dto.default_near_expiry_days !== undefined)
+            item.defaultNearExpiryDays = dto.default_near_expiry_days ?? null;
 
         return this.itemsRepo.save(item);
+    }
+
+    private async ensureUniqueItemCode(
+        tenantId: number,
+        code: string,
+        excludeItemId?: number,
+    ) {
+        const qb = this.itemsRepo
+            .createQueryBuilder('item')
+            .where('item.tenant_id = :tenantId', { tenantId })
+            .andWhere('LOWER(item.code) = LOWER(:code)', { code });
+        if (excludeItemId != null) {
+            qb.andWhere('item.id != :excludeItemId', { excludeItemId });
+        }
+        const existing = await qb.getOne();
+        if (existing) {
+            throw new BadRequestException(
+                'Code / SKU already exists. Please use a unique value.',
+            );
+        }
     }
 
     async deactivateItem(tenantId: number, itemId: number) {
@@ -310,7 +375,10 @@ export class InventoryService {
         tenantId: number,
         branchId: number,
         inventoryItemId: number,
-        dto: { reorder_point?: number | null; near_expiry_days?: number | null },
+        dto: {
+            reorder_point?: number | null;
+            near_expiry_days?: number | null;
+        },
     ) {
         const existing = await this.itemBranchSettingsRepo.findOne({
             where: { tenantId, branchId, inventoryItemId },
@@ -370,12 +438,118 @@ export class InventoryService {
         });
     }
 
-    listLedger(tenantId: number, branchId: number, limit = 200) {
-        return this.ledgerRepo.find({
-            where: { tenantId, branchId },
-            order: { createdAt: 'DESC' },
-            take: Math.min(Math.max(limit, 1), 1000),
+    async listLedger(
+        tenantId: number,
+        branchId: number,
+        opts?: {
+            eventType?: string;
+            inventoryItemId?: number;
+            eventRefType?: string;
+            eventRefId?: number;
+            from?: string;
+            to?: string;
+            page?: number;
+            pageSize?: number;
+        },
+    ) {
+        const page = Math.max(Number(opts?.page ?? 1), 1);
+        const pageSize = Math.min(
+            Math.max(Number(opts?.pageSize ?? 50), 1),
+            200,
+        );
+        const qb = this.ledgerRepo
+            .createQueryBuilder('l')
+            .where('l.tenant_id = :tenantId', { tenantId })
+            .andWhere('l.branch_id = :branchId', { branchId });
+
+        if (opts?.eventType) {
+            qb.andWhere('l.event_type = :eventType', {
+                eventType: opts.eventType,
+            });
+        }
+        if (opts?.inventoryItemId != null) {
+            qb.andWhere('l.inventory_item_id = :inventoryItemId', {
+                inventoryItemId: opts.inventoryItemId,
+            });
+        }
+        if (opts?.eventRefType) {
+            qb.andWhere('l.event_ref_type = :eventRefType', {
+                eventRefType: opts.eventRefType,
+            });
+        }
+        if (opts?.eventRefId != null) {
+            qb.andWhere('l.event_ref_id = :eventRefId', {
+                eventRefId: opts.eventRefId,
+            });
+        }
+        if (opts?.from) {
+            qb.andWhere('l.created_at >= :fromDate', { fromDate: opts.from });
+        }
+        if (opts?.to) {
+            qb.andWhere(
+                `l.created_at < (:toDate::timestamp + interval '1 day')`,
+                {
+                    toDate: opts.to,
+                },
+            );
+        }
+
+        qb.orderBy('l.created_at', 'DESC')
+            .skip((page - 1) * pageSize)
+            .take(pageSize);
+        const [items, total] = await qb.getManyAndCount();
+        return { items, total, page, pageSize };
+    }
+
+    async getBrandLedgerSummary(args: {
+        tenantId: number;
+        brandId: number;
+        from?: string;
+        to?: string;
+    }) {
+        const scopedBranches = await this.branchBrandsRepo.find({
+            where: { brandId: args.brandId },
         });
+        const branchIds = scopedBranches.map((b) => b.branchId);
+        if (branchIds.length === 0) {
+            return {
+                brandId: args.brandId,
+                from: args.from,
+                to: args.to,
+                rows: [],
+            };
+        }
+
+        const params: unknown[] = [args.tenantId, branchIds];
+        let whereDate = '';
+        if (args.from) {
+            params.push(args.from);
+            whereDate += ` AND l.created_at >= $${params.length}`;
+        }
+        if (args.to) {
+            params.push(args.to);
+            whereDate += ` AND l.created_at < ($${params.length}::timestamp + interval '1 day')`;
+        }
+
+        const rows: Array<{
+            inventory_item_id: number | string;
+            on_hand_qty: number | string;
+        }> = await this.dataSource.query(
+            `
+            SELECT l.branch_id,
+                   l.inventory_item_id,
+                   l.event_type,
+                   SUM(l.qty_delta)::numeric AS qty_delta
+            FROM inventory_ledger_entries l
+            WHERE l.tenant_id = $1
+              AND l.branch_id = ANY($2)
+              ${whereDate}
+            GROUP BY l.branch_id, l.inventory_item_id, l.event_type
+            ORDER BY l.branch_id, l.inventory_item_id
+            `,
+            params,
+        );
+        return { brandId: args.brandId, from: args.from, to: args.to, rows };
     }
 
     // ---------------- Posting helpers (ledger-first) ----------------
@@ -390,6 +564,13 @@ export class InventoryService {
         });
         if (!item) throw new NotFoundException('Inventory item not found');
         const itemBaseUomId = item.baseUomId;
+        const allowedUomIds = this.resolveItemAllowedBaseUomIds(item);
+
+        if (!allowedUomIds.includes(qtyUomId)) {
+            throw new BadRequestException(
+                `Selected unit is not configured for ${item.code}. Use a configured comparable unit or create a separate item for a different measurement type.`,
+            );
+        }
 
         if (qtyUomId === itemBaseUomId) return qty;
 
@@ -406,10 +587,69 @@ export class InventoryService {
         );
         if (multiplier == null) {
             throw new BadRequestException(
-                `Cannot convert uom ${qtyUomId} to item base uom ${itemBaseUomId}`,
+                `Selected unit is not comparable with this item's primary unit. Use a compatible unit or create a separate item for a different measurement family.`,
             );
         }
         return qty * multiplier;
+    }
+
+    private resolveItemAllowedBaseUomIds(item: InventoryItem): number[] {
+        const configured = Array.isArray(item.baseUomIds)
+            ? item.baseUomIds
+            : [];
+        const normalized = configured
+            .map((id) => Number(id))
+            .filter((id) => Number.isInteger(id) && id > 0);
+        const deduped = Array.from(new Set(normalized));
+        if (item.baseUomId && !deduped.includes(Number(item.baseUomId))) {
+            deduped.unshift(Number(item.baseUomId));
+        }
+        return deduped.length > 0 ? deduped : [Number(item.baseUomId)];
+    }
+
+    private async normalizeAndValidateItemBaseUoms(
+        tenantId: number,
+        baseUomId: number,
+        baseUomIds?: number[],
+    ): Promise<{ baseUomId: number; baseUomIds: number[] }> {
+        if (!Number.isInteger(baseUomId) || baseUomId <= 0) {
+            throw new BadRequestException('Base unit is required');
+        }
+        const normalizedFromDto = Array.isArray(baseUomIds)
+            ? baseUomIds
+                  .map((id) => Number(id))
+                  .filter((id) => Number.isInteger(id) && id > 0)
+            : [];
+        const normalized = Array.from(
+            new Set([baseUomId, ...normalizedFromDto]),
+        );
+        if (normalized.length === 0) {
+            throw new BadRequestException('At least one base unit is required');
+        }
+        for (const uomId of normalized) {
+            const uom = await this.uomsRepo.findOne({
+                where: { id: uomId, tenantId, isActive: true },
+            });
+            if (!uom) {
+                throw new NotFoundException(
+                    `Unit of measure ${uomId} not found`,
+                );
+            }
+        }
+        for (const uomId of normalized) {
+            if (uomId === baseUomId) continue;
+            const multiplier = await this.resolveMultiplierToBaseUom(
+                tenantId,
+                uomId,
+                baseUomId,
+            );
+            if (multiplier == null) {
+                throw new BadRequestException(
+                    `Unit ${uomId} cannot convert to primary base unit ${baseUomId}`,
+                );
+            }
+        }
+        return { baseUomId, baseUomIds: normalized };
     }
 
     private async resolveMultiplierToBaseUom(
@@ -417,17 +657,24 @@ export class InventoryService {
         fromUomId: number,
         targetBaseUomId: number,
     ): Promise<number | null> {
+        const targetBaseUom = await this.uomsRepo.findOne({
+            where: { id: targetBaseUomId, tenantId, isActive: true },
+        });
+        if (!targetBaseUom) return null;
+
         // Walk at most 4 levels to prevent cycles and bad data.
         let currentId: number | null = fromUomId;
         let multiplier = 1;
         for (let i = 0; i < 4; i++) {
             const uom = await this.uomsRepo.findOne({
-                where: { id: currentId!, tenantId },
+                where: { id: currentId, tenantId, isActive: true },
             });
             if (!uom) return null;
+            if (String(uom.kind) !== String(targetBaseUom.kind)) return null;
             if (uom.id === targetBaseUomId) return multiplier;
 
-            if (uom.baseUomId == null || uom.multiplierToBase == null) return null;
+            if (uom.baseUomId == null || uom.multiplierToBase == null)
+                return null;
             multiplier *= Number(uom.multiplierToBase);
             currentId = uom.baseUomId;
         }
@@ -441,6 +688,7 @@ export class InventoryService {
     async postLedgerMovements(args: {
         tenantId: number;
         branchId: number;
+        manager?: EntityManager;
         movements: Array<{
             inventoryItemId: number;
             inventoryBatchId?: number | null;
@@ -457,7 +705,7 @@ export class InventoryService {
         const { tenantId, branchId, movements } = args;
         if (movements.length === 0) return [];
 
-        return this.dataSource.transaction(async (manager) => {
+        const run = async (manager: EntityManager) => {
             const inserted: InventoryLedgerEntry[] = [];
 
             for (const m of movements) {
@@ -528,7 +776,10 @@ export class InventoryService {
             }
 
             return inserted;
-        });
+        };
+
+        if (args.manager) return run(args.manager);
+        return this.dataSource.transaction((manager) => run(manager));
     }
 
     async recordWastage(args: {
@@ -610,7 +861,10 @@ export class InventoryService {
     // ---------------- Alerts ----------------
     async getLowStockAlerts(tenantId: number, branchId: number) {
         // On-hand totals per item (sum all locations)
-        const rows = (await this.dataSource.query(
+        const rows: Array<{
+            inventory_item_id: number | string;
+            on_hand_qty: number | string;
+        }> = await this.dataSource.query(
             `
             SELECT ioh.inventory_item_id,
                    SUM(ioh.qty)::numeric AS on_hand_qty
@@ -619,9 +873,12 @@ export class InventoryService {
             GROUP BY ioh.inventory_item_id
             `,
             [tenantId, branchId],
-        )) as Array<{ inventory_item_id: number; on_hand_qty: string }>;
+        );
         const onHandMap = new Map<number, number>(
-            rows.map((r) => [r.inventory_item_id, Number(r.on_hand_qty)]),
+            rows.map((r) => [
+                Number(r.inventory_item_id),
+                Number(r.on_hand_qty),
+            ]),
         );
 
         const settings = await this.itemBranchSettingsRepo.find({
@@ -675,10 +932,12 @@ export class InventoryService {
         const items = await this.itemsRepo.find({
             where: { tenantId, isActive: true },
         });
-        const itemsMap = new Map<number, InventoryItem>(items.map((i) => [i.id, i]));
+        const itemsMap = new Map<number, InventoryItem>(
+            items.map((i) => [i.id, i]),
+        );
 
         // Find batches with qty > 0 and expiry within (today + nearExpiryDays)
-        const rows = (await this.dataSource.query(
+        const rows = await this.dataSource.query(
             `
             SELECT b.id AS batch_id,
                    b.inventory_item_id,
@@ -694,12 +953,7 @@ export class InventoryService {
             ORDER BY b.expiry_date ASC
             `,
             [tenantId, branchId],
-        )) as Array<{
-            batch_id: number;
-            inventory_item_id: number;
-            expiry_date: string;
-            on_hand_qty: string;
-        }>;
+        );
 
         const today = new Date();
         const msPerDay = 24 * 60 * 60 * 1000;
@@ -724,7 +978,9 @@ export class InventoryService {
                 null;
             if (nearExpiryDays == null) continue;
             const expiry = new Date(r.expiry_date + 'T00:00:00Z');
-            const daysToExpiry = Math.floor((expiry.getTime() - today.getTime()) / msPerDay);
+            const daysToExpiry = Math.floor(
+                (expiry.getTime() - today.getTime()) / msPerDay,
+            );
             if (daysToExpiry <= Number(nearExpiryDays)) {
                 alerts.push({
                     batch_id: r.batch_id,
@@ -742,6 +998,68 @@ export class InventoryService {
         return alerts;
     }
 
+    async getExpiryCoverageWarnings(tenantId: number, branchId: number) {
+        const onHandRows: Array<{
+            inventory_item_id: number | string;
+            on_hand_qty: number | string;
+        }> = await this.dataSource.query(
+            `
+            SELECT inventory_item_id, SUM(qty)::numeric AS on_hand_qty
+            FROM inventory_on_hand
+            WHERE tenant_id = $1 AND branch_id = $2
+            GROUP BY inventory_item_id
+            HAVING SUM(qty) > 0
+            `,
+            [tenantId, branchId],
+        );
+        if (onHandRows.length === 0) return [];
+
+        const onHandMap = new Map<number, number>(
+            onHandRows.map((r) => [
+                Number(r.inventory_item_id),
+                Number(r.on_hand_qty),
+            ]),
+        );
+        const itemIds = [...onHandMap.keys()];
+        const items = await this.itemsRepo
+            .createQueryBuilder('i')
+            .where('i.id IN (:...itemIds)', { itemIds })
+            .andWhere('i.tenant_id = :tenantId', { tenantId })
+            .andWhere('i.is_active = true')
+            .getMany();
+        const expiryTracked = items.filter((i) => i.trackExpiry);
+        if (expiryTracked.length === 0) return [];
+
+        const coveredRows: Array<{ inventory_item_id: number | string }> =
+            await this.dataSource.query(
+                `
+            SELECT b.inventory_item_id
+            FROM inventory_batches b
+            INNER JOIN inventory_batch_on_hand iboh ON iboh.inventory_batch_id = b.id
+            WHERE b.tenant_id = $1
+              AND b.branch_id = $2
+              AND b.status = 'available'
+              AND b.expiry_date IS NOT NULL
+            GROUP BY b.inventory_item_id
+            HAVING SUM(iboh.qty) > 0
+            `,
+                [tenantId, branchId],
+            );
+        const coveredSet = new Set(
+            coveredRows.map((r) => Number(r.inventory_item_id)),
+        );
+
+        return expiryTracked
+            .filter((item) => !coveredSet.has(item.id))
+            .map((item) => ({
+                inventory_item_id: item.id,
+                item_code: item.code,
+                item_name: item.name,
+                on_hand_qty: onHandMap.get(item.id) ?? 0,
+                warning: 'Stock exists but no expiry batches found',
+            }));
+    }
+
     // ---------------- Stocktakes ----------------
     async createStocktake(args: {
         tenantId: number;
@@ -752,7 +1070,11 @@ export class InventoryService {
         createdBy: number;
     }) {
         const existing = await this.stocktakesRepo.findOne({
-            where: { tenantId: args.tenantId, branchId: args.branchId, weekStart: args.weekStart },
+            where: {
+                tenantId: args.tenantId,
+                branchId: args.branchId,
+                weekStart: args.weekStart,
+            },
         });
         if (existing) return existing;
         return this.stocktakesRepo.save(
@@ -778,10 +1100,15 @@ export class InventoryService {
         notes: string | null;
     }) {
         const st = await this.stocktakesRepo.findOne({
-            where: { id: args.stocktakeId, tenantId: args.tenantId, branchId: args.branchId },
+            where: {
+                id: args.stocktakeId,
+                tenantId: args.tenantId,
+                branchId: args.branchId,
+            },
         });
         if (!st) throw new NotFoundException('Stocktake not found');
-        if (st.status !== 'open') throw new BadRequestException('Stocktake is not open');
+        if (st.status !== 'open')
+            throw new BadRequestException('Stocktake is not open');
 
         const existing = await this.stocktakeLinesRepo.findOne({
             where: {
@@ -815,10 +1142,15 @@ export class InventoryService {
         submittedBy: number;
     }) {
         const st = await this.stocktakesRepo.findOne({
-            where: { id: args.stocktakeId, tenantId: args.tenantId, branchId: args.branchId },
+            where: {
+                id: args.stocktakeId,
+                tenantId: args.tenantId,
+                branchId: args.branchId,
+            },
         });
         if (!st) throw new NotFoundException('Stocktake not found');
-        if (st.status !== 'open') throw new BadRequestException('Stocktake not open');
+        if (st.status !== 'open')
+            throw new BadRequestException('Stocktake not open');
         st.status = 'submitted';
         st.submittedBy = args.submittedBy;
         st.submittedAt = new Date();
@@ -832,11 +1164,17 @@ export class InventoryService {
         closedBy: number;
     }) {
         const st = await this.stocktakesRepo.findOne({
-            where: { id: args.stocktakeId, tenantId: args.tenantId, branchId: args.branchId },
+            where: {
+                id: args.stocktakeId,
+                tenantId: args.tenantId,
+                branchId: args.branchId,
+            },
         });
         if (!st) throw new NotFoundException('Stocktake not found');
         if (st.status !== 'submitted') {
-            throw new BadRequestException('Stocktake must be submitted before close');
+            throw new BadRequestException(
+                'Stocktake must be submitted before close',
+            );
         }
         const lines = await this.stocktakeLinesRepo.find({
             where: { stocktakeId: st.id },
@@ -861,7 +1199,10 @@ export class InventoryService {
         }
 
         // Theoretical on-hand by item (sum all locations)
-        const theoRows = (await this.dataSource.query(
+        const theoRows: Array<{
+            inventory_item_id: number | string;
+            qty: number | string;
+        }> = await this.dataSource.query(
             `
             SELECT inventory_item_id, SUM(qty)::numeric AS qty
             FROM inventory_on_hand
@@ -869,9 +1210,9 @@ export class InventoryService {
             GROUP BY inventory_item_id
             `,
             [args.tenantId, args.branchId],
-        )) as Array<{ inventory_item_id: number; qty: string }>;
+        );
         const theoreticalByItem = new Map<number, number>(
-            theoRows.map((r) => [r.inventory_item_id, Number(r.qty)]),
+            theoRows.map((r) => [Number(r.inventory_item_id), Number(r.qty)]),
         );
 
         // Post variance entries
@@ -889,6 +1230,16 @@ export class InventoryService {
             const theoretical = theoreticalByItem.get(itemId) ?? 0;
             const variance = counted - theoretical;
             if (Math.abs(variance) < 1e-9) continue;
+            if (variance > 0) {
+                const item = await this.itemsRepo.findOne({
+                    where: { id: itemId, tenantId: args.tenantId },
+                });
+                if (item?.trackExpiry) {
+                    throw new BadRequestException(
+                        `Stocktake positive variance for expiry-tracked item ${item.code} is blocked. Use adjustment IN with expiry date and lot code.`,
+                    );
+                }
+            }
             movements.push({
                 inventoryItemId: itemId,
                 qtyDelta: variance,
@@ -927,7 +1278,7 @@ export class InventoryService {
         from: string;
         to: string;
     }) {
-        const rows = (await this.dataSource.query(
+        const rows = await this.dataSource.query(
             `
             SELECT inventory_item_id,
                    event_type,
@@ -940,11 +1291,7 @@ export class InventoryService {
             ORDER BY inventory_item_id ASC
             `,
             [args.tenantId, args.branchId, args.from, args.to],
-        )) as Array<{
-            inventory_item_id: number;
-            event_type: string;
-            qty_delta: string;
-        }>;
+        );
 
         const byItem: Record<
             string,
@@ -952,7 +1299,10 @@ export class InventoryService {
         > = {};
         for (const r of rows) {
             const key = String(r.inventory_item_id);
-            byItem[key] ??= { inventory_item_id: r.inventory_item_id, movements: {} };
+            byItem[key] ??= {
+                inventory_item_id: r.inventory_item_id,
+                movements: {},
+            };
             byItem[key].movements[r.event_type] = Number(r.qty_delta);
         }
 
@@ -963,4 +1313,3 @@ export class InventoryService {
         };
     }
 }
-

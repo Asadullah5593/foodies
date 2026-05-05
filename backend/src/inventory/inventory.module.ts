@@ -23,6 +23,14 @@ import { OrderItem } from '../entities/order-item.entity';
 import { Recipe } from '../entities/recipe.entity';
 import { RecipeLine } from '../entities/recipe-line.entity';
 import { OrderInventoryAllocation } from '../entities/order-inventory-allocation.entity';
+import { BranchBrand } from '../entities/branch-brand.entity';
+import { InventoryTransferRequest } from '../entities/inventory-transfer-request.entity';
+import { InventoryTransferRequestLine } from '../entities/inventory-transfer-request-line.entity';
+import { InventoryTransferOrder } from '../entities/inventory-transfer-order.entity';
+import { InventoryTransferReceipt } from '../entities/inventory-transfer-receipt.entity';
+import { InventoryTransferReceiptLine } from '../entities/inventory-transfer-receipt-line.entity';
+import { InventoryAdjustment } from '../entities/inventory-adjustment.entity';
+import { InventoryAdjustmentLine } from '../entities/inventory-adjustment-line.entity';
 import { InventoryService } from './inventory.service';
 import { InventoryConsumptionService } from './inventory-consumption.service';
 import { UomsAdminController } from './uoms.admin.controller';
@@ -31,6 +39,10 @@ import { InventoryItemsAdminController } from './inventory-items.admin.controlle
 import { InventoryLocationsAdminController } from './inventory-locations.admin.controller';
 import { InventoryAdminController } from './inventory.admin.controller';
 import { StocktakesAdminController } from './stocktakes.admin.controller';
+import { InventoryTransfersAdminController } from './inventory-transfers.admin.controller';
+import { InventoryAdjustmentsAdminController } from './inventory-adjustments.admin.controller';
+import { InventoryTransferService } from './inventory-transfer.service';
+import { InventoryAdjustmentService } from './inventory-adjustment.service';
 
 @Module({
     imports: [
@@ -58,6 +70,14 @@ import { StocktakesAdminController } from './stocktakes.admin.controller';
             Recipe,
             RecipeLine,
             OrderInventoryAllocation,
+            BranchBrand,
+            InventoryTransferRequest,
+            InventoryTransferRequestLine,
+            InventoryTransferOrder,
+            InventoryTransferReceipt,
+            InventoryTransferReceiptLine,
+            InventoryAdjustment,
+            InventoryAdjustmentLine,
         ]),
     ],
     controllers: [
@@ -67,9 +87,15 @@ import { StocktakesAdminController } from './stocktakes.admin.controller';
         InventoryLocationsAdminController,
         InventoryAdminController,
         StocktakesAdminController,
+        InventoryTransfersAdminController,
+        InventoryAdjustmentsAdminController,
     ],
-    providers: [InventoryService, InventoryConsumptionService],
+    providers: [
+        InventoryService,
+        InventoryConsumptionService,
+        InventoryTransferService,
+        InventoryAdjustmentService,
+    ],
     exports: [InventoryService, InventoryConsumptionService],
 })
 export class InventoryModule {}
-

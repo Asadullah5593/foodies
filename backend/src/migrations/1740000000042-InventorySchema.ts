@@ -563,4 +563,3 @@ export class InventorySchema1740000000042 implements MigrationInterface {
         }
     }
 }
-

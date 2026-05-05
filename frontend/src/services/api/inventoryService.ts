@@ -28,6 +28,7 @@ export type InventoryItemDto = {
   code: string;
   type: string;
   baseUomId: number;
+  baseUomIds?: number[] | null;
   trackExpiry: boolean;
   trackLot: boolean;
   defaultReorderPoint?: number | null;
@@ -104,6 +105,7 @@ export const inventoryService = {
     code: string;
     type?: string;
     base_uom_id: number;
+    base_uom_ids?: number[];
     track_expiry?: boolean;
     track_lot?: boolean;
     default_reorder_point?: number | null;
@@ -119,6 +121,7 @@ export const inventoryService = {
       code?: string;
       type?: string;
       base_uom_id?: number;
+      base_uom_ids?: number[];
       track_expiry?: boolean;
       track_lot?: boolean;
       default_reorder_point?: number | null;
@@ -148,9 +151,21 @@ export const inventoryService = {
     const res = await apiClient.get(`/admin/inventory/branches/${branchId}/on-hand`);
     return res.data ?? [];
   },
-  getLedger: async (branchId: number, limit = 200) => {
-    const res = await apiClient.get(`/admin/inventory/branches/${branchId}/ledger`, { params: { limit } });
-    return res.data ?? [];
+  getLedger: async (
+    branchId: number,
+    params?: {
+      event_type?: string;
+      inventory_item_id?: number;
+      event_ref_type?: string;
+      event_ref_id?: number;
+      from?: string;
+      to?: string;
+      page?: number;
+      page_size?: number;
+    },
+  ) => {
+    const res = await apiClient.get(`/admin/inventory/branches/${branchId}/ledger`, { params });
+    return res.data ?? { items: [], total: 0, page: 1, pageSize: 50 };
   },
 
   // Alerts
@@ -160,6 +175,10 @@ export const inventoryService = {
   },
   getNearExpiry: async (branchId: number) => {
     const res = await apiClient.get(`/admin/inventory/branches/${branchId}/near-expiry`);
+    return res.data ?? [];
+  },
+  getExpiryCoverageWarnings: async (branchId: number) => {
+    const res = await apiClient.get(`/admin/inventory/branches/${branchId}/expiry-coverage-warnings`);
     return res.data ?? [];
   },
 
@@ -202,6 +221,112 @@ export const inventoryService = {
   },
   weeklyUsage: async (branchId: number, data: { from: string; to: string }) => {
     const res = await apiClient.post(`/admin/inventory/branches/${branchId}/weekly-usage`, data);
+    return res.data;
+  },
+
+  // Transfers
+  listTransferRequests: async (branchId?: number) => {
+    const res = await apiClient.get('/admin/inventory/transfers/requests', {
+      params: branchId ? { branch_id: branchId } : undefined,
+    });
+    return res.data ?? [];
+  },
+  createTransferRequest: async (data: {
+    source_branch_id: number;
+    destination_branch_id: number;
+    notes?: string;
+    lines: Array<{
+      inventory_item_id: number;
+      requested_qty: number;
+      requested_uom_id: number;
+      notes?: string;
+    }>;
+  }) => {
+    const res = await apiClient.post('/admin/inventory/transfers/requests', data);
+    return res.data;
+  },
+  approveTransferRequest: async (id: number, data?: { notes?: string }) => {
+    const res = await apiClient.post(`/admin/inventory/transfers/requests/${id}/approve`, data ?? {});
+    return res.data;
+  },
+  rejectTransferRequest: async (id: number, data?: { reason?: string }) => {
+    const res = await apiClient.post(`/admin/inventory/transfers/requests/${id}/reject`, data ?? {});
+    return res.data;
+  },
+  listTransferOrders: async (branchId?: number) => {
+    const res = await apiClient.get('/admin/inventory/transfers/orders', {
+      params: branchId ? { branch_id: branchId } : undefined,
+    });
+    return res.data ?? [];
+  },
+  dispatchTransferOrder: async (id: number, data: {
+    lines: Array<{
+      inventory_item_id: number;
+      qty: number;
+      qty_uom_id: number;
+      location_id?: number | null;
+      inventory_batch_id?: number | null;
+      notes?: string | null;
+    }>;
+  }) => {
+    const res = await apiClient.post(`/admin/inventory/transfers/orders/${id}/dispatch`, data);
+    return res.data;
+  },
+  receiveTransferOrder: async (id: number, data: {
+    notes?: string;
+    lines: Array<{
+      inventory_item_id: number;
+      received_qty: number;
+      received_uom_id: number;
+      location_id?: number | null;
+      lot_code?: string | null;
+      expiry_date?: string | null;
+      notes?: string | null;
+    }>;
+  }) => {
+    const res = await apiClient.post(`/admin/inventory/transfers/orders/${id}/receive`, data);
+    return res.data;
+  },
+
+  // Adjustments
+  listAdjustments: async (branchId: number) => {
+    const res = await apiClient.get('/admin/inventory/adjustments', {
+      params: { branch_id: branchId },
+    });
+    return res.data ?? [];
+  },
+  createAdjustment: async (data: {
+    branch_id: number;
+    adjustment_type: 'in' | 'out';
+    reason_code: string;
+    notes?: string;
+    lines: Array<{
+      inventory_item_id: number;
+      qty: number;
+      qty_uom_id: number;
+      location_id?: number | null;
+      inventory_batch_id?: number | null;
+      lot_code?: string | null;
+      expiry_date?: string | null;
+      notes?: string | null;
+    }>;
+  }) => {
+    const res = await apiClient.post('/admin/inventory/adjustments', data);
+    return res.data;
+  },
+  postAdjustment: async (id: number) => {
+    const res = await apiClient.post(`/admin/inventory/adjustments/${id}/post`);
+    return res.data;
+  },
+
+  // Brand reporting
+  getBrandLedgerSummary: async (
+    brandId: number,
+    params?: { from?: string; to?: string; branch_id?: number },
+  ) => {
+    const res = await apiClient.get(`/admin/inventory/brands/${brandId}/ledger-summary`, {
+      params,
+    });
     return res.data;
   },
 };

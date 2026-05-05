@@ -31,6 +31,9 @@ export class InventoryItem {
     @Column()
     baseUomId: number;
 
+    @Column('int', { array: true, nullable: true })
+    baseUomIds: number[] | null;
+
     @Column({ default: true })
     trackExpiry: boolean;
 
@@ -60,4 +63,3 @@ export class InventoryItem {
     @JoinColumn({ name: 'base_uom_id' })
     baseUom: Uom;
 }
-

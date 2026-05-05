@@ -1,4 +1,10 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import {
+    Column,
+    Entity,
+    JoinColumn,
+    ManyToOne,
+    PrimaryGeneratedColumn,
+} from 'typeorm';
 import { Tenant } from './tenant.entity';
 import { Branch } from './branch.entity';
 import { InventoryItem } from './inventory-item.entity';
@@ -45,4 +51,3 @@ export class InventoryItemCost {
     @JoinColumn({ name: 'inventory_item_id' })
     inventoryItem: InventoryItem;
 }
-

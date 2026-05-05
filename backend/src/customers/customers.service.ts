@@ -314,6 +314,8 @@ export class CustomersService {
         customer.tenantId = tenantId;
         customer.phone = phone;
         await this.repo.save(customer);
-        return (await this.repo.findOne({ where: { id: customerId } })) as Customer;
+        return (await this.repo.findOne({
+            where: { id: customerId },
+        })) as Customer;
     }
 }
