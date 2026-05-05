@@ -74,4 +74,3 @@ export class Stocktake {
     @OneToMany(() => StocktakeLine, (l) => l.stocktake)
     lines: StocktakeLine[];
 }
-

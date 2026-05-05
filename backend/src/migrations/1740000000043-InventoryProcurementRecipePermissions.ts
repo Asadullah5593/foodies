@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class InventoryProcurementRecipePermissions1740000000043
-    implements MigrationInterface
-{
+export class InventoryProcurementRecipePermissions1740000000043 implements MigrationInterface {
     name = 'InventoryProcurementRecipePermissions1740000000043';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
@@ -148,4 +146,3 @@ export class InventoryProcurementRecipePermissions1740000000043
         }
     }
 }
-

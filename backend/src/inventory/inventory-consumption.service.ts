@@ -21,7 +21,8 @@ export class InventoryConsumptionService {
         private dataSource: DataSource,
         private inventoryService: InventoryService,
         @InjectRepository(Order) private ordersRepo: Repository<Order>,
-        @InjectRepository(OrderItem) private orderItemsRepo: Repository<OrderItem>,
+        @InjectRepository(OrderItem)
+        private orderItemsRepo: Repository<OrderItem>,
         @InjectRepository(Recipe) private recipesRepo: Repository<Recipe>,
         @InjectRepository(RecipeLine)
         private recipeLinesRepo: Repository<RecipeLine>,
@@ -108,7 +109,8 @@ export class InventoryConsumptionService {
         const allocations = await this.allocationsRepo.find({
             where: { orderId: order.id },
         });
-        if (allocations.length === 0) return { ok: true, nothing_to_reverse: true };
+        if (allocations.length === 0)
+            return { ok: true, nothing_to_reverse: true };
 
         return this.dataSource.transaction(async (manager) => {
             // Reverse in same batches
@@ -296,4 +298,3 @@ export class InventoryConsumptionService {
         }
     }
 }
-

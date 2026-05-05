@@ -72,7 +72,10 @@ export class PurchaseOrder {
     @JoinColumn({ name: 'vendor_id' })
     vendor: Vendor;
 
-    @ManyToOne(() => PurchaseRequisition, { onDelete: 'SET NULL', nullable: true })
+    @ManyToOne(() => PurchaseRequisition, {
+        onDelete: 'SET NULL',
+        nullable: true,
+    })
     @JoinColumn({ name: 'purchase_requisition_id' })
     purchaseRequisition: PurchaseRequisition | null;
 
@@ -87,4 +90,3 @@ export class PurchaseOrder {
     @OneToMany(() => PurchaseOrderLine, (l) => l.purchaseOrder)
     lines: PurchaseOrderLine[];
 }
-

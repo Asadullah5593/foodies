@@ -54,4 +54,3 @@ export class Uom {
     @JoinColumn({ name: 'base_uom_id' })
     baseUom: Uom | null;
 }
-

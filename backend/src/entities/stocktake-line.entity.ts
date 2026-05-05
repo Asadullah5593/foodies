@@ -53,8 +53,10 @@ export class StocktakeLine {
     @JoinColumn({ name: 'counted_uom_id' })
     countedUom: Uom;
 
-    @ManyToOne(() => InventoryLocation, { onDelete: 'SET NULL', nullable: true })
+    @ManyToOne(() => InventoryLocation, {
+        onDelete: 'SET NULL',
+        nullable: true,
+    })
     @JoinColumn({ name: 'location_id' })
     location: InventoryLocation | null;
 }
-

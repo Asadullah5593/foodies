@@ -39,4 +39,3 @@ export class InventoryLocationsAdminController {
         return this.inventoryService.createLocation(tenantId, +branchId, dto);
     }
 }
-

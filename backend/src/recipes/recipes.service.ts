@@ -56,14 +56,21 @@ export class RecipesService {
     async createRecipe(
         tenantId: number,
         userId: number,
-        dto: { menu_item_id: number; variant_id?: number | null; notes?: string },
+        dto: {
+            menu_item_id: number;
+            variant_id?: number | null;
+            notes?: string;
+        },
     ) {
         const menuItem = await this.menuItemsRepo.findOne({
             where: { id: dto.menu_item_id },
             relations: { brand: true },
         });
         if (!menuItem) throw new NotFoundException('Menu item not found');
-        if ((menuItem as any).brand?.tenantId != null && (menuItem as any).brand.tenantId !== tenantId) {
+        if (
+            (menuItem as any).brand?.tenantId != null &&
+            (menuItem as any).brand.tenantId !== tenantId
+        ) {
             throw new ForbiddenException('Menu item is not in this tenant');
         }
 
@@ -195,7 +202,8 @@ export class RecipesService {
                 : 0;
             const qtyWithWastage = qtyBase * (1 + wastageFactor);
 
-            const lineCost = unitCost != null ? qtyWithWastage * unitCost : null;
+            const lineCost =
+                unitCost != null ? qtyWithWastage * unitCost : null;
             if (lineCost == null) anyMissing = true;
             if (lineCost != null) total += lineCost;
 
@@ -222,7 +230,11 @@ export class RecipesService {
             where: { id: recipe.menuItemId },
             relations: { brand: true },
         });
-        if (menuItem && (menuItem as any).brand?.tenantId != null && (menuItem as any).brand.tenantId !== args.tenantId) {
+        if (
+            menuItem &&
+            (menuItem as any).brand?.tenantId != null &&
+            (menuItem as any).brand.tenantId !== args.tenantId
+        ) {
             throw new ForbiddenException('Menu item is not in this tenant');
         }
         const variant = recipe.variantId
@@ -231,12 +243,14 @@ export class RecipesService {
               })
             : null;
         const sellPrice =
-            Number(menuItem?.basePrice ?? 0) + Number(variant?.priceModifier ?? 0);
+            Number(menuItem?.basePrice ?? 0) +
+            Number(variant?.priceModifier ?? 0);
 
         const grossMargin =
-            sellPrice > 0 && total >= 0 ? (sellPrice - total) / sellPrice : null;
+            sellPrice > 0 && total >= 0
+                ? (sellPrice - total) / sellPrice
+                : null;
 
         return { snapshot, sell_price: sellPrice, gross_margin: grossMargin };
     }
 }
-

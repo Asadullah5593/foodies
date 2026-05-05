@@ -32,6 +32,8 @@ import Customers from './pages/Admin/Customers';
 import InventoryOnHand from './pages/Admin/Inventory/InventoryOnHand';
 import InventoryLedger from './pages/Admin/Inventory/InventoryLedger';
 import InventoryAlerts from './pages/Admin/Inventory/InventoryAlerts';
+import InventoryTransfers from './pages/Admin/Inventory/InventoryTransfers';
+import InventoryAdjustments from './pages/Admin/Inventory/InventoryAdjustments';
 import InventoryWastage from './pages/Admin/Inventory/InventoryWastage';
 import InventoryStocktake from './pages/Admin/Inventory/InventoryStocktake';
 import InventoryWeeklyUsage from './pages/Admin/Inventory/InventoryWeeklyUsage';
@@ -262,11 +264,13 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { path: '/admin/inventory/on-hand', label: 'On-hand inventory' },
         { path: '/admin/inventory/ledger', label: 'Stock movement ledger' },
         { path: '/admin/inventory/alerts', label: 'Alerts (low stock & expiry)' },
+        { path: '/admin/inventory/transfers', label: 'Branch transfers' },
+        { path: '/admin/inventory/adjustments', label: 'Adjustments' },
         { path: '/admin/inventory/wastage', label: 'Record wastage' },
         { path: '/admin/inventory/stocktake', label: 'Weekly stock count (Finance Day)' },
         { path: '/admin/inventory/weekly-usage', label: 'Weekly usage report' },
-        { path: '/admin/inventory/items', label: 'Inventory items (ingredients, packaging)' },
-        { path: '/admin/inventory/vendors', label: 'Vendors (suppliers / warehouse)' },
+        { path: '/admin/inventory/items', label: 'Inventory items' },
+        { path: '/admin/inventory/vendors', label: 'Vendors' },
         { path: '/admin/inventory/uoms', label: 'Units of measure' },
       ],
     },
@@ -892,6 +896,8 @@ const AppRoutes: React.FC = () => {
       <Route path="/admin/inventory/on-hand" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryOnHand /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/inventory/ledger" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryLedger /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/inventory/alerts" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryAlerts /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/inventory/transfers" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryTransfers /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/inventory/adjustments" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryAdjustments /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/inventory/wastage" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryWastage /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/inventory/stocktake" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryStocktake /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/inventory/weekly-usage" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryWeeklyUsage /></Layout></AdminOnlyRoute></ProtectedRoute>} />

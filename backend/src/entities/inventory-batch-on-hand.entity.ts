@@ -46,8 +46,10 @@ export class InventoryBatchOnHand {
     @JoinColumn({ name: 'inventory_batch_id' })
     batch: InventoryBatch;
 
-    @ManyToOne(() => InventoryLocation, { onDelete: 'SET NULL', nullable: true })
+    @ManyToOne(() => InventoryLocation, {
+        onDelete: 'SET NULL',
+        nullable: true,
+    })
     @JoinColumn({ name: 'location_id' })
     location: InventoryLocation | null;
 }
-

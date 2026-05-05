@@ -44,4 +44,3 @@ export class InventoryLocation {
     @JoinColumn({ name: 'branch_id' })
     branch: Branch;
 }
-

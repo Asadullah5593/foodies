@@ -18,7 +18,10 @@ export class StocktakesAdminController {
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
         @Param('branchId') branchId: string,
     ) {
-        const tenantId = await this.inventoryService.resolveTenantId(user, +branchId);
+        const tenantId = await this.inventoryService.resolveTenantId(
+            user,
+            +branchId,
+        );
         return this.inventoryService.getLowStockAlerts(tenantId, +branchId);
     }
 
@@ -28,8 +31,27 @@ export class StocktakesAdminController {
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
         @Param('branchId') branchId: string,
     ) {
-        const tenantId = await this.inventoryService.resolveTenantId(user, +branchId);
+        const tenantId = await this.inventoryService.resolveTenantId(
+            user,
+            +branchId,
+        );
         return this.inventoryService.getNearExpiryAlerts(tenantId, +branchId);
+    }
+
+    @Get('expiry-coverage-warnings')
+    async expiryCoverageWarnings(
+        @CurrentUser()
+        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        @Param('branchId') branchId: string,
+    ) {
+        const tenantId = await this.inventoryService.resolveTenantId(
+            user,
+            +branchId,
+        );
+        return this.inventoryService.getExpiryCoverageWarnings(
+            tenantId,
+            +branchId,
+        );
     }
 
     @Post('stocktakes')
@@ -40,7 +62,10 @@ export class StocktakesAdminController {
         @Body()
         dto: { week_start: string; week_end: string; finance_day: string },
     ) {
-        const tenantId = await this.inventoryService.resolveTenantId(user, +branchId);
+        const tenantId = await this.inventoryService.resolveTenantId(
+            user,
+            +branchId,
+        );
         return this.inventoryService.createStocktake({
             tenantId,
             branchId: +branchId,
@@ -66,7 +91,10 @@ export class StocktakesAdminController {
             notes?: string | null;
         },
     ) {
-        const tenantId = await this.inventoryService.resolveTenantId(user, +branchId);
+        const tenantId = await this.inventoryService.resolveTenantId(
+            user,
+            +branchId,
+        );
         return this.inventoryService.upsertStocktakeLine({
             tenantId,
             branchId: +branchId,
@@ -86,7 +114,10 @@ export class StocktakesAdminController {
         @Param('branchId') branchId: string,
         @Param('stocktakeId') stocktakeId: string,
     ) {
-        const tenantId = await this.inventoryService.resolveTenantId(user, +branchId);
+        const tenantId = await this.inventoryService.resolveTenantId(
+            user,
+            +branchId,
+        );
         return this.inventoryService.submitStocktake({
             tenantId,
             branchId: +branchId,
@@ -102,7 +133,10 @@ export class StocktakesAdminController {
         @Param('branchId') branchId: string,
         @Param('stocktakeId') stocktakeId: string,
     ) {
-        const tenantId = await this.inventoryService.resolveTenantId(user, +branchId);
+        const tenantId = await this.inventoryService.resolveTenantId(
+            user,
+            +branchId,
+        );
         return this.inventoryService.closeStocktake({
             tenantId,
             branchId: +branchId,
@@ -118,7 +152,10 @@ export class StocktakesAdminController {
         @Param('branchId') branchId: string,
         @Body() dto: { from: string; to: string },
     ) {
-        const tenantId = await this.inventoryService.resolveTenantId(user, +branchId);
+        const tenantId = await this.inventoryService.resolveTenantId(
+            user,
+            +branchId,
+        );
         return this.inventoryService.getWeeklyUsageReport({
             tenantId,
             branchId: +branchId,
@@ -127,4 +164,3 @@ export class StocktakesAdminController {
         });
     }
 }
-

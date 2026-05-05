@@ -42,16 +42,25 @@ const dataSource = new DataSource({
     entities: [join(__dirname, '**', '*.entity{.ts,.js}')],
 });
 
-async function upsertUom(tenantId: number, code: string, name: string, kind: string) {
+async function upsertUom(
+    tenantId: number,
+    code: string,
+    name: string,
+    kind: string,
+) {
     const repo = dataSource.getRepository(Uom);
     const existing = await repo.findOne({ where: { tenantId, code } });
     if (existing) return existing;
-    return repo.save(repo.create({ tenantId, code, name, kind, isActive: true }));
+    return repo.save(
+        repo.create({ tenantId, code, name, kind, isActive: true }),
+    );
 }
 
 async function upsertVendor(tenantId: number, name: string, type: string) {
     const repo = dataSource.getRepository(Vendor);
-    const existing = await repo.findOne({ where: { tenantId, name, type } as any });
+    const existing = await repo.findOne({
+        where: { tenantId, name, type } as any,
+    });
     if (existing) return existing;
     return repo.save(repo.create({ tenantId, name, type, isActive: true }));
 }
@@ -67,7 +76,9 @@ async function upsertInventoryItem(args: {
     defaultNearExpiryDays?: number | null;
 }) {
     const repo = dataSource.getRepository(InventoryItem);
-    const existing = await repo.findOne({ where: { tenantId: args.tenantId, code: args.code } });
+    const existing = await repo.findOne({
+        where: { tenantId: args.tenantId, code: args.code },
+    });
     if (existing) return existing;
     return repo.save(
         repo.create({
@@ -85,11 +96,20 @@ async function upsertInventoryItem(args: {
     );
 }
 
-async function upsertLocation(tenantId: number, branchId: number, code: string, name: string) {
+async function upsertLocation(
+    tenantId: number,
+    branchId: number,
+    code: string,
+    name: string,
+) {
     const repo = dataSource.getRepository(InventoryLocation);
-    const existing = await repo.findOne({ where: { tenantId, branchId, code } });
+    const existing = await repo.findOne({
+        where: { tenantId, branchId, code },
+    });
     if (existing) return existing;
-    return repo.save(repo.create({ tenantId, branchId, code, name, isActive: true }));
+    return repo.save(
+        repo.create({ tenantId, branchId, code, name, isActive: true }),
+    );
 }
 
 async function ensureActiveRecipe(args: {
@@ -102,20 +122,33 @@ async function ensureActiveRecipe(args: {
     const lineRepo = dataSource.getRepository(RecipeLine);
 
     const existingActive = await recipeRepo.findOne({
-        where: { tenantId: args.tenantId, menuItemId: args.menuItemId, variantId: null, status: 'active' } as any,
+        where: {
+            tenantId: args.tenantId,
+            menuItemId: args.menuItemId,
+            variantId: null,
+            status: 'active',
+        } as any,
         relations: { lines: true },
     });
     if (existingActive) return existingActive;
 
     const latest = await recipeRepo.findOne({
-        where: { tenantId: args.tenantId, menuItemId: args.menuItemId, variantId: null } as any,
+        where: {
+            tenantId: args.tenantId,
+            menuItemId: args.menuItemId,
+            variantId: null,
+        } as any,
         order: { version: 'DESC' },
     });
     const nextVersion = (latest?.version ?? 0) + 1;
 
     // Archive others
     await recipeRepo.update(
-        { tenantId: args.tenantId, menuItemId: args.menuItemId, variantId: null } as any,
+        {
+            tenantId: args.tenantId,
+            menuItemId: args.menuItemId,
+            variantId: null,
+        } as any,
         { status: 'archived' },
     );
 
@@ -161,10 +194,13 @@ async function main() {
     }
 
     // Pick the first tenant that has at least one branch and one menu item.
-    let picked: { tenant: Tenant; branchId: number; menuItemId: number } | null =
-        null;
+    let picked: {
+        tenant: Tenant;
+        branchId: number;
+        menuItemId: number;
+    } | null = null;
     for (const t of tenants) {
-        const branchRow = (await dataSource.query(
+        const branchRow = await dataSource.query(
             `
             SELECT b.id
             FROM branches b
@@ -174,8 +210,8 @@ async function main() {
             LIMIT 1
             `,
             [t.id],
-        )) as Array<{ id: number }>;
-        const menuRow = (await dataSource.query(
+        );
+        const menuRow = await dataSource.query(
             `
             SELECT mi.id
             FROM menu_items mi
@@ -184,9 +220,13 @@ async function main() {
             LIMIT 1
             `,
             [t.id],
-        )) as Array<{ id: number }>;
+        );
         if (branchRow[0]?.id && menuRow[0]?.id) {
-            picked = { tenant: t, branchId: branchRow[0].id, menuItemId: menuRow[0].id };
+            picked = {
+                tenant: t,
+                branchId: branchRow[0].id,
+                menuItemId: menuRow[0].id,
+            };
             break;
         }
     }
@@ -200,7 +240,9 @@ async function main() {
     const tenant = picked.tenant;
     const branch = await branchRepo.findOne({ where: { id: picked.branchId } });
     if (!branch) throw new Error('Picked branch not found');
-    const menuItem = await menuItemRepo.findOne({ where: { id: picked.menuItemId } });
+    const menuItem = await menuItemRepo.findOne({
+        where: { id: picked.menuItemId },
+    });
     if (!menuItem) throw new Error('Picked menu item not found');
 
     // --- UOMs (tenant scoped) ---
@@ -222,12 +264,21 @@ async function main() {
     }
 
     // --- Vendors ---
-    const warehouse = await upsertVendor(tenant.id, 'Central Warehouse', 'warehouse');
+    const warehouse = await upsertVendor(
+        tenant.id,
+        'Central Warehouse',
+        'warehouse',
+    );
     await upsertVendor(tenant.id, 'Local Produce Supplier', 'supplier');
 
     // --- Locations (branch) ---
     const dry = await upsertLocation(tenant.id, branch.id, 'dry', 'Dry store');
-    const chiller = await upsertLocation(tenant.id, branch.id, 'chiller', 'Chiller');
+    const chiller = await upsertLocation(
+        tenant.id,
+        branch.id,
+        'chiller',
+        'Chiller',
+    );
 
     // --- Inventory items (tenant) ---
     const bun = await upsertInventoryItem({
@@ -522,4 +573,3 @@ main().catch((e) => {
     console.error(e);
     process.exit(1);
 });
-

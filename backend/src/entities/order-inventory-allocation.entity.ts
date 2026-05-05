@@ -1,4 +1,11 @@
-import { Column, CreateDateColumn, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import {
+    Column,
+    CreateDateColumn,
+    Entity,
+    JoinColumn,
+    ManyToOne,
+    PrimaryGeneratedColumn,
+} from 'typeorm';
 import { Tenant } from './tenant.entity';
 import { Branch } from './branch.entity';
 import { Order } from './order.entity';
@@ -51,4 +58,3 @@ export class OrderInventoryAllocation {
     @JoinColumn({ name: 'inventory_batch_id' })
     inventoryBatch: InventoryBatch;
 }
-

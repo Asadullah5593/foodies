@@ -77,4 +77,3 @@ export class Recipe {
     @OneToMany(() => RecipeLine, (l) => l.recipe)
     lines: RecipeLine[];
 }
-

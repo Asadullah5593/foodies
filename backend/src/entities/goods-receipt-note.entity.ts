@@ -28,6 +28,9 @@ export class GoodsReceiptNote {
     @Column()
     purchaseOrderId: number;
 
+    @Column({ type: 'varchar', nullable: true })
+    grnNumber: string | null;
+
     /** draft | posted | reversed */
     @Column({ default: 'draft' })
     status: string;
@@ -76,4 +79,3 @@ export class GoodsReceiptNote {
     @OneToMany(() => GoodsReceiptNoteLine, (l) => l.goodsReceiptNote)
     lines: GoodsReceiptNoteLine[];
 }
-

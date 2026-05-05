@@ -55,4 +55,3 @@ export class Vendor {
     @JoinColumn({ name: 'linked_branch_id' })
     linkedBranch: Branch | null;
 }
-

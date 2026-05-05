@@ -78,6 +78,58 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
 
   const selectedRecipeId = form.recipe_id ? Number(form.recipe_id) : null;
   const selectedRecipe = useMemo(() => (recipesQ.data ?? []).find((r: any) => r.id === selectedRecipeId) ?? null, [recipesQ.data, selectedRecipeId]);
+  const itemById = useMemo(() => {
+    const m = new Map<number, any>();
+    for (const it of itemsQ.data ?? []) m.set(Number(it.id), it);
+    return m;
+  }, [itemsQ.data]);
+  const uomById = useMemo(() => {
+    const m = new Map<number, any>();
+    for (const u of uomsQ.data ?? []) m.set(Number(u.id), u);
+    return m;
+  }, [uomsQ.data]);
+  const selectedLineItem = useMemo(
+    () => itemById.get(Number(form.line_item_id)),
+    [itemById, form.line_item_id],
+  );
+
+  const getItemAllowedUomIds = (item: any): number[] => {
+    if (!item) return [];
+    const configured = Array.isArray(item.baseUomIds) && item.baseUomIds.length > 0
+      ? item.baseUomIds
+      : [item.baseUomId];
+    const normalized = configured
+      .map((id: any) => Number(id))
+      .filter((id: number) => Number.isInteger(id) && id > 0);
+    const unique: number[] = [];
+    const seen = new Set<number>();
+    for (const id of normalized) {
+      if (!seen.has(id)) {
+        seen.add(id);
+        unique.push(id);
+      }
+    }
+    const primary = Number(item.baseUomId);
+    if (Number.isInteger(primary) && primary > 0 && !seen.has(primary)) {
+      unique.unshift(primary);
+    }
+    return unique;
+  };
+
+  const getItemAllowedUoms = (item: any, currentUomId?: number | string | null) => {
+    const ids = getItemAllowedUomIds(item);
+    const current = Number(currentUomId);
+    if (Number.isInteger(current) && current > 0 && !ids.includes(current)) {
+      ids.push(current);
+    }
+    const options = ids.map((id) => uomById.get(id)).filter(Boolean);
+    return options.length > 0 ? options : (uomsQ.data ?? []);
+  };
+
+  const getDefaultItemUomId = (item: any): string => {
+    const ids = getItemAllowedUomIds(item);
+    return ids.length > 0 ? String(ids[0]) : '';
+  };
 
   return (
     <div className="space-y-4">
@@ -180,16 +232,29 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-2">
               <select className="border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                value={form.line_item_id ?? ''} onChange={(e) => setForm({ ...form, line_item_id: e.target.value })}>
+                value={form.line_item_id ?? ''}
+                onChange={(e) => {
+                  const itemId = Number(e.target.value);
+                  const selected = itemById.get(itemId);
+                  setForm({
+                    ...form,
+                    line_item_id: e.target.value,
+                    line_uom_id: getDefaultItemUomId(selected),
+                  });
+                }}
+              >
                 <option value="">Ingredient…</option>
                 {(itemsQ.data ?? []).map((it: any) => <option key={it.id} value={it.id}>{it.name}</option>)}
               </select>
               <input className="border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
                 placeholder="Qty" value={form.line_qty ?? ''} onChange={(e) => setForm({ ...form, line_qty: e.target.value })} />
               <select className="border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                value={form.line_uom_id ?? ''} onChange={(e) => setForm({ ...form, line_uom_id: e.target.value })}>
+                value={form.line_uom_id ?? ''}
+                onChange={(e) => setForm({ ...form, line_uom_id: e.target.value })}
+                disabled={!selectedLineItem}
+              >
                 <option value="">UOM…</option>
-                {(uomsQ.data ?? []).map((u: any) => <option key={u.id} value={u.id}>{u.code}</option>)}
+                {getItemAllowedUoms(selectedLineItem, form.line_uom_id).map((u: any) => <option key={u.id} value={u.id}>{u.code}</option>)}
               </select>
               <Button onClick={() => addLineM.mutate({ recipeId: selectedRecipe.id, line: {
                 inventory_item_id: Number(form.line_item_id),

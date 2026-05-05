@@ -73,4 +73,3 @@ export class InventoryBatch {
     @JoinColumn({ name: 'vendor_id' })
     vendor: Vendor | null;
 }
-

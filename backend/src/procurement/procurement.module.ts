@@ -36,4 +36,3 @@ import { ProcurementAdminController } from './procurement.admin.controller';
     providers: [ProcurementService],
 })
 export class ProcurementModule {}
-

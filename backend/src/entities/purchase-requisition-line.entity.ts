@@ -51,4 +51,3 @@ export class PurchaseRequisitionLine {
     @JoinColumn({ name: 'requested_uom_id' })
     requestedUom: Uom;
 }
-

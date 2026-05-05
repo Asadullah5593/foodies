@@ -64,7 +64,10 @@ export class WastageEvent {
     @JoinColumn({ name: 'inventory_batch_id' })
     inventoryBatch: InventoryBatch | null;
 
-    @ManyToOne(() => InventoryLocation, { onDelete: 'SET NULL', nullable: true })
+    @ManyToOne(() => InventoryLocation, {
+        onDelete: 'SET NULL',
+        nullable: true,
+    })
     @JoinColumn({ name: 'location_id' })
     location: InventoryLocation | null;
 
@@ -72,4 +75,3 @@ export class WastageEvent {
     @JoinColumn({ name: 'created_by' })
     creator: User | null;
 }
-

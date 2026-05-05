@@ -52,4 +52,3 @@ export class InventoryItemBranchSetting {
     @JoinColumn({ name: 'inventory_item_id' })
     inventoryItem: InventoryItem;
 }
-

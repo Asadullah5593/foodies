@@ -15,6 +15,7 @@ import { CartModule } from '../cart/cart.module';
 import { MailModule } from '../mail/mail.module';
 import { MediaModule } from '../media/media.module';
 import { ConsumerController } from './consumer.controller';
+import { ConsumerRiderLocationController } from './consumer-rider-location.controller';
 
 @Module({
     imports: [
@@ -38,6 +39,6 @@ import { ConsumerController } from './consumer.controller';
         MailModule,
         MediaModule,
     ],
-    controllers: [ConsumerController],
+    controllers: [ConsumerController, ConsumerRiderLocationController],
 })
 export class ConsumerModule {}
