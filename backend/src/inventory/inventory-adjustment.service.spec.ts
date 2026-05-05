@@ -14,14 +14,30 @@ describe('InventoryAdjustmentService', () => {
             find: jest.fn(),
         } as any;
         const adjustmentLineRepo = {} as any;
-        const dataSource = { transaction: jest.fn() } as any;
+        const managerRepo = {
+            findOne: jest
+                .fn()
+                .mockResolvedValue({ id: 99, code: 'ITEM-99', trackExpiry: false }),
+            save: jest.fn().mockImplementation(async (x: any) => x),
+            create: jest.fn().mockImplementation((x: any) => x),
+        } as any;
+        const manager = {
+            getRepository: jest.fn().mockReturnValue(managerRepo),
+        } as any;
+        const dataSource = {
+            transaction: jest
+                .fn()
+                .mockImplementation(async (cb: (manager: any) => any) =>
+                    cb(manager),
+                ),
+        } as any;
         const service = new InventoryAdjustmentService(
             dataSource,
             inventoryService,
             adjustmentRepo,
             adjustmentLineRepo,
         );
-        return { service, inventoryService, adjustmentRepo };
+        return { service, inventoryService, adjustmentRepo, manager, managerRepo };
     };
 
     it('posts adjustment_out as negative ledger movement', async () => {
