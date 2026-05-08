@@ -88,6 +88,9 @@ export class OrdersService {
             /** Optional drop-off coordinates (e.g. consumer map picker). */
             latitude?: number;
             longitude?: number;
+            /** Optional branch coordinates snapshot (from client). */
+            branch_latitude?: number;
+            branch_longitude?: number;
         },
         tenantId: number,
         createdBy: number | null,
@@ -490,6 +493,17 @@ export class OrdersService {
                 ? Number(dto.longitude)
                 : null;
 
+        const branchLatitude =
+            dto.branch_latitude != null &&
+            Number.isFinite(Number(dto.branch_latitude))
+                ? Number(dto.branch_latitude)
+                : null;
+        const branchLongitude =
+            dto.branch_longitude != null &&
+            Number.isFinite(Number(dto.branch_longitude))
+                ? Number(dto.branch_longitude)
+                : null;
+
         const createdOrderIds: number[] = [];
         let deliveryFeeAssigned = false;
         let firstOrderIdForLoyalty: number | null = null;
@@ -553,6 +567,8 @@ export class OrdersService {
                     deliveryAddress: dto.delivery_address ?? null,
                     deliveryLatitude,
                     deliveryLongitude,
+                    branchLatitude,
+                    branchLongitude,
                     status: 'placed',
                     source,
                     notes: dto.notes ?? null,
@@ -796,6 +812,14 @@ export class OrdersService {
                 order.deliveryLongitude != null
                     ? Number(order.deliveryLongitude)
                     : null,
+            branch_latitude:
+                order.branchLatitude != null
+                    ? Number(order.branchLatitude)
+                    : null,
+            branch_longitude:
+                order.branchLongitude != null
+                    ? Number(order.branchLongitude)
+                    : null,
             customer_latitude:
                 order.deliveryLatitude != null
                     ? Number(order.deliveryLatitude)
@@ -948,6 +972,14 @@ export class OrdersService {
             delivery_longitude:
                 order.deliveryLongitude != null
                     ? Number(order.deliveryLongitude)
+                    : null,
+            branch_latitude:
+                order.branchLatitude != null
+                    ? Number(order.branchLatitude)
+                    : null,
+            branch_longitude:
+                order.branchLongitude != null
+                    ? Number(order.branchLongitude)
                     : null,
             loyalty_points_redeemed: order.loyaltyPointsRedeemed ?? 0,
             placed_at: order.placedAt?.toISOString() ?? null,
@@ -1720,6 +1752,10 @@ export class OrdersService {
                 o.deliveryLongitude != null
                     ? Number(o.deliveryLongitude)
                     : null,
+            branch_latitude:
+                o.branchLatitude != null ? Number(o.branchLatitude) : null,
+            branch_longitude:
+                o.branchLongitude != null ? Number(o.branchLongitude) : null,
             placed_at: o.placedAt?.toISOString() ?? null,
             total_amount: Number(o.totalAmount),
             branch: o.branch
@@ -1780,6 +1816,14 @@ export class OrdersService {
             delivery_longitude:
                 order.deliveryLongitude != null
                     ? Number(order.deliveryLongitude)
+                    : null,
+            branch_latitude:
+                order.branchLatitude != null
+                    ? Number(order.branchLatitude)
+                    : null,
+            branch_longitude:
+                order.branchLongitude != null
+                    ? Number(order.branchLongitude)
                     : null,
             placed_at: order.placedAt?.toISOString() ?? null,
             total_amount: Number(order.totalAmount),

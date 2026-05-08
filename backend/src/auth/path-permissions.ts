@@ -109,6 +109,21 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         ],
     },
     {
+        prefix: '/admin/procurement/prs',
+        permissionNames: [
+            Permissions.PROCUREMENT_PR_CREATE,
+            Permissions.PROCUREMENT_PR_APPROVE,
+        ],
+    },
+    {
+        prefix: '/admin/procurement/pos',
+        permissionNames: [Permissions.PROCUREMENT_PO_MANAGE],
+    },
+    {
+        prefix: '/admin/procurement/grns',
+        permissionNames: [Permissions.PROCUREMENT_GRN_POST],
+    },
+    {
         prefix: '/admin/recipes',
         permissionNames: [Permissions.RECIPES_MANAGE, Permissions.COSTING_VIEW],
     },

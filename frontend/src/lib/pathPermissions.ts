@@ -39,6 +39,12 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
     'procurement:po:manage',
     'procurement:grn:post',
   ],
+  '/admin/procurement/prs': [
+    'procurement:pr:create',
+    'procurement:pr:approve',
+  ],
+  '/admin/procurement/pos': ['procurement:po:manage'],
+  '/admin/procurement/grns': ['procurement:grn:post'],
   '/admin/recipes': ['recipes:manage', 'costing:view'],
   '/pos/orders': ['orders:create'],
   '/kitchen': ['kitchen:view', 'kitchen:update'],

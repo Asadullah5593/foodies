@@ -49,6 +49,9 @@ export class InventoryItem {
     @Column({ type: 'int', nullable: true })
     defaultNearExpiryDays: number | null;
 
+    @Column({ type: 'decimal', precision: 18, scale: 6, nullable: true })
+    defaultBuyPrice: number | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

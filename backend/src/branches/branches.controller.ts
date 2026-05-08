@@ -29,11 +29,17 @@ export class BranchesController {
     @Get()
     index(
         @Query('brand_id') brandId: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
     ) {
         return this.service.findAllForAdmin(
             user.tenantId,
             brandId ? +brandId : undefined,
+            user.allowedBranchIds,
         );
     }
 

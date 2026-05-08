@@ -122,4 +122,30 @@ export class InventoryAdminController {
             createdBy: user.id,
         });
     }
+
+    @Get('branches/:branchId/wastage')
+    async listWastage(
+        @CurrentUser()
+        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        @Param('branchId') branchId: string,
+        @Query('inventory_item_id') inventoryItemId?: string,
+        @Query('reason') reason?: string,
+        @Query('from') from?: string,
+        @Query('to') to?: string,
+        @Query('page') page?: string,
+        @Query('page_size') pageSize?: string,
+    ) {
+        const tenantId = await this.inventoryService.resolveTenantId(
+            user,
+            +branchId,
+        );
+        return this.inventoryService.listWastage(tenantId, +branchId, {
+            inventoryItemId: inventoryItemId ? +inventoryItemId : undefined,
+            reason,
+            from,
+            to,
+            page: page ? +page : undefined,
+            pageSize: pageSize ? +pageSize : undefined,
+        });
+    }
 }

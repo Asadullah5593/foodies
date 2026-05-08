@@ -63,7 +63,7 @@ describe('InventoryTransferService', () => {
                     expect.objectContaining({
                         inventoryItemId: 99,
                         qtyDelta: -12,
-                        eventType: 'transfer_out',
+                        eventType: 'transfer_order',
                     }),
                 ],
             }),

@@ -861,6 +861,16 @@ export class ConsumerController {
                     type: 'number',
                     description: 'Optional drop-off longitude',
                 },
+                branch_latitude: {
+                    type: 'number',
+                    description:
+                        'Optional branch latitude snapshot (from client)',
+                },
+                branch_longitude: {
+                    type: 'number',
+                    description:
+                        'Optional branch longitude snapshot (from client)',
+                },
             },
             example: {
                 branch_id: 1,
@@ -871,6 +881,8 @@ export class ConsumerController {
                 delivery_address: '123 Main St',
                 latitude: 24.8607,
                 longitude: 67.0011,
+                branch_latitude: 24.8611,
+                branch_longitude: 67.0022,
                 items: [
                     {
                         menu_item_id: 5,
@@ -911,6 +923,8 @@ export class ConsumerController {
             customer_id?: number;
             latitude?: number;
             longitude?: number;
+            branch_latitude?: number;
+            branch_longitude?: number;
         },
     ) {
         const tenantId = await this.getTenantIdFromBranch(dto.branch_id);

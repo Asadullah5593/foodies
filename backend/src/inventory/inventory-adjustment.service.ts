@@ -202,4 +202,91 @@ export class InventoryAdjustmentService {
             return manager.getRepository(InventoryAdjustment).save(adjustment);
         });
     }
+
+    async updateDraftAdjustment(
+        user: TenantContextUser,
+        adjustmentId: number,
+        dto: {
+            reason_code?: string;
+            notes?: string | null;
+            lines: Array<{
+                inventory_item_id: number;
+                qty: number;
+                qty_uom_id: number;
+                location_id?: number | null;
+                inventory_batch_id?: number | null;
+                lot_code?: string | null;
+                expiry_date?: string | null;
+                notes?: string | null;
+            }>;
+        },
+    ) {
+        const adjustment = await this.adjustmentRepo.findOne({
+            where: { id: adjustmentId },
+            relations: { lines: true },
+        });
+        if (!adjustment) throw new NotFoundException('Adjustment not found');
+        const tenantId = await this.inventoryService.resolveTenantId(
+            user,
+            adjustment.branchId,
+        );
+        if (adjustment.tenantId !== tenantId) throw new ForbiddenException();
+        if (adjustment.status !== 'draft') {
+            throw new BadRequestException('Only draft adjustment can be edited');
+        }
+        const nextLines = Array.isArray(dto.lines) ? dto.lines : [];
+        if (nextLines.length === 0) {
+            throw new BadRequestException('Adjustment must include lines');
+        }
+        return this.dataSource.transaction(async (manager) => {
+            if (dto.reason_code !== undefined) {
+                const reason = String(dto.reason_code).trim();
+                if (!reason) throw new BadRequestException('reason_code is required');
+                adjustment.reasonCode = reason;
+            }
+            if (dto.notes !== undefined) {
+                adjustment.notes = dto.notes == null ? null : String(dto.notes);
+            }
+            await manager.getRepository(InventoryAdjustment).save(adjustment);
+            await manager.getRepository(InventoryAdjustmentLine).delete({
+                inventoryAdjustmentId: adjustment.id,
+            });
+            for (const line of nextLines) {
+                await manager.getRepository(InventoryAdjustmentLine).save(
+                    manager.getRepository(InventoryAdjustmentLine).create({
+                        inventoryAdjustmentId: adjustment.id,
+                        inventoryItemId: line.inventory_item_id,
+                        qty: line.qty,
+                        qtyUomId: line.qty_uom_id,
+                        locationId: line.location_id ?? null,
+                        inventoryBatchId: line.inventory_batch_id ?? null,
+                        lotCode: line.lot_code ?? null,
+                        expiryDate: line.expiry_date ?? null,
+                        notes: line.notes ?? null,
+                    }),
+                );
+            }
+            return manager.getRepository(InventoryAdjustment).findOne({
+                where: { id: adjustment.id, tenantId },
+                relations: { lines: true },
+            });
+        });
+    }
+
+    async deleteDraftAdjustment(user: TenantContextUser, adjustmentId: number) {
+        const adjustment = await this.adjustmentRepo.findOne({
+            where: { id: adjustmentId },
+        });
+        if (!adjustment) throw new NotFoundException('Adjustment not found');
+        const tenantId = await this.inventoryService.resolveTenantId(
+            user,
+            adjustment.branchId,
+        );
+        if (adjustment.tenantId !== tenantId) throw new ForbiddenException();
+        if (adjustment.status !== 'draft') {
+            throw new BadRequestException('Only draft adjustment can be deleted');
+        }
+        await this.adjustmentRepo.delete({ id: adjustment.id });
+        return { ok: true };
+    }
 }
