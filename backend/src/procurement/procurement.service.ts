@@ -55,6 +55,10 @@ export class ProcurementService {
         return this.inventoryService.resolveTenantId(user, branchId);
     }
 
+    private isAdminLike(user: TenantContextUser): boolean {
+        return user.isSuperAdmin === true || user.allowedBranchIds == null;
+    }
+
     private generatePRNumber(tenantId: number, id: number) {
         return `PR-${tenantId}-${String(id).padStart(6, '0')}`;
     }
@@ -234,8 +238,7 @@ export class ProcurementService {
         );
         if (pr.tenantId !== tenantId) throw new ForbiddenException();
 
-        const isAdminLike =
-            user.isSuperAdmin === true || user.allowedBranchIds == null;
+        const isAdminLike = this.isAdminLike(user);
         const isBranchUserForPr =
             Array.isArray(user.allowedBranchIds) &&
             user.allowedBranchIds.includes(Number(pr.requestingBranchId));
@@ -323,7 +326,7 @@ export class ProcurementService {
         return this.prRepo.find({
             where: { tenantId },
             order: { id: 'DESC' },
-            relations: { lines: true },
+            relations: { lines: true, creator: true },
         });
     }
 
@@ -369,6 +372,11 @@ export class ProcurementService {
             pr.requestingBranchId,
         );
         if (pr.tenantId !== tenantId) throw new ForbiddenException();
+        if (!this.isAdminLike(args.user)) {
+            throw new ForbiddenException(
+                'Only admin can approve purchase requisitions',
+            );
+        }
         if (pr.status !== 'submitted') {
             throw new BadRequestException('Only submitted PR can be approved');
         }
@@ -408,13 +416,35 @@ export class ProcurementService {
                     uomId: Number(l.requestedUomId),
                     qtyFieldLabel: 'requested_qty',
                 });
+                const item = await manager
+                    .getRepository(InventoryItem)
+                    .findOne({
+                        where: {
+                            tenantId,
+                            id: Number(l.inventoryItemId),
+                        },
+                    });
+                const defaultBuyPricePerBase =
+                    item?.defaultBuyPrice != null
+                        ? Number(item.defaultBuyPrice)
+                        : null;
+                const unitCost =
+                    defaultBuyPricePerBase == null
+                        ? null
+                        : defaultBuyPricePerBase *
+                          (await this.inventoryService.convertToItemBaseQty(
+                              tenantId,
+                              Number(l.inventoryItemId),
+                              1,
+                              Number(l.requestedUomId),
+                          ));
                 await manager.getRepository(PurchaseOrderLine).save(
                     manager.getRepository(PurchaseOrderLine).create({
                         purchaseOrderId: po.id,
                         inventoryItemId: l.inventoryItemId,
                         orderedQty: l.requestedQty,
                         orderedUomId: l.requestedUomId,
-                        unitCost: null,
+                        unitCost,
                         taxRate: null,
                         notes: l.notes ?? null,
                     }),

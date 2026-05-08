@@ -2,7 +2,9 @@ import {
     BadRequestException,
     Body,
     Controller,
+    Delete,
     Get,
+    Patch,
     Param,
     Post,
     Query,
@@ -74,5 +76,38 @@ export class InventoryAdjustmentsAdminController {
         @Param('id') id: string,
     ) {
         return this.adjustmentService.postAdjustment(user, +id);
+    }
+
+    @Patch(':id')
+    updateDraftAdjustment(
+        @CurrentUser()
+        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        @Param('id') id: string,
+        @Body()
+        dto: {
+            reason_code?: string;
+            notes?: string | null;
+            lines: Array<{
+                inventory_item_id: number;
+                qty: number;
+                qty_uom_id: number;
+                location_id?: number | null;
+                inventory_batch_id?: number | null;
+                lot_code?: string | null;
+                expiry_date?: string | null;
+                notes?: string | null;
+            }>;
+        },
+    ) {
+        return this.adjustmentService.updateDraftAdjustment(user, +id, dto);
+    }
+
+    @Delete(':id')
+    deleteDraftAdjustment(
+        @CurrentUser()
+        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        @Param('id') id: string,
+    ) {
+        return this.adjustmentService.deleteDraftAdjustment(user, +id);
     }
 }

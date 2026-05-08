@@ -70,6 +70,13 @@ export class Order {
     @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
     deliveryLongitude: number | null;
 
+    /** Optional branch coordinates snapshot captured at order placement time. */
+    @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+    branchLatitude: number | null;
+
+    @Column({ type: 'decimal', precision: 10, scale: 7, nullable: true })
+    branchLongitude: number | null;
+
     @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
     subtotal: number;
 

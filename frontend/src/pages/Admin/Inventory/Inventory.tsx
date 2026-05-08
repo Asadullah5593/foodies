@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import Card from '../../../components/Card';
 import Loader from '../../../components/Loader';
 import Button from '../../../components/Button';
@@ -93,6 +94,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
   initialTab = 'onhand',
   showTabs = true,
 }) => {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<InventoryTabKey>(initialTab);
   const [uomModalOpen, setUomModalOpen] = useState(false);
@@ -109,7 +111,32 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
   const [selectedTransferRequest, setSelectedTransferRequest] = useState<any | null>(null);
   const [selectedTransferOrder, setSelectedTransferOrder] = useState<any | null>(null);
   const [selectedAdjustment, setSelectedAdjustment] = useState<any | null>(null);
+  const [editingAdjustmentGroup, setEditingAdjustmentGroup] = useState<any | null>(null);
+  const [selectedOnHandItemId, setSelectedOnHandItemId] = useState<number | null>(null);
   const [transferActionType, setTransferActionType] = useState<'dispatch' | 'receive'>('dispatch');
+
+  const toDateInput = (d: Date) => {
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toISOString().slice(0, 10);
+  };
+
+  const [ledgerFrom, setLedgerFrom] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 6);
+    return toDateInput(d);
+  });
+  const [ledgerTo, setLedgerTo] = useState(() => toDateInput(new Date()));
+  const [ledgerEventType, setLedgerEventType] = useState<string>('');
+  const [ledgerItemId, setLedgerItemId] = useState<string>('');
+  const [ledgerPage, setLedgerPage] = useState<number>(1);
+  const [ledgerPageSize, setLedgerPageSize] = useState<number>(50);
+
+  const [wastageFrom, setWastageFrom] = useState<string>('');
+  const [wastageTo, setWastageTo] = useState<string>('');
+  const [wastageItemId, setWastageItemId] = useState<string>('');
+  const [wastageReason, setWastageReason] = useState<string>('');
+  const [wastagePage, setWastagePage] = useState<number>(1);
+  const [wastagePageSize, setWastagePageSize] = useState<number>(50);
 
   const { data: branches } = useQuery({
     queryKey: ['branches'],
@@ -172,9 +199,36 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
   });
 
   const ledgerQ = useQuery({
-    queryKey: ['inventory-ledger', branchId],
-    queryFn: () => inventoryService.getLedger(branchId!, { page_size: 300 }),
+    queryKey: [
+      'inventory-ledger',
+      branchId,
+      ledgerFrom,
+      ledgerTo,
+      ledgerEventType,
+      ledgerItemId,
+      ledgerPage,
+      ledgerPageSize,
+    ],
+    queryFn: () =>
+      inventoryService.getLedger(branchId!, {
+        from: ledgerFrom || undefined,
+        to: ledgerTo || undefined,
+        event_type: ledgerEventType || undefined,
+        inventory_item_id: ledgerItemId ? Number(ledgerItemId) : undefined,
+        page: ledgerPage,
+        page_size: ledgerPageSize,
+      }),
     enabled: tab === 'ledger' && branchId != null,
+  });
+
+  const productHistoryQ = useQuery({
+    queryKey: ['inventory-item-history', branchId, selectedOnHandItemId],
+    queryFn: () =>
+      inventoryService.getLedger(branchId!, {
+        inventory_item_id: Number(selectedOnHandItemId),
+        page_size: 500,
+      }),
+    enabled: branchId != null && selectedOnHandItemId != null,
   });
 
   const transferRequestsQ = useQuery({
@@ -223,8 +277,21 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
   });
 
   const updateUomM = useMutation({
-    mutationFn: (data: { id: number; name: string; code: string }) =>
-      inventoryService.updateUom(data.id, { name: data.name, code: data.code }),
+    mutationFn: (data: {
+      id: number;
+      name: string;
+      code: string;
+      kind?: string;
+      base_uom_id?: number | null;
+      multiplier_to_base?: number | null;
+    }) =>
+      inventoryService.updateUom(data.id, {
+        name: data.name,
+        code: data.code,
+        kind: data.kind,
+        base_uom_id: data.base_uom_id,
+        multiplier_to_base: data.multiplier_to_base,
+      }),
     onSuccess: async () => {
       toast.success('Unit of measure updated');
       await queryClient.invalidateQueries({ queryKey: ['inventory-uoms'] });
@@ -297,12 +364,41 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
 
   const createWastageM = useMutation({
     mutationFn: (data: any) => inventoryService.createWastage(branchId!, data),
-    onSuccess: async () => {
+    onSuccess: async (_created, variables: any) => {
       toast.success('Wastage recorded');
       await queryClient.invalidateQueries({ queryKey: ['inventory-ledger', branchId] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-onhand', branchId] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-wastage', branchId] });
+      setWastageModalOpen(false);
+      const wastedItemId = Number(variables?.inventory_item_id ?? NaN);
+      if (Number.isInteger(wastedItemId) && wastedItemId > 0) {
+        setSelectedOnHandItemId(wastedItemId);
+      }
     },
     onError: (e: any) => toast.error(readApiError(e, 'Failed to record wastage')),
+  });
+
+  const wastageQ = useQuery({
+    queryKey: [
+      'inventory-wastage',
+      branchId,
+      wastageFrom,
+      wastageTo,
+      wastageItemId,
+      wastageReason,
+      wastagePage,
+      wastagePageSize,
+    ],
+    queryFn: () =>
+      inventoryService.listWastage(branchId!, {
+        from: wastageFrom || undefined,
+        to: wastageTo || undefined,
+        inventory_item_id: wastageItemId ? Number(wastageItemId) : undefined,
+        reason: wastageReason || undefined,
+        page: wastagePage,
+        page_size: wastagePageSize,
+      }),
+    enabled: tab === 'wastage' && branchId != null,
   });
 
   const createTransferRequestM = useMutation({
@@ -361,7 +457,25 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
   });
 
   const createAdjustmentM = useMutation({
-    mutationFn: inventoryService.createAdjustment,
+    mutationFn: async (payloads: Array<{
+      branch_id: number;
+      adjustment_type: 'in' | 'out';
+      reason_code: string;
+      notes?: string;
+      lines: Array<{
+        inventory_item_id: number;
+        qty: number;
+        qty_uom_id: number;
+        lot_code?: string | null;
+        expiry_date?: string | null;
+      }>;
+    }>) => {
+      const created: any[] = [];
+      for (const payload of payloads) {
+        created.push(await inventoryService.createAdjustment(payload));
+      }
+      return created;
+    },
     onSuccess: async () => {
       toast.success('Adjustment saved as draft');
       await queryClient.invalidateQueries({ queryKey: ['inventory-adjustments', branchId] });
@@ -370,10 +484,11 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
   });
 
   const createAndPostAdjustmentM = useMutation({
-    mutationFn: async (payload: {
+    mutationFn: async (payloads: Array<{
       branch_id: number;
       adjustment_type: 'in' | 'out';
       reason_code: string;
+      notes?: string;
       lines: Array<{
         inventory_item_id: number;
         qty: number;
@@ -381,10 +496,14 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
         lot_code?: string | null;
         expiry_date?: string | null;
       }>;
-    }) => {
-      const created = await inventoryService.createAdjustment(payload);
-      if (!created?.id) throw new Error('Adjustment created but missing id');
-      await inventoryService.postAdjustment(Number(created.id));
+    }>) => {
+      const created: any[] = [];
+      for (const payload of payloads) {
+        const one = await inventoryService.createAdjustment(payload);
+        if (!one?.id) throw new Error('Adjustment created but missing id');
+        await inventoryService.postAdjustment(Number(one.id));
+        created.push(one);
+      }
       return created;
     },
     onSuccess: async () => {
@@ -394,17 +513,6 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
       await queryClient.invalidateQueries({ queryKey: ['inventory-onhand', branchId] });
     },
     onError: (e: any) => toast.error(readApiError(e, 'Failed to create and post adjustment')),
-  });
-
-  const postAdjustmentM = useMutation({
-    mutationFn: (id: number) => inventoryService.postAdjustment(id),
-    onSuccess: async () => {
-      toast.success('Adjustment posted');
-      await queryClient.invalidateQueries({ queryKey: ['inventory-adjustments', branchId] });
-      await queryClient.invalidateQueries({ queryKey: ['inventory-ledger', branchId] });
-      await queryClient.invalidateQueries({ queryKey: ['inventory-onhand', branchId] });
-    },
-    onError: (e: any) => toast.error(readApiError(e, 'Failed to post adjustment')),
   });
 
   const createStocktakeM = useMutation({
@@ -453,11 +561,14 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
     return m;
   }, [itemsQ.data]);
 
-  const locationById = useMemo(() => {
-    const m = new Map<number, any>();
-    for (const l of locationsQ.data ?? []) m.set(Number(l.id), l);
-    return m;
-  }, [locationsQ.data]);
+  const ledgerItemOptions = useMemo(
+    () =>
+      (itemsQ.data ?? []).map((it: any) => ({
+        value: String(it.id),
+        label: `${it.name}${it.code ? ` (${it.code})` : ''}`,
+      })),
+    [itemsQ.data],
+  );
 
   const uomById = useMemo(() => {
     const m = new Map<number, any>();
@@ -470,6 +581,99 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
     for (const b of branches ?? []) m.set(Number(b.id), b);
     return m;
   }, [branches]);
+
+  const groupedOnHandRows = useMemo(() => {
+    const grouped = new Map<number, { inventoryItemId: number; qty: number }>();
+    for (const row of onHandQ.data ?? []) {
+      const inventoryItemId = Number((row as any).inventoryItemId ?? (row as any).inventory_item_id);
+      if (!Number.isInteger(inventoryItemId) || inventoryItemId <= 0) continue;
+      const qty = Number((row as any).qty ?? 0);
+      const existing = grouped.get(inventoryItemId);
+      if (existing) {
+        existing.qty += Number.isFinite(qty) ? qty : 0;
+      } else {
+        grouped.set(inventoryItemId, {
+          inventoryItemId,
+          qty: Number.isFinite(qty) ? qty : 0,
+        });
+      }
+    }
+    return Array.from(grouped.values()).sort((a, b) => a.inventoryItemId - b.inventoryItemId);
+  }, [onHandQ.data]);
+
+  const selectedOnHandItem = useMemo(
+    () => (selectedOnHandItemId != null ? itemById.get(Number(selectedOnHandItemId)) : null),
+    [itemById, selectedOnHandItemId],
+  );
+
+  const groupedAdjustments = useMemo(() => {
+    const groups = new Map<
+      string,
+      {
+        reference: string;
+        adjustments: any[];
+        lines: any[];
+        createdAt: string | null;
+        status: string;
+        reason: string;
+        types: Set<string>;
+        itemIds: Set<number>;
+        totalQtyBase: number;
+      }
+    >();
+    for (const adj of adjustmentsQ.data ?? []) {
+      const ref = extractAdjustmentGroupRef(adj?.notes) ?? `ADJ-${adj.id}`;
+      const key = ref;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          reference: ref,
+          adjustments: [],
+          lines: [],
+          createdAt: adj?.createdAt ?? null,
+          status: String(adj?.status ?? 'draft'),
+          reason: String(adj?.reasonCode ?? '—'),
+          types: new Set<string>(),
+          itemIds: new Set<number>(),
+          totalQtyBase: 0,
+        });
+      }
+      const g = groups.get(key)!;
+      g.adjustments.push(adj);
+      g.types.add(String(adj?.adjustmentType ?? ''));
+      if (!g.createdAt || (adj?.createdAt && new Date(adj.createdAt).getTime() > new Date(g.createdAt).getTime())) {
+        g.createdAt = adj.createdAt;
+      }
+      if (String(adj?.status ?? '') !== 'posted') g.status = 'draft';
+      if (String(g.reason) !== String(adj?.reasonCode ?? '')) g.reason = 'multiple';
+      for (const line of adj?.lines ?? []) {
+        const itemId = Number(line?.inventoryItemId);
+        const item = itemById.get(itemId);
+        if (Number.isInteger(itemId) && itemId > 0) g.itemIds.add(itemId);
+        const converted = convertQtyToItemBase(line, item);
+        const normalizedQty = converted != null ? Math.abs(Number(converted)) : Math.abs(Number(line?.qty ?? 0));
+        g.totalQtyBase += Number.isFinite(normalizedQty) ? normalizedQty : 0;
+        g.lines.push({
+          ...line,
+          adjustmentType: String(adj?.adjustmentType ?? ''),
+          parentAdjustmentId: Number(adj?.id),
+        });
+      }
+    }
+    return Array.from(groups.values())
+      .sort((a, b) => {
+        const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return tb - ta;
+      })
+      .map((g) => ({
+        ...g,
+        typeLabel:
+          g.types.size > 1
+            ? 'in + out'
+            : String(Array.from(g.types)[0] ?? '—'),
+        itemCount: g.itemIds.size,
+      }));
+  }, [adjustmentsQ.data, extractAdjustmentGroupRef, itemById]);
 
   const selectedTransferRequestItem = useMemo(
     () => itemById.get(Number(form.tr_item_id)),
@@ -543,19 +747,456 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
     return d.toLocaleString();
   };
 
+  const formatNumeric = (value: number, minFraction = 2, maxFraction = 6) =>
+    Number(value).toLocaleString(undefined, {
+      minimumFractionDigits: minFraction,
+      maximumFractionDigits: maxFraction,
+    });
+
+  const prettyLedgerEventType = (raw?: string | null) => {
+    const v = String(raw ?? '').trim().toLowerCase();
+    if (!v) return '—';
+    const map: Record<string, string> = {
+      receive: 'Received (GRN)',
+      consume: 'Consumed (Order)',
+      consume_reversal: 'Consumption reversal',
+      adjustment_in: 'Adjustment IN',
+      adjustment_out: 'Adjustment OUT',
+      transfer_order: 'Transfer OUT (Dispatch)',
+      transfer_receipt: 'Transfer IN (Receipt)',
+      transfer_out: 'Transfer OUT (Dispatch)',
+      transfer_in: 'Transfer IN (Receipt)',
+      waste: 'Wastage',
+      stocktake_variance: 'Stocktake variance',
+    };
+    return map[v] ?? v;
+  };
+
+  const downloadLedgerCsv = (rows: any[], filename: string) => {
+    const headers = [
+      'time',
+      'movement_type',
+      'item',
+      'item_code',
+      'location',
+      'batch_id',
+      'lot_code',
+      'expiry_date',
+      'qty_delta',
+      'uom',
+      'reference',
+      'created_by',
+      'notes',
+    ];
+    const esc = (value: any) => {
+      const s = String(value ?? '');
+      if (s.includes('"') || s.includes(',') || s.includes('\n')) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
+    const lines = [
+      headers.join(','),
+      ...(rows ?? []).map((r: any) => {
+        const item = itemById.get(Number(r.inventoryItemId));
+        const uomCode = item?.baseUomId ? uomById.get(Number(item.baseUomId))?.code ?? '' : '';
+        const locationLabel = r?.location?.code
+          ? `${r.location.code}${r.location.name ? ` - ${r.location.name}` : ''}`
+          : (r?.location?.name ?? '');
+        const batch = r?.inventoryBatch ?? null;
+        const ref = r?.eventRefType ? `${r.eventRefType}:${r.eventRefId}` : '';
+        const createdBy = r?.creator?.name ?? (r?.createdBy != null ? `User #${r.createdBy}` : '');
+        return [
+          formatDateTime(r.createdAt),
+          String(r.eventType ?? ''),
+          String(item?.name ?? `Item #${r.inventoryItemId}`),
+          String(item?.code ?? ''),
+          locationLabel || 'Unassigned',
+          r.inventoryBatchId ?? '',
+          batch?.lotCode ?? '',
+          batch?.expiryDate ?? '',
+          Number(r.qtyDelta ?? 0),
+          uomCode,
+          ref,
+          createdBy,
+          String(r.notes ?? ''),
+        ].map(esc).join(',');
+      }),
+    ].join('\n');
+    const blob = new Blob([lines], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  function createAdjustmentGroupRef() {
+    return `ADJGRP-${new Date().toISOString().replace(/\D/g, '').slice(0, 14)}-${Math.random()
+      .toString(36)
+      .slice(2, 8)
+      .toUpperCase()}`;
+  }
+
+  function extractAdjustmentGroupRef(notesRaw: unknown): string | null {
+    const notes = String(notesRaw ?? '');
+    const match = notes.match(/\[GROUP_REF:([A-Z0-9-]+)\]/i);
+    return match?.[1] ? String(match[1]).toUpperCase() : null;
+  }
+
+  function getUomToRootMultiplier(uomIdRaw: number | string | null | undefined): number | null {
+    const start = Number(uomIdRaw);
+    if (!Number.isInteger(start) || start <= 0) return null;
+    let current = start;
+    let multiplier = 1;
+    for (let hop = 0; hop < 8; hop += 1) {
+      const u = uomById.get(current);
+      if (!u) return null;
+      const baseId = u.baseUomId != null ? Number(u.baseUomId) : null;
+      const step = u.multiplierToBase != null ? Number(u.multiplierToBase) : null;
+      if (
+        baseId == null ||
+        step == null ||
+        !Number.isInteger(baseId) ||
+        baseId <= 0 ||
+        !Number.isFinite(step) ||
+        step <= 0
+      ) {
+        return multiplier;
+      }
+      const resolvedStep = Number(step);
+      const resolvedBaseId = Number(baseId);
+      multiplier *= resolvedStep;
+      current = resolvedBaseId;
+    }
+    return null;
+  }
+
+  function convertQtyToItemBase(line: any, item: any): number | null {
+    const qty = Number(line?.qty ?? 0);
+    const fromUomId = Number(line?.qtyUomId);
+    const toUomId = Number(item?.baseUomId);
+    if (!Number.isFinite(qty) || !Number.isInteger(fromUomId) || !Number.isInteger(toUomId)) return null;
+    if (fromUomId === toUomId) return qty;
+    const fromToRoot = getUomToRootMultiplier(fromUomId);
+    const toToRoot = getUomToRootMultiplier(toUomId);
+    if (fromToRoot == null || toToRoot == null || toToRoot === 0) return null;
+    return qty * (fromToRoot / toToRoot);
+  }
+
+  const getHistoryReferenceMeta = (entry: any): { label: string; path: string | null } => {
+    const refType = String(entry?.eventRefType ?? '').trim().toLowerCase();
+    const refId = Number(entry?.eventRefId ?? NaN);
+    if (!refType || !Number.isFinite(refId) || refId <= 0) {
+      return { label: '—', path: null };
+    }
+    if (refType === 'grn') return { label: `GRN-${refId}`, path: '/admin/procurement/grns' };
+    if (refType === 'inventory_adjustment') return { label: `ADJ-${refId}`, path: '/admin/inventory/adjustments' };
+    if (refType === 'transfer_order') return { label: `TO-${refId}`, path: '/admin/inventory/transfers' };
+    if (refType === 'transfer_receipt') return { label: `TR-${refId}`, path: '/admin/inventory/transfers' };
+    if (refType === 'stocktake') return { label: `ST-${refId}`, path: '/admin/inventory/stocktake' };
+    if (refType === 'wastage_event') return { label: `WST-${refId}`, path: '/admin/inventory/wastage' };
+    if (refType === 'order') return { label: `ORD-${refId}`, path: '/admin/orders' };
+    return { label: `${refType}:${refId}`, path: null };
+  };
+
+  const productHistorySummary = useMemo(() => {
+    const summary = {
+      received: 0,
+      utilized: 0,
+      adjustmentIn: 0,
+      adjustmentOut: 0,
+      transferIn: 0,
+      transferOut: 0,
+      wastage: 0,
+    };
+    for (const entry of productHistoryQ.data?.items ?? []) {
+      const qtyDelta = Number(entry?.qtyDelta ?? 0);
+      const eventType = String(entry?.eventType ?? '').toLowerCase();
+      if (!Number.isFinite(qtyDelta) || qtyDelta === 0) continue;
+      if (eventType === 'receive') summary.received += qtyDelta;
+      if (eventType === 'consume') summary.utilized += Math.abs(qtyDelta);
+      if (eventType === 'adjustment_in') summary.adjustmentIn += Math.abs(qtyDelta);
+      if (eventType === 'adjustment_out') summary.adjustmentOut += Math.abs(qtyDelta);
+      if (eventType === 'transfer_receipt' || eventType === 'transfer_in') summary.transferIn += Math.abs(qtyDelta);
+      if (eventType === 'transfer_order' || eventType === 'transfer_out') summary.transferOut += Math.abs(qtyDelta);
+      if (eventType === 'waste' || eventType === 'wastage') summary.wastage += Math.abs(qtyDelta);
+    }
+    return summary;
+  }, [productHistoryQ.data]);
+
   const openCreateUom = () => {
-    setForm((f: any) => ({ ...f, uom_edit_id: null, uom_name: '', uom_code: '' }));
+    setForm((f: any) => ({
+      ...f,
+      uom_edit_id: null,
+      uom_name: '',
+      uom_code: '',
+      uom_kind: 'count',
+      uom_base_uom_id: '',
+      uom_multiplier_to_base: '',
+    }));
     setUomModalOpen(true);
   };
 
   const openEditUom = (u: any) => {
-    setForm((f: any) => ({ ...f, uom_edit_id: u.id, uom_name: u.name, uom_code: u.code }));
+    setForm((f: any) => ({
+      ...f,
+      uom_edit_id: u.id,
+      uom_name: u.name,
+      uom_code: u.code,
+      uom_kind: u.kind ?? 'count',
+      uom_base_uom_id: u.baseUomId != null ? String(u.baseUomId) : '',
+      uom_multiplier_to_base:
+        u.multiplierToBase != null ? String(u.multiplierToBase) : '',
+    }));
     setUomModalOpen(true);
   };
 
   const closeUomModal = () => {
     setUomModalOpen(false);
-    setForm((f: any) => ({ ...f, uom_edit_id: null, uom_name: '', uom_code: '' }));
+    setForm((f: any) => ({
+      ...f,
+      uom_edit_id: null,
+      uom_name: '',
+      uom_code: '',
+      uom_kind: 'count',
+      uom_base_uom_id: '',
+      uom_multiplier_to_base: '',
+    }));
+  };
+
+  const openCreateAdjustment = () => {
+    setEditingAdjustmentGroup(null);
+    setForm((f: any) => ({
+      ...f,
+      adj_type: 'out',
+      adj_reason: 'manual_correction',
+      adj_item_id: '',
+      adj_qty: '',
+      adj_uom_id: '',
+      adj_lot_code: '',
+      adj_expiry_date: '',
+      adj_lines: [],
+    }));
+    setAdjustmentModalOpen(true);
+  };
+
+  const openEditAdjustmentGroup = (group: any) => {
+    const editable = (group?.adjustments ?? []).every((a: any) => String(a?.status ?? '') === 'draft');
+    if (!editable) {
+      toast.error('Only draft adjustments can be edited');
+      return;
+    }
+    setEditingAdjustmentGroup(group);
+    const firstType = String(group?.lines?.[0]?.adjustmentType ?? 'out').toLowerCase() === 'in' ? 'in' : 'out';
+    setForm((f: any) => ({
+      ...f,
+      adj_type: firstType,
+      adj_reason: String(group?.reason ?? group?.reasonCode ?? 'manual_correction'),
+      adj_item_id: '',
+      adj_qty: '',
+      adj_uom_id: '',
+      adj_lot_code: '',
+      adj_expiry_date: '',
+      adj_lines: (group?.lines ?? []).map((line: any) => ({
+        line_type: String(line.adjustmentType ?? 'out').toLowerCase() === 'in' ? 'in' : 'out',
+        inventory_item_id: Number(line.inventoryItemId),
+        qty: Number(line.qty),
+        qty_uom_id: Number(line.qtyUomId),
+        lot_code: line.lotCode ?? null,
+        expiry_date: line.expiryDate ?? null,
+      })),
+    }));
+    setAdjustmentModalOpen(true);
+  };
+
+  const addAdjustmentLine = () => {
+    const lineType = String(form.adj_type ?? 'out') as 'in' | 'out';
+    const itemId = Number(form.adj_item_id);
+    const qty = Number(form.adj_qty);
+    const uomId = Number(form.adj_uom_id);
+    if (!itemId || !uomId || !Number.isFinite(qty) || qty <= 0) {
+      toast.error('Select item, unit, and quantity > 0');
+      return;
+    }
+    if (lineType === 'in' && !form.adj_expiry_date) {
+      toast.error('Expiry date is required for IN adjustment lines');
+      return;
+    }
+    const nextLine = {
+      line_type: lineType,
+      inventory_item_id: itemId,
+      qty,
+      qty_uom_id: uomId,
+      lot_code: lineType === 'in' && form.adj_lot_code ? String(form.adj_lot_code) : null,
+      expiry_date: lineType === 'in' && form.adj_expiry_date ? String(form.adj_expiry_date) : null,
+    };
+    setForm((prev: any) => ({
+      ...prev,
+      adj_lines: [...(Array.isArray(prev.adj_lines) ? prev.adj_lines : []), nextLine],
+      adj_item_id: '',
+      adj_qty: '',
+      adj_uom_id: '',
+      adj_lot_code: '',
+      adj_expiry_date: '',
+    }));
+  };
+
+  const updateAdjustmentLine = (
+    index: number,
+    patch: Record<string, unknown>,
+  ) => {
+    setForm((prev: any) => ({
+      ...prev,
+      adj_lines: (Array.isArray(prev.adj_lines) ? prev.adj_lines : []).map(
+        (line: any, i: number) => (i === index ? { ...line, ...patch } : line),
+      ),
+    }));
+  };
+
+  const buildAdjustmentPayloads = (groupRefOverride?: string): Array<{
+    branch_id: number;
+    adjustment_type: 'in' | 'out';
+    reason_code: string;
+    notes?: string;
+    lines: Array<{
+      inventory_item_id: number;
+      qty: number;
+      qty_uom_id: number;
+      lot_code?: string | null;
+      expiry_date?: string | null;
+    }>;
+  }> | null => {
+    if (!branchId) {
+      toast.error('Select a branch first');
+      return null;
+    }
+    const lines = Array.isArray(form.adj_lines) ? form.adj_lines : [];
+    if (lines.length === 0) {
+      toast.error('Add at least one line');
+      return null;
+    }
+    const reasonCode = String(form.adj_reason || 'manual_correction');
+    const groupRef = groupRefOverride ?? createAdjustmentGroupRef();
+    const notes = `[GROUP_REF:${groupRef}]`;
+    const grouped: Record<'in' | 'out', any[]> = { in: [], out: [] };
+    for (let idx = 0; idx < lines.length; idx += 1) {
+      const line = lines[idx];
+      const adjustmentType = String(line?.line_type ?? 'out') === 'in' ? 'in' : 'out';
+      const itemId = Number(line?.inventory_item_id);
+      const qty = Number(line?.qty);
+      const uomId = Number(line?.qty_uom_id);
+      if (!itemId || !uomId || !Number.isFinite(qty) || qty <= 0) {
+        toast.error(`Line ${idx + 1}: invalid item/unit/quantity`);
+        return null;
+      }
+      if (adjustmentType === 'in' && !line?.expiry_date) {
+        toast.error(`Line ${idx + 1}: expiry date is required for IN lines`);
+        return null;
+      }
+      grouped[adjustmentType].push({
+        inventory_item_id: itemId,
+        qty,
+        qty_uom_id: uomId,
+        lot_code: adjustmentType === 'in' ? (line?.lot_code ? String(line.lot_code) : null) : null,
+        expiry_date: adjustmentType === 'in' ? (line?.expiry_date ? String(line.expiry_date) : null) : null,
+      });
+    }
+    const payloads: Array<{
+      branch_id: number;
+      adjustment_type: 'in' | 'out';
+      reason_code: string;
+      notes?: string;
+      lines: Array<{
+        inventory_item_id: number;
+        qty: number;
+        qty_uom_id: number;
+        lot_code?: string | null;
+        expiry_date?: string | null;
+      }>;
+    }> = [];
+    if (grouped.out.length > 0) {
+      payloads.push({
+        branch_id: branchId,
+        adjustment_type: 'out',
+        reason_code: reasonCode,
+        notes,
+        lines: grouped.out,
+      });
+    }
+    if (grouped.in.length > 0) {
+      payloads.push({
+        branch_id: branchId,
+        adjustment_type: 'in',
+        reason_code: reasonCode,
+        notes,
+        lines: grouped.in,
+      });
+    }
+    return payloads;
+  };
+
+  const saveEditedAdjustmentGroup = async (postAfterSave: boolean) => {
+    if (!editingAdjustmentGroup) {
+      toast.error('No draft adjustment selected for edit');
+      return;
+    }
+    const editable = (editingAdjustmentGroup.adjustments ?? []).every(
+      (a: any) => String(a?.status ?? '') === 'draft',
+    );
+    if (!editable) {
+      toast.error('Only draft adjustments can be edited');
+      return;
+    }
+    const groupRef = String(editingAdjustmentGroup.reference ?? '').trim();
+    const payloads = buildAdjustmentPayloads(groupRef || undefined);
+    if (!payloads) return;
+    const payloadByType = new Map<'in' | 'out', any>();
+    for (const payload of payloads) {
+      payloadByType.set(payload.adjustment_type, payload);
+    }
+    const existingDraftByType = new Map<'in' | 'out', any>();
+    for (const adj of editingAdjustmentGroup.adjustments ?? []) {
+      if (String(adj?.status ?? '') !== 'draft') continue;
+      const t = String(adj?.adjustmentType ?? '').toLowerCase() === 'in' ? 'in' : 'out';
+      existingDraftByType.set(t, adj);
+    }
+    const touchedIds: number[] = [];
+    for (const [type, payload] of payloadByType.entries()) {
+      const existing = existingDraftByType.get(type);
+      if (existing?.id) {
+        await inventoryService.updateAdjustment(Number(existing.id), {
+          reason_code: payload.reason_code,
+          notes: payload.notes ?? null,
+          lines: payload.lines,
+        });
+        touchedIds.push(Number(existing.id));
+      } else {
+        const created = await inventoryService.createAdjustment(payload);
+        if (created?.id) touchedIds.push(Number(created.id));
+      }
+    }
+    for (const [type, adj] of existingDraftByType.entries()) {
+      if (!payloadByType.has(type) && adj?.id) {
+        await inventoryService.deleteAdjustment(Number(adj.id));
+      }
+    }
+    if (postAfterSave) {
+      for (const id of touchedIds) {
+        await inventoryService.postAdjustment(id);
+      }
+      toast.success('Adjustment updated and posted');
+      await queryClient.invalidateQueries({ queryKey: ['inventory-ledger', branchId] });
+      await queryClient.invalidateQueries({ queryKey: ['inventory-onhand', branchId] });
+    } else {
+      toast.success('Draft adjustment updated');
+    }
+    await queryClient.invalidateQueries({ queryKey: ['inventory-adjustments', branchId] });
+    setAdjustmentModalOpen(false);
+    setEditingAdjustmentGroup(null);
   };
 
   const openCreateVendor = () => {
@@ -639,6 +1280,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
       item_expiry_required: 'yes',
       item_near_expiry_days: '',
       item_reorder_point: '',
+      item_buy_price: '',
     }));
     setItemModalOpen(true);
   };
@@ -663,6 +1305,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
       item_expiry_required: it.trackExpiry ? 'yes' : 'no',
       item_near_expiry_days: it.defaultNearExpiryDays != null ? String(it.defaultNearExpiryDays) : '',
       item_reorder_point: it.defaultReorderPoint != null ? String(it.defaultReorderPoint) : '',
+      item_buy_price: it.defaultBuyPrice != null ? String(it.defaultBuyPrice) : '',
     }));
     setItemModalOpen(true);
   };
@@ -681,6 +1324,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
       item_expiry_required: 'yes',
       item_near_expiry_days: '',
       item_reorder_point: '',
+      item_buy_price: '',
     }));
   };
 
@@ -761,6 +1405,16 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
     }
 
     const expiryRequired = (form.item_expiry_required ?? 'yes') === 'yes';
+    const buyPriceRaw = String(form.item_buy_price ?? '').trim();
+    if (buyPriceRaw === '') {
+      toast.error('Buying price is required');
+      return;
+    }
+    const buyPrice = Number(buyPriceRaw);
+    if (!Number.isFinite(buyPrice) || buyPrice < 0) {
+      toast.error('Buying price is required and must be a valid number >= 0');
+      return;
+    }
     const payload = {
       name,
       code,
@@ -774,6 +1428,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
           ? Number(form.item_near_expiry_days)
           : null,
       default_reorder_point: String(form.item_reorder_point ?? '').trim() !== '' ? Number(form.item_reorder_point) : null,
+      default_buy_price: buyPrice,
     };
 
     if (form.item_edit_id) {
@@ -789,14 +1444,41 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
   const submitUom = () => {
     const name = String(form.uom_name ?? '').trim();
     const code = String(form.uom_code ?? '').trim();
+    const kind = String(form.uom_kind ?? 'count').trim().toLowerCase();
+    const baseUomIdRaw = String(form.uom_base_uom_id ?? '').trim();
+    const multiplierRaw = String(form.uom_multiplier_to_base ?? '').trim();
     if (!name || !code) {
       toast.error('Please fill the required fields');
       return;
     }
+    const base_uom_id = baseUomIdRaw === '' ? null : Number(baseUomIdRaw);
+    const multiplier_to_base =
+      multiplierRaw === '' ? null : Number(multiplierRaw);
+    if (base_uom_id != null && (!Number.isInteger(base_uom_id) || base_uom_id <= 0)) {
+      toast.error('Base unit must be a valid selection');
+      return;
+    }
+    if (base_uom_id != null && (multiplier_to_base == null || !Number.isFinite(multiplier_to_base) || multiplier_to_base <= 0)) {
+      toast.error('Multiplier to base must be a number greater than 0');
+      return;
+    }
     if (form.uom_edit_id) {
-      updateUomM.mutate({ id: Number(form.uom_edit_id), name, code });
+      updateUomM.mutate({
+        id: Number(form.uom_edit_id),
+        name,
+        code,
+        kind,
+        base_uom_id,
+        multiplier_to_base,
+      });
     } else {
-      createUomM.mutate({ name, code, kind: 'count' });
+      createUomM.mutate({
+        name,
+        code,
+        kind,
+        base_uom_id,
+        multiplier_to_base,
+      });
     }
     closeUomModal();
   };
@@ -875,14 +1557,17 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
               <table className="min-w-full text-sm">
                 <thead className="text-left text-slate-600 dark:text-slate-300">
                   <tr>
+                    <th className="py-2 pr-4 w-12">#</th>
                     <th className="py-2 pr-4">Item</th>
-                    <th className="py-2 pr-4">Storage location</th>
+                    <th className="py-2 pr-4">Buy price</th>
                     <th className="py-2 pr-4">Quantity (base unit)</th>
+                    <th className="py-2 pr-4">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="text-slate-700 dark:text-slate-200">
-                  {(onHandQ.data ?? []).map((r: any) => (
-                    <tr key={r.id} className="border-t border-slate-100 dark:border-slate-700">
+                  {groupedOnHandRows.map((r: any, index: number) => (
+                    <tr key={r.inventoryItemId} className="border-t border-slate-100 dark:border-slate-700">
+                      <td className="py-2 pr-4">{index + 1}</td>
                       <td className="py-2 pr-4">
                         <div className="font-medium">
                           {itemById.get(Number(r.inventoryItemId))?.name ?? `Item #${r.inventoryItemId}`}
@@ -892,15 +1577,20 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                         </div>
                       </td>
                       <td className="py-2 pr-4">
-                        {r.locationId
-                          ? `${locationById.get(Number(r.locationId))?.name ?? `Location #${r.locationId}`}`
-                          : 'Unassigned'}
+                        {itemById.get(Number(r.inventoryItemId))?.defaultBuyPrice != null
+                          ? formatNumeric(Number(itemById.get(Number(r.inventoryItemId))?.defaultBuyPrice), 2, 6)
+                          : '—'}
                       </td>
                       <td className="py-2 pr-4">
-                        {Number(r.qty)}
+                        {formatNumeric(Number(r.qty), 0, 6)}
                         {itemById.get(Number(r.inventoryItemId))?.baseUomId
                           ? ` ${uomById.get(Number(itemById.get(Number(r.inventoryItemId))?.baseUomId))?.code ?? ''}`
                           : ''}
+                      </td>
+                      <td className="py-2 pr-4">
+                        <Button variant="secondary" onClick={() => setSelectedOnHandItemId(Number(r.inventoryItemId))}>
+                          History
+                        </Button>
                       </td>
                     </tr>
                   ))}
@@ -913,43 +1603,244 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
 
       {tab === 'ledger' && (
         <Card>
+          <div className="flex flex-wrap items-start justify-between gap-2 mb-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Stock movement ledger</h2>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                Filter by date, item, movement type, or reference. Click references to jump to the source document.
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                disabled={!branchId || (ledgerQ.data?.items ?? []).length === 0}
+                onClick={() => {
+                  const safeFrom = ledgerFrom || 'all';
+                  const safeTo = ledgerTo || 'all';
+                  downloadLedgerCsv(
+                    ledgerQ.data?.items ?? [],
+                    `ledger-branch-${branchId}-${safeFrom}-to-${safeTo}.csv`,
+                  );
+                }}
+              >
+                Export CSV
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={!branchId}
+                onClick={() => {
+                  setLedgerFrom('');
+                  setLedgerTo('');
+                  setLedgerEventType('');
+                  setLedgerItemId('');
+                  setLedgerPage(1);
+                  setLedgerPageSize(50);
+                }}
+              >
+                Clear filters
+              </Button>
+            </div>
+          </div>
+
           {!branchId ? (
             <div className="text-slate-500 dark:text-slate-400">Select a branch to view ledger.</div>
-          ) : ledgerQ.isLoading ? (
-            <Loader />
           ) : (
-            <div className="overflow-auto">
-              <table className="min-w-full text-sm">
-                <thead className="text-left text-slate-600 dark:text-slate-300">
-                  <tr>
-                    <th className="py-2 pr-4">Time</th>
-                    <th className="py-2 pr-4">Movement type</th>
-                    <th className="py-2 pr-4">Item</th>
-                    <th className="py-2 pr-4">Batch</th>
-                    <th className="py-2 pr-4">Quantity change</th>
-                    <th className="py-2 pr-4">Reference</th>
-                  </tr>
-                </thead>
-                <tbody className="text-slate-700 dark:text-slate-200">
-                  {(ledgerQ.data?.items ?? []).map((r: any) => (
-                    <tr key={r.id} className="border-t border-slate-100 dark:border-slate-700">
-                      <td className="py-2 pr-4">{new Date(r.createdAt).toLocaleString()}</td>
-                      <td className="py-2 pr-4">{r.eventType}</td>
-                      <td className="py-2 pr-4">
-                        {itemById.get(Number(r.inventoryItemId))?.name ?? `Item #${r.inventoryItemId}`}
-                      </td>
-                      <td className="py-2 pr-4">{r.inventoryBatchId ?? '—'}</td>
-                      <td className="py-2 pr-4">
-                        {Number(r.qtyDelta)}
-                        {itemById.get(Number(r.inventoryItemId))?.baseUomId
-                          ? ` ${uomById.get(Number(itemById.get(Number(r.inventoryItemId))?.baseUomId))?.code ?? ''}`
-                          : ''}
-                      </td>
-                      <td className="py-2 pr-4">{r.eventRefType ? `${r.eventRefType}:${r.eventRefId}` : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                <label className="text-sm">
+                  <div className="text-xs font-medium text-slate-600 mb-1">From</div>
+                  <input
+                    className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                    type="date"
+                    value={ledgerFrom}
+                    onChange={(e) => {
+                      setLedgerFrom(e.target.value);
+                      setLedgerPage(1);
+                    }}
+                  />
+                </label>
+                <label className="text-sm">
+                  <div className="text-xs font-medium text-slate-600 mb-1">To</div>
+                  <input
+                    className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                    type="date"
+                    value={ledgerTo}
+                    onChange={(e) => {
+                      setLedgerTo(e.target.value);
+                      setLedgerPage(1);
+                    }}
+                  />
+                </label>
+                <label className="text-sm md:col-span-2">
+                  <div className="text-xs font-medium text-slate-600 mb-1">Item</div>
+                  <SearchableSelect
+                    value={ledgerItemId}
+                    onChange={(v) => {
+                      setLedgerItemId(v);
+                      setLedgerPage(1);
+                    }}
+                    options={[{ value: '', label: 'All items…' }, ...ledgerItemOptions]}
+                  />
+                </label>
+                <label className="text-sm md:col-span-2">
+                  <div className="text-xs font-medium text-slate-600 mb-1">Movement type</div>
+                  <select
+                    className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                    value={ledgerEventType}
+                    onChange={(e) => {
+                      setLedgerEventType(e.target.value);
+                      setLedgerPage(1);
+                    }}
+                  >
+                    <option value="">All movements…</option>
+                    {[
+                      'receive',
+                      'consume',
+                      'consume_reversal',
+                      'adjustment_in',
+                      'adjustment_out',
+                      'transfer_order',
+                      'transfer_receipt',
+                      'waste',
+                      'stocktake_variance',
+                    ].map((k) => (
+                      <option key={k} value={k}>
+                        {prettyLedgerEventType(k)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                <label className="text-sm">
+                  <div className="text-xs font-medium text-slate-600 mb-1">Page size</div>
+                  <select
+                    className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                    value={String(ledgerPageSize)}
+                    onChange={(e) => {
+                      setLedgerPageSize(Number(e.target.value));
+                      setLedgerPage(1);
+                    }}
+                  >
+                    {[50, 100, 200].map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flex items-end gap-2">
+                  <Button
+                    variant="secondary"
+                    disabled={ledgerPage <= 1 || ledgerQ.isLoading}
+                    onClick={() => setLedgerPage((p) => Math.max(p - 1, 1))}
+                  >
+                    Prev
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={
+                      ledgerQ.isLoading ||
+                      (ledgerQ.data?.total ?? 0) <= ledgerPage * ledgerPageSize
+                    }
+                    onClick={() => setLedgerPage((p) => p + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
+
+              {ledgerQ.isLoading ? (
+                <Loader />
+              ) : (ledgerQ.data?.items ?? []).length === 0 ? (
+                <div className="text-sm text-slate-500 dark:text-slate-400">
+                  No ledger rows found for the selected filters.
+                </div>
+              ) : (
+                <>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    Showing {(ledgerQ.data?.items ?? []).length} of {ledgerQ.data?.total ?? 0} rows. Page {ledgerQ.data?.page ?? ledgerPage}.
+                  </div>
+                  <div className="overflow-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="text-left text-slate-600 dark:text-slate-300">
+                        <tr>
+                          <th className="py-2 pr-4">Time</th>
+                          <th className="py-2 pr-4">Type</th>
+                          <th className="py-2 pr-4">Item</th>
+                          <th className="py-2 pr-4">Location</th>
+                          <th className="py-2 pr-4">Lot / Expiry</th>
+                          <th className="py-2 pr-4">Qty Δ</th>
+                          <th className="py-2 pr-4">Reference</th>
+                          <th className="py-2 pr-4">By</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-slate-700 dark:text-slate-200">
+                        {(ledgerQ.data?.items ?? []).map((r: any) => {
+                          const item = itemById.get(Number(r.inventoryItemId));
+                          const uomCode = item?.baseUomId ? uomById.get(Number(item.baseUomId))?.code ?? '' : '';
+                          const qty = Number(r.qtyDelta ?? 0);
+                          const refMeta = getHistoryReferenceMeta(r);
+                          const locationLabel = r?.location?.code
+                            ? `${r.location.code}${r.location.name ? ` - ${r.location.name}` : ''}`
+                            : (r?.location?.name ?? 'Unassigned');
+                          const batch = r?.inventoryBatch ?? null;
+                          const lot = batch?.lotCode ?? null;
+                          const expiry = batch?.expiryDate ?? null;
+                          const createdBy = r?.creator?.name ?? (r?.createdBy != null ? `User #${r.createdBy}` : '—');
+                          return (
+                            <tr key={r.id} className="border-t border-slate-100 dark:border-slate-700">
+                              <td className="py-2 pr-4">{formatDateTime(r.createdAt)}</td>
+                              <td className="py-2 pr-4">{prettyLedgerEventType(r.eventType)}</td>
+                              <td className="py-2 pr-4">
+                                <div className="font-medium">
+                                  {item?.name ?? `Item #${r.inventoryItemId}`}
+                                </div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400">{item?.code ?? ''}</div>
+                              </td>
+                              <td className="py-2 pr-4">{locationLabel || 'Unassigned'}</td>
+                              <td className="py-2 pr-4">
+                                {r.inventoryBatchId ? (
+                                  <div>
+                                    <div className="font-medium">
+                                      {lot ? `Lot ${lot}` : `Batch #${r.inventoryBatchId}`}
+                                    </div>
+                                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                                      {expiry ? `Expiry ${expiry}` : 'No expiry'}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  '—'
+                                )}
+                              </td>
+                              <td className={`py-2 pr-4 ${qty > 0 ? 'text-emerald-700 dark:text-emerald-300' : qty < 0 ? 'text-rose-700 dark:text-rose-300' : ''}`}>
+                                {qty > 0 ? `+${formatNumeric(qty, 0, 6)}` : formatNumeric(qty, 0, 6)}
+                                {uomCode ? ` ${uomCode}` : ''}
+                              </td>
+                              <td className="py-2 pr-4">
+                                {refMeta?.path ? (
+                                  <button
+                                    type="button"
+                                    className="text-red-700 hover:underline"
+                                    onClick={() => navigate(refMeta.path!)}
+                                    title="Open source module"
+                                  >
+                                    {refMeta.label}
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-500 dark:text-slate-400">{refMeta.label}</span>
+                                )}
+                              </td>
+                              <td className="py-2 pr-4">{createdBy}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </Card>
@@ -1060,32 +1951,71 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 Draft adjustments do not change inventory or ledger until posted.
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => setAdjustmentModalOpen(true)}>Create adjustment</Button>
+                <Button onClick={openCreateAdjustment}>Create adjustment</Button>
               </div>
 
               <div className="overflow-auto">
                 <table className="min-w-full text-sm">
                   <thead className="text-left text-slate-600 dark:text-slate-300">
                     <tr>
+                      <th className="py-2 pr-4 w-12">#</th>
+                      <th className="py-2 pr-4">Reference</th>
                       <th className="py-2 pr-4">Type</th>
-                      <th className="py-2 pr-4">Item</th>
                       <th className="py-2 pr-4">Reason</th>
                       <th className="py-2 pr-4">Status</th>
+                      <th className="py-2 pr-4">Items</th>
+                      <th className="py-2 pr-4">Qty total</th>
                       <th className="py-2 pr-4">Created</th>
                       <th className="py-2 pr-4">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="text-slate-700 dark:text-slate-200">
-                    {(adjustmentsQ.data ?? []).map((a: any) => (
-                      <tr key={a.id} className="border-t border-slate-100 dark:border-slate-700">
-                        <td className="py-2 pr-4">{a.adjustmentType}</td>
-                        <td className="py-2 pr-4">{itemById.get(Number(a.lines?.[0]?.inventoryItemId))?.name ?? '—'}</td>
-                        <td className="py-2 pr-4">{a.reasonCode}</td>
-                        <td className="py-2 pr-4">{a.status}</td>
-                        <td className="py-2 pr-4">{formatDateTime(a.createdAt)}</td>
+                    {groupedAdjustments.map((g: any, index: number) => (
+                      <tr key={g.reference} className="border-t border-slate-100 dark:border-slate-700">
+                        <td className="py-2 pr-4">{index + 1}</td>
+                        <td className="py-2 pr-4 font-medium">
+                          <button
+                            type="button"
+                            className="text-red-700 hover:underline"
+                            onClick={() => setSelectedAdjustment(g)}
+                          >
+                            {g.reference}
+                          </button>
+                        </td>
+                        <td className="py-2 pr-4">{g.typeLabel}</td>
+                        <td className="py-2 pr-4">{g.reason}</td>
+                        <td className="py-2 pr-4">{g.status}</td>
+                        <td className="py-2 pr-4">{g.itemCount}</td>
+                        <td className="py-2 pr-4">{formatNumeric(g.totalQtyBase, 0, 6)}</td>
+                        <td className="py-2 pr-4">{formatDateTime(g.createdAt)}</td>
                         <td className="py-2 pr-4 flex gap-2">
-                          <Button variant="secondary" onClick={() => setSelectedAdjustment(a)}>View</Button>
-                          <Button disabled={a.status !== 'draft'} onClick={() => postAdjustmentM.mutate(a.id)}>Post</Button>
+                          <Button variant="secondary" onClick={() => setSelectedAdjustment(g)}>View</Button>
+                          {(g.adjustments ?? []).every((a: any) => String(a?.status ?? '') === 'draft') ? (
+                            <Button variant="secondary" onClick={() => openEditAdjustmentGroup(g)}>
+                              Edit
+                            </Button>
+                          ) : null}
+                          <Button
+                            disabled={String(g.status) !== 'draft'}
+                            onClick={() => {
+                              (async () => {
+                                const draftIds = (g.adjustments ?? [])
+                                  .filter((a: any) => String(a.status ?? '') === 'draft')
+                                  .map((a: any) => Number(a.id))
+                                  .filter((id: number) => Number.isInteger(id) && id > 0);
+                                if (draftIds.length === 0) return;
+                                for (const id of draftIds) {
+                                  await inventoryService.postAdjustment(id);
+                                }
+                                toast.success('Adjustment posted');
+                                await queryClient.invalidateQueries({ queryKey: ['inventory-adjustments', branchId] });
+                                await queryClient.invalidateQueries({ queryKey: ['inventory-ledger', branchId] });
+                                await queryClient.invalidateQueries({ queryKey: ['inventory-onhand', branchId] });
+                              })().catch((e: any) => toast.error(readApiError(e, 'Failed to post adjustment')));
+                            }}
+                          >
+                            Post
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -1201,16 +2131,28 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 <table className="w-full table-auto text-sm">
                   <thead className="text-left text-slate-600 dark:text-slate-300">
                     <tr>
+                      <th className="py-2 pr-4 w-16">#</th>
                       <th className="py-2 pr-4 w-40">Code</th>
                       <th className="py-2 pr-4">Name</th>
+                      <th className="py-2 pr-4 w-32">Kind</th>
+                      <th className="py-2 pr-4">Base unit</th>
+                      <th className="py-2 pr-4 w-40">Multiplier to base</th>
                       <th className="py-2 pr-4 w-44">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="text-slate-700 dark:text-slate-200">
-                    {(uomsQ.data ?? []).map((u: any) => (
+                    {(uomsQ.data ?? []).map((u: any, index: number) => (
                       <tr key={u.id} className="border-t border-slate-100 dark:border-slate-700">
+                        <td className="py-2 pr-4">{index + 1}</td>
                         <td className="py-2 pr-4">{u.code}</td>
                         <td className="py-2 pr-4">{u.name}</td>
+                        <td className="py-2 pr-4">{u.kind ?? '—'}</td>
+                        <td className="py-2 pr-4">
+                          {u.baseUomId != null ? (uomById.get(Number(u.baseUomId))?.code ?? `#${u.baseUomId}`) : '—'}
+                        </td>
+                        <td className="py-2 pr-4">
+                          {u.multiplierToBase != null ? Number(u.multiplierToBase) : '—'}
+                        </td>
                         <td className="py-2 pr-4">
                           <div className="flex gap-2">
                             <Button
@@ -1272,8 +2214,77 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                         onChange={(e) => setForm({ ...form, uom_code: e.target.value })}
                       />
                     </label>
+                    <label className="text-sm">
+                      <div className="text-xs font-medium text-slate-600 mb-1">
+                        Kind <span className="text-red-600">*</span>
+                      </div>
+                      <select
+                        className="w-full border rounded-lg p-2 bg-white border-slate-200"
+                        value={form.uom_kind ?? 'count'}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            uom_kind: e.target.value,
+                            uom_base_uom_id: '',
+                            uom_multiplier_to_base: '',
+                          })
+                        }
+                      >
+                        {[
+                          'count',
+                          'mass',
+                          'volume',
+                          'length',
+                          'area',
+                          'time',
+                          'energy',
+                          'pressure',
+                          'power',
+                          'frequency',
+                          'speed',
+                          'flow',
+                        ].map((k) => (
+                          <option key={k} value={k}>
+                            {k}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-sm">
+                      <div className="text-xs font-medium text-slate-600 mb-1">Base unit (optional)</div>
+                      <select
+                        className="w-full border rounded-lg p-2 bg-white border-slate-200"
+                        value={form.uom_base_uom_id ?? ''}
+                        onChange={(e) => setForm({ ...form, uom_base_uom_id: e.target.value })}
+                      >
+                        <option value="">None (this is a base unit)</option>
+                        {(uomsQ.data ?? [])
+                          .filter((u: any) => String(u.kind ?? '') === String(form.uom_kind ?? 'count'))
+                          .filter((u: any) => Number(u.id) !== Number(form.uom_edit_id ?? 0))
+                          .map((u: any) => (
+                            <option key={u.id} value={u.id}>
+                              {u.code} - {u.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    <label className="text-sm">
+                      <div className="text-xs font-medium text-slate-600 mb-1">Multiplier to base</div>
+                      <input
+                        className="w-full border rounded-lg p-2 bg-white border-slate-200"
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="any"
+                        placeholder="e.g. 1000"
+                        value={form.uom_multiplier_to_base ?? ''}
+                        onChange={(e) => setForm({ ...form, uom_multiplier_to_base: e.target.value })}
+                        disabled={!String(form.uom_base_uom_id ?? '').trim()}
+                      />
+                    </label>
                     <div className="text-xs text-slate-500">
-                      Required fields are marked with <span className="text-red-600">*</span>.
+                      Required fields are marked with <span className="text-red-600">*</span>. If a base unit is selected,
+                      multiplier to base must be greater than 0.
                     </div>
                   </div>
 
@@ -1478,6 +2489,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                       <th className="py-2 pr-4 w-40">Code</th>
                       <th className="py-2 pr-4">Name</th>
                       <th className="py-2 pr-4 w-40">Base unit</th>
+                      <th className="py-2 pr-4 w-40">Buy price</th>
                       <th className="py-2 pr-4 w-56">Expiry settings</th>
                       <th className="py-2 pr-4 w-44">Actions</th>
                     </tr>
@@ -1497,6 +2509,14 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                               .map((id: number) => uomById.get(Number(id))?.code ?? `#${id}`)
                               .join(', ');
                           })()}
+                        </td>
+                        <td className="py-2 pr-4">
+                          {it.defaultBuyPrice == null
+                            ? '—'
+                            : Number(it.defaultBuyPrice).toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 6,
+                              })}
                         </td>
                         <td className="py-2 pr-4">
                           {it.trackExpiry ? (
@@ -1702,6 +2722,26 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                         onChange={(e) => setForm({ ...form, item_reorder_point: e.target.value })}
                       />
                     </label>
+
+                    <label className="text-sm lg:col-span-2">
+                      <div className="text-xs font-medium text-slate-600 mb-1">
+                        Default buying price <span className="text-red-600">*</span>
+                      </div>
+                      <input
+                        className="w-full border rounded-lg p-2 bg-white border-slate-200"
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="any"
+                        placeholder="e.g. 120.00"
+                        value={form.item_buy_price ?? ''}
+                        onChange={(e) => setForm({ ...form, item_buy_price: e.target.value })}
+                        required
+                      />
+                      <div className="text-xs text-slate-500 mt-1">
+                        Stored per primary unit; used to prefill procurement costs.
+                      </div>
+                    </label>
                   </div>
 
                   <div className="text-xs text-slate-500">
@@ -1725,17 +2765,173 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
 
       {tab === 'wastage' && (
         <Card>
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Record wastage</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Record wastage</h2>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                Record damaged, spoiled, or discarded stock. Wastage creates a stock-out movement in the ledger.
+              </div>
+            </div>
+            <Button disabled={!branchId} onClick={() => setWastageModalOpen(true)}>Record wastage</Button>
+          </div>
           {!branchId ? (
             <div className="text-slate-500 dark:text-slate-400">Select a branch.</div>
           ) : itemsQ.isLoading ? (
             <Loader />
           ) : (
             <div className="space-y-3">
-              <div className="text-xs text-slate-500 dark:text-slate-400">
-                Record damaged, spoiled, or discarded stock. This creates a stock-out movement in the ledger.
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+                <label className="text-sm">
+                  <div className="text-xs font-medium text-slate-600 mb-1">From</div>
+                  <input
+                    className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                    type="date"
+                    value={wastageFrom}
+                    onChange={(e) => {
+                      setWastageFrom(e.target.value);
+                      setWastagePage(1);
+                    }}
+                  />
+                </label>
+                <label className="text-sm">
+                  <div className="text-xs font-medium text-slate-600 mb-1">To</div>
+                  <input
+                    className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                    type="date"
+                    value={wastageTo}
+                    onChange={(e) => {
+                      setWastageTo(e.target.value);
+                      setWastagePage(1);
+                    }}
+                  />
+                </label>
+                <label className="text-sm md:col-span-2">
+                  <div className="text-xs font-medium text-slate-600 mb-1">Item</div>
+                  <SearchableSelect
+                    value={wastageItemId}
+                    onChange={(v) => {
+                      setWastageItemId(v);
+                      setWastagePage(1);
+                    }}
+                    options={[{ value: '', label: 'All items…' }, ...ledgerItemOptions]}
+                  />
+                </label>
+                <label className="text-sm md:col-span-2">
+                  <div className="text-xs font-medium text-slate-600 mb-1">Reason contains</div>
+                  <input
+                    className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                    placeholder="e.g. spoiled"
+                    value={wastageReason}
+                    onChange={(e) => {
+                      setWastageReason(e.target.value);
+                      setWastagePage(1);
+                    }}
+                  />
+                </label>
               </div>
-              <Button onClick={() => setWastageModalOpen(true)}>Record wastage</Button>
+
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <div className="flex items-end gap-2">
+                  <label className="text-sm">
+                    <div className="text-xs font-medium text-slate-600 mb-1">Page size</div>
+                    <select
+                      className="border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                      value={String(wastagePageSize)}
+                      onChange={(e) => {
+                        setWastagePageSize(Number(e.target.value));
+                        setWastagePage(1);
+                      }}
+                    >
+                      {[50, 100, 200].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <Button
+                    variant="secondary"
+                    disabled={wastagePage <= 1 || wastageQ.isLoading}
+                    onClick={() => setWastagePage((p) => Math.max(p - 1, 1))}
+                  >
+                    Prev
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={
+                      wastageQ.isLoading ||
+                      (wastageQ.data?.total ?? 0) <= wastagePage * wastagePageSize
+                    }
+                    onClick={() => setWastagePage((p) => p + 1)}
+                  >
+                    Next
+                  </Button>
+                </div>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setWastageFrom('');
+                    setWastageTo('');
+                    setWastageItemId('');
+                    setWastageReason('');
+                    setWastagePage(1);
+                    setWastagePageSize(50);
+                  }}
+                >
+                  Clear filters
+                </Button>
+              </div>
+
+              {wastageQ.isLoading ? (
+                <Loader />
+              ) : (wastageQ.data?.items ?? []).length === 0 ? (
+                <div className="text-sm text-slate-500 dark:text-slate-400">
+                  No wastage entries found for the selected filters.
+                </div>
+              ) : (
+                <div className="overflow-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="text-left text-slate-600 dark:text-slate-300">
+                      <tr>
+                        <th className="py-2 pr-4 w-12">#</th>
+                        <th className="py-2 pr-4">Time</th>
+                        <th className="py-2 pr-4">Item</th>
+                        <th className="py-2 pr-4">Qty</th>
+                        <th className="py-2 pr-4">Reason</th>
+                        <th className="py-2 pr-4">Reference</th>
+                        <th className="py-2 pr-4">By</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-slate-700 dark:text-slate-200">
+                      {(wastageQ.data?.items ?? []).map((w: any, index: number) => {
+                        const item = itemById.get(Number(w.inventoryItemId));
+                        const uomCode = item?.baseUomId ? uomById.get(Number(item.baseUomId))?.code ?? '' : '';
+                        const createdBy = w?.creator?.name ?? (w?.createdBy != null ? `User #${w.createdBy}` : '—');
+                        const serial = (Number(wastageQ.data?.page ?? wastagePage) - 1) * wastagePageSize + index + 1;
+                        return (
+                          <tr key={w.id} className="border-t border-slate-100 dark:border-slate-700">
+                            <td className="py-2 pr-4">{serial}</td>
+                            <td className="py-2 pr-4">{formatDateTime(w.createdAt)}</td>
+                            <td className="py-2 pr-4">
+                              <div className="font-medium">{item?.name ?? `Item #${w.inventoryItemId}`}</div>
+                              <div className="text-xs text-slate-500 dark:text-slate-400">{item?.code ?? ''}</div>
+                            </td>
+                            <td className="py-2 pr-4">
+                              <span className="text-rose-700 dark:text-rose-300">
+                                -{formatNumeric(Number(w.qty ?? 0), 0, 6)}
+                              </span>{' '}
+                              {uomCode}
+                            </td>
+                            <td className="py-2 pr-4">{w.reason ?? '—'}</td>
+                            <td className="py-2 pr-4 font-medium">{w?.id != null ? `WST-${w.id}` : '—'}</td>
+                            <td className="py-2 pr-4">{createdBy}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </Card>
@@ -2168,15 +3364,123 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
       </Modal>
 
       <Modal
+        isOpen={selectedOnHandItemId != null}
+        onClose={() => setSelectedOnHandItemId(null)}
+        title={`Product history${selectedOnHandItem?.name ? ` - ${selectedOnHandItem.name}` : ''}`}
+        size="large"
+      >
+        {!selectedOnHandItem ? null : productHistoryQ.isLoading ? (
+          <Loader />
+        ) : (
+          <div className="space-y-4">
+            <div className="text-xs text-slate-500">
+              Totals are grouped in base unit and include purchases, adjustments, transfers, wastage, and consumption.
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-2 text-sm">
+              <div className="rounded-lg border border-slate-200 p-2">
+                <div className="text-xs text-slate-500">Received (purchase)</div>
+                <div className="font-semibold">
+                  {formatNumeric(productHistorySummary.received, 0, 6)} {uomById.get(Number(selectedOnHandItem.baseUomId))?.code ?? ''}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-2">
+                <div className="text-xs text-slate-500">Utilized (consume)</div>
+                <div className="font-semibold">
+                  {formatNumeric(productHistorySummary.utilized, 0, 6)} {uomById.get(Number(selectedOnHandItem.baseUomId))?.code ?? ''}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-2">
+                <div className="text-xs text-slate-500">Wastage</div>
+                <div className="font-semibold">
+                  {formatNumeric(productHistorySummary.wastage, 0, 6)} {uomById.get(Number(selectedOnHandItem.baseUomId))?.code ?? ''}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-2">
+                <div className="text-xs text-slate-500">Adjustment IN</div>
+                <div className="font-semibold text-emerald-700">
+                  {formatNumeric(productHistorySummary.adjustmentIn, 0, 6)} {uomById.get(Number(selectedOnHandItem.baseUomId))?.code ?? ''}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-2">
+                <div className="text-xs text-slate-500">Adjustment OUT</div>
+                <div className="font-semibold text-rose-700">
+                  {formatNumeric(productHistorySummary.adjustmentOut, 0, 6)} {uomById.get(Number(selectedOnHandItem.baseUomId))?.code ?? ''}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 p-2">
+                <div className="text-xs text-slate-500">Transfers (In / Out)</div>
+                <div className="font-semibold">
+                  {formatNumeric(productHistorySummary.transferIn, 0, 6)} / {formatNumeric(productHistorySummary.transferOut, 0, 6)} {uomById.get(Number(selectedOnHandItem.baseUomId))?.code ?? ''}
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-auto">
+              <table className="min-w-full text-sm">
+                <thead className="text-left text-slate-600">
+                  <tr>
+                    <th className="py-2 pr-4 w-12">#</th>
+                    <th className="py-2 pr-4">Time</th>
+                    <th className="py-2 pr-4">Movement</th>
+                    <th className="py-2 pr-4">Qty change</th>
+                    <th className="py-2 pr-4">Reference</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(productHistoryQ.data?.items ?? []).map((entry: any, index: number) => {
+                    const meta = getHistoryReferenceMeta(entry);
+                    return (
+                      <tr key={entry.id} className="border-t border-slate-100">
+                        <td className="py-2 pr-4">{index + 1}</td>
+                        <td className="py-2 pr-4">{formatDateTime(entry.createdAt)}</td>
+                        <td className="py-2 pr-4">{prettyLedgerEventType(entry.eventType)}</td>
+                        <td className="py-2 pr-4">
+                          <span className={Number(entry.qtyDelta) >= 0 ? 'text-emerald-700' : 'text-rose-700'}>
+                            {Number(entry.qtyDelta) > 0 ? '+' : ''}
+                            {formatNumeric(Number(entry.qtyDelta), 0, 6)}
+                          </span>
+                          {' '}
+                          {uomById.get(Number(selectedOnHandItem.baseUomId))?.code ?? ''}
+                        </td>
+                        <td className="py-2 pr-4">
+                          {meta.path ? (
+                            <button
+                              type="button"
+                              className="text-red-700 hover:underline"
+                              onClick={() => {
+                                setSelectedOnHandItemId(null);
+                                navigate(`${meta.path}?ref_type=${encodeURIComponent(String(entry.eventRefType ?? ''))}&ref_id=${Number(entry.eventRefId ?? 0)}`);
+                              }}
+                            >
+                              {meta.label}
+                            </button>
+                          ) : (
+                            meta.label
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
         isOpen={adjustmentModalOpen}
-        onClose={() => setAdjustmentModalOpen(false)}
-        title="Create adjustment"
+        onClose={() => {
+          setAdjustmentModalOpen(false);
+          setEditingAdjustmentGroup(null);
+        }}
+        title={editingAdjustmentGroup ? 'Edit draft adjustment' : 'Create adjustment'}
         size="large"
       >
         <div className="space-y-3">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <label className="text-sm">
-              <div className="text-xs font-medium text-slate-600 mb-1">Type</div>
+              <div className="text-xs font-medium text-slate-600 mb-1">Line type</div>
               <select
                 className="w-full border rounded-lg p-2 bg-white border-slate-200"
                 value={form.adj_type ?? 'out'}
@@ -2185,15 +3489,6 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 <option value="out">OUT (decrease)</option>
                 <option value="in">IN (increase)</option>
               </select>
-            </label>
-            <label className="text-sm">
-              <div className="text-xs font-medium text-slate-600 mb-1">Reason code</div>
-              <input
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.adj_reason ?? ''}
-                onChange={(e) => setForm({ ...form, adj_reason: e.target.value })}
-                placeholder="manual_correction"
-              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Item</div>
@@ -2227,7 +3522,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 placeholder="e.g. 2"
               />
             </label>
-            <label className="text-sm lg:col-span-2">
+            <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Unit</div>
               <select
                 className="w-full border rounded-lg p-2 bg-white border-slate-200"
@@ -2258,11 +3553,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">
                 Expiry date
-                {(form.adj_type ?? 'out') === 'in'
-                  ? selectedAdjustmentItem?.trackExpiry
-                    ? ' (required for this item)'
-                    : ' (optional)'
-                  : ' (only for IN)'}
+                {(form.adj_type ?? 'out') === 'in' ? ' (required for IN)' : ' (only for IN)'}
               </div>
               <input
                 type="date"
@@ -2272,35 +3563,174 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 disabled={(form.adj_type ?? 'out') !== 'in'}
               />
             </label>
+            <div className="text-sm lg:col-span-2">
+              <Button variant="secondary" onClick={addAdjustmentLine}>
+                Add line
+              </Button>
+            </div>
           </div>
+
+          <div className="overflow-auto">
+            <table className="min-w-full text-sm">
+              <thead className="text-left text-slate-600">
+                <tr>
+                  <th className="py-2 pr-4 w-12">#</th>
+                  <th className="py-2 pr-4">Type</th>
+                  <th className="py-2 pr-4">Item</th>
+                  <th className="py-2 pr-4">Qty</th>
+                  <th className="py-2 pr-4">Unit</th>
+                    <th className="py-2 pr-4">Lot/batch</th>
+                  <th className="py-2 pr-4">Expiry</th>
+                  <th className="py-2 pr-4">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(Array.isArray(form.adj_lines) ? form.adj_lines : []).map((line: any, index: number) => (
+                  <tr key={`adj-line-${index}`} className="border-t border-slate-100">
+                    <td className="py-2 pr-4">{index + 1}</td>
+                      <td className="py-2 pr-4">
+                        <select
+                          className="border rounded px-2 py-1 bg-white border-slate-200"
+                          value={line.line_type ?? 'out'}
+                          onChange={(e) =>
+                            updateAdjustmentLine(index, {
+                              line_type: e.target.value,
+                              lot_code: e.target.value === 'in' ? line.lot_code ?? null : null,
+                              expiry_date: e.target.value === 'in' ? line.expiry_date ?? null : null,
+                            })
+                          }
+                        >
+                          <option value="out">OUT</option>
+                          <option value="in">IN</option>
+                        </select>
+                      </td>
+                      <td className="py-2 pr-4">
+                        <select
+                          className="border rounded px-2 py-1 bg-white border-slate-200 min-w-[150px]"
+                          value={line.inventory_item_id ?? ''}
+                          onChange={(e) => {
+                            const itemId = Number(e.target.value);
+                            const item = itemById.get(itemId);
+                            updateAdjustmentLine(index, {
+                              inventory_item_id: itemId,
+                              qty_uom_id: Number(getDefaultItemUomId(item) || line.qty_uom_id || 0),
+                            });
+                          }}
+                        >
+                          <option value="">Select item…</option>
+                          {(itemsQ.data ?? []).map((it: any) => (
+                            <option key={it.id} value={it.id}>
+                              {it.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-2 pr-4">
+                        <input
+                          className="border rounded px-2 py-1 bg-white border-slate-200 w-24"
+                          type="number"
+                          inputMode="decimal"
+                          step="any"
+                          min="0"
+                          value={line.qty ?? ''}
+                          onChange={(e) => updateAdjustmentLine(index, { qty: e.target.value })}
+                        />
+                      </td>
+                      <td className="py-2 pr-4">
+                        <select
+                          className="border rounded px-2 py-1 bg-white border-slate-200"
+                          value={line.qty_uom_id ?? ''}
+                          onChange={(e) => updateAdjustmentLine(index, { qty_uom_id: Number(e.target.value) })}
+                        >
+                          <option value="">Select…</option>
+                          {getItemAllowedUoms(itemById.get(Number(line.inventory_item_id)), line.qty_uom_id).map((u: any) => (
+                            <option key={u.id} value={u.id}>
+                              {u.code}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="py-2 pr-4">
+                        <input
+                          className="border rounded px-2 py-1 bg-white border-slate-200 w-28"
+                          value={line.lot_code ?? line.lotCode ?? ''}
+                          onChange={(e) => updateAdjustmentLine(index, { lot_code: e.target.value })}
+                          disabled={String(line.line_type ?? '') !== 'in'}
+                        />
+                      </td>
+                      <td className="py-2 pr-4">
+                        <input
+                          type="date"
+                          className="border rounded px-2 py-1 bg-white border-slate-200"
+                          value={line.expiry_date ?? ''}
+                          onChange={(e) => updateAdjustmentLine(index, { expiry_date: e.target.value })}
+                          disabled={String(line.line_type ?? '') !== 'in'}
+                        />
+                      </td>
+                    <td className="py-2 pr-4">
+                      <button
+                        type="button"
+                        className="text-rose-700 hover:underline"
+                        onClick={() =>
+                          setForm((prev: any) => ({
+                            ...prev,
+                            adj_lines: (Array.isArray(prev.adj_lines) ? prev.adj_lines : []).filter(
+                              (_: any, i: number) => i !== index,
+                            ),
+                          }))
+                        }
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {(!Array.isArray(form.adj_lines) || form.adj_lines.length === 0) ? (
+                  <tr className="border-t border-slate-100">
+                    <td className="py-3 pr-4 text-slate-500" colSpan={8}>
+                      No lines added yet.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="border-t border-slate-200 pt-3">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <label className="text-sm">
+                <div className="text-xs font-medium text-slate-600 mb-1">Reason code</div>
+                <input
+                  className="w-full border rounded-lg p-2 bg-white border-slate-200"
+                  value={form.adj_reason ?? ''}
+                  onChange={(e) => setForm({ ...form, adj_reason: e.target.value })}
+                  placeholder="manual_correction"
+                />
+              </label>
+            </div>
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
-            <Button variant="secondary" onClick={() => setAdjustmentModalOpen(false)}>Cancel</Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setAdjustmentModalOpen(false);
+                setEditingAdjustmentGroup(null);
+              }}
+            >
+              Cancel
+            </Button>
             <Button
               variant="secondary"
               isLoading={createAdjustmentM.isPending}
-              onClick={() => {
-                if (!branchId || !form.adj_item_id || !form.adj_qty || !form.adj_uom_id) {
-                  toast.error('Please fill all required fields');
+              onClick={async () => {
+                if (editingAdjustmentGroup) {
+                  await saveEditedAdjustmentGroup(false);
                   return;
                 }
-                if ((form.adj_type ?? 'out') === 'in' && selectedAdjustmentItem?.trackExpiry && !form.adj_expiry_date) {
-                  toast.error('Expiry date is required for this item');
-                  return;
-                }
-                createAdjustmentM.mutate({
-                  branch_id: branchId,
-                  adjustment_type: form.adj_type ?? 'out',
-                  reason_code: String(form.adj_reason || 'manual_correction'),
-                  lines: [
-                    {
-                      inventory_item_id: Number(form.adj_item_id),
-                      qty: Number(form.adj_qty),
-                      qty_uom_id: Number(form.adj_uom_id),
-                      lot_code: form.adj_lot_code ? String(form.adj_lot_code) : null,
-                      expiry_date: form.adj_expiry_date ? String(form.adj_expiry_date) : null,
-                    },
-                  ],
-                });
+                const payloads = buildAdjustmentPayloads();
+                if (!payloads) return;
+                createAdjustmentM.mutate(payloads);
                 setAdjustmentModalOpen(false);
               }}
             >
@@ -2308,29 +3738,14 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             </Button>
             <Button
               isLoading={createAndPostAdjustmentM.isPending}
-              onClick={() => {
-                if (!branchId || !form.adj_item_id || !form.adj_qty || !form.adj_uom_id) {
-                  toast.error('Please fill all required fields');
+              onClick={async () => {
+                if (editingAdjustmentGroup) {
+                  await saveEditedAdjustmentGroup(true);
                   return;
                 }
-                if ((form.adj_type ?? 'out') === 'in' && selectedAdjustmentItem?.trackExpiry && !form.adj_expiry_date) {
-                  toast.error('Expiry date is required for this item');
-                  return;
-                }
-                createAndPostAdjustmentM.mutate({
-                  branch_id: branchId,
-                  adjustment_type: form.adj_type ?? 'out',
-                  reason_code: String(form.adj_reason || 'manual_correction'),
-                  lines: [
-                    {
-                      inventory_item_id: Number(form.adj_item_id),
-                      qty: Number(form.adj_qty),
-                      qty_uom_id: Number(form.adj_uom_id),
-                      lot_code: form.adj_lot_code ? String(form.adj_lot_code) : null,
-                      expiry_date: form.adj_expiry_date ? String(form.adj_expiry_date) : null,
-                    },
-                  ],
-                });
+                const payloads = buildAdjustmentPayloads();
+                if (!payloads) return;
+                createAndPostAdjustmentM.mutate(payloads);
                 setAdjustmentModalOpen(false);
               }}
             >
@@ -2348,25 +3763,34 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
       >
         {selectedAdjustment ? (
           <div className="space-y-3 text-sm text-slate-700">
-            <div>Type: {selectedAdjustment.adjustmentType}</div>
-            <div>Reason: {selectedAdjustment.reasonCode}</div>
+            <div>Reference: {selectedAdjustment.reference ?? `ADJ-${selectedAdjustment.id}`}</div>
+            <div>Type: {selectedAdjustment.typeLabel ?? selectedAdjustment.adjustmentType}</div>
+            <div>Reason: {selectedAdjustment.reason ?? selectedAdjustment.reasonCode}</div>
             <div>Status: {selectedAdjustment.status}</div>
             <div>Created: {formatDateTime(selectedAdjustment.createdAt)}</div>
             <div className="overflow-auto">
               <table className="min-w-full text-sm">
                 <thead className="text-left text-slate-600">
                   <tr>
+                    <th className="py-2 pr-4">#</th>
+                    <th className="py-2 pr-4">Type</th>
                     <th className="py-2 pr-4">Item</th>
                     <th className="py-2 pr-4">Qty</th>
                     <th className="py-2 pr-4">Unit</th>
+                    <th className="py-2 pr-4">Lot/batch</th>
+                    <th className="py-2 pr-4">Parent adj</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(selectedAdjustment.lines ?? []).map((line: any) => (
-                    <tr key={line.id} className="border-t border-slate-100">
+                  {(selectedAdjustment.lines ?? []).map((line: any, index: number) => (
+                    <tr key={`${line.id}-${index}`} className="border-t border-slate-100">
+                      <td className="py-2 pr-4">{index + 1}</td>
+                      <td className="py-2 pr-4">{String(line.adjustmentType ?? selectedAdjustment.adjustmentType ?? '').toUpperCase()}</td>
                       <td className="py-2 pr-4">{itemById.get(Number(line.inventoryItemId))?.name ?? '—'}</td>
                       <td className="py-2 pr-4">{line.qty}</td>
                       <td className="py-2 pr-4">{uomById.get(Number(line.qtyUomId))?.code ?? '—'}</td>
+                      <td className="py-2 pr-4">{line.lotCode ?? line.lot_code ?? '—'}</td>
+                      <td className="py-2 pr-4">ADJ-{line.parentAdjustmentId ?? selectedAdjustment.id}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -2445,6 +3869,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setWastageModalOpen(false)}>Cancel</Button>
             <Button
+              isLoading={createWastageM.isPending}
               onClick={() => {
                 if (!branchId || !form.w_item_id || !form.w_qty || !form.w_uom_id) {
                   toast.error('Please fill all required fields');
@@ -2457,7 +3882,6 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                   reason: String(form.w_reason || 'wastage'),
                   notes: form.w_notes,
                 });
-                setWastageModalOpen(false);
               }}
             >
               Save

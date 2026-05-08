@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
@@ -8,6 +8,7 @@ import Modal from '../../../components/Modal';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { procurementService } from '../../../services/api/procurementService';
+import { useAuth } from '../../../contexts/AuthContext';
 
 export type ProcurementTabKey = 'prs' | 'pos' | 'grns';
 
@@ -15,7 +16,17 @@ const prettyDate = (d?: string | Date | null) => {
   if (!d) return '—';
   const value = new Date(d);
   if (Number.isNaN(value.getTime())) return '—';
-  return value.toLocaleDateString();
+  return value.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  });
+};
+
+const prettyStatus = (status?: string) => {
+  const raw = String(status ?? '').trim();
+  if (!raw) return '—';
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
 };
 
 const statusClass = (status?: string) => {
@@ -41,8 +52,23 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
   initialTab = 'prs',
   showTabs = true,
 }) => {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<ProcurementTabKey>(initialTab);
+  const hasPoManagePermission = Boolean(
+    user?.is_super_admin || user?.permissions?.includes('procurement:po:manage'),
+  );
+  const hasPrApprovePermission = Boolean(
+    user?.is_super_admin || user?.permissions?.includes('procurement:pr:approve'),
+  );
+  const canApprovePR = hasPoManagePermission && hasPrApprovePermission;
+  const canAccessPOModule = hasPoManagePermission;
+
+  useEffect(() => {
+    if (!canAccessPOModule && tab === 'pos') {
+      setTab('prs');
+    }
+  }, [canAccessPOModule, tab]);
 
   const [isCreatePROpen, setIsCreatePROpen] = useState(false);
   const [isEditPOOpen, setIsEditPOOpen] = useState(false);
@@ -51,6 +77,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
   const [isAddGRNLineOpen, setIsAddGRNLineOpen] = useState(false);
 
   const [selectedPR, setSelectedPR] = useState<any | null>(null);
+  const [selectedPRForStatus, setSelectedPRForStatus] = useState<any | null>(null);
   const [selectedPO, setSelectedPO] = useState<any | null>(null);
   const [selectedGRN, setSelectedGRN] = useState<any | null>(null);
 
@@ -116,6 +143,12 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
   const uomsQ = useQuery({
     queryKey: ['inventory-uoms'],
     queryFn: inventoryService.listUoms,
+  });
+
+  const prOnHandQ = useQuery({
+    queryKey: ['inventory-onhand-for-pr', prForm.requesting_branch_id],
+    queryFn: () => inventoryService.getOnHand(Number(prForm.requesting_branch_id)),
+    enabled: Boolean(isCreatePROpen && prForm.requesting_branch_id),
   });
 
   const prsQ = useQuery({
@@ -317,11 +350,29 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     onError: (e: any) => toast.error(readApiError(e, 'Failed to reverse GRN')),
   });
 
+  const canEditPRRow = (pr: any) => (
+    String(pr?.status) === 'draft' ||
+    (canApprovePR && String(pr?.status) === 'submitted')
+  );
+
+  const canSubmitPRRow = (pr: any) => String(pr?.status) === 'draft';
+  const canApprovePRRow = (pr: any) => canApprovePR && String(pr?.status) === 'submitted';
+
   const branchById = useMemo(() => {
     const m = new Map<number, any>();
     for (const b of branchesQ.data ?? []) m.set(Number(b.id), b);
     return m;
   }, [branchesQ.data]);
+
+  const availablePrBranches = useMemo(
+    () => (branchesQ.data ?? []).filter((b: any) => Number.isInteger(Number(b.id)) && Number(b.id) > 0),
+    [branchesQ.data],
+  );
+
+  const singlePrBranchId = useMemo(
+    () => (availablePrBranches.length === 1 ? String(availablePrBranches[0].id) : ''),
+    [availablePrBranches],
+  );
 
   const vendorById = useMemo(() => {
     const m = new Map<number, any>();
@@ -340,6 +391,67 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     for (const u of uomsQ.data ?? []) m.set(Number(u.id), u);
     return m;
   }, [uomsQ.data]);
+
+  const getUomToRootMultiplier = (uomIdRaw: number | string | null | undefined): number | null => {
+    const startId = Number(uomIdRaw);
+    if (!Number.isInteger(startId) || startId <= 0) return null;
+    const seen = new Set<number>();
+    let id: number | null = startId;
+    let multiplier = 1;
+    // Walk baseUomId chain, multiplying along the way.
+    while (id != null) {
+      if (seen.has(id)) return null; // cycle
+      seen.add(id);
+      const u = uomById.get(id);
+      if (!u) return null;
+      const baseIdRaw = u.baseUomId ?? u.base_uom_id ?? null;
+      const baseId = baseIdRaw == null ? null : Number(baseIdRaw);
+      if (baseId == null) break;
+      const step = Number(u.multiplierToBase ?? u.multiplier_to_base ?? 1);
+      if (!Number.isFinite(step) || step <= 0) return null;
+      multiplier *= step;
+      id = baseId;
+    }
+    return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : null;
+  };
+
+  const getQtyInItemBasePerOne = (item: any, uomId: number): number | null => {
+    const itemBaseUomId = Number(item?.baseUomId ?? item?.base_uom_id);
+    if (!Number.isInteger(itemBaseUomId) || itemBaseUomId <= 0) return null;
+    const multFrom = getUomToRootMultiplier(uomId);
+    const multBase = getUomToRootMultiplier(itemBaseUomId);
+    if (multFrom == null || multBase == null) return null;
+    const kindFrom = String(uomById.get(Number(uomId))?.kind ?? '');
+    const kindBase = String(uomById.get(itemBaseUomId)?.kind ?? '');
+    if (kindFrom && kindBase && kindFrom !== kindBase) return null;
+    return multFrom / multBase;
+  };
+
+  const convertQtyBetweenUoms = (args: {
+    qty: number;
+    item: any;
+    fromUomId: number;
+    toUomId: number;
+  }): number | null => {
+    if (!Number.isFinite(args.qty)) return null;
+    const basePerOneFrom = getQtyInItemBasePerOne(args.item, args.fromUomId);
+    const basePerOneTo = getQtyInItemBasePerOne(args.item, args.toUomId);
+    if (basePerOneFrom == null || basePerOneTo == null) return null;
+    const qtyBase = args.qty * basePerOneFrom;
+    return qtyBase / basePerOneTo;
+  };
+
+  const onHandByItemId = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const row of prOnHandQ.data ?? []) {
+      const itemId = Number((row as any).inventoryItemId ?? (row as any).inventory_item_id);
+      const qty = Number((row as any).qty ?? 0);
+      if (Number.isInteger(itemId) && itemId > 0) {
+        m.set(itemId, Number.isFinite(qty) ? qty : 0);
+      }
+    }
+    return m;
+  }, [prOnHandQ.data]);
 
   const poById = useMemo(() => {
     const m = new Map<number, any>();
@@ -364,11 +476,6 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
   const selectedPOForEditGRN = useMemo(
     () => poById.get(Number(grnForm.purchase_order_id)),
     [poById, grnForm.purchase_order_id],
-  );
-
-  const selectedItemForPR = useMemo(
-    () => itemById.get(Number(prForm.inventory_item_id)),
-    [itemById, prForm.inventory_item_id],
   );
 
   const selectedItemForLine = useMemo(
@@ -462,44 +569,37 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     return { qty, uomId };
   };
 
-  const addCurrentPrLine = () => {
-    if (!prForm.inventory_item_id || !prForm.requested_qty || !prForm.requested_uom_id) {
-      toast.error('Please select item, quantity, and unit');
+  const addSelectedPrItem = (inventoryItemId: number) => {
+    const itemId = Number(inventoryItemId);
+    if (!Number.isInteger(itemId) || itemId <= 0) {
+      toast.error('Please select a product');
       return;
     }
-    const qty = Number(prForm.requested_qty);
-    if (!Number.isFinite(qty) || qty <= 0) {
-      toast.error('Quantity must be a valid number greater than 0');
+    const item = itemById.get(itemId);
+    const uomId = Number(item?.baseUomId);
+    if (!Number.isInteger(uomId) || uomId <= 0) {
+      toast.error('Missing unit for selected item');
       return;
     }
-    const nextLine = {
-      inventory_item_id: Number(prForm.inventory_item_id),
-      requested_qty: qty,
-      requested_uom_id: Number(prForm.requested_uom_id),
-    };
-    setPrForm((prev: any) => ({
-      ...prev,
-      lines: (() => {
-        const existing = [...(prev.lines ?? [])];
-        const idx = existing.findIndex(
-          (l: any) =>
-            Number(l.inventory_item_id) === nextLine.inventory_item_id &&
-            Number(l.requested_uom_id) === nextLine.requested_uom_id,
-        );
-        if (idx >= 0) {
-          const currentQty = Number(existing[idx].requested_qty);
-          existing[idx] = {
-            ...existing[idx],
-            requested_qty: (Number.isFinite(currentQty) ? currentQty : 0) + nextLine.requested_qty,
-          };
-          return existing;
-        }
-        return [...existing, nextLine];
-      })(),
-      inventory_item_id: '',
-      requested_qty: '',
-      requested_uom_id: '',
-    }));
+    setPrForm((prev: any) => {
+      const existing = [...(prev.lines ?? [])];
+      const idx = existing.findIndex(
+        (l: any) =>
+          Number(l.inventory_item_id) === itemId &&
+          Number(l.requested_uom_id) === uomId,
+      );
+      if (idx >= 0) {
+        return { ...prev, inventory_item_id: '' };
+      }
+      return {
+        ...prev,
+        lines: [
+          ...existing,
+          { inventory_item_id: itemId, requested_qty: 0, requested_uom_id: uomId },
+        ],
+        inventory_item_id: '',
+      };
+    });
   };
 
   const addCurrentPoLine = () => {
@@ -642,7 +742,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     setPrForm({
       pr_id: '',
       pr_number: '',
-      requesting_branch_id: '',
+      requesting_branch_id: singlePrBranchId,
       requested_from_vendor_id: '',
       inventory_item_id: '',
       requested_qty: '',
@@ -652,6 +752,21 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     });
     setIsCreatePROpen(true);
   };
+
+  useEffect(() => {
+    if (!isCreatePROpen) return;
+    if (!singlePrBranchId) return;
+    setPrForm((prev: any) => {
+      if (String(prev.requesting_branch_id ?? '') === String(singlePrBranchId)) {
+        return prev;
+      }
+      return {
+        ...prev,
+        requesting_branch_id: singlePrBranchId,
+        lines: [],
+      };
+    });
+  }, [isCreatePROpen, singlePrBranchId]);
 
   const openEditPRModal = (pr: any) => {
     setPrForm({
@@ -724,8 +839,10 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
         <div className="flex flex-wrap gap-2">
           {[
             { k: 'prs', label: 'Purchase requisitions' },
-            { k: 'pos', label: 'Purchase orders' },
             { k: 'grns', label: 'Goods receipt notes' },
+            ...(canAccessPOModule
+              ? [{ k: 'pos', label: 'Purchase orders' } as const]
+              : []),
           ].map((t) => (
             <button
               key={t.k}
@@ -756,39 +873,64 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               <table className="min-w-full text-sm">
                 <thead className="text-left text-slate-600 dark:text-slate-300">
                   <tr>
+                    <th className="py-2 pr-4">#</th>
                     <th className="py-2 pr-4">PR Number</th>
                     <th className="py-2 pr-4">Requesting branch</th>
                     <th className="py-2 pr-4">Requested from</th>
+                    <th className="py-2 pr-4">Created by</th>
                     <th className="py-2 pr-4">Items</th>
-                    <th className="py-2 pr-4">Created</th>
+                    <th className="py-2 pr-4">Qty total</th>
+                    <th className="py-2 pr-4">Request date</th>
+                    <th className="py-2 pr-4">Approve date</th>
+                    <th className="py-2 pr-4">Notes</th>
                     <th className="py-2 pr-4">Status</th>
                     <th className="py-2 pr-4">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="text-slate-700 dark:text-slate-200">
-                  {(prsQ.data ?? []).map((pr: any) => (
+                  {(prsQ.data ?? []).map((pr: any, idx: number) => (
                     <tr key={pr.id} className="border-t border-slate-100 dark:border-slate-700">
+                      <td className="py-2 pr-4">{idx + 1}</td>
                       <td className="py-2 pr-4 font-medium">{pr.prNumber ?? `PR-${pr.id}`}</td>
                       <td className="py-2 pr-4">{branchById.get(Number(pr.requestingBranchId))?.name ?? '—'}</td>
                       <td className="py-2 pr-4">{vendorById.get(Number(pr.requestedFromVendorId))?.name ?? '—'}</td>
+                      <td className="py-2 pr-4">{pr.creator?.name ?? (pr.createdBy != null ? `User #${pr.createdBy}` : '—')}</td>
                       <td className="py-2 pr-4">{(pr.lines ?? []).length}</td>
+                      <td className="py-2 pr-4">
+                        {(pr.lines ?? []).reduce((sum: number, l: any) => {
+                          const qty = Number(l.requestedQty ?? l.requested_qty ?? 0);
+                          return sum + (Number.isFinite(qty) ? qty : 0);
+                        }, 0)}
+                      </td>
                       <td className="py-2 pr-4">{prettyDate(pr.createdAt)}</td>
+                      <td className="py-2 pr-4">{prettyDate(pr.approvedAt)}</td>
+                      <td className="py-2 pr-4 max-w-[200px] truncate" title={pr.notes ?? ''}>
+                        {pr.notes?.trim() ? pr.notes : '—'}
+                      </td>
                       <td className="py-2 pr-4">
                         <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${statusClass(pr.status)}`}>
-                          {pr.status}
+                          <button
+                            type="button"
+                            className="cursor-pointer"
+                            onClick={() => setSelectedPRForStatus(pr)}
+                          >
+                            {prettyStatus(pr.status)}
+                          </button>
                         </span>
                       </td>
-                      <td className="py-2 pr-4 flex gap-2">
-                        <Button variant="secondary" onClick={() => setSelectedPR(pr)}>View</Button>
-                        <Button
-                          variant="secondary"
-                          disabled={!['draft', 'submitted'].includes(String(pr.status))}
-                          onClick={() => openEditPRModal(pr)}
-                        >
-                          Edit
-                        </Button>
-                        <Button disabled={pr.status !== 'draft'} onClick={() => submitPRM.mutate(pr.id)}>Submit</Button>
-                        <Button disabled={pr.status !== 'submitted'} onClick={() => approvePRM.mutate(pr.id)}>Approve</Button>
+                      <td className="py-2 pr-4">
+                        <div className="flex flex-wrap gap-1">
+                        <Button size="small" variant="secondary" onClick={() => setSelectedPR(pr)}>View</Button>
+                        {canEditPRRow(pr) && (
+                          <Button
+                            size="small"
+                            variant="secondary"
+                            onClick={() => openEditPRModal(pr)}
+                          >
+                            Edit
+                          </Button>
+                        )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -799,7 +941,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
         </Card>
       )}
 
-      {tab === 'pos' && (
+      {tab === 'pos' && canAccessPOModule && (
         <Card>
           <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Purchase orders</h2>
           {posQ.isLoading ? (
@@ -1005,14 +1147,28 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Requesting branch</div>
-              <select
-                className="w-full border rounded-lg p-2"
-                value={prForm.requesting_branch_id}
-                onChange={(e) => setPrForm({ ...prForm, requesting_branch_id: e.target.value })}
-              >
-                <option value="">Select branch…</option>
-                {(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
+              {availablePrBranches.length === 1 ? (
+                <input
+                  className="w-full border rounded-lg p-2 bg-slate-50 text-slate-700"
+                  value={availablePrBranches[0]?.name ?? '—'}
+                  readOnly
+                />
+              ) : (
+                <select
+                  className="w-full border rounded-lg p-2"
+                  value={prForm.requesting_branch_id}
+                  onChange={(e) =>
+                    setPrForm({
+                      ...prForm,
+                      requesting_branch_id: e.target.value,
+                      lines: [],
+                    })
+                  }
+                >
+                  <option value="">Select branch…</option>
+                  {availablePrBranches.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              )}
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Requested from</div>
@@ -1025,135 +1181,225 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                 {(vendorsQ.data ?? []).map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}
               </select>
             </label>
-            <label className="text-sm">
-              <div className="text-xs font-medium text-slate-600 mb-1">Item to add</div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <label className="text-sm md:col-span-2">
+              <div className="text-xs font-medium text-slate-600 mb-1">Raw product select</div>
               <select
                 className="w-full border rounded-lg p-2"
                 value={prForm.inventory_item_id}
                 onChange={(e) => {
-                  const itemId = Number(e.target.value);
-                  const item = itemById.get(itemId);
-                  setPrForm({
-                    ...prForm,
-                    inventory_item_id: e.target.value,
-                    requested_uom_id: getDefaultItemUomId(item),
-                  });
+                  const id = Number(e.target.value);
+                  if (!id) {
+                    setPrForm({ ...prForm, inventory_item_id: '' });
+                    return;
+                  }
+                  setPrForm((prev: any) => ({ ...prev, inventory_item_id: String(id) }));
+                  addSelectedPrItem(id);
                 }}
+                disabled={!prForm.requesting_branch_id}
               >
-                <option value="">Select item…</option>
-                {(itemsQ.data ?? []).map((it: any) => <option key={it.id} value={it.id}>{it.name}</option>)}
-              </select>
-            </label>
-            <label className="text-sm">
-              <div className="text-xs font-medium text-slate-600 mb-1">Quantity to add</div>
-              <input
-                className="w-full border rounded-lg p-2"
-                type="number"
-                inputMode="decimal"
-                min="0"
-                step="any"
-                placeholder="e.g. 10"
-                value={prForm.requested_qty}
-                onChange={(e) => setPrForm({ ...prForm, requested_qty: e.target.value })}
-              />
-            </label>
-            <label className="text-sm">
-              <div className="text-xs font-medium text-slate-600 mb-1">Unit for item</div>
-              <select
-                className="w-full border rounded-lg p-2"
-                value={prForm.requested_uom_id}
-                onChange={(e) => setPrForm({ ...prForm, requested_uom_id: e.target.value })}
-                disabled={!selectedItemForPR}
-              >
-                <option value="">Select unit…</option>
-                {getItemAllowedUoms(selectedItemForPR, prForm.requested_uom_id).map((u: any) => (
-                  <option key={u.id} value={u.id}>{u.code}</option>
+                <option value="">
+                  {!prForm.requesting_branch_id ? 'Select branch first…' : 'Select product…'}
+                </option>
+                {(itemsQ.data ?? []).map((it: any) => (
+                  <option key={it.id} value={it.id}>
+                    {it.name}
+                  </option>
                 ))}
               </select>
             </label>
-            <div className="text-sm flex items-end">
-              <Button variant="secondary" onClick={addCurrentPrLine}>Add item</Button>
-            </div>
-            <label className="text-sm md:col-span-2">
-              <div className="text-xs font-medium text-slate-600 mb-1">Notes (optional)</div>
-              <textarea
-                className="w-full border rounded-lg p-2"
-                rows={3}
-                value={prForm.notes}
-                onChange={(e) => setPrForm({ ...prForm, notes: e.target.value })}
-              />
-            </label>
           </div>
+
           <div className="border rounded-lg">
             <div className="px-3 py-2 text-xs font-medium text-slate-600 border-b">
-              Requisition lines ({(prForm.lines ?? []).length})
+              Requested products ({(prForm.lines ?? []).length})
             </div>
             {(prForm.lines ?? []).length === 0 ? (
-              <div className="px-3 py-3 text-sm text-slate-500">No items added yet.</div>
+              <div className="px-3 py-3 text-sm text-slate-500">
+                Select a product to add it to the request.
+              </div>
             ) : (
               <div className="overflow-auto">
                 <table className="min-w-full text-sm">
                   <thead className="text-left text-slate-600">
                     <tr>
-                      <th className="py-2 px-3">Item</th>
-                      <th className="py-2 px-3">Qty</th>
+                      <th className="py-2 px-3">#</th>
+                      <th className="py-2 px-3">Product name</th>
+                      <th className="py-2 px-3">Buying price</th>
+                      <th className="py-2 px-3">Qty in stock</th>
+                      <th className="py-2 px-3">Purchase quantity</th>
                       <th className="py-2 px-3">Unit</th>
-                      <th className="py-2 px-3">Action</th>
+                      <th className="py-2 px-3">Remove</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(prForm.lines ?? []).map((l: any, idx: number) => (
-                      <tr key={`${l.inventory_item_id}-${idx}`} className="border-t">
-                        <td className="py-2 px-3">{itemById.get(Number(l.inventory_item_id))?.name ?? '—'}</td>
-                        <td className="py-2 px-3">
-                          {Number.isFinite(Number(l.requested_qty)) ? Number(l.requested_qty) : '—'}
-                        </td>
-                        <td className="py-2 px-3">{uomById.get(Number(l.requested_uom_id))?.code ?? '—'}</td>
-                        <td className="py-2 px-3">
-                          <Button
-                            variant="secondary"
-                            onClick={() =>
-                              setPrForm((prev: any) => ({
-                                ...prev,
-                                lines: (prev.lines ?? []).filter((_: any, i: number) => i !== idx),
-                              }))
-                            }
-                          >
-                            Remove
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {(prForm.lines ?? []).map((l: any, idx: number) => {
+                      const item = itemById.get(Number(l.inventory_item_id));
+                      const buyPrice = item?.defaultBuyPrice ?? item?.default_buy_price ?? null;
+                      const stock = onHandByItemId.get(Number(l.inventory_item_id)) ?? 0;
+                      return (
+                        <tr key={`${l.inventory_item_id}-${idx}`} className="border-t">
+                          <td className="py-2 px-3 text-slate-500">{idx + 1}</td>
+                          <td className="py-2 px-3">{item?.name ?? '—'}</td>
+                          <td className="py-2 px-3">
+                            {(() => {
+                              const basePrice = buyPrice == null ? null : Number(buyPrice);
+                              if (basePrice == null || !Number.isFinite(basePrice)) return '—';
+                              const perOne = getQtyInItemBasePerOne(item, Number(l.requested_uom_id));
+                              if (perOne == null || !Number.isFinite(perOne)) return basePrice.toFixed(2);
+                              return (basePrice * perOne).toFixed(2);
+                            })()}
+                          </td>
+                          <td className="py-2 px-3">
+                            {(() => {
+                              const stockBase = Number(stock ?? 0);
+                              const perOne = getQtyInItemBasePerOne(item, Number(l.requested_uom_id));
+                              if (perOne == null || !Number.isFinite(perOne) || perOne <= 0) {
+                                return stockBase.toFixed(2);
+                              }
+                              return (stockBase / perOne).toFixed(2);
+                            })()}
+                          </td>
+                          <td className="py-2 px-3">
+                            <input
+                              className="w-28 border rounded-lg p-1.5"
+                              type="number"
+                              inputMode="decimal"
+                              min="0"
+                              step="any"
+                              value={l.requested_qty ?? ''}
+                              onChange={(e) =>
+                                setPrForm((prev: any) => ({
+                                  ...prev,
+                                  lines: (prev.lines ?? []).map((x: any, i: number) =>
+                                    i === idx ? { ...x, requested_qty: e.target.value } : x,
+                                  ),
+                                }))
+                              }
+                            />
+                          </td>
+                          <td className="py-2 px-3">
+                            {(() => {
+                              const allowedUoms = getItemAllowedUoms(item, l.requested_uom_id);
+                              if ((allowedUoms ?? []).length <= 1) {
+                                return (
+                                  <span className="inline-flex h-9 items-center">
+                                    {uomById.get(Number(l.requested_uom_id))?.code ?? allowedUoms?.[0]?.code ?? '—'}
+                                  </span>
+                                );
+                              }
+                              return (
+                                <select
+                                  className="w-28 border rounded-lg p-1.5 bg-white"
+                                  value={l.requested_uom_id ?? ''}
+                                  onChange={(e) => {
+                                    const nextUomId = Number(e.target.value);
+                                    const prevUomId = Number(l.requested_uom_id);
+                                    if (!nextUomId || !prevUomId || nextUomId === prevUomId) {
+                                      setPrForm((prev: any) => ({
+                                        ...prev,
+                                        lines: (prev.lines ?? []).map((x: any, i: number) =>
+                                          i === idx ? { ...x, requested_uom_id: e.target.value } : x,
+                                        ),
+                                      }));
+                                      return;
+                                    }
+                                    const currentQty = Number(l.requested_qty ?? 0);
+                                    const converted = convertQtyBetweenUoms({
+                                      qty: Number.isFinite(currentQty) ? currentQty : 0,
+                                      item,
+                                      fromUomId: prevUomId,
+                                      toUomId: nextUomId,
+                                    });
+                                    setPrForm((prev: any) => ({
+                                      ...prev,
+                                      lines: (prev.lines ?? []).map((x: any, i: number) =>
+                                        i === idx
+                                          ? {
+                                              ...x,
+                                              requested_uom_id: String(nextUomId),
+                                              requested_qty:
+                                                converted == null || !Number.isFinite(converted)
+                                                  ? x.requested_qty
+                                                  : converted.toFixed(6).replace(/\.?0+$/, ''),
+                                            }
+                                          : x,
+                                      ),
+                                    }));
+                                  }}
+                                >
+                                  {allowedUoms.map((u: any) => (
+                                    <option key={u.id} value={u.id}>
+                                      {u.code}
+                                    </option>
+                                  ))}
+                                </select>
+                              );
+                            })()}
+                          </td>
+                          <td className="py-2 px-3">
+                            <Button
+                              variant="secondary"
+                              onClick={() =>
+                                setPrForm((prev: any) => ({
+                                  ...prev,
+                                  lines: (prev.lines ?? []).filter((_: any, i: number) => i !== idx),
+                                }))
+                              }
+                            >
+                              Remove
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t bg-slate-50">
+                      <td className="py-2 px-3 text-right font-medium text-slate-700" colSpan={4}>
+                        Total quantity
+                      </td>
+                      <td className="py-2 px-3 font-medium text-slate-800">
+                        {(() => {
+                          const sum = (prForm.lines ?? []).reduce((acc: number, x: any) => {
+                            const v = Number(x?.requested_qty ?? 0);
+                            return acc + (Number.isFinite(v) ? v : 0);
+                          }, 0);
+                          return sum.toFixed(2);
+                        })()}
+                      </td>
+                      <td className="py-2 px-3" colSpan={2} />
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             )}
           </div>
+
+          <label className="text-sm block">
+            <div className="text-xs font-medium text-slate-600 mb-1">Notes (optional)</div>
+            <textarea
+              className="w-full border rounded-lg p-2"
+              rows={3}
+              value={prForm.notes}
+              onChange={(e) => setPrForm({ ...prForm, notes: e.target.value })}
+            />
+          </label>
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setIsCreatePROpen(false)}>Cancel</Button>
             <Button
               isLoading={createPRM.isPending || updatePRM.isPending}
               onClick={() => {
-                let lines = [...(prForm.lines ?? [])];
-                if (
-                  lines.length === 0 &&
-                  prForm.inventory_item_id &&
-                  prForm.requested_qty &&
-                  prForm.requested_uom_id
-                ) {
-                  const qty = Number(prForm.requested_qty);
-                  if (!Number.isFinite(qty) || qty <= 0) {
-                    toast.error('Quantity must be a valid number greater than 0');
-                    return;
-                  }
-                  lines = [
-                    {
-                      inventory_item_id: Number(prForm.inventory_item_id),
-                      requested_qty: qty,
-                      requested_uom_id: Number(prForm.requested_uom_id),
-                    },
-                  ];
-                }
+                let lines = [...(prForm.lines ?? [])]
+                  .map((l: any) => ({
+                    ...l,
+                    requested_qty: Number(l.requested_qty ?? 0),
+                    requested_uom_id: Number(l.requested_uom_id),
+                    inventory_item_id: Number(l.inventory_item_id),
+                  }))
+                  .filter((l: any) => Number.isFinite(l.requested_qty) && l.requested_qty > 0);
                 if (!prForm.requesting_branch_id || !prForm.requested_from_vendor_id || lines.length === 0) {
                   toast.error('Select branch, vendor, and add at least one item');
                   return;
@@ -1778,24 +2024,48 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
       <Modal isOpen={!!selectedPR} onClose={() => setSelectedPR(null)} title="Purchase Requisition Details" size="xlarge">
         {!selectedPR ? null : (
           <div className="space-y-3 text-sm">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
               <div><span className="text-slate-500">PR Number:</span> {selectedPR.prNumber ?? `PR-${selectedPR.id}`}</div>
               <div><span className="text-slate-500">Requesting branch:</span> {branchById.get(Number(selectedPR.requestingBranchId))?.name ?? '—'}</div>
               <div><span className="text-slate-500">Requested from:</span> {vendorById.get(Number(selectedPR.requestedFromVendorId))?.name ?? '—'}</div>
-              <div><span className="text-slate-500">Status:</span> <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${statusClass(selectedPR.status)}`}>{selectedPR.status}</span></div>
+              <div><span className="text-slate-500">Created by:</span> {selectedPR.creator?.name ?? (selectedPR.createdBy != null ? `User #${selectedPR.createdBy}` : '—')}</div>
+              <div>
+                <span className="text-slate-500">Status:</span>{' '}
+                <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${statusClass(selectedPR.status)}`}>
+                  {prettyStatus(selectedPR.status)}
+                </span>
+              </div>
+              <div><span className="text-slate-500">Request date:</span> {prettyDate(selectedPR.createdAt)}</div>
+              <div><span className="text-slate-500">Approve date:</span> {prettyDate(selectedPR.approvedAt)}</div>
+              <div><span className="text-slate-500">Items:</span> {(selectedPR.lines ?? []).length}</div>
+              <div>
+                <span className="text-slate-500">Total quantity:</span>{' '}
+                {(selectedPR.lines ?? []).reduce((sum: number, l: any) => {
+                  const qty = Number(l.requestedQty ?? l.requested_qty ?? 0);
+                  return sum + (Number.isFinite(qty) ? qty : 0);
+                }, 0)}
+              </div>
+            </div>
+            <div className="border rounded-lg p-3 bg-slate-50/60 dark:bg-slate-900/30">
+              <div className="text-xs font-medium text-slate-600 mb-1">Notes</div>
+              <div className="text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap">
+                {selectedPR.notes?.trim() ? selectedPR.notes : '—'}
+              </div>
             </div>
             <div className="overflow-auto border rounded-lg">
               <table className="min-w-full text-sm">
                 <thead className="text-left text-slate-600">
                   <tr>
+                    <th className="py-2 px-3">#</th>
                     <th className="py-2 px-3">Item</th>
                     <th className="py-2 px-3">Requested qty</th>
                     <th className="py-2 px-3">UOM</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {(selectedPR.lines ?? []).map((l: any) => (
+                  {(selectedPR.lines ?? []).map((l: any, idx: number) => (
                     <tr key={l.id} className="border-t">
+                      <td className="py-2 px-3 text-slate-500">{idx + 1}</td>
                       <td className="py-2 px-3">{itemById.get(Number(l.inventoryItemId))?.name ?? '—'}</td>
                       <td className="py-2 px-3">{Number(l.requestedQty)}</td>
                       <td className="py-2 px-3">{uomById.get(Number(l.requestedUomId))?.code ?? '—'}</td>
@@ -1803,6 +2073,67 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        isOpen={!!selectedPRForStatus}
+        onClose={() => setSelectedPRForStatus(null)}
+        title="Update Requisition Status"
+        size="medium"
+      >
+        {!selectedPRForStatus ? null : (
+          <div className="space-y-4 text-sm">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div><span className="text-slate-500">PR Number:</span> {selectedPRForStatus.prNumber ?? `PR-${selectedPRForStatus.id}`}</div>
+              <div><span className="text-slate-500">Current status:</span> {prettyStatus(selectedPRForStatus.status)}</div>
+            </div>
+
+            <div className="rounded-lg border p-3 bg-slate-50/60 dark:bg-slate-900/30">
+              <div className="text-xs font-medium text-slate-600 mb-2">Available actions</div>
+              <div className="flex flex-wrap gap-2">
+                {canSubmitPRRow(selectedPRForStatus) && (
+                  <Button
+                    isLoading={submitPRM.isPending}
+                    onClick={() =>
+                      submitPRM.mutate(selectedPRForStatus.id, {
+                        onSuccess: () => {
+                          setSelectedPRForStatus(null);
+                        },
+                      })
+                    }
+                  >
+                    Submit
+                  </Button>
+                )}
+                {canApprovePRRow(selectedPRForStatus) && (
+                  <Button
+                    isLoading={approvePRM.isPending}
+                    onClick={() =>
+                      approvePRM.mutate(selectedPRForStatus.id, {
+                        onSuccess: () => {
+                          setSelectedPRForStatus(null);
+                        },
+                      })
+                    }
+                  >
+                    Approve
+                  </Button>
+                )}
+                {!canSubmitPRRow(selectedPRForStatus) && !canApprovePRRow(selectedPRForStatus) && (
+                  <div className="text-xs text-slate-500">
+                    No status update action available for your role or this status.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button variant="secondary" onClick={() => setSelectedPRForStatus(null)}>
+                Close
+              </Button>
             </div>
           </div>
         )}

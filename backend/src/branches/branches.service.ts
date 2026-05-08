@@ -23,7 +23,14 @@ export class BranchesService {
     ) {}
 
     /** Admin: tenant user sees only their tenant's branches; super admin sees all with tenant_name + brand_names */
-    async findAllForAdmin(tenantId: number | null, brandId?: number) {
+    async findAllForAdmin(
+        tenantId: number | null,
+        brandId?: number,
+        allowedBranchIds?: number[] | null,
+    ) {
+        if (Array.isArray(allowedBranchIds) && allowedBranchIds.length === 0) {
+            return [];
+        }
         const qb = this.repo
             .createQueryBuilder('b')
             .leftJoinAndSelect('b.branchBrands', 'bb')
@@ -35,6 +42,9 @@ export class BranchesService {
         }
         if (brandId != null) {
             qb.andWhere('bb.brandId = :brandId', { brandId });
+        }
+        if (Array.isArray(allowedBranchIds)) {
+            qb.andWhere('b.id IN (:...allowedBranchIds)', { allowedBranchIds });
         }
         const list = await qb.getMany();
         return list.map((b) => this.toResponse(b));

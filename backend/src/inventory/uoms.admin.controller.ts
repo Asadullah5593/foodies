@@ -58,7 +58,13 @@ export class UomsAdminController {
         @Param('id')
         id: string,
         @Body()
-        dto: { name?: string; code?: string },
+        dto: {
+            name?: string;
+            code?: string;
+            kind?: string;
+            base_uom_id?: number | null;
+            multiplier_to_base?: number | null;
+        },
     ) {
         const tenantId = await this.inventoryService.resolveTenantId(user);
         return this.inventoryService.updateUom(tenantId, Number(id), dto);

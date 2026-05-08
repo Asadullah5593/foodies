@@ -96,13 +96,24 @@ export class InventoryService {
             multiplier_to_base?: number | null;
         },
     ) {
+        const name = String(dto.name ?? '').trim();
+        const code = String(dto.code ?? '').trim();
+        if (!name) throw new BadRequestException('Name is required');
+        if (!code) throw new BadRequestException('Code is required');
+        const kind = this.normalizeUomKind(dto.kind);
+        const cfg = await this.normalizeUomConversionConfig({
+            tenantId,
+            kind,
+            baseUomIdRaw: dto.base_uom_id,
+            multiplierRaw: dto.multiplier_to_base,
+        });
         const uom = this.uomsRepo.create({
             tenantId,
-            name: dto.name,
-            code: dto.code,
-            kind: dto.kind ?? 'count',
-            baseUomId: dto.base_uom_id ?? null,
-            multiplierToBase: dto.multiplier_to_base ?? null,
+            name,
+            code,
+            kind,
+            baseUomId: cfg.baseUomId,
+            multiplierToBase: cfg.multiplierToBase,
             isActive: true,
         });
         return this.uomsRepo.save(uom);
@@ -111,7 +122,13 @@ export class InventoryService {
     async updateUom(
         tenantId: number,
         uomId: number,
-        dto: { name?: string; code?: string },
+        dto: {
+            name?: string;
+            code?: string;
+            kind?: string;
+            base_uom_id?: number | null;
+            multiplier_to_base?: number | null;
+        },
     ) {
         const uom = await this.uomsRepo.findOne({
             where: { tenantId, id: uomId, isActive: true },
@@ -127,7 +144,100 @@ export class InventoryService {
             if (!code) throw new BadRequestException('Code is required');
             uom.code = code;
         }
+        const nextKind = this.normalizeUomKind(dto.kind ?? uom.kind);
+        const shouldUpdateConversion =
+            dto.kind !== undefined ||
+            dto.base_uom_id !== undefined ||
+            dto.multiplier_to_base !== undefined;
+        if (shouldUpdateConversion) {
+            const cfg = await this.normalizeUomConversionConfig({
+                tenantId,
+                kind: nextKind,
+                baseUomIdRaw:
+                    dto.base_uom_id !== undefined ? dto.base_uom_id : uom.baseUomId,
+                multiplierRaw:
+                    dto.multiplier_to_base !== undefined
+                        ? dto.multiplier_to_base
+                        : uom.multiplierToBase,
+                currentUomId: uom.id,
+            });
+            uom.kind = nextKind;
+            uom.baseUomId = cfg.baseUomId;
+            uom.multiplierToBase = cfg.multiplierToBase;
+        } else {
+            uom.kind = nextKind;
+        }
         return this.uomsRepo.save(uom);
+    }
+
+    private normalizeUomKind(kindRaw?: string): string {
+        const kind = String(kindRaw ?? 'count')
+            .trim()
+            .toLowerCase();
+        const allowed = new Set([
+            'count',
+            'mass',
+            'volume',
+            'length',
+            'area',
+            'time',
+            'energy',
+            'pressure',
+            'power',
+            'frequency',
+            'speed',
+            'flow',
+        ]);
+        if (!allowed.has(kind)) {
+            throw new BadRequestException(`Unsupported UOM kind: ${kind}`);
+        }
+        return kind;
+    }
+
+    private async normalizeUomConversionConfig(args: {
+        tenantId: number;
+        kind: string;
+        baseUomIdRaw?: number | null;
+        multiplierRaw?: number | null;
+        currentUomId?: number;
+    }): Promise<{ baseUomId: number | null; multiplierToBase: number | null }> {
+        const hasBase =
+            args.baseUomIdRaw !== undefined &&
+            args.baseUomIdRaw !== null &&
+            String(args.baseUomIdRaw).trim() !== '';
+        if (!hasBase) {
+            return { baseUomId: null, multiplierToBase: null };
+        }
+        const baseUomId = Number(args.baseUomIdRaw);
+        if (!Number.isInteger(baseUomId) || baseUomId <= 0) {
+            throw new BadRequestException('base_uom_id must be a valid unit id');
+        }
+        if (
+            args.currentUomId != null &&
+            Number(baseUomId) === Number(args.currentUomId)
+        ) {
+            throw new BadRequestException(
+                'A unit cannot reference itself as base',
+            );
+        }
+        const baseUom = await this.uomsRepo.findOne({
+            where: { tenantId: args.tenantId, id: baseUomId, isActive: true },
+        });
+        if (!baseUom) {
+            throw new NotFoundException('Base unit not found');
+        }
+        if (String(baseUom.kind) !== String(args.kind)) {
+            throw new BadRequestException(
+                'Base unit kind must match selected kind',
+            );
+        }
+        const multiplier = Number(args.multiplierRaw);
+        if (!Number.isFinite(multiplier) || multiplier <= 0) {
+            throw new BadRequestException(
+                'multiplier_to_base must be a number greater than 0 when base_uom_id is set',
+            );
+        }
+        return { baseUomId, multiplierToBase: multiplier };
     }
 
     async deactivateUom(tenantId: number, uomId: number) {
@@ -235,6 +345,7 @@ export class InventoryService {
             track_lot?: boolean;
             default_reorder_point?: number | null;
             default_near_expiry_days?: number | null;
+            default_buy_price: number;
         },
     ) {
         const name = String(dto.name ?? '').trim();
@@ -246,6 +357,12 @@ export class InventoryService {
         if (!name) throw new BadRequestException('Name is required');
         if (!code) throw new BadRequestException('Code is required');
         if (!baseUomId) throw new BadRequestException('Base unit is required');
+        const buyPrice = Number(dto.default_buy_price);
+        if (!Number.isFinite(buyPrice) || buyPrice < 0) {
+            throw new BadRequestException(
+                'default_buy_price is required and must be a valid number >= 0',
+            );
+        }
         await this.ensureUniqueItemCode(tenantId, code);
         const validatedBaseUoms = await this.normalizeAndValidateItemBaseUoms(
             tenantId,
@@ -264,6 +381,7 @@ export class InventoryService {
             trackLot: dto.track_lot ?? true,
             defaultReorderPoint: dto.default_reorder_point ?? null,
             defaultNearExpiryDays: dto.default_near_expiry_days ?? null,
+            defaultBuyPrice: buyPrice,
             isActive: true,
         });
         return this.itemsRepo.save(item);
@@ -282,6 +400,7 @@ export class InventoryService {
             track_lot?: boolean;
             default_reorder_point?: number | null;
             default_near_expiry_days?: number | null;
+            default_buy_price: number;
         },
     ) {
         const item = await this.itemsRepo.findOne({
@@ -338,6 +457,16 @@ export class InventoryService {
             item.defaultReorderPoint = dto.default_reorder_point ?? null;
         if (dto.default_near_expiry_days !== undefined)
             item.defaultNearExpiryDays = dto.default_near_expiry_days ?? null;
+        if (dto.default_buy_price === undefined || dto.default_buy_price === null) {
+            throw new BadRequestException('default_buy_price is required');
+        }
+        const next = Number(dto.default_buy_price);
+        if (!Number.isFinite(next) || next < 0) {
+            throw new BadRequestException(
+                'default_buy_price is required and must be a valid number >= 0',
+            );
+        }
+        item.defaultBuyPrice = next;
 
         return this.itemsRepo.save(item);
     }
@@ -459,6 +588,9 @@ export class InventoryService {
         );
         const qb = this.ledgerRepo
             .createQueryBuilder('l')
+            .leftJoinAndSelect('l.inventoryBatch', 'batch')
+            .leftJoinAndSelect('l.location', 'location')
+            .leftJoinAndSelect('l.creator', 'creator')
             .where('l.tenant_id = :tenantId', { tenantId })
             .andWhere('l.branch_id = :branchId', { branchId });
 
@@ -483,18 +615,15 @@ export class InventoryService {
             });
         }
         if (opts?.from) {
-            qb.andWhere('l.created_at >= :fromDate', { fromDate: opts.from });
+            qb.andWhere('l.createdAt >= :fromDate', { fromDate: opts.from });
         }
         if (opts?.to) {
-            qb.andWhere(
-                `l.created_at < (:toDate::timestamp + interval '1 day')`,
-                {
-                    toDate: opts.to,
-                },
-            );
+            qb.andWhere('l.createdAt < (:toDate::timestamp + interval \'1 day\')', {
+                toDate: opts.to,
+            });
         }
 
-        qb.orderBy('l.created_at', 'DESC')
+        qb.orderBy('l.createdAt', 'DESC')
             .skip((page - 1) * pageSize)
             .take(pageSize);
         const [items, total] = await qb.getManyAndCount();
@@ -834,6 +963,59 @@ export class InventoryService {
         });
 
         return wastage;
+    }
+
+    async listWastage(
+        tenantId: number,
+        branchId: number,
+        opts?: {
+            inventoryItemId?: number;
+            reason?: string;
+            from?: string;
+            to?: string;
+            page?: number;
+            pageSize?: number;
+        },
+    ) {
+        const page = Math.max(Number(opts?.page ?? 1), 1);
+        const pageSize = Math.min(
+            Math.max(Number(opts?.pageSize ?? 50), 1),
+            200,
+        );
+
+        const qb = this.wastageRepo
+            .createQueryBuilder('w')
+            .leftJoinAndSelect('w.inventoryBatch', 'batch')
+            .leftJoinAndSelect('w.location', 'location')
+            .leftJoinAndSelect('w.creator', 'creator')
+            .where('w.tenant_id = :tenantId', { tenantId })
+            .andWhere('w.branch_id = :branchId', { branchId });
+
+        if (opts?.inventoryItemId != null) {
+            qb.andWhere('w.inventory_item_id = :inventoryItemId', {
+                inventoryItemId: opts.inventoryItemId,
+            });
+        }
+        if (opts?.reason) {
+            qb.andWhere('LOWER(w.reason) LIKE LOWER(:reason)', {
+                reason: `%${String(opts.reason).trim()}%`,
+            });
+        }
+        if (opts?.from) {
+            qb.andWhere('w.createdAt >= :fromDate', { fromDate: opts.from });
+        }
+        if (opts?.to) {
+            qb.andWhere('w.createdAt < (:toDate::timestamp + interval \'1 day\')', {
+                toDate: opts.to,
+            });
+        }
+
+        qb.orderBy('w.createdAt', 'DESC')
+            .skip((page - 1) * pageSize)
+            .take(pageSize);
+
+        const [items, total] = await qb.getManyAndCount();
+        return { items, total, page, pageSize };
     }
 
     async addItemCost(args: {

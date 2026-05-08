@@ -33,6 +33,7 @@ export type InventoryItemDto = {
   trackLot: boolean;
   defaultReorderPoint?: number | null;
   defaultNearExpiryDays?: number | null;
+  defaultBuyPrice?: number | null;
 };
 
 export const inventoryService = {
@@ -51,7 +52,13 @@ export const inventoryService = {
     const res = await apiClient.post('/admin/inventory/uoms', data);
     return res.data;
   },
-  updateUom: async (id: number, data: { name?: string; code?: string }) => {
+  updateUom: async (id: number, data: {
+    name?: string;
+    code?: string;
+    kind?: string;
+    base_uom_id?: number | null;
+    multiplier_to_base?: number | null;
+  }) => {
     const res = await apiClient.patch(`/admin/inventory/uoms/${id}`, data);
     return res.data;
   },
@@ -110,6 +117,7 @@ export const inventoryService = {
     track_lot?: boolean;
     default_reorder_point?: number | null;
     default_near_expiry_days?: number | null;
+    default_buy_price: number;
   }) => {
     const res = await apiClient.post('/admin/inventory/items', data);
     return res.data;
@@ -126,6 +134,7 @@ export const inventoryService = {
       track_lot?: boolean;
       default_reorder_point?: number | null;
       default_near_expiry_days?: number | null;
+      default_buy_price: number;
     },
   ) => {
     const res = await apiClient.patch(`/admin/inventory/items/${id}`, data);
@@ -194,6 +203,20 @@ export const inventoryService = {
   }) => {
     const res = await apiClient.post(`/admin/inventory/branches/${branchId}/wastage`, data);
     return res.data;
+  },
+  listWastage: async (
+    branchId: number,
+    params?: {
+      inventory_item_id?: number;
+      reason?: string;
+      from?: string;
+      to?: string;
+      page?: number;
+      page_size?: number;
+    },
+  ) => {
+    const res = await apiClient.get(`/admin/inventory/branches/${branchId}/wastage`, { params });
+    return res.data ?? { items: [], total: 0, page: 1, pageSize: 50 };
   },
 
   // Stocktake
@@ -312,6 +335,27 @@ export const inventoryService = {
     }>;
   }) => {
     const res = await apiClient.post('/admin/inventory/adjustments', data);
+    return res.data;
+  },
+  updateAdjustment: async (id: number, data: {
+    reason_code?: string;
+    notes?: string | null;
+    lines: Array<{
+      inventory_item_id: number;
+      qty: number;
+      qty_uom_id: number;
+      location_id?: number | null;
+      inventory_batch_id?: number | null;
+      lot_code?: string | null;
+      expiry_date?: string | null;
+      notes?: string | null;
+    }>;
+  }) => {
+    const res = await apiClient.patch(`/admin/inventory/adjustments/${id}`, data);
+    return res.data;
+  },
+  deleteAdjustment: async (id: number) => {
+    const res = await apiClient.delete(`/admin/inventory/adjustments/${id}`);
     return res.data;
   },
   postAdjustment: async (id: number) => {

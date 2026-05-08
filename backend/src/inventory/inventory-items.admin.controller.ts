@@ -49,6 +49,7 @@ export class InventoryItemsAdminController {
             track_lot?: boolean;
             default_reorder_point?: number | null;
             default_near_expiry_days?: number | null;
+            default_buy_price: number;
         },
     ) {
         const tenantId = await this.inventoryService.resolveTenantId(user);
@@ -72,6 +73,7 @@ export class InventoryItemsAdminController {
             track_lot?: boolean;
             default_reorder_point?: number | null;
             default_near_expiry_days?: number | null;
+            default_buy_price: number;
         },
     ) {
         const tenantId = await this.inventoryService.resolveTenantId(user);
