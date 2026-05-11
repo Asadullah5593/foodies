@@ -329,6 +329,66 @@ In Postman: use the **Authorization** tab, set Type to **Bearer Token**, and pas
 - **Query:** `phone` (required)
 - **Response (200):** Full order object, including when applicable: `customer_id`, `delivery_latitude`, `delivery_longitude`, `loyalty_points_redeemed`, line items, payments.
 
+### Rider live location (polling fallback)
+- **Endpoint:** `GET /api/public/consumer/orders/:id/rider-location`
+- **Auth:** None
+- **Params:** `id` – order ID
+- **Query:** `phone` (required)
+- **Response (200):**
+```json
+{
+  "latitude": 31.5204,
+  "longitude": 74.3587,
+  "recorded_at": "2026-05-11T10:15:00.000Z"
+}
+```
+- **Notes:**
+  - This endpoint remains available as fallback for reconnect/recovery.
+  - Response may return `null` values when no rider coordinates are recorded yet.
+
+### Rider live location (WebSocket)
+- **Socket namespace:** `/tracking`
+- **Transport URL:** same backend host, e.g. `wss://<api-host>/tracking` (or `ws://localhost:3001/tracking` for local)
+- **Join event (client -> server):** `track:join`
+```json
+{
+  "orderId": 123,
+  "phone": "03001234567"
+}
+```
+- **Join success (server -> client):** `track:joined`
+```json
+{
+  "orderId": 123,
+  "latest": {
+    "latitude": 31.5204,
+    "longitude": 74.3587,
+    "recorded_at": "2026-05-11T10:15:00.000Z"
+  }
+}
+```
+- **Live update (server -> client):** `location:update`
+```json
+{
+  "orderId": 123,
+  "latitude": 31.5211,
+  "longitude": 74.3592,
+  "recorded_at": "2026-05-11T10:15:12.000Z"
+}
+```
+- **Join error (server -> client):** `track:error`
+```json
+{
+  "code": "FORBIDDEN_TRACKING",
+  "message": "Unable to subscribe to rider tracking for this order"
+}
+```
+- **Reconnect strategy (recommended):**
+  1. Reconnect socket.
+  2. Emit `track:join` again.
+  3. Call `GET /api/public/consumer/orders/:id/rider-location?phone=...` once to backfill latest point.
+  4. Continue rendering `location:update` events.
+
 ### Rate rider (customer JWT)
 - **Endpoint:** `POST /api/public/consumer/orders/:id/ratings/rider`
 - **Auth:** Bearer token (customer JWT)
@@ -454,6 +514,24 @@ In Postman: use the **Authorization** tab, set Type to **Bearer Token**, and pas
 - **400 Bad Request:** Invalid or missing body/params (e.g. missing `brand_id`/`branch_id` on register).
 - **404 Not Found:** Resource not found (e.g. customer not found, branch not found, `email and password are required`).
 - **409 Conflict:** e.g. duplicate email on profile update (if applicable).
+
+---
+
+## Rider location retention and cleanup
+
+- Raw rider coordinate points are treated as lifecycle data:
+  - **Hot:** day 0-5
+  - **Warm:** day 6-10 (compacted summary kept in DB)
+  - **Expired:** day 11 onward
+- A scheduled backend cleanup job runs automatically (no manual trigger) and:
+  - builds warm summary rows for terminal deliveries,
+  - deletes raw points older than warm retention in controlled batches,
+  - removes expired warm summaries once corresponding raw points are gone.
+- Batch controls are fixed for cleanup safety:
+  - cadence: once daily,
+  - max raw deletions per run: `100000`,
+  - oldest rows deleted first.
+- **Dry-run mode:** set `RIDER_LOCATION_RETENTION_DRY_RUN=true` to log actions without deleting rows.
 
 ---
 

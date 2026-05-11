@@ -8,6 +8,7 @@ import { Repository } from 'typeorm';
 import { Order } from '../entities/order.entity';
 import { RiderOrderLocation } from '../entities/rider-order-location.entity';
 import { normalizePakistaniPhone } from '../utils/phone';
+import { RiderLocationEventsService } from './rider-location-events.service';
 
 const TERMINAL_DELIVERY_STATUSES = ['delivered', 'delivery_failed'];
 
@@ -18,6 +19,7 @@ export class RiderOrderLocationService {
         private readonly orderRepo: Repository<Order>,
         @InjectRepository(RiderOrderLocation)
         private readonly locationRepo: Repository<RiderOrderLocation>,
+        private readonly riderLocationEvents: RiderLocationEventsService,
     ) {}
 
     private parseCoordinate(value: unknown, name: string): number {
@@ -74,11 +76,35 @@ export class RiderOrderLocationService {
             longitude: lng,
         });
         const saved = await this.locationRepo.save(row);
-        return {
+        const payload = {
+            orderId,
             latitude: Number(saved.latitude),
             longitude: Number(saved.longitude),
             recorded_at: saved.createdAt.toISOString(),
         };
+        this.riderLocationEvents.emitLocationUpdate(payload);
+        return {
+            latitude: payload.latitude,
+            longitude: payload.longitude,
+            recorded_at: payload.recorded_at,
+        };
+    }
+
+    async verifyCustomerCanTrack(orderId: number, customerPhone: string) {
+        const normalized = normalizePakistaniPhone(
+            typeof customerPhone === 'string' ? customerPhone.trim() : '',
+        );
+        if (!normalized) {
+            throw new BadRequestException('Valid phone is required');
+        }
+
+        const order = await this.orderRepo.findOne({ where: { id: orderId } });
+        if (!order) throw new NotFoundException('Order not found');
+        if (order.customerPhone !== normalized) {
+            throw new NotFoundException('Order not found');
+        }
+
+        return order;
     }
 
     async getLatestForCustomerPhone(
@@ -89,17 +115,7 @@ export class RiderOrderLocationService {
         longitude: number | null;
         recorded_at: string | null;
     }> {
-        const normalized = normalizePakistaniPhone(
-            typeof customerPhone === 'string' ? customerPhone.trim() : '',
-        );
-        if (!normalized)
-            throw new BadRequestException('Valid phone is required');
-
-        const order = await this.orderRepo.findOne({ where: { id: orderId } });
-        if (!order) throw new NotFoundException('Order not found');
-        if (order.customerPhone !== normalized) {
-            throw new NotFoundException('Order not found');
-        }
+        await this.verifyCustomerCanTrack(orderId, customerPhone);
 
         const latest = await this.locationRepo.findOne({
             where: { orderId },

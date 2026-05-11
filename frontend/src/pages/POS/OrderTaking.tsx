@@ -983,6 +983,7 @@ const OrderTaking: React.FC = () => {
               </div>
             )}
             <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+              {/* <RiderTrackingTestPanel /> */}
               <MenuGrid
                 menu={paginatedMenu}
                 justAddedItemId={justAddedItem}
