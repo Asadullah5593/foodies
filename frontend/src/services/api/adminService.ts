@@ -333,8 +333,17 @@ export const adminService = {
     return response.data;
   },
 
-  // Riders (for delivery assignment)
-  getRiders: async (): Promise<Array<{ id: number; name: string; email: string | null; phone: string | null }>> => {
+  // Riders (for delivery assignment) — includes all-time customer star averages (tenant orders only)
+  getRiders: async (): Promise<
+    Array<{
+      id: number;
+      name: string;
+      email: string | null;
+      phone: string | null;
+      rating_average: number | null;
+      rating_count: number;
+    }>
+  > => {
     const response = await apiClient.get('/admin/orders/riders');
     return response.data ?? [];
   },

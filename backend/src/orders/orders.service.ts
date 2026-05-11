@@ -5,7 +5,7 @@ import {
     ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { Order } from '../entities/order.entity';
 import { OrderItem } from '../entities/order-item.entity';
@@ -914,15 +914,41 @@ export class OrdersService {
                 branchId: options.branchId,
             });
         const orders = await qb.getMany();
-        return orders.map((o) => ({
-            id: o.id,
-            order_number: o.orderNumber,
-            status: o.status,
-            total_amount: Number(o.totalAmount),
-            placed_at: o.placedAt?.toISOString() ?? null,
-            branch_id: o.branchId,
-            loyalty_points_redeemed: o.loyaltyPointsRedeemed ?? 0,
-        }));
+        if (orders.length === 0) return [];
+
+        const orderIds = orders.map((o) => o.id);
+        const lineBrandRows = await this.orderItemRepo.find({
+            where: { orderId: In(orderIds) },
+            select: ['orderId', 'brandId'],
+        });
+        const brandIdsByOrder = new Map<number, Set<number>>();
+        for (const row of lineBrandRows) {
+            if (row.brandId == null) continue;
+            let set = brandIdsByOrder.get(row.orderId);
+            if (!set) {
+                set = new Set<number>();
+                brandIdsByOrder.set(row.orderId, set);
+            }
+            set.add(row.brandId);
+        }
+
+        return orders.map((o) => {
+            const fromLines = brandIdsByOrder.get(o.id);
+            const brand_ids = fromLines
+                ? [...fromLines].sort((a, b) => a - b)
+                : [];
+            return {
+                id: o.id,
+                order_number: o.orderNumber,
+                status: o.status,
+                total_amount: Number(o.totalAmount),
+                placed_at: o.placedAt?.toISOString() ?? null,
+                branch_id: o.branchId,
+                brand_id: o.brandId ?? null,
+                brand_ids,
+                loyalty_points_redeemed: o.loyaltyPointsRedeemed ?? 0,
+            };
+        });
     }
 
     /** Get full order details for consumer; only if customerPhone matches. */
@@ -1555,7 +1581,49 @@ export class OrdersService {
              ORDER BY u.name`,
             [tenantId],
         );
-        return rows;
+        if (rows.length === 0) return [];
+
+        const riderIds = rows.map((r) => r.id);
+        const stats: Array<{
+            rider_id: number;
+            rating_count: string;
+            rating_average: string | null;
+        }> = await this.dataSource.query(
+            `SELECT ror.rider_user_id AS rider_id,
+                    COUNT(*)::text AS rating_count,
+                    AVG(ror.stars)::text AS rating_average
+             FROM rider_order_ratings ror
+             INNER JOIN orders o ON o.id = ror.order_id AND o.tenant_id = $1
+             WHERE ror.rider_user_id = ANY($2::int[])
+             GROUP BY ror.rider_user_id`,
+            [tenantId, riderIds],
+        );
+        const statMap = new Map<
+            number,
+            { rating_count: number; rating_average: number | null }
+        >();
+        for (const s of stats) {
+            const rid = Number(s.rider_id);
+            const cnt = parseInt(String(s.rating_count), 10) || 0;
+            const avgRaw = s.rating_average;
+            const avg =
+                avgRaw != null && avgRaw !== ''
+                    ? Math.round(parseFloat(String(avgRaw)) * 10) / 10
+                    : null;
+            statMap.set(rid, { rating_count: cnt, rating_average: avg });
+        }
+
+        return rows.map((r) => {
+            const st = statMap.get(r.id);
+            return {
+                id: r.id,
+                name: r.name,
+                email: r.email ?? null,
+                phone: r.phone ?? null,
+                rating_count: st?.rating_count ?? 0,
+                rating_average: st?.rating_average ?? null,
+            };
+        });
     }
 
     /** Assign a rider to an order. Admin only. */

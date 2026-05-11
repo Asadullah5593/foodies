@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Brand } from '../entities/brand.entity';
 import { BranchBrand } from '../entities/branch-brand.entity';
+import { BrandOrderRating } from '../entities/brand-order-rating.entity';
 import { MediaStorageService } from '../media/media-storage.service';
 
 @Injectable()
@@ -12,6 +13,8 @@ export class BrandsService {
         private repo: Repository<Brand>,
         @InjectRepository(BranchBrand)
         private branchBrandRepo: Repository<BranchBrand>,
+        @InjectRepository(BrandOrderRating)
+        private brandRatingRepo: Repository<BrandOrderRating>,
         private mediaStorage: MediaStorageService,
     ) {}
 
@@ -22,14 +25,20 @@ export class BrandsService {
                 where: { tenantId },
                 order: { id: 'ASC' },
             });
-            return list.map((b) => this.toResponse(b));
+            const aggMap = await this.loadRatingAggregates(list.map((b) => b.id));
+            return list.map((b) => ({
+                ...this.toResponse(b),
+                ...this.mergeAdminRatingFields(b.id, aggMap),
+            }));
         }
         const list = await this.repo.find({
             relations: ['tenant'],
             order: { id: 'ASC' },
         });
+        const aggMap = await this.loadRatingAggregates(list.map((b) => b.id));
         return list.map((b) => ({
             ...this.toResponse(b),
+            ...this.mergeAdminRatingFields(b.id, aggMap),
             tenant_name:
                 (b as Brand & { tenant?: { name: string } }).tenant?.name ??
                 null,
@@ -50,8 +59,9 @@ export class BrandsService {
             where: { isActive: true },
             order: { id: 'ASC' },
         });
-        const mapped = list.map((b) => this.toResponse(b));
-        return this.filterBrandsBySearch(mapped, search);
+        const filtered = this.filterBrandsBySearch(list, search);
+        const aggMap = await this.loadRatingAggregates(filtered.map((b) => b.id));
+        return filtered.map((b) => this.toPublicResponse(b, aggMap.get(b.id)));
     }
 
     /** Public list for web home – active brands scoped to a tenant id. Optional search filters by brand name. */
@@ -60,8 +70,9 @@ export class BrandsService {
             where: { isActive: true, tenantId },
             order: { id: 'ASC' },
         });
-        const mapped = list.map((b) => this.toResponse(b));
-        return this.filterBrandsBySearch(mapped, search);
+        const filtered = this.filterBrandsBySearch(list, search);
+        const aggMap = await this.loadRatingAggregates(filtered.map((b) => b.id));
+        return filtered.map((b) => this.toPublicResponse(b, aggMap.get(b.id)));
     }
 
     /** Public: active brands at a specific branch (for consumer app). Optional search filters by brand name. */
@@ -76,8 +87,9 @@ export class BrandsService {
             where: { id: In(brandIds), isActive: true },
             order: { id: 'ASC' },
         });
-        const mapped = list.map((b) => this.toResponse(b));
-        return this.filterBrandsBySearch(mapped, search);
+        const filtered = this.filterBrandsBySearch(list, search);
+        const aggMap = await this.loadRatingAggregates(filtered.map((b) => b.id));
+        return filtered.map((b) => this.toPublicResponse(b, aggMap.get(b.id)));
     }
 
     /** Public: active brands by explicit id list (for consumer app helpers). */
@@ -87,7 +99,78 @@ export class BrandsService {
             where: { id: In(ids), isActive: true },
             order: { id: 'ASC' },
         });
-        return list.map((b) => this.toResponse(b));
+        const aggMap = await this.loadRatingAggregates(list.map((b) => b.id));
+        return list.map((b) => this.toPublicResponse(b, aggMap.get(b.id)));
+    }
+
+    private async loadRatingAggregates(
+        brandIds: number[],
+    ): Promise<Map<number, { avg: number; count: number }>> {
+        const map = new Map<number, { avg: number; count: number }>();
+        if (brandIds.length === 0) return map;
+        const rows = await this.brandRatingRepo
+            .createQueryBuilder('br')
+            .select('br.brandId', 'brandId')
+            .addSelect('COUNT(*)', 'cnt')
+            .addSelect('AVG(br.stars)', 'avgstars')
+            .where('br.brandId IN (:...ids)', { ids: brandIds })
+            .groupBy('br.brandId')
+            .getRawMany<{
+                brandId: string | number;
+                cnt: string | number;
+                avgstars: string | null;
+            }>();
+        for (const row of rows) {
+            const r = row as Record<string, unknown>;
+            const id = Number(r.brandId ?? r.brand_id);
+            const count = Number(r.cnt ?? r.count);
+            const avgRaw = r.avgstars ?? r.avg_stars;
+            const avg =
+                avgRaw != null && avgRaw !== ''
+                    ? parseFloat(String(avgRaw))
+                    : 0;
+            map.set(id, { count, avg });
+        }
+        return map;
+    }
+
+    private mergeAdminRatingFields(
+        brandId: number,
+        aggMap: Map<number, { avg: number; count: number }>,
+    ): { rating_average: number | null; rating_count: number } {
+        const agg = aggMap.get(brandId);
+        if (!agg || agg.count === 0) {
+            return { rating_average: null, rating_count: 0 };
+        }
+        return {
+            rating_count: agg.count,
+            rating_average: Math.round(agg.avg * 10) / 10,
+        };
+    }
+
+    /**
+     * Admin / POS: all-time brand rating aggregates (stars average and count only).
+     * Does not expose individual reviews.
+     */
+    async getRatingAggregatesForBrandIds(brandIds: number[]): Promise<
+        Map<
+            number,
+            { rating_average: number | null; rating_count: number }
+        >
+    > {
+        const raw = await this.loadRatingAggregates(brandIds);
+        const out = new Map<
+            number,
+            { rating_average: number | null; rating_count: number }
+        >();
+        for (const [id, agg] of raw) {
+            out.set(id, {
+                rating_count: agg.count,
+                rating_average:
+                    agg.count > 0 ? Math.round(agg.avg * 10) / 10 : null,
+            });
+        }
+        return out;
     }
 
     private filterBrandsBySearch<T extends { name?: string | null }>(
@@ -106,7 +189,8 @@ export class BrandsService {
             where: { id, isActive: true },
         });
         if (!brand) throw new NotFoundException('Brand not found');
-        return this.toResponse(brand);
+        const aggMap = await this.loadRatingAggregates([id]);
+        return this.toPublicResponse(brand, aggMap.get(id));
     }
 
     /** Admin: tenant user can only view own tenant's brand; super admin can view any */
@@ -116,7 +200,11 @@ export class BrandsService {
             relations: tenantId == null ? ['tenant'] : undefined,
         });
         if (!brand) throw new NotFoundException('Brand not found');
-        const out = this.toResponse(brand);
+        const aggMap = await this.loadRatingAggregates([id]);
+        const out = {
+            ...this.toResponse(brand),
+            ...this.mergeAdminRatingFields(id, aggMap),
+        };
         if (
             tenantId == null &&
             (brand as Brand & { tenant?: { name: string } }).tenant
@@ -272,6 +360,26 @@ export class BrandsService {
             tenant_id: b.tenantId,
             created_at: b.createdAt?.toISOString() ?? null,
             updated_at: b.updatedAt?.toISOString() ?? null,
+        };
+    }
+
+    /** Public brand JSON including consumer rating aggregates. */
+    private toPublicResponse(
+        b: Brand,
+        agg: { avg: number; count: number } | undefined,
+    ) {
+        const base = this.toResponse(b);
+        if (!agg || agg.count === 0) {
+            return {
+                ...base,
+                rating_average: null as number | null,
+                rating_count: 0,
+            };
+        }
+        return {
+            ...base,
+            rating_average: Math.round(agg.avg * 10) / 10,
+            rating_count: agg.count,
         };
     }
 }
