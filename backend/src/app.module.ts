@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ScheduleModule } from '@nestjs/schedule';
 import { join } from 'path';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import { AppController } from './app.controller';
@@ -50,6 +51,7 @@ import { RecipesModule } from './recipes/recipes.module';
             migrations: [join(__dirname, 'migrations', '*.js')],
             entities: [join(__dirname, '**', '*.entity{.ts,.js}')],
         }),
+        ScheduleModule.forRoot(),
         AuthModule,
         TenantsModule,
         BrandsModule,

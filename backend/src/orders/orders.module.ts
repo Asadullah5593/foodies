@@ -19,8 +19,12 @@ import { AdminOrdersController } from './admin-orders.controller';
 import { RiderOrdersController } from './rider-orders.controller';
 import { RiderOrderLocationController } from './rider-order-location.controller';
 import { RiderOrderLocation } from '../entities/rider-order-location.entity';
+import { RiderOrderLocationSummary } from '../entities/rider-order-location-summary.entity';
 import { OrdersService } from './orders.service';
 import { RiderOrderLocationService } from './rider-order-location.service';
+import { RiderLocationGateway } from './rider-location.gateway';
+import { RiderLocationEventsService } from './rider-location-events.service';
+import { RiderLocationRetentionService } from './rider-location-retention.service';
 import { MenuModule } from '../menu/menu.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
@@ -46,6 +50,7 @@ import { InventoryModule } from '../inventory/inventory.module';
             Tenant,
             Discount,
             RiderOrderLocation,
+            RiderOrderLocationSummary,
         ]),
         MenuModule,
         PaymentsModule,
@@ -62,7 +67,13 @@ import { InventoryModule } from '../inventory/inventory.module';
         RiderOrdersController,
         RiderOrderLocationController,
     ],
-    providers: [OrdersService, RiderOrderLocationService],
+    providers: [
+        OrdersService,
+        RiderOrderLocationService,
+        RiderLocationGateway,
+        RiderLocationEventsService,
+        RiderLocationRetentionService,
+    ],
     exports: [OrdersService, RiderOrderLocationService],
 })
 export class OrdersModule {}
