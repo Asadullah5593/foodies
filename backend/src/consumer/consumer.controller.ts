@@ -45,6 +45,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RegisterDto } from './dto/register.dto';
 import { MediaStorageService } from '../media/media-storage.service';
+import { RatingsService } from '../ratings/ratings.service';
 
 type BranchWithBrands = Branch & {
     branchBrands: Array<{ brand: { tenantId: number } }>;
@@ -68,6 +69,7 @@ export class ConsumerController {
         private cartService: CartService,
         private mailService: MailService,
         private mediaStorage: MediaStorageService,
+        private ratingsService: RatingsService,
         @InjectRepository(Branch) private branchRepo: Repository<Branch>,
     ) {}
 
@@ -995,6 +997,136 @@ export class ConsumerController {
             ...o,
             loyalty_points_balance: loyaltyPointsBalance,
         }));
+    }
+
+    @Post('orders/:id/ratings/rider')
+    @UseGuards(CustomerJwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiTags('Consumer – Rate RIDER (delivery)')
+    @ApiOperation({
+        operationId: 'consumer_rateRiderForOrder',
+        summary: 'Submit / update RIDER star rating (not brand)',
+        description:
+            'Use this endpoint only to rate the **assigned delivery rider** after `delivery_status` is `delivered`. ' +
+            'Path `id` is the **order id** (same as GET /public/consumer/orders/:id). Body only needs `stars` (1–5). ' +
+            'Does not update public brand scores. For restaurant/brand stars use **POST .../ratings/brand** instead.',
+    })
+    @ApiParam({
+        name: 'id',
+        description:
+            '**Order id** (numeric). Identifies which order you are rating. Not a rider user id or brand id.',
+        example: 1001,
+        type: Number,
+    })
+    @ApiBody({
+        description: 'Rider star rating only',
+        schema: {
+            type: 'object',
+            required: ['stars'],
+            properties: { stars: { type: 'integer', minimum: 1, maximum: 5 } },
+        },
+    })
+    async rateRiderForOrder(
+        @Param('id') id: string,
+        @Req() req: { user: Customer },
+        @Body() body: { stars: number },
+    ) {
+        return this.ratingsService.upsertRiderRating(+id, req.user, body?.stars);
+    }
+
+    @Post('orders/:id/ratings/brand')
+    @UseGuards(CustomerJwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiTags('Consumer – Rate BRAND / order')
+    @ApiOperation({
+        operationId: 'consumer_rateBrandForOrder',
+        summary: 'Submit / update BRAND (restaurant) star rating for this order',
+        description:
+            'Use this endpoint to rate the **food / brand experience** for this order; averages appear on public brand APIs. ' +
+            'Path `id` is the **order id** (same as GET /public/consumer/orders/:id). Body requires `stars` (1–5). ' +
+            '**Single-brand order:** omit `brand_id` (server infers the brand). ' +
+            '**Multi-brand order (e.g. food court):** send **one request per brand** — same order `id` each time, with `brand_id` set to that brand and `stars` for that brand only (2 brands ⇒ 2 POSTs). ' +
+            'Use **GET .../orders/:id/ratings** to see which brands you already rated. ' +
+            'This is **not** the rider rating — use **POST .../ratings/rider** for the driver.',
+    })
+    @ApiParam({
+        name: 'id',
+        description:
+            '**Order id** (numeric). Identifies which order you are rating. Not a brand id alone (use body `brand_id` only when needed).',
+        example: 1001,
+        type: Number,
+    })
+    @ApiBody({
+        description:
+            'One brand per request. For multiple brands on the same order, call this endpoint repeatedly with the same order id.',
+        examples: {
+            singleBrand: {
+                summary: 'Single-brand order',
+                value: { stars: 5 },
+            },
+            multiBrandFirst: {
+                summary: 'Multi-brand — rate first brand',
+                value: { stars: 5, brand_id: 12 },
+            },
+            multiBrandSecond: {
+                summary: 'Multi-brand — rate second brand (second POST)',
+                value: { stars: 4, brand_id: 34 },
+            },
+        },
+        schema: {
+            type: 'object',
+            required: ['stars'],
+            properties: {
+                stars: {
+                    type: 'integer',
+                    minimum: 1,
+                    maximum: 5,
+                    example: 5,
+                },
+                brand_id: {
+                    type: 'integer',
+                    minimum: 1,
+                    description:
+                        'Required when the order has line items from more than one brand. Must match a brand on that order.',
+                    example: 12,
+                },
+            },
+        },
+    })
+    async rateBrandForOrder(
+        @Param('id') id: string,
+        @Req() req: { user: Customer },
+        @Body() body: { stars: number; brand_id?: number },
+    ) {
+        return this.ratingsService.upsertBrandRating(
+            +id,
+            req.user,
+            body?.stars,
+            body?.brand_id,
+        );
+    }
+
+    @Get('orders/:id/ratings')
+    @UseGuards(CustomerJwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiTags('Consumer – Read my ratings')
+    @ApiOperation({
+        operationId: 'consumer_getMyRatingsForOrder',
+        summary: 'Read my rider + brand rating rows for this order',
+        description:
+            'Returns `rider_rating` (one object or null) and `brand_ratings` (array). Path `id` is the **order id**.',
+    })
+    @ApiParam({
+        name: 'id',
+        description: '**Order id** (numeric) for which to load your submitted ratings.',
+        example: 1001,
+        type: Number,
+    })
+    async getMyRatingsForOrder(
+        @Param('id') id: string,
+        @Req() req: { user: Customer },
+    ) {
+        return this.ratingsService.getMyRatingsForOrder(+id, req.user);
     }
 
     @Get('orders/:id/status')

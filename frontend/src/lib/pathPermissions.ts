@@ -22,6 +22,7 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/customers': ['customers:manage'],
   '/admin/roles': ['roles:manage'],
   '/admin/orders': ['orders:view'],
+  '/admin/riders': ['deliveries:view', 'orders:view'],
   '/admin/deliveries': ['deliveries:view'],
   '/admin/shifts': ['shifts:manage'],
   '/admin/reports': ['reports:view'],

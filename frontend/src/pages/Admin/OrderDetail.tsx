@@ -27,6 +27,18 @@ type OrderDetailItem = {
   modifiers?: Array<{ name: string | null; unit_price: number }>;
 };
 
+type OrderRatingsResponse = {
+  rider_rating: { stars: number; rated_at: string | null } | null;
+  brand_ratings: Array<{
+    brand_id: number;
+    brand_name: string | null;
+    order_stars: number;
+    order_rated_at: string | null;
+    public_rating_average: number | null;
+    public_rating_count: number;
+  }>;
+};
+
 type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   order_number?: string;
   order_type?: string;
@@ -58,6 +70,11 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function formatStars(n: number): string {
+  const s = Math.max(1, Math.min(5, Math.round(Number(n) || 0)));
+  return `${'★'.repeat(s)}${'☆'.repeat(5 - s)} (${s}/5)`;
+}
+
 function formatOrderSourceLabel(source: string | null | undefined): string {
   if (source === 'consumer_app') return 'Consumer app';
   if (source === 'pos') return 'POS';
@@ -81,6 +98,16 @@ const OrderDetail: React.FC = () => {
     refetchInterval: ORDER_POLL_INTERVAL_MS,
   });
 
+  const { data: ratings, isLoading: ratingsLoading } = useQuery({
+    queryKey: ['admin-order-ratings', id],
+    queryFn: async () => {
+      const response = await apiClient.get<OrderRatingsResponse>(`/admin/orders/${id}/ratings`);
+      return response.data;
+    },
+    enabled: !!id,
+    refetchInterval: ORDER_POLL_INTERVAL_MS,
+  });
+
   const updateStatusMutation = useMutation({
     mutationFn: async (status: string) => {
       const response = await apiClient.put(`/admin/orders/${id}/status`, { status });
@@ -88,6 +115,7 @@ const OrderDetail: React.FC = () => {
     },
     onSuccess: (_data, status) => {
       queryClient.invalidateQueries({ queryKey: ['admin-order', id] });
+      queryClient.invalidateQueries({ queryKey: ['admin-order-ratings', id] });
       if (status === 'completed') {
         queryClient.invalidateQueries({ queryKey: ['salesSummary'] });
         queryClient.invalidateQueries({ queryKey: ['topItems'] });
@@ -287,6 +315,81 @@ const OrderDetail: React.FC = () => {
             );
           })}
         </div>
+      </Card>
+
+      <Card className="p-6 mb-6 border border-gray-200 dark:border-slate-700 dark:bg-slate-800 shadow-sm">
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-1">
+          Customer ratings
+        </h2>
+        <p className="text-xs text-gray-500 dark:text-slate-400 mb-4 leading-relaxed">
+          Stars only — no customer names, phones, or written reviews. Rider scores are internal (not shown on public menus).
+          Public brand average is the same all-time figure customers see for that brand online.
+        </p>
+        {ratingsLoading ? (
+          <p className="text-sm text-gray-500 dark:text-slate-400">Loading ratings…</p>
+        ) : (
+          <div className="space-y-5 text-sm">
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2">
+                Delivery rider (this order)
+              </h3>
+              {ratings?.rider_rating ? (
+                <div className="rounded-lg bg-amber-50/80 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/50 px-3 py-2 text-gray-800 dark:text-slate-200">
+                  <p className="font-medium text-amber-900 dark:text-amber-100">{formatStars(ratings.rider_rating.stars)}</p>
+                  {ratings.rider_rating.rated_at && (
+                    <p className="text-xs text-amber-800/90 dark:text-amber-200/80 mt-1">
+                      Updated {new Date(ratings.rider_rating.rated_at).toLocaleString()}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-gray-500 dark:text-slate-400">No rider rating for this order yet.</p>
+              )}
+            </div>
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2">
+                Brand / food (this order)
+              </h3>
+              {ratings?.brand_ratings && ratings.brand_ratings.length > 0 ? (
+                <ul className="space-y-3">
+                  {ratings.brand_ratings.map((br) => (
+                    <li
+                      key={br.brand_id}
+                      className="rounded-lg bg-slate-50 dark:bg-slate-700/40 border border-slate-100 dark:border-slate-600 px-3 py-2"
+                    >
+                      <p className="font-medium text-gray-900 dark:text-slate-100">
+                        {br.brand_name ?? `Brand #${br.brand_id}`}
+                      </p>
+                      <p className="text-gray-700 dark:text-slate-300 mt-1">
+                        This order: <span className="font-medium">{formatStars(br.order_stars)}</span>
+                        {br.order_rated_at && (
+                          <span className="text-xs text-gray-500 dark:text-slate-400 ml-2">
+                            ({new Date(br.order_rated_at).toLocaleString()})
+                          </span>
+                        )}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                        Public average:{' '}
+                        {br.public_rating_average != null ? (
+                          <>
+                            <strong className="text-gray-700 dark:text-slate-300">
+                              {br.public_rating_average.toFixed(1)} / 5
+                            </strong>
+                            <span> · {br.public_rating_count} rating{br.public_rating_count === 1 ? '' : 's'} (all orders)</span>
+                          </>
+                        ) : (
+                          <span>no public ratings yet</span>
+                        )}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-gray-500 dark:text-slate-400">No brand ratings for this order yet.</p>
+              )}
+            </div>
+          </div>
+        )}
       </Card>
 
       <Card className="p-6 mb-6 border border-gray-200 dark:border-slate-700 dark:bg-slate-800 shadow-sm">

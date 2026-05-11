@@ -95,6 +95,17 @@ const Deliveries: React.FC = () => {
     queryFn: () => adminService.getRiders(),
   });
 
+  const riderRatingById = useMemo(() => {
+    const m = new Map<number, { rating_average: number | null; rating_count: number }>();
+    for (const r of riders ?? []) {
+      m.set(r.id, {
+        rating_average: r.rating_average ?? null,
+        rating_count: r.rating_count ?? 0,
+      });
+    }
+    return m;
+  }, [riders]);
+
   const orders = ordersRaw ?? [];
 
   const ordersFilteredByRider = useMemo(() => {
@@ -155,7 +166,13 @@ const Deliveries: React.FC = () => {
             onChange={(v) => setFilter('rider_id', v)}
             options={[
               { value: '', label: 'All riders' },
-              ...(riders ?? []).map((r) => ({ value: String(r.id), label: r.name })),
+              ...(riders ?? []).map((r) => ({
+                value: String(r.id),
+                label:
+                  (r.rating_count ?? 0) > 0 && r.rating_average != null
+                    ? `${r.name} (${r.rating_average.toFixed(1)}/5, ${r.rating_count})`
+                    : r.name,
+              })),
             ]}
             placeholder="All riders"
             minWidth="min-w-[160px]"
@@ -194,10 +211,25 @@ const Deliveries: React.FC = () => {
           <AccentedList>
             {paginatedByRider.map(({ riderId, riderName, orders: riderOrders }, i) => {
               const deliveredCount = riderOrders.filter((o) => o.delivery_status === 'delivered').length;
+              const rStat = riderRatingById.get(riderId);
               const subtitle = (
                 <>
                   <p>{riderOrders.length} order{riderOrders.length !== 1 ? 's' : ''} assigned</p>
                   {deliveredCount > 0 && <p className="text-emerald-600 dark:text-emerald-400">{deliveredCount} delivered</p>}
+                  {rStat && rStat.rating_count > 0 && rStat.rating_average != null ? (
+                    <p className="text-sm text-gray-600 dark:text-slate-300 mt-1">
+                      Customer delivery ratings (all orders):{' '}
+                      <strong className="text-gray-800 dark:text-slate-200">
+                        {rStat.rating_average.toFixed(1)} / 5
+                      </strong>
+                      <span className="text-gray-500 dark:text-slate-400">
+                        {' '}
+                        · {rStat.rating_count} rating{rStat.rating_count === 1 ? '' : 's'}
+                      </span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500 dark:text-slate-500 mt-1">No customer rider ratings yet.</p>
+                  )}
                 </>
               );
               const footer = (

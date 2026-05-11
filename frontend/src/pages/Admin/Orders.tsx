@@ -449,7 +449,11 @@ const Orders: React.FC = () => {
                 <option value="">Select a rider</option>
                 {(riders ?? []).map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.name} {r.phone ? `· ${r.phone}` : ''}
+                    {r.name}
+                    {(r.rating_count ?? 0) > 0 && r.rating_average != null
+                      ? ` · ${r.rating_average.toFixed(1)}/5 (${r.rating_count})`
+                      : ''}
+                    {r.phone ? ` · ${r.phone}` : ''}
                   </option>
                 ))}
               </select>

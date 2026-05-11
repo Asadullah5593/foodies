@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { RoleAccessModule } from '../auth/role-access.module';
 import { Brand } from '../entities/brand.entity';
 import { BranchBrand } from '../entities/branch-brand.entity';
+import { BrandOrderRating } from '../entities/brand-order-rating.entity';
 import { MediaModule } from '../media/media.module';
 import { BrandsController } from './brands.controller';
 import { BrandsService } from './brands.service';
@@ -11,7 +12,7 @@ import { BrandsService } from './brands.service';
     imports: [
         RoleAccessModule,
         MediaModule,
-        TypeOrmModule.forFeature([Brand, BranchBrand]),
+        TypeOrmModule.forFeature([Brand, BranchBrand, BrandOrderRating]),
     ],
     controllers: [BrandsController],
     providers: [BrandsService],

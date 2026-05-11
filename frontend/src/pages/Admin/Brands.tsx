@@ -394,7 +394,26 @@ const Brands: React.FC = () => {
                     imageUrl={brand.logo_url ? fullImageUrl(brand.logo_url) : null}
                     initial={brand.name.charAt(0)}
                     title={brand.name}
-                    subtitle={brand.tenant_name || undefined}
+                    subtitle={
+                      <div className="space-y-0.5">
+                        {brand.tenant_name ? (
+                          <span className="block text-gray-600 dark:text-slate-400">{brand.tenant_name}</span>
+                        ) : null}
+                        <span className="block text-xs text-gray-500 dark:text-slate-500">
+                          Customer ratings (all orders):{' '}
+                          {(brand.rating_count ?? 0) > 0 ? (
+                            <>
+                              <strong className="text-gray-700 dark:text-slate-300">
+                                {brand.rating_average != null ? `${brand.rating_average.toFixed(1)} / 5` : '—'}
+                              </strong>
+                              <span> · {brand.rating_count} rating{brand.rating_count === 1 ? '' : 's'}</span>
+                            </>
+                          ) : (
+                            <span>no ratings yet</span>
+                          )}
+                        </span>
+                      </div>
+                    }
                     statusLabel={brand.status}
                     statusVariant={brand.status === 'active' ? 'active' : 'inactive'}
                     animationIndex={i}

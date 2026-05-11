@@ -37,6 +37,9 @@ export interface Brand {
   status: string;
   /** Present when super admin lists brands (to show which tenant) */
   tenant_name?: string;
+  /** All-time consumer brand ratings (admin / POS) */
+  rating_average?: number | null;
+  rating_count?: number;
 }
 
 export interface Branch {

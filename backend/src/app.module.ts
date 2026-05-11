@@ -28,7 +28,6 @@ import { UploadModule } from './upload/upload.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ProcurementModule } from './procurement/procurement.module';
 import { RecipesModule } from './recipes/recipes.module';
-
 @Module({
     imports: [
         ConfigModule.forRoot({

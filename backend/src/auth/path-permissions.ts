@@ -83,6 +83,13 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
     { prefix: '/admin/roles', permissionNames: [Permissions.ROLES_MANAGE] },
     { prefix: '/admin/orders', permissionNames: [Permissions.ORDERS_VIEW] },
     {
+        prefix: '/admin/riders',
+        permissionNames: [
+            Permissions.DELIVERIES_VIEW,
+            Permissions.ORDERS_VIEW,
+        ],
+    },
+    {
         prefix: '/admin/deliveries',
         permissionNames: [Permissions.DELIVERIES_VIEW],
     },
