@@ -1,6 +1,7 @@
 import {
     Controller,
     Get,
+    Post,
     Put,
     Body,
     Param,
@@ -97,6 +98,7 @@ export class AdminOrdersController {
         },
         @Query('branch_id') branchId: string,
         @Query('status') status: string,
+        @Query('order_type') orderType: string,
         @Query('date_from') dateFrom: string,
         @Query('date_to') dateTo: string,
         @Query('has_rider') hasRider: string,
@@ -106,6 +108,7 @@ export class AdminOrdersController {
             {
                 branch_id: branchId ? +branchId : undefined,
                 status,
+                order_type: orderType || undefined,
                 date_from: dateFrom,
                 date_to: dateTo,
                 has_rider:
@@ -203,6 +206,28 @@ export class AdminOrdersController {
             +id,
             user.tenantId,
             riderId,
+            user.allowedBranchIds,
+        );
+    }
+
+    @Post(':id/auto-assign')
+    retryAutoAssign(
+        @Param('id') id: string,
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
+    ) {
+        if (user.tenantId == null) {
+            throw new BadRequestException(
+                'Automatic assignment retry is only available for tenant users',
+            );
+        }
+        return this.service.retryAutoAssignForAdmin(
+            +id,
+            user.tenantId,
             user.allowedBranchIds,
         );
     }

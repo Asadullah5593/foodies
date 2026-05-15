@@ -578,6 +578,7 @@ function DealFormSearchableSelect<T extends { id: number; name: string }>({
                 onSelect={(opt) => {
                   setSearch(opt.label);
                   typeahead.setOpen(false);
+                  setOpen(false);
                 }}
                 onClose={() => typeahead.setOpen(false)}
               />
@@ -586,7 +587,12 @@ function DealFormSearchableSelect<T extends { id: number; name: string }>({
               <li>
                 <button
                   type="button"
-                  onClick={() => { onChange(null); setOpen(false); setSearch(''); }}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    onChange(null);
+                    setOpen(false);
+                    setSearch('');
+                  }}
                   className="w-full px-3 py-2 text-left text-sm text-gray-500 hover:bg-gray-50"
                 >
                   — Clear
@@ -596,7 +602,12 @@ function DealFormSearchableSelect<T extends { id: number; name: string }>({
                 <li key={getOptionId(o)}>
                   <button
                     type="button"
-                    onClick={() => { onChange(getOptionId(o)); setOpen(false); setSearch(''); }}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      onChange(getOptionId(o));
+                      setOpen(false);
+                      setSearch('');
+                    }}
                     className="w-full px-3 py-2 text-left text-sm text-gray-900 hover:bg-blue-50"
                   >
                     {o.name}

@@ -68,6 +68,7 @@ export class BranchesController {
             supports_takeaway?: boolean;
             supports_delivery?: boolean;
             delivery_flat_fee?: number;
+            delivery_radius_km?: number;
             is_active?: boolean;
             menu_enabled?: boolean;
             status?: string;
@@ -106,6 +107,7 @@ export class BranchesController {
             supports_takeaway?: boolean;
             supports_delivery?: boolean;
             delivery_flat_fee?: number;
+            delivery_radius_km?: number;
             is_active?: boolean;
             menu_enabled?: boolean;
             status?: string;

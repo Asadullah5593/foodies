@@ -35,6 +35,9 @@ export class BrandOrderRating {
     @Column({ type: 'jsonb' })
     orderItemIds: number[];
 
+    @Column({ type: 'text', nullable: true })
+    comment: string | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

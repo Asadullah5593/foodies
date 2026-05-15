@@ -183,8 +183,10 @@ const CustomerSearchSelect: React.FC<CustomerSearchSelectProps> = ({
                 <li key={c.id}>
                   <button
                     type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleSelect(c)}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      handleSelect(c);
+                    }}
                     className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 focus:bg-blue-50 focus:outline-none"
                   >
                     <span className="font-medium text-gray-800">{c.name || '—'}</span>

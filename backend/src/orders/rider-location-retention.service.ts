@@ -42,8 +42,14 @@ export class RiderLocationRetentionService {
             now - WARM_RETENTION_DAYS * 24 * 60 * 60 * 1000,
         );
 
-        const summariesCreated = await this.ensureWarmSummaries(hotCutoff, dryRun);
-        const deletedRaw = await this.deleteRawLocationBatches(warmCutoff, dryRun);
+        const summariesCreated = await this.ensureWarmSummaries(
+            hotCutoff,
+            dryRun,
+        );
+        const deletedRaw = await this.deleteRawLocationBatches(
+            warmCutoff,
+            dryRun,
+        );
         const deletedWarmSummaries = await this.deleteExpiredSummaries(
             warmCutoff,
             dryRun,
@@ -138,7 +144,11 @@ export class RiderLocationRetentionService {
                 .createQueryBuilder('l')
                 .select('l.id', 'id')
                 .innerJoin(Order, 'o', 'o.id = l.order_id')
-                .innerJoin(RiderOrderLocationSummary, 's', 's.order_id = l.order_id')
+                .innerJoin(
+                    RiderOrderLocationSummary,
+                    's',
+                    's.order_id = l.order_id',
+                )
                 .where('o.delivery_status IN (:...statuses)', {
                     statuses: TERMINAL_DELIVERY_STATUSES,
                 })

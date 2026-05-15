@@ -13,14 +13,18 @@ import {
     ApiOperation,
     ApiOkResponse,
     ApiParam,
+    ApiBody,
+    ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RiderAuthGuard } from '../auth/rider-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RiderDeliveryStatusDto } from './dto/rider-delivery-status.dto';
 
 @ApiTags('Rider – Orders')
 @ApiBearerAuth()
+@ApiUnauthorizedResponse({ description: 'Missing or invalid JWT' })
 @Controller('rider/orders')
 @UseGuards(JwtAuthGuard, RiderAuthGuard)
 export class RiderOrdersController {
@@ -151,11 +155,36 @@ export class RiderOrdersController {
     }
 
     @Patch(':id/status')
+    @ApiOperation({
+        summary: 'Update delivery status for an order assigned to this rider',
+        description:
+            'Only orders where `rider_id` matches the authenticated rider may be updated. When setting `delivery_failed`, `delivery_failed_reason` is required.',
+    })
+    @ApiParam({ name: 'id', example: 100, description: 'Order ID' })
+    @ApiBody({
+        type: RiderDeliveryStatusDto,
+        examples: {
+            pickedUp: {
+                summary: 'Picked up from restaurant',
+                value: { delivery_status: 'picked_up' },
+            },
+            delivered: {
+                summary: 'Delivered to customer',
+                value: { delivery_status: 'delivered' },
+            },
+            failed: {
+                summary: 'Delivery failed (reason required)',
+                value: {
+                    delivery_status: 'delivery_failed',
+                    delivery_failed_reason: 'Customer not available',
+                },
+            },
+        },
+    })
     updateDeliveryStatus(
         @Param('id') id: string,
         @CurrentUser() user: { id: number },
-        @Body()
-        body: { delivery_status: string; delivery_failed_reason?: string },
+        @Body() body: RiderDeliveryStatusDto,
     ) {
         const deliveryStatus = body?.delivery_status;
         if (!deliveryStatus || typeof deliveryStatus !== 'string') {

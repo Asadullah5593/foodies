@@ -187,6 +187,17 @@ export class ProcurementAdminController {
         return this.procurementService.listGRNs(tenantId, { status, from, to });
     }
 
+    @Get('grns/:id')
+    async getGRNById(
+        @CurrentUser()
+        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        @Param('id') id: string,
+    ) {
+        const tenantId =
+            await this.procurementService.resolveTenantIdForList(user);
+        return this.procurementService.getGRN(tenantId, +id);
+    }
+
     @Post('grns')
     createGRN(
         @CurrentUser()

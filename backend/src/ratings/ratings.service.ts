@@ -15,7 +15,7 @@ import { OrdersService } from '../orders/orders.service';
 import { BrandsService } from '../brands/brands.service';
 import { normalizePakistaniPhone } from '../utils/phone';
 
-function assertStars(stars: unknown): number {
+export function assertStars(stars: unknown): number {
     if (!Number.isInteger(stars) || typeof stars !== 'number') {
         throw new BadRequestException('stars must be an integer from 1 to 5');
     }
@@ -23,6 +23,21 @@ function assertStars(stars: unknown): number {
         throw new BadRequestException('stars must be between 1 and 5');
     }
     return stars;
+}
+
+export function normalizeOptionalComment(commentRaw: unknown): string | null {
+    if (commentRaw == null) return null;
+    if (typeof commentRaw !== 'string') {
+        throw new BadRequestException('comment must be a string');
+    }
+    const comment = commentRaw.trim();
+    if (!comment) return null;
+    if (comment.length > 500) {
+        throw new BadRequestException(
+            'comment must be 500 characters or fewer',
+        );
+    }
+    return comment;
 }
 
 @Injectable()
@@ -42,7 +57,9 @@ export class RatingsService {
     assertCustomerOwnsOrder(order: Order, customer: Customer): void {
         if (order.customerId != null) {
             if (order.customerId !== customer.id) {
-                throw new ForbiddenException('You do not have access to this order');
+                throw new ForbiddenException(
+                    'You do not have access to this order',
+                );
             }
             return;
         }
@@ -56,7 +73,9 @@ export class RatingsService {
             !normalizedOrderPhone ||
             normalizedOrderPhone !== normalizedCustomerPhone
         ) {
-            throw new ForbiddenException('You do not have access to this order');
+            throw new ForbiddenException(
+                'You do not have access to this order',
+            );
         }
     }
 
@@ -144,9 +163,7 @@ export class RatingsService {
             .sort((a, b) => a - b);
     }
 
-    private collectAllOrderItemIds(
-        items: OrderItem[],
-    ): number[] {
+    private collectAllOrderItemIds(items: OrderItem[]): number[] {
         return items.map((i) => i.id).sort((a, b) => a - b);
     }
 
@@ -157,6 +174,7 @@ export class RatingsService {
             customer_id: r.customerId,
             rider_user_id: r.riderUserId,
             stars: r.stars,
+            comment: r.comment ?? null,
             order_item_ids: r.orderItemIds ?? [],
             created_at: r.createdAt?.toISOString() ?? null,
             updated_at: r.updatedAt?.toISOString() ?? null,
@@ -170,6 +188,7 @@ export class RatingsService {
             brand_id: r.brandId,
             customer_id: r.customerId,
             stars: r.stars,
+            comment: r.comment ?? null,
             order_item_ids: r.orderItemIds ?? [],
             created_at: r.createdAt?.toISOString() ?? null,
             updated_at: r.updatedAt?.toISOString() ?? null,
@@ -180,8 +199,10 @@ export class RatingsService {
         orderId: number,
         customer: Customer,
         starsRaw: unknown,
+        commentRaw?: unknown,
     ) {
         const stars = assertStars(starsRaw);
+        const comment = normalizeOptionalComment(commentRaw);
         return this.dataSource.transaction(async (manager) => {
             const order = await manager.findOne(Order, {
                 where: { id: orderId },
@@ -203,10 +224,12 @@ export class RatingsService {
                     customerId: customer.id,
                     riderUserId,
                     stars,
+                    comment,
                     orderItemIds,
                 });
             } else {
                 row.stars = stars;
+                row.comment = comment;
                 row.riderUserId = riderUserId;
                 row.orderItemIds = orderItemIds;
             }
@@ -220,8 +243,10 @@ export class RatingsService {
         customer: Customer,
         starsRaw: unknown,
         bodyBrandId?: number | null,
+        commentRaw?: unknown,
     ) {
         const stars = assertStars(starsRaw);
+        const comment = normalizeOptionalComment(commentRaw);
         return this.dataSource.transaction(async (manager) => {
             const order = await manager.findOne(Order, {
                 where: { id: orderId },
@@ -249,10 +274,12 @@ export class RatingsService {
                     brandId,
                     customerId: customer.id,
                     stars,
+                    comment,
                     orderItemIds,
                 });
             } else {
                 row.stars = stars;
+                row.comment = comment;
                 row.orderItemIds = orderItemIds;
             }
             const saved = await manager.save(BrandOrderRating, row);
@@ -304,7 +331,7 @@ export class RatingsService {
     }
 
     /**
-     * Admin POS: ratings for this order only. No customer identifiers or review text.
+     * Admin POS: ratings for this order only. No customer identifiers.
      * Includes all-time public brand averages for context (same numbers as consumer brand APIs).
      */
     async getOrderRatingsForAdmin(
@@ -313,7 +340,8 @@ export class RatingsService {
         allowedBranchIds?: number[] | null,
     ) {
         const order = await this.orderRepo.findOne({
-            where: tenantId != null ? { id: orderId, tenantId } : { id: orderId },
+            where:
+                tenantId != null ? { id: orderId, tenantId } : { id: orderId },
         });
         if (!order) throw new NotFoundException('Order not found');
         if (
@@ -354,6 +382,7 @@ export class RatingsService {
             rider_rating: riderRow
                 ? {
                       stars: riderRow.stars,
+                      comment: riderRow.comment ?? null,
                       rated_at: riderRow.updatedAt?.toISOString() ?? null,
                   }
                 : null,
@@ -363,6 +392,7 @@ export class RatingsService {
                     brand_id: r.brandId,
                     brand_name: r.brand?.name ?? null,
                     order_stars: r.stars,
+                    order_comment: r.comment ?? null,
                     order_rated_at: r.updatedAt?.toISOString() ?? null,
                     public_rating_average: pub?.rating_average ?? null,
                     public_rating_count: pub?.rating_count ?? 0,
@@ -394,6 +424,7 @@ export class RatingsService {
                 order_id: r.orderId,
                 order_number: r.order?.orderNumber ?? '',
                 stars: r.stars,
+                comment: r.comment ?? null,
                 order_item_ids: r.orderItemIds ?? [],
                 created_at: r.createdAt?.toISOString() ?? null,
             })),

@@ -12,6 +12,7 @@ import {
     ApiOperation,
     ApiParam,
     ApiQuery,
+    ApiOkResponse,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
@@ -30,7 +31,7 @@ export class AdminRiderRatingsController {
         operationId: 'admin_listRiderStarRatings',
         summary: 'List customer star ratings for a rider (admin only)',
         description:
-            'Paginated rider ratings (stars + order refs). `userId` is the **rider staff user id** (`users.id`), not an order id. ' +
+            'Paginated rider ratings (stars + order refs + optional customer `comment` when provided). `userId` is the **rider staff user id** (`users.id`), not an order id. ' +
             'Tenant users only see ratings tied to orders in their tenant. `limit` and `offset` are optional.',
     })
     @ApiParam({
@@ -51,6 +52,41 @@ export class AdminRiderRatingsController {
         required: false,
         description: 'Number of rows to skip for pagination (default 0).',
         schema: { type: 'integer', default: 0, minimum: 0 },
+    })
+    @ApiOkResponse({
+        description: 'Paginated rider star ratings; each item may include an optional customer `comment`.',
+        schema: {
+            type: 'object',
+            required: ['items', 'total', 'limit', 'offset'],
+            properties: {
+                items: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        required: ['id', 'order_id', 'order_number', 'stars', 'order_item_ids', 'created_at'],
+                        properties: {
+                            id: { type: 'integer' },
+                            order_id: { type: 'integer' },
+                            order_number: { type: 'string' },
+                            stars: { type: 'integer', minimum: 1, maximum: 5 },
+                            comment: {
+                                type: 'string',
+                                nullable: true,
+                                description: 'Optional customer comment for this rider rating.',
+                            },
+                            order_item_ids: {
+                                type: 'array',
+                                items: { type: 'integer' },
+                            },
+                            created_at: { type: 'string', format: 'date-time' },
+                        },
+                    },
+                },
+                total: { type: 'integer' },
+                limit: { type: 'integer' },
+                offset: { type: 'integer' },
+            },
+        },
     })
     listRatings(
         @Param('userId') userId: string,

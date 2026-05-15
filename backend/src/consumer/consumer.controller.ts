@@ -26,6 +26,7 @@ import {
     ApiQuery,
     ApiParam,
     ApiBearerAuth,
+    ApiOkResponse,
 } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
 import { BrandsService } from '../brands/brands.service';
@@ -1008,7 +1009,7 @@ export class ConsumerController {
         summary: 'Submit / update RIDER star rating (not brand)',
         description:
             'Use this endpoint only to rate the **assigned delivery rider** after `delivery_status` is `delivered`. ' +
-            'Path `id` is the **order id** (same as GET /public/consumer/orders/:id). Body only needs `stars` (1–5). ' +
+            'Path `id` is the **order id** (same as GET /public/consumer/orders/:id). Body requires `stars` (1–5) and allows optional `comment`. ' +
             'Does not update public brand scores. For restaurant/brand stars use **POST .../ratings/brand** instead.',
     })
     @ApiParam({
@@ -1019,19 +1020,83 @@ export class ConsumerController {
         type: Number,
     })
     @ApiBody({
-        description: 'Rider star rating only',
+        description:
+            'Rider star rating (1–5). Optional `comment` is trimmed; empty string clears on update. Max 500 characters.',
+        examples: {
+            starsOnly: {
+                summary: 'Stars only',
+                value: { stars: 5 },
+            },
+            withComment: {
+                summary: 'Stars + optional comment',
+                value: { stars: 4, comment: 'Friendly and on time' },
+            },
+        },
         schema: {
             type: 'object',
             required: ['stars'],
-            properties: { stars: { type: 'integer', minimum: 1, maximum: 5 } },
+            properties: {
+                stars: {
+                    type: 'integer',
+                    minimum: 1,
+                    maximum: 5,
+                    example: 5,
+                    description: 'Star rating for the delivery rider (1–5).',
+                },
+                comment: {
+                    type: 'string',
+                    nullable: true,
+                    maxLength: 500,
+                    description:
+                        'Optional feedback about the rider for this order (not shown on public brand menus).',
+                },
+            },
+        },
+    })
+    @ApiOkResponse({
+        description: 'Upserted rider rating row (same shape as GET .../ratings `rider_rating`).',
+        schema: {
+            type: 'object',
+            required: [
+                'id',
+                'order_id',
+                'customer_id',
+                'rider_user_id',
+                'stars',
+                'order_item_ids',
+            ],
+            properties: {
+                id: { type: 'integer', example: 1 },
+                order_id: { type: 'integer', example: 1001 },
+                customer_id: { type: 'integer', example: 42 },
+                rider_user_id: { type: 'integer', example: 55 },
+                stars: { type: 'integer', minimum: 1, maximum: 5, example: 5 },
+                comment: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Customer comment if provided; otherwise null.',
+                },
+                order_item_ids: {
+                    type: 'array',
+                    items: { type: 'integer' },
+                    example: [101, 102],
+                },
+                created_at: { type: 'string', format: 'date-time', nullable: true },
+                updated_at: { type: 'string', format: 'date-time', nullable: true },
+            },
         },
     })
     async rateRiderForOrder(
         @Param('id') id: string,
         @Req() req: { user: Customer },
-        @Body() body: { stars: number },
+        @Body() body: { stars: number; comment?: string },
     ) {
-        return this.ratingsService.upsertRiderRating(+id, req.user, body?.stars);
+        return this.ratingsService.upsertRiderRating(
+            +id,
+            req.user,
+            body?.stars,
+            body?.comment,
+        );
     }
 
     @Post('orders/:id/ratings/brand')
@@ -1040,10 +1105,11 @@ export class ConsumerController {
     @ApiTags('Consumer – Rate BRAND / order')
     @ApiOperation({
         operationId: 'consumer_rateBrandForOrder',
-        summary: 'Submit / update BRAND (restaurant) star rating for this order',
+        summary:
+            'Submit / update BRAND (restaurant) star rating for this order',
         description:
             'Use this endpoint to rate the **food / brand experience** for this order; averages appear on public brand APIs. ' +
-            'Path `id` is the **order id** (same as GET /public/consumer/orders/:id). Body requires `stars` (1–5). ' +
+            'Path `id` is the **order id** (same as GET /public/consumer/orders/:id). Body requires `stars` (1–5); optional `comment` (string, max 500 chars) is stored with this brand rating only. ' +
             '**Single-brand order:** omit `brand_id` (server infers the brand). ' +
             '**Multi-brand order (e.g. food court):** send **one request per brand** — same order `id` each time, with `brand_id` set to that brand and `stars` for that brand only (2 brands ⇒ 2 POSTs). ' +
             'Use **GET .../orders/:id/ratings** to see which brands you already rated. ' +
@@ -1064,13 +1130,17 @@ export class ConsumerController {
                 summary: 'Single-brand order',
                 value: { stars: 5 },
             },
+            singleBrandWithComment: {
+                summary: 'Single-brand with optional comment',
+                value: { stars: 5, comment: 'Food was great!' },
+            },
             multiBrandFirst: {
                 summary: 'Multi-brand — rate first brand',
                 value: { stars: 5, brand_id: 12 },
             },
             multiBrandSecond: {
                 summary: 'Multi-brand — rate second brand (second POST)',
-                value: { stars: 4, brand_id: 34 },
+                value: { stars: 4, brand_id: 34, comment: 'Slow service' },
             },
         },
         schema: {
@@ -1090,19 +1160,61 @@ export class ConsumerController {
                         'Required when the order has line items from more than one brand. Must match a brand on that order.',
                     example: 12,
                 },
+                comment: {
+                    type: 'string',
+                    nullable: true,
+                    maxLength: 500,
+                    description:
+                        'Optional free-text feedback for this brand on this order (not shown on public brand aggregates).',
+                },
+            },
+        },
+    })
+    @ApiOkResponse({
+        description:
+            'Upserted brand rating row for this `(order_id, brand_id)` (same shape as entries in GET .../ratings `brand_ratings`).',
+        schema: {
+            type: 'object',
+            required: [
+                'id',
+                'order_id',
+                'brand_id',
+                'customer_id',
+                'stars',
+                'order_item_ids',
+            ],
+            properties: {
+                id: { type: 'integer', example: 1 },
+                order_id: { type: 'integer', example: 1001 },
+                brand_id: { type: 'integer', example: 12 },
+                customer_id: { type: 'integer', example: 42 },
+                stars: { type: 'integer', minimum: 1, maximum: 5, example: 5 },
+                comment: {
+                    type: 'string',
+                    nullable: true,
+                    description: 'Customer comment if provided; otherwise null.',
+                },
+                order_item_ids: {
+                    type: 'array',
+                    items: { type: 'integer' },
+                    example: [101],
+                },
+                created_at: { type: 'string', format: 'date-time', nullable: true },
+                updated_at: { type: 'string', format: 'date-time', nullable: true },
             },
         },
     })
     async rateBrandForOrder(
         @Param('id') id: string,
         @Req() req: { user: Customer },
-        @Body() body: { stars: number; brand_id?: number },
+        @Body() body: { stars: number; brand_id?: number; comment?: string },
     ) {
         return this.ratingsService.upsertBrandRating(
             +id,
             req.user,
             body?.stars,
             body?.brand_id,
+            body?.comment,
         );
     }
 
@@ -1114,13 +1226,72 @@ export class ConsumerController {
         operationId: 'consumer_getMyRatingsForOrder',
         summary: 'Read my rider + brand rating rows for this order',
         description:
-            'Returns `rider_rating` (one object or null) and `brand_ratings` (array). Path `id` is the **order id**.',
+            'Returns `rider_rating` (one object or null) and `brand_ratings` (array). Path `id` is the **order id**. ' +
+            'Each row may include `comment` when the customer submitted optional text with rider or brand ratings.',
     })
     @ApiParam({
         name: 'id',
-        description: '**Order id** (numeric) for which to load your submitted ratings.',
+        description:
+            '**Order id** (numeric) for which to load your submitted ratings.',
         example: 1001,
         type: Number,
+    })
+    @ApiOkResponse({
+        description:
+            '`rider_rating` is a single object or null. `brand_ratings` is an array (one row per brand you rated on this order). Each row may include `comment`.',
+        schema: {
+            type: 'object',
+            required: ['rider_rating', 'brand_ratings'],
+            properties: {
+                rider_rating: {
+                    type: 'object',
+                    nullable: true,
+                    description: 'Your rider rating for this order, or null if not submitted.',
+                    properties: {
+                        id: { type: 'integer' },
+                        order_id: { type: 'integer' },
+                        customer_id: { type: 'integer' },
+                        rider_user_id: { type: 'integer' },
+                        stars: { type: 'integer', minimum: 1, maximum: 5 },
+                        comment: {
+                            type: 'string',
+                            nullable: true,
+                            description: 'Optional text submitted with the rider rating.',
+                        },
+                        order_item_ids: {
+                            type: 'array',
+                            items: { type: 'integer' },
+                        },
+                        created_at: { type: 'string', format: 'date-time', nullable: true },
+                        updated_at: { type: 'string', format: 'date-time', nullable: true },
+                    },
+                },
+                brand_ratings: {
+                    type: 'array',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            id: { type: 'integer' },
+                            order_id: { type: 'integer' },
+                            brand_id: { type: 'integer' },
+                            customer_id: { type: 'integer' },
+                            stars: { type: 'integer', minimum: 1, maximum: 5 },
+                            comment: {
+                                type: 'string',
+                                nullable: true,
+                                description: 'Optional text submitted with this brand rating.',
+                            },
+                            order_item_ids: {
+                                type: 'array',
+                                items: { type: 'integer' },
+                            },
+                            created_at: { type: 'string', format: 'date-time', nullable: true },
+                            updated_at: { type: 'string', format: 'date-time', nullable: true },
+                        },
+                    },
+                },
+            },
+        },
     })
     async getMyRatingsForOrder(
         @Param('id') id: string,

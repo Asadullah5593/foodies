@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class RiderLocationSummariesAndRetentionIndexes1760000000011
-    implements MigrationInterface
-{
+export class RiderLocationSummariesAndRetentionIndexes1760000000011 implements MigrationInterface {
     name = 'RiderLocationSummariesAndRetentionIndexes1760000000011';
 
     public async up(queryRunner: QueryRunner): Promise<void> {

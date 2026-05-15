@@ -5,7 +5,7 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Not, Repository } from 'typeorm';
+import { DataSource, EntityManager, Not, Repository } from 'typeorm';
 import { BranchesService } from '../branches/branches.service';
 import { InventoryService } from '../inventory/inventory.service';
 import { PurchaseRequisition } from '../entities/purchase-requisition.entity';
@@ -17,6 +17,8 @@ import { GoodsReceiptNoteLine } from '../entities/goods-receipt-note-line.entity
 import { InventoryBatch } from '../entities/inventory-batch.entity';
 import { InventoryItem } from '../entities/inventory-item.entity';
 import { Vendor } from '../entities/vendor.entity';
+import { InventoryLocation } from '../entities/inventory-location.entity';
+import { nextPurchaseOrderReceiptStatus } from './po-receipt-status.util';
 
 type TenantContextUser = {
     id: number;
@@ -47,6 +49,8 @@ export class ProcurementService {
         private batchesRepo: Repository<InventoryBatch>,
         @InjectRepository(InventoryItem)
         private itemsRepo: Repository<InventoryItem>,
+        @InjectRepository(InventoryLocation)
+        private locationsRepo: Repository<InventoryLocation>,
         @InjectRepository(Vendor)
         private vendorsRepo: Repository<Vendor>,
     ) {}
@@ -605,47 +609,136 @@ export class ProcurementService {
         });
     }
 
+    private async getPostedGrnReceiveTotalsByItem(
+        manager: EntityManager | DataSource,
+        tenantId: number,
+        branchId: number,
+        purchaseOrderId: number,
+    ): Promise<Map<number, number>> {
+        const totals: Array<{
+            inventory_item_id: number | string;
+            received_qty: number | string;
+        }> = await manager.query(
+            `
+                SELECT inventory_item_id, SUM(qty_delta) AS received_qty
+                FROM inventory_ledger_entries
+                WHERE tenant_id = $1 AND branch_id = $2
+                  AND event_type = 'receive'
+                  AND event_ref_type = 'grn'
+                  AND event_ref_id IN (
+                    SELECT id FROM goods_receipt_notes
+                    WHERE purchase_order_id = $3 AND status = 'posted'
+                  )
+                GROUP BY inventory_item_id
+                `,
+            [tenantId, branchId, purchaseOrderId],
+        );
+        return new Map<number, number>(
+            totals.map((r) => [
+                Number(r.inventory_item_id),
+                Number(r.received_qty),
+            ]),
+        );
+    }
+
+    private async recalculatePurchaseOrderReceiptStatus(
+        manager: EntityManager,
+        tenantId: number,
+        branchId: number,
+        purchaseOrderId: number,
+    ): Promise<void> {
+        const po = await manager.getRepository(PurchaseOrder).findOne({
+            where: { id: purchaseOrderId, tenantId },
+            relations: { lines: true },
+        });
+        if (!po) return;
+        const orderedByItem = new Map<number, number>();
+        for (const l of po.lines ?? []) {
+            const qtyBase = await this.inventoryService.convertToItemBaseQty(
+                tenantId,
+                l.inventoryItemId,
+                Number(l.orderedQty),
+                l.orderedUomId,
+            );
+            orderedByItem.set(
+                l.inventoryItemId,
+                (orderedByItem.get(l.inventoryItemId) ?? 0) + qtyBase,
+            );
+        }
+        const receivedTotals = await this.getPostedGrnReceiveTotalsByItem(
+            manager,
+            tenantId,
+            branchId,
+            po.id,
+        );
+        po.status = nextPurchaseOrderReceiptStatus(
+            orderedByItem,
+            receivedTotals,
+        );
+        await manager.getRepository(PurchaseOrder).save(po);
+    }
+
+    private async assertGrnLocationForBranch(
+        tenantId: number,
+        branchId: number,
+        locationId: number | null | undefined,
+        manager?: EntityManager,
+    ): Promise<void> {
+        if (locationId == null || locationId === undefined) return;
+        const id = Number(locationId);
+        if (!Number.isInteger(id) || id <= 0) {
+            throw new BadRequestException('Invalid location_id');
+        }
+        const repo = manager
+            ? manager.getRepository(InventoryLocation)
+            : this.locationsRepo;
+        const loc = await repo.findOne({
+            where: { id, tenantId, branchId },
+        });
+        if (!loc) {
+            throw new BadRequestException(
+                'location_id must belong to the receiving branch and tenant',
+            );
+        }
+        if (!loc.isActive) {
+            throw new BadRequestException('location_id is inactive');
+        }
+    }
+
     private async isPOFullyReceived(
         tenantId: number,
         branchId: number,
         poId: number,
     ) {
-        const rows = await this.dataSource.query(
-            `
-            SELECT COALESCE(SUM(qty_delta),0)::numeric AS qty
-            FROM inventory_ledger_entries
-            WHERE tenant_id = $1
-              AND branch_id = $2
-              AND event_type = 'receive'
-              AND event_ref_type = 'grn'
-              AND event_ref_id IN (
-                SELECT id FROM goods_receipt_notes
-                WHERE purchase_order_id = $3 AND status = 'posted'
-              )
-            `,
-            [tenantId, branchId, poId],
-        );
-        const totalReceived = Number(rows?.[0]?.qty ?? 0);
-        const orderedRows = await this.dataSource.query(
-            `
-            SELECT pol.inventory_item_id,
-                   pol.ordered_qty,
-                   pol.ordered_uom_id
-            FROM purchase_order_lines pol
-            WHERE pol.purchase_order_id = $1
-            `,
-            [poId],
-        );
-        let orderedTotal = 0;
-        for (const row of orderedRows) {
-            orderedTotal += await this.inventoryService.convertToItemBaseQty(
+        const po = await this.poRepo.findOne({
+            where: { tenantId, id: poId },
+            relations: { lines: true },
+        });
+        if (!po?.lines?.length) return false;
+        const orderedByItem = new Map<number, number>();
+        for (const row of po.lines ?? []) {
+            const qtyBase = await this.inventoryService.convertToItemBaseQty(
                 tenantId,
-                row.inventory_item_id,
-                Number(row.ordered_qty),
-                row.ordered_uom_id,
+                row.inventoryItemId,
+                Number(row.orderedQty),
+                row.orderedUomId,
+            );
+            orderedByItem.set(
+                row.inventoryItemId,
+                (orderedByItem.get(row.inventoryItemId) ?? 0) + qtyBase,
             );
         }
-        return orderedTotal > 0 && totalReceived + 1e-9 >= orderedTotal;
+        const receivedTotals = await this.getPostedGrnReceiveTotalsByItem(
+            this.dataSource,
+            tenantId,
+            branchId,
+            poId,
+        );
+        for (const [itemId, orderedQtyBase] of orderedByItem.entries()) {
+            const receivedQtyBase = receivedTotals.get(itemId) ?? 0;
+            if (receivedQtyBase + 1e-9 < orderedQtyBase) return false;
+        }
+        return true;
     }
 
     // ---------------- GRN ----------------
@@ -767,14 +860,17 @@ export class ProcurementService {
             relations: { lines: true },
         });
         if (!po) throw new NotFoundException('PO not found');
+        if (po.status === 'closed') {
+            throw new BadRequestException('Cannot edit GRN for closed PO');
+        }
 
         await this.dataSource.transaction(async (manager) => {
             if (dto.grn_number != null) {
                 const next = String(dto.grn_number).trim();
-                if (!next)
-                    throw new BadRequestException('grn_number cannot be empty');
-                await this.ensureUniqueGRNNumber(tenantId, next, grn.id);
-                grn.grnNumber = next;
+                if (next) {
+                    await this.ensureUniqueGRNNumber(tenantId, next, grn.id);
+                    grn.grnNumber = next;
+                }
             }
             if (dto.notes !== undefined) {
                 grn.notes = dto.notes ?? null;
@@ -856,6 +952,21 @@ export class ProcurementService {
                             'Expiry date is required for this item',
                         );
                     }
+                    if (
+                        item.trackLot &&
+                        receivedQty > 0 &&
+                        !String(l.lot_code ?? '').trim()
+                    ) {
+                        throw new BadRequestException(
+                            `lot_code is required for item ${item.code}`,
+                        );
+                    }
+                    await this.assertGrnLocationForBranch(
+                        tenantId,
+                        grn.branchId,
+                        l.location_id,
+                        manager,
+                    );
 
                     const poLine = l.purchase_order_line_id
                         ? (po.lines?.find(
@@ -961,11 +1072,26 @@ export class ProcurementService {
             where: { id: dto.inventory_item_id, tenantId },
         });
         if (!item) throw new NotFoundException('Inventory item not found');
-        if (item.trackExpiry && !dto.expiry_date) {
+        const receivedQty = Number(dto.received_qty);
+        if (item.trackExpiry && receivedQty > 0 && !dto.expiry_date) {
             throw new BadRequestException(
                 'Expiry date is required for this item',
             );
         }
+        if (
+            item.trackLot &&
+            receivedQty > 0 &&
+            !String(dto.lot_code ?? '').trim()
+        ) {
+            throw new BadRequestException(
+                `lot_code is required for item ${item.code}`,
+            );
+        }
+        await this.assertGrnLocationForBranch(
+            tenantId,
+            grn.branchId,
+            dto.location_id,
+        );
         const poLine = dto.purchase_order_line_id
             ? (po.lines?.find((l) => l.id === dto.purchase_order_line_id) ??
               null)
@@ -981,7 +1107,6 @@ export class ProcurementService {
             );
         }
 
-        const receivedQty = Number(dto.received_qty);
         if (receivedQty <= 0) {
             throw new BadRequestException(
                 'received_qty must be greater than 0',
@@ -1142,9 +1267,6 @@ export class ProcurementService {
                 grn.postedBy = user.id;
                 await manager.getRepository(GoodsReceiptNote).save(grn);
 
-                // Track per-item total receipt for updating PO status
-                const receivedByItem = new Map<number, number>();
-
                 const movements: Array<{
                     inventoryItemId: number;
                     inventoryBatchId: number;
@@ -1174,6 +1296,21 @@ export class ProcurementService {
                             `Missing expiry_date for item ${item.code}`,
                         );
                     }
+                    if (
+                        lineReceivedQty > 0 &&
+                        item.trackLot &&
+                        !String(line.lotCode ?? '').trim()
+                    ) {
+                        throw new BadRequestException(
+                            `Missing lot_code for item ${item.code}`,
+                        );
+                    }
+                    await this.assertGrnLocationForBranch(
+                        tenantId,
+                        grn.branchId,
+                        line.locationId,
+                        manager,
+                    );
 
                     const qtyBase =
                         await this.inventoryService.convertToItemBaseQty(
@@ -1211,11 +1348,6 @@ export class ProcurementService {
                         qtyDelta: qtyBase,
                         idempotencyKey: `grn:${grn.id}:line:${line.id}:receive`,
                     });
-
-                    receivedByItem.set(
-                        item.id,
-                        (receivedByItem.get(item.id) ?? 0) + qtyBase,
-                    );
 
                     // Cost: if PO line has unit cost, store per-base unit cost snapshot
                     const poLine = line.purchaseOrderLineId
@@ -1267,66 +1399,12 @@ export class ProcurementService {
                     })),
                 });
 
-                // Update PO status based on received vs ordered (base-unit compare)
-                const orderedByItem = new Map<number, number>();
-                for (const l of po.lines ?? []) {
-                    const qtyBase =
-                        await this.inventoryService.convertToItemBaseQty(
-                            tenantId,
-                            l.inventoryItemId,
-                            Number(l.orderedQty),
-                            l.orderedUomId,
-                        );
-                    orderedByItem.set(
-                        l.inventoryItemId,
-                        (orderedByItem.get(l.inventoryItemId) ?? 0) + qtyBase,
-                    );
-                }
-
-                // Compare total received across all posted GRNs for this PO
-                const totals: Array<{
-                    inventory_item_id: number | string;
-                    received_qty: number | string;
-                }> = await manager.query(
-                    `
-                SELECT inventory_item_id, SUM(qty_delta) AS received_qty
-                FROM inventory_ledger_entries
-                WHERE tenant_id = $1 AND branch_id = $2
-                  AND event_type = 'receive'
-                  AND event_ref_type = 'grn'
-                  AND event_ref_id IN (
-                    SELECT id FROM goods_receipt_notes
-                    WHERE purchase_order_id = $3 AND status = 'posted'
-                  )
-                GROUP BY inventory_item_id
-                `,
-                    [tenantId, grn.branchId, po.id],
+                await this.recalculatePurchaseOrderReceiptStatus(
+                    manager,
+                    tenantId,
+                    grn.branchId,
+                    po.id,
                 );
-                const receivedTotals = new Map<number, number>(
-                    totals.map((r) => [
-                        Number(r.inventory_item_id),
-                        Number(r.received_qty),
-                    ]),
-                );
-
-                let allReceived = true;
-                let anyReceived = false;
-                for (const [
-                    itemId,
-                    orderedQtyBase,
-                ] of orderedByItem.entries()) {
-                    const receivedQtyBase = receivedTotals.get(itemId) ?? 0;
-                    if (receivedQtyBase > 0) anyReceived = true;
-                    if (receivedQtyBase + 1e-9 < orderedQtyBase)
-                        allReceived = false;
-                }
-
-                po.status = allReceived
-                    ? 'closed'
-                    : anyReceived
-                      ? 'partially_received'
-                      : po.status;
-                await manager.getRepository(PurchaseOrder).save(po);
 
                 return grn.id;
             },
@@ -1362,17 +1440,6 @@ export class ProcurementService {
             async (manager) => {
                 // Ensure none of the batches were consumed/adjusted after receiving:
                 for (const b of batches) {
-                    const rows = await manager.query(
-                        `
-                    SELECT SUM(qty) AS on_hand_qty
-                    FROM inventory_batch_on_hand
-                    WHERE tenant_id = $1 AND branch_id = $2 AND inventory_batch_id = $3
-                    `,
-                        [tenantId, grn.branchId, b.id],
-                    );
-                    const onHandQty = Number(rows?.[0]?.on_hand_qty ?? 0);
-                    if (onHandQty <= 0) continue;
-
                     const movementRows = await manager.query(
                         `
                     SELECT COUNT(*)::int AS cnt
@@ -1434,6 +1501,13 @@ export class ProcurementService {
                 WHERE tenant_id = $1 AND branch_id = $2 AND goods_receipt_note_id = $3
                 `,
                     [tenantId, grn.branchId, grn.id],
+                );
+
+                await this.recalculatePurchaseOrderReceiptStatus(
+                    manager,
+                    tenantId,
+                    grn.branchId,
+                    grn.purchaseOrderId,
                 );
 
                 return grn.id;

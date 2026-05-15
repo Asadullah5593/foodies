@@ -232,7 +232,9 @@ export class InventoryAdjustmentService {
         );
         if (adjustment.tenantId !== tenantId) throw new ForbiddenException();
         if (adjustment.status !== 'draft') {
-            throw new BadRequestException('Only draft adjustment can be edited');
+            throw new BadRequestException(
+                'Only draft adjustment can be edited',
+            );
         }
         const nextLines = Array.isArray(dto.lines) ? dto.lines : [];
         if (nextLines.length === 0) {
@@ -241,7 +243,8 @@ export class InventoryAdjustmentService {
         return this.dataSource.transaction(async (manager) => {
             if (dto.reason_code !== undefined) {
                 const reason = String(dto.reason_code).trim();
-                if (!reason) throw new BadRequestException('reason_code is required');
+                if (!reason)
+                    throw new BadRequestException('reason_code is required');
                 adjustment.reasonCode = reason;
             }
             if (dto.notes !== undefined) {
@@ -284,7 +287,9 @@ export class InventoryAdjustmentService {
         );
         if (adjustment.tenantId !== tenantId) throw new ForbiddenException();
         if (adjustment.status !== 'draft') {
-            throw new BadRequestException('Only draft adjustment can be deleted');
+            throw new BadRequestException(
+                'Only draft adjustment can be deleted',
+            );
         }
         await this.adjustmentRepo.delete({ id: adjustment.id });
         return { ok: true };

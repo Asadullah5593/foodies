@@ -36,6 +36,7 @@ const R = {
 
 const ALL_NAV_ID = "all";
 const ITEMS_PER_PAGE = 9;
+const MotionLink = motion(Link);
 
 const MENU_ITEM_PLACEHOLDER = (label: string) => {
   const safe = (label || "Food").replace(/[<>&"]/g, "");
@@ -596,8 +597,9 @@ export default function MenuPage() {
                         className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3"
                       >
                         {visibleItems.map((item) => (
-                          <motion.article
+                          <MotionLink
                             key={item.id}
+                            href={`/menu/${item.id}`}
                             variants={itemIn}
                             className="group overflow-hidden rounded-2xl border transition will-change-transform"
                             style={{
@@ -636,7 +638,7 @@ export default function MenuPage() {
                                 Rs. {item.price}
                               </p>
                             </div>
-                          </motion.article>
+                          </MotionLink>
                         ))}
 
                         {isLoadingMore

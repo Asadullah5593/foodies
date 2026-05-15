@@ -24,6 +24,8 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/orders': ['orders:view'],
   '/admin/riders': ['deliveries:view', 'orders:view'],
   '/admin/deliveries': ['deliveries:view'],
+  '/admin/rider-hrm': ['deliveries:view', 'shifts:manage'],
+  '/admin/rider-ops': ['deliveries:view'],
   '/admin/shifts': ['shifts:manage'],
   '/admin/reports': ['reports:view'],
   '/admin/inventory': [
@@ -112,6 +114,7 @@ const ORDERED_LANDING_PATHS = [
   '/admin/roles',
   '/admin/orders',
   '/admin/deliveries',
+  '/admin/rider-hrm',
   '/admin/shifts',
   '/admin/reports',
   '/admin/inventory',

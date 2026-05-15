@@ -58,6 +58,10 @@ export type MenuItem = {
   price: number;
   base_price?: number;
   category?: string | null;
+  /** From API: which order channels this item supports; omit/empty treated as all channels. */
+  available_for_order_types?: string[] | null;
+  /** From API: extra photos for product page gallery (ordered). */
+  gallery_image_urls?: string[];
   variants: Variant[];
   addons: Addon[];
   modifier_groups: ModifierGroup[];

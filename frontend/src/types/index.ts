@@ -57,6 +57,9 @@ export interface Branch {
   supports_takeaway?: boolean;
   supports_delivery?: boolean;
   delivery_flat_fee?: number;
+  delivery_radius_km?: number;
+  latitude?: number | null;
+  longitude?: number | null;
   is_active?: boolean;
   /** When false, POS/KDS/consumer menu for this branch returns empty */
   menu_enabled?: boolean;
@@ -65,6 +68,110 @@ export interface Branch {
   tenant_id?: number;
   tenant_name?: string;
   brand_names?: string[];
+}
+
+export interface RiderProfile {
+  id: number;
+  user_id: number;
+  user_name?: string | null;
+  user_phone?: string | null;
+  tenant_id: number;
+  employment_status: string;
+  salary_type: string;
+  employee_code?: string | null;
+  base_salary: number;
+  default_per_ride_commission: number;
+  max_active_orders: number;
+  min_rating?: number | null;
+  min_timely_rate?: number | null;
+  is_active: boolean;
+  metadata?: Record<string, unknown>;
+  updated_at?: string | null;
+}
+
+export interface RiderOnDuty {
+  rider_user_id: number;
+  branch_id: number;
+  is_checked_in: boolean;
+  is_paused: boolean;
+  pause_reason?: string | null;
+  last_heartbeat_at?: string | null;
+  last_location_at?: string | null;
+  last_latitude?: number | null;
+  last_longitude?: number | null;
+}
+
+export interface RiderAttendanceStatus
+  extends Omit<RiderOnDuty, 'branch_id'> {
+  branch_id: number | null;
+  branch_name?: string | null;
+}
+
+export interface RiderCompPlanComponent {
+  id?: number;
+  component_key: string;
+  name: string;
+  component_type: string;
+  calc_basis: string;
+  value: number;
+  conditions?: Record<string, unknown>;
+  is_enabled?: boolean;
+  sort_order?: number;
+}
+
+export interface RiderCompPlan {
+  id: number;
+  tenant_id: number;
+  branch_id?: number | null;
+  name: string;
+  pay_method: string;
+  status: string;
+  version: number;
+  effective_from?: string | null;
+  effective_to?: string | null;
+  component_count?: number;
+  components: RiderCompPlanComponent[];
+}
+
+export interface RiderPayrollLineItem {
+  id: number;
+  component_key: string;
+  component_name: string;
+  amount: number;
+  formula_meta: Record<string, unknown>;
+}
+
+export interface RiderPayrollLine {
+  id: number;
+  rider_user_id: number;
+  plan_id?: number | null;
+  total_amount: number;
+  attendance_minutes: number;
+  completed_rides: number;
+  timely_deliveries: number;
+  avg_rating?: number | null;
+  items: RiderPayrollLineItem[];
+}
+
+export interface RiderPayrollRun {
+  id: number;
+  tenant_id: number;
+  branch_id?: number | null;
+  period_from: string;
+  period_to: string;
+  status: string;
+  rule_version?: string | null;
+  finalized_at?: string | null;
+  rider_count?: number;
+  total_amount?: number;
+  lines?: RiderPayrollLine[];
+}
+
+export interface RiderOpsMetricsSnapshot {
+  counters: Record<string, number>;
+  gauges: Record<string, number>;
+  samples: Record<string, { count: number; p95: number }>;
+  generated_at: string;
 }
 
 export interface MenuItem {
@@ -86,8 +193,10 @@ export interface MenuItem {
   price?: number;
   /** Brand id (for multi-brand cart splitting). */
   brand_id?: number | null;
-  /** Image URL path (e.g. /api/admin/upload/file/xxx). */
+  /** Main image: POS tile, menu lists, consumer product hero. */
   image_url?: string | null;
+  /** Extra photos (ordered) for consumer website gallery under the hero; not used as the POS thumbnail. */
+  gallery_image_urls?: string[];
   /** When set, limits which order channels can include this item (delivery, pickup, dine_in). Omit/null = all. */
   available_for_order_types?: string[] | null;
 }

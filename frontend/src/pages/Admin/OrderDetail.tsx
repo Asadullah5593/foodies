@@ -28,11 +28,12 @@ type OrderDetailItem = {
 };
 
 type OrderRatingsResponse = {
-  rider_rating: { stars: number; rated_at: string | null } | null;
+  rider_rating: { stars: number; comment?: string | null; rated_at: string | null } | null;
   brand_ratings: Array<{
     brand_id: number;
     brand_name: string | null;
     order_stars: number;
+    order_comment?: string | null;
     order_rated_at: string | null;
     public_rating_average: number | null;
     public_rating_count: number;
@@ -322,8 +323,8 @@ const OrderDetail: React.FC = () => {
           Customer ratings
         </h2>
         <p className="text-xs text-gray-500 dark:text-slate-400 mb-4 leading-relaxed">
-          Stars only — no customer names, phones, or written reviews. Rider scores are internal (not shown on public menus).
-          Public brand average is the same all-time figure customers see for that brand online.
+          Stars only — no customer names or phones. Optional short comments may appear when the customer left feedback with their rating.
+          Rider scores are internal (not shown on public menus). Public brand average is the same all-time figure customers see for that brand online.
         </p>
         {ratingsLoading ? (
           <p className="text-sm text-gray-500 dark:text-slate-400">Loading ratings…</p>
@@ -341,6 +342,11 @@ const OrderDetail: React.FC = () => {
                       Updated {new Date(ratings.rider_rating.rated_at).toLocaleString()}
                     </p>
                   )}
+                  {ratings.rider_rating.comment ? (
+                    <p className="text-sm text-gray-700 dark:text-slate-300 mt-2 italic border-t border-amber-200/60 dark:border-amber-800/40 pt-2">
+                      “{ratings.rider_rating.comment}”
+                    </p>
+                  ) : null}
                 </div>
               ) : (
                 <p className="text-gray-500 dark:text-slate-400">No rider rating for this order yet.</p>
@@ -381,6 +387,11 @@ const OrderDetail: React.FC = () => {
                           <span>no public ratings yet</span>
                         )}
                       </p>
+                      {br.order_comment ? (
+                        <p className="text-sm text-gray-700 dark:text-slate-300 mt-2 italic border-t border-slate-200 dark:border-slate-600 pt-2">
+                          “{br.order_comment}”
+                        </p>
+                      ) : null}
                     </li>
                   ))}
                 </ul>

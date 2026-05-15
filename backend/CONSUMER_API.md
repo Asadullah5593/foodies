@@ -393,27 +393,27 @@ In Postman: use the **Authorization** tab, set Type to **Bearer Token**, and pas
 - **Endpoint:** `POST /api/public/consumer/orders/:id/ratings/rider`
 - **Auth:** Bearer token (customer JWT)
 - **Params:** `id` – order ID
-- **Body:** `{ "stars": 5 }` where `stars` is an integer **1–5**
+- **Body:** `{ "stars": 5, "comment": "Optional text" }` where `stars` is an integer **1–5** and **`comment`** is optional (string, trimmed, max **500** characters; omit or empty string to clear on update)
 - **Rules:** Only the order’s customer may rate (`customer_id` match, or if the order has no `customer_id`, normalized `customer_phone` must match the logged-in customer’s phone). The order must have a **rider** and **`delivery_status` must be `delivered`**. Re-submitting updates the same rating.
-- **Response (200):** `{ "id", "order_id", "customer_id", "rider_user_id", "stars", "order_item_ids", "created_at", "updated_at" }` — `order_item_ids` is a snapshot of line-item ids for future analytics (admin-only visibility for the rating row itself).
+- **Response (200):** `{ "id", "order_id", "customer_id", "rider_user_id", "stars", "comment", "order_item_ids", "created_at", "updated_at" }` — `order_item_ids` is a snapshot of line-item ids for future analytics (admin-only visibility for the rating row itself).
 
 ### Rate brand / order (customer JWT)
 - **Endpoint:** `POST /api/public/consumer/orders/:id/ratings/brand`
 - **Auth:** Bearer token (customer JWT)
 - **Params:** `id` – order ID
-- **Body:** `{ "stars": 5, "brand_id": 2 }` — `stars` integer **1–5**; **`brand_id`** required when the order spans multiple brands (food court); optional when the order has a single inferred brand.
-- **Rules:** Same ownership as rider rating. Order must be **`status: completed`**. If **`order_type` is `delivery`**, then **`delivery_status` must also be `delivered`**. Pickup/dine-in may be rated when completed without a rider delivery milestone. This rating contributes to the **public** brand `rating_average` / `rating_count` on consumer brand endpoints. Re-submitting updates the same `(order_id, brand_id)` row.
-- **Response (200):** `{ "id", "order_id", "brand_id", "customer_id", "stars", "order_item_ids", "created_at", "updated_at" }` — `order_item_ids` lists line items for that brand on the order.
+- **Body:** `{ "stars": 5, "brand_id": 2, "comment": "Optional text" }` — `stars` integer **1–5**; **`brand_id`** required when the order spans multiple brands (food court); optional when the order has a single inferred brand; **`comment`** optional (string, max **500** characters; same rules as rider)
+- **Rules:** Same ownership as rider rating. Order must be **`status: completed`**. If **`order_type` is `delivery`**, then **`delivery_status` must also be `delivered`**. Pickup/dine-in may be rated when completed without a rider delivery milestone. This rating contributes to the **public** brand `rating_average` / `rating_count` on consumer brand endpoints (comments are **not** part of public aggregates). Re-submitting updates the same `(order_id, brand_id)` row.
+- **Response (200):** `{ "id", "order_id", "brand_id", "customer_id", "stars", "comment", "order_item_ids", "created_at", "updated_at" }` — `order_item_ids` lists line items for that brand on the order.
 
 ### Get my ratings for an order (customer JWT)
 - **Endpoint:** `GET /api/public/consumer/orders/:id/ratings`
 - **Auth:** Bearer token (customer JWT)
-- **Response (200):** `{ "rider_rating": { ... } | null, "brand_ratings": [ ... ] }`
+- **Response (200):** `{ "rider_rating": { ..., "comment": "..." } | null, "brand_ratings": [ { ..., "comment": "..." } ] }` — `comment` is `null` if not provided.
 
 ### Admin: list rider star ratings (staff JWT, not consumer base URL)
 - **Endpoint:** `GET /api/admin/riders/:userId/ratings?limit=50&offset=0`
 - **Auth:** Staff Bearer token with **`deliveries:view`** or **`orders:view`**
-- **Response (200):** `{ "items": [ { "id", "order_id", "order_number", "stars", "order_item_ids", "created_at" } ], "total", "limit", "offset" }` — tenant users only see ratings for orders in their tenant.
+- **Response (200):** `{ "items": [ { "id", "order_id", "order_number", "stars", "comment", "order_item_ids", "created_at" } ], "total", "limit", "offset" }` — tenant users only see ratings for orders in their tenant; `comment` is the optional customer note for that rider rating, if any.
 
 ### Cancel order
 - **Endpoint:** `PATCH /api/public/consumer/orders/:id/cancel`

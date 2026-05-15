@@ -202,6 +202,12 @@ const Branches: React.FC = () => {
                       {branch.address && <p>Address: {branch.address}</p>}
                       <p>Menu: <span className={branch.menu_enabled !== false ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}>{branch.menu_enabled !== false ? 'Enabled' : 'Disabled'}</span></p>
                       {branch.delivery_flat_fee != null && <p>Delivery fee: {formatCurrency(Number(branch.delivery_flat_fee))}</p>}
+                      {branch.delivery_radius_km != null && <p>Delivery radius: {Number(branch.delivery_radius_km)} km</p>}
+                      {(branch.latitude != null || branch.longitude != null) && (
+                        <p>
+                          Coordinates: {branch.latitude != null ? Number(branch.latitude) : '—'}, {branch.longitude != null ? Number(branch.longitude) : '—'}
+                        </p>
+                      )}
                     </>
                   }
                   statusLabel={branch.status}

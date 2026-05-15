@@ -123,6 +123,20 @@ code {
 .dark .text-green-700 { color: #6ee7b7 !important; }
 .dark .text-red-600 { color: #f87171 !important; }
 
+/* SweetAlert2: popup is light-themed but lives under `html.dark`. Global `.dark .text-slate-*`
+   rules above use !important and turn body copy white-on-white. Reset readable colors on the popup. */
+html.dark .swal2-popup {
+  color: #334155 !important;
+  background: #fff !important;
+}
+html.dark .swal2-popup .swal2-title {
+  color: #0f172a !important;
+}
+html.dark .swal2-popup .swal2-html-container,
+html.dark .swal2-popup .swal2-content {
+  color: #334155 !important;
+}
+
 /* Scrollbar in dark mode */
 .dark ::-webkit-scrollbar-track { background: #1e293b; }
 .dark ::-webkit-scrollbar-thumb { background: #475569; }

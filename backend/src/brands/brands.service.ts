@@ -25,7 +25,9 @@ export class BrandsService {
                 where: { tenantId },
                 order: { id: 'ASC' },
             });
-            const aggMap = await this.loadRatingAggregates(list.map((b) => b.id));
+            const aggMap = await this.loadRatingAggregates(
+                list.map((b) => b.id),
+            );
             return list.map((b) => ({
                 ...this.toResponse(b),
                 ...this.mergeAdminRatingFields(b.id, aggMap),
@@ -60,7 +62,9 @@ export class BrandsService {
             order: { id: 'ASC' },
         });
         const filtered = this.filterBrandsBySearch(list, search);
-        const aggMap = await this.loadRatingAggregates(filtered.map((b) => b.id));
+        const aggMap = await this.loadRatingAggregates(
+            filtered.map((b) => b.id),
+        );
         return filtered.map((b) => this.toPublicResponse(b, aggMap.get(b.id)));
     }
 
@@ -71,7 +75,9 @@ export class BrandsService {
             order: { id: 'ASC' },
         });
         const filtered = this.filterBrandsBySearch(list, search);
-        const aggMap = await this.loadRatingAggregates(filtered.map((b) => b.id));
+        const aggMap = await this.loadRatingAggregates(
+            filtered.map((b) => b.id),
+        );
         return filtered.map((b) => this.toPublicResponse(b, aggMap.get(b.id)));
     }
 
@@ -88,7 +94,9 @@ export class BrandsService {
             order: { id: 'ASC' },
         });
         const filtered = this.filterBrandsBySearch(list, search);
-        const aggMap = await this.loadRatingAggregates(filtered.map((b) => b.id));
+        const aggMap = await this.loadRatingAggregates(
+            filtered.map((b) => b.id),
+        );
         return filtered.map((b) => this.toPublicResponse(b, aggMap.get(b.id)));
     }
 
@@ -152,11 +160,10 @@ export class BrandsService {
      * Admin / POS: all-time brand rating aggregates (stars average and count only).
      * Does not expose individual reviews.
      */
-    async getRatingAggregatesForBrandIds(brandIds: number[]): Promise<
-        Map<
-            number,
-            { rating_average: number | null; rating_count: number }
-        >
+    async getRatingAggregatesForBrandIds(
+        brandIds: number[],
+    ): Promise<
+        Map<number, { rating_average: number | null; rating_count: number }>
     > {
         const raw = await this.loadRatingAggregates(brandIds);
         const out = new Map<

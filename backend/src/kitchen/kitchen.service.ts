@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Order } from '../entities/order.entity';
 import { ShiftsService } from '../shifts/shifts.service';
+import { OrdersService } from '../orders/orders.service';
 
 /** Statuses shown on KDS (includes 'placed' so new orders appear immediately). */
 const KITCHEN_STATUSES = [
@@ -22,6 +23,7 @@ export class KitchenService {
     constructor(
         @InjectRepository(Order) private orderRepo: Repository<Order>,
         private shiftsService: ShiftsService,
+        private ordersService: OrdersService,
     ) {}
 
     async listOrders(
@@ -114,6 +116,7 @@ export class KitchenService {
         }
         const order = await this.orderRepo.findOne({ where: { id, branchId } });
         if (!order) throw new NotFoundException('Order not found');
+        const previousStatus = order.status;
         order.status = status;
         if (status === 'completed') {
             order.completedAt = new Date();
@@ -125,6 +128,10 @@ export class KitchenService {
         } else {
             await this.orderRepo.save(order);
         }
+        await this.ordersService.triggerAutoAssignAfterStatusChange(
+            id,
+            previousStatus,
+        );
         return this.getOrder(id, branchId);
     }
 

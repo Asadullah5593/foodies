@@ -84,13 +84,18 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
     { prefix: '/admin/orders', permissionNames: [Permissions.ORDERS_VIEW] },
     {
         prefix: '/admin/riders',
-        permissionNames: [
-            Permissions.DELIVERIES_VIEW,
-            Permissions.ORDERS_VIEW,
-        ],
+        permissionNames: [Permissions.DELIVERIES_VIEW, Permissions.ORDERS_VIEW],
     },
     {
         prefix: '/admin/deliveries',
+        permissionNames: [Permissions.DELIVERIES_VIEW],
+    },
+    {
+        prefix: '/admin/rider-hrm',
+        permissionNames: [Permissions.DELIVERIES_VIEW, Permissions.SHIFTS_MANAGE],
+    },
+    {
+        prefix: '/admin/rider-ops',
         permissionNames: [Permissions.DELIVERIES_VIEW],
     },
     { prefix: '/admin/shifts', permissionNames: [Permissions.SHIFTS_MANAGE] },

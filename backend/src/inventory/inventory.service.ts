@@ -154,7 +154,9 @@ export class InventoryService {
                 tenantId,
                 kind: nextKind,
                 baseUomIdRaw:
-                    dto.base_uom_id !== undefined ? dto.base_uom_id : uom.baseUomId,
+                    dto.base_uom_id !== undefined
+                        ? dto.base_uom_id
+                        : uom.baseUomId,
                 multiplierRaw:
                     dto.multiplier_to_base !== undefined
                         ? dto.multiplier_to_base
@@ -210,7 +212,9 @@ export class InventoryService {
         }
         const baseUomId = Number(args.baseUomIdRaw);
         if (!Number.isInteger(baseUomId) || baseUomId <= 0) {
-            throw new BadRequestException('base_uom_id must be a valid unit id');
+            throw new BadRequestException(
+                'base_uom_id must be a valid unit id',
+            );
         }
         if (
             args.currentUomId != null &&
@@ -457,7 +461,10 @@ export class InventoryService {
             item.defaultReorderPoint = dto.default_reorder_point ?? null;
         if (dto.default_near_expiry_days !== undefined)
             item.defaultNearExpiryDays = dto.default_near_expiry_days ?? null;
-        if (dto.default_buy_price === undefined || dto.default_buy_price === null) {
+        if (
+            dto.default_buy_price === undefined ||
+            dto.default_buy_price === null
+        ) {
             throw new BadRequestException('default_buy_price is required');
         }
         const next = Number(dto.default_buy_price);
@@ -618,9 +625,12 @@ export class InventoryService {
             qb.andWhere('l.createdAt >= :fromDate', { fromDate: opts.from });
         }
         if (opts?.to) {
-            qb.andWhere('l.createdAt < (:toDate::timestamp + interval \'1 day\')', {
-                toDate: opts.to,
-            });
+            qb.andWhere(
+                "l.createdAt < (:toDate::timestamp + interval '1 day')",
+                {
+                    toDate: opts.to,
+                },
+            );
         }
 
         qb.orderBy('l.createdAt', 'DESC')
@@ -1005,9 +1015,12 @@ export class InventoryService {
             qb.andWhere('w.createdAt >= :fromDate', { fromDate: opts.from });
         }
         if (opts?.to) {
-            qb.andWhere('w.createdAt < (:toDate::timestamp + interval \'1 day\')', {
-                toDate: opts.to,
-            });
+            qb.andWhere(
+                "w.createdAt < (:toDate::timestamp + interval '1 day')",
+                {
+                    toDate: opts.to,
+                },
+            );
         }
 
         qb.orderBy('w.createdAt', 'DESC')
