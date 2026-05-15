@@ -78,6 +78,22 @@ const DELIVERY_STATUS_LABELS: Record<string, string> = {
 
 const ORDERS_PAGE_SIZE = DEFAULT_PAGE_SIZE;
 
+function localDateYYYYMMDD(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function getOrderType(o: OrderRow): string {
+  return String(o.order_type ?? o.orderType ?? '').trim();
+}
+
+function isDeliveryOrder(o: OrderRow): boolean {
+  return getOrderType(o) === 'delivery';
+}
+
 const Orders: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -90,12 +106,15 @@ const Orders: React.FC = () => {
   const [selectedRiderId, setSelectedRiderId] = useState<number | null>(null);
   const branchId = searchParams.get('branch_id') || '';
   const status = searchParams.get('status') || '';
-  const dateFrom = searchParams.get('date_from') || '';
-  const dateTo = searchParams.get('date_to') || '';
+  const orderType = searchParams.get('order_type') || '';
+  const defaultToday = localDateYYYYMMDD();
+  const dateFrom = searchParams.get('date_from') || defaultToday;
+  const dateTo = searchParams.get('date_to') || defaultToday;
 
   const params = {
     ...(branchId && { branch_id: +branchId }),
     ...(status && { status }),
+    ...(orderType && { order_type: orderType }),
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo && { date_to: dateTo }),
   };
@@ -106,6 +125,7 @@ const Orders: React.FC = () => {
       const search = new URLSearchParams();
       if (params.branch_id) search.append('branch_id', String(params.branch_id));
       if (params.status) search.append('status', params.status);
+      if (params.order_type) search.append('order_type', params.order_type);
       if (params.date_from) search.append('date_from', params.date_from);
       if (params.date_to) search.append('date_to', params.date_to);
       const response = await apiClient.get<OrderRow[]>(`/admin/orders?${search.toString()}`);
@@ -148,6 +168,13 @@ const Orders: React.FC = () => {
     enabled: riderModalOrderId != null || riderModalGroupId != null,
   });
 
+  const { data: onDutyRiders } = useQuery({
+    queryKey: ['rider-on-duty-banner'],
+    queryFn: () => adminService.getOnDutyRiders(),
+    refetchInterval: ORDER_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: true,
+  });
+
   const assignRiderMutation = useMutation({
     mutationFn: async (params: {
       orderId?: number;
@@ -176,6 +203,17 @@ const Orders: React.FC = () => {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to assign rider');
+    },
+  });
+
+  const retryAutoAssignMutation = useMutation({
+    mutationFn: (orderId: number) => adminService.retryAutoAssignOrder(orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      toast.success('Automatic rider assignment retried');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to retry automatic assignment');
     },
   });
 
@@ -223,7 +261,7 @@ const Orders: React.FC = () => {
 
   useEffect(() => {
     setOrdersPage(1);
-  }, [branchId, status, dateFrom, dateTo]);
+  }, [branchId, status, orderType, dateFrom, dateTo]);
 
   const isSubmitting = assignRiderMutation.isPending || updateStatusMutation.isPending;
   if (isLoading || isSubmitting) {
@@ -248,6 +286,19 @@ const Orders: React.FC = () => {
             ]}
             placeholder="All"
             minWidth="min-w-[140px]"
+          />
+          <SearchableSelect
+            label="Order type"
+            value={orderType}
+            onChange={(v) => setFilter('order_type', v)}
+            options={[
+              { value: '', label: 'All' },
+              { value: 'delivery', label: 'Delivery' },
+              { value: 'dine_in', label: 'Dine in' },
+              { value: 'takeaway', label: 'Takeaway' },
+            ]}
+            placeholder="All"
+            minWidth="min-w-[130px]"
           />
           <SearchableSelect
             label="Status"
@@ -283,7 +334,36 @@ const Orders: React.FC = () => {
               className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <ClearFiltersButton onClick={() => setSearchParams({})} />
+          <ClearFiltersButton
+            onClick={() => {
+              const t = localDateYYYYMMDD();
+              setSearchParams({ date_from: t, date_to: t });
+            }}
+          />
+        </div>
+      </Card>
+
+      <Card className="mb-6 p-4 border-blue-200 dark:border-slate-700 dark:bg-slate-800">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-gray-800 dark:text-slate-100">
+              Automatic Rider Assignment
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-slate-300 mt-1">
+              Delivery orders get a rider automatically when the kitchen status moves to <strong>Preparing</strong> from Placed or Accepted (Admin or KDS). Riders need an HR profile, check-in, fresh heartbeat/location, and the branch needs coordinates plus delivery radius.
+            </p>
+            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
+              Riders currently on duty: <span className="font-semibold text-gray-800 dark:text-slate-100">{onDutyRiders?.length ?? 0}</span>
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/admin/rider-hrm">
+              <Button size="small" variant="outline">Open Rider HRM</Button>
+            </Link>
+            <Link to="/admin/branches">
+              <Button size="small" variant="outline">Configure Branch Radius</Button>
+            </Link>
+          </div>
         </div>
       </Card>
 
@@ -312,9 +392,10 @@ const Orders: React.FC = () => {
                       ? (DELIVERY_STATUS_LABELS[groupOrders[0].delivery_status] ?? groupOrders[0].delivery_status)
                       : '—')
                   : 'Mixed';
+                const allDelivery = groupOrders.every((o) => isDeliveryOrder(o));
                 const allSameRider = isGroup && groupOrders.length > 0 && groupOrders.every((o) => o.rider_id != null && o.rider_id === groupOrders[0].rider_id);
                 const groupRider = allSameRider && groupOrders[0].rider ? groupOrders[0].rider : null;
-                const groupCanChangeRider = isGroup && groupRider != null && groupOrders.every((o) => o.delivery_status === 'assigned');
+                const groupCanChangeRider = allDelivery && isGroup && groupRider != null && groupOrders.every((o) => o.delivery_status === 'accepted');
                 const showPerOrderRiderButton = !(isGroup && groupRider);
                 const isDone = orderStatusLabel === 'Completed' || orderStatusLabel === 'Cancelled';
                 const title = isGroup ? `Order #${first?.order_number} +${groupOrders.length - 1} more` : `#${first?.order_number}`;
@@ -340,7 +421,7 @@ const Orders: React.FC = () => {
                     >
                       {sourceLabel}
                     </span>
-                    {isGroup && gid && (
+                    {isGroup && gid && allDelivery && (
                       <>
                         {groupRider ? groupCanChangeRider && (
                           <Button size="small" variant="edit" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(true); setSelectedRiderId(groupOrders[0].rider_id ?? null); }}>Change rider</Button>
@@ -349,6 +430,9 @@ const Orders: React.FC = () => {
                         )}
                         <Button size="small" variant="view" onClick={() => { setCustomerInvoiceGroupId(gid); setCustomerInvoiceOrderId(null); }}>Customer invoice</Button>
                       </>
+                    )}
+                    {isGroup && gid && !allDelivery && (
+                      <Button size="small" variant="view" onClick={() => { setCustomerInvoiceGroupId(gid); setCustomerInvoiceOrderId(null); }}>Customer invoice</Button>
                     )}
                   </>
                 );
@@ -363,11 +447,21 @@ const Orders: React.FC = () => {
                           <span className="text-sm text-gray-500 dark:text-slate-400">{formatCurrency(Number(order.total_amount ?? 0))}</span>
                         </div>
                         <div className="flex flex-wrap gap-3 items-center">
-                          {showPerOrderRiderButton && (order.rider_id != null && order.rider) && (
+                          {showPerOrderRiderButton && isDeliveryOrder(order) && order.rider_id != null && order.rider && (
                             <span className="text-xs text-gray-500 dark:text-slate-400">Rider: {order.rider.name}</span>
                           )}
-                          {showPerOrderRiderButton && (order.delivery_status === 'assigned' || order.delivery_status == null) && (
+                          {showPerOrderRiderButton && isDeliveryOrder(order) && (order.delivery_status === 'accepted' || order.delivery_status == null) && (
                             <Button size="small" variant={order.rider_id ? 'edit' : 'primary'} onClick={() => { setRiderModalOrderId(order.id); setRiderModalGroupId(null); setRiderModalIsChange(!!order.rider_id); setSelectedRiderId(order.rider_id ?? null); }}>{order.rider_id ? 'Change rider' : 'Assign rider'}</Button>
+                          )}
+                          {!order.rider_id && isDeliveryOrder(order) && (
+                            <Button
+                              size="small"
+                              variant="outline"
+                              isLoading={retryAutoAssignMutation.isPending}
+                              onClick={() => retryAutoAssignMutation.mutate(order.id)}
+                            >
+                              Retry auto-assign
+                            </Button>
                           )}
                           <span className="flex items-center gap-1.5 text-sm">
                             <span className="text-gray-500 dark:text-slate-400 font-medium">Order:</span>
@@ -380,12 +474,14 @@ const Orders: React.FC = () => {
                               <option value="cancelled">Cancelled</option>
                             </select>
                           </span>
+                          {isDeliveryOrder(order) && (
                           <span className="flex items-center gap-1.5 text-sm">
                             <span className="text-gray-500 dark:text-slate-400 font-medium">Delivery:</span>
                             <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-xs font-medium">
                               {order.delivery_status ? (DELIVERY_STATUS_LABELS[order.delivery_status] ?? order.delivery_status) : '—'}
                             </span>
                           </span>
+                          )}
                           <Link to={`/admin/orders/${order.id}`}><Button size="small" variant="view">View</Button></Link>
                           <Button size="small" variant="view" onClick={() => { if (order.order_group_id) { setCustomerInvoiceGroupId(order.order_group_id); setCustomerInvoiceOrderId(null); } else { setCustomerInvoiceOrderId(order.id); setCustomerInvoiceGroupId(null); } }}>Customer invoice</Button>
                         </div>

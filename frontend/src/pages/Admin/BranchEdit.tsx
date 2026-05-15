@@ -24,10 +24,13 @@ const emptyForm = {
   address: '',
   phone: '',
   email: '',
+  latitude: '',
+  longitude: '',
   supports_dine_in: true,
   supports_takeaway: true,
   supports_delivery: false,
   delivery_flat_fee: '',
+  delivery_radius_km: '10',
   is_active: true,
   menu_enabled: true,
 };
@@ -76,12 +79,15 @@ const BranchEdit: React.FC = () => {
         address: branch.address || '',
         phone: branch.phone || '',
         email: branch.email || '',
+        latitude: branch.latitude != null ? String(branch.latitude) : '',
+        longitude: branch.longitude != null ? String(branch.longitude) : '',
         supports_dine_in: branch.supports_dine_in ?? true,
         // Pickup is deprecated; treat legacy branch flag as takeaway.
         supports_takeaway:
           branch.supports_takeaway === true || branch.supports_pickup === true,
         supports_delivery: branch.supports_delivery ?? false,
         delivery_flat_fee: branch.delivery_flat_fee != null ? String(branch.delivery_flat_fee) : '',
+        delivery_radius_km: branch.delivery_radius_km != null ? String(branch.delivery_radius_km) : '10',
         is_active: branch.is_active ?? true,
         menu_enabled: branch.menu_enabled ?? true,
       });
@@ -192,10 +198,13 @@ const BranchEdit: React.FC = () => {
         address: data.address || undefined,
         phone: data.phone || undefined,
         email: data.email || undefined,
+        latitude: data.latitude ? +data.latitude : undefined,
+        longitude: data.longitude ? +data.longitude : undefined,
         supports_dine_in: data.supports_dine_in,
         supports_takeaway: data.supports_takeaway,
         supports_delivery: data.supports_delivery,
         delivery_flat_fee: data.delivery_flat_fee ? +data.delivery_flat_fee : 0,
+        delivery_radius_km: data.delivery_radius_km ? +data.delivery_radius_km : 10,
         is_active: data.is_active,
         menu_enabled: data.menu_enabled,
       };
@@ -221,10 +230,13 @@ const BranchEdit: React.FC = () => {
         address: data.address || undefined,
         phone: data.phone || undefined,
         email: data.email || undefined,
+        latitude: data.latitude ? +data.latitude : undefined,
+        longitude: data.longitude ? +data.longitude : undefined,
         supports_dine_in: data.supports_dine_in,
         supports_takeaway: data.supports_takeaway,
         supports_delivery: data.supports_delivery,
         delivery_flat_fee: data.delivery_flat_fee ? +data.delivery_flat_fee : 0,
+        delivery_radius_km: data.delivery_radius_km ? +data.delivery_radius_km : 10,
         is_active: data.is_active,
         menu_enabled: data.menu_enabled,
       };
@@ -390,6 +402,16 @@ const BranchEdit: React.FC = () => {
                 <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className={inputClass} />
               </div>
             </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Latitude</label>
+                <input type="number" step="0.0000001" value={formData.latitude} onChange={(e) => setFormData({ ...formData, latitude: e.target.value })} className={inputClass} placeholder="24.8607" />
+              </div>
+              <div>
+                <label className={labelClass}>Longitude</label>
+                <input type="number" step="0.0000001" value={formData.longitude} onChange={(e) => setFormData({ ...formData, longitude: e.target.value })} className={inputClass} placeholder="67.0011" />
+              </div>
+            </div>
           </div>
         </Card>
 
@@ -407,6 +429,13 @@ const BranchEdit: React.FC = () => {
             <div>
               <label className={labelClass}>Delivery flat fee (Rs.)</label>
               <input type="number" step="0.01" min="0" value={formData.delivery_flat_fee} onChange={(e) => setFormData({ ...formData, delivery_flat_fee: e.target.value })} className={inputClass} />
+            </div>
+            <div>
+              <label className={labelClass}>Delivery radius (km)</label>
+              <input type="number" step="0.1" min="0" value={formData.delivery_radius_km} onChange={(e) => setFormData({ ...formData, delivery_radius_km: e.target.value })} className={inputClass} />
+              <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                Riders must be within this branch radius for automatic assignment.
+              </p>
             </div>
           </div>
         </Card>

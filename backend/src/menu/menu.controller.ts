@@ -114,6 +114,13 @@ export class MenuController {
                 base_price: { type: 'number' },
                 is_active: { type: 'boolean' },
                 image_url: { type: 'string', nullable: true },
+                gallery_image_urls: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    nullable: true,
+                    description:
+                        'Optional extra photos (max 12, unique URLs). Consumer website: gallery/slider below the main image. POS/menu grids: main thumbnail only (`image_url`).',
+                },
                 deal_only: { type: 'boolean' },
                 available_for_order_types: {
                     type: 'array',
@@ -139,6 +146,7 @@ export class MenuController {
             base_price: number;
             is_active?: boolean;
             image_url?: string | null;
+            gallery_image_urls?: string[] | null;
             deal_only?: boolean;
             available_for_order_types?: string[] | null;
         },
@@ -168,6 +176,13 @@ export class MenuController {
                 brand_id: { type: 'number' },
                 category_id: { type: 'number' },
                 image_url: { type: 'string', nullable: true },
+                gallery_image_urls: {
+                    type: 'array',
+                    items: { type: 'string' },
+                    nullable: true,
+                    description:
+                        'Replaces the full gallery list (max 12). Send [] to clear. Omit to leave gallery unchanged.',
+                },
                 deal_only: { type: 'boolean' },
                 available_for_order_types: {
                     type: 'array',
@@ -194,6 +209,7 @@ export class MenuController {
             brand_id?: number;
             category_id?: number;
             image_url?: string | null;
+            gallery_image_urls?: string[] | null;
             deal_only?: boolean;
             available_for_order_types?: string[] | null;
         },

@@ -41,6 +41,17 @@ export class MenuItem {
     @Column({ type: 'varchar', nullable: true })
     imageUrl: string | null;
 
+    /**
+     * Extra product photos (ordered). Shown on consumer web below main `imageUrl` in a gallery/slider.
+     * Main thumbnail for POS/menu grids remains `imageUrl` only.
+     */
+    @Column({
+        name: 'gallery_image_urls',
+        type: 'jsonb',
+        nullable: true,
+    })
+    galleryImageUrls: string[] | null;
+
     @Column({ type: 'decimal', precision: 10, scale: 2 })
     basePrice: number;
 

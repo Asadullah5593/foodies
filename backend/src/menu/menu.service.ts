@@ -22,6 +22,30 @@ import {
     parseMenuOrderChannelsInput,
 } from '../utils/menu-order-type';
 
+const MENU_ITEM_GALLERY_MAX = 12;
+
+/** Dedupe, trim, cap length; null means store no gallery in DB. */
+function normalizeGalleryImageUrls(input: unknown): string[] | null {
+    if (input == null) return null;
+    const raw = Array.isArray(input) ? input : [];
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const x of raw) {
+        if (typeof x !== 'string') continue;
+        const u = x.trim();
+        if (!u || seen.has(u)) continue;
+        seen.add(u);
+        out.push(u);
+        if (out.length >= MENU_ITEM_GALLERY_MAX) break;
+    }
+    return out.length ? out : null;
+}
+
+function galleryUrlsForApi(item: MenuItem): string[] {
+    const n = normalizeGalleryImageUrls(item.galleryImageUrls);
+    return n ?? [];
+}
+
 @Injectable()
 export class MenuService {
     constructor(
@@ -212,6 +236,7 @@ export class MenuService {
             slug: i.slug,
             description: i.description,
             image_url: i.imageUrl ?? null,
+            gallery_image_urls: galleryUrlsForApi(i),
             base_price: Number(i.basePrice),
             is_active: i.isActive,
             deal_only: i.dealOnly ?? false,
@@ -249,6 +274,7 @@ export class MenuService {
         base_price: number;
         is_active?: boolean;
         image_url?: string | null;
+        gallery_image_urls?: string[] | null;
         deal_only?: boolean;
         /** Omit or null = available on all channels (delivery, pickup, dine_in). */
         available_for_order_types?: string[] | null;
@@ -265,6 +291,9 @@ export class MenuService {
                 slug,
                 description: dto.description ?? null,
                 imageUrl: dto.image_url ?? null,
+                galleryImageUrls: normalizeGalleryImageUrls(
+                    dto.gallery_image_urls,
+                ),
                 basePrice: dto.base_price,
                 isActive: dto.is_active ?? true,
                 dealOnly: dto.deal_only ?? false,
@@ -288,6 +317,7 @@ export class MenuService {
             brand_id?: number;
             category_id?: number;
             image_url?: string | null;
+            gallery_image_urls?: string[] | null;
             deal_only?: boolean;
             available_for_order_types?: string[] | null;
         },
@@ -316,6 +346,24 @@ export class MenuService {
         }
         if (dto.description !== undefined) item.description = dto.description;
         if (dto.image_url !== undefined) item.imageUrl = dto.image_url;
+        if (dto.gallery_image_urls !== undefined) {
+            const oldG = Array.isArray(item.galleryImageUrls)
+                ? [...item.galleryImageUrls]
+                : [];
+            const normalized = normalizeGalleryImageUrls(
+                dto.gallery_image_urls,
+            );
+            item.galleryImageUrls = normalized;
+            const keep = new Set(normalized ?? []);
+            for (const url of oldG) {
+                if (!keep.has(url)) {
+                    await this.mediaStorage.deleteManagedObjectByUrl(
+                        url,
+                        'menu-items',
+                    );
+                }
+            }
+        }
         if (dto.base_price !== undefined) item.basePrice = dto.base_price;
         if (dto.is_active !== undefined) item.isActive = dto.is_active;
 
@@ -833,6 +881,9 @@ export class MenuService {
                 name: item?.name,
                 description: item?.description,
                 image_url: item?.imageUrl ?? null,
+                gallery_image_urls: item
+                    ? galleryUrlsForApi(item)
+                    : [],
                 price,
                 base_price: Number(item?.basePrice ?? 0),
                 category: item?.category?.name,
@@ -924,6 +975,7 @@ export class MenuService {
                 name: item.name,
                 description: item.description,
                 image_url: item.imageUrl ?? null,
+                gallery_image_urls: galleryUrlsForApi(item),
                 price: base,
                 base_price: base,
                 category: item.category?.name ?? null,
@@ -1217,6 +1269,7 @@ export class MenuService {
             name: item.name,
             description: item.description ?? null,
             image_url: item.imageUrl ?? null,
+            gallery_image_urls: galleryUrlsForApi(item),
             price,
             base_price: Number(item.basePrice ?? 0),
             category: item.category?.name ?? null,
@@ -1512,6 +1565,7 @@ export class MenuService {
             price,
             base_price: Number(item.basePrice ?? 0),
             image_url: item.imageUrl ?? null,
+            gallery_image_urls: galleryUrlsForApi(item),
             category: item.category?.name ?? null,
             category_id: item.categoryId ?? item.category?.id ?? null,
             brand_id: item.brandId ?? null,

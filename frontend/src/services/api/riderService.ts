@@ -1,4 +1,22 @@
 import apiClient from '../../utils/apiClient';
+import { RiderAttendanceStatus } from '../../types';
+
+export interface RiderBranch {
+  id: number;
+  name: string;
+  code: string;
+  address: string | null;
+}
+
+export interface RiderAttendanceSession {
+  id: number;
+  rider_user_id: number;
+  branch_id: number;
+  status: string;
+  checked_in_at: string | null;
+  checked_out_at: string | null;
+  notes: string | null;
+}
 
 export interface RiderOrder {
   id: number;
@@ -37,6 +55,59 @@ function normalizeOrdersPayload(data: unknown): RiderOrder[] {
 }
 
 export const riderService = {
+  getAttendanceStatus: async (): Promise<RiderAttendanceStatus> => {
+    const response = await apiClient.get<RiderAttendanceStatus>('/rider/attendance/status', noCache);
+    return response.data;
+  },
+
+  sendAttendanceHeartbeat: async (payload: {
+    latitude?: number;
+    longitude?: number;
+  }): Promise<RiderAttendanceStatus> => {
+    const response = await apiClient.patch<RiderAttendanceStatus>(
+      '/rider/attendance/heartbeat',
+      payload
+    );
+    return response.data;
+  },
+
+  getMyBranches: async (): Promise<RiderBranch[]> => {
+    const response = await apiClient.get<RiderBranch[]>('/rider/attendance/branches', noCache);
+    return Array.isArray(response.data) ? response.data : [];
+  },
+
+  checkIn: async (payload: {
+    branch_id: number;
+    notes?: string;
+  }): Promise<RiderAttendanceSession> => {
+    const response = await apiClient.post<RiderAttendanceSession>(
+      '/rider/attendance/check-in',
+      payload
+    );
+    return response.data;
+  },
+
+  checkOut: async (payload?: { notes?: string }): Promise<RiderAttendanceSession> => {
+    const response = await apiClient.post<RiderAttendanceSession>(
+      '/rider/attendance/check-out',
+      payload ?? {}
+    );
+    return response.data;
+  },
+
+  setAttendancePause: async (payload: {
+    is_paused: boolean;
+    pause_reason?: string;
+  }): Promise<{
+    rider_user_id: number;
+    is_checked_in: boolean;
+    is_paused: boolean;
+    pause_reason: string | null;
+  }> => {
+    const response = await apiClient.patch('/rider/attendance/pause', payload);
+    return response.data;
+  },
+
   getOrders: async (): Promise<RiderOrder[]> => {
     const response = await apiClient.get<unknown>('/rider/orders', noCache);
     return normalizeOrdersPayload(response.data);

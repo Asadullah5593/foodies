@@ -12,6 +12,7 @@ import { GoodsReceiptNoteLine } from '../entities/goods-receipt-note-line.entity
 import { InventoryBatch } from '../entities/inventory-batch.entity';
 import { InventoryItem } from '../entities/inventory-item.entity';
 import { Vendor } from '../entities/vendor.entity';
+import { InventoryLocation } from '../entities/inventory-location.entity';
 import { ProcurementService } from './procurement.service';
 import { ProcurementAdminController } from './procurement.admin.controller';
 
@@ -29,6 +30,7 @@ import { ProcurementAdminController } from './procurement.admin.controller';
             GoodsReceiptNoteLine,
             InventoryBatch,
             InventoryItem,
+            InventoryLocation,
             Vendor,
         ]),
     ],

@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
 import Loader from '../../../components/Loader';
 import Button from '../../../components/Button';
 import Modal from '../../../components/Modal';
+import SearchableSelect from '../../../components/SearchableSelect';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { procurementService } from '../../../services/api/procurementService';
@@ -54,6 +56,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
 }) => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState<ProcurementTabKey>(initialTab);
   const hasPoManagePermission = Boolean(
     user?.is_super_admin || user?.permissions?.includes('procurement:po:manage'),
@@ -74,7 +77,13 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
   const [isEditPOOpen, setIsEditPOOpen] = useState(false);
   const [isCreateGRNOpen, setIsCreateGRNOpen] = useState(false);
   const [isEditGRNOpen, setIsEditGRNOpen] = useState(false);
-  const [isAddGRNLineOpen, setIsAddGRNLineOpen] = useState(false);
+  const [grnFilterStatus, setGrnFilterStatus] = useState('');
+  const [grnFilterFrom, setGrnFilterFrom] = useState('');
+  const [grnFilterTo, setGrnFilterTo] = useState('');
+  const [grnFilterBranch, setGrnFilterBranch] = useState('');
+  const [grnSearchText, setGrnSearchText] = useState('');
+  const [confirmPostGrnId, setConfirmPostGrnId] = useState<number | null>(null);
+  const [confirmReverseGrnId, setConfirmReverseGrnId] = useState<number | null>(null);
 
   const [selectedPR, setSelectedPR] = useState<any | null>(null);
   const [selectedPRForStatus, setSelectedPRForStatus] = useState<any | null>(null);
@@ -112,14 +121,6 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     lines: [],
   });
 
-  const [lineForm, setLineForm] = useState<any>({
-    grn_id: '',
-    inventory_item_id: '',
-    received_qty: '',
-    received_uom_id: '',
-    lot_code: '',
-    expiry_date: '',
-  });
   const [editGrnLineForm, setEditGrnLineForm] = useState<any>({
     inventory_item_id: '',
     received_qty: '',
@@ -127,6 +128,45 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     lot_code: '',
     expiry_date: '',
   });
+
+  const mapGrnLineFromApi = (l: any) => {
+    const idRaw = l.id ?? l.line_id;
+    const lineId = Number(idRaw);
+    const polRaw = l.purchaseOrderLineId ?? l.purchase_order_line_id;
+    const itemRaw = l.inventoryItemId ?? l.inventory_item_id;
+    const recvQtyRaw = l.receivedQty ?? l.received_qty;
+    const recvUomRaw = l.receivedUomId ?? l.received_uom_id;
+    return {
+      line_id: Number.isFinite(lineId) && lineId > 0 ? lineId : undefined,
+      purchase_order_line_id:
+        polRaw != null && polRaw !== '' ? Number(polRaw) : null,
+      inventory_item_id: Number(itemRaw),
+      received_qty: Number(recvQtyRaw ?? 0),
+      received_uom_id: Number(recvUomRaw),
+      lot_code: l.lotCode ?? l.lot_code ?? '',
+      expiry_date: l.expiryDate ?? l.expiry_date ?? '',
+      location_id: (l.locationId ?? l.location_id) != null ? Number(l.locationId ?? l.location_id) : null,
+      notes: l.notes ?? '',
+    };
+  };
+
+  const openEditGRNModal = (grn: any) => {
+    setGrnForm({
+      grn_id: String(grn.id),
+      grn_number: grn.grnNumber ?? grn.grn_number ?? '',
+      purchase_order_id: String(grn.purchaseOrderId ?? grn.purchase_order_id ?? ''),
+      notes: grn.notes ?? '',
+      lines: (grn.lines ?? []).map(mapGrnLineFromApi),
+    });
+    setEditGrnLineForm({
+      inventory_item_id: '',
+      received_qty: '',
+      received_uom_id: '',
+      lot_code: '',
+      expiry_date: '',
+    });
+    setIsEditGRNOpen(true);
+  };
 
   const branchesQ = useQuery({
     queryKey: ['branches'],
@@ -161,10 +201,26 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     queryFn: procurementService.listPOs,
     enabled: tab === 'pos' || tab === 'grns',
   });
+  const grnIdFromUrl = searchParams.get('grn_id');
   const grnsQ = useQuery({
-    queryKey: ['procurement-grns'],
-    queryFn: procurementService.listGRNs,
+    queryKey: ['procurement-grns', grnFilterStatus, grnFilterFrom, grnFilterTo],
+    queryFn: () =>
+      procurementService.listGRNsFiltered({
+        status: grnFilterStatus || undefined,
+        from: grnFilterFrom || undefined,
+        to: grnFilterTo || undefined,
+      }),
     enabled: tab === 'grns',
+  });
+
+  const grnFromLinkQ = useQuery({
+    queryKey: ['procurement-grn-by-id', grnIdFromUrl],
+    queryFn: () => procurementService.getGRN(Number(grnIdFromUrl)),
+    enabled:
+      tab === 'grns' &&
+      !!grnIdFromUrl &&
+      Number.isInteger(Number(grnIdFromUrl)) &&
+      Number(grnIdFromUrl) > 0,
   });
 
   const createPRM = useMutation({
@@ -273,19 +329,20 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
   const createGRNM = useMutation({
     mutationFn: (data: { grn_number?: string; purchase_order_id: number; branch_id: number; notes?: string }) => procurementService.createGRN(data),
     onSuccess: async (created: any) => {
-      toast.success('Draft GRN created');
-      if (created?.id != null) {
-        setLineForm((prev: any) => ({ ...prev, grn_id: String(created.id) }));
-      }
-      setIsCreateGRNOpen(false);
-      setGrnForm({ grn_id: '', grn_number: '', purchase_order_id: '', notes: '', lines: [] });
+      toast.success('Draft receipt created — enter quantities below');
       await queryClient.invalidateQueries({ queryKey: ['procurement-grns'] });
+      setIsCreateGRNOpen(false);
+      if (created?.id != null) {
+        openEditGRNModal(created);
+      } else {
+        setGrnForm({ grn_id: '', grn_number: '', purchase_order_id: '', notes: '', lines: [] });
+      }
     },
     onError: (e: any) => toast.error(readApiError(e, 'Failed to create GRN')),
   });
 
   const updateGRNM = useMutation({
-    mutationFn: (data: {
+    mutationFn: (vars: {
       id: number;
       payload: {
         grn_number?: string;
@@ -295,6 +352,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
           purchase_order_line_id?: number | null;
           inventory_item_id: number;
           received_qty: number;
+          allow_mismatched_item?: boolean;
           received_uom_id: number;
           lot_code?: string | null;
           expiry_date?: string | null;
@@ -302,39 +360,31 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
           notes?: string | null;
         }>;
       };
-    }) => procurementService.updateGRN(data.id, data.payload),
-    onSuccess: async () => {
-      toast.success('Draft GRN updated');
-      setIsEditGRNOpen(false);
-      setGrnForm({ grn_id: '', grn_number: '', purchase_order_id: '', notes: '', lines: [] });
+      keepOpen?: boolean;
+    }) => procurementService.updateGRN(vars.id, vars.payload),
+    onSuccess: async (updated: any, vars) => {
+      toast.success('Draft saved');
       await queryClient.invalidateQueries({ queryKey: ['procurement-grns'] });
+      if (vars.keepOpen && updated?.id != null) {
+        openEditGRNModal(updated);
+      } else {
+        setIsEditGRNOpen(false);
+        setGrnForm({ grn_id: '', grn_number: '', purchase_order_id: '', notes: '', lines: [] });
+      }
     },
     onError: (e: any) => toast.error(readApiError(e, 'Failed to update GRN')),
-  });
-
-  const addGRNLineM = useMutation({
-    mutationFn: (data: { grnId: number; line: any }) => procurementService.addGRNLine(data.grnId, data.line),
-    onSuccess: async () => {
-      toast.success('Received line added');
-      setIsAddGRNLineOpen(false);
-      setLineForm((prev: any) => ({
-        ...prev,
-        inventory_item_id: '',
-        received_qty: '',
-        received_uom_id: '',
-        lot_code: '',
-        expiry_date: '',
-      }));
-      await queryClient.invalidateQueries({ queryKey: ['procurement-grns'] });
-    },
-    onError: (e: any) => toast.error(readApiError(e, 'Failed to add line')),
   });
 
   const postGRNM = useMutation({
     mutationFn: (id: number) => procurementService.postGRN(id),
     onSuccess: async () => {
-      toast.success('GRN posted');
+      toast.success('GRN posted to inventory');
+      setConfirmPostGrnId(null);
+      setIsEditGRNOpen(false);
+      setGrnForm({ grn_id: '', grn_number: '', purchase_order_id: '', notes: '', lines: [] });
       await queryClient.invalidateQueries({ queryKey: ['procurement-grns'] });
+      await queryClient.invalidateQueries({ queryKey: ['procurement-grn-by-id'] });
+      await queryClient.invalidateQueries({ queryKey: ['procurement-pos'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-onhand'] });
       await queryClient.invalidateQueries({ queryKey: ['inventory-ledger'] });
     },
@@ -345,7 +395,10 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     mutationFn: (id: number) => procurementService.reverseGRN(id),
     onSuccess: async () => {
       toast.success('GRN reversed');
+      setConfirmReverseGrnId(null);
       await queryClient.invalidateQueries({ queryKey: ['procurement-grns'] });
+      await queryClient.invalidateQueries({ queryKey: ['procurement-grn-by-id'] });
+      await queryClient.invalidateQueries({ queryKey: ['procurement-pos'] });
     },
     onError: (e: any) => toast.error(readApiError(e, 'Failed to reverse GRN')),
   });
@@ -391,6 +444,70 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     for (const u of uomsQ.data ?? []) m.set(Number(u.id), u);
     return m;
   }, [uomsQ.data]);
+
+  const grnStatusFilterOptions = useMemo(
+    () => [
+      { value: '', label: 'All' },
+      { value: 'draft', label: 'Draft' },
+      { value: 'posted', label: 'Posted' },
+      { value: 'reversed', label: 'Reversed' },
+    ],
+    [],
+  );
+
+  const grnBranchFilterOptions = useMemo(
+    () => [
+      { value: '', label: 'All branches' },
+      ...((branchesQ.data ?? []) as any[]).map((b) => ({
+        value: String(b.id),
+        label: String(b.name ?? b.code ?? `Branch #${b.id}`),
+      })),
+    ],
+    [branchesQ.data],
+  );
+
+  const prBranchSelectOptions = useMemo(
+    () =>
+      availablePrBranches.map((b: any) => ({
+        value: String(b.id),
+        label: String(b.name ?? `Branch #${b.id}`),
+      })),
+    [availablePrBranches],
+  );
+
+  const vendorSearchableOptions = useMemo(
+    () =>
+      (vendorsQ.data ?? []).map((v: any) => ({
+        value: String(v.id),
+        label: String(v.name ?? `Vendor #${v.id}`),
+      })),
+    [vendorsQ.data],
+  );
+
+  const itemsSearchableOptions = useMemo(
+    () =>
+      (itemsQ.data ?? []).map((it: any) => ({
+        value: String(it.id),
+        label: String(it.name ?? it.code ?? `Item #${it.id}`),
+      })),
+    [itemsQ.data],
+  );
+
+  const grnExtraItemSelectOptions = useMemo(
+    () =>
+      (itemsQ.data ?? [])
+        .filter(
+          (it: any) =>
+            !(grnForm.lines ?? []).some(
+              (l: any) => Number(l.inventory_item_id) === Number(it.id),
+            ),
+        )
+        .map((it: any) => ({
+          value: String(it.id),
+          label: String(it.name ?? it.code ?? `Item #${it.id}`),
+        })),
+    [itemsQ.data, grnForm.lines],
+  );
 
   const getUomToRootMultiplier = (uomIdRaw: number | string | null | undefined): number | null => {
     const startId = Number(uomIdRaw);
@@ -464,10 +581,39 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     [posQ.data],
   );
 
-  const draftGRNs = useMemo(
-    () => (grnsQ.data ?? []).filter((g: any) => g.status === 'draft'),
-    [grnsQ.data],
+  const grnPoSearchableOptions = useMemo(
+    () =>
+      openPOs.map((po: any) => {
+        const branchName = branchById.get(Number(po.buyerBranchId))?.name ?? 'Branch';
+        const pr = po.purchaseRequisition?.prNumber;
+        const vendorName = vendorById.get(Number(po.vendorId))?.name;
+        const parts = [String(po.poNumber ?? ''), branchName];
+        if (pr) parts.push(`PR ${pr}`);
+        if (vendorName) parts.push(vendorName);
+        return { value: String(po.id), label: parts.join(' — ') };
+      }),
+    [openPOs, branchById, vendorById],
   );
+
+  const displayedGrns = useMemo(() => {
+    let rows = [...(grnsQ.data ?? [])];
+    const bid = Number(grnFilterBranch);
+    if (Number.isInteger(bid) && bid > 0) {
+      rows = rows.filter((g: any) => Number(g.branchId) === bid);
+    }
+    const q = grnSearchText.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((g: any) => {
+        const gn = String(g.grnNumber ?? g.id ?? '').toLowerCase();
+        const pn = String(
+          g.purchaseOrder?.poNumber ?? poById.get(Number(g.purchaseOrderId))?.poNumber ?? '',
+        ).toLowerCase();
+        const prn = String(g.purchaseOrder?.purchaseRequisition?.prNumber ?? '').toLowerCase();
+        return gn.includes(q) || pn.includes(q) || prn.includes(q);
+      });
+    }
+    return rows;
+  }, [grnsQ.data, grnFilterBranch, grnSearchText, poById]);
 
   const selectedPOForCreateGRN = useMemo(
     () => poById.get(Number(grnForm.purchase_order_id)),
@@ -478,19 +624,11 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     [poById, grnForm.purchase_order_id],
   );
 
-  const selectedItemForLine = useMemo(
-    () => itemById.get(Number(lineForm.inventory_item_id)),
-    [itemById, lineForm.inventory_item_id],
-  );
   const selectedItemForEditGrnLine = useMemo(
     () => itemById.get(Number(editGrnLineForm.inventory_item_id)),
     [itemById, editGrnLineForm.inventory_item_id],
   );
 
-  const selectedDraftGrn = useMemo(
-    () => (grnsQ.data ?? []).find((g: any) => Number(g.id) === Number(lineForm.grn_id)),
-    [grnsQ.data, lineForm.grn_id],
-  );
   const selectedItemForPOLine = useMemo(
     () => itemById.get(Number(poForm.line_item_id)),
     [itemById, poForm.line_item_id],
@@ -640,13 +778,20 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     line: any,
   ): { qty: number | null; uomId: number | null } => {
     const po = selectedPOForEditGRN;
+    const poLines = po?.lines ?? [];
     const poLine =
-      (po?.lines ?? []).find((l: any) => Number(l.id) === Number(line.purchase_order_line_id)) ??
-      (po?.lines ?? []).find((l: any) => Number(l.inventoryItemId) === Number(line.inventory_item_id));
-    if (poLine?.orderedQty != null && Number.isFinite(Number(poLine.orderedQty))) {
+      poLines.find((l: any) => Number(l.id) === Number(line.purchase_order_line_id)) ??
+      poLines.find(
+        (l: any) =>
+          Number(l.inventoryItemId ?? l.inventory_item_id) === Number(line.inventory_item_id),
+      );
+    const ordered =
+      poLine?.orderedQty ?? poLine?.ordered_qty;
+    const orderedUom = poLine?.orderedUomId ?? poLine?.ordered_uom_id;
+    if (ordered != null && Number.isFinite(Number(ordered))) {
       return {
-        qty: Number(poLine.orderedQty),
-        uomId: poLine?.orderedUomId != null ? Number(poLine.orderedUomId) : null,
+        qty: Number(ordered),
+        uomId: orderedUom != null ? Number(orderedUom) : null,
       };
     }
     const note = String(line?.notes ?? '');
@@ -671,14 +816,26 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
       toast.error('Expiry date is required for this item');
       return;
     }
+    if (
+      selectedItemForEditGrnLine?.trackLot &&
+      receivedQty > 0 &&
+      !String(editGrnLineForm.lot_code ?? '').trim()
+    ) {
+      toast.error('Lot / batch code is required for this item');
+      return;
+    }
+    const poLines = selectedPOForEditGRN?.lines ?? [];
     const poLine =
-      (selectedPOForEditGRN?.lines ?? []).find(
+      poLines.find(
         (l: any) =>
-          Number(l.inventoryItemId) === Number(editGrnLineForm.inventory_item_id) &&
-          Number(l.orderedUomId) === Number(editGrnLineForm.received_uom_id),
+          Number(l.inventoryItemId ?? l.inventory_item_id) ===
+            Number(editGrnLineForm.inventory_item_id) &&
+          Number(l.orderedUomId ?? l.ordered_uom_id) === Number(editGrnLineForm.received_uom_id),
       ) ??
-      (selectedPOForEditGRN?.lines ?? []).find(
-        (l: any) => Number(l.inventoryItemId) === Number(editGrnLineForm.inventory_item_id),
+      poLines.find(
+        (l: any) =>
+          Number(l.inventoryItemId ?? l.inventory_item_id) ===
+          Number(editGrnLineForm.inventory_item_id),
       );
     const nextLine = {
       line_id: undefined,
@@ -693,22 +850,14 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     };
     setGrnForm((prev: any) => {
       const existing = [...(prev.lines ?? [])];
-      const idx = existing.findIndex(
-        (l: any) =>
-          Number(l.inventory_item_id) === nextLine.inventory_item_id &&
-          Number(l.received_uom_id) === nextLine.received_uom_id,
+      const dupIdx = existing.findIndex(
+        (l: any) => Number(l.inventory_item_id) === nextLine.inventory_item_id,
       );
-      if (idx >= 0 && (existing[idx].line_id == null || Number(existing[idx].line_id) <= 0)) {
-        existing[idx] = {
-          ...existing[idx],
-          received_qty: Number(existing[idx].received_qty ?? 0) + nextLine.received_qty,
-          received_uom_id: nextLine.received_uom_id,
-          lot_code: nextLine.lot_code,
-          expiry_date: nextLine.expiry_date,
-        };
-      } else {
-        existing.push(nextLine);
+      if (dupIdx >= 0) {
+        toast.error('This item is already on the receipt — change the quantity on that row.');
+        return prev;
       }
+      existing.push(nextLine);
       return { ...prev, lines: existing };
     });
     setEditGrnLineForm({
@@ -719,6 +868,22 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
       expiry_date: '',
     });
   };
+
+  useEffect(() => {
+    if (tab !== 'grns' || !grnIdFromUrl || !grnFromLinkQ.data) return;
+    const g = grnFromLinkQ.data as any;
+    if (String(g?.status) === 'draft') {
+      openEditGRNModal(g);
+    } else {
+      setSelectedGRN(g);
+    }
+    setSearchParams((prev) => {
+      const n = new URLSearchParams(prev);
+      n.delete('grn_id');
+      return n;
+    }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open once when linked GRN loads
+  }, [tab, grnIdFromUrl, grnFromLinkQ.data, setSearchParams]);
 
   const openEditPOModal = (po: any) => {
     setPoForm({
@@ -787,32 +952,90 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     setIsCreatePROpen(true);
   };
 
-  const openEditGRNModal = (grn: any) => {
-    setGrnForm({
-      grn_id: String(grn.id),
-      grn_number: grn.grnNumber ?? '',
-      purchase_order_id: String(grn.purchaseOrderId ?? ''),
-      notes: grn.notes ?? '',
-      lines: (grn.lines ?? []).map((l: any) => ({
-        line_id: Number(l.id),
-        purchase_order_line_id: l.purchaseOrderLineId != null ? Number(l.purchaseOrderLineId) : null,
-        inventory_item_id: Number(l.inventoryItemId),
-        received_qty: Number(l.receivedQty ?? 0),
-        received_uom_id: Number(l.receivedUomId),
-        lot_code: l.lotCode ?? '',
-        expiry_date: l.expiryDate ?? '',
-        location_id: l.locationId ?? null,
-        notes: l.notes ?? '',
+  const validateGrnLinesForDraft = (): boolean => {
+    if (!grnForm.grn_id) {
+      toast.error('Missing draft receipt');
+      return false;
+    }
+    if (!(grnForm.lines ?? []).length) {
+      toast.error('This receipt has no lines');
+      return false;
+    }
+    for (const l of grnForm.lines ?? []) {
+      const qty = Number(l.received_qty ?? 0);
+      if (!Number.isFinite(qty) || qty < 0) {
+        toast.error('Received quantity must be a valid number ≥ 0');
+        return false;
+      }
+      const item = itemById.get(Number(l.inventory_item_id));
+      if (item?.trackExpiry && qty > 0 && !String(l.expiry_date ?? '').trim()) {
+        toast.error(`Expiry date is required for ${item.name}`);
+        return false;
+      }
+      if (item?.trackLot && qty > 0 && !String(l.lot_code ?? '').trim()) {
+        toast.error(`Lot / batch code is required for ${item.name}`);
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const canPostGrnFromForm = (): boolean => {
+    if (!validateGrnLinesForDraft()) return false;
+    const anyPositive = (grnForm.lines ?? []).some((l: any) => Number(l.received_qty ?? 0) > 0);
+    if (!anyPositive) {
+      toast.error('Enter at least one received quantity before posting.');
+      return false;
+    }
+    return true;
+  };
+
+  const buildGrnUpdatePayload = () => {
+    const trimmedRef = String(grnForm.grn_number ?? '').trim();
+    const poItemIds = new Set(
+      (selectedPOForEditGRN?.lines ?? []).map((pl: any) =>
+        Number(pl.inventoryItemId ?? pl.inventory_item_id),
+      ),
+    );
+    const payload: any = {
+      notes: grnForm.notes || null,
+      lines: (grnForm.lines ?? []).map((l: any) => ({
+        line_id:
+          l.line_id == null || Number.isNaN(Number(l.line_id)) ? undefined : Number(l.line_id),
+        purchase_order_line_id:
+          l.purchase_order_line_id != null ? Number(l.purchase_order_line_id) : null,
+        inventory_item_id: Number(l.inventory_item_id),
+        received_qty: Number(l.received_qty ?? 0),
+        received_uom_id: Number(l.received_uom_id),
+        allow_mismatched_item: !poItemIds.has(Number(l.inventory_item_id)),
+        lot_code: l.lot_code || null,
+        expiry_date: l.expiry_date || null,
+        location_id: l.location_id != null ? Number(l.location_id) : null,
+        notes: l.notes || null,
       })),
-    });
-    setEditGrnLineForm({
-      inventory_item_id: '',
-      received_qty: '',
-      received_uom_id: '',
-      lot_code: '',
-      expiry_date: '',
-    });
-    setIsEditGRNOpen(true);
+    };
+    if (trimmedRef) payload.grn_number = trimmedRef;
+    return payload;
+  };
+
+  const runConfirmedGrnPost = () => {
+    if (confirmPostGrnId == null) return;
+    const id = confirmPostGrnId;
+    const editingThis = isEditGRNOpen && Number(grnForm.grn_id) === id;
+    if (editingThis) {
+      if (!canPostGrnFromForm()) return;
+      if (!validateGrnLinesForDraft()) return;
+      updateGRNM.mutate(
+        { id, payload: buildGrnUpdatePayload(), keepOpen: false },
+        {
+          onSuccess: () => {
+            postGRNM.mutate(id);
+          },
+        },
+      );
+    } else {
+      postGRNM.mutate(id);
+    }
   };
 
   return (
@@ -830,7 +1053,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
           <ol className="list-decimal pl-5 space-y-1 text-slate-600 dark:text-slate-300">
             <li>Create and submit a purchase requisition from your branch.</li>
             <li>Once approved, watch the purchase order status in Purchase orders.</li>
-            <li>Create a draft GRN, review expected lines, add received quantities, then post.</li>
+            <li>Open <strong>Receive delivery</strong>, pick the PO, enter what arrived, then save and post.</li>
           </ol>
         </div>
       </Card>
@@ -993,90 +1216,79 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
       {tab === 'grns' && (
         <div className="space-y-4">
           <Card>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                onClick={() => {
-                  setGrnForm({ grn_id: '', grn_number: '', purchase_order_id: '', notes: '', lines: [] });
-                  setIsCreateGRNOpen(true);
-                }}
-              >
-                Create draft GRN
-              </Button>
-              <select
-                className="border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 min-w-[260px]"
-                value={lineForm.grn_id ?? ''}
-                onChange={(e) => setLineForm({ ...lineForm, grn_id: e.target.value })}
-              >
-                <option value="">Select draft GRN to add received line…</option>
-                {draftGRNs.map((g: any) => (
-                  <option key={g.id} value={g.id}>
-                    {g.grnNumber ?? `GRN-${g.id}`} - {poById.get(Number(g.purchaseOrderId))?.poNumber ?? g.purchaseOrder?.poNumber ?? 'PO'}
-                  </option>
-                ))}
-              </select>
-              <Button disabled={!lineForm.grn_id} onClick={() => setIsAddGRNLineOpen(true)}>
-                Add received line
-              </Button>
+            <div className="text-sm text-slate-700 dark:text-slate-200 space-y-2 mb-4">
+              <div className="font-semibold text-slate-800 dark:text-slate-100">Receiving in 3 steps</div>
+              <ol className="list-decimal pl-5 text-slate-600 dark:text-slate-300 space-y-1">
+                <li><strong>Start</strong> — pick an open PO; we open a draft with every line from that order.</li>
+                <li><strong>Record</strong> — type received qty per line; add lot/expiry when the product requires it.</li>
+                <li><strong>Finish</strong> — save draft anytime, then <strong>Post</strong> to add stock (use Reverse only if you made a mistake).</li>
+              </ol>
             </div>
-            {draftGRNs.length === 0 && (
-              <div className="mt-2 text-xs text-amber-700 dark:text-amber-300">
-                No draft GRN found. Create one from an open PO first.
-              </div>
-            )}
+            <Button
+              onClick={() => {
+                setGrnForm({ grn_id: '', grn_number: '', purchase_order_id: '', notes: '', lines: [] });
+                setIsCreateGRNOpen(true);
+              }}
+            >
+              Receive delivery (new draft)
+            </Button>
           </Card>
-
-          {selectedDraftGrn?.lines?.length ? (
-            <Card>
-              <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">Expected vs received (selected draft GRN)</h3>
-              <div className="overflow-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="text-left text-slate-600 dark:text-slate-300">
-                    <tr>
-                      <th className="py-2 pr-4">Item</th>
-                      <th className="py-2 pr-4">Expected</th>
-                      <th className="py-2 pr-4">Received</th>
-                      <th className="py-2 pr-4">Difference</th>
-                      <th className="py-2 pr-4">UOM</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-slate-700 dark:text-slate-200">
-                    {(selectedDraftGrn.lines ?? []).map((line: any) => {
-                      const expected = getExpectedForGrnLine(selectedDraftGrn, line);
-                      const received = getReceivedForGrnLine(line);
-                      const canDiff =
-                        expected.qty != null &&
-                        (expected.uomId == null || received.uomId == null || expected.uomId === received.uomId);
-                      const diff = canDiff ? Number(received.qty) - Number(expected.qty) : null;
-                      return (
-                        <tr key={line.id} className="border-t border-slate-100 dark:border-slate-700">
-                          <td className="py-2 pr-4">{itemById.get(Number(line.inventoryItemId))?.name ?? '—'}</td>
-                          <td className="py-2 pr-4">{formatQtyWithUom(expected.qty, expected.uomId)}</td>
-                          <td className="py-2 pr-4">{formatQtyWithUom(received.qty, received.uomId)}</td>
-                          <td className="py-2 pr-4">
-                            {!canDiff ? (
-                              <span className="text-xs text-slate-500">UOM differs</span>
-                            ) : diff == null ? (
-                              '—'
-                            ) : diff === 0 ? (
-                              <span className="font-medium text-emerald-700 dark:text-emerald-400">0</span>
-                            ) : (
-                              <span className={diff > 0 ? 'font-medium text-amber-700 dark:text-amber-300' : 'font-medium text-rose-700 dark:text-rose-300'}>
-                                {diff > 0 ? `+${diff}` : diff}
-                              </span>
-                            )}
-                          </td>
-                          <td className="py-2 pr-4">{uomById.get(Number(received.uomId))?.code ?? '—'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          ) : null}
 
           <Card>
             <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Goods receipt notes</h2>
+            <div className="flex flex-wrap gap-3 mb-4 text-sm">
+              <label className="min-w-[140px]">
+                <div className="text-xs font-medium text-slate-600 mb-1">Status</div>
+                <SearchableSelect
+                  value={grnFilterStatus}
+                  onChange={setGrnFilterStatus}
+                  options={grnStatusFilterOptions}
+                  placeholder="All"
+                  searchPlaceholder="Search status…"
+                  minWidth="w-full"
+                  className="w-full"
+                />
+              </label>
+              <label className="min-w-[140px]">
+                <div className="text-xs font-medium text-slate-600 mb-1">From</div>
+                <input
+                  type="date"
+                  className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                  value={grnFilterFrom}
+                  onChange={(e) => setGrnFilterFrom(e.target.value)}
+                />
+              </label>
+              <label className="min-w-[140px]">
+                <div className="text-xs font-medium text-slate-600 mb-1">To</div>
+                <input
+                  type="date"
+                  className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                  value={grnFilterTo}
+                  onChange={(e) => setGrnFilterTo(e.target.value)}
+                />
+              </label>
+              <label className="min-w-[160px]">
+                <div className="text-xs font-medium text-slate-600 mb-1">Branch</div>
+                <SearchableSelect
+                  value={grnFilterBranch}
+                  onChange={setGrnFilterBranch}
+                  options={grnBranchFilterOptions}
+                  placeholder="All branches"
+                  searchPlaceholder="Search branches…"
+                  minWidth="w-full"
+                  className="w-full"
+                />
+              </label>
+              <label className="min-w-[200px] flex-1">
+                <div className="text-xs font-medium text-slate-600 mb-1">Search GRN / PO / PR</div>
+                <input
+                  className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                  placeholder="Type to filter…"
+                  value={grnSearchText}
+                  onChange={(e) => setGrnSearchText(e.target.value)}
+                />
+              </label>
+            </div>
             {grnsQ.isLoading ? (
               <Loader />
             ) : (
@@ -1094,32 +1306,51 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                     </tr>
                   </thead>
                   <tbody className="text-slate-700 dark:text-slate-200">
-                    {(grnsQ.data ?? []).map((g: any) => (
-                      <tr key={g.id} className="border-t border-slate-100 dark:border-slate-700">
-                        <td className="py-2 pr-4 font-medium">{g.grnNumber ?? `GRN-${g.id}`}</td>
-                        <td className="py-2 pr-4">{g.purchaseOrder?.purchaseRequisition?.prNumber ?? '—'}</td>
-                        <td className="py-2 pr-4">{g.purchaseOrder?.poNumber ?? poById.get(Number(g.purchaseOrderId))?.poNumber ?? '—'}</td>
-                        <td className="py-2 pr-4">{branchById.get(Number(g.branchId))?.name ?? '—'}</td>
-                        <td className="py-2 pr-4">{(g.lines ?? []).length}</td>
-                        <td className="py-2 pr-4">
-                          <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${statusClass(g.status)}`}>
-                            {g.status}
-                          </span>
-                        </td>
-                        <td className="py-2 pr-4 flex gap-2">
-                          <Button variant="secondary" onClick={() => setSelectedGRN(g)}>View</Button>
-                          <Button
-                            variant="secondary"
-                            disabled={g.status !== 'draft'}
-                            onClick={() => openEditGRNModal(g)}
-                          >
-                            Edit
-                          </Button>
-                          <Button disabled={g.status !== 'draft'} onClick={() => postGRNM.mutate(g.id)}>Post</Button>
-                          <Button disabled={g.status !== 'posted'} onClick={() => reverseGRNM.mutate(g.id)}>Reverse</Button>
+                    {displayedGrns.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-6 text-center text-slate-500">
+                          No goods receipt notes match your filters.
                         </td>
                       </tr>
-                    ))}
+                    ) : (
+                      displayedGrns.map((g: any) => (
+                        <tr key={g.id} className="border-t border-slate-100 dark:border-slate-700">
+                          <td className="py-2 pr-4 font-medium">{g.grnNumber ?? `GRN-${g.id}`}</td>
+                          <td className="py-2 pr-4">{g.purchaseOrder?.purchaseRequisition?.prNumber ?? '—'}</td>
+                          <td className="py-2 pr-4">{g.purchaseOrder?.poNumber ?? poById.get(Number(g.purchaseOrderId))?.poNumber ?? '—'}</td>
+                          <td className="py-2 pr-4">{branchById.get(Number(g.branchId))?.name ?? '—'}</td>
+                          <td className="py-2 pr-4">{(g.lines ?? []).length}</td>
+                          <td className="py-2 pr-4">
+                            <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${statusClass(g.status)}`}>
+                              {g.status}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-4 flex flex-wrap gap-2">
+                            <Button variant="secondary" onClick={() => setSelectedGRN(g)}>View</Button>
+                            <Button
+                              variant="secondary"
+                              disabled={g.status !== 'draft'}
+                              onClick={() => openEditGRNModal(g)}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              disabled={g.status !== 'draft'}
+                              onClick={() => setConfirmPostGrnId(Number(g.id))}
+                            >
+                              Post
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              disabled={g.status !== 'posted'}
+                              onClick={() => setConfirmReverseGrnId(Number(g.id))}
+                            >
+                              Reverse
+                            </Button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1154,61 +1385,60 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                   readOnly
                 />
               ) : (
-                <select
-                  className="w-full border rounded-lg p-2"
-                  value={prForm.requesting_branch_id}
-                  onChange={(e) =>
+                <SearchableSelect
+                  value={String(prForm.requesting_branch_id ?? '')}
+                  onChange={(v) =>
                     setPrForm({
                       ...prForm,
-                      requesting_branch_id: e.target.value,
+                      requesting_branch_id: v,
                       lines: [],
                     })
                   }
-                >
-                  <option value="">Select branch…</option>
-                  {availablePrBranches.map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                </select>
+                  options={prBranchSelectOptions}
+                  placeholder="Select branch…"
+                  searchPlaceholder="Search branches…"
+                  minWidth="w-full"
+                  className="w-full"
+                />
               )}
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Requested from</div>
-              <select
-                className="w-full border rounded-lg p-2"
-                value={prForm.requested_from_vendor_id}
-                onChange={(e) => setPrForm({ ...prForm, requested_from_vendor_id: e.target.value })}
-              >
-                <option value="">Select supplier/warehouse…</option>
-                {(vendorsQ.data ?? []).map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
+              <SearchableSelect
+                value={String(prForm.requested_from_vendor_id ?? '')}
+                onChange={(v) => setPrForm({ ...prForm, requested_from_vendor_id: v })}
+                options={vendorSearchableOptions}
+                placeholder="Select supplier/warehouse…"
+                searchPlaceholder="Search suppliers…"
+                minWidth="w-full"
+                className="w-full"
+              />
             </label>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <label className="text-sm md:col-span-2">
               <div className="text-xs font-medium text-slate-600 mb-1">Raw product select</div>
-              <select
-                className="w-full border rounded-lg p-2"
-                value={prForm.inventory_item_id}
-                onChange={(e) => {
-                  const id = Number(e.target.value);
-                  if (!id) {
+              <SearchableSelect
+                value={String(prForm.inventory_item_id ?? '')}
+                onChange={(v) => {
+                  if (!v) {
                     setPrForm({ ...prForm, inventory_item_id: '' });
                     return;
                   }
+                  const id = Number(v);
                   setPrForm((prev: any) => ({ ...prev, inventory_item_id: String(id) }));
                   addSelectedPrItem(id);
                 }}
+                options={itemsSearchableOptions}
+                placeholder={
+                  !prForm.requesting_branch_id ? 'Select branch first…' : 'Select product…'
+                }
+                searchPlaceholder="Search products…"
+                minWidth="w-full"
+                className="w-full"
                 disabled={!prForm.requesting_branch_id}
-              >
-                <option value="">
-                  {!prForm.requesting_branch_id ? 'Select branch first…' : 'Select product…'}
-                </option>
-                {(itemsQ.data ?? []).map((it: any) => (
-                  <option key={it.id} value={it.id}>
-                    {it.name}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
           </div>
 
@@ -1291,17 +1521,16 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                                 );
                               }
                               return (
-                                <select
-                                  className="w-28 border rounded-lg p-1.5 bg-white"
-                                  value={l.requested_uom_id ?? ''}
-                                  onChange={(e) => {
-                                    const nextUomId = Number(e.target.value);
+                                <SearchableSelect
+                                  value={String(l.requested_uom_id ?? '')}
+                                  onChange={(v) => {
+                                    const nextUomId = Number(v);
                                     const prevUomId = Number(l.requested_uom_id);
                                     if (!nextUomId || !prevUomId || nextUomId === prevUomId) {
                                       setPrForm((prev: any) => ({
                                         ...prev,
                                         lines: (prev.lines ?? []).map((x: any, i: number) =>
-                                          i === idx ? { ...x, requested_uom_id: e.target.value } : x,
+                                          i === idx ? { ...x, requested_uom_id: v } : x,
                                         ),
                                       }));
                                       return;
@@ -1329,13 +1558,15 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                                       ),
                                     }));
                                   }}
-                                >
-                                  {allowedUoms.map((u: any) => (
-                                    <option key={u.id} value={u.id}>
-                                      {u.code}
-                                    </option>
-                                  ))}
-                                </select>
+                                  options={allowedUoms.map((u: any) => ({
+                                    value: String(u.id),
+                                    label: u.code,
+                                  }))}
+                                  placeholder="Unit"
+                                  searchPlaceholder="Search units…"
+                                  minWidth="min-w-[7rem]"
+                                  className="w-28"
+                                />
                               );
                             })()}
                           </td>
@@ -1424,7 +1655,12 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
         </div>
       </Modal>
 
-      <Modal isOpen={isCreateGRNOpen} onClose={() => setIsCreateGRNOpen(false)} title="Create Draft GRN" size="medium">
+      <Modal
+        isOpen={isCreateGRNOpen}
+        onClose={() => setIsCreateGRNOpen(false)}
+        title="Receive delivery"
+        size="medium"
+      >
         <div className="space-y-3">
           <label className="text-sm block">
             <div className="text-xs font-medium text-slate-600 mb-1">GRN Reference Number (optional)</div>
@@ -1435,21 +1671,20 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               placeholder="Auto-generated if blank"
             />
           </label>
-          <label className="text-sm block">
-            <div className="text-xs font-medium text-slate-600 mb-1">Open purchase order</div>
-            <select
-              className="w-full border rounded-lg p-2"
-              value={grnForm.purchase_order_id}
-              onChange={(e) => setGrnForm({ ...grnForm, purchase_order_id: e.target.value })}
-            >
-              <option value="">Select PO…</option>
-              {openPOs.map((po: any) => (
-                <option key={po.id} value={po.id}>
-                  {po.poNumber} - {branchById.get(Number(po.buyerBranchId))?.name ?? 'Branch'}
-                </option>
-              ))}
-            </select>
-          </label>
+          <SearchableSelect
+            label="Open purchase order"
+            placeholder="Select PO…"
+            searchPlaceholder="Search POs…"
+            value={String(grnForm.purchase_order_id ?? '')}
+            onChange={(v) => setGrnForm({ ...grnForm, purchase_order_id: v })}
+            options={grnPoSearchableOptions}
+            minWidth="w-full"
+            className="w-full"
+            disabled={grnPoSearchableOptions.length === 0}
+          />
+          {grnPoSearchableOptions.length === 0 ? (
+            <div className="text-xs text-slate-500">No open purchase orders. Approve a PR and ensure the PO is not closed.</div>
+          ) : null}
           <label className="text-sm block">
             <div className="text-xs font-medium text-slate-600 mb-1">Receiving branch</div>
             <input
@@ -1481,20 +1716,44 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                 })
               }
             >
-              Create draft GRN
+              Create draft & continue
             </Button>
           </div>
         </div>
       </Modal>
 
-      <Modal isOpen={isEditGRNOpen} onClose={() => setIsEditGRNOpen(false)} title="Edit Draft GRN" size="full">
+      <Modal isOpen={isEditGRNOpen} onClose={() => setIsEditGRNOpen(false)} title="Receive delivery (draft)" size="full">
         <div className="space-y-3 overflow-x-hidden">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-600 p-3 bg-slate-50/60 dark:bg-slate-900/30 text-sm">
+            <div className="font-semibold text-slate-800 dark:text-slate-100 mb-2">
+              1 · Purchase order — 2 · Record what arrived — 3 · Save draft or Post
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-slate-700 dark:text-slate-200">
+              <div>
+                <span className="text-slate-500">PO:</span>{' '}
+                {selectedPOForEditGRN?.poNumber ?? poById.get(Number(grnForm.purchase_order_id))?.poNumber ?? '—'}
+              </div>
+              <div>
+                <span className="text-slate-500">Branch:</span>{' '}
+                {selectedPOForEditGRN
+                  ? (branchById.get(Number(selectedPOForEditGRN.buyerBranchId))?.name ?? '—')
+                  : '—'}
+              </div>
+              <div>
+                <span className="text-slate-500">Vendor:</span>{' '}
+                {selectedPOForEditGRN
+                  ? (vendorById.get(Number(selectedPOForEditGRN.vendorId))?.name ?? '—')
+                  : '—'}
+              </div>
+            </div>
+          </div>
           <label className="text-sm block">
-            <div className="text-xs font-medium text-slate-600 mb-1">GRN Reference Number</div>
+            <div className="text-xs font-medium text-slate-600 mb-1">GRN reference (optional override)</div>
             <input
               className="w-full border rounded-lg p-2"
               value={grnForm.grn_number}
               onChange={(e) => setGrnForm({ ...grnForm, grn_number: e.target.value })}
+              placeholder="Leave blank to keep the auto-generated number"
             />
           </label>
           <label className="text-sm block">
@@ -1507,24 +1766,28 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
             />
           </label>
           <div className="border rounded-lg p-3 bg-slate-50/60 dark:bg-slate-900/30">
-            <div className="text-xs font-medium text-slate-600 mb-2">Add missing item line</div>
+            <div className="text-xs font-medium text-slate-600 mb-2">
+              Add extra item <span className="font-normal text-slate-500">(not on this PO — only when supplier sent something extra)</span>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
-              <select
-                className="border rounded-lg p-2 text-sm"
-                value={editGrnLineForm.inventory_item_id}
-                onChange={(e) => {
-                  const itemId = Number(e.target.value);
+              <SearchableSelect
+                value={String(editGrnLineForm.inventory_item_id ?? '')}
+                onChange={(v) => {
+                  const itemId = Number(v);
                   const item = itemById.get(itemId);
                   setEditGrnLineForm((prev: any) => ({
                     ...prev,
-                    inventory_item_id: e.target.value,
+                    inventory_item_id: v,
                     received_uom_id: getDefaultItemUomId(item),
                   }));
                 }}
-              >
-                <option value="">Select item…</option>
-                {(itemsQ.data ?? []).map((it: any) => <option key={it.id} value={it.id}>{it.name}</option>)}
-              </select>
+                options={grnExtraItemSelectOptions}
+                placeholder="Select item…"
+                searchPlaceholder="Search items…"
+                minWidth="w-full"
+                className="w-full"
+                disabled={grnExtraItemSelectOptions.length === 0}
+              />
               <input
                 className="border rounded-lg p-2 text-sm"
                 type="number"
@@ -1535,20 +1798,19 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                 value={editGrnLineForm.received_qty}
                 onChange={(e) => setEditGrnLineForm((prev: any) => ({ ...prev, received_qty: e.target.value }))}
               />
-              <select
-                className="border rounded-lg p-2 text-sm"
-                value={editGrnLineForm.received_uom_id}
-                onChange={(e) => setEditGrnLineForm((prev: any) => ({ ...prev, received_uom_id: e.target.value }))}
-                disabled={!selectedItemForEditGrnLine}
-              >
-                <option value="">Unit…</option>
-                {getItemAllowedUoms(
+              <SearchableSelect
+                value={String(editGrnLineForm.received_uom_id ?? '')}
+                onChange={(v) => setEditGrnLineForm((prev: any) => ({ ...prev, received_uom_id: v }))}
+                options={getItemAllowedUoms(
                   selectedItemForEditGrnLine,
                   editGrnLineForm.received_uom_id,
-                ).map((u: any) => (
-                  <option key={u.id} value={u.id}>{u.code}</option>
-                ))}
-              </select>
+                ).map((u: any) => ({ value: String(u.id), label: u.code }))}
+                placeholder="Unit…"
+                searchPlaceholder="Search units…"
+                minWidth="min-w-[7rem]"
+                className="w-full"
+                disabled={!selectedItemForEditGrnLine}
+              />
               <input
                 className="border rounded-lg p-2 text-sm"
                 placeholder="Lot / batch"
@@ -1568,7 +1830,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
           </div>
           <div className="border rounded-lg">
             <div className="px-3 py-2 text-xs font-medium text-slate-600 border-b">
-              GRN lines ({(grnForm.lines ?? []).length})
+              Lines from purchase order — enter received quantities
             </div>
             {(grnForm.lines ?? []).length === 0 ? (
               <div className="px-3 py-3 text-sm text-slate-500">No lines found on this GRN.</div>
@@ -1578,9 +1840,9 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                   <thead className="text-left text-slate-600">
                     <tr>
                       <th className="py-2 px-3">Item</th>
-                      <th className="py-2 px-3">Current</th>
                       <th className="py-2 px-3">Received qty</th>
                       <th className="py-2 px-3">Unit</th>
+                      <th className="py-2 px-3">vs expected</th>
                       <th className="py-2 px-3">Lot / batch</th>
                       <th className="py-2 px-3">Expiry</th>
                     </tr>
@@ -1589,21 +1851,59 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                     {(grnForm.lines ?? []).map((l: any, idx: number) => {
                       const item = itemById.get(Number(l.inventory_item_id));
                       const lineTrackExpiry = !!item?.trackExpiry;
+                      const lineTrackLot = !!item?.trackLot;
+                      const expected = getExpectedForEditGrnLine(l);
+                      const qty = Number(l.received_qty ?? 0);
+                      const recvUom = Number(l.received_uom_id);
+                      let diffNode: React.ReactNode = '—';
+                      if (
+                        expected.qty != null &&
+                        Number.isFinite(qty) &&
+                        expected.uomId != null &&
+                        Number.isInteger(recvUom) &&
+                        recvUom > 0
+                      ) {
+                        if (expected.uomId === recvUom) {
+                          const d = qty - Number(expected.qty);
+                          diffNode =
+                            d === 0 ? (
+                              <span className="text-emerald-700 dark:text-emerald-400 font-medium">0</span>
+                            ) : (
+                              <span className={d > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-rose-700 dark:text-rose-300'}>
+                                {d > 0 ? `+${d}` : d}
+                              </span>
+                            );
+                        } else if (item) {
+                          const conv = convertQtyBetweenUoms({
+                            qty: Number(expected.qty),
+                            item,
+                            fromUomId: expected.uomId,
+                            toUomId: recvUom,
+                          });
+                          if (conv != null) {
+                            const d = qty - conv;
+                            diffNode =
+                              d === 0 ? (
+                                <span className="text-emerald-700 dark:text-emerald-400 font-medium">0</span>
+                              ) : (
+                                <span className={d > 0 ? 'text-amber-700 dark:text-amber-300' : 'text-rose-700 dark:text-rose-300'}>
+                                  {d > 0 ? `+${d}` : d}
+                                </span>
+                              );
+                          } else {
+                            diffNode = <span className="text-xs text-slate-500">UOM</span>;
+                          }
+                        }
+                      }
                       return (
                         <tr key={l.line_id ?? idx} className="border-t">
                           <td className="py-2 px-3">
                             <div>{item?.name ?? '—'}</div>
-                            <div className="text-[10px] text-slate-500">
-                              {(() => {
-                                const expected = getExpectedForEditGrnLine(l);
-                                return `Expected: ${formatQtyWithUom(expected.qty, expected.uomId)}`;
-                              })()}
-                            </div>
-                          </td>
-                          <td className="py-2 px-3 text-[11px] text-slate-600">
-                            Received: {Number(l.received_qty ?? 0)}
                           </td>
                           <td className="py-2 px-3">
+                            <div className="text-[10px] text-slate-500 mb-1">
+                              PO expected: {formatQtyWithUom(expected.qty, expected.uomId)}
+                            </div>
                             <input
                               className="w-28 border rounded-lg p-1.5"
                               type="number"
@@ -1622,23 +1922,27 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                             />
                           </td>
                           <td className="py-2 px-3">
-                            <select
-                              className="w-28 border rounded-lg p-1.5"
-                              value={l.received_uom_id ?? ''}
-                              onChange={(e) =>
+                            <SearchableSelect
+                              value={String(l.received_uom_id ?? '')}
+                              onChange={(v) =>
                                 setGrnForm((prev: any) => ({
                                   ...prev,
                                   lines: (prev.lines ?? []).map((x: any, i: number) =>
-                                    i === idx ? { ...x, received_uom_id: e.target.value } : x,
+                                    i === idx ? { ...x, received_uom_id: v } : x,
                                   ),
                                 }))
                               }
-                            >
-                              {getItemAllowedUoms(item, l.received_uom_id).map((u: any) => (
-                                <option key={u.id} value={u.id}>{u.code}</option>
-                              ))}
-                            </select>
+                              options={getItemAllowedUoms(item, l.received_uom_id).map((u: any) => ({
+                                value: String(u.id),
+                                label: u.code,
+                              }))}
+                              placeholder="Unit"
+                              searchPlaceholder="Search units…"
+                              minWidth="min-w-[7rem]"
+                              className="w-28"
+                            />
                           </td>
+                          <td className="py-2 px-3 text-sm">{diffNode}</td>
                           <td className="py-2 px-3">
                             <input
                               className="w-32 border rounded-lg p-1.5"
@@ -1652,6 +1956,9 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                                 }))
                               }
                             />
+                            {lineTrackLot && (
+                              <div className="text-[10px] text-amber-700 mt-1">Required when qty &gt; 0</div>
+                            )}
                           </td>
                           <td className="py-2 px-3">
                             <input
@@ -1679,56 +1986,30 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               </div>
             )}
           </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setIsEditGRNOpen(false)}>Cancel</Button>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" onClick={() => setIsEditGRNOpen(false)}>Close</Button>
             <Button
+              variant="secondary"
               isLoading={updateGRNM.isPending}
               onClick={() => {
-                if (!grnForm.grn_id || !String(grnForm.grn_number ?? '').trim()) {
-                  toast.error('GRN reference number is required');
-                  return;
-                }
-                if (!(grnForm.lines ?? []).length) {
-                  toast.error('GRN must have at least one line');
-                  return;
-                }
-                for (const l of grnForm.lines ?? []) {
-                  const qty = Number(l.received_qty ?? 0);
-                  if (!Number.isFinite(qty) || qty < 0) {
-                    toast.error('Received quantity must be a valid number >= 0');
-                    return;
-                  }
-                  const item = itemById.get(Number(l.inventory_item_id));
-                  if (item?.trackExpiry && qty > 0 && !String(l.expiry_date ?? '').trim()) {
-                    toast.error(`Expiry date is required for ${item.name}`);
-                    return;
-                  }
-                }
+                if (!validateGrnLinesForDraft()) return;
                 updateGRNM.mutate({
                   id: Number(grnForm.grn_id),
-                  payload: {
-                    grn_number: String(grnForm.grn_number).trim(),
-                    notes: grnForm.notes || null,
-                    lines: (grnForm.lines ?? []).map((l: any) => ({
-                      line_id:
-                        l.line_id == null || Number.isNaN(Number(l.line_id))
-                          ? undefined
-                          : Number(l.line_id),
-                      purchase_order_line_id:
-                        l.purchase_order_line_id != null ? Number(l.purchase_order_line_id) : null,
-                      inventory_item_id: Number(l.inventory_item_id),
-                      received_qty: Number(l.received_qty ?? 0),
-                      received_uom_id: Number(l.received_uom_id),
-                      lot_code: l.lot_code || null,
-                      expiry_date: l.expiry_date || null,
-                      location_id: l.location_id != null ? Number(l.location_id) : null,
-                      notes: l.notes || null,
-                    })),
-                  },
+                  payload: buildGrnUpdatePayload(),
+                  keepOpen: true,
                 });
               }}
             >
-              Save changes
+              Save draft
+            </Button>
+            <Button
+              isLoading={updateGRNM.isPending || postGRNM.isPending}
+              onClick={() => {
+                if (!canPostGrnFromForm()) return;
+                setConfirmPostGrnId(Number(grnForm.grn_id));
+              }}
+            >
+              Post GRN…
             </Button>
           </div>
         </div>
@@ -1747,14 +2028,15 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Vendor</div>
-              <select
-                className="w-full border rounded-lg p-2"
-                value={poForm.vendor_id ?? ''}
-                onChange={(e) => setPoForm({ ...poForm, vendor_id: e.target.value })}
-              >
-                <option value="">Select supplier/warehouse…</option>
-                {(vendorsQ.data ?? []).map((v: any) => <option key={v.id} value={v.id}>{v.name}</option>)}
-              </select>
+              <SearchableSelect
+                value={String(poForm.vendor_id ?? '')}
+                onChange={(v) => setPoForm({ ...poForm, vendor_id: v })}
+                options={vendorSearchableOptions}
+                placeholder="Select supplier/warehouse…"
+                searchPlaceholder="Search suppliers…"
+                minWidth="w-full"
+                className="w-full"
+              />
             </label>
             <label className="text-sm md:col-span-2">
               <div className="text-xs font-medium text-slate-600 mb-1">Notes (optional)</div>
@@ -1770,22 +2052,23 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Item to add</div>
-              <select
-                className="w-full border rounded-lg p-2"
-                value={poForm.line_item_id ?? ''}
-                onChange={(e) => {
-                  const itemId = Number(e.target.value);
+              <SearchableSelect
+                value={String(poForm.line_item_id ?? '')}
+                onChange={(v) => {
+                  const itemId = Number(v);
                   const item = itemById.get(itemId);
                   setPoForm({
                     ...poForm,
-                    line_item_id: e.target.value,
+                    line_item_id: v,
                     line_uom_id: getDefaultItemUomId(item),
                   });
                 }}
-              >
-                <option value="">Select item…</option>
-                {(itemsQ.data ?? []).map((it: any) => <option key={it.id} value={it.id}>{it.name}</option>)}
-              </select>
+                options={itemsSearchableOptions}
+                placeholder="Select item…"
+                searchPlaceholder="Search items…"
+                minWidth="w-full"
+                className="w-full"
+              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Quantity to add</div>
@@ -1801,17 +2084,19 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Unit for item</div>
-              <select
-                className="w-full border rounded-lg p-2"
-                value={poForm.line_uom_id ?? ''}
-                onChange={(e) => setPoForm({ ...poForm, line_uom_id: e.target.value })}
+              <SearchableSelect
+                value={String(poForm.line_uom_id ?? '')}
+                onChange={(v) => setPoForm({ ...poForm, line_uom_id: v })}
+                options={getItemAllowedUoms(selectedItemForPOLine, poForm.line_uom_id).map((u: any) => ({
+                  value: String(u.id),
+                  label: u.code,
+                }))}
+                placeholder="Select unit…"
+                searchPlaceholder="Search units…"
+                minWidth="w-full"
+                className="w-full"
                 disabled={!selectedItemForPOLine}
-              >
-                <option value="">Select unit…</option>
-                {getItemAllowedUoms(selectedItemForPOLine, poForm.line_uom_id).map((u: any) => (
-                  <option key={u.id} value={u.id}>{u.code}</option>
-                ))}
-              </select>
+              />
             </label>
             <div className="flex items-end">
               <Button variant="secondary" onClick={addCurrentPoLine}>Add item</Button>
@@ -1890,132 +2175,6 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               }}
             >
               Save changes
-            </Button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal isOpen={isAddGRNLineOpen} onClose={() => setIsAddGRNLineOpen(false)} title="Add Received Line" size="large">
-        <div className="space-y-3">
-          <label className="text-sm block">
-            <div className="text-xs font-medium text-slate-600 mb-1">Draft GRN</div>
-            <select
-              className="w-full border rounded-lg p-2"
-              value={lineForm.grn_id}
-              onChange={(e) => setLineForm({ ...lineForm, grn_id: e.target.value })}
-            >
-              <option value="">Select draft GRN…</option>
-              {draftGRNs.map((g: any) => (
-                <option key={g.id} value={g.id}>
-                  {g.grnNumber ?? `GRN-${g.id}`} - {poById.get(Number(g.purchaseOrderId))?.poNumber ?? g.purchaseOrder?.poNumber ?? 'PO'}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <label className="text-sm">
-              <div className="text-xs font-medium text-slate-600 mb-1">Item received</div>
-              <select
-                className="w-full border rounded-lg p-2"
-                value={lineForm.inventory_item_id}
-                onChange={(e) => {
-                  const itemId = Number(e.target.value);
-                  const item = itemById.get(itemId);
-                  setLineForm({
-                    ...lineForm,
-                    inventory_item_id: e.target.value,
-                    received_uom_id: getDefaultItemUomId(item),
-                  });
-                }}
-              >
-                <option value="">Select item…</option>
-                {(itemsQ.data ?? []).map((it: any) => <option key={it.id} value={it.id}>{it.name}</option>)}
-              </select>
-            </label>
-            <label className="text-sm">
-              <div className="text-xs font-medium text-slate-600 mb-1">Received quantity</div>
-              <input
-                className="w-full border rounded-lg p-2"
-                placeholder="e.g. 8"
-                value={lineForm.received_qty}
-                onChange={(e) => setLineForm({ ...lineForm, received_qty: e.target.value })}
-              />
-            </label>
-            <label className="text-sm">
-              <div className="text-xs font-medium text-slate-600 mb-1">Unit</div>
-              <select
-                className="w-full border rounded-lg p-2"
-                value={lineForm.received_uom_id}
-                onChange={(e) => setLineForm({ ...lineForm, received_uom_id: e.target.value })}
-                disabled={!selectedItemForLine}
-              >
-                <option value="">Select unit…</option>
-                {getItemAllowedUoms(selectedItemForLine, lineForm.received_uom_id).map((u: any) => (
-                  <option key={u.id} value={u.id}>{u.code}</option>
-                ))}
-              </select>
-            </label>
-            <label className="text-sm">
-              <div className="text-xs font-medium text-slate-600 mb-1">Lot / batch code (optional)</div>
-              <input
-                className="w-full border rounded-lg p-2"
-                value={lineForm.lot_code}
-                onChange={(e) => setLineForm({ ...lineForm, lot_code: e.target.value })}
-              />
-            </label>
-            <label className="text-sm md:col-span-2">
-              <div className="text-xs font-medium text-slate-600 mb-1">
-                Expiry date {selectedItemForLine?.trackExpiry ? '(required for this item)' : '(optional)'}
-              </div>
-              <input
-                className="w-full border rounded-lg p-2"
-                type="date"
-                value={lineForm.expiry_date}
-                onChange={(e) => setLineForm({ ...lineForm, expiry_date: e.target.value })}
-              />
-            </label>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setIsAddGRNLineOpen(false)}>Cancel</Button>
-            <Button
-              isLoading={addGRNLineM.isPending}
-              disabled={!lineForm.grn_id}
-              onClick={() => {
-                if (!lineForm.inventory_item_id || !lineForm.received_qty || !lineForm.received_uom_id) {
-                  toast.error('Please select item, quantity, and unit');
-                  return;
-                }
-                if (selectedItemForLine?.trackExpiry && !lineForm.expiry_date) {
-                  toast.error('Expiry date is required for this item');
-                  return;
-                }
-                addGRNLineM.mutate({
-                  grnId: Number(lineForm.grn_id),
-                  line: {
-                    purchase_order_line_id:
-                      selectedDraftGrn?.lines?.find(
-                        (l: any) =>
-                          Number(l.inventoryItemId) === Number(lineForm.inventory_item_id) &&
-                          Number(l.receivedUomId) === Number(lineForm.received_uom_id),
-                      )?.purchaseOrderLineId ??
-                      selectedDraftGrn?.lines?.find(
-                        (l: any) => Number(l.inventoryItemId) === Number(lineForm.inventory_item_id),
-                      )?.purchaseOrderLineId ??
-                      null,
-                    inventory_item_id: Number(lineForm.inventory_item_id),
-                    received_qty: Number(lineForm.received_qty),
-                    received_uom_id: Number(lineForm.received_uom_id),
-                    lot_code: lineForm.lot_code || null,
-                    expiry_date: lineForm.expiry_date || null,
-                    location_id: null,
-                    notes: null,
-                  },
-                });
-              }}
-            >
-              Add line
             </Button>
           </div>
         </div>
@@ -2171,6 +2330,50 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
             </div>
           </div>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={confirmPostGrnId != null}
+        onClose={() => setConfirmPostGrnId(null)}
+        title="Post this receipt to inventory?"
+        size="medium"
+      >
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          On-hand stock will increase from this goods receipt. If this screen is open in the editor for this GRN, your
+          current line entries are saved first. Otherwise make sure the draft was saved before posting from the list.
+        </p>
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="secondary" onClick={() => setConfirmPostGrnId(null)}>Cancel</Button>
+          <Button
+            isLoading={updateGRNM.isPending || postGRNM.isPending}
+            onClick={runConfirmedGrnPost}
+          >
+            Post to inventory
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={confirmReverseGrnId != null}
+        onClose={() => setConfirmReverseGrnId(null)}
+        title="Reverse this receipt?"
+        size="medium"
+      >
+        <p className="text-sm text-slate-600 dark:text-slate-300">
+          Inventory will be reduced and this GRN marked reversed. This fails if stock from these batches was already
+          moved or consumed.
+        </p>
+        <div className="flex justify-end gap-2 mt-4">
+          <Button variant="secondary" onClick={() => setConfirmReverseGrnId(null)}>Cancel</Button>
+          <Button
+            isLoading={reverseGRNM.isPending}
+            onClick={() => {
+              if (confirmReverseGrnId != null) reverseGRNM.mutate(confirmReverseGrnId);
+            }}
+          >
+            Reverse receipt
+          </Button>
+        </div>
       </Modal>
 
       <Modal isOpen={!!selectedGRN} onClose={() => setSelectedGRN(null)} title="Goods Receipt Details" size="xlarge">

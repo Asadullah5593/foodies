@@ -389,7 +389,7 @@ export class InventoryTransferService {
                     INNER JOIN inventory_transfer_receipts tr ON tr.id = l.event_ref_id
                     WHERE l.tenant_id = $1
                       AND l.branch_id = $2
-                      AND l.event_type = 'transfer_in'
+                      AND l.event_type IN ('transfer_receipt', 'transfer_in')
                       AND l.event_ref_type = 'transfer_receipt'
                       AND tr.transfer_order_id = $3
                     GROUP BY l.inventory_item_id

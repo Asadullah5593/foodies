@@ -20,6 +20,10 @@ import { RiderOrdersController } from './rider-orders.controller';
 import { RiderOrderLocationController } from './rider-order-location.controller';
 import { RiderOrderLocation } from '../entities/rider-order-location.entity';
 import { RiderOrderLocationSummary } from '../entities/rider-order-location-summary.entity';
+import { RiderProfile } from '../entities/rider-profile.entity';
+import { RiderPresence } from '../entities/rider-presence.entity';
+import { RiderDispatchState } from '../entities/rider-dispatch-state.entity';
+import { RiderAssignmentLedger } from '../entities/rider-assignment-ledger.entity';
 import { OrdersService } from './orders.service';
 import { RiderOrderLocationService } from './rider-order-location.service';
 import { RiderLocationGateway } from './rider-location.gateway';
@@ -32,6 +36,7 @@ import { ShiftsModule } from '../shifts/shifts.module';
 import { BranchesModule } from '../branches/branches.module';
 import { CustomersModule } from '../customers/customers.module';
 import { InventoryModule } from '../inventory/inventory.module';
+import { RiderHrmModule } from '../rider-hrm/rider-hrm.module';
 
 @Module({
     imports: [
@@ -51,6 +56,10 @@ import { InventoryModule } from '../inventory/inventory.module';
             Discount,
             RiderOrderLocation,
             RiderOrderLocationSummary,
+            RiderProfile,
+            RiderPresence,
+            RiderDispatchState,
+            RiderAssignmentLedger,
         ]),
         MenuModule,
         PaymentsModule,
@@ -59,6 +68,7 @@ import { InventoryModule } from '../inventory/inventory.module';
         BranchesModule,
         CustomersModule,
         InventoryModule,
+        RiderHrmModule,
     ],
     controllers: [
         PosMenuController,

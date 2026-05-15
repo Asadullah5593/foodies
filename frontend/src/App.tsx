@@ -26,6 +26,7 @@ import Reports from './pages/Admin/Reports';
 import Orders from './pages/Admin/Orders';
 import OrderDetail from './pages/Admin/OrderDetail';
 import Deliveries from './pages/Admin/Deliveries';
+import RiderHRM from './pages/Admin/RiderHRM';
 import LoyaltySettings from './pages/Admin/LoyaltySettings';
 import BusinessSettings from './pages/Admin/BusinessSettings';
 import Customers from './pages/Admin/Customers';
@@ -253,6 +254,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { path: '/admin/roles', label: 'Roles', icon: '🔐' as const },
     { path: '/admin/orders', label: 'Orders', icon: '📋' as const },
     { path: '/admin/deliveries', label: 'Deliveries', icon: '🛵' as const },
+    { path: '/admin/rider-hrm', label: 'Rider HRM', icon: '🧑‍💼' as const },
     { path: '/admin/shifts', label: 'Shifts', icon: '⏰' as const },
     { path: '/admin/reports', label: 'Reports', icon: '📈' as const },
     {
@@ -261,17 +263,17 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       label: 'Inventory',
       icon: '📦',
       children: [
+        { path: '/admin/inventory/uoms', label: 'Units of measure' },
+        { path: '/admin/inventory/vendors', label: 'Vendors' },
+        { path: '/admin/inventory/items', label: 'Inventory items' },
         { path: '/admin/inventory/on-hand', label: 'On-hand inventory' },
         { path: '/admin/inventory/ledger', label: 'Stock movement ledger' },
-        { path: '/admin/inventory/alerts', label: 'Alerts (low stock & expiry)' },
         { path: '/admin/inventory/transfers', label: 'Branch transfers' },
-        { path: '/admin/inventory/adjustments', label: 'Adjustments' },
+        { path: '/admin/inventory/adjustments', label: 'Stock adjustment' },
         { path: '/admin/inventory/wastage', label: 'Record wastage' },
-        { path: '/admin/inventory/stocktake', label: 'Weekly stock count (Finance Day)' },
-        { path: '/admin/inventory/weekly-usage', label: 'Weekly usage report' },
-        { path: '/admin/inventory/items', label: 'Inventory items' },
-        { path: '/admin/inventory/vendors', label: 'Vendors' },
-        { path: '/admin/inventory/uoms', label: 'Units of measure' },
+        // { path: '/admin/inventory/alerts', label: 'Alerts (low stock & expiry)' },
+        // { path: '/admin/inventory/stocktake', label: 'Weekly stock count (Finance Day)' },
+        // { path: '/admin/inventory/weekly-usage', label: 'Weekly usage report' },
       ],
     },
     {
@@ -874,6 +876,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><Deliveries /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/rider-hrm"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><RiderHRM /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />

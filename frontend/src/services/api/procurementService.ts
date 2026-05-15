@@ -86,6 +86,10 @@ export const procurementService = {
     const res = await apiClient.get('/admin/procurement/grns', { params });
     return res.data ?? [];
   },
+  getGRN: async (id: number) => {
+    const res = await apiClient.get(`/admin/procurement/grns/${id}`);
+    return res.data;
+  },
   createGRN: async (data: { grn_number?: string; purchase_order_id: number; branch_id: number; notes?: string }) => {
     const res = await apiClient.post('/admin/procurement/grns', data);
     return res.data;

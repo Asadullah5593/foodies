@@ -740,6 +740,22 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
     return m;
   }, [transferRequestsQ.data]);
 
+  const transferRequestsForBranch = useMemo(() => {
+    if (branchId == null) return [];
+    return (transferRequestsQ.data ?? []).filter(
+      (r: any) =>
+        Number(r.sourceBranchId) === branchId || Number(r.destinationBranchId) === branchId,
+    );
+  }, [transferRequestsQ.data, branchId]);
+
+  const transferOrdersForBranch = useMemo(() => {
+    if (branchId == null) return [];
+    return (transferOrdersQ.data ?? []).filter(
+      (o: any) =>
+        Number(o.sourceBranchId) === branchId || Number(o.destinationBranchId) === branchId,
+    );
+  }, [transferOrdersQ.data, branchId]);
+
   const formatDateTime = (value?: string | Date | null) => {
     if (!value) return '—';
     const d = new Date(value);
@@ -771,6 +787,133 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
     };
     return map[v] ?? v;
   };
+
+  const ledgerMovementTypeOptions = useMemo(
+    () => [
+      { value: '', label: 'All movements…' },
+      { value: 'receive', label: 'Received (GRN)' },
+      { value: 'consume', label: 'Consumed (Order)' },
+      { value: 'consume_reversal', label: 'Consumption reversal' },
+      { value: 'adjustment_in', label: 'Adjustment IN' },
+      { value: 'adjustment_out', label: 'Adjustment OUT' },
+      { value: 'transfer_order', label: 'Transfer OUT (Dispatch)' },
+      { value: 'transfer_receipt', label: 'Transfer IN (Receipt)' },
+      { value: 'waste', label: 'Wastage' },
+      { value: 'stocktake_variance', label: 'Stocktake variance' },
+    ],
+    [],
+  );
+
+  const tablePageSizeOptions = useMemo(
+    () => [50, 100, 200].map((n) => ({ value: String(n), label: String(n) })),
+    [],
+  );
+
+  const vendorTypeOptions = useMemo(
+    () => [
+      { value: 'supplier', label: 'Supplier' },
+      { value: 'warehouse', label: 'Warehouse' },
+      { value: 'branch', label: 'Branch (inter-branch)' },
+    ],
+    [],
+  );
+
+  const branchSearchableOptions = useMemo(
+    () =>
+      (branches ?? []).map((b: any) => ({
+        value: String(b.id),
+        label: `${b.name}${b.code ? ` (${b.code})` : ''}`,
+      })),
+    [branches],
+  );
+
+  const itemNameSelectOptions = useMemo(
+    () => (itemsQ.data ?? []).map((it: any) => ({ value: String(it.id), label: it.name })),
+    [itemsQ.data],
+  );
+
+  const transferDestinationBranchOptions = useMemo(
+    () =>
+      (branches ?? [])
+        .filter((b: any) => Number(b.id) !== Number(branchId))
+        .map((b: any) => ({ value: String(b.id), label: b.name })),
+    [branches, branchId],
+  );
+
+  const transferOrderSelectOptions = useMemo(
+    () =>
+      (branchId != null ? transferOrdersForBranch : []).map((o: any) => ({
+        value: String(o.id),
+        label: `TO-${o.id}: ${branchById.get(Number(o.sourceBranchId))?.name ?? '—'} → ${branchById.get(Number(o.destinationBranchId))?.name ?? '—'} (${o.status})`,
+      })),
+    [transferOrdersForBranch, branchById, branchId],
+  );
+
+  const adjustmentHeaderTypeOptions = useMemo(
+    () => [
+      { value: 'out', label: 'OUT (decrease)' },
+      { value: 'in', label: 'IN (increase)' },
+    ],
+    [],
+  );
+
+  const adjustmentRowLineTypeOptions = useMemo(
+    () => [
+      { value: 'out', label: 'OUT' },
+      { value: 'in', label: 'IN' },
+    ],
+    [],
+  );
+
+  const itemExpiryRequiredOptions = useMemo(
+    () => [
+      { value: 'yes', label: 'Required (enter an expiry date)' },
+      { value: 'no', label: 'Not required' },
+    ],
+    [],
+  );
+
+  const uomKindSelectOptions = useMemo(
+    () =>
+      [
+        'count',
+        'mass',
+        'volume',
+        'length',
+        'area',
+        'time',
+        'energy',
+        'pressure',
+        'power',
+        'frequency',
+        'speed',
+        'flow',
+      ].map((k) => ({ value: k, label: k })),
+    [],
+  );
+
+  const uomBaseUomSelectOptions = useMemo(() => {
+    const kind = String(form.uom_kind ?? 'count');
+    const editId = Number(form.uom_edit_id ?? 0);
+    return [
+      { value: '', label: 'None (this is a base unit)' },
+      ...(uomsQ.data ?? [])
+        .filter((u: any) => String(u.kind ?? '') === kind)
+        .filter((u: any) => Number(u.id) !== editId)
+        .map((u: any) => ({ value: String(u.id), label: `${u.code} - ${u.name}` })),
+    ];
+  }, [uomsQ.data, form.uom_kind, form.uom_edit_id]);
+
+  const stocktakeLocationOptions = useMemo(
+    () => [
+      { value: '', label: 'Unassigned' },
+      ...(locationsQ.data ?? []).map((l: any) => ({
+        value: String(l.id),
+        label: l.name,
+      })),
+    ],
+    [locationsQ.data],
+  );
 
   const downloadLedgerCsv = (rows: any[], filename: string) => {
     const headers = [
@@ -893,7 +1036,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
     if (!refType || !Number.isFinite(refId) || refId <= 0) {
       return { label: '—', path: null };
     }
-    if (refType === 'grn') return { label: `GRN-${refId}`, path: '/admin/procurement/grns' };
+    if (refType === 'grn') return { label: `GRN-${refId}`, path: `/admin/procurement/grns?grn_id=${refId}` };
     if (refType === 'inventory_adjustment') return { label: `ADJ-${refId}`, path: '/admin/inventory/adjustments' };
     if (refType === 'transfer_order') return { label: `TO-${refId}`, path: '/admin/inventory/transfers' };
     if (refType === 'transfer_receipt') return { label: `TR-${refId}`, path: '/admin/inventory/transfers' };
@@ -1506,30 +1649,31 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
           <div className="font-semibold text-slate-800 dark:text-slate-100">How this module works</div>
           <ul className="list-disc pl-5 space-y-1 text-slate-600 dark:text-slate-300">
             <li><span className="font-medium">On-hand inventory</span> shows what you currently have in the selected branch.</li>
-            <li><span className="font-medium">Stock movement ledger</span> is the “audit trail” of every increase/decrease (goods received, consumption, wastage, stock count variance).</li>
-            <li><span className="font-medium">Alerts</span> highlights items that are low in stock or batches that are near expiry.</li>
-            <li><span className="font-medium">Storage locations</span> are optional sub-areas inside a branch (e.g., “Dry store”, “Chiller”, “Freezer”). They help you see and count stock by physical place.</li>
+            <li><span className="font-medium">Stock movement ledger</span> is the “audit trail” of every increase/decrease (goods received, consumption, wastage, stock count variance, and branch transfers as transfer OUT / transfer IN).</li>
+            <li><span className="font-medium">Branch transfers</span> let you request, approve, dispatch, and receive stock between branches; dispatch and receipt rows appear in the stock movement ledger for the source and destination branches respectively.</li>
+            {/* <li><span className="font-medium">Alerts</span> highlights items that are low in stock or batches that are near expiry.</li> */}
+            {/* <li><span className="font-medium">Storage locations</span> are optional sub-areas inside a branch (e.g., “Dry store”, “Chiller”, “Freezer”). They help you see and count stock by physical place.</li> */}
           </ul>
-          <div className="text-xs text-slate-500 dark:text-slate-400">
+          {/* <div className="text-xs text-slate-500 dark:text-slate-400">
             Tip: If you don’t use locations, stock can still be tracked at branch level (location will show as “Unassigned”).
-          </div>
+          </div> */}
         </div>
       </Card>
 
       {showTabs && (
         <div className="flex flex-wrap gap-2">
           {[
+            { k: 'uoms', label: 'Units of measure' },
+            { k: 'vendors', label: 'Vendors' },
+            { k: 'items', label: 'Inventory items' },
             { k: 'onhand', label: 'On-hand inventory' },
             { k: 'ledger', label: 'Stock movement ledger' },
-            { k: 'alerts', label: 'Alerts (low stock & expiry)' },
             { k: 'transfers', label: 'Branch transfers' },
-            { k: 'adjustments', label: 'Adjustments' },
+            { k: 'adjustments', label: 'Stock adjustment' },
             { k: 'wastage', label: 'Record wastage' },
-            { k: 'stocktake', label: 'Weekly stock count (Finance Day)' },
-            { k: 'weekly', label: 'Weekly usage report' },
-            { k: 'items', label: 'Inventory items' },
-            { k: 'vendors', label: 'Vendors' },
-            { k: 'uoms', label: 'Units of measure' },
+            // { k: 'alerts', label: 'Alerts (low stock & expiry)' },
+            // { k: 'stocktake', label: 'Weekly stock count (Finance Day)' },
+            // { k: 'weekly', label: 'Weekly usage report' },
           ].map((t) => (
             <button
               key={t.k}
@@ -1684,51 +1828,36 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 </label>
                 <label className="text-sm md:col-span-2">
                   <div className="text-xs font-medium text-slate-600 mb-1">Movement type</div>
-                  <select
-                    className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                  <SearchableSelect
                     value={ledgerEventType}
-                    onChange={(e) => {
-                      setLedgerEventType(e.target.value);
+                    onChange={(v) => {
+                      setLedgerEventType(v);
                       setLedgerPage(1);
                     }}
-                  >
-                    <option value="">All movements…</option>
-                    {[
-                      'receive',
-                      'consume',
-                      'consume_reversal',
-                      'adjustment_in',
-                      'adjustment_out',
-                      'transfer_order',
-                      'transfer_receipt',
-                      'waste',
-                      'stocktake_variance',
-                    ].map((k) => (
-                      <option key={k} value={k}>
-                        {prettyLedgerEventType(k)}
-                      </option>
-                    ))}
-                  </select>
+                    options={ledgerMovementTypeOptions}
+                    placeholder="All movements…"
+                    searchPlaceholder="Search movement types…"
+                    minWidth="w-full"
+                    className="w-full"
+                  />
                 </label>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
                 <label className="text-sm">
                   <div className="text-xs font-medium text-slate-600 mb-1">Page size</div>
-                  <select
-                    className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                  <SearchableSelect
                     value={String(ledgerPageSize)}
-                    onChange={(e) => {
-                      setLedgerPageSize(Number(e.target.value));
+                    onChange={(v) => {
+                      setLedgerPageSize(Number(v));
                       setLedgerPage(1);
                     }}
-                  >
-                    {[50, 100, 200].map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
+                    options={tablePageSizeOptions}
+                    placeholder="Page size"
+                    searchPlaceholder="Search…"
+                    minWidth="w-full"
+                    className="w-full"
+                  />
                 </label>
                 <div className="flex items-end gap-2">
                   <Button
@@ -1852,9 +1981,15 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
           {!branchId ? (
             <div className="text-slate-500 dark:text-slate-400">Select a branch.</div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                Create request, then approve, then dispatch from source branch, and finally receive at destination branch.
+                Workflow: create a <span className="font-medium">transfer request</span>, approve it to create a{' '}
+                <span className="font-medium">transfer order</span>, then dispatch from the source branch and receive at
+                the destination. Stock and ledger change only on dispatch (source) and receive (destination).
+              </div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                Lists below include only rows where the selected branch is the source or destination (other branches in
+                the same brand are hidden here).
               </div>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => setTransferRequestModalOpen(true)}>Create transfer request</Button>
@@ -1878,60 +2013,104 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 </Button>
               </div>
 
-              <div className="overflow-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="text-left text-slate-600 dark:text-slate-300">
-                    <tr>
-                      <th className="py-2 pr-4">Source branch</th>
-                      <th className="py-2 pr-4">Destination branch</th>
-                      <th className="py-2 pr-4">Status</th>
-                      <th className="py-2 pr-4">Created</th>
-                      <th className="py-2 pr-4">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-slate-700 dark:text-slate-200">
-                    {(transferRequestsQ.data ?? []).map((r: any) => (
-                      <tr key={r.id} className="border-t border-slate-100 dark:border-slate-700">
-                        <td className="py-2 pr-4">{branchById.get(Number(r.sourceBranchId))?.name ?? '—'}</td>
-                        <td className="py-2 pr-4">{branchById.get(Number(r.destinationBranchId))?.name ?? '—'}</td>
-                        <td className="py-2 pr-4">{r.status}</td>
-                        <td className="py-2 pr-4">{formatDateTime(r.createdAt)}</td>
-                        <td className="py-2 pr-4 flex gap-2">
-                          <Button variant="secondary" onClick={() => setSelectedTransferRequest(r)}>View</Button>
-                          <Button disabled={r.status !== 'submitted'} onClick={() => approveTransferRequestM.mutate(r.id)}>Approve</Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Card>
+                <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-1">Transfer requests</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                  Draft of what to move. Approve creates a transfer order; only requests in <span className="font-medium">submitted</span>{' '}
+                  status can be approved.
+                </p>
+                {transferRequestsQ.isLoading ? (
+                  <Loader />
+                ) : transferRequestsForBranch.length === 0 ? (
+                  <div className="text-sm text-slate-500 dark:text-slate-400">No transfer requests for this branch.</div>
+                ) : (
+                  <div className="overflow-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="text-left text-slate-600 dark:text-slate-300">
+                        <tr>
+                          <th className="py-2 pr-4 w-12">#</th>
+                          <th className="py-2 pr-4">Request</th>
+                          <th className="py-2 pr-4">Source branch</th>
+                          <th className="py-2 pr-4">Destination branch</th>
+                          <th className="py-2 pr-4">Status</th>
+                          <th className="py-2 pr-4">Created</th>
+                          <th className="py-2 pr-4">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-slate-700 dark:text-slate-200">
+                        {transferRequestsForBranch.map((r: any, index: number) => (
+                          <tr key={r.id} className="border-t border-slate-100 dark:border-slate-700">
+                            <td className="py-2 pr-4">{index + 1}</td>
+                            <td className="py-2 pr-4 font-medium">REQ-{r.id}</td>
+                            <td className="py-2 pr-4">{branchById.get(Number(r.sourceBranchId))?.name ?? '—'}</td>
+                            <td className="py-2 pr-4">{branchById.get(Number(r.destinationBranchId))?.name ?? '—'}</td>
+                            <td className="py-2 pr-4">{r.status}</td>
+                            <td className="py-2 pr-4">{formatDateTime(r.createdAt)}</td>
+                            <td className="py-2 pr-4">
+                              <div className="flex flex-wrap gap-2">
+                                <Button variant="secondary" onClick={() => setSelectedTransferRequest(r)}>
+                                  View
+                                </Button>
+                                {String(r.status ?? '') === 'submitted' ? (
+                                  <Button onClick={() => approveTransferRequestM.mutate(r.id)}>Approve</Button>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
 
-              <div className="overflow-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="text-left text-slate-600 dark:text-slate-300">
-                    <tr>
-                      <th className="py-2 pr-4">Source branch</th>
-                      <th className="py-2 pr-4">Destination branch</th>
-                      <th className="py-2 pr-4">Status</th>
-                      <th className="py-2 pr-4">Created</th>
-                      <th className="py-2 pr-4">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-slate-700 dark:text-slate-200">
-                    {(transferOrdersQ.data ?? []).map((o: any) => (
-                      <tr key={o.id} className="border-t border-slate-100 dark:border-slate-700">
-                        <td className="py-2 pr-4">{branchById.get(Number(o.sourceBranchId))?.name ?? '—'}</td>
-                        <td className="py-2 pr-4">{branchById.get(Number(o.destinationBranchId))?.name ?? '—'}</td>
-                        <td className="py-2 pr-4">{o.status}</td>
-                        <td className="py-2 pr-4">{formatDateTime(o.createdAt)}</td>
-                        <td className="py-2 pr-4">
-                          <Button variant="secondary" onClick={() => setSelectedTransferOrder(o)}>View</Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Card>
+                <h3 className="text-base font-semibold text-slate-800 dark:text-slate-100 mb-1">Transfer orders</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                  Created when a request is approved. Use <span className="font-medium">Dispatch order</span> /{' '}
+                  <span className="font-medium">Receive order</span> above to move stock; status reflects dispatch and receipt progress.
+                </p>
+                {transferOrdersQ.isLoading ? (
+                  <Loader />
+                ) : transferOrdersForBranch.length === 0 ? (
+                  <div className="text-sm text-slate-500 dark:text-slate-400">No transfer orders for this branch.</div>
+                ) : (
+                  <div className="overflow-auto">
+                    <table className="min-w-full text-sm">
+                      <thead className="text-left text-slate-600 dark:text-slate-300">
+                        <tr>
+                          <th className="py-2 pr-4 w-12">#</th>
+                          <th className="py-2 pr-4">Order</th>
+                          <th className="py-2 pr-4">Source branch</th>
+                          <th className="py-2 pr-4">Destination branch</th>
+                          <th className="py-2 pr-4">Status</th>
+                          <th className="py-2 pr-4">Created</th>
+                          <th className="py-2 pr-4">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-slate-700 dark:text-slate-200">
+                        {transferOrdersForBranch.map((o: any, index: number) => (
+                          <tr key={o.id} className="border-t border-slate-100 dark:border-slate-700">
+                            <td className="py-2 pr-4">{index + 1}</td>
+                            <td className="py-2 pr-4 font-medium">TO-{o.id}</td>
+                            <td className="py-2 pr-4">{branchById.get(Number(o.sourceBranchId))?.name ?? '—'}</td>
+                            <td className="py-2 pr-4">{branchById.get(Number(o.destinationBranchId))?.name ?? '—'}</td>
+                            <td className="py-2 pr-4">{o.status}</td>
+                            <td className="py-2 pr-4">{formatDateTime(o.createdAt)}</td>
+                            <td className="py-2 pr-4">
+                              <div className="flex flex-wrap gap-2">
+                                <Button variant="secondary" onClick={() => setSelectedTransferOrder(o)}>
+                                  View
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </Card>
             </div>
           )}
         </Card>
@@ -2218,55 +2397,34 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                       <div className="text-xs font-medium text-slate-600 mb-1">
                         Kind <span className="text-red-600">*</span>
                       </div>
-                      <select
-                        className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                        value={form.uom_kind ?? 'count'}
-                        onChange={(e) =>
+                      <SearchableSelect
+                        value={String(form.uom_kind ?? 'count')}
+                        onChange={(v) =>
                           setForm({
                             ...form,
-                            uom_kind: e.target.value,
+                            uom_kind: v,
                             uom_base_uom_id: '',
                             uom_multiplier_to_base: '',
                           })
                         }
-                      >
-                        {[
-                          'count',
-                          'mass',
-                          'volume',
-                          'length',
-                          'area',
-                          'time',
-                          'energy',
-                          'pressure',
-                          'power',
-                          'frequency',
-                          'speed',
-                          'flow',
-                        ].map((k) => (
-                          <option key={k} value={k}>
-                            {k}
-                          </option>
-                        ))}
-                      </select>
+                        options={uomKindSelectOptions}
+                        placeholder="Kind"
+                        searchPlaceholder="Search kinds…"
+                        minWidth="w-full"
+                        className="w-full"
+                      />
                     </label>
                     <label className="text-sm">
                       <div className="text-xs font-medium text-slate-600 mb-1">Base unit (optional)</div>
-                      <select
-                        className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                        value={form.uom_base_uom_id ?? ''}
-                        onChange={(e) => setForm({ ...form, uom_base_uom_id: e.target.value })}
-                      >
-                        <option value="">None (this is a base unit)</option>
-                        {(uomsQ.data ?? [])
-                          .filter((u: any) => String(u.kind ?? '') === String(form.uom_kind ?? 'count'))
-                          .filter((u: any) => Number(u.id) !== Number(form.uom_edit_id ?? 0))
-                          .map((u: any) => (
-                            <option key={u.id} value={u.id}>
-                              {u.code} - {u.name}
-                            </option>
-                          ))}
-                      </select>
+                      <SearchableSelect
+                        value={String(form.uom_base_uom_id ?? '')}
+                        onChange={(v) => setForm({ ...form, uom_base_uom_id: v })}
+                        options={uomBaseUomSelectOptions}
+                        placeholder="None (this is a base unit)"
+                        searchPlaceholder="Search units…"
+                        minWidth="w-full"
+                        className="w-full"
+                      />
                     </label>
                     <label className="text-sm">
                       <div className="text-xs font-medium text-slate-600 mb-1">Multiplier to base</div>
@@ -2392,31 +2550,28 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
 
                     <label className="text-sm">
                       <div className="text-xs font-medium text-slate-600 mb-1">Type</div>
-                      <select
-                        className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                        value={form.vendor_type ?? 'supplier'}
-                        onChange={(e) => setForm({ ...form, vendor_type: e.target.value })}
-                      >
-                        <option value="supplier">Supplier</option>
-                        <option value="warehouse">Warehouse</option>
-                        <option value="branch">Branch (inter-branch)</option>
-                      </select>
+                      <SearchableSelect
+                        value={String(form.vendor_type ?? 'supplier')}
+                        onChange={(v) => setForm({ ...form, vendor_type: v })}
+                        options={vendorTypeOptions}
+                        placeholder="Type"
+                        searchPlaceholder="Search types…"
+                        minWidth="w-full"
+                        className="w-full"
+                      />
                     </label>
 
                     <label className="text-sm lg:col-span-2">
                       <div className="text-xs font-medium text-slate-600 mb-1">Linked branch (optional)</div>
-                      <select
-                        className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                        value={form.vendor_linked_branch_id ?? ''}
-                        onChange={(e) => setForm({ ...form, vendor_linked_branch_id: e.target.value })}
-                      >
-                        <option value="">None</option>
-                        {(branches ?? []).map((b: any) => (
-                          <option key={b.id} value={b.id}>
-                            {b.name}{b.code ? ` (${b.code})` : ''}
-                          </option>
-                        ))}
-                      </select>
+                      <SearchableSelect
+                        value={String(form.vendor_linked_branch_id ?? '')}
+                        onChange={(v) => setForm({ ...form, vendor_linked_branch_id: v })}
+                        options={[{ value: '', label: 'None' }, ...branchSearchableOptions]}
+                        placeholder="None"
+                        searchPlaceholder="Search branches…"
+                        minWidth="w-full"
+                        className="w-full"
+                      />
                       <div className="text-xs text-slate-500 mt-1">
                         Use this only when the “vendor” is actually another branch or your central warehouse branch.
                       </div>
@@ -2688,14 +2843,15 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
 
                     <label className="text-sm">
                       <div className="text-xs font-medium text-slate-600 mb-1">Expiry date on receiving</div>
-                      <select
-                        className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                        value={form.item_expiry_required ?? 'yes'}
-                        onChange={(e) => setForm({ ...form, item_expiry_required: e.target.value })}
-                      >
-                        <option value="yes">Required (enter an expiry date)</option>
-                        <option value="no">Not required</option>
-                      </select>
+                      <SearchableSelect
+                        value={String(form.item_expiry_required ?? 'yes')}
+                        onChange={(v) => setForm({ ...form, item_expiry_required: v })}
+                        options={itemExpiryRequiredOptions}
+                        placeholder="Expiry on receiving"
+                        searchPlaceholder="Search…"
+                        minWidth="w-full"
+                        className="w-full"
+                      />
                       <div className="text-xs text-slate-500 mt-1">
                         Expiry itself is stored as a <span className="font-medium">date</span> on each received batch.
                       </div>
@@ -2834,20 +2990,18 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 <div className="flex items-end gap-2">
                   <label className="text-sm">
                     <div className="text-xs font-medium text-slate-600 mb-1">Page size</div>
-                    <select
-                      className="border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                    <SearchableSelect
                       value={String(wastagePageSize)}
-                      onChange={(e) => {
-                        setWastagePageSize(Number(e.target.value));
+                      onChange={(v) => {
+                        setWastagePageSize(Number(v));
                         setWastagePage(1);
                       }}
-                    >
-                      {[50, 100, 200].map((n) => (
-                        <option key={n} value={n}>
-                          {n}
-                        </option>
-                      ))}
-                    </select>
+                      options={tablePageSizeOptions}
+                      placeholder="Page size"
+                      searchPlaceholder="Search…"
+                      minWidth="min-w-[100px]"
+                      className="border rounded-lg"
+                    />
                   </label>
                   <Button
                     variant="secondary"
@@ -3040,43 +3194,35 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Destination branch</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.tr_destination_branch_id ?? ''}
-                onChange={(e) => setForm({ ...form, tr_destination_branch_id: e.target.value })}
-              >
-                <option value="">Select destination branch…</option>
-                {(branches ?? [])
-                  .filter((b: any) => Number(b.id) !== Number(branchId))
-                  .map((b: any) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-              </select>
+              <SearchableSelect
+                value={String(form.tr_destination_branch_id ?? '')}
+                onChange={(v) => setForm({ ...form, tr_destination_branch_id: v })}
+                options={transferDestinationBranchOptions}
+                placeholder="Select destination branch…"
+                searchPlaceholder="Search branches…"
+                minWidth="w-full"
+                className="w-full"
+              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Item</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.tr_item_id ?? ''}
-                onChange={(e) => {
-                  const itemId = Number(e.target.value);
+              <SearchableSelect
+                value={String(form.tr_item_id ?? '')}
+                onChange={(v) => {
+                  const itemId = Number(v);
                   const selected = itemById.get(itemId);
                   setForm({
                     ...form,
-                    tr_item_id: e.target.value,
+                    tr_item_id: v,
                     tr_uom_id: getDefaultItemUomId(selected),
                   });
                 }}
-              >
-                <option value="">Select item…</option>
-                {(itemsQ.data ?? []).map((it: any) => (
-                  <option key={it.id} value={it.id}>
-                    {it.name}
-                  </option>
-                ))}
-              </select>
+                options={itemNameSelectOptions}
+                placeholder="Select item…"
+                searchPlaceholder="Search items…"
+                minWidth="w-full"
+                className="w-full"
+              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Requested quantity</div>
@@ -3089,19 +3235,19 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             </label>
             <label className="text-sm lg:col-span-2">
               <div className="text-xs font-medium text-slate-600 mb-1">Unit</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.tr_uom_id ?? ''}
-                onChange={(e) => setForm({ ...form, tr_uom_id: e.target.value })}
+              <SearchableSelect
+                value={String(form.tr_uom_id ?? '')}
+                onChange={(v) => setForm({ ...form, tr_uom_id: v })}
+                options={getItemAllowedUoms(selectedTransferRequestItem, form.tr_uom_id).map((u: any) => ({
+                  value: String(u.id),
+                  label: u.code,
+                }))}
+                placeholder="Select unit…"
+                searchPlaceholder="Search units…"
+                minWidth="w-full"
+                className="w-full"
                 disabled={!selectedTransferRequestItem}
-              >
-                <option value="">Select unit…</option>
-                {getItemAllowedUoms(selectedTransferRequestItem, form.tr_uom_id).map((u: any) => (
-                  <option key={u.id} value={u.id}>
-                    {u.code}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">
@@ -3171,41 +3317,35 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Transfer order</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.tr_order_id ?? ''}
-                onChange={(e) => setForm({ ...form, tr_order_id: e.target.value })}
-              >
-                <option value="">Select order…</option>
-                {(transferOrdersQ.data ?? []).map((o: any) => (
-                  <option key={o.id} value={o.id}>
-                    {branchById.get(Number(o.sourceBranchId))?.name ?? '—'} to {branchById.get(Number(o.destinationBranchId))?.name ?? '—'} ({o.status})
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                value={String(form.tr_order_id ?? '')}
+                onChange={(v) => setForm({ ...form, tr_order_id: v })}
+                options={transferOrderSelectOptions}
+                placeholder="Select order…"
+                searchPlaceholder="Search transfer orders…"
+                minWidth="w-full"
+                className="w-full"
+              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Item</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.tr_order_item_id ?? ''}
-                onChange={(e) => {
-                  const itemId = Number(e.target.value);
+              <SearchableSelect
+                value={String(form.tr_order_item_id ?? '')}
+                onChange={(v) => {
+                  const itemId = Number(v);
                   const selected = itemById.get(itemId);
                   setForm({
                     ...form,
-                    tr_order_item_id: e.target.value,
+                    tr_order_item_id: v,
                     tr_order_uom_id: getDefaultItemUomId(selected),
                   });
                 }}
-              >
-                <option value="">Select item…</option>
-                {(itemsQ.data ?? []).map((it: any) => (
-                  <option key={it.id} value={it.id}>
-                    {it.name}
-                  </option>
-                ))}
-              </select>
+                options={itemNameSelectOptions}
+                placeholder="Select item…"
+                searchPlaceholder="Search items…"
+                minWidth="w-full"
+                className="w-full"
+              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Quantity</div>
@@ -3218,19 +3358,19 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Unit</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.tr_order_uom_id ?? ''}
-                onChange={(e) => setForm({ ...form, tr_order_uom_id: e.target.value })}
+              <SearchableSelect
+                value={String(form.tr_order_uom_id ?? '')}
+                onChange={(v) => setForm({ ...form, tr_order_uom_id: v })}
+                options={getItemAllowedUoms(selectedTransferOrderItem, form.tr_order_uom_id).map((u: any) => ({
+                  value: String(u.id),
+                  label: u.code,
+                }))}
+                placeholder="Select unit…"
+                searchPlaceholder="Search units…"
+                minWidth="w-full"
+                className="w-full"
                 disabled={!selectedTransferOrderItem}
-              >
-                <option value="">Select unit…</option>
-                {getItemAllowedUoms(selectedTransferOrderItem, form.tr_order_uom_id).map((u: any) => (
-                  <option key={u.id} value={u.id}>
-                    {u.code}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             {transferActionType === 'receive' && (
               <>
@@ -3481,37 +3621,35 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Line type</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.adj_type ?? 'out'}
-                onChange={(e) => setForm({ ...form, adj_type: e.target.value })}
-              >
-                <option value="out">OUT (decrease)</option>
-                <option value="in">IN (increase)</option>
-              </select>
+              <SearchableSelect
+                value={String(form.adj_type ?? 'out')}
+                onChange={(v) => setForm({ ...form, adj_type: v })}
+                options={adjustmentHeaderTypeOptions}
+                placeholder="Type"
+                searchPlaceholder="Search…"
+                minWidth="w-full"
+                className="w-full"
+              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Item</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.adj_item_id ?? ''}
-                onChange={(e) => {
-                  const itemId = Number(e.target.value);
+              <SearchableSelect
+                value={String(form.adj_item_id ?? '')}
+                onChange={(v) => {
+                  const itemId = Number(v);
                   const selected = itemById.get(itemId);
                   setForm({
                     ...form,
-                    adj_item_id: e.target.value,
+                    adj_item_id: v,
                     adj_uom_id: getDefaultItemUomId(selected),
                   });
                 }}
-              >
-                <option value="">Select item…</option>
-                {(itemsQ.data ?? []).map((it: any) => (
-                  <option key={it.id} value={it.id}>
-                    {it.name}
-                  </option>
-                ))}
-              </select>
+                options={itemNameSelectOptions}
+                placeholder="Select item…"
+                searchPlaceholder="Search items…"
+                minWidth="w-full"
+                className="w-full"
+              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Quantity</div>
@@ -3524,19 +3662,19 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Unit</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.adj_uom_id ?? ''}
-                onChange={(e) => setForm({ ...form, adj_uom_id: e.target.value })}
+              <SearchableSelect
+                value={String(form.adj_uom_id ?? '')}
+                onChange={(v) => setForm({ ...form, adj_uom_id: v })}
+                options={getItemAllowedUoms(selectedAdjustmentItem, form.adj_uom_id).map((u: any) => ({
+                  value: String(u.id),
+                  label: u.code,
+                }))}
+                placeholder="Select unit…"
+                searchPlaceholder="Search units…"
+                minWidth="w-full"
+                className="w-full"
                 disabled={!selectedAdjustmentItem}
-              >
-                <option value="">Select unit…</option>
-                {getItemAllowedUoms(selectedAdjustmentItem, form.adj_uom_id).map((u: any) => (
-                  <option key={u.id} value={u.id}>
-                    {u.code}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">
@@ -3589,41 +3727,39 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                   <tr key={`adj-line-${index}`} className="border-t border-slate-100">
                     <td className="py-2 pr-4">{index + 1}</td>
                       <td className="py-2 pr-4">
-                        <select
-                          className="border rounded px-2 py-1 bg-white border-slate-200"
-                          value={line.line_type ?? 'out'}
-                          onChange={(e) =>
+                        <SearchableSelect
+                          value={String(line.line_type ?? 'out')}
+                          onChange={(v) =>
                             updateAdjustmentLine(index, {
-                              line_type: e.target.value,
-                              lot_code: e.target.value === 'in' ? line.lot_code ?? null : null,
-                              expiry_date: e.target.value === 'in' ? line.expiry_date ?? null : null,
+                              line_type: v,
+                              lot_code: v === 'in' ? line.lot_code ?? null : null,
+                              expiry_date: v === 'in' ? line.expiry_date ?? null : null,
                             })
                           }
-                        >
-                          <option value="out">OUT</option>
-                          <option value="in">IN</option>
-                        </select>
+                          options={adjustmentRowLineTypeOptions}
+                          placeholder="Type"
+                          searchPlaceholder="Search…"
+                          minWidth="min-w-[5.5rem]"
+                          className="min-w-[5.5rem]"
+                        />
                       </td>
                       <td className="py-2 pr-4">
-                        <select
-                          className="border rounded px-2 py-1 bg-white border-slate-200 min-w-[150px]"
-                          value={line.inventory_item_id ?? ''}
-                          onChange={(e) => {
-                            const itemId = Number(e.target.value);
+                        <SearchableSelect
+                          value={line.inventory_item_id ? String(line.inventory_item_id) : ''}
+                          onChange={(v) => {
+                            const itemId = Number(v);
                             const item = itemById.get(itemId);
                             updateAdjustmentLine(index, {
                               inventory_item_id: itemId,
                               qty_uom_id: Number(getDefaultItemUomId(item) || line.qty_uom_id || 0),
                             });
                           }}
-                        >
-                          <option value="">Select item…</option>
-                          {(itemsQ.data ?? []).map((it: any) => (
-                            <option key={it.id} value={it.id}>
-                              {it.name}
-                            </option>
-                          ))}
-                        </select>
+                          options={itemNameSelectOptions}
+                          placeholder="Select item…"
+                          searchPlaceholder="Search items…"
+                          minWidth="min-w-[10rem]"
+                          className="min-w-[150px]"
+                        />
                       </td>
                       <td className="py-2 pr-4">
                         <input
@@ -3637,18 +3773,20 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                         />
                       </td>
                       <td className="py-2 pr-4">
-                        <select
-                          className="border rounded px-2 py-1 bg-white border-slate-200"
-                          value={line.qty_uom_id ?? ''}
-                          onChange={(e) => updateAdjustmentLine(index, { qty_uom_id: Number(e.target.value) })}
-                        >
-                          <option value="">Select…</option>
-                          {getItemAllowedUoms(itemById.get(Number(line.inventory_item_id)), line.qty_uom_id).map((u: any) => (
-                            <option key={u.id} value={u.id}>
-                              {u.code}
-                            </option>
-                          ))}
-                        </select>
+                        <SearchableSelect
+                          value={line.qty_uom_id ? String(line.qty_uom_id) : ''}
+                          onChange={(v) =>
+                            updateAdjustmentLine(index, { qty_uom_id: v ? Number(v) : '' })
+                          }
+                          options={getItemAllowedUoms(itemById.get(Number(line.inventory_item_id)), line.qty_uom_id).map(
+                            (u: any) => ({ value: String(u.id), label: u.code }),
+                          )}
+                          placeholder="Select…"
+                          searchPlaceholder="Search units…"
+                          minWidth="min-w-[5rem]"
+                          className="min-w-[5rem]"
+                          disabled={!line.inventory_item_id}
+                        />
                       </td>
                       <td className="py-2 pr-4">
                         <input
@@ -3810,26 +3948,23 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Item</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.w_item_id ?? ''}
-                onChange={(e) => {
-                  const itemId = Number(e.target.value);
+              <SearchableSelect
+                value={String(form.w_item_id ?? '')}
+                onChange={(v) => {
+                  const itemId = Number(v);
                   const selected = itemById.get(itemId);
                   setForm({
                     ...form,
-                    w_item_id: e.target.value,
+                    w_item_id: v,
                     w_uom_id: getDefaultItemUomId(selected),
                   });
                 }}
-              >
-                <option value="">Select item…</option>
-                {(itemsQ.data ?? []).map((it: any) => (
-                  <option key={it.id} value={it.id}>
-                    {it.name}
-                  </option>
-                ))}
-              </select>
+                options={itemNameSelectOptions}
+                placeholder="Select item…"
+                searchPlaceholder="Search items…"
+                minWidth="w-full"
+                className="w-full"
+              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Quantity</div>
@@ -3842,19 +3977,19 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Unit</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.w_uom_id ?? ''}
-                onChange={(e) => setForm({ ...form, w_uom_id: e.target.value })}
+              <SearchableSelect
+                value={String(form.w_uom_id ?? '')}
+                onChange={(v) => setForm({ ...form, w_uom_id: v })}
+                options={getItemAllowedUoms(selectedWastageItem, form.w_uom_id).map((u: any) => ({
+                  value: String(u.id),
+                  label: u.code,
+                }))}
+                placeholder="Select unit…"
+                searchPlaceholder="Search units…"
+                minWidth="w-full"
+                className="w-full"
                 disabled={!selectedWastageItem}
-              >
-                <option value="">Select unit…</option>
-                {getItemAllowedUoms(selectedWastageItem, form.w_uom_id).map((u: any) => (
-                  <option key={u.id} value={u.id}>
-                    {u.code}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Reason</div>
@@ -3969,26 +4104,23 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Item</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.st_item_id ?? ''}
-                onChange={(e) => {
-                  const itemId = Number(e.target.value);
+              <SearchableSelect
+                value={String(form.st_item_id ?? '')}
+                onChange={(v) => {
+                  const itemId = Number(v);
                   const selected = itemById.get(itemId);
                   setForm({
                     ...form,
-                    st_item_id: e.target.value,
+                    st_item_id: v,
                     st_uom_id: getDefaultItemUomId(selected),
                   });
                 }}
-              >
-                <option value="">Select item…</option>
-                {(itemsQ.data ?? []).map((it: any) => (
-                  <option key={it.id} value={it.id}>
-                    {it.name}
-                  </option>
-                ))}
-              </select>
+                options={itemNameSelectOptions}
+                placeholder="Select item…"
+                searchPlaceholder="Search items…"
+                minWidth="w-full"
+                className="w-full"
+              />
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Counted quantity</div>
@@ -4001,34 +4133,31 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             </label>
             <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Counted unit</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.st_uom_id ?? ''}
-                onChange={(e) => setForm({ ...form, st_uom_id: e.target.value })}
+              <SearchableSelect
+                value={String(form.st_uom_id ?? '')}
+                onChange={(v) => setForm({ ...form, st_uom_id: v })}
+                options={getItemAllowedUoms(selectedStocktakeItem, form.st_uom_id).map((u: any) => ({
+                  value: String(u.id),
+                  label: u.code,
+                }))}
+                placeholder="Select unit…"
+                searchPlaceholder="Search units…"
+                minWidth="w-full"
+                className="w-full"
                 disabled={!selectedStocktakeItem}
-              >
-                <option value="">Select unit…</option>
-                {getItemAllowedUoms(selectedStocktakeItem, form.st_uom_id).map((u: any) => (
-                  <option key={u.id} value={u.id}>
-                    {u.code}
-                  </option>
-                ))}
-              </select>
+              />
             </label>
             <label className="text-sm lg:col-span-2">
               <div className="text-xs font-medium text-slate-600 mb-1">Location (optional)</div>
-              <select
-                className="w-full border rounded-lg p-2 bg-white border-slate-200"
-                value={form.st_location_id ?? ''}
-                onChange={(e) => setForm({ ...form, st_location_id: e.target.value })}
-              >
-                <option value="">Unassigned</option>
-                {(locationsQ.data ?? []).map((l: any) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
-              </select>
+              <SearchableSelect
+                value={String(form.st_location_id ?? '')}
+                onChange={(v) => setForm({ ...form, st_location_id: v })}
+                options={stocktakeLocationOptions}
+                placeholder="Unassigned"
+                searchPlaceholder="Search locations…"
+                minWidth="w-full"
+                className="w-full"
+              />
             </label>
           </div>
           <div className="flex justify-end gap-2 pt-2">

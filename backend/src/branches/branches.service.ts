@@ -202,6 +202,7 @@ export class BranchesService {
             supports_pickup?: boolean;
             supports_delivery?: boolean;
             delivery_flat_fee?: number;
+            delivery_radius_km?: number;
             is_active?: boolean;
             menu_enabled?: boolean;
             status?: string;
@@ -265,6 +266,7 @@ export class BranchesService {
         supports_pickup?: boolean;
         supports_delivery?: boolean;
         delivery_flat_fee?: number;
+        delivery_radius_km?: number;
         is_active?: boolean;
         menu_enabled?: boolean;
         status?: string;
@@ -300,6 +302,7 @@ export class BranchesService {
                 supportsPickup: dto.supports_pickup ?? true,
                 supportsDelivery: dto.supports_delivery ?? false,
                 deliveryFlatFee: dto.delivery_flat_fee ?? 0,
+                deliveryRadiusKm: dto.delivery_radius_km ?? 10,
                 isActive: dto.is_active ?? true,
                 menuEnabled: dto.menu_enabled ?? true,
                 // Single source of truth: status derived from is_active.
@@ -342,6 +345,7 @@ export class BranchesService {
             supports_pickup?: boolean;
             supports_delivery?: boolean;
             delivery_flat_fee?: number;
+            delivery_radius_km?: number;
             is_active?: boolean;
             menu_enabled?: boolean;
             status?: string;
@@ -405,6 +409,7 @@ export class BranchesService {
             supports_pickup?: boolean;
             supports_delivery?: boolean;
             delivery_flat_fee?: number;
+            delivery_radius_km?: number;
             is_active?: boolean;
             menu_enabled?: boolean;
             status?: string;
@@ -438,6 +443,8 @@ export class BranchesService {
         });
         if (dto.delivery_flat_fee !== undefined)
             branch.deliveryFlatFee = dto.delivery_flat_fee;
+        if (dto.delivery_radius_km !== undefined)
+            branch.deliveryRadiusKm = dto.delivery_radius_km;
         if (dto.is_active !== undefined) branch.isActive = dto.is_active;
         if (dto.menu_enabled !== undefined)
             branch.menuEnabled = dto.menu_enabled;
@@ -507,6 +514,7 @@ export class BranchesService {
         supports_pickup: boolean;
         supports_delivery: boolean;
         delivery_flat_fee: number;
+        delivery_radius_km: number;
         is_active: boolean;
         menu_enabled: boolean;
         status: string;
@@ -539,6 +547,7 @@ export class BranchesService {
             supports_pickup: b.supportsPickup,
             supports_delivery: b.supportsDelivery,
             delivery_flat_fee: Number(b.deliveryFlatFee),
+            delivery_radius_km: Number(b.deliveryRadiusKm),
             is_active: b.isActive,
             menu_enabled: b.menuEnabled,
             status: b.status,
@@ -567,6 +576,7 @@ export class BranchesService {
             supports_pickup: boolean;
             supports_delivery: boolean;
             delivery_flat_fee: number;
+            delivery_radius_km: number;
             is_active: boolean;
             menu_enabled: boolean;
             status: string;

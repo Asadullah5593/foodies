@@ -1,5 +1,18 @@
 import apiClient from '../../utils/apiClient';
-import { MenuVariant, MenuAddon, BranchMenuItem, Discount, Shift, User, Order } from '../../types';
+import {
+  MenuVariant,
+  MenuAddon,
+  BranchMenuItem,
+  Discount,
+  Shift,
+  User,
+  Order,
+  RiderProfile,
+  RiderOnDuty,
+  RiderCompPlan,
+  RiderPayrollRun,
+  RiderOpsMetricsSnapshot,
+} from '../../types';
 
 export interface ModifierGroupResponse {
   id: number;
@@ -67,6 +80,8 @@ export const adminService = {
       brand_id?: number;
       category_id?: number;
       image_url?: string | null;
+      /** Extra photos for consumer gallery; POS uses `image_url` only. */
+      gallery_image_urls?: string[] | null;
       deal_only?: boolean;
       /** Subset of delivery, pickup, dine_in. Omit or null = all channels. */
       available_for_order_types?: string[] | null;
@@ -365,6 +380,122 @@ export const adminService = {
 
   changeRiderForGroup: async (orderGroupId: string, riderId: number): Promise<{ order_group_id: string; updated_count: number }> => {
     const response = await apiClient.put(`/admin/orders/group/${encodeURIComponent(orderGroupId)}/rider/change`, { rider_id: riderId });
+    return response.data;
+  },
+
+  retryAutoAssignOrder: async (orderId: number): Promise<Order> => {
+    const response = await apiClient.post(`/admin/orders/${orderId}/auto-assign`);
+    return response.data;
+  },
+
+  // Rider HRM
+  getRiderProfiles: async (): Promise<RiderProfile[]> => {
+    const response = await apiClient.get('/admin/rider-hrm/profiles');
+    return response.data ?? [];
+  },
+
+  upsertRiderProfile: async (data: {
+    user_id: number;
+    employment_status?: string;
+    salary_type?: string;
+    employee_code?: string;
+    base_salary?: number;
+    default_per_ride_commission?: number;
+    max_active_orders?: number;
+    min_rating?: number;
+    min_timely_rate?: number;
+    is_active?: boolean;
+    metadata?: Record<string, unknown>;
+  }): Promise<RiderProfile> => {
+    const response = await apiClient.post('/admin/rider-hrm/profiles', data);
+    return response.data;
+  },
+
+  getOnDutyRiders: async (branchId?: number): Promise<RiderOnDuty[]> => {
+    const params = new URLSearchParams();
+    if (branchId != null) params.append('branch_id', String(branchId));
+    const query = params.toString();
+    const response = await apiClient.get(`/admin/rider-hrm/on-duty${query ? `?${query}` : ''}`);
+    return response.data ?? [];
+  },
+
+  adminCheckInRider: async (data: {
+    rider_user_id: number;
+    branch_id: number;
+    notes?: string;
+  }) => {
+    const response = await apiClient.post('/admin/rider-hrm/attendance/check-in', data);
+    return response.data;
+  },
+
+  adminCheckOutRider: async (data: {
+    rider_user_id: number;
+    notes?: string;
+  }) => {
+    const response = await apiClient.post('/admin/rider-hrm/attendance/check-out', data);
+    return response.data;
+  },
+
+  getRiderCompPlans: async (branchId?: number): Promise<RiderCompPlan[]> => {
+    const params = new URLSearchParams();
+    if (branchId != null) params.append('branch_id', String(branchId));
+    const query = params.toString();
+    const response = await apiClient.get(`/admin/rider-hrm/comp-plans${query ? `?${query}` : ''}`);
+    return response.data ?? [];
+  },
+
+  createRiderCompPlan: async (data: {
+    name: string;
+    pay_method: string;
+    branch_id?: number;
+    effective_from?: string;
+    effective_to?: string;
+    components: Array<{
+      component_key: string;
+      name: string;
+      component_type: string;
+      calc_basis: string;
+      value: number;
+      conditions?: Record<string, unknown>;
+      is_enabled?: boolean;
+      sort_order?: number;
+    }>;
+  }): Promise<RiderCompPlan> => {
+    const response = await apiClient.post('/admin/rider-hrm/comp-plans', data);
+    return response.data;
+  },
+
+  activateRiderCompPlan: async (planId: number): Promise<RiderCompPlan> => {
+    const response = await apiClient.patch(`/admin/rider-hrm/comp-plans/${planId}/activate`);
+    return response.data;
+  },
+
+  getPayrollRuns: async (branchId?: number): Promise<RiderPayrollRun[]> => {
+    const params = new URLSearchParams();
+    if (branchId != null) params.append('branch_id', String(branchId));
+    const query = params.toString();
+    const response = await apiClient.get(`/admin/rider-hrm/payroll/runs${query ? `?${query}` : ''}`);
+    return response.data ?? [];
+  },
+
+  runPayroll: async (data: {
+    from: string;
+    to: string;
+    branch_id?: number;
+    timely_minutes?: number;
+    expected_monthly_minutes?: number;
+  }): Promise<RiderPayrollRun> => {
+    const response = await apiClient.post('/admin/rider-hrm/payroll/runs', data);
+    return response.data;
+  },
+
+  reversePayrollRun: async (runId: number): Promise<RiderPayrollRun> => {
+    const response = await apiClient.post(`/admin/rider-hrm/payroll/runs/${runId}/reverse`);
+    return response.data;
+  },
+
+  getRiderOpsMetrics: async (): Promise<RiderOpsMetricsSnapshot> => {
+    const response = await apiClient.get('/admin/rider-ops/metrics');
     return response.data;
   },
 

@@ -3,6 +3,7 @@ import {
     NotFoundException,
     BadRequestException,
     ForbiddenException,
+    Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
@@ -14,6 +15,7 @@ import { OrderItemModifier } from '../entities/order-item-modifier.entity';
 import { Branch } from '../entities/branch.entity';
 import { Tenant } from '../entities/tenant.entity';
 import { Discount } from '../entities/discount.entity';
+import { User } from '../entities/user.entity';
 import { MenuService } from '../menu/menu.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { ShiftsService } from '../shifts/shifts.service';
@@ -21,9 +23,15 @@ import { CustomersService } from '../customers/customers.service';
 import { InventoryConsumptionService } from '../inventory/inventory-consumption.service';
 import { normalizePakistaniPhone } from '../utils/phone';
 import { assertMenuItemAvailableForOrderType } from '../utils/menu-order-type';
+import { RiderDispatchState } from '../entities/rider-dispatch-state.entity';
+import { RiderAssignmentLedger } from '../entities/rider-assignment-ledger.entity';
+import { RiderOpsMetricsService } from '../rider-hrm/rider-ops-metrics.service';
+import { freshnessState, selectNextRoundRobin } from './dispatch.utils';
 
 @Injectable()
 export class OrdersService {
+    private readonly logger = new Logger(OrdersService.name);
+
     constructor(
         @InjectRepository(Order) private orderRepo: Repository<Order>,
         @InjectRepository(OrderItem)
@@ -35,13 +43,473 @@ export class OrdersService {
         @InjectRepository(Branch) private branchRepo: Repository<Branch>,
         @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
         @InjectRepository(Discount) private discountRepo: Repository<Discount>,
+        @InjectRepository(User) private userRepo: Repository<User>,
+        @InjectRepository(RiderAssignmentLedger)
+        private riderAssignmentLedgerRepo: Repository<RiderAssignmentLedger>,
         private menuService: MenuService,
         private loyaltyService: LoyaltyService,
         private shiftsService: ShiftsService,
         private customersService: CustomersService,
         private inventoryConsumptionService: InventoryConsumptionService,
+        private riderOpsMetrics: RiderOpsMetricsService,
         private dataSource: DataSource,
     ) {}
+
+    private haversineKm(
+        lat1: number,
+        lng1: number,
+        lat2: number,
+        lng2: number,
+    ): number {
+        const R = 6371;
+        const dLat = ((lat2 - lat1) * Math.PI) / 180;
+        const dLng = ((lng2 - lng1) * Math.PI) / 180;
+        const a =
+            Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos((lat1 * Math.PI) / 180) *
+                Math.cos((lat2 * Math.PI) / 180) *
+                Math.sin(dLng / 2) *
+                Math.sin(dLng / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
+    }
+
+    private async createAssignmentLedgerEntry(input: {
+        tenantId: number;
+        branchId: number;
+        orderId: number;
+        eventType: 'auto' | 'manual' | 'change' | 'failed';
+        selectedRiderUserId: number | null;
+        eligibleRiderUserIds?: number[];
+        skippedRiders?: Array<Record<string, unknown>>;
+        reasonCode?: string | null;
+        reasonDetail?: string | null;
+        assignmentRequestId?: string | null;
+        createdBy?: number | null;
+    }) {
+        await this.riderAssignmentLedgerRepo.save(
+            this.riderAssignmentLedgerRepo.create({
+                tenantId: input.tenantId,
+                branchId: input.branchId,
+                orderId: input.orderId,
+                eventType: input.eventType,
+                selectedRiderUserId: input.selectedRiderUserId,
+                eligibleRiderUserIds: input.eligibleRiderUserIds ?? [],
+                skippedRiders: input.skippedRiders ?? [],
+                reasonCode: input.reasonCode ?? null,
+                reasonDetail: input.reasonDetail ?? null,
+                assignmentRequestId: input.assignmentRequestId ?? null,
+                createdBy: input.createdBy ?? null,
+            }),
+        );
+    }
+
+    private humanizeDispatchSkipReason(reason: string): string {
+        const labels: Record<string, string> = {
+            user_inactive: 'user is inactive',
+            not_checked_in: 'not checked in',
+            paused: 'paused',
+            checked_in_elsewhere: 'checked in at another branch',
+            heartbeat_stale: 'heartbeat is stale',
+            location_stale: 'live location is stale',
+            active_order_cap: 'already at active order limit',
+            below_min_rating: 'below minimum rating',
+            below_min_timely_rate: 'below minimum timely rate',
+            outside_branch_radius: 'outside branch delivery radius',
+        };
+        return labels[reason] ?? reason.replace(/_/g, ' ');
+    }
+
+    private async buildDispatchFailureMessage(
+        latestFailure: RiderAssignmentLedger | null,
+    ): Promise<string> {
+        const fallback =
+            latestFailure?.reasonDetail ??
+            'No eligible riders were available for automatic assignment';
+        const skipped = Array.isArray(latestFailure?.skippedRiders)
+            ? latestFailure.skippedRiders
+            : [];
+        if (skipped.length === 0) return fallback;
+
+        const riderIds = skipped
+            .map((item) =>
+                typeof item?.rider_user_id === 'number'
+                    ? item.rider_user_id
+                    : Number(item?.rider_user_id),
+            )
+            .filter((value) => Number.isFinite(value));
+        const riders =
+            riderIds.length > 0
+                ? await this.userRepo.findBy({ id: In(riderIds) })
+                : [];
+        const riderNames = new Map(
+            riders.map((rider) => [rider.id, rider.name?.trim() || `Rider #${rider.id}`]),
+        );
+
+        const detail = skipped
+            .slice(0, 4)
+            .map((item) => {
+                const riderId =
+                    typeof item?.rider_user_id === 'number'
+                        ? item.rider_user_id
+                        : Number(item?.rider_user_id);
+                const reasonList = Array.isArray(item?.reasons)
+                    ? item.reasons
+                          .map((reason) =>
+                              typeof reason === 'string'
+                                  ? this.humanizeDispatchSkipReason(reason)
+                                  : null,
+                          )
+                          .filter((reason): reason is string => !!reason)
+                    : [];
+                const riderLabel = Number.isFinite(riderId)
+                    ? riderNames.get(riderId) ?? `Rider #${riderId}`
+                    : 'A rider';
+                return `${riderLabel}: ${reasonList.join(', ') || 'not eligible'}`;
+            })
+            .join('; ');
+        const remaining =
+            skipped.length > 4
+                ? `; +${skipped.length - 4} more rider(s)`
+                : '';
+        return `${fallback}. ${detail}${remaining}`;
+    }
+
+    private async resolveEligibleRidersForAutoDispatch(
+        manager: DataSource['manager'],
+        tenantId: number,
+        branchId: number,
+    ): Promise<{
+        eligibleRiderIds: number[];
+        skipped: Array<Record<string, unknown>>;
+    }> {
+        const branch = await manager.findOne(Branch, {
+            where: { id: branchId },
+        });
+        if (!branch) return { eligibleRiderIds: [], skipped: [] };
+
+        const rows: Array<{
+            rider_user_id: number;
+            status: string;
+            max_active_orders: number | null;
+            min_rating: string | null;
+            min_timely_rate: string | null;
+            active_orders: string;
+            rating_avg: string | null;
+            timely_rate: string | null;
+            is_checked_in: boolean | null;
+            is_paused: boolean | null;
+            branch_id: number | null;
+            last_heartbeat_at: Date | null;
+            last_location_at: Date | null;
+            last_latitude: string | null;
+            last_longitude: string | null;
+        }> = await manager.query(
+            `SELECT DISTINCT u.id AS rider_user_id,
+                    u.status,
+                    rp.max_active_orders,
+                    rp.min_rating::text,
+                    rp.min_timely_rate::text,
+                    COALESCE(ao.active_orders, 0)::text AS active_orders,
+                    rr.rating_avg::text,
+                    tr.timely_rate::text,
+                    prs.is_checked_in,
+                    prs.is_paused,
+                    prs.branch_id,
+                    prs.last_heartbeat_at,
+                    prs.last_location_at,
+                    prs.last_latitude::text,
+                    prs.last_longitude::text
+             FROM users u
+             INNER JOIN branch_users bu ON bu.user_id = u.id AND bu.branch_id = $2
+             INNER JOIN roles r ON r.id = bu.role_id AND r.slug = 'rider'
+             INNER JOIN branch_brands bb ON bb.branch_id = bu.branch_id
+             INNER JOIN brands br ON br.id = bb.brand_id AND br.tenant_id = $1
+             LEFT JOIN rider_profiles rp ON rp.user_id = u.id AND rp.tenant_id = $1
+             LEFT JOIN rider_presences prs ON prs.rider_user_id = u.id
+             LEFT JOIN (
+                 SELECT o.rider_id AS rider_user_id, COUNT(*) AS active_orders
+                 FROM orders o
+                 WHERE o.tenant_id = $1
+                   AND o.delivery_status IN ('accepted', 'picked_up')
+                 GROUP BY o.rider_id
+             ) ao ON ao.rider_user_id = u.id
+             LEFT JOIN (
+                 SELECT ror.rider_user_id, AVG(ror.stars) AS rating_avg
+                 FROM rider_order_ratings ror
+                 INNER JOIN orders o ON o.id = ror.order_id AND o.tenant_id = $1
+                 GROUP BY ror.rider_user_id
+             ) rr ON rr.rider_user_id = u.id
+             LEFT JOIN (
+                 SELECT o.rider_id AS rider_user_id,
+                        (100.0 * COUNT(*) FILTER (
+                            WHERE o.completed_at IS NOT NULL
+                              AND EXTRACT(EPOCH FROM (o.completed_at - o.placed_at)) / 60 <= 45
+                        ) / NULLIF(COUNT(*), 0)) AS timely_rate
+                 FROM orders o
+                 WHERE o.tenant_id = $1
+                   AND o.delivery_status = 'delivered'
+                 GROUP BY o.rider_id
+             ) tr ON tr.rider_user_id = u.id`,
+            [tenantId, branchId],
+        );
+
+        const skipped: Array<Record<string, unknown>> = [];
+        const eligibleRiderIds: number[] = [];
+        const branchLat =
+            branch.latitude != null ? Number(branch.latitude) : null;
+        const branchLng =
+            branch.longitude != null ? Number(branch.longitude) : null;
+        const radiusKm = Number(branch.deliveryRadiusKm ?? 10);
+        for (const row of rows) {
+            const riderId = Number(row.rider_user_id);
+            const maxActiveOrders = Number(row.max_active_orders ?? 1);
+            const activeOrders = Number(row.active_orders ?? 0);
+            const minRating =
+                row.min_rating != null ? Number(row.min_rating) : null;
+            const minTimelyRate =
+                row.min_timely_rate != null
+                    ? Number(row.min_timely_rate)
+                    : null;
+            const ratingAvg =
+                row.rating_avg != null ? Number(row.rating_avg) : null;
+            const timelyRate =
+                row.timely_rate != null ? Number(row.timely_rate) : null;
+            const reasons: string[] = [];
+            if (row.status !== 'active') reasons.push('user_inactive');
+            if (!row.is_checked_in) reasons.push('not_checked_in');
+            if (row.is_paused) reasons.push('paused');
+            if (row.branch_id != null && Number(row.branch_id) !== branchId) {
+                reasons.push('checked_in_elsewhere');
+            }
+            if (!freshnessState(row.last_heartbeat_at, 90))
+                reasons.push('heartbeat_stale');
+            if (!freshnessState(row.last_location_at, 120))
+                reasons.push('location_stale');
+            if (activeOrders >= maxActiveOrders)
+                reasons.push('active_order_cap');
+            if (minRating != null && ratingAvg != null && ratingAvg < minRating)
+                reasons.push('below_min_rating');
+            if (
+                minTimelyRate != null &&
+                timelyRate != null &&
+                timelyRate < minTimelyRate
+            )
+                reasons.push('below_min_timely_rate');
+            if (
+                branchLat != null &&
+                branchLng != null &&
+                row.last_latitude != null &&
+                row.last_longitude != null
+            ) {
+                const dist = this.haversineKm(
+                    branchLat,
+                    branchLng,
+                    Number(row.last_latitude),
+                    Number(row.last_longitude),
+                );
+                if (dist > radiusKm) reasons.push('outside_branch_radius');
+            }
+            if (reasons.length > 0) {
+                skipped.push({ rider_user_id: riderId, reasons });
+                continue;
+            }
+            eligibleRiderIds.push(riderId);
+        }
+        return {
+            eligibleRiderIds: eligibleRiderIds.sort((a, b) => a - b),
+            skipped,
+        };
+    }
+
+    private async autoAssignRiderForOrder(
+        orderId: number,
+        options?: { assignmentRequestId?: string | null },
+    ): Promise<void> {
+        const started = Date.now();
+        const assignmentRequestId =
+            options?.assignmentRequestId ?? `auto-${orderId}`;
+        await this.dataSource.transaction(async (manager) => {
+            const existingLedger = await manager.findOne(
+                RiderAssignmentLedger,
+                {
+                    where: { assignmentRequestId },
+                },
+            );
+            if (existingLedger) return;
+
+            const order = await manager.findOne(Order, {
+                where: { id: orderId },
+            });
+            if (!order) return;
+            if (order.orderType !== 'delivery' || order.riderId != null) return;
+
+            const { eligibleRiderIds, skipped } =
+                await this.resolveEligibleRidersForAutoDispatch(
+                    manager,
+                    order.tenantId,
+                    order.branchId,
+                );
+
+            if (eligibleRiderIds.length === 0) {
+                this.riderOpsMetrics.inc('auto_assignment_no_eligible_riders');
+                await manager.save(
+                    manager.create(RiderAssignmentLedger, {
+                        tenantId: order.tenantId,
+                        branchId: order.branchId,
+                        orderId: order.id,
+                        eventType: 'failed',
+                        assignmentRequestId,
+                        selectedRiderUserId: null,
+                        eligibleRiderUserIds: [],
+                        skippedRiders: skipped,
+                        reasonCode: 'no_eligible_riders',
+                        reasonDetail:
+                            'No eligible riders matched attendance/presence constraints',
+                    }),
+                );
+                return;
+            }
+
+            let state = await manager
+                .createQueryBuilder(RiderDispatchState, 's')
+                .setLock('pessimistic_write')
+                .where('s.tenant_id = :tenantId AND s.branch_id = :branchId', {
+                    tenantId: order.tenantId,
+                    branchId: order.branchId,
+                })
+                .getOne();
+            if (!state) {
+                state = await manager.save(
+                    manager.create(RiderDispatchState, {
+                        tenantId: order.tenantId,
+                        branchId: order.branchId,
+                        lastAssignedRiderUserId: null,
+                        lastAssignedAt: null,
+                    }),
+                );
+                state = await manager
+                    .createQueryBuilder(RiderDispatchState, 's')
+                    .setLock('pessimistic_write')
+                    .where('s.id = :id', { id: state.id })
+                    .getOne();
+            }
+            if (!state) return;
+
+            const selectedRiderId = selectNextRoundRobin(
+                eligibleRiderIds,
+                state.lastAssignedRiderUserId,
+            );
+            if (selectedRiderId == null) return;
+
+            order.riderId = selectedRiderId;
+            order.deliveryStatus = 'accepted';
+            order.deliveryFailedReason = null;
+            await manager.save(order);
+
+            state.lastAssignedRiderUserId = selectedRiderId;
+            state.lastAssignedAt = new Date();
+            await manager.save(state);
+
+            await manager.save(
+                manager.create(RiderAssignmentLedger, {
+                    tenantId: order.tenantId,
+                    branchId: order.branchId,
+                    orderId: order.id,
+                    eventType: 'auto',
+                    assignmentRequestId,
+                    selectedRiderUserId: selectedRiderId,
+                    eligibleRiderUserIds: eligibleRiderIds,
+                    skippedRiders: skipped,
+                    reasonCode: 'auto_round_robin',
+                    reasonDetail: 'Assigned through strict round-robin',
+                }),
+            );
+            this.riderOpsMetrics.inc('auto_assignment_success');
+        });
+        this.riderOpsMetrics.observe(
+            'assignment_latency_ms',
+            Date.now() - started,
+        );
+    }
+
+    /**
+     * Kitchen/KDS updates order status directly; call this after save so delivery
+     * auto-dispatch matches Admin status transitions.
+     */
+    async triggerAutoAssignAfterStatusChange(
+        orderId: number,
+        previousStatus: string,
+    ): Promise<void> {
+        const order = await this.orderRepo.findOne({ where: { id: orderId } });
+        if (!order) return;
+        await this.maybeAutoAssignDeliveryOnPreparing(order, previousStatus);
+    }
+
+    private async maybeAutoAssignDeliveryOnPreparing(
+        order: Order,
+        previousStatus: string,
+    ): Promise<void> {
+        if (order.orderType !== 'delivery') return;
+        if (order.status !== 'preparing') return;
+        if (previousStatus !== 'placed' && previousStatus !== 'accepted') return;
+        if (order.riderId != null) return;
+        try {
+            await this.autoAssignRiderForOrder(order.id);
+        } catch (e) {
+            this.riderOpsMetrics.inc('auto_assignment_error');
+            this.logger.error(
+                `Auto rider assignment failed for order ${order.id} on entering preparing`,
+                e instanceof Error ? e.stack : undefined,
+            );
+        }
+    }
+
+    async retryAutoAssignForAdmin(
+        orderId: number,
+        tenantId: number,
+        allowedBranchIds?: number[] | null,
+    ) {
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId, tenantId },
+        });
+        if (!order) throw new NotFoundException('Order not found');
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0 &&
+            !allowedBranchIds.includes(order.branchId)
+        ) {
+            throw new ForbiddenException('You do not have access to this branch');
+        }
+        if (order.orderType !== 'delivery') {
+            throw new BadRequestException(
+                'Automatic rider assignment is only available for delivery orders',
+            );
+        }
+        if (order.riderId != null) {
+            throw new BadRequestException('Order already has an assigned rider');
+        }
+        await this.autoAssignRiderForOrder(orderId, {
+            assignmentRequestId: `admin-retry-${orderId}-${randomUUID()}`,
+        });
+        const refreshed = await this.orderRepo.findOne({
+            where: { id: orderId, tenantId },
+        });
+        if (refreshed?.riderId == null) {
+            const latestFailure = await this.riderAssignmentLedgerRepo.findOne({
+                where: {
+                    orderId,
+                    eventType: 'failed',
+                },
+                order: { createdAt: 'DESC' },
+            });
+            throw new BadRequestException(
+                await this.buildDispatchFailureMessage(latestFailure),
+            );
+        }
+        return this.findForAdmin(orderId, tenantId, allowedBranchIds);
+    }
 
     async createOrder(
         dto: {
@@ -1324,6 +1792,7 @@ export class OrdersService {
             );
         }
 
+        const previousStatus = order.status;
         const wasCompleted = order.status === 'completed';
         if (wasCompleted && status !== 'completed') {
             await this.loyaltyService.revokeEarnedPoints(id);
@@ -1354,6 +1823,7 @@ export class OrdersService {
         } else {
             await this.orderRepo.save(order);
         }
+        await this.maybeAutoAssignDeliveryOnPreparing(order, previousStatus);
         return this.findForAdmin(id, tenantId);
     }
 
@@ -1503,6 +1973,7 @@ export class OrdersService {
         filters: {
             branch_id?: number;
             status?: string;
+            order_type?: string;
             date_from?: string;
             date_to?: string;
             has_rider?: boolean;
@@ -1549,6 +2020,14 @@ export class OrdersService {
             });
         if (filters.status)
             qb.andWhere('o.status = :status', { status: filters.status });
+        if (
+            filters.order_type &&
+            ['delivery', 'dine_in', 'takeaway'].includes(filters.order_type)
+        ) {
+            qb.andWhere('o.orderType = :orderType', {
+                orderType: filters.order_type,
+            });
+        }
         if (filters.date_from)
             qb.andWhere('date(o.placed_at) >= :dateFrom', {
                 dateFrom: filters.date_from,
@@ -1647,6 +2126,11 @@ export class OrdersService {
                 'You do not have access to this branch',
             );
         }
+        if (order.orderType !== 'delivery') {
+            throw new BadRequestException(
+                'Riders can only be assigned to delivery orders',
+            );
+        }
         const riders = await this.listRiders(tenantId);
         if (!riders.some((r) => r.id === riderId)) {
             throw new BadRequestException('Invalid rider for this tenant');
@@ -1655,6 +2139,15 @@ export class OrdersService {
         order.deliveryStatus = 'accepted';
         order.deliveryFailedReason = null;
         await this.orderRepo.save(order);
+        await this.createAssignmentLedgerEntry({
+            tenantId,
+            branchId: order.branchId,
+            orderId: order.id,
+            eventType: 'manual',
+            selectedRiderUserId: riderId,
+            reasonCode: 'manual_assignment',
+            reasonDetail: 'Assigned manually by admin',
+        });
         return this.findForAdmin(orderId, tenantId, allowedBranchIds);
     }
 
@@ -1679,6 +2172,11 @@ export class OrdersService {
                 'You do not have access to this branch',
             );
         }
+        if (order.orderType !== 'delivery') {
+            throw new BadRequestException(
+                'Riders can only be assigned to delivery orders',
+            );
+        }
         if (order.deliveryStatus !== 'accepted') {
             throw new BadRequestException(
                 'Rider can only be changed before they have picked up the order',
@@ -1690,6 +2188,15 @@ export class OrdersService {
         }
         order.riderId = riderId;
         await this.orderRepo.save(order);
+        await this.createAssignmentLedgerEntry({
+            tenantId,
+            branchId: order.branchId,
+            orderId: order.id,
+            eventType: 'change',
+            selectedRiderUserId: riderId,
+            reasonCode: 'manual_change',
+            reasonDetail: 'Rider changed manually by admin',
+        });
         return this.findForAdmin(orderId, tenantId, allowedBranchIds);
     }
 
@@ -1724,11 +2231,26 @@ export class OrdersService {
                 );
             }
         }
+        const nonDelivery = orders.filter((o) => o.orderType !== 'delivery');
+        if (nonDelivery.length > 0) {
+            throw new BadRequestException(
+                'Riders can only be assigned when every order in the group is a delivery order',
+            );
+        }
         for (const order of orders) {
             order.riderId = riderId;
             order.deliveryStatus = 'accepted';
             order.deliveryFailedReason = null;
             await this.orderRepo.save(order);
+            await this.createAssignmentLedgerEntry({
+                tenantId,
+                branchId: order.branchId,
+                orderId: order.id,
+                eventType: 'manual',
+                selectedRiderUserId: riderId,
+                reasonCode: 'manual_group_assignment',
+                reasonDetail: `Assigned manually for group ${orderGroupId}`,
+            });
         }
         return {
             order_group_id: orderGroupId,
@@ -1768,6 +2290,12 @@ export class OrdersService {
                 );
             }
         }
+        const nonDeliveryGroup = orders.filter((o) => o.orderType !== 'delivery');
+        if (nonDeliveryGroup.length > 0) {
+            throw new BadRequestException(
+                'Riders can only be assigned when every order in the group is a delivery order',
+            );
+        }
         const notAccepted = orders.filter(
             (o) => o.deliveryStatus !== 'accepted',
         );
@@ -1783,6 +2311,15 @@ export class OrdersService {
         for (const order of orders) {
             order.riderId = riderId;
             await this.orderRepo.save(order);
+            await this.createAssignmentLedgerEntry({
+                tenantId,
+                branchId: order.branchId,
+                orderId: order.id,
+                eventType: 'change',
+                selectedRiderUserId: riderId,
+                reasonCode: 'manual_group_change',
+                reasonDetail: `Rider changed manually for group ${orderGroupId}`,
+            });
         }
         return {
             order_group_id: orderGroupId,

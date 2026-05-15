@@ -13,6 +13,8 @@ interface SearchableSelectProps {
   onChange: (value: string) => void;
   options: SearchableSelectOption[];
   placeholder?: string;
+  /** Placeholder for the search field inside the open panel */
+  searchPlaceholder?: string;
   label?: string;
   className?: string;
   id?: string;
@@ -32,6 +34,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   onChange,
   options,
   placeholder = 'Select...',
+  searchPlaceholder = 'Search...',
   label,
   className = '',
   id,
@@ -66,10 +69,16 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setOpen(false);
+        setSearch('');
+        setSugOpen(false);
       }
     };
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        setOpen(false);
+        setSearch('');
+        setSugOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     document.addEventListener('keydown', handleEscape);
@@ -80,10 +89,10 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   }, [open]);
 
   const handleSelect = (opt: SearchableSelectOption) => {
-    onChange(opt.value);
     setOpen(false);
     setSearch('');
     setSugOpen(false);
+    onChange(opt.value);
   };
 
   const onKeyDownSearch = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -138,7 +147,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
       </button>
       {open && (
         <div
-          className="absolute z-50 mt-1 w-full min-w-[200px] rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg overflow-hidden"
+          className="absolute z-[200] mt-1 w-full min-w-[200px] rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg overflow-hidden"
           role="listbox"
         >
           <div className="p-2 border-b border-gray-100 dark:border-slate-600">
@@ -146,7 +155,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search..."
+              placeholder={searchPlaceholder}
               className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
               autoFocus
               onKeyDown={onKeyDownSearch}
@@ -174,7 +183,10 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                   key={opt.value}
                   role="option"
                   aria-selected={opt.value === value}
-                  onClick={() => handleSelect(opt)}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    handleSelect(opt);
+                  }}
                   className={`px-3 py-2 text-sm cursor-pointer truncate ${
                     opt.value === value
                       ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 font-medium'

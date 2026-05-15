@@ -29,6 +29,7 @@ import { UploadModule } from './upload/upload.module';
 import { InventoryModule } from './inventory/inventory.module';
 import { ProcurementModule } from './procurement/procurement.module';
 import { RecipesModule } from './recipes/recipes.module';
+import { RiderHrmModule } from './rider-hrm/rider-hrm.module';
 @Module({
     imports: [
         ConfigModule.forRoot({
@@ -75,6 +76,7 @@ import { RecipesModule } from './recipes/recipes.module';
         InventoryModule,
         ProcurementModule,
         RecipesModule,
+        RiderHrmModule,
     ],
     controllers: [AppController],
     providers: [AppService],

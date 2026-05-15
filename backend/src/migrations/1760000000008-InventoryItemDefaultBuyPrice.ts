@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class InventoryItemDefaultBuyPrice1760000000008
-    implements MigrationInterface
-{
+export class InventoryItemDefaultBuyPrice1760000000008 implements MigrationInterface {
     name = 'InventoryItemDefaultBuyPrice1760000000008';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
@@ -19,4 +17,3 @@ export class InventoryItemDefaultBuyPrice1760000000008
         `);
     }
 }
-

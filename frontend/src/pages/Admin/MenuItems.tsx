@@ -34,6 +34,7 @@ interface MenuItem {
   is_active: boolean;
   deal_only?: boolean;
   image_url?: string | null;
+  gallery_image_urls?: string[];
   /** Effective channels from API (delivery, pickup, dine_in). */
   available_for_order_types?: string[];
   category?: {
@@ -49,6 +50,8 @@ const ORDER_CHANNELS = [
   { key: 'pickup', label: 'Pickup / Takeaway' },
   { key: 'dine_in', label: 'Dine-in' },
 ] as const;
+
+const MENU_ITEM_GALLERY_MAX = 12;
 
 function channelsFromApiList(channels: string[] | undefined | null): {
   delivery: boolean;
@@ -96,12 +99,15 @@ const MenuItems: React.FC = () => {
     is_active: true,
     deal_only: false,
     image_url: '',
+    gallery_image_urls: [] as string[],
     channel_delivery: true,
     channel_pickup: true,
     channel_dine_in: true,
   });
   const [imageUploading, setImageUploading] = useState(false);
+  const [galleryUploading, setGalleryUploading] = useState(false);
   const [editImageUploading, setEditImageUploading] = useState(false);
+  const [editGalleryUploading, setEditGalleryUploading] = useState(false);
   const [filters, setFilters] = useState<{
     brand_id: string;
     category_id: string;
@@ -207,6 +213,7 @@ const MenuItems: React.FC = () => {
     is_active: true,
     deal_only: false,
     image_url: '',
+    gallery_image_urls: [] as string[],
     channel_delivery: true,
     channel_pickup: true,
     channel_dine_in: true,
@@ -223,6 +230,7 @@ const MenuItems: React.FC = () => {
         is_active: editingItem.is_active,
         deal_only: (editingItem as { deal_only?: boolean }).deal_only ?? false,
         image_url: (editingItem as { image_url?: string }).image_url ?? '',
+        gallery_image_urls: [...(editingItem.gallery_image_urls ?? [])],
         channel_delivery: ch.delivery,
         channel_pickup: ch.pickup,
         channel_dine_in: ch.dine_in,
@@ -264,6 +272,7 @@ const MenuItems: React.FC = () => {
         brand_id?: number;
         category_id?: number;
         image_url?: string | null;
+        gallery_image_urls?: string[];
         deal_only?: boolean;
         available_for_order_types?: string[] | null;
       };
@@ -277,6 +286,8 @@ const MenuItems: React.FC = () => {
                 ...item,
                 ...variables.data,
                 image_url: variables.data.image_url ?? item.image_url,
+                gallery_image_urls:
+                  variables.data.gallery_image_urls ?? item.gallery_image_urls,
               }
             : item,
         );
@@ -290,34 +301,106 @@ const MenuItems: React.FC = () => {
     },
   });
 
-  const uploadImageFile = async (file: File, isEdit: boolean) => {
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file (PNG, JPEG, GIF, WebP).');
+  const uploadFileToMenuItems = async (file: File): Promise<string> => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('folder', 'menu-items');
+    const { data } = await apiClient.post<{ url: string }>('/admin/upload', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    if (!data?.url?.trim()) {
+      throw new Error('Upload did not return an image URL.');
+    }
+    return data.url;
+  };
+
+  const uploadGalleryFiles = async (files: File[], mode: 'create' | 'edit') => {
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+    if (!imageFiles.length) {
+      toast.error('Please select image files (PNG, JPEG, GIF, WebP).');
       return;
     }
-    if (isEdit) setEditImageUploading(true);
-    else setImageUploading(true);
+    const isEdit = mode === 'edit';
+    if (isEdit) setEditGalleryUploading(true);
+    else setGalleryUploading(true);
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('folder', 'menu-items');
-      const { data } = await apiClient.post<{ url: string }>('/admin/upload', fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
+      const uploaded: string[] = [];
+      for (const file of imageFiles) {
+        uploaded.push(await uploadFileToMenuItems(file));
+      }
+      if (!uploaded.length) return;
+
+      // Read current list synchronously from state ref to compute count BEFORE update
+      const setter = isEdit ? setEditFormData : setFormData;
+      let addedCount = 0;
+      setter((prev) => {
+        const existing = prev.gallery_image_urls ?? [];
+        const next = [...existing];
+        for (const url of uploaded) {
+          const u = url.trim();
+          if (!u || next.includes(u)) continue;
+          if (next.length >= MENU_ITEM_GALLERY_MAX) break;
+          next.push(u);
+          addedCount++;
+        }
+        return addedCount > 0 ? { ...prev, gallery_image_urls: next } : prev;
       });
-      if (isEdit) setEditFormData((prev) => ({ ...prev, image_url: data.url }));
-      else setFormData((prev) => ({ ...prev, image_url: data.url }));
-      toast.success('Image uploaded.');
+
+      // Use setTimeout so addedCount is finalised after the setter runs
+      setTimeout(() => {
+        if (addedCount > 0) {
+          toast.success(addedCount === 1 ? 'Gallery image added.' : `${addedCount} gallery images added.`);
+        } else {
+          toast.error(`Gallery is full (max ${MENU_ITEM_GALLERY_MAX}) or these images are already listed.`);
+        }
+      }, 0);
     } catch (err: unknown) {
       toast.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Upload failed.');
     } finally {
-      if (isEdit) setEditImageUploading(false);
-      else setImageUploading(false);
+      if (isEdit) setEditGalleryUploading(false);
+      else setGalleryUploading(false);
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isEdit: boolean) => {
+  const uploadMenuItemImage = async (
+    file: File,
+    ctx: { mode: 'create' | 'edit'; target: 'main' | 'gallery' },
+  ): Promise<boolean> => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file (PNG, JPEG, GIF, WebP).');
+      return false;
+    }
+    const isEdit = ctx.mode === 'edit';
+    if (ctx.target === 'main') {
+      if (isEdit) setEditImageUploading(true);
+      else setImageUploading(true);
+      try {
+        const url = await uploadFileToMenuItems(file);
+        if (isEdit) setEditFormData((prev) => ({ ...prev, image_url: url }));
+        else setFormData((prev) => ({ ...prev, image_url: url }));
+        toast.success('Main image uploaded.');
+        return true;
+      } catch (err: unknown) {
+        toast.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Upload failed.');
+        return false;
+      } finally {
+        if (isEdit) setEditImageUploading(false);
+        else setImageUploading(false);
+      }
+    }
+    await uploadGalleryFiles([file], ctx.mode);
+    return true;
+  };
+
+  const handleMainImageInput = (e: React.ChangeEvent<HTMLInputElement>, mode: 'create' | 'edit') => {
     const file = e.target.files?.[0];
-    if (file) uploadImageFile(file, isEdit);
+    if (file) void uploadMenuItemImage(file, { mode, target: 'main' });
+    e.target.value = '';
+  };
+
+  const handleGalleryImageInput = (e: React.ChangeEvent<HTMLInputElement>, mode: 'create' | 'edit') => {
+    const files = e.target.files;
+    if (files?.length) void uploadGalleryFiles(Array.from(files), mode);
     e.target.value = '';
   };
 
@@ -331,6 +414,7 @@ const MenuItems: React.FC = () => {
       is_active: boolean;
       deal_only?: boolean;
       image_url?: string;
+      gallery_image_urls?: string[];
       channel_delivery: boolean;
       channel_pickup: boolean;
       channel_dine_in: boolean;
@@ -354,6 +438,9 @@ const MenuItems: React.FC = () => {
         deal_only: data.deal_only ?? false,
         image_url: data.image_url || undefined,
       };
+      if (data.gallery_image_urls?.length) {
+        payload.gallery_image_urls = data.gallery_image_urls;
+      }
       if (channels !== undefined) payload.available_for_order_types = channels;
       const response = await apiClient.post('/admin/menu/items', payload);
       return response.data;
@@ -371,6 +458,7 @@ const MenuItems: React.FC = () => {
         is_active: true,
         deal_only: false,
         image_url: '',
+        gallery_image_urls: [] as string[],
         channel_delivery: true,
         channel_pickup: true,
         channel_dine_in: true,
@@ -726,6 +814,7 @@ const MenuItems: React.FC = () => {
                   is_active: editFormData.is_active,
                   deal_only: editFormData.deal_only,
                   image_url: editFormData.image_url || null,
+                  gallery_image_urls: [...editFormData.gallery_image_urls],
                   available_for_order_types: av,
                 },
               });
@@ -781,43 +870,100 @@ const MenuItems: React.FC = () => {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 resize-vertical"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Image (optional)</label>
-              <input id="edit-item-image" type="file" accept="image/*" onChange={(e) => handleImageUpload(e, true)} disabled={editImageUploading} className="hidden" />
-              <div
-                className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50/50 transition-colors hover:border-gray-400 hover:bg-gray-50"
-                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-blue-400', 'bg-blue-50/50'); }}
-                onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50'); }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50');
-                  const f = e.dataTransfer.files[0];
-                  if (f) uploadImageFile(f, true);
-                }}
-              >
-                {editFormData.image_url ? (
-                  <div className="flex items-start gap-3">
-                    <img src={getImageFullUrl(editFormData.image_url)} alt="" className="h-24 w-24 object-cover rounded-lg border border-gray-200 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-600 mb-2">Image uploaded.</p>
-                      <div className="flex gap-2">
-                        <Button type="button" size="small" variant="secondary" onClick={() => document.getElementById('edit-item-image')?.click()}>
-                          Replace
-                        </Button>
-                        <Button type="button" size="small" variant="outline" onClick={() => setEditFormData((f) => ({ ...f, image_url: '' }))}>
-                          Remove
-                        </Button>
+            <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
+              <div>
+                <label className="block text-sm font-semibold text-gray-900">Main product image (optional)</label>
+                <p className="text-xs text-gray-500 mt-0.5 mb-2">
+                  <span className="font-medium text-gray-700">Where it appears:</span> POS menu grid, this admin list thumbnail, and the large hero on the consumer website. One image only.
+                </p>
+                <input id="edit-item-image-main" type="file" accept="image/*" onChange={(e) => handleMainImageInput(e, 'edit')} disabled={editImageUploading} className="hidden" />
+                <div
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50/50 transition-colors hover:border-gray-400 hover:bg-gray-50"
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-blue-400', 'bg-blue-50/50'); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50'); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50');
+                    const f = e.dataTransfer.files[0];
+                    if (f) void uploadMenuItemImage(f, { mode: 'edit', target: 'main' });
+                  }}
+                >
+                  {editFormData.image_url ? (
+                    <div className="flex items-start gap-3">
+                      <img src={getImageFullUrl(editFormData.image_url)} alt="" className="h-24 w-24 object-cover rounded-lg border border-gray-200 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-600 mb-2">Main image set.</p>
+                        <div className="flex gap-2">
+                          <Button type="button" size="small" variant="secondary" onClick={() => document.getElementById('edit-item-image-main')?.click()}>
+                            Replace
+                          </Button>
+                          <Button type="button" size="small" variant="outline" onClick={() => setEditFormData((f) => ({ ...f, image_url: '' }))}>
+                            Remove
+                          </Button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ) : (
-                  <label htmlFor="edit-item-image" className="flex flex-col items-center justify-center py-6 cursor-pointer text-center">
-                    <span className="text-gray-500 text-sm mb-1">PNG, JPEG, GIF or WebP · max 5MB</span>
-                    <span className="text-blue-600 font-medium text-sm">Click to upload or drag and drop</span>
-                  </label>
-                )}
+                  ) : (
+                    <label htmlFor="edit-item-image-main" className="flex flex-col items-center justify-center py-6 cursor-pointer text-center">
+                      <span className="text-gray-500 text-sm mb-1">PNG, JPEG, GIF or WebP · max 5MB</span>
+                      <span className="text-blue-600 font-medium text-sm">Click to upload or drag and drop</span>
+                    </label>
+                  )}
+                </div>
+                {editImageUploading && <p className="text-xs text-amber-600 mt-2 font-medium">Uploading main image…</p>}
               </div>
-              {editImageUploading && <p className="text-xs text-amber-600 mt-2 font-medium">Uploading...</p>}
+
+              <div className="border-t border-gray-200 pt-3">
+                <label className="block text-sm font-semibold text-gray-900">Gallery / slider images (optional)</label>
+                <p className="text-xs text-gray-500 mt-0.5 mb-2">
+                  <span className="font-medium text-gray-700">Where they appear:</span> consumer website only — extra photos in a row or carousel under the main hero.{' '}
+                  <span className="font-medium text-gray-700">Not used</span> as the POS tile (POS always uses the main image above).
+                </p>
+                <p className="text-xs text-gray-500 mb-2">Up to {MENU_ITEM_GALLERY_MAX} images. Order is left-to-right (same as slider order).</p>
+                <input id="edit-item-gallery" type="file" accept="image/*" multiple onChange={(e) => handleGalleryImageInput(e, 'edit')} disabled={editGalleryUploading} className="hidden" />
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {editFormData.gallery_image_urls.map((url, idx) => (
+                    <div key={`${url}-${idx}`} className="relative group">
+                      <img src={getImageFullUrl(url)} alt="" className="h-16 w-16 object-cover rounded-lg border border-gray-200" />
+                      <button
+                        type="button"
+                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-600 text-white text-xs leading-none opacity-90 hover:opacity-100"
+                        onClick={() =>
+                          setEditFormData((f) => ({
+                            ...f,
+                            gallery_image_urls: f.gallery_image_urls.filter((_, j) => j !== idx),
+                          }))
+                        }
+                        aria-label="Remove gallery image"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-3 bg-gray-50/50 text-center transition-colors hover:border-gray-400"
+                  onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-blue-400', 'bg-blue-50/50'); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50'); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50');
+                    const fl = e.dataTransfer.files;
+                    if (fl?.length) void uploadGalleryFiles(Array.from(fl), 'edit');
+                  }}
+                >
+                  <Button
+                    type="button"
+                    size="small"
+                    variant="secondary"
+                    disabled={editGalleryUploading || editFormData.gallery_image_urls.length >= MENU_ITEM_GALLERY_MAX}
+                    onClick={() => document.getElementById('edit-item-gallery')?.click()}
+                  >
+                    Add gallery photos
+                  </Button>
+                </div>
+                {editGalleryUploading && <p className="text-xs text-amber-600 mt-2 font-medium">Uploading gallery…</p>}
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -994,43 +1140,100 @@ const MenuItems: React.FC = () => {
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Image (optional)</label>
-            <input id="create-item-image" type="file" accept="image/*" onChange={(e) => handleImageUpload(e, false)} disabled={imageUploading} className="hidden" />
-            <div
-              className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50/50 transition-colors hover:border-gray-400 hover:bg-gray-50"
-              onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-blue-400', 'bg-blue-50/50'); }}
-              onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50'); }}
-              onDrop={(e) => {
-                e.preventDefault();
-                e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50');
-                const f = e.dataTransfer.files[0];
-                if (f) uploadImageFile(f, false);
-              }}
-            >
-              {formData.image_url ? (
-                <div className="flex items-start gap-3">
-                  <img src={getImageFullUrl(formData.image_url)} alt="" className="h-24 w-24 object-cover rounded-lg border border-gray-200 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-600 mb-2">Image uploaded.</p>
-                    <div className="flex gap-2">
-                      <Button type="button" size="small" variant="secondary" onClick={() => document.getElementById('create-item-image')?.click()}>
-                        Replace
-                      </Button>
-                      <Button type="button" size="small" variant="outline" onClick={() => setFormData((p) => ({ ...p, image_url: '' }))}>
-                        Remove
-                      </Button>
+          <div className="rounded-lg border border-gray-200 bg-white p-3 space-y-3">
+            <div>
+              <label className="block text-sm font-semibold text-gray-900">Main product image (optional)</label>
+              <p className="text-xs text-gray-500 mt-0.5 mb-2">
+                <span className="font-medium text-gray-700">Where it appears:</span> POS menu grid, admin list thumbnail, consumer website hero. One image only.
+              </p>
+              <input id="create-item-image-main" type="file" accept="image/*" onChange={(e) => handleMainImageInput(e, 'create')} disabled={imageUploading} className="hidden" />
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50/50 transition-colors hover:border-gray-400 hover:bg-gray-50"
+                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-blue-400', 'bg-blue-50/50'); }}
+                onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50'); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50');
+                  const f = e.dataTransfer.files[0];
+                  if (f) void uploadMenuItemImage(f, { mode: 'create', target: 'main' });
+                }}
+              >
+                {formData.image_url ? (
+                  <div className="flex items-start gap-3">
+                    <img src={getImageFullUrl(formData.image_url)} alt="" className="h-24 w-24 object-cover rounded-lg border border-gray-200 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-gray-600 mb-2">Main image set.</p>
+                      <div className="flex gap-2">
+                        <Button type="button" size="small" variant="secondary" onClick={() => document.getElementById('create-item-image-main')?.click()}>
+                          Replace
+                        </Button>
+                        <Button type="button" size="small" variant="outline" onClick={() => setFormData((p) => ({ ...p, image_url: '' }))}>
+                          Remove
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ) : (
-                <label htmlFor="create-item-image" className="flex flex-col items-center justify-center py-6 cursor-pointer text-center">
-                  <span className="text-gray-500 text-sm mb-1">PNG, JPEG, GIF or WebP · max 5MB</span>
-                  <span className="text-blue-600 font-medium text-sm">Click to upload or drag and drop</span>
-                </label>
-              )}
+                ) : (
+                  <label htmlFor="create-item-image-main" className="flex flex-col items-center justify-center py-6 cursor-pointer text-center">
+                    <span className="text-gray-500 text-sm mb-1">PNG, JPEG, GIF or WebP · max 5MB</span>
+                    <span className="text-blue-600 font-medium text-sm">Click to upload or drag and drop</span>
+                  </label>
+                )}
+              </div>
+              {imageUploading && <p className="text-xs text-amber-600 mt-2 font-medium">Uploading main image…</p>}
             </div>
-            {imageUploading && <p className="text-xs text-amber-600 mt-2 font-medium">Uploading...</p>}
+
+            <div className="border-t border-gray-200 pt-3">
+              <label className="block text-sm font-semibold text-gray-900">Gallery / slider images (optional)</label>
+              <p className="text-xs text-gray-500 mt-0.5 mb-2">
+                <span className="font-medium text-gray-700">Where they appear:</span> consumer website only — under the main hero.{' '}
+                <span className="font-medium text-gray-700">Not used</span> as the POS tile.
+              </p>
+              <p className="text-xs text-gray-500 mb-2">Up to {MENU_ITEM_GALLERY_MAX} images. Order = slider order.</p>
+              <input id="create-item-gallery" type="file" accept="image/*" multiple onChange={(e) => handleGalleryImageInput(e, 'create')} disabled={galleryUploading} className="hidden" />
+              <div className="flex flex-wrap gap-2 mb-2">
+                {formData.gallery_image_urls.map((url, idx) => (
+                  <div key={`${url}-${idx}`} className="relative group">
+                    <img src={getImageFullUrl(url)} alt="" className="h-16 w-16 object-cover rounded-lg border border-gray-200" />
+                    <button
+                      type="button"
+                      className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-600 text-white text-xs leading-none opacity-90 hover:opacity-100"
+                      onClick={() =>
+                        setFormData((f) => ({
+                          ...f,
+                          gallery_image_urls: f.gallery_image_urls.filter((_, j) => j !== idx),
+                        }))
+                      }
+                      aria-label="Remove gallery image"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div
+                className="border-2 border-dashed border-gray-300 rounded-lg p-3 bg-gray-50/50 text-center transition-colors hover:border-gray-400"
+                onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add('border-blue-400', 'bg-blue-50/50'); }}
+                onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50'); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.remove('border-blue-400', 'bg-blue-50/50');
+                  const fl = e.dataTransfer.files;
+                  if (fl?.length) void uploadGalleryFiles(Array.from(fl), 'create');
+                }}
+              >
+                <Button
+                  type="button"
+                  size="small"
+                  variant="secondary"
+                  disabled={galleryUploading || formData.gallery_image_urls.length >= MENU_ITEM_GALLERY_MAX}
+                  onClick={() => document.getElementById('create-item-gallery')?.click()}
+                >
+                  Add gallery photos
+                </Button>
+              </div>
+              {galleryUploading && <p className="text-xs text-amber-600 mt-2 font-medium">Uploading gallery…</p>}
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">

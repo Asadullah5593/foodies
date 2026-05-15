@@ -54,6 +54,9 @@ export class Branch {
     @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
     deliveryFlatFee: number;
 
+    @Column({ type: 'decimal', precision: 8, scale: 2, default: 10 })
+    deliveryRadiusKm: number;
+
     @Column({ default: true })
     isActive: boolean;
 
