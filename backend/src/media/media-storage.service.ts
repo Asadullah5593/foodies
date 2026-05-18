@@ -3,9 +3,20 @@ import {
     InternalServerErrorException,
     Logger,
 } from '@nestjs/common';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
-import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import {
+    DeleteObjectCommand,
+    GetObjectCommand,
+    ListObjectsV2Command,
+    PutObjectCommand,
+    S3Client,
+} from '@aws-sdk/client-s3';
 import { randomBytes } from 'crypto';
+import { ImageOptimizeService } from './image-optimize.service';
+import {
+    isMenuItemVariantKey,
+    menuItemVariantKeys,
+    menuItemVariantUrl,
+} from './menu-image-variants';
 
 type UploadFileInput = {
     originalname?: string;
@@ -13,9 +24,14 @@ type UploadFileInput = {
     buffer?: Buffer;
 };
 
-type UploadResult = {
+export type UploadResult = {
     url: string;
     key: string;
+    variants?: {
+        thumb: string;
+        display: string;
+        full: string;
+    };
 };
 
 @Injectable()
@@ -34,6 +50,8 @@ export class MediaStorageService {
         .replace(/\/+$/g, '');
     private readonly s3Client = new S3Client({ region: this.region });
 
+    constructor(private readonly imageOptimize: ImageOptimizeService) {}
+
     async uploadImage(
         file: UploadFileInput,
         folder: string,
@@ -48,13 +66,31 @@ export class MediaStorageService {
         }
         const safeFolder =
             (folder || 'misc').replace(/^\/+|\/+$/g, '') || 'misc';
-        const filename = this.generateFilename(file.originalname);
-        return this.uploadToS3(file, safeFolder, filename);
+
+        if (safeFolder === 'menu-items') {
+            return this.uploadMenuItemWithVariants(file, safeFolder);
+        }
+
+        const optimized = await this.imageOptimize.optimizeForUpload(
+            file,
+            safeFolder,
+        );
+        const filename = this.generateFilename(
+            file.originalname,
+            optimized.fileExtension,
+        );
+        return this.uploadToS3(
+            {
+                buffer: optimized.buffer,
+                mimetype: optimized.contentType,
+            },
+            safeFolder,
+            filename,
+        );
     }
 
     /**
-     * Delete a previously uploaded media object, but only when URL is clearly
-     * within our managed S3 bucket + allowed media folders.
+     * Delete a managed media object and, for menu-items, its variant siblings.
      */
     async deleteManagedObjectByUrl(
         url: string | null | undefined,
@@ -63,44 +99,145 @@ export class MediaStorageService {
         if (this.driver !== 's3' || !this.bucket || !url) return false;
         const key = this.extractManagedKeyFromUrl(url, expectedFolder);
         if (!key) return false;
-        try {
-            await this.s3Client.send(
-                new DeleteObjectCommand({
-                    Bucket: this.bucket,
-                    Key: key,
-                }),
-            );
-            return true;
-        } catch (err) {
-            const error = err as { name?: string; message?: string };
-            const reason =
-                error?.name && error?.message
-                    ? `${error.name}: ${error.message}`
-                    : 'Unknown S3 error';
-            this.logger.warn(`S3 delete skipped for key "${key}" - ${reason}`);
-            return false;
+
+        const keysToDelete = [key];
+        const relative = this.keyPrefix
+            ? key.slice(this.keyPrefix.length + 1)
+            : key;
+        const folder = relative.split('/')[0] || '';
+        if (folder === 'menu-items' && !isMenuItemVariantKey(key)) {
+            const variants = menuItemVariantKeys(key);
+            keysToDelete.push(variants.thumb, variants.full);
         }
+
+        let deleted = false;
+        for (const objectKey of keysToDelete) {
+            try {
+                await this.s3Client.send(
+                    new DeleteObjectCommand({
+                        Bucket: this.bucket,
+                        Key: objectKey,
+                    }),
+                );
+                deleted = true;
+            } catch (err) {
+                const error = err as { name?: string; message?: string };
+                const reason =
+                    error?.name && error?.message
+                        ? `${error.name}: ${error.message}`
+                        : 'Unknown S3 error';
+                this.logger.warn(
+                    `S3 delete skipped for key "${objectKey}" - ${reason}`,
+                );
+            }
+        }
+        return deleted;
     }
 
-    private async uploadToS3(
-        file: UploadFileInput,
-        folder: string,
-        filename: string,
-    ): Promise<UploadResult> {
+    /** List object keys under a media folder (for backfill). */
+    async listObjectKeysInFolder(folder: string): Promise<string[]> {
+        if (!this.bucket) return [];
+        const prefixParts = [this.keyPrefix, folder.replace(/^\/+|\/+$/g, '')]
+            .filter(Boolean)
+            .join('/');
+        const prefix = prefixParts ? `${prefixParts}/` : '';
+        const keys: string[] = [];
+        let continuationToken: string | undefined;
+
+        do {
+            const res = await this.s3Client.send(
+                new ListObjectsV2Command({
+                    Bucket: this.bucket,
+                    Prefix: prefix,
+                    ContinuationToken: continuationToken,
+                }),
+            );
+            for (const obj of res.Contents ?? []) {
+                if (obj.Key) keys.push(obj.Key);
+            }
+            continuationToken = res.NextContinuationToken;
+        } while (continuationToken);
+
+        return keys;
+    }
+
+    async downloadObject(key: string): Promise<Buffer> {
         if (!this.bucket) {
             throw new InternalServerErrorException(
                 'S3 is enabled but AWS_S3_BUCKET is not configured',
             );
         }
-        const keyParts = [this.keyPrefix, folder, filename].filter(Boolean);
-        const key = keyParts.join('/');
+        const res = await this.s3Client.send(
+            new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+        );
+        const bytes = await res.Body?.transformToByteArray();
+        if (!bytes?.length) {
+            throw new Error(`Empty object for key ${key}`);
+        }
+        return Buffer.from(bytes);
+    }
+
+    /**
+     * Overwrite canonical key with display bytes and upload variant siblings.
+     * Used by backfill; keeps the same public URL in the database.
+     */
+    async backfillMenuItemVariants(
+        canonicalKey: string,
+        variants: { thumb: Buffer; display: Buffer; full: Buffer },
+    ): Promise<void> {
+        const { thumb, full } = menuItemVariantKeys(canonicalKey);
+        await this.putObject(canonicalKey, variants.display, 'image/jpeg');
+        await this.putObject(thumb, variants.thumb, 'image/jpeg');
+        await this.putObject(full, variants.full, 'image/jpeg');
+    }
+
+    private async uploadMenuItemWithVariants(
+        file: UploadFileInput,
+        folder: string,
+    ): Promise<UploadResult> {
+        const variants = await this.imageOptimize.optimizeMenuVariants(file);
+        const filename = `${randomBytes(16).toString('hex')}.jpg`;
+        const display = await this.uploadToS3(
+            { buffer: variants.display, mimetype: 'image/jpeg' },
+            folder,
+            filename,
+        );
+        const { thumb: thumbKey, full: fullKey } = menuItemVariantKeys(
+            display.key,
+        );
+        await this.putObject(thumbKey, variants.thumb, 'image/jpeg');
+        await this.putObject(fullKey, variants.full, 'image/jpeg');
+
+        const displayUrl = display.url;
+        return {
+            url: displayUrl,
+            key: display.key,
+            variants: {
+                thumb: menuItemVariantUrl(displayUrl, 'thumb'),
+                display: displayUrl,
+                full: menuItemVariantUrl(displayUrl, 'full'),
+            },
+        };
+    }
+
+    private async putObject(
+        key: string,
+        body: Buffer,
+        contentType: string,
+    ): Promise<void> {
+        if (!this.bucket) {
+            throw new InternalServerErrorException(
+                'S3 is enabled but AWS_S3_BUCKET is not configured',
+            );
+        }
         try {
             await this.s3Client.send(
                 new PutObjectCommand({
                     Bucket: this.bucket,
                     Key: key,
-                    Body: file.buffer,
-                    ContentType: file.mimetype || 'application/octet-stream',
+                    Body: body,
+                    ContentType: contentType,
+                    CacheControl: 'public, max-age=31536000, immutable',
                 }),
             );
         } catch (err) {
@@ -114,6 +251,25 @@ export class MediaStorageService {
                 `S3 upload failed: ${reason}`,
             );
         }
+    }
+
+    private async uploadToS3(
+        file: { buffer?: Buffer; mimetype?: string },
+        folder: string,
+        filename: string,
+    ): Promise<UploadResult> {
+        if (!this.bucket) {
+            throw new InternalServerErrorException(
+                'S3 is enabled but AWS_S3_BUCKET is not configured',
+            );
+        }
+        const keyParts = [this.keyPrefix, folder, filename].filter(Boolean);
+        const key = keyParts.join('/');
+        await this.putObject(
+            key,
+            file.buffer!,
+            file.mimetype || 'application/octet-stream',
+        );
         const base =
             this.cloudfrontBase ||
             `https://${this.bucket}.s3.${this.region}.amazonaws.com`;
@@ -123,16 +279,20 @@ export class MediaStorageService {
         };
     }
 
-    private generateFilename(originalname?: string): string {
+    private generateFilename(
+        originalname?: string,
+        preferredExt?: string,
+    ): string {
         const ext =
-            originalname && originalname.includes('.')
+            preferredExt ??
+            (originalname && originalname.includes('.')
                 ? originalname
                       .slice(originalname.lastIndexOf('.'))
                       .toLowerCase()
-                : '.png';
+                : '.png');
         const safeExt = ext.match(/^\.(png|jpe?g|gif|webp|svg)$/)
             ? ext
-            : '.png';
+            : '.jpg';
         return `${randomBytes(16).toString('hex')}${safeExt}`;
     }
 

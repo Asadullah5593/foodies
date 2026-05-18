@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>App Support — Foodies</title>
+  <meta name="description" content="Get help with the Foodies mobile app — contact support, FAQs, and legal information.">
+  <style>
+    :root {
+      --text: #1a1a1a;
+      --text-muted: #4a4a4a;
+      --border: #e8e8e8;
+      --accent: #c45c26;
+      --bg: #fafaf9;
+      --surface: #ffffff;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 1.0625rem;
+      line-height: 1.65;
+      color: var(--text);
+      background: var(--bg);
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap {
+      max-width: 42rem;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem 4rem;
+    }
+    .app-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+    .app-brand img {
+      width: 3rem;
+      height: 3rem;
+      border-radius: 999px;
+      object-fit: cover;
+    }
+    .app-brand span {
+      font-size: 1.125rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+    }
+    header {
+      margin-bottom: 2.5rem;
+      padding-bottom: 1.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    h1 {
+      margin: 0 0 0.35em;
+      font-size: clamp(1.75rem, 4vw, 2.125rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+    .lead {
+      margin: 0;
+      color: var(--text-muted);
+      font-size: 1.05rem;
+    }
+    main section {
+      margin-bottom: 2.25rem;
+    }
+    main section:last-of-type {
+      margin-bottom: 0;
+    }
+    h2 {
+      margin: 0 0 0.85em;
+      font-size: 1.2rem;
+      font-weight: 650;
+      color: var(--text);
+    }
+    h3 {
+      margin: 1.35em 0 0.55em;
+      font-size: 1.05rem;
+      font-weight: 600;
+    }
+    h3:first-child {
+      margin-top: 0;
+    }
+    p {
+      margin: 0 0 1em;
+    }
+    p:last-child {
+      margin-bottom: 0;
+    }
+    a {
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+    strong {
+      font-weight: 600;
+    }
+    .contact-box {
+      margin-top: 1rem;
+      padding: 1.25rem 1.35rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    .faq-item {
+      margin-bottom: 1.35rem;
+    }
+    .faq-item:last-child {
+      margin-bottom: 0;
+    }
+    .faq-item h3 {
+      margin: 0 0 0.35em;
+    }
+    .legal-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem 1.5rem;
+      margin-top: 1rem;
+    }
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="app-brand">
+      <img src="/foodies-logo.png" alt="Foodies logo" width="48" height="48">
+      <span>FOODIES</span>
+    </div>
+
+    <header>
+      <h1>App Support</h1>
+      <p class="lead">Welcome to official support for the <strong>Foodies</strong> mobile application. We&rsquo;re here to help with orders, your account, and using the app.</p>
+    </header>
+
+    <main>
+      <section aria-labelledby="contact">
+        <h2 id="contact">Contact support</h2>
+        <p>For order issues, account help, refunds, or technical problems, email our support team. We aim to respond within one to two business days.</p>
+        <div class="contact-box">
+          <p><strong>Support email:</strong> <a href="mailto:foodiespk2@gmail.com">foodiespk2@gmail.com</a></p>
+          <p style="margin-top: 0.75em; margin-bottom: 0; font-size: 0.95rem; color: var(--text-muted);">Please include your registered phone number or email and, if relevant, your order number.</p>
+        </div>
+      </section>
+
+      <section aria-labelledby="faq">
+        <h2 id="faq">Frequently asked questions</h2>
+
+        <div class="faq-item">
+          <h3>How do I place an order?</h3>
+          <p>Open the Foodies app, choose your nearest branch, browse the menu, add items to your cart, and complete checkout with your preferred payment method.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>How can I track my delivery?</h3>
+          <p>After placing a delivery order, you can follow its status in the app under your orders. You may receive push notifications as the order is prepared and dispatched.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>Can I cancel or change an order?</h3>
+          <p>Contact support as soon as possible with your order number. Changes or cancellations depend on whether the branch has already started preparing your order.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>How do loyalty points work?</h3>
+          <p>Eligible purchases can earn loyalty points according to the rules shown in the app. Redemption options and balances are visible in your account when signed in.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>I forgot my password. What should I do?</h3>
+          <p>Use the password reset option on the login screen in the app. If you still cannot access your account, email support with the phone number or email linked to your account.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>How do I delete my account?</h3>
+          <p>Email <a href="mailto:foodiespk2@gmail.com">foodiespk2@gmail.com</a> from the address associated with your account and request deletion. We will process your request in line with our Privacy Policy.</p>
+        </div>
+
+        <div class="faq-item">
+          <h3>Why does the app need my location?</h3>
+          <p>Location helps us show nearby Foodies branches, calculate delivery fees, and enable accurate delivery tracking. You can manage location permissions in your device settings.</p>
+        </div>
+      </section>
+
+      <section aria-labelledby="legal">
+        <h2 id="legal">Legal &amp; policies</h2>
+        <p>Review how we handle your data and the terms that apply when you use Foodies.</p>
+        <nav class="legal-links" aria-label="Legal documents">
+          <a href="/privacy-policy.html">Privacy Policy</a>
+          <a href="/terms-and-conditions.html">Terms and Conditions</a>
+        </nav>
+      </section>
+    </main>
+
+    <footer>
+      <p>Foodies &mdash; App Support</p>
+    </footer>
+  </div>
+</body>
+</html>

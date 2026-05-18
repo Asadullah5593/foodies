@@ -30,7 +30,9 @@ export function SiteHeader() {
             Brands
           </Link>
           <span className="cursor-default">About Us</span>
-          <span className="cursor-default">Contact</span>
+          <Link href="/support.html" className="hover:text-[var(--foreground)]" onClick={() => setMobileOpen(false)}>
+            Support
+          </Link>
         </nav>
 
         <button

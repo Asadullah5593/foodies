@@ -18,6 +18,8 @@ import { AppShell, Card } from "@/components/ui";
 import { getTenantBrands, getTenantMenuByBrand } from "@/lib/api/consumer";
 import type { MenuItem } from "@/lib/api/types";
 import { toImageUrl } from "@/lib/api/client";
+import { MenuItemImage } from "@/components/menu-item-image";
+import { menuImageUrl } from "@/lib/menu-image-url";
 import { useSessionStore } from "@/lib/store/session-store";
 import { orderRedirectConfig } from "@/lib/config/order-redirect";
 import clsx from "clsx";
@@ -609,18 +611,25 @@ export default function MenuPage() {
                             }}
                             whileHover={{ scale: 1.01 }}
                           >
-                            <div className="relative aspect-[4/3] w-full overflow-hidden bg-white">
-                              <Image
-                                src={item.image_url ? toImageUrl(item.image_url) : MENU_ITEM_PLACEHOLDER(item.name)}
+                            <div className="relative aspect-[4/3] w-full overflow-hidden bg-neutral-100">
+                              <MenuItemImage
+                                src={
+                                  item.image_url
+                                    ? menuImageUrl(toImageUrl(item.image_url), "display")
+                                    : MENU_ITEM_PLACEHOLDER(item.name)
+                                }
+                                fallbackSrc={
+                                  item.image_url ? toImageUrl(item.image_url) : undefined
+                                }
                                 alt={item.name}
                                 fill
-                                unoptimized={!item.image_url}
+                                loading="lazy"
                                 className={
                                   item.image_url
                                     ? "object-cover transition duration-300 group-hover:scale-[1.03]"
                                     : "object-contain"
                                 }
-                                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                                sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 400px"
                               />
                               <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/6 via-transparent to-transparent opacity-0 transition group-hover:opacity-100" />
                             </div>

@@ -12,6 +12,7 @@ import { ApiTags, ApiBody, ApiConsumes } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { MediaStorageService } from '../media/media-storage.service';
+import { MAX_UPLOAD_FILE_BYTES } from './upload.constants';
 
 @ApiTags('Admin – Upload')
 @Controller('admin')
@@ -22,7 +23,7 @@ export class UploadController {
     @UseGuards(JwtAuthGuard, RoleAccessGuard)
     @UseInterceptors(
         FileInterceptor('file', {
-            limits: { fileSize: 5 * 1024 * 1024 },
+            limits: { fileSize: MAX_UPLOAD_FILE_BYTES },
         }),
     )
     @ApiConsumes('multipart/form-data')
@@ -67,7 +68,10 @@ export class UploadController {
                 'Invalid folder. Allowed: brands, menu-items, customer-profiles, misc',
             );
         }
-        const { url } = await this.mediaStorage.uploadImage(file, folder);
-        return { url };
+        const result = await this.mediaStorage.uploadImage(file, folder);
+        return {
+            url: result.url,
+            ...(result.variants ? { variants: result.variants } : {}),
+        };
     }
 }

@@ -46,6 +46,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RegisterDto } from './dto/register.dto';
 import { MediaStorageService } from '../media/media-storage.service';
+import { MAX_UPLOAD_FILE_BYTES } from '../upload/upload.constants';
 import { RatingsService } from '../ratings/ratings.service';
 
 type BranchWithBrands = Branch & {
@@ -512,7 +513,7 @@ export class ConsumerController {
     @UseGuards(CustomerJwtAuthGuard)
     @UseInterceptors(
         FileInterceptor('file', {
-            limits: { fileSize: 5 * 1024 * 1024 },
+            limits: { fileSize: MAX_UPLOAD_FILE_BYTES },
         }),
     )
     @ApiConsumes('multipart/form-data')
@@ -712,6 +713,22 @@ export class ConsumerController {
         return this.menuService.getTenantBrandMenu(tenantId, brandId, {
             search,
         });
+    }
+
+    @Get('tenant/menu/items/:id')
+    @ApiOperation({
+        summary:
+            'Get a single menu item for tenant consumer web (includes gallery; no branch_id)',
+    })
+    @ApiQuery({ name: 'brand_id', required: true, example: '1' })
+    getTenantMenuItem(
+        @Param('id') id: string,
+        @Query('brand_id') brandIdParam: string,
+    ) {
+        const tenantId = this.getTenantIdFromEnv();
+        const brandId = brandIdParam ? +brandIdParam : undefined;
+        if (!brandId) throw new NotFoundException('brand_id is required');
+        return this.menuService.getTenantMenuItem(tenantId, brandId, +id);
     }
 
     @Get('categories')

@@ -975,7 +975,6 @@ export class MenuService {
                 name: item.name,
                 description: item.description,
                 image_url: item.imageUrl ?? null,
-                gallery_image_urls: galleryUrlsForApi(item),
                 price: base,
                 base_price: base,
                 category: item.category?.name ?? null,
@@ -1017,6 +1016,72 @@ export class MenuService {
                     })) ?? [],
             };
         });
+    }
+
+    /** Single tenant-brand menu item (includes gallery for consumer PDP). */
+    async getTenantMenuItem(tenantId: number, brandId: number, menuItemId: number) {
+        await this.assertBrandBelongsToTenant(brandId, tenantId);
+
+        const item = await this.itemRepo.findOne({
+            where: { id: menuItemId, brandId, isActive: true },
+            relations: [
+                'category',
+                'variants',
+                'addons',
+                'modifierGroups',
+                'modifierGroups.modifiers',
+            ],
+        });
+        if (!item || item.dealOnly) {
+            throw new NotFoundException('Menu item not found');
+        }
+
+        const base = Number(item.basePrice ?? 0);
+        return {
+            id: item.id,
+            name: item.name,
+            description: item.description,
+            image_url: item.imageUrl ?? null,
+            gallery_image_urls: galleryUrlsForApi(item),
+            price: base,
+            base_price: base,
+            category: item.category?.name ?? null,
+            category_id: item.categoryId ?? item.category?.id ?? null,
+            brand_id: item.brandId ?? null,
+            available_for_order_types: effectiveMenuOrderChannels(
+                item.availableForOrderTypes ?? null,
+            ),
+            variants: [...(item.variants ?? [])]
+                .sort(
+                    (a, b) =>
+                        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id,
+                )
+                .map((v) => ({
+                    id: v.id,
+                    name: v.name,
+                    price_modifier: Number(v.priceModifier),
+                    is_default: v.isDefault,
+                    sort_order: v.sortOrder ?? 0,
+                })),
+            addons:
+                item.addons?.map((a) => ({
+                    id: a.id,
+                    name: a.name,
+                    price: Number(a.price),
+                })) ?? [],
+            modifier_groups:
+                item.modifierGroups?.map((mg) => ({
+                    id: mg.id,
+                    name: mg.name,
+                    min_select: mg.minSelect,
+                    max_select: mg.maxSelect,
+                    modifiers: (mg.modifiers ?? []).map((m) => ({
+                        id: m.id,
+                        name: m.name,
+                        price: Number(m.price),
+                    })),
+                })) ?? [],
+        };
     }
 
     async findMenuItem(id: number) {
