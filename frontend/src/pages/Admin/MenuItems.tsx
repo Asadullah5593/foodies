@@ -52,6 +52,9 @@ const ORDER_CHANNELS = [
 ] as const;
 
 const MENU_ITEM_GALLERY_MAX = 12;
+/** Must match backend `MAX_UPLOAD_FILE_BYTES` in upload.constants.ts */
+const MENU_ITEM_UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
+const MENU_ITEM_UPLOAD_MAX_MB = 25;
 
 function channelsFromApiList(channels: string[] | undefined | null): {
   delivery: boolean;
@@ -302,6 +305,11 @@ const MenuItems: React.FC = () => {
   });
 
   const uploadFileToMenuItems = async (file: File): Promise<string> => {
+    if (file.size > MENU_ITEM_UPLOAD_MAX_BYTES) {
+      throw Object.assign(new Error('File too large'), {
+        response: { data: { message: `File too large. Maximum size is ${MENU_ITEM_UPLOAD_MAX_MB} MB.` } },
+      });
+    }
     const fd = new FormData();
     fd.append('file', file);
     fd.append('folder', 'menu-items');
@@ -876,6 +884,7 @@ const MenuItems: React.FC = () => {
                 <p className="text-xs text-gray-500 mt-0.5 mb-2">
                   <span className="font-medium text-gray-700">Where it appears:</span> POS menu grid, this admin list thumbnail, and the large hero on the consumer website. One image only.
                 </p>
+                <p className="text-xs text-gray-500 mb-2">Images are optimized for web on upload (max 1920px wide).</p>
                 <input id="edit-item-image-main" type="file" accept="image/*" onChange={(e) => handleMainImageInput(e, 'edit')} disabled={editImageUploading} className="hidden" />
                 <div
                   className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50/50 transition-colors hover:border-gray-400 hover:bg-gray-50"
@@ -905,7 +914,7 @@ const MenuItems: React.FC = () => {
                     </div>
                   ) : (
                     <label htmlFor="edit-item-image-main" className="flex flex-col items-center justify-center py-6 cursor-pointer text-center">
-                      <span className="text-gray-500 text-sm mb-1">PNG, JPEG, GIF or WebP · max 5MB</span>
+                      <span className="text-gray-500 text-sm mb-1">PNG, JPEG, GIF or WebP · max {MENU_ITEM_UPLOAD_MAX_MB} MB</span>
                       <span className="text-blue-600 font-medium text-sm">Click to upload or drag and drop</span>
                     </label>
                   )}
@@ -919,7 +928,7 @@ const MenuItems: React.FC = () => {
                   <span className="font-medium text-gray-700">Where they appear:</span> consumer website only — extra photos in a row or carousel under the main hero.{' '}
                   <span className="font-medium text-gray-700">Not used</span> as the POS tile (POS always uses the main image above).
                 </p>
-                <p className="text-xs text-gray-500 mb-2">Up to {MENU_ITEM_GALLERY_MAX} images. Order is left-to-right (same as slider order).</p>
+                <p className="text-xs text-gray-500 mb-2">Up to {MENU_ITEM_GALLERY_MAX} images. Order is left-to-right (same as slider order). Optimized on upload (max 1920px).</p>
                 <input id="edit-item-gallery" type="file" accept="image/*" multiple onChange={(e) => handleGalleryImageInput(e, 'edit')} disabled={editGalleryUploading} className="hidden" />
                 <div className="flex flex-wrap gap-2 mb-2">
                   {editFormData.gallery_image_urls.map((url, idx) => (
@@ -1146,6 +1155,7 @@ const MenuItems: React.FC = () => {
               <p className="text-xs text-gray-500 mt-0.5 mb-2">
                 <span className="font-medium text-gray-700">Where it appears:</span> POS menu grid, admin list thumbnail, consumer website hero. One image only.
               </p>
+              <p className="text-xs text-gray-500 mb-2">Images are optimized for web on upload (max 1920px wide).</p>
               <input id="create-item-image-main" type="file" accept="image/*" onChange={(e) => handleMainImageInput(e, 'create')} disabled={imageUploading} className="hidden" />
               <div
                 className="border-2 border-dashed border-gray-300 rounded-lg p-4 bg-gray-50/50 transition-colors hover:border-gray-400 hover:bg-gray-50"
@@ -1175,7 +1185,7 @@ const MenuItems: React.FC = () => {
                   </div>
                 ) : (
                   <label htmlFor="create-item-image-main" className="flex flex-col items-center justify-center py-6 cursor-pointer text-center">
-                    <span className="text-gray-500 text-sm mb-1">PNG, JPEG, GIF or WebP · max 5MB</span>
+                    <span className="text-gray-500 text-sm mb-1">PNG, JPEG, GIF or WebP · max {MENU_ITEM_UPLOAD_MAX_MB} MB</span>
                     <span className="text-blue-600 font-medium text-sm">Click to upload or drag and drop</span>
                   </label>
                 )}
@@ -1189,7 +1199,7 @@ const MenuItems: React.FC = () => {
                 <span className="font-medium text-gray-700">Where they appear:</span> consumer website only — under the main hero.{' '}
                 <span className="font-medium text-gray-700">Not used</span> as the POS tile.
               </p>
-              <p className="text-xs text-gray-500 mb-2">Up to {MENU_ITEM_GALLERY_MAX} images. Order = slider order.</p>
+              <p className="text-xs text-gray-500 mb-2">Up to {MENU_ITEM_GALLERY_MAX} images. Order = slider order. Optimized on upload (max 1920px).</p>
               <input id="create-item-gallery" type="file" accept="image/*" multiple onChange={(e) => handleGalleryImageInput(e, 'create')} disabled={galleryUploading} className="hidden" />
               <div className="flex flex-wrap gap-2 mb-2">
                 {formData.gallery_image_urls.map((url, idx) => (

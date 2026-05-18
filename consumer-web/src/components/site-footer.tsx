@@ -1,6 +1,7 @@
 "use client";
 
 import clsx from "clsx";
+import Link from "next/link";
 
 export function SiteFooter({ className }: { className?: string }) {
   return (
@@ -28,6 +29,17 @@ export function SiteFooter({ className }: { className?: string }) {
             ))}
           </div>
         </div>
+      </div>
+      <div className="flex flex-wrap gap-4 border-t border-white/10 px-6 py-4 text-sm text-white/70 md:px-10">
+        <Link href="/support.html" className="hover:text-white">
+          Support
+        </Link>
+        <Link href="/privacy-policy.html" className="hover:text-white">
+          Privacy policy
+        </Link>
+        <Link href="/terms-and-conditions.html" className="hover:text-white">
+          Terms
+        </Link>
       </div>
     </footer>
   );

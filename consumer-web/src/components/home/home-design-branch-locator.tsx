@@ -262,6 +262,9 @@ export function HomeDesignBranchLocator() {
           </span>
         </div>
         <div className="flex flex-wrap gap-4">
+          <Link href="/support.html" className="hover:text-white/80">
+            Support
+          </Link>
           <Link href="/privacy-policy.html" className="hover:text-white/80">
             Privacy policy
           </Link>

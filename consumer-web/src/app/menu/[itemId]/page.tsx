@@ -16,8 +16,16 @@ import clsx from "clsx";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { AppShell, Card } from "@/components/ui";
-import { getTenantBrands, getTenantMenuByBrand } from "@/lib/api/consumer";
+import {
+  getMenuItemDetail,
+  getTenantBrands,
+  getTenantMenuByBrand,
+  getTenantMenuItem,
+} from "@/lib/api/consumer";
 import { toImageUrl } from "@/lib/api/client";
+import { menuImageUrl } from "@/lib/menu-image-url";
+import { shouldUnoptimizeImage } from "@/lib/media-image";
+import { useMenuImageLoaded } from "@/lib/use-menu-image-loaded";
 import { orderRedirectConfig } from "@/lib/config/order-redirect";
 import { useSessionStore } from "@/lib/store/session-store";
 import type { Modifier, ModifierGroup, Variant } from "@/lib/api/types";
@@ -91,6 +99,13 @@ function ImageSkeleton({ className }: { className?: string }) {
   return <div className={clsx("absolute inset-0 animate-pulse bg-neutral-200", className)} aria-hidden />;
 }
 
+type GallerySlide = {
+  canonical: string;
+  displaySrc: string;
+  thumbSrc: string;
+  isPlaceholder: boolean;
+};
+
 /** Main hero + thumbnail strip (consumer PDP). Main image first, then gallery URLs from admin. */
 function ProductImageGallery({
   itemName,
@@ -102,14 +117,19 @@ function ProductImageGallery({
   galleryUrls?: string[];
 }) {
   const images = useMemo(() => {
-    const out: { src: string; isPlaceholder: boolean }[] = [];
+    const out: GallerySlide[] = [];
     const seen = new Set<string>();
     const push = (raw: string | null | undefined, isPlaceholder = false) => {
       if (!raw?.trim()) return;
-      const src = isPlaceholder ? raw : toImageUrl(raw);
-      if (seen.has(src)) return;
-      seen.add(src);
-      out.push({ src, isPlaceholder });
+      const canonical = isPlaceholder ? raw : toImageUrl(raw);
+      if (seen.has(canonical)) return;
+      seen.add(canonical);
+      out.push({
+        canonical,
+        displaySrc: isPlaceholder ? canonical : menuImageUrl(canonical, "display"),
+        thumbSrc: isPlaceholder ? canonical : menuImageUrl(canonical, "thumb"),
+        isPlaceholder,
+      });
     };
     push(imageUrl?.trim() ? imageUrl : null);
     for (const g of galleryUrls ?? []) push(g);
@@ -118,7 +138,6 @@ function ProductImageGallery({
   }, [galleryUrls, imageUrl, itemName]);
 
   const [activeIdx, setActiveIdx] = useState(0);
-  const [heroLoadedSrc, setHeroLoadedSrc] = useState<string | null>(null);
   const thumbStripRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef({ active: false, startX: 0, scrollLeft: 0, moved: false });
 
@@ -132,13 +151,34 @@ function ProductImageGallery({
     return { flex: `0 0 ${slot}`, width: slot, minWidth: slot } as const;
   }, []);
 
-  const heroLoaded = active.isPlaceholder || heroLoadedSrc === active.src;
+  const {
+    loaded: heroLoaded,
+    markLoaded: markHeroLoaded,
+    imgRef: heroImgRef,
+  } = useMenuImageLoaded(active.displaySrc, active.isPlaceholder);
 
   useEffect(() => {
     if (!showStrip) return;
     const el = thumbStripRef.current?.children[clampedIdx] as HTMLElement | undefined;
     el?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [clampedIdx, showStrip]);
+
+  useEffect(() => {
+    const links: HTMLLinkElement[] = [];
+    for (const offset of [-1, 1]) {
+      const slide = images[clampedIdx + offset];
+      if (!slide || slide.isPlaceholder) continue;
+      const link = document.createElement("link");
+      link.rel = "prefetch";
+      link.as = "image";
+      link.href = slide.displaySrc;
+      document.head.appendChild(link);
+      links.push(link);
+    }
+    return () => {
+      for (const link of links) link.remove();
+    };
+  }, [clampedIdx, images]);
 
   const scrollStripByPage = (dir: -1 | 1) => {
     const el = thumbStripRef.current;
@@ -180,24 +220,19 @@ function ProductImageGallery({
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3 }}
       >
-        <div className="relative aspect-[4/3] w-full" key={active.src}>
+        <div className="relative aspect-[4/3] w-full" key={active.displaySrc}>
           {!heroLoaded ? <ImageSkeleton /> : null}
-          <motion.div
-            className="relative h-full w-full"
-            animate={{ opacity: heroLoaded ? 1 : 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <Image
-              src={active.src}
-              alt={itemName}
-              fill
-              unoptimized={active.isPlaceholder}
-              className={active.isPlaceholder ? "object-contain" : "object-cover"}
-              sizes="(max-width: 1024px) 100vw, 50vw"
-              priority
-              onLoad={() => setHeroLoadedSrc(active.src)}
-            />
-          </motion.div>
+          <Image
+            ref={heroImgRef}
+            src={active.displaySrc}
+            alt={itemName}
+            fill
+            unoptimized={shouldUnoptimizeImage(active.displaySrc)}
+            className={active.isPlaceholder ? "object-contain" : "object-cover"}
+            sizes="(max-width: 1024px) 100vw, 50vw"
+            priority
+            onLoad={markHeroLoaded}
+          />
         </div>
       </motion.div>
 
@@ -237,7 +272,7 @@ function ProductImageGallery({
           >
             {images.map((img, idx) => (
               <ThumbSlot
-                key={`${img.src}-${idx}`}
+                key={img.canonical}
                 img={img}
                 selected={idx === clampedIdx}
                 index={idx}
@@ -272,7 +307,7 @@ function ThumbSlot({
   stripRef,
   onSelect,
 }: {
-  img: { src: string; isPlaceholder: boolean };
+  img: GallerySlide;
   selected: boolean;
   index: number;
   total: number;
@@ -280,7 +315,11 @@ function ThumbSlot({
   stripRef: React.RefObject<HTMLDivElement | null>;
   onSelect: () => void;
 }) {
-  const [loaded, setLoaded] = useState(img.isPlaceholder);
+  const [thumbSrc, setThumbSrc] = useState(img.thumbSrc);
+  const { loaded, markLoaded, imgRef } = useMenuImageLoaded(
+    thumbSrc,
+    img.isPlaceholder,
+  );
   const pointerRef = useRef({ startX: 0, scrollLeft: 0, moved: false });
 
   const onThumbPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -317,7 +356,7 @@ function ThumbSlot({
       data-thumb-slot
       style={slotStyle}
       className={clsx(
-        "relative aspect-square shrink-0 overflow-hidden rounded-xl border-2 transition",
+        "relative aspect-square shrink-0 overflow-hidden rounded-xl border-2 bg-neutral-100 transition",
         selected ? "border-red-600 shadow-sm" : "border-transparent opacity-80 hover:opacity-100",
       )}
       aria-label={`Show image ${index + 1} of ${total}`}
@@ -329,14 +368,23 @@ function ThumbSlot({
     >
       {!loaded ? <ImageSkeleton className="rounded-xl" /> : null}
       <Image
-        src={img.src}
+        ref={imgRef}
+        src={thumbSrc}
         alt=""
         fill
-        unoptimized={img.isPlaceholder}
-        className={clsx(img.isPlaceholder ? "object-contain" : "object-cover", !loaded && "opacity-0")}
+        unoptimized={shouldUnoptimizeImage(thumbSrc)}
+        loading="eager"
+        className={img.isPlaceholder ? "object-contain" : "object-cover"}
         sizes="(max-width: 1024px) 25vw, 120px"
         draggable={false}
-        onLoad={() => setLoaded(true)}
+        onLoad={markLoaded}
+        onError={() => {
+          if (thumbSrc !== img.canonical) {
+            setThumbSrc(img.canonical);
+          } else {
+            markLoaded();
+          }
+        }}
       />
     </button>
   );
@@ -531,13 +579,13 @@ function PdpAccordion({
     <div
       className={clsx(
         "border-b border-neutral-200 last:border-b-0",
-        open && "border-l-2 border-l-red-600 pl-2 -ml-px bg-red-50/30",
+        open && "border-l-2 border-l-red-600 pl-2 bg-red-50/30",
       )}
     >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 py-2.5 pr-1 text-left transition hover:bg-neutral-50/80"
+        className="flex w-full items-center justify-between gap-2 px-1 py-2.5 text-left transition hover:bg-neutral-50/80"
         aria-expanded={open}
       >
         <span className="flex min-w-0 items-center gap-2">
@@ -601,6 +649,7 @@ function iconNode(kind: (typeof SERVICE_OPTIONS)[number]["icon"]): JSX.Element {
 export default function MenuItemDetailPage() {
   const params = useParams<{ itemId?: string | string[] }>();
   const selectedBrandId = useSessionStore((s) => s.selectedBrandId);
+  const selectedBranchId = useSessionStore((s) => s.selectedBranchId);
   const parsedParam = Array.isArray(params?.itemId) ? params.itemId[0] : params?.itemId;
   const itemId = Number(parsedParam);
   const itemIdValid = Number.isFinite(itemId) && itemId > 0;
@@ -623,11 +672,19 @@ export default function MenuItemDetailPage() {
     enabled: Boolean(selectedBrandId && itemIdValid),
   });
 
+  const itemDetailQuery = useQuery({
+    queryKey: ["menu-item-detail", itemId, selectedBrandId, selectedBranchId],
+    queryFn: () =>
+      selectedBranchId
+        ? getMenuItemDetail(itemId, selectedBranchId)
+        : getTenantMenuItem(selectedBrandId!, itemId),
+    enabled: Boolean(selectedBrandId && itemIdValid),
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+
   const allItems = useMemo(() => menuQuery.data ?? [], [menuQuery.data]);
-  const currentItem = useMemo(
-    () => allItems.find((entry) => entry.id === itemId) ?? null,
-    [allItems, itemId],
-  );
+  const currentItem = itemDetailQuery.data ?? null;
   const availableOrderChannels = useMemo(
     () => (currentItem ? itemAvailableOrderChannels(currentItem) : []),
     [currentItem],
@@ -848,7 +905,7 @@ export default function MenuItemDetailPage() {
               Go to menu
             </Link>
           </Card>
-        ) : menuQuery.isLoading ? (
+        ) : itemDetailQuery.isLoading ? (
           <section className="rounded-2xl border bg-white p-4 shadow-sm sm:p-6" style={{ borderColor: COLORS.line }}>
             <div className="animate-pulse space-y-5">
               <div className="h-4 w-72 rounded bg-neutral-200" />
@@ -960,7 +1017,7 @@ export default function MenuItemDetailPage() {
                   ) : null}
 
                   {hasVariants || hasModifierGroups || hasAddons ? (
-                    <div className="mt-6 overflow-hidden rounded-xl border border-neutral-200 bg-[var(--surface)]">
+                    <div className="mt-6 overflow-hidden rounded-xl border border-neutral-200 bg-[var(--surface)] px-2 sm:px-3">
                       {hasVariants ? (
                         <PdpAccordion
                           key={`${currentItem.id}-variants`}
@@ -1209,10 +1266,19 @@ export default function MenuItemDetailPage() {
                       <Link href={`/menu/${product.id}`} className="block">
                         <div className="relative aspect-[4/3] bg-neutral-100">
                           <Image
-                            src={product.image_url ? toImageUrl(product.image_url) : MENU_ITEM_PLACEHOLDER(product.name)}
+                            src={
+                              product.image_url
+                                ? menuImageUrl(toImageUrl(product.image_url), "thumb")
+                                : MENU_ITEM_PLACEHOLDER(product.name)
+                            }
                             alt={product.name}
                             fill
-                            unoptimized={!product.image_url}
+                            unoptimized={shouldUnoptimizeImage(
+                              product.image_url
+                                ? menuImageUrl(toImageUrl(product.image_url), "thumb")
+                                : MENU_ITEM_PLACEHOLDER(product.name),
+                            )}
+                            loading="lazy"
                             className={product.image_url ? "object-cover" : "object-contain"}
                             sizes="(max-width: 640px) 80vw, (max-width: 1024px) 50vw, 33vw"
                           />

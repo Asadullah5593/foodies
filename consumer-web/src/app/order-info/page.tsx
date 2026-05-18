@@ -7,6 +7,7 @@ import { orderRedirectConfig } from "@/lib/config/order-redirect";
 import { AppShell } from "@/components/ui";
 import { TopNav } from "@/components/top-nav";
 import { toImageUrl } from "@/lib/api/client";
+import { shouldUnoptimizeImage } from "@/lib/media-image";
 
 export default function OrderInfoPage() {
   const { appDeepLink } = orderRedirectConfig;
@@ -38,6 +39,7 @@ export default function OrderInfoPage() {
               src={orderRedirectConfig.bannerImageUrl}
               alt=""
               fill
+              unoptimized={shouldUnoptimizeImage(orderRedirectConfig.bannerImageUrl)}
               priority
               className="object-cover"
               sizes="(max-width: 768px) 100vw, 672px"

@@ -94,6 +94,20 @@ export async function getTenantMenuByBrand(brandId: number, search?: string) {
   return data;
 }
 
+export async function getTenantMenuItem(brandId: number, itemId: number) {
+  const tenantId = process.env.NEXT_PUBLIC_TENANT_ID;
+  const { data } = await apiClient.get<MenuItem>(
+    `/public/consumer/tenant/menu/items/${itemId}`,
+    {
+      params: {
+        tenant_id: tenantId || undefined,
+        brand_id: brandId,
+      },
+    },
+  );
+  return data;
+}
+
 export async function getMenuItemDetail(
   itemId: number,
   branchId: number,

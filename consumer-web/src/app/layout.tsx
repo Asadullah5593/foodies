@@ -9,6 +9,7 @@ import "./globals.css";
 import "leaflet/dist/leaflet.css";
 import { Providers } from "@/components/providers";
 import { RouteTransition } from "@/components/route-transition";
+import { getMediaOrigin } from "@/lib/media-image";
 
 // const geistSans = Geist({
 //   variable: "--font-geist-sans",
@@ -54,6 +55,8 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const mediaOrigin = getMediaOrigin();
+
   return (
     // <html
     //   lang="en"
@@ -79,6 +82,9 @@ export default function RootLayout({
       className={`${jakarta.variable} ${geistMono.variable} h-full antialiased`}
       data-theme="light"
     >
+      <head>
+        {mediaOrigin ? <link rel="preconnect" href={mediaOrigin} crossOrigin="anonymous" /> : null}
+      </head>
       <body className="min-h-full bg-[var(--background)] text-[var(--foreground)]">
         <Providers>
           <RouteTransition>{children}</RouteTransition>
