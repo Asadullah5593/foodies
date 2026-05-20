@@ -53,12 +53,7 @@ export class FirebaseService implements OnModuleInit {
         }
     }
 
-    private resolveServiceAccount(): admin.ServiceAccount | null {
-        const keyPath = process.env.FIREBASE_PRIVATE_KEY_PATH?.trim();
-        if (keyPath) {
-            return this.loadServiceAccountFromPath(keyPath);
-        }
-
+    private resolveFromEnvVars(): admin.ServiceAccount | null {
         const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
         const clientEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
         const privateKey = normalizeFirebasePrivateKey(
@@ -66,6 +61,18 @@ export class FirebaseService implements OnModuleInit {
         );
         if (!projectId || !clientEmail || !privateKey) return null;
         return { projectId, clientEmail, privateKey };
+    }
+
+    private resolveServiceAccount(): admin.ServiceAccount | null {
+        const keyPath = process.env.FIREBASE_PRIVATE_KEY_PATH?.trim();
+        if (keyPath) {
+            const fromFile = this.loadServiceAccountFromPath(keyPath);
+            if (fromFile) return fromFile;
+            this.logger.warn(
+                `Could not load Firebase credentials from ${keyPath}; falling back to FIREBASE_* env vars.`,
+            );
+        }
+        return this.resolveFromEnvVars();
     }
 
     onModuleInit() {
