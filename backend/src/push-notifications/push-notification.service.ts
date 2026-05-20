@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as admin from 'firebase-admin';
 import { Order } from '../entities/order.entity';
 import { FirebaseService } from '../firebase/firebase.service';
-import { OrderPushType } from './push-notification.types';
+import { OrderPushType, RiderPushScreen } from './push-notification.types';
 
 const CONSUMER_SOURCES = new Set(['consumer_app', 'consumer_web']);
 
@@ -50,6 +50,16 @@ export class PushNotificationService {
         void this.sendOrderUpdateSafe(order, type);
     }
 
+    /**
+     * Notify assigned rider (users/{riderUserId}/tokens). Default: open order detail.
+     */
+    notifyRiderNewAssignment(
+        order: Order,
+        screen: RiderPushScreen = 'rider_order_detail',
+    ): void {
+        void this.sendRiderAssignmentSafe(order, screen);
+    }
+
     private async sendOrderUpdateSafe(
         order: Order,
         type: OrderPushType,
@@ -70,20 +80,20 @@ export class PushNotificationService {
         return true;
     }
 
-    async getCustomerTokens(customerId: number): Promise<string[]> {
+    async getUserTokens(userId: number, label = 'user'): Promise<string[]> {
         const firestore = this.firebase.firestore;
         if (!firestore) return [];
 
         try {
             const snapshot = await firestore
                 .collection('users')
-                .doc(String(customerId))
+                .doc(String(userId))
                 .collection('tokens')
                 .get();
 
             if (snapshot.empty) {
                 this.logger.warn(
-                    `No notification tokens found for customer: ${customerId}`,
+                    `No notification tokens found for ${label}: ${userId}`,
                 );
                 return [];
             }
@@ -91,11 +101,15 @@ export class PushNotificationService {
             return snapshot.docs.map((doc) => doc.id);
         } catch (error) {
             this.logger.error(
-                `Error fetching tokens for customer ${customerId}`,
+                `Error fetching tokens for ${label} ${userId}`,
                 error instanceof Error ? error.stack : error,
             );
             return [];
         }
+    }
+
+    async getCustomerTokens(customerId: number): Promise<string[]> {
+        return this.getUserTokens(customerId, 'customer');
     }
 
     async sendOrderUpdate(order: Order, type: OrderPushType): Promise<void> {
@@ -171,8 +185,101 @@ export class PushNotificationService {
         }
     }
 
+    private async sendRiderAssignmentSafe(
+        order: Order,
+        screen: RiderPushScreen,
+    ): Promise<void> {
+        try {
+            await this.sendRiderAssignment(order, screen);
+        } catch (error) {
+            this.logger.error(
+                `Rider push failed for order ${order.id} (rider ${order.riderId})`,
+                error instanceof Error ? error.stack : error,
+            );
+        }
+    }
+
+    private shouldNotifyRider(order: Order): boolean {
+        return (
+            order.orderType === 'delivery' &&
+            order.riderId != null &&
+            order.riderId > 0
+        );
+    }
+
+    async sendRiderAssignment(
+        order: Order,
+        screen: RiderPushScreen = 'rider_order_detail',
+    ): Promise<void> {
+        if (!this.shouldNotifyRider(order)) return;
+
+        const messaging = this.firebase.messaging;
+        if (!messaging) return;
+
+        const riderUserId = order.riderId!;
+        const tokens = await this.getUserTokens(riderUserId, 'rider');
+        if (tokens.length === 0) return;
+
+        const title = 'New Order Assigned 🏍️';
+        const body =
+            screen === 'rider_order_detail'
+                ? `You have been assigned order #${order.id}. Tap to view details.`
+                : 'You have been assigned a new order.';
+
+        const data: Record<string, string> = { screen };
+        if (screen === 'rider_order_detail') {
+            data.orderId = String(order.id);
+        }
+
+        const messagePayload: admin.messaging.MulticastMessage = {
+            tokens,
+            notification: { title, body },
+            data,
+            android: {
+                priority: 'high',
+                notification: {
+                    channelId: 'foodies_notifications',
+                    sound: 'default',
+                },
+            },
+            apns: {
+                payload: {
+                    aps: {
+                        alert: { title, body },
+                        sound: 'default',
+                        badge: 1,
+                    },
+                },
+            },
+        };
+
+        const response = await messaging.sendEachForMulticast(messagePayload);
+        this.logger.log(
+            `FCM multicast rider assignment order ${order.id} → user ${riderUserId}: ${response.successCount} succeeded, ${response.failureCount} failed.`,
+        );
+
+        if (response.failureCount > 0) {
+            const tokensToRemove: string[] = [];
+            response.responses.forEach((res, index) => {
+                if (!res.success && res.error) {
+                    const errorCode = res.error.code;
+                    if (
+                        errorCode ===
+                            'messaging/registration-token-not-registered' ||
+                        errorCode === 'messaging/invalid-registration-token'
+                    ) {
+                        tokensToRemove.push(tokens[index]);
+                    }
+                }
+            });
+            if (tokensToRemove.length > 0) {
+                await this.removeStaleTokens(riderUserId, tokensToRemove);
+            }
+        }
+    }
+
     private async removeStaleTokens(
-        customerId: number,
+        userId: number,
         tokens: string[],
     ): Promise<void> {
         const firestore = this.firebase.firestore;
@@ -182,14 +289,14 @@ export class PushNotificationService {
         for (const token of tokens) {
             const tokenRef = firestore
                 .collection('users')
-                .doc(String(customerId))
+                .doc(String(userId))
                 .collection('tokens')
                 .doc(token);
             batch.delete(tokenRef);
         }
         await batch.commit();
         this.logger.log(
-            `Cleaned up ${tokens.length} stale tokens for customer ${customerId}`,
+            `Cleaned up ${tokens.length} stale tokens for user ${userId}`,
         );
     }
 }
