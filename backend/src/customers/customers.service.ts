@@ -321,20 +321,27 @@ export class CustomersService {
                 typeof consumer.email === 'string'
                     ? consumer.email.trim().toLowerCase()
                     : null;
+            if (absorbEmail) {
+                consumer.email = null;
+                await qr.manager.save(consumer);
+            }
             if (
                 absorbEmail &&
                 (!tenantCustomer.email ||
                     tenantCustomer.email.trim() === '')
             ) {
-                const emailTaken = await qr.manager.findOne(Customer, {
-                    where: { email: absorbEmail },
-                });
-                if (emailTaken && emailTaken.id !== tenantCustomerId) {
-                    throw new ConflictException(
-                        'Cannot merge: email already belongs to another customer',
-                    );
+                const emailTaken = await qr.manager
+                    .createQueryBuilder(Customer, 'c')
+                    .where('LOWER(TRIM(c.email)) = :email', {
+                        email: absorbEmail,
+                    })
+                    .andWhere('c.id != :tenantCustomerId', {
+                        tenantCustomerId,
+                    })
+                    .getOne();
+                if (!emailTaken) {
+                    tenantCustomer.email = absorbEmail;
                 }
-                tenantCustomer.email = absorbEmail;
             }
 
             if (!tenantCustomer.password && consumer.password) {

@@ -27,6 +27,7 @@ import { RiderDispatchState } from '../entities/rider-dispatch-state.entity';
 import { RiderAssignmentLedger } from '../entities/rider-assignment-ledger.entity';
 import { RiderOpsMetricsService } from '../rider-hrm/rider-ops-metrics.service';
 import { freshnessState, selectNextRoundRobin } from './dispatch.utils';
+import { PushNotificationService } from '../push-notifications/push-notification.service';
 
 @Injectable()
 export class OrdersService {
@@ -53,6 +54,7 @@ export class OrdersService {
         private inventoryConsumptionService: InventoryConsumptionService,
         private riderOpsMetrics: RiderOpsMetricsService,
         private dataSource: DataSource,
+        private pushNotificationService: PushNotificationService,
     ) {}
 
     private haversineKm(
@@ -329,6 +331,7 @@ export class OrdersService {
         const started = Date.now();
         const assignmentRequestId =
             options?.assignmentRequestId ?? `auto-${orderId}`;
+        let didAssign = false;
         await this.dataSource.transaction(async (manager) => {
             const existingLedger = await manager.findOne(
                 RiderAssignmentLedger,
@@ -406,6 +409,7 @@ export class OrdersService {
             order.deliveryStatus = 'accepted';
             order.deliveryFailedReason = null;
             await manager.save(order);
+            didAssign = true;
 
             state.lastAssignedRiderUserId = selectedRiderId;
             state.lastAssignedAt = new Date();
@@ -427,6 +431,17 @@ export class OrdersService {
             );
             this.riderOpsMetrics.inc('auto_assignment_success');
         });
+        if (didAssign) {
+            const order = await this.orderRepo.findOne({
+                where: { id: orderId },
+            });
+            if (order) {
+                this.pushNotificationService.notifyConsumerOrder(
+                    order,
+                    'rider_assigned',
+                );
+            }
+        }
         this.riderOpsMetrics.observe(
             'assignment_latency_ms',
             Date.now() - started,
@@ -1837,6 +1852,12 @@ export class OrdersService {
             await this.orderRepo.save(order);
         }
         await this.maybeAutoAssignDeliveryOnPreparing(order, previousStatus);
+        if (status === 'cancelled' && previousStatus !== 'cancelled') {
+            this.pushNotificationService.notifyConsumerOrder(
+                order,
+                'cancelled',
+            );
+        }
         return this.findForAdmin(id, tenantId);
     }
 
@@ -2148,6 +2169,7 @@ export class OrdersService {
         if (!riders.some((r) => r.id === riderId)) {
             throw new BadRequestException('Invalid rider for this tenant');
         }
+        const previousDeliveryStatus = order.deliveryStatus;
         order.riderId = riderId;
         order.deliveryStatus = 'accepted';
         order.deliveryFailedReason = null;
@@ -2161,6 +2183,12 @@ export class OrdersService {
             reasonCode: 'manual_assignment',
             reasonDetail: 'Assigned manually by admin',
         });
+        if (previousDeliveryStatus !== 'accepted') {
+            this.pushNotificationService.notifyConsumerOrder(
+                order,
+                'rider_assigned',
+            );
+        }
         return this.findForAdmin(orderId, tenantId, allowedBranchIds);
     }
 
@@ -2251,6 +2279,7 @@ export class OrdersService {
             );
         }
         for (const order of orders) {
+            const previousDeliveryStatus = order.deliveryStatus;
             order.riderId = riderId;
             order.deliveryStatus = 'accepted';
             order.deliveryFailedReason = null;
@@ -2264,6 +2293,12 @@ export class OrdersService {
                 reasonCode: 'manual_group_assignment',
                 reasonDetail: `Assigned manually for group ${orderGroupId}`,
             });
+            if (previousDeliveryStatus !== 'accepted') {
+                this.pushNotificationService.notifyConsumerOrder(
+                    order,
+                    'rider_assigned',
+                );
+            }
         }
         return {
             order_group_id: orderGroupId,
@@ -2488,6 +2523,7 @@ export class OrdersService {
             where: { id: orderId, riderId: riderUserId },
         });
         if (!order) throw new NotFoundException('Order not found');
+        const previousDeliveryStatus = order.deliveryStatus;
         const allowed = [
             'accepted',
             'picked_up',
@@ -2525,6 +2561,23 @@ export class OrdersService {
             );
         } else {
             await this.orderRepo.save(order);
+        }
+        if (
+            deliveryStatus === 'picked_up' &&
+            previousDeliveryStatus !== 'picked_up'
+        ) {
+            this.pushNotificationService.notifyConsumerOrder(
+                order,
+                'picked_up',
+            );
+        } else if (
+            deliveryStatus === 'delivered' &&
+            previousDeliveryStatus !== 'delivered'
+        ) {
+            this.pushNotificationService.notifyConsumerOrder(
+                order,
+                'delivered',
+            );
         }
         return this.findForRider(orderId, riderUserId);
     }

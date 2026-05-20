@@ -37,10 +37,12 @@ import { BranchesModule } from '../branches/branches.module';
 import { CustomersModule } from '../customers/customers.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { RiderHrmModule } from '../rider-hrm/rider-hrm.module';
+import { PushNotificationsModule } from '../push-notifications/push-notifications.module';
 
 @Module({
     imports: [
         AuthModule,
+        PushNotificationsModule,
         TypeOrmModule.forFeature([
             Order,
             OrderItem,

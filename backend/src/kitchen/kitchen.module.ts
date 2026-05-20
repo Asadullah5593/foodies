@@ -6,6 +6,7 @@ import { KitchenController } from './kitchen.controller';
 import { KitchenService } from './kitchen.service';
 import { ShiftsModule } from '../shifts/shifts.module';
 import { OrdersModule } from '../orders/orders.module';
+import { PushNotificationsModule } from '../push-notifications/push-notifications.module';
 
 @Module({
     imports: [
@@ -13,6 +14,7 @@ import { OrdersModule } from '../orders/orders.module';
         TypeOrmModule.forFeature([Order]),
         ShiftsModule,
         OrdersModule,
+        PushNotificationsModule,
     ],
     controllers: [KitchenController],
     providers: [KitchenService],

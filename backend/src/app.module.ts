@@ -30,6 +30,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { ProcurementModule } from './procurement/procurement.module';
 import { RecipesModule } from './recipes/recipes.module';
 import { RiderHrmModule } from './rider-hrm/rider-hrm.module';
+import { FirebaseModule } from './firebase/firebase.module';
 @Module({
     imports: [
         ConfigModule.forRoot({
@@ -53,6 +54,7 @@ import { RiderHrmModule } from './rider-hrm/rider-hrm.module';
             entities: [join(__dirname, '**', '*.entity{.ts,.js}')],
         }),
         ScheduleModule.forRoot(),
+        FirebaseModule,
         AuthModule,
         TenantsModule,
         BrandsModule,
