@@ -109,7 +109,7 @@ In Postman: use the **Authorization** tab, set Type to **Bearer Token**, and pas
 ```
 - **Notes:**
   - Idempotent: if the customer is already linked to a tenant, the API returns success.
-  - If the same phone already exists under the selected tenant, the API returns a conflict error (no silent merge).
+  - If the same phone already exists under the selected tenant, the consumer account is merged into the existing tenant customer (login profile + loyalty combined; JWT `sub` may change to the kept customer id).
 
 ### Login
 - **Endpoint:** `POST /api/public/consumer/auth/login`

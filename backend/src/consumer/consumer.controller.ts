@@ -37,6 +37,7 @@ import { LoyaltyService } from '../loyalty/loyalty.service';
 import { CustomersService } from '../customers/customers.service';
 import { PaymentsService } from '../payments/payments.service';
 import { CustomerJwtAuthGuard } from '../auth/customer-jwt-auth.guard';
+import { OptionalCustomerJwtAuthGuard } from '../auth/optional-customer-jwt-auth.guard';
 import { OtpService } from '../otp/otp.service';
 import { CartService } from '../cart/cart.service';
 import { MailService } from '../mail/mail.service';
@@ -813,6 +814,8 @@ export class ConsumerController {
     }
 
     @Post('orders')
+    @UseGuards(OptionalCustomerJwtAuthGuard)
+    @ApiBearerAuth()
     @ApiOperation({ summary: 'Place order' })
     @ApiBody({
         schema: {
@@ -921,7 +924,10 @@ export class ConsumerController {
     })
     async placeOrder(
         @Req()
-        req: { headers?: Record<string, string | string[] | undefined> },
+        req: {
+            user?: Customer | null;
+            headers?: Record<string, string | string[] | undefined>;
+        },
         @Body()
         dto: {
             branch_id: number;
@@ -949,7 +955,13 @@ export class ConsumerController {
     ) {
         const tenantId = await this.getTenantIdFromBranch(dto.branch_id);
         const source = this.resolveOrderSourceFromRequest(req);
-        return this.ordersService.createOrder(dto, tenantId, null, source);
+        return this.ordersService.createOrder(
+            dto,
+            tenantId,
+            null,
+            source,
+            req.user?.id ?? null,
+        );
     }
 
     @Get('orders')

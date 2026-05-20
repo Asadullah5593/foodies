@@ -9,6 +9,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { CustomersModule } from '../customers/customers.module';
 import { CustomerJwtStrategy } from './customer-jwt.strategy';
 import { CustomerJwtAuthGuard } from './customer-jwt-auth.guard';
+import { OptionalCustomerJwtAuthGuard } from './optional-customer-jwt-auth.guard';
 import { RoleAccessModule } from './role-access.module';
 
 @Module({
@@ -30,7 +31,13 @@ import { RoleAccessModule } from './role-access.module';
         JwtStrategy,
         CustomerJwtStrategy,
         CustomerJwtAuthGuard,
+        OptionalCustomerJwtAuthGuard,
     ],
-    exports: [AuthService, CustomerJwtAuthGuard, RoleAccessModule],
+    exports: [
+        AuthService,
+        CustomerJwtAuthGuard,
+        OptionalCustomerJwtAuthGuard,
+        RoleAccessModule,
+    ],
 })
 export class AuthModule {}
