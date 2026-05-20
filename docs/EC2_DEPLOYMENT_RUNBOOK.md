@@ -312,6 +312,65 @@ sudo systemctl reload nginx
 
 ---
 
+## Backend build failed after `npm audit fix` (corrupted `node_modules`)
+
+**Do not run `npm audit fix` on the EC2 production server.** It can leave `node_modules` half-updated (`ENOTEMPTY`) and break `nest build` with errors like `Cannot find module 'lodash/toArray'`.
+
+**Recovery** (run on EC2 while the app is briefly down):
+
+```bash
+cd ~/foodies/backend
+pm2 stop foodies-backend
+
+rm -rf node_modules
+npm install --legacy-peer-deps
+npm run build
+
+pm2 start foodies-backend --update-env
+# or: pm2 restart foodies-backend --update-env
+
+pm2 logs foodies-backend --lines 20
+```
+
+Confirm Firebase (if configured): log line `Firebase Admin SDK initialized successfully.`
+
+Use `npm ci` instead of `npm install` only if `package-lock.json` is committed and in sync with `package.json` on the server.
+
+---
+
+## Firebase credentials from mobile dev (text only, no JSON file)
+
+If you only have **project id**, **client email**, and **private key** as chat text (not a downloaded `.json`):
+
+1. Put them in `~/foodies/backend/.env`:
+
+```env
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxx@your-project.iam.gserviceaccount.com
+FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----\n"
+```
+
+Rules for `FIREBASE_PRIVATE_KEY`:
+
+- One line in `.env`, wrapped in **double quotes**.
+- Use literal `\n` between PEM lines (not real line breaks in the file).
+- Must include `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` (with spaces).
+- If mobile dev sent only the long base64 block, paste that alone — the build script adds BEGIN/END headers.
+
+2. **Either** rely on `.env` only (leave `FIREBASE_PRIVATE_KEY_PATH` unset), **or** generate a real JSON file on EC2:
+
+```bash
+cd ~/foodies/backend
+node scripts/build-firebase-service-account-json.mjs /home/ubuntu/secrets/firebase-service-account.json
+head -c 2 /home/ubuntu/secrets/firebase-service-account.json   # must print: {
+```
+
+3. `pm2 restart foodies-backend --update-env`
+
+**Do not** save raw PEM text into `firebase-service-account.json` — that file must be JSON starting with `{`.
+
+---
+
 ## Rollback (when a deploy breaks)
 
 ### Roll back to a previous Git commit
