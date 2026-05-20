@@ -440,6 +440,7 @@ export class OrdersService {
                     order,
                     'rider_assigned',
                 );
+                this.pushNotificationService.notifyRiderNewAssignment(order);
             }
         }
         this.riderOpsMetrics.observe(
@@ -2188,6 +2189,7 @@ export class OrdersService {
                 order,
                 'rider_assigned',
             );
+            this.pushNotificationService.notifyRiderNewAssignment(order);
         }
         return this.findForAdmin(orderId, tenantId, allowedBranchIds);
     }
@@ -2238,6 +2240,7 @@ export class OrdersService {
             reasonCode: 'manual_change',
             reasonDetail: 'Rider changed manually by admin',
         });
+        this.pushNotificationService.notifyRiderNewAssignment(order);
         return this.findForAdmin(orderId, tenantId, allowedBranchIds);
     }
 
@@ -2298,6 +2301,7 @@ export class OrdersService {
                     order,
                     'rider_assigned',
                 );
+                this.pushNotificationService.notifyRiderNewAssignment(order);
             }
         }
         return {
