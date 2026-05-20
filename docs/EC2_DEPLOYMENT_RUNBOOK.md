@@ -69,6 +69,76 @@ curl -sS http://127.0.0.1/api/ && echo
 
 ---
 
+## Consumer web (Next.js public site, port 3002)
+
+The public consumer site lives in `consumer-web/`. CI builds it on every merge, but **production deploy today only publishes the admin Vite SPA** to `/var/www/foodies`. To serve the consumer site (including the coming-soon gate) on your public domain:
+
+### 1. Environment variables (PM2)
+
+Create `consumer-web/.env.production.local` on the server (do not commit secrets):
+
+```bash
+COMING_SOON_ENABLED=true
+COMING_SOON_BYPASS_SECRET=<long-random-string>
+```
+
+Team preview URL (sets an httpOnly cookie, then full routes work):
+
+`https://<your-domain>/?preview=<COMING_SOON_BYPASS_SECRET>`
+
+To launch the full site later, set `COMING_SOON_ENABLED=false` and restart PM2.
+
+### 2. Build and run with PM2
+
+```bash
+cd ~/foodies/consumer-web
+npm ci
+npm run build
+pm2 start npm --name foodies-consumer --cwd ~/foodies/consumer-web -- start
+# Or after first setup:
+pm2 restart foodies-consumer
+```
+
+`next start` listens on **port 3002** (see `consumer-web/package.json`).
+
+### 3. Nginx: proxy public domain to consumer-web
+
+Example server block (adjust `server_name` and paths). Keep `/api` pointing at the Nest backend on `:3001`:
+
+```nginx
+location /api/ {
+    proxy_pass http://127.0.0.1:3001/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+
+location / {
+    proxy_pass http://127.0.0.1:3002;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Reload nginx after editing: `sudo nginx -t && sudo systemctl reload nginx`.
+
+### 4. Smoke test
+
+```bash
+curl -sI http://127.0.0.1:3002/ | head -n 5
+curl -sI http://127.0.0.1:3002/menu | head -n 5   # should redirect to /coming-soon when gate is on
+curl -sI http://127.0.0.1/ | head -n 5            # via nginx
+```
+
+Static legal pages (`/privacy-policy.html`, etc.) remain reachable without the preview cookie (served from `consumer-web/public/`).
+
+---
+
 ## Health checks (when something “doesn’t work”)
 
 Run on EC2:
