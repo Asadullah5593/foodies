@@ -6,6 +6,7 @@ import { Order } from '../entities/order.entity';
 import { Customer } from '../entities/customer.entity';
 import { LoyaltyTransaction } from '../entities/loyalty-transaction.entity';
 import { normalizePakistaniPhone } from '../utils/phone';
+import { CustomersService } from '../customers/customers.service';
 
 const DEFAULT_SPEND_PER_POINT = 1000;
 const DEFAULT_MIN_ORDER_TO_EARN = 1;
@@ -20,6 +21,7 @@ export class LoyaltyService {
         @InjectRepository(Customer) private customerRepo: Repository<Customer>,
         @InjectRepository(LoyaltyTransaction)
         private txRepo: Repository<LoyaltyTransaction>,
+        private customersService: CustomersService,
     ) {}
 
     private getSettings(tenant: Tenant) {
@@ -56,18 +58,15 @@ export class LoyaltyService {
         if (!customer && phone) {
             const normalized = normalizePakistaniPhone(phone);
             if (normalized) {
-                customer = await this.customerRepo.findOne({
-                    where: { tenantId: order.tenantId, phone: normalized },
-                });
-                if (!customer) {
-                    customer = await this.customerRepo.save(
-                        this.customerRepo.create({
-                            tenantId: order.tenantId,
-                            phone: normalized,
-                            name: order.customerName ?? 'Customer',
-                            loyaltyPointsBalance: 0,
-                        }),
-                    );
+                customer = await this.customersService.findOrCreateTenantCustomerForPhone(
+                    order.tenantId,
+                    normalized,
+                    order.customerName ?? 'Customer',
+                );
+                if (order.customerId == null) {
+                    await this.orderRepo.update(orderId, {
+                        customerId: customer.id,
+                    });
                 }
             }
         }

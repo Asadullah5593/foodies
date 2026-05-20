@@ -6,7 +6,7 @@ import {
     UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 import { Customer } from '../entities/customer.entity';
 import {
@@ -18,6 +18,7 @@ import {
 export class CustomersService {
     constructor(
         @InjectRepository(Customer) private repo: Repository<Customer>,
+        private dataSource: DataSource,
     ) {}
 
     /**
@@ -277,15 +278,178 @@ export class CustomersService {
     }
 
     /**
-     * One-time consumer tenant linking:
-     * - If customer already has tenantId, returns it (idempotent) unless different tenant requested.
-     * - Otherwise sets tenantId, after ensuring (tenantId, phone) is not already in use by another customer.
+     * Merge a consumer row (tenantId null) into an existing tenant-scoped customer.
+     * Reassigns FKs, combines loyalty balance, copies login profile fields, deletes consumer.
      */
-    async syncTenantForCustomer(
-        customerId: number,
+    async mergeConsumerIntoTenantCustomer(
+        consumerId: number,
+        tenantCustomerId: number,
+    ): Promise<Customer> {
+        if (consumerId === tenantCustomerId) {
+            const row = await this.repo.findOne({
+                where: { id: tenantCustomerId },
+            });
+            if (!row) throw new NotFoundException('Customer not found');
+            return row;
+        }
+
+        const qr = this.dataSource.createQueryRunner();
+        await qr.connect();
+        await qr.startTransaction();
+        try {
+            const consumer = await qr.manager.findOne(Customer, {
+                where: { id: consumerId },
+            });
+            const tenantCustomer = await qr.manager.findOne(Customer, {
+                where: { id: tenantCustomerId },
+            });
+            if (!consumer || !tenantCustomer) {
+                throw new NotFoundException('Customer not found');
+            }
+            if (consumer.tenantId != null) {
+                throw new BadRequestException(
+                    'Only consumer accounts can be merged into tenant customers',
+                );
+            }
+            if (tenantCustomer.tenantId == null) {
+                throw new BadRequestException(
+                    'Target customer must belong to a tenant',
+                );
+            }
+
+            const absorbEmail =
+                typeof consumer.email === 'string'
+                    ? consumer.email.trim().toLowerCase()
+                    : null;
+            if (
+                absorbEmail &&
+                (!tenantCustomer.email ||
+                    tenantCustomer.email.trim() === '')
+            ) {
+                const emailTaken = await qr.manager.findOne(Customer, {
+                    where: { email: absorbEmail },
+                });
+                if (emailTaken && emailTaken.id !== tenantCustomerId) {
+                    throw new ConflictException(
+                        'Cannot merge: email already belongs to another customer',
+                    );
+                }
+                tenantCustomer.email = absorbEmail;
+            }
+
+            if (!tenantCustomer.password && consumer.password) {
+                tenantCustomer.password = consumer.password;
+            }
+            if (
+                (!tenantCustomer.name || tenantCustomer.name.trim() === '') &&
+                consumer.name?.trim()
+            ) {
+                tenantCustomer.name = consumer.name.trim();
+            }
+            if (!tenantCustomer.profileImageUrl && consumer.profileImageUrl) {
+                tenantCustomer.profileImageUrl = consumer.profileImageUrl;
+            }
+            if (tenantCustomer.latitude == null && consumer.latitude != null) {
+                tenantCustomer.latitude = consumer.latitude;
+            }
+            if (tenantCustomer.longitude == null && consumer.longitude != null) {
+                tenantCustomer.longitude = consumer.longitude;
+            }
+            tenantCustomer.loyaltyPointsBalance =
+                (tenantCustomer.loyaltyPointsBalance || 0) +
+                (consumer.loyaltyPointsBalance || 0);
+            tenantCustomer.phone = normalizePakistaniPhone(consumer.phone)
+                ?? tenantCustomer.phone;
+
+            await qr.manager.save(tenantCustomer);
+
+            await qr.manager.query(
+                `UPDATE orders SET customer_id = $1 WHERE customer_id = $2`,
+                [tenantCustomerId, consumerId],
+            );
+            await qr.manager.query(
+                `UPDATE loyalty_transactions SET customer_id = $1 WHERE customer_id = $2`,
+                [tenantCustomerId, consumerId],
+            );
+            await qr.manager.query(
+                `UPDATE rider_order_ratings SET customer_id = $1 WHERE customer_id = $2`,
+                [tenantCustomerId, consumerId],
+            );
+            await qr.manager.query(
+                `UPDATE brand_order_ratings SET customer_id = $1 WHERE customer_id = $2`,
+                [tenantCustomerId, consumerId],
+            );
+            await qr.manager.query(
+                `DELETE FROM carts absorb
+                 WHERE absorb.customer_id = $2
+                   AND EXISTS (
+                     SELECT 1 FROM carts keep
+                     WHERE keep.customer_id = $1 AND keep.branch_id = absorb.branch_id
+                   )`,
+                [tenantCustomerId, consumerId],
+            );
+            await qr.manager.query(
+                `UPDATE carts SET customer_id = $1 WHERE customer_id = $2`,
+                [tenantCustomerId, consumerId],
+            );
+            await qr.manager.remove(consumer);
+
+            await qr.commitTransaction();
+            return (await this.repo.findOne({
+                where: { id: tenantCustomerId },
+            })) as Customer;
+        } catch (e) {
+            await qr.rollbackTransaction();
+            throw e;
+        } finally {
+            await qr.release();
+        }
+    }
+
+    /**
+     * Find or create tenant-scoped customer for a phone.
+     * Links an existing consumer account instead of creating a duplicate row.
+     */
+    async findOrCreateTenantCustomerForPhone(
+        tenantId: number,
+        phone: string,
+        name?: string | null,
+    ): Promise<Customer> {
+        const normalized = normalizePakistaniPhone(phone);
+        if (!normalized) {
+            throw new BadRequestException(
+                'Invalid Pakistani phone number. Use format: 03XXXXXXXXX (e.g. 03001234567)',
+            );
+        }
+
+        const existing = await this.repo.findOne({
+            where: { tenantId, phone: normalized },
+        });
+        if (existing) return existing;
+
+        const consumer = await this.findConsumerByPhone(normalized);
+        if (consumer) {
+            return this.linkConsumerToTenant(consumer.id, tenantId);
+        }
+
+        return this.repo.save(
+            this.repo.create({
+                tenantId,
+                phone: normalized,
+                name: name?.trim() || 'Customer',
+                loyaltyPointsBalance: 0,
+            }),
+        );
+    }
+
+    /**
+     * Link consumer to tenant, or merge into existing tenant row with same phone.
+     */
+    async linkConsumerToTenant(
+        consumerId: number,
         tenantId: number,
     ): Promise<Customer> {
-        const customer = await this.repo.findOne({ where: { id: customerId } });
+        const customer = await this.repo.findOne({ where: { id: consumerId } });
         if (!customer) throw new NotFoundException('Customer not found');
 
         if (customer.tenantId != null) {
@@ -306,8 +470,9 @@ export class CustomersService {
             where: { tenantId, phone },
         });
         if (existing && existing.id !== customer.id) {
-            throw new ConflictException(
-                'Another customer already exists for this phone in the selected tenant',
+            return this.mergeConsumerIntoTenantCustomer(
+                consumerId,
+                existing.id,
             );
         }
 
@@ -315,7 +480,54 @@ export class CustomersService {
         customer.phone = phone;
         await this.repo.save(customer);
         return (await this.repo.findOne({
-            where: { id: customerId },
+            where: { id: consumerId },
         })) as Customer;
+    }
+
+    /**
+     * Resolve customer id for a consumer order when the user is logged in.
+     */
+    async resolveCustomerIdForOrder(
+        tenantId: number,
+        phone: string,
+        loggedInCustomerId?: number | null,
+    ): Promise<number | null> {
+        const normalized = normalizePakistaniPhone(phone);
+        if (!normalized) return null;
+
+        const tenantCustomer = await this.findByPhone(tenantId, normalized);
+        if (tenantCustomer) return tenantCustomer.id;
+
+        if (loggedInCustomerId == null) return null;
+
+        const loggedIn = await this.findById(loggedInCustomerId);
+        if (!loggedIn) return null;
+
+        const loggedInPhone = normalizePakistaniPhone(loggedIn.phone);
+        if (loggedInPhone !== normalized) return null;
+
+        if (loggedIn.tenantId === tenantId) return loggedIn.id;
+
+        if (loggedIn.tenantId == null) {
+            const linked = await this.linkConsumerToTenant(
+                loggedIn.id,
+                tenantId,
+            );
+            return linked.id;
+        }
+
+        return null;
+    }
+
+    /**
+     * One-time consumer tenant linking:
+     * - If customer already has tenantId, returns it (idempotent) unless different tenant requested.
+     * - Merges into existing tenant customer when phone is already registered under that tenant.
+     */
+    async syncTenantForCustomer(
+        customerId: number,
+        tenantId: number,
+    ): Promise<Customer> {
+        return this.linkConsumerToTenant(customerId, tenantId);
     }
 }

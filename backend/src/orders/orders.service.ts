@@ -563,6 +563,7 @@ export class OrdersService {
         tenantId: number,
         createdBy: number | null,
         source: 'pos' | 'consumer_app' | 'consumer_web' = 'pos',
+        loggedInCustomerId: number | null = null,
     ) {
         const tenant = await this.tenantRepo.findOne({
             where: { id: tenantId },
@@ -881,6 +882,18 @@ export class OrdersService {
                 customerPhoneNormalized,
             );
             if (customer) customerId = customer.id;
+        }
+        if (
+            customerId == null &&
+            customerPhoneNormalized &&
+            loggedInCustomerId != null &&
+            (source === 'consumer_app' || source === 'consumer_web')
+        ) {
+            customerId = await this.customersService.resolveCustomerIdForOrder(
+                tenantId,
+                customerPhoneNormalized,
+                loggedInCustomerId,
+            );
         }
 
         let loyaltyDiscountAmount = 0;
