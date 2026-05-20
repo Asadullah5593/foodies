@@ -33,12 +33,20 @@ BEGIN
         FROM customers c
         WHERE c.id = r.consumer_id;
 
+        -- Free the global unique email slot (consumer row still holds it until deleted).
+        IF v_consumer_email IS NOT NULL THEN
+            UPDATE customers
+            SET email = NULL, updated_at = NOW()
+            WHERE id = r.consumer_id;
+        END IF;
+
         v_email_taken := false;
         IF v_consumer_email IS NOT NULL THEN
             SELECT EXISTS (
                 SELECT 1 FROM customers other
-                WHERE LOWER(TRIM(other.email)) = v_consumer_email
-                  AND other.id NOT IN (r.consumer_id, r.tenant_customer_id)
+                WHERE other.email IS NOT NULL
+                  AND LOWER(TRIM(other.email)) = v_consumer_email
+                  AND other.id <> r.tenant_customer_id
             ) INTO v_email_taken;
         END IF;
 
@@ -51,8 +59,7 @@ BEGIN
         SET
             email = CASE
                 WHEN NULLIF(TRIM(t.email), '') IS NOT NULL THEN t.email
-                WHEN v_consumer_email IS NULL THEN t.email
-                WHEN v_email_taken THEN t.email
+                WHEN v_consumer_email IS NULL OR v_email_taken THEN t.email
                 ELSE v_consumer_email
             END,
             password = COALESCE(t.password, c.password),

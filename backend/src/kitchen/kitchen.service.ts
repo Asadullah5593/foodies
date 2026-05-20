@@ -8,6 +8,7 @@ import { Repository } from 'typeorm';
 import { Order } from '../entities/order.entity';
 import { ShiftsService } from '../shifts/shifts.service';
 import { OrdersService } from '../orders/orders.service';
+import { PushNotificationService } from '../push-notifications/push-notification.service';
 
 /** Statuses shown on KDS (includes 'placed' so new orders appear immediately). */
 const KITCHEN_STATUSES = [
@@ -24,6 +25,7 @@ export class KitchenService {
         @InjectRepository(Order) private orderRepo: Repository<Order>,
         private shiftsService: ShiftsService,
         private ordersService: OrdersService,
+        private pushNotificationService: PushNotificationService,
     ) {}
 
     async listOrders(
@@ -132,6 +134,12 @@ export class KitchenService {
             id,
             previousStatus,
         );
+        if (status === 'accepted' && previousStatus !== 'accepted') {
+            this.pushNotificationService.notifyConsumerOrder(
+                order,
+                'kitchen_accepted',
+            );
+        }
         return this.getOrder(id, branchId);
     }
 
