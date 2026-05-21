@@ -12,5 +12,5 @@ export default function ComingSoonLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  return children;
+  return <div className="h-dvh w-full overflow-hidden bg-[#f5f5f0]">{children}</div>;
 }
