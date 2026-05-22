@@ -19,7 +19,10 @@ const STEPS = [
   },
 ] as const;
 
-function StepIcon({ type }: { type: (typeof STEPS)[number]["icon"] }) {
+type StepIconType = (typeof STEPS)[number]["icon"];
+
+function StepIcon({ type, size }: { type: StepIconType; size: "mobile" | "desktop" }) {
+  const iconClass = size === "mobile" ? "h-8 w-8 text-zinc-900" : "h-11 w-11 text-zinc-900";
   const common = {
     fill: "none",
     stroke: "currentColor",
@@ -29,7 +32,7 @@ function StepIcon({ type }: { type: (typeof STEPS)[number]["icon"] }) {
   };
   if (type === "download") {
     return (
-      <svg viewBox="0 0 24 24" className="h-11 w-11 text-zinc-900" aria-hidden>
+      <svg viewBox="0 0 24 24" className={iconClass} aria-hidden>
         <rect x="7" y="2" width="10" height="16" rx="2" {...common} />
         <path {...common} d="M12 6v8M9 11l3 3 3-3" />
       </svg>
@@ -37,7 +40,7 @@ function StepIcon({ type }: { type: (typeof STEPS)[number]["icon"] }) {
   }
   if (type === "store") {
     return (
-      <svg viewBox="0 0 24 24" className="h-11 w-11 text-zinc-900" aria-hidden>
+      <svg viewBox="0 0 24 24" className={iconClass} aria-hidden>
         <path {...common} d="M3 10l9-6 9 6" />
         <path {...common} d="M4 10v10h16V10" />
         <path {...common} d="M9 20v-6h6v6" />
@@ -46,7 +49,7 @@ function StepIcon({ type }: { type: (typeof STEPS)[number]["icon"] }) {
     );
   }
   return (
-    <svg viewBox="0 0 24 24" className="h-11 w-11 text-zinc-900" aria-hidden>
+    <svg viewBox="0 0 24 24" className={iconClass} aria-hidden>
       <circle cx="6" cy="17" r="2" {...common} />
       <circle cx="18" cy="17" r="2" {...common} />
       <path {...common} d="M4 17h2l2-8h8l2 8h2M8 9l1-4h6l1 4" />
@@ -54,62 +57,79 @@ function StepIcon({ type }: { type: (typeof STEPS)[number]["icon"] }) {
   );
 }
 
-function StepIconCircle({ type }: { type: (typeof STEPS)[number]["icon"] }) {
+function MobileStepRow({ step }: { step: (typeof STEPS)[number] }) {
   return (
-    <div className="relative z-10 grid h-20 w-20 place-items-center rounded-full bg-rose-50 sm:h-[5.25rem] sm:w-[5.25rem]">
-      <StepIcon type={type} />
-    </div>
+    <article className="flex items-start gap-3.5">
+      <div className="relative z-10 grid h-14 w-14 shrink-0 place-items-center rounded-full bg-rose-50">
+        <StepIcon type={step.icon} size="mobile" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-red-600 text-xs font-bold text-white">
+            {step.n}
+          </span>
+          <h3 className="text-sm font-bold leading-snug text-zinc-900">{step.title}</h3>
+        </div>
+        <p className="mt-1.5 text-xs leading-snug text-zinc-600">{step.body}</p>
+      </div>
+    </article>
   );
 }
 
-function StepCopy({ step }: { step: (typeof STEPS)[number] }) {
+function DesktopStepColumn({ step, index }: { step: (typeof STEPS)[number]; index: number }) {
   return (
-    <>
-      <div className="flex items-center gap-2.5">
-        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-red-600 text-sm font-bold text-white">
-          {step.n}
-        </span>
-        <h3 className="text-base font-bold leading-snug text-zinc-900 sm:text-lg">{step.title}</h3>
+    <article className="relative min-w-0">
+      {index < STEPS.length - 1 ? (
+        <div
+          className="pointer-events-none absolute top-[2.625rem] z-0 h-0 border-t border-dashed border-zinc-300"
+          style={{
+            left: "calc(50% + 2.625rem)",
+            right: "calc(-50% - 0.75rem)",
+          }}
+          aria-hidden
+        />
+      ) : null}
+
+      <div className="flex justify-center">
+        <div className="relative z-10 grid h-[5.25rem] w-[5.25rem] shrink-0 place-items-center rounded-full bg-rose-50">
+          <StepIcon type={step.icon} size="desktop" />
+        </div>
       </div>
-      <p className="mt-2 pl-[2.375rem] text-sm leading-relaxed text-zinc-600">{step.body}</p>
-    </>
+
+      <div className="mt-8 flex flex-col items-center text-center">
+        <div className="flex items-center justify-center gap-2.5">
+          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-red-600 text-sm font-bold text-white">
+            {step.n}
+          </span>
+          <h3 className="text-base font-bold leading-snug text-zinc-900">{step.title}</h3>
+        </div>
+        <p className="mt-2 max-w-[16rem] text-sm leading-relaxed text-zinc-600">{step.body}</p>
+      </div>
+    </article>
   );
 }
 
 export function OrderInfoHowItWorks() {
   return (
-    <section className="mb-6 rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] py-10 shadow-sm sm:py-14">
-      <div className="px-6 sm:px-8">
-        <p className="text-center text-xs font-bold uppercase tracking-[0.25em] text-red-600">
+    <section className="mb-6 rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] py-8 shadow-sm md:py-14">
+      <div className="px-4 md:px-8">
+        <p className="text-center text-[10px] font-bold uppercase tracking-[0.22em] text-red-600 md:text-xs md:tracking-[0.25em]">
           How it works
         </p>
-        <h2 className="mt-3 text-center text-3xl font-black text-zinc-900 sm:text-4xl">
+        <h2 className="mt-2 text-center text-2xl font-black text-zinc-900 md:mt-3 md:text-4xl">
           Ordering Made Simple
         </h2>
 
-        <div className="mx-auto mt-12 max-w-5xl sm:mt-14">
-          <div className="grid gap-12 sm:grid-cols-3 sm:gap-6 lg:gap-10">
+        <div className="mx-auto mt-8 max-w-5xl md:mt-14">
+          <div className="flex flex-col gap-6 md:hidden">
+            {STEPS.map((step) => (
+              <MobileStepRow key={step.n} step={step} />
+            ))}
+          </div>
+
+          <div className="hidden md:grid md:grid-cols-3 md:gap-x-8 lg:gap-x-12">
             {STEPS.map((step, index) => (
-              <article key={step.n} className="relative">
-                {index < STEPS.length - 1 ? (
-                  <div
-                    className="pointer-events-none absolute top-10 z-0 hidden h-0 border-t border-dashed border-zinc-300 sm:top-[2.625rem] sm:block"
-                    style={{
-                      left: "calc(50% + 2.625rem)",
-                      right: "calc(-50% - 0.75rem)",
-                    }}
-                    aria-hidden
-                  />
-                ) : null}
-
-                <div className="flex justify-center sm:justify-center">
-                  <StepIconCircle type={step.icon} />
-                </div>
-
-                <div className="mt-6 sm:mt-8">
-                  <StepCopy step={step} />
-                </div>
-              </article>
+              <DesktopStepColumn key={step.n} step={step} index={index} />
             ))}
           </div>
         </div>

@@ -6,7 +6,7 @@ import clsx from "clsx";
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-      <div className="mx-auto w-full max-w-screen-2xl px-3 py-5 sm:px-4 md:px-6">
+      <div className="mx-auto w-full max-w-screen-2xl px-3 py-3 sm:px-4 md:px-6 md:py-5">
         {children}
       </div>
     </div>

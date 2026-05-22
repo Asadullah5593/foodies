@@ -8,7 +8,7 @@ export function SiteHeader() {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <header className="relative mb-6 rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] px-5 py-4 shadow-sm">
+    <header className="relative mb-4 rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] px-4 py-3 shadow-sm md:mb-6 md:px-5 md:py-4">
       <div className="flex items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}

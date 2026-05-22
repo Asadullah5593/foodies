@@ -9,6 +9,27 @@ const env = (key: string, fallback: string) =>
 const defaultHeroLine1 = "Better Food.";
 const defaultHeroLine2 = "Better Experience.";
 const defaultHeroHighlight = "Only on Foodies App.";
+
+/** Split legacy single-line hero env into line1 + line2 so SSR and client match. */
+function resolveHeroLines(): { heroLine1: string; heroLine2: string } {
+  const raw1 = env("NEXT_PUBLIC_ORDER_HERO_LINE1", defaultHeroLine1).trim();
+  const raw2 = env("NEXT_PUBLIC_ORDER_HERO_LINE2", "").trim();
+  if (raw2) return { heroLine1: raw1, heroLine2: raw2 };
+
+  const needle = defaultHeroLine2.trim();
+  const idx = raw1.indexOf(needle);
+  if (idx > 0) {
+    const before = raw1.slice(0, idx).trim();
+    const after = raw1.slice(idx).trim();
+    if (before && after) {
+      return { heroLine1: before, heroLine2: after };
+    }
+  }
+
+  return { heroLine1: raw1, heroLine2: defaultHeroLine2 };
+}
+
+const heroLines = resolveHeroLines();
 const defaultHeroSubtitle =
   "Skip the line and order faster. Exclusive app-only offers, real-time order tracking, and a lot more.";
 const defaultDownloadTitle = "Get the Foodies App Now";
@@ -28,8 +49,8 @@ export const orderRedirectConfig = {
 
   pageTitle: env("NEXT_PUBLIC_ORDER_PAGE_TITLE", "Foodies App"),
 
-  heroLine1: env("NEXT_PUBLIC_ORDER_HERO_LINE1", defaultHeroLine1),
-  heroLine2: env("NEXT_PUBLIC_ORDER_HERO_LINE2", defaultHeroLine2),
+  heroLine1: heroLines.heroLine1,
+  heroLine2: heroLines.heroLine2,
   heroHighlight: env("NEXT_PUBLIC_ORDER_HERO_HIGHLIGHT", defaultHeroHighlight),
   heroSubtitle: env(
     "NEXT_PUBLIC_ORDER_HERO_SUBTITLE",
