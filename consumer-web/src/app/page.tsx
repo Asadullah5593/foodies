@@ -57,8 +57,9 @@ export default function Home() {
       <motion.section initial={false} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
         <SiteHeader />
 
-        <section className="relative overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] shadow-sm">
-          <div className="absolute inset-0">
+        <section className="relative overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] shadow-sm md:min-h-[360px]">
+          {/* Desktop: full-bleed background (unchanged) */}
+          <div className="absolute inset-0 hidden md:block">
             <Image
               src="/Banner.jpg.jpeg"
               alt=""
@@ -70,21 +71,25 @@ export default function Home() {
             <div className="absolute inset-0 bg-gradient-to-r from-white/50 via-white/40 to-white/10" />
           </div>
 
-          <div className="relative z-10 px-6 py-10 md:px-10 md:py-14">
+          {/* Mobile: text on solid surface — no overlap with food photo */}
+          <div className="relative z-10 bg-[var(--surface)] px-4 pb-4 pt-6 md:bg-transparent md:px-10 md:py-14">
             <div className="max-w-xl">
               <div className="flex items-center gap-3">
-                <span className="h-[2px] w-10 rounded-full bg-red-600" aria-hidden="true" />
-                <p className="text-xs font-black uppercase tracking-[0.24em] text-red-600">Welcome to</p>
+                <span className="h-[2px] w-8 rounded-full bg-red-600 md:w-10" aria-hidden="true" />
+                <p className="text-[10px] font-black uppercase tracking-[0.24em] text-red-600 md:text-xs">
+                  Welcome to
+                </p>
               </div>
-              <h1 className="mt-3 text-4xl font-black leading-[0.92] tracking-tight text-[var(--foreground)] md:text-6xl">
+              <h1 className="mt-3 text-3xl font-black leading-[0.92] tracking-tight text-[var(--foreground)] md:text-6xl">
                 FOODIES
                 <br />
                 <span className="text-red-600">FOOD COURT</span>
               </h1>
-              <p className="mt-4 text-sm text-[var(--muted)] md:text-base">
+              <p className="mt-3 text-sm leading-relaxed text-[var(--muted)] md:mt-4 md:text-base">
                 A world of flavors, under one roof. Choose your favorite brand and enjoy a delicious experience.
               </p>
-              <div className="mt-7">
+              {/* Desktop: button stays under copy */}
+              <div className="mt-5 hidden md:mt-7 md:block">
                 <Button
                   type="button"
                   className="rounded-full bg-zinc-900 px-6 py-3 text-sm font-black uppercase tracking-wide text-white hover:bg-zinc-800"
@@ -115,11 +120,56 @@ export default function Home() {
               </div>
             </div>
           </div>
+
+          {/* Mobile: food image, then CTA below */}
+          <div className="relative h-44 w-full shrink-0 overflow-hidden md:hidden">
+            <Image
+              src="/Banner.jpg.jpeg"
+              alt=""
+              fill
+              sizes="100vw"
+              className="object-cover object-center"
+            />
+            <div
+              className="absolute inset-x-0 top-0 h-12 bg-gradient-to-b from-[var(--surface)] to-transparent"
+              aria-hidden
+            />
+          </div>
+
+          <div className="bg-[var(--surface)] px-4 pb-6 pt-4 md:hidden">
+            <Button
+              type="button"
+              className="w-full rounded-full bg-zinc-900 px-6 py-3.5 text-sm font-black uppercase tracking-wide text-white hover:bg-zinc-800"
+              onClick={() => document.getElementById("choose-brand")?.scrollIntoView({ behavior: "smooth" })}
+            >
+              <span className="inline-flex items-center justify-center gap-3">
+                <span className="grid h-10 w-10 place-items-center rounded-full border border-white/20 bg-white/10">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="22"
+                    height="22"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                    className="text-white"
+                  >
+                    <path d="M16.5 7.5 14.25 14.25 7.5 16.5l2.25-6.75z" />
+                    <circle cx="12" cy="12" r="10" />
+                  </svg>
+                </span>
+                Choose your brand
+              </span>
+            </Button>
+          </div>
         </section>
 
-        <section id="choose-brand" className="mt-12">
+        <section id="choose-brand" className="mt-8 md:mt-12">
           <div className="text-center">
-            <div className="mx-auto grid h-14 w-14 place-items-center">
+            <div className="mx-auto grid h-12 w-12 place-items-center md:h-14 md:w-14">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 width="54"
@@ -162,9 +212,11 @@ export default function Home() {
               </svg>
             </div>
             <p className="mt-3 text-xs font-black uppercase tracking-[0.24em] text-red-600">Choose your favorite</p>
-            <h2 className="mt-2 text-4xl font-black tracking-tight text-[var(--foreground)]">BRAND</h2>
-            <div className="mx-auto mt-2 h-[3px] w-12 rounded-full bg-red-600" aria-hidden="true" />
-            <p className="mt-3 text-sm text-[var(--muted)]">Select a brand below to explore the menu and place your order</p>
+            <h2 className="mt-2 text-3xl font-black tracking-tight text-[var(--foreground)] md:text-4xl">BRAND</h2>
+            <div className="mx-auto mt-2 h-[3px] w-10 rounded-full bg-red-600 md:w-12" aria-hidden="true" />
+            <p className="mt-2 px-2 text-sm text-[var(--muted)] md:mt-3 md:px-0">
+              Select a brand below to explore the menu and place your order
+            </p>
           </div>
 
           {brandsQuery.isLoading ? (
@@ -182,13 +234,13 @@ export default function Home() {
           ) : null}
 
           {topBrands.length ? (
-            <div className="mt-10 grid gap-5 md:grid-cols-3">
+            <div className="mt-6 grid gap-4 md:mt-10 md:grid-cols-3 md:gap-5">
               {topBrands.map((b) => (
                 <div
                   key={b.id}
                   className="overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] shadow-sm"
                 >
-                  <div className="relative h-44 bg-[var(--surface-2)]">
+                  <div className="relative h-28 bg-[var(--surface-2)] md:h-44">
                     <Image
                       src="/Banner_02.jpg.jpeg"
                       alt=""
@@ -197,8 +249,8 @@ export default function Home() {
                       className="object-cover opacity-90"
                     />
                   </div>
-                  <div className="relative -mt-10 px-6 pb-6">
-                    <div className="relative mx-auto h-40 w-40 rounded-full border border-[var(--border-soft)] bg-white p-3 shadow-sm">
+                  <div className="relative -mt-8 px-4 pb-5 md:-mt-10 md:px-6 md:pb-6">
+                    <div className="relative mx-auto h-28 w-28 rounded-full border border-[var(--border-soft)] bg-white p-2 shadow-sm md:h-40 md:w-40 md:p-3">
                       {b.logo_url ? (
                         <Image
                           src={toImageUrl(b.logo_url)}
@@ -214,7 +266,9 @@ export default function Home() {
                         </span>
                       )}
                     </div>
-                    <h3 className="mt-4 text-center text-lg font-black text-[var(--foreground)]">{b.name}</h3>
+                    <h3 className="mt-3 text-center text-base font-black text-[var(--foreground)] md:mt-4 md:text-lg">
+                      {b.name}
+                    </h3>
                     <button
                       type="button"
                       onClick={() => enterBrand(b)}
@@ -243,9 +297,9 @@ export default function Home() {
             </div>
           ) : null}
 
-          <div className="mt-8 flex items-center justify-center">
-            <div className="inline-flex items-center gap-3 rounded-full border border-[var(--border-soft)] bg-[var(--surface)] px-6 py-3 text-xs font-black tracking-wide text-[var(--muted)]">
-              <span className="grid h-11 w-11 place-items-center rounded-lg bg-[var(--surface-2)] text-[var(--muted)]">
+          <div className="mt-6 flex items-center justify-center md:mt-8">
+            <div className="inline-flex w-full max-w-sm items-center justify-center gap-3 rounded-full border border-[var(--border-soft)] bg-[var(--surface)] px-5 py-2.5 text-xs font-black tracking-wide text-[var(--muted)] md:w-auto md:px-6 md:py-3">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--surface-2)] text-[var(--muted)] md:h-11 md:w-11">
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
                   <path
                     d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z"
@@ -260,7 +314,7 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mt-14 overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] shadow-sm">
+        <section className="mt-8 overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] shadow-sm md:mt-14">
           {/* <div className="border-b border-[var(--border-soft)] px-6 py-5 md:px-10 md:py-7">
             <p className="text-xs font-black uppercase tracking-[0.2em] text-red-600">Why Foodies?</p>
             <p className="mt-2 max-w-4xl text-sm leading-relaxed text-[var(--muted)] md:text-base">
@@ -270,20 +324,33 @@ export default function Home() {
           </div> */}
 
           <div className="grid gap-0 md:grid-cols-[minmax(0,2fr)_auto_minmax(0,1.25fr)]">
-            <div className="grid gap-6 p-6 sm:grid-cols-3 sm:gap-4 md:gap-0 md:p-0">
+            <div className="grid grid-cols-3 gap-2 p-3 md:gap-0 md:p-0">
               {HOME_FEATURE_BLURBS.map((x) => (
                 <div
                   key={x.title}
                   className="flex w-full flex-col items-center text-center md:min-h-[260px] md:justify-center md:px-8 md:py-10 lg:px-10 md:not-last:border-r md:not-last:border-[var(--border-soft)]"
                 >
-                  <div className="mx-auto grid h-20 w-20 shrink-0 place-items-center rounded-full border border-red-200 bg-white shadow-sm">
-                    <Image src={x.icon} alt="" width={46} height={46} unoptimized />
+                  <div className="mx-auto grid h-12 w-12 shrink-0 place-items-center rounded-full border border-red-200 bg-white shadow-sm md:h-20 md:w-20">
+                    <Image
+                      src={x.icon}
+                      alt=""
+                      width={46}
+                      height={46}
+                      unoptimized
+                      className="h-8 w-8 md:h-[46px] md:w-[46px]"
+                    />
                   </div>
-                  <div className="mt-3 w-full max-w-md px-1 sm:px-0">
-                    <p className="text-sm font-black text-[var(--foreground)] md:text-base">{x.title}</p>
-                    <p className="mt-1 text-sm leading-relaxed text-[var(--foreground)]">{x.body}</p>
+                  <div className="mt-2 w-full px-0.5 md:mt-3 md:max-w-md md:px-0">
+                    <p className="text-[11px] font-black leading-tight text-[var(--foreground)] md:text-base">
+                      {x.title}
+                    </p>
+                    <p className="mt-0.5 text-[10px] leading-snug text-[var(--muted)] md:mt-1 md:text-sm md:text-[var(--foreground)]">
+                      {x.body}
+                    </p>
                     {x.detail ? (
-                      <p className="mt-2 text-xs leading-relaxed text-[var(--muted)] md:text-sm">{x.detail}</p>
+                      <p className="mt-2 hidden text-xs leading-relaxed text-[var(--muted)] md:block md:text-sm">
+                        {x.detail}
+                      </p>
                     ) : null}
                   </div>
                 </div>
@@ -292,24 +359,19 @@ export default function Home() {
 
             <div className="hidden w-px bg-[var(--border-soft)] md:block" aria-hidden="true" />
 
-            <div className="relative min-h-[240px] overflow-hidden bg-rose-50 p-6 md:min-h-[280px] md:p-10 lg:p-12">
-              <div className="relative z-10 max-w-lg pr-0 md:max-w-xl md:pr-[42%] lg:pr-[44%]">
-                <p className="text-3xl font-black leading-[0.95] tracking-tight text-[var(--foreground)] md:text-4xl">
+            <div className="relative min-h-[168px] overflow-hidden bg-rose-50 p-4 md:min-h-[280px] md:p-10 lg:p-12">
+              <div className="relative z-10 max-w-lg pr-[38%] md:max-w-xl md:pr-[42%] lg:pr-[44%]">
+                <p className="text-xl font-black leading-[0.95] tracking-tight text-[var(--foreground)] md:text-4xl">
                   CRAVING <span className="text-red-600">SOMETHING?</span>
                 </p>
-                <div className="mt-3 h-1 w-10 rounded-full bg-[var(--border-soft)]" aria-hidden="true" />
-                <p className="mt-3 text-sm leading-relaxed text-[var(--muted)] md:text-base">
-                  Good food is just a click away! Pick a brand, explore the menu, and place your order in minutes 
-                  {/* — whether
-                  you&apos;re dining in or grabbing something on the go. */}
+                <div className="mt-1.5 h-1 w-8 rounded-full bg-[var(--border-soft)] md:mt-3 md:w-10" aria-hidden="true" />
+                <p className="mt-1.5 text-xs leading-snug text-[var(--muted)] md:mt-3 md:text-base md:leading-relaxed">
+                  Good food is just a click away! Pick a brand, explore the menu, and place your order in minutes
                 </p>
-                {/* <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--muted)] md:text-sm">
-                  New brands join regularly — check back often for fresh menus and limited-time favorites.
-                </p> */}
-                <div className="mt-5">
+                <div className="mt-3 md:mt-5">
                   <Button
                     type="button"
-                    className="rounded-full bg-zinc-900 px-7 py-3 text-sm font-black text-white hover:bg-zinc-800"
+                    className="rounded-full bg-zinc-900 px-5 py-2.5 text-xs font-black text-white hover:bg-zinc-800 md:px-7 md:py-3 md:text-sm"
                     onClick={() => (topBrands[0] ? enterBrand(topBrands[0]) : null)}
                     disabled={!topBrands.length}
                   >
@@ -318,15 +380,15 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-[52%] md:block">
-                <div className="absolute inset-0 bg-gradient-to-l from-rose-50 via-rose-50/70 to-transparent" />
+              <div className="pointer-events-none absolute inset-y-0 right-0 w-[44%] md:w-[52%]">
+                <div className="absolute inset-0 bg-gradient-to-l from-rose-50 via-rose-50/80 to-transparent md:via-rose-50/70" />
                 <div className="relative h-full w-full">
                   <Image
                     src="/Banner_02.jpg.jpeg"
                     alt=""
                     fill
-                    sizes="(max-width: 768px) 100vw, (max-width: 1536px) 42vw, 600px"
-                    className="object-contain object-right scale-[1.08]"
+                    sizes="(max-width: 768px) 44vw, (max-width: 1536px) 42vw, 600px"
+                    className="object-contain object-right object-bottom md:scale-[1.08]"
                   />
                 </div>
               </div>

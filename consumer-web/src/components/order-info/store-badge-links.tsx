@@ -5,14 +5,26 @@ type StoreBadgeLinksProps = {
   appStoreUrl: string;
   playStoreUrl: string;
   className?: string;
+  /** On mobile: stack Play Store under App Store with smaller badges. */
+  mobileStack?: boolean;
 };
 
-/** Preserve official badge aspect ratio — never set both width and height. */
 const badgeClass = "block h-11 w-auto";
 
-export function StoreBadgeLinks({ appStoreUrl, playStoreUrl, className }: StoreBadgeLinksProps) {
+export function StoreBadgeLinks({
+  appStoreUrl,
+  playStoreUrl,
+  className,
+  mobileStack = false,
+}: StoreBadgeLinksProps) {
   return (
-    <div className={clsx("flex flex-wrap items-center gap-3", className)}>
+    <div
+      className={clsx(
+        "flex flex-wrap items-center gap-3",
+        mobileStack && "max-md:flex-col max-md:items-start max-md:gap-2",
+        className,
+      )}
+    >
       <Link
         href={appStoreUrl}
         target="_blank"
@@ -26,7 +38,7 @@ export function StoreBadgeLinks({ appStoreUrl, playStoreUrl, className }: StoreB
           alt=""
           width={180}
           height={54}
-          className={badgeClass}
+          className={clsx(badgeClass, mobileStack && "max-md:h-9 max-md:max-w-[132px]")}
         />
       </Link>
       <Link
@@ -42,7 +54,7 @@ export function StoreBadgeLinks({ appStoreUrl, playStoreUrl, className }: StoreB
           alt=""
           width={180}
           height={53}
-          className={badgeClass}
+          className={clsx(badgeClass, mobileStack && "max-md:h-9 max-md:max-w-[132px]")}
         />
       </Link>
     </div>

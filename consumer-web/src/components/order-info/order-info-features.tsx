@@ -56,15 +56,17 @@ function FeatureIcon({ type }: { type: (typeof FEATURES)[number]["icon"] }) {
 
 export function OrderInfoFeatures() {
   return (
-    <section className="mb-6 rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] py-10 shadow-sm sm:py-12">
-      <div className="grid gap-8 px-6 sm:grid-cols-2 sm:px-8 lg:grid-cols-4">
+    <section className="mb-6 rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] py-8 shadow-sm md:py-12">
+      <div className="grid grid-cols-2 gap-6 px-4 md:gap-8 md:px-8 lg:grid-cols-4">
         {FEATURES.map((f) => (
           <article key={f.title} className="flex flex-col items-center text-center">
-            <div className="grid h-20 w-20 place-items-center rounded-full bg-rose-50 text-red-600">
+            <div className="grid h-14 w-14 place-items-center rounded-full bg-rose-50 text-red-600 md:h-20 md:w-20">
               <FeatureIcon type={f.icon} />
             </div>
-            <h3 className="mt-4 text-base font-bold text-zinc-900">{f.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-zinc-600">{f.body}</p>
+            <h3 className="mt-3 text-sm font-bold text-zinc-900 md:mt-4 md:text-base">{f.title}</h3>
+            <p className="mt-1.5 text-xs leading-snug text-zinc-600 md:mt-2 md:text-sm md:leading-relaxed">
+              {f.body}
+            </p>
           </article>
         ))}
       </div>

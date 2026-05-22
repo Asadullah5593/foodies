@@ -405,7 +405,7 @@ export default function MenuPage() {
 
   const mobileCategoryStrip = (
     <nav
-      className="mb-6 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] lg:hidden [&::-webkit-scrollbar]:hidden"
+      className="mb-6 mt-5 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] lg:hidden [&::-webkit-scrollbar]:hidden"
       aria-label="Menu categories"
     >
       {menuQuery.isLoading || menuQuery.isFetching || isSwitching ? (
@@ -484,13 +484,15 @@ export default function MenuPage() {
               </div>
             </aside>
 
-            <div className="min-w-0 flex-1 px-4 py-7 sm:px-8 sm:py-9 lg:px-10 lg:py-10">
+            <div className="min-w-0 flex-1 px-3 py-5 sm:px-8 sm:py-9 lg:px-10 lg:py-10">
               <div
                 className={clsx(
-                  "mt-2 flex gap-5 sm:gap-6",
+                  "mt-1 flex w-full gap-3 pb-1",
+                  brandRowScroll &&
+                    "max-lg:overflow-x-auto max-lg:pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
                   brandRowScroll
-                    ? "overflow-x-auto pb-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                    : "w-full",
+                    ? "lg:gap-5 lg:overflow-x-auto lg:pb-2 sm:lg:gap-6"
+                    : "lg:gap-5 lg:overflow-visible lg:pb-0 sm:lg:gap-6",
                 )}
               >
               {brandsOnBranch.map((b) => {
@@ -499,6 +501,7 @@ export default function MenuPage() {
                   <motion.button
                     key={b.id}
                     type="button"
+                    aria-label={b.name}
                     onClick={() => {
                       // Smooth brand switch: immediate skeleton, then fetch, then fade to content.
                       beginSwitch();
@@ -507,10 +510,14 @@ export default function MenuPage() {
                       setVisibleCount(ITEMS_PER_PAGE);
                     }}
                     className={clsx(
-                      "relative flex min-h-[118px] items-center gap-5 rounded-2xl px-8 py-6 text-left transition will-change-transform",
+                      "relative flex rounded-2xl text-left transition will-change-transform",
                       brandRowScroll
-                        ? "w-[min(100%,28rem)] shrink-0 sm:w-[29rem]"
-                        : "min-w-0 flex-1",
+                        ? "max-lg:w-[7.25rem] max-lg:shrink-0 max-lg:flex-col max-lg:items-center max-lg:justify-center max-lg:gap-2 max-lg:px-2.5 max-lg:py-3"
+                        : "max-lg:min-w-0 max-lg:flex-1 max-lg:flex-col max-lg:items-center max-lg:justify-center max-lg:gap-2.5 max-lg:px-3 max-lg:py-4",
+                      "lg:min-h-[118px] lg:items-center lg:gap-5 lg:px-8 lg:py-6",
+                      brandRowScroll
+                        ? "lg:w-[min(100%,28rem)] lg:shrink-0 sm:lg:w-[29rem]"
+                        : "lg:min-w-0 lg:flex-1",
                     )}
                     style={{
                       borderWidth: selected ? 2 : 1,
@@ -526,31 +533,41 @@ export default function MenuPage() {
                     whileHover={{ scale: 1.01 }}
                     whileTap={{ scale: 0.99 }}
                   >
-                    {selected ? (
-                      <IconCheckBadge className="absolute right-4 top-4 h-7 w-7" />
-                    ) : null}
-                    <div
-                      className="flex h-[84px] w-[84px] shrink-0 items-center justify-center overflow-hidden rounded-full"
-                      style={{
-                        backgroundColor: "#FFFFFF",
-                        border: `1px solid ${selected ? R.brand : R.cardBorder}`,
-                      }}
-                    >
-                      {b.logo_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={toImageUrl(b.logo_url)}
-                          alt=""
-                          className="h-full w-full object-contain p-1"
-                        />
-                      ) : (
-                        <span className="text-sm font-black" style={{ color: R.muted }}>
-                          {(b.name || "?").slice(0, 2).toUpperCase()}
-                        </span>
-                      )}
+                    <div className="relative shrink-0">
+                      {selected ? (
+                        <IconCheckBadge className="absolute -right-1 -top-1 z-10 h-5 w-5 lg:-right-0.5 lg:-top-0.5 lg:h-7 lg:w-7" />
+                      ) : null}
+                      <div
+                        className={clsx(
+                          "flex items-center justify-center overflow-hidden rounded-full lg:h-[84px] lg:w-[84px]",
+                          brandRowScroll ? "h-14 w-14" : "h-16 w-16",
+                        )}
+                        style={{
+                          backgroundColor: "#FFFFFF",
+                          border: `1px solid ${selected ? R.brand : R.cardBorder}`,
+                        }}
+                      >
+                        {b.logo_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={toImageUrl(b.logo_url)}
+                            alt=""
+                            className="h-full w-full object-contain p-1"
+                          />
+                        ) : (
+                          <span className="text-xs font-black lg:text-sm" style={{ color: R.muted }}>
+                            {(b.name || "?").slice(0, 2).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <span
-                      className="line-clamp-2 w-full pr-3 text-[18px] font-black leading-tight sm:text-[20px]"
+                      className={clsx(
+                        "line-clamp-2 w-full font-black leading-tight",
+                        brandRowScroll ? "max-lg:text-[10px]" : "max-lg:text-[11px]",
+                        "max-lg:text-center",
+                        "lg:pr-3 lg:text-left lg:text-[18px] sm:lg:text-[20px]",
+                      )}
                       style={{ color: R.text }}
                     >
                       {b.name}
