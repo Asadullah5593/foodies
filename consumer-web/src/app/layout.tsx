@@ -48,6 +48,11 @@ export const metadata: Metadata = {
   title: "Foodies — Browse the menu",
   description:
     "Find a branch, explore brands and menus, then order through our mobile app.",
+  icons: {
+    icon: [{ url: "/foodies-logo.png", type: "image/png" }],
+    shortcut: "/foodies-logo.png",
+    apple: "/foodies-logo.png",
+  },
 };
 
 export default function RootLayout({
