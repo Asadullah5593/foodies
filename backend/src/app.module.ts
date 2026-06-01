@@ -47,6 +47,9 @@ import { FirebaseModule } from './firebase/firebase.module';
             username: process.env.DB_USERNAME || 'postgres',
             password: process.env.DB_PASSWORD || '',
             database: process.env.DB_DATABASE || 'foodies',
+            ...(process.env.DB_SSL === 'true'
+                ? { ssl: { rejectUnauthorized: false } }
+                : {}),
             namingStrategy: new SnakeNamingStrategy(),
             synchronize: false,
             migrationsRun: true,
