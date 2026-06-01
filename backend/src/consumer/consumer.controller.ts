@@ -46,6 +46,7 @@ import { Customer } from '../entities/customer.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { RegisterDto } from './dto/register.dto';
+import { DeleteAccountDto } from './dto/delete-account.dto';
 import { MediaStorageService } from '../media/media-storage.service';
 import { MAX_UPLOAD_FILE_BYTES } from '../upload/upload.constants';
 import { RatingsService } from '../ratings/ratings.service';
@@ -380,6 +381,59 @@ export class ConsumerController {
     @Post('auth/logout')
     logout() {
         return { message: 'Logged out successfully' };
+    }
+
+    /** Permanently delete the logged-in customer account (App Store requirement). */
+    @Delete('auth/account')
+    @UseGuards(CustomerJwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({
+        summary: 'Delete customer account permanently',
+        description:
+            'Irreversible. Requires customer JWT, current password, and `confirm: true`. ' +
+            'Removes login profile, cart, loyalty balance/history, and ratings tied to the account. ' +
+            'Past orders remain for business records but are no longer linked to this customer id.',
+    })
+    @ApiBody({
+        type: DeleteAccountDto,
+        examples: {
+            default: {
+                summary: 'Confirm deletion',
+                value: {
+                    password: 'secret123',
+                    confirm: true,
+                },
+            },
+        },
+    })
+    @ApiOkResponse({
+        description: 'Account deleted; client must discard the JWT.',
+        schema: {
+            type: 'object',
+            properties: {
+                message: {
+                    type: 'string',
+                    example: 'Account deleted successfully',
+                },
+            },
+        },
+    })
+    async deleteAccount(
+        @Req() req: { user: Customer },
+        @Body() dto: DeleteAccountDto,
+    ) {
+        const { profileImageUrl } =
+            await this.customersService.deleteConsumerAccount(
+                req.user.id,
+                dto.password,
+            );
+        if (profileImageUrl) {
+            await this.mediaStorage.deleteManagedObjectByUrl(
+                profileImageUrl,
+                'customer-profiles',
+            );
+        }
+        return { message: 'Account deleted successfully' };
     }
 
     /** Forgot password: create OTP and send it to the customer's email. */
