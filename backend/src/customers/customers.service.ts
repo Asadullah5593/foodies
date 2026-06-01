@@ -278,6 +278,35 @@ export class CustomersService {
     }
 
     /**
+     * Self-service account deletion (consumer app / App Store requirement).
+     * Removes the customer row; orders keep historical customer_name/phone with customer_id set null.
+     */
+    async deleteConsumerAccount(
+        customerId: number,
+        password: string,
+    ): Promise<{ profileImageUrl: string | null }> {
+        const customer = await this.repo.findOne({ where: { id: customerId } });
+        if (!customer) throw new NotFoundException('Customer not found');
+        if (!customer.password) {
+            throw new BadRequestException(
+                'This account has no password set. Contact support to delete your account.',
+            );
+        }
+        const trimmed =
+            typeof password === 'string' ? password : '';
+        if (!trimmed) {
+            throw new BadRequestException('password is required');
+        }
+        const ok = await bcrypt.compare(trimmed, customer.password);
+        if (!ok) {
+            throw new UnauthorizedException('Invalid password');
+        }
+        const profileImageUrl = customer.profileImageUrl ?? null;
+        await this.repo.remove(customer);
+        return { profileImageUrl };
+    }
+
+    /**
      * Merge a consumer row (tenantId null) into an existing tenant-scoped customer.
      * Reassigns FKs, combines loyalty balance, copies login profile fields, deletes consumer.
      */
