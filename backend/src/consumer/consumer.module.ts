@@ -22,9 +22,13 @@ import { getJwtSecret } from '../auth/jwt-secret.util';
 @Module({
     imports: [
         TypeOrmModule.forFeature([Branch]),
-        JwtModule.register({
-            secret: getJwtSecret(),
-            signOptions: { expiresIn: '7d' },
+        // registerAsync so getJwtSecret() runs at instantiation (after
+        // ConfigModule has loaded .env), not at module-import time.
+        JwtModule.registerAsync({
+            useFactory: () => ({
+                secret: getJwtSecret(),
+                signOptions: { expiresIn: '7d' },
+            }),
         }),
         BrandsModule,
         BranchesModule,

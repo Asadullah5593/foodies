@@ -17,9 +17,13 @@ import { getJwtSecret } from './jwt-secret.util';
     imports: [
         TypeOrmModule.forFeature([User]),
         PassportModule,
-        JwtModule.register({
-            secret: getJwtSecret(),
-            signOptions: { expiresIn: '7d' },
+        // registerAsync so getJwtSecret() runs at instantiation (after
+        // ConfigModule has loaded .env), not at module-import time.
+        JwtModule.registerAsync({
+            useFactory: () => ({
+                secret: getJwtSecret(),
+                signOptions: { expiresIn: '7d' },
+            }),
         }),
         CustomersModule,
         RoleAccessModule,
