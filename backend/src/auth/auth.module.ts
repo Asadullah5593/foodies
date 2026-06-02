@@ -11,15 +11,14 @@ import { CustomerJwtStrategy } from './customer-jwt.strategy';
 import { CustomerJwtAuthGuard } from './customer-jwt-auth.guard';
 import { OptionalCustomerJwtAuthGuard } from './optional-customer-jwt-auth.guard';
 import { RoleAccessModule } from './role-access.module';
+import { getJwtSecret } from './jwt-secret.util';
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([User]),
         PassportModule,
         JwtModule.register({
-            secret:
-                process.env.JWT_SECRET ||
-                'rough-foodie-secret-change-in-production',
+            secret: getJwtSecret(),
             signOptions: { expiresIn: '7d' },
         }),
         CustomersModule,

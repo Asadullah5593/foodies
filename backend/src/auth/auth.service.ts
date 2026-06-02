@@ -21,11 +21,6 @@ export class AuthService {
             typeof password === 'string' ? String(password).trim() : '';
         const emailNorm =
             typeof email === 'string' ? email.trim().toLowerCase() : '';
-        this.logger.log(
-            `[auth] email=${emailNorm} plainLen=${plain.length} plainIsOwner123=${
-                plain === 'owner123'
-            }`,
-        );
         if (!plain) return null;
 
         // Raw query: users table has no tenant_id; we get it from tenant_users
@@ -42,82 +37,22 @@ export class AuthService {
             [emailNorm || email],
         )) as unknown as UserRow[];
         const row: UserRow | undefined = rows[0];
-        this.logger.log(
-            `[auth] query rows=${rows?.length ?? 0} rowStatus=${row?.status} hashLen=${typeof row?.password === 'string' ? row.password.length : 'n/a'}`,
-        );
         if (!row || row.status !== 'active') return null;
-
-        // Guaranteed demo login: owner@demo.com / owner123 always allowed, fix hash if needed
-        if (emailNorm === 'owner@demo.com' && plain === 'owner123') {
-            const hash = row.password;
-            const matches =
-                hash &&
-                typeof hash === 'string' &&
-                (await bcrypt.compare(plain, hash).catch(() => false));
-            if (!matches) {
-                this.logger.log('Updating demo user password hash');
-                const newHash = await bcrypt.hash('owner123', 10);
-                await this.dataSource.query(
-                    'UPDATE users SET password = $1 WHERE id = $2',
-                    [newHash, row.id],
-                );
-            }
-            const tenantRows = (await this.dataSource.query(
-                'SELECT tenant_id FROM tenant_users WHERE user_id = $1 LIMIT 1',
-                [row.id],
-            )) as unknown as { tenant_id: number }[];
-            const tenantId = tenantRows[0]?.tenant_id ?? null;
-            const isRider = await this.checkIsRider(row.id);
-            return {
-                id: row.id,
-                name: row.name,
-                email: row.email,
-                phone: row.phone,
-                status: row.status,
-                tenantId,
-                isRider,
-            };
-        }
 
         const hash = row.password;
         if (!hash || typeof hash !== 'string') return null;
 
+        // Only ever accept a valid bcrypt hash compared via bcrypt.
+        // No plain-text fallback and no demo backdoor: passwords are always
+        // hashed at creation (users/customers/tenants services + seeds), and a
+        // live-DB audit confirmed 0 non-bcrypt password rows.
         let matches = false;
         try {
-            // Valid bcrypt hashes start with $2a$, $2b$, or $2y$
-            const isBcryptHash = /^\$2[aby]\$\d{2}\$/.test(hash);
-            if (isBcryptHash) {
-                matches = await bcrypt.compare(plain, hash);
-            } else {
-                // Stored as plain text (e.g. manual insert or old seed): compare then re-hash
-                matches = hash === plain;
-                if (matches) {
-                    this.logger.log(
-                        'Re-hashing plain-text password for user id=' + row.id,
-                    );
-                    const newHash = await bcrypt.hash(plain, 10);
-                    await this.dataSource.query(
-                        'UPDATE users SET password = $1 WHERE id = $2',
-                        [newHash, row.id],
-                    );
-                }
-            }
+            matches = await bcrypt.compare(plain, hash);
         } catch (e) {
-            this.logger.warn('bcrypt.compare error', e);
-            // Hash might be invalid/corrupt; try plain comparison as last resort
-            matches = hash === plain;
-            if (matches) {
-                this.logger.log(
-                    'Re-hashing invalid/corrupt password for user id=' + row.id,
-                );
-                const newHash = await bcrypt.hash(plain, 10);
-                await this.dataSource.query(
-                    'UPDATE users SET password = $1 WHERE id = $2',
-                    [newHash, row.id],
-                );
-            }
+            this.logger.warn(`bcrypt.compare error for user id=${row.id}`, e);
+            return null;
         }
-        this.logger.log(`[auth] bcrypt.compare result=${matches}`);
         if (!matches) return null;
 
         const tenantRows = (await this.dataSource.query(

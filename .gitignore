@@ -24,3 +24,7 @@ logs
 # OS
 .DS_Store
 Thumbs.db
+
+# Committed credential docs (history rotated separately)
+LOGIN_CREDENTIALS.md
+USER_CREDENTIALS.md
