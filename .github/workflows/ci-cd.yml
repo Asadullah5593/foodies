@@ -114,17 +114,23 @@ jobs:
             git fetch origin
             git checkout main
             git pull --ff-only origin main
+
+            # Backend
             cd "$REPO/backend"
             npm ci --legacy-peer-deps
             npm run build
-            pm2 restart foodies-backend
+            pm2 restart foodies-backend --update-env
+
+            # Frontend (admin/POS) -> served from /var/www/foodies
             cd "$REPO/frontend"
             npm ci
-            printf '%s\n' 'VITE_API_URL=/api' > .env.production
             npm run build
             sudo rsync -a --delete dist/ /var/www/foodies/
-            sudo chown -R www-data:www-data /var/www/foodies
-            sudo chmod -R 755 /var/www/foodies
-            sudo systemctl reload nginx
-            curl -fsS http://127.0.0.1/api/ >/dev/null
+
+            # Consumer web
+            cd "$REPO/consumer-web"
+            npm ci
+            npm run build
+            pm2 restart website --update-env
+
             echo "Deploy finished OK."
