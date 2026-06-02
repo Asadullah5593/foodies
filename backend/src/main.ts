@@ -3,6 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { getCorsOrigin } from './common/cors-origins.util';
+import { CorsIoAdapter } from './common/cors-io.adapter';
 
 async function bootstrap() {
     const app = await NestFactory.create(AppModule);
@@ -13,6 +14,8 @@ async function bootstrap() {
         origin: getCorsOrigin(),
         credentials: true,
     });
+    // Apply the same allowlist to socket.io (websocket) handshakes.
+    app.useWebSocketAdapter(new CorsIoAdapter(app));
     app.useGlobalPipes(
         new ValidationPipe({ whitelist: true, transform: true }),
     );

@@ -10,19 +10,16 @@ import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { RiderOrderLocationService } from './rider-order-location.service';
 import { RiderLocationEventsService } from './rider-location-events.service';
-import { getCorsOrigin } from '../common/cors-origins.util';
 
 type TrackJoinPayload = {
     orderId?: number | string;
     phone?: string;
 };
 
+// CORS for websockets is applied server-wide via CorsIoAdapter (main.ts),
+// which reads CORS_ORIGINS at runtime after .env is loaded.
 @WebSocketGateway({
     namespace: '/tracking',
-    cors: {
-        origin: getCorsOrigin(),
-        credentials: true,
-    },
 })
 export class RiderLocationGateway implements OnGatewayInit {
     private readonly logger = new Logger(RiderLocationGateway.name);
