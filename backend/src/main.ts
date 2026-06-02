@@ -2,11 +2,17 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import { getCorsOrigin } from './common/cors-origins.util';
 
 async function bootstrap() {
     const app = await NestFactory.create(AppModule);
     app.setGlobalPrefix('api');
-    app.enableCors({ origin: true, credentials: true });
+
+    // CORS allowlist driven by CORS_ORIGINS (see common/cors-origins.util.ts).
+    app.enableCors({
+        origin: getCorsOrigin(),
+        credentials: true,
+    });
     app.useGlobalPipes(
         new ValidationPipe({ whitelist: true, transform: true }),
     );

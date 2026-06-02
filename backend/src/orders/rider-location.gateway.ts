@@ -10,6 +10,7 @@ import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { RiderOrderLocationService } from './rider-order-location.service';
 import { RiderLocationEventsService } from './rider-location-events.service';
+import { getCorsOrigin } from '../common/cors-origins.util';
 
 type TrackJoinPayload = {
     orderId?: number | string;
@@ -19,7 +20,7 @@ type TrackJoinPayload = {
 @WebSocketGateway({
     namespace: '/tracking',
     cors: {
-        origin: true,
+        origin: getCorsOrigin(),
         credentials: true,
     },
 })

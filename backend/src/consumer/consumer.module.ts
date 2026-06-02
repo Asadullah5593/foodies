@@ -17,14 +17,13 @@ import { MediaModule } from '../media/media.module';
 import { ConsumerController } from './consumer.controller';
 import { ConsumerRiderLocationController } from './consumer-rider-location.controller';
 import { RatingsModule } from '../ratings/ratings.module';
+import { getJwtSecret } from '../auth/jwt-secret.util';
 
 @Module({
     imports: [
         TypeOrmModule.forFeature([Branch]),
         JwtModule.register({
-            secret:
-                process.env.JWT_SECRET ||
-                'rough-foodie-secret-change-in-production',
+            secret: getJwtSecret(),
             signOptions: { expiresIn: '7d' },
         }),
         BrandsModule,
