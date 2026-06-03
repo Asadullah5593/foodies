@@ -94,7 +94,7 @@ export class InventoryAdjustmentService {
                 );
             }
 
-            return this.adjustmentRepo.findOne({
+            return manager.getRepository(InventoryAdjustment).findOne({
                 where: { id: adjustment.id, tenantId },
                 relations: { lines: true },
             });
