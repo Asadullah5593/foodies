@@ -11,7 +11,12 @@ import { RiderPayrollLine } from '../entities/rider-payroll-line.entity';
 import { RiderPayrollLineItem } from '../entities/rider-payroll-line-item.entity';
 import { Branch } from '../entities/branch.entity';
 import { RiderHrmService } from './rider-hrm.service';
-import { AdminRiderHrmController } from './admin-rider-hrm.controller';
+import { RiderProfilesAdminController } from './rider-profiles.admin.controller';
+import { RiderAttendanceAdminController } from './rider-attendance.admin.controller';
+import { RiderPresenceAdminController } from './rider-presence.admin.controller';
+import { RiderBreaksAdminController } from './rider-breaks.admin.controller';
+import { RiderCompPlansAdminController } from './rider-comp-plans.admin.controller';
+import { RiderPayrollAdminController } from './rider-payroll.admin.controller';
 import { RiderAttendanceController } from './rider-attendance.controller';
 import { RiderOpsMetricsService } from './rider-ops-metrics.service';
 import { AdminRiderOpsController } from './admin-rider-ops.controller';
@@ -32,7 +37,12 @@ import { AdminRiderOpsController } from './admin-rider-ops.controller';
         ]),
     ],
     controllers: [
-        AdminRiderHrmController,
+        RiderProfilesAdminController,
+        RiderAttendanceAdminController,
+        RiderPresenceAdminController,
+        RiderBreaksAdminController,
+        RiderCompPlansAdminController,
+        RiderPayrollAdminController,
         RiderAttendanceController,
         AdminRiderOpsController,
     ],

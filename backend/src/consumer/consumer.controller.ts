@@ -98,10 +98,11 @@ export class ConsumerController {
 
     private resolveOrderSourceFromRequest(req: {
         headers?: Record<string, string | string[] | undefined>;
-    }): 'consumer_app' | 'consumer_web' {
+    }): 'consumer_app' | 'consumer_web' | 'kiosk' {
         const headerVal = req?.headers?.['x-client-platform'];
         const raw = Array.isArray(headerVal) ? headerVal[0] : headerVal;
         const platform = (raw ?? '').toString().trim().toLowerCase();
+        if (platform === 'kiosk') return 'kiosk';
         return platform === 'web' || platform === 'consumer_web'
             ? 'consumer_web'
             : 'consumer_app';
@@ -1037,7 +1038,7 @@ export class ConsumerController {
             branchId?: number;
             tenantId?: number;
             limit?: number;
-            sources?: Array<'consumer_app' | 'consumer_web'>;
+            sources?: Array<'consumer_app' | 'consumer_web' | 'kiosk'>;
         } = {};
         if (branchIdParam) options.branchId = +branchIdParam;
         if (tenantIdParam) options.tenantId = +tenantIdParam;

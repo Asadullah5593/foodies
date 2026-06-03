@@ -174,6 +174,17 @@ export interface RiderOpsMetricsSnapshot {
   generated_at: string;
 }
 
+export interface RiderBreakSession {
+  id: number;
+  rider_user_id: number;
+  attendance_session_id?: number | null;
+  branch_id?: number | null;
+  started_at: string;
+  ended_at?: string | null;
+  reason?: string | null;
+  created_at: string;
+}
+
 export interface MenuItem {
   id: number;
   tenant_id?: number;

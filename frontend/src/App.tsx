@@ -26,7 +26,12 @@ import Reports from './pages/Admin/Reports';
 import Orders from './pages/Admin/Orders';
 import OrderDetail from './pages/Admin/OrderDetail';
 import Deliveries from './pages/Admin/Deliveries';
-import RiderHRM from './pages/Admin/RiderHRM';
+import RiderProfiles from './pages/Admin/RiderHRM/RiderProfiles';
+import RiderAttendance from './pages/Admin/RiderHRM/RiderAttendance';
+import RiderBreaks from './pages/Admin/RiderHRM/RiderBreaks';
+import RiderCompPlans from './pages/Admin/RiderHRM/RiderCompPlans';
+import RiderPayroll from './pages/Admin/RiderHRM/RiderPayroll';
+import RiderOpsMetrics from './pages/Admin/RiderHRM/RiderOpsMetrics';
 import LoyaltySettings from './pages/Admin/LoyaltySettings';
 import BusinessSettings from './pages/Admin/BusinessSettings';
 import Customers from './pages/Admin/Customers';
@@ -226,7 +231,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   type MenuLink = { type: 'link'; path: string; label: string; icon: string };
   type MenuGroup = {
     type: 'group';
-    id: 'inventory' | 'procurement' | 'recipes';
+    id: 'inventory' | 'procurement' | 'recipes' | 'rider-hrm';
     label: string;
     icon: string;
     children: Array<{ path: string; label: string }>;
@@ -254,7 +259,20 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { path: '/admin/roles', label: 'Roles', icon: '🔐' as const },
     { path: '/admin/orders', label: 'Orders', icon: '📋' as const },
     { path: '/admin/deliveries', label: 'Deliveries', icon: '🛵' as const },
-    { path: '/admin/rider-hrm', label: 'Rider HRM', icon: '🧑‍💼' as const },
+    {
+      type: 'group',
+      id: 'rider-hrm',
+      label: 'Rider HRM',
+      icon: '🧑‍💼',
+      children: [
+        { path: '/admin/rider-hrm/profiles', label: 'Rider profiles' },
+        { path: '/admin/rider-hrm/attendance', label: 'Attendance & on-duty' },
+        { path: '/admin/rider-hrm/breaks', label: 'Breaks' },
+        { path: '/admin/rider-hrm/comp-plans', label: 'Compensation plans' },
+        { path: '/admin/rider-hrm/payroll', label: 'Payroll runs' },
+        { path: '/admin/rider-hrm/metrics', label: 'Ops metrics' },
+      ],
+    },
     { path: '/admin/shifts', label: 'Shifts', icon: '⏰' as const },
     { path: '/admin/reports', label: 'Reports', icon: '📈' as const },
     {
@@ -308,6 +326,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     inventory: location.pathname.startsWith('/admin/inventory'),
     procurement: location.pathname.startsWith('/admin/procurement'),
     recipes: location.pathname.startsWith('/admin/recipes'),
+    'rider-hrm': location.pathname.startsWith('/admin/rider-hrm'),
   });
 
   useEffect(() => {
@@ -316,6 +335,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       inventory: location.pathname.startsWith('/admin/inventory') ? true : prev.inventory,
       procurement: location.pathname.startsWith('/admin/procurement') ? true : prev.procurement,
       recipes: location.pathname.startsWith('/admin/recipes') ? true : prev.recipes,
+      'rider-hrm': location.pathname.startsWith('/admin/rider-hrm') ? true : prev['rider-hrm'],
     }));
   }, [location.pathname]);
 
@@ -883,10 +903,16 @@ const AppRoutes: React.FC = () => {
         path="/admin/rider-hrm"
         element={
           <ProtectedRoute>
-            <AdminOnlyRoute><Layout><RiderHRM /></Layout></AdminOnlyRoute>
+            <AdminOnlyRoute><Layout><Navigate to="/admin/rider-hrm/profiles" replace /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />
+      <Route path="/admin/rider-hrm/profiles" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderProfiles /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/rider-hrm/attendance" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderAttendance /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/rider-hrm/breaks" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderBreaks /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/rider-hrm/comp-plans" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderCompPlans /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/rider-hrm/payroll" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderPayroll /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/rider-hrm/metrics" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderOpsMetrics /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route
         path="/admin/reports"
         element={

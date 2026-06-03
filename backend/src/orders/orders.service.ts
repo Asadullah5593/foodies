@@ -578,7 +578,7 @@ export class OrdersService {
         },
         tenantId: number,
         createdBy: number | null,
-        source: 'pos' | 'consumer_app' | 'consumer_web' = 'pos',
+        source: 'pos' | 'consumer_app' | 'consumer_web' | 'kiosk' = 'pos',
         loggedInCustomerId: number | null = null,
     ) {
         const tenant = await this.tenantRepo.findOne({
@@ -1384,7 +1384,7 @@ export class OrdersService {
             branchId?: number;
             tenantId?: number;
             limit?: number;
-            sources?: Array<'consumer_app' | 'consumer_web'>;
+            sources?: Array<'consumer_app' | 'consumer_web' | 'kiosk'>;
         },
     ) {
         const normalized = normalizePakistaniPhone(
@@ -2606,7 +2606,7 @@ export class OrdersService {
             loyalty_points_to_redeem?: number;
         },
         tenantId: number,
-        source: 'pos' | 'consumer_app' | 'consumer_web' = 'pos',
+        source: 'pos' | 'consumer_app' | 'consumer_web' | 'kiosk' = 'pos',
     ) {
         const branch = await this.branchRepo.findOne({
             where: { id: dto.branch_id },

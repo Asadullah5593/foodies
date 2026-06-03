@@ -2,50 +2,52 @@ import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import apiClient from '../../utils/apiClient';
-import Card from '../../components/Card';
 import SearchableSelect from '../../components/SearchableSelect';
 import { formatCurrency } from '../../utils/currency';
-import Loader from '../../components/Loader';
+import KpiCard from './dashboard/KpiCard';
+import ChartCard from './dashboard/ChartCard';
+import {
+  RevenueTrendChart,
+  OrdersByStatusChart,
+  OrderTypeDonut,
+  SourceSplitDonut,
+  PaymentMethodDonut,
+  TopItemsChart,
+} from './dashboard/charts';
+import {
+  DeliveryStatusPanel,
+  RatingsPanel,
+  RecentOrdersPanel,
+  InventoryAlertsPanel,
+} from './dashboard/panels';
+import { defaultRange, matchPreset, presetRanges } from './dashboard/dateRanges';
+import type { DashboardSummary, RecentOrder, InventoryAlerts } from './dashboard/types';
 
-function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10);
+function buildReportParams(
+  branchId: number | null,
+  from: string,
+  to: string,
+  extra?: Record<string, string>,
+): string {
+  const params = new URLSearchParams();
+  if (branchId != null) params.append('branch_id', String(branchId));
+  params.append('date_from', from);
+  params.append('date_to', to);
+  if (extra) for (const [k, v] of Object.entries(extra)) params.append(k, v);
+  return params.toString();
 }
-
-type DayOverviewResponse = {
-  date_from: string;
-  date_to: string;
-  branch_id: number | null;
-  orders_by_status: Record<string, number>;
-  orders_by_status_by_source: Record<string, Record<string, number>>;
-  payments_total: number;
-  payments_by_method: Record<string, number>;
-  payments_by_method_by_source: Record<string, Record<string, number>>;
-};
-
-type SalesSummaryResponse = {
-  total_orders: number;
-  total_revenue: number;
-  total_sales: number;
-  total_discounts: number;
-  total_service_charge: number;
-  total_delivery_fee: number;
-  total_tax: number;
-  average_order_value: number;
-};
-
-type TopItemRow = {
-  menu_item_id: number;
-  name: string;
-  quantity: number;
-  total_revenue: number;
-};
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
+  const { theme } = useTheme();
+  const initial = defaultRange();
   const [branchId, setBranchId] = useState<number | null>(null);
-  const [dateFrom, setDateFrom] = useState<string>(todayIsoDate());
-  const [dateTo, setDateTo] = useState<string>(todayIsoDate());
+  const [dateFrom, setDateFrom] = useState<string>(initial.from);
+  const [dateTo, setDateTo] = useState<string>(initial.to);
+
+  const activePreset = matchPreset(dateFrom, dateTo);
 
   const { data: branches } = useQuery({
     queryKey: ['branches'],
@@ -55,284 +57,243 @@ const Dashboard: React.FC = () => {
     },
   });
 
-  const { data: overview, isLoading: overviewLoading } = useQuery({
-    queryKey: ['dayOverview', branchId, dateFrom, dateTo],
+  const { data: summary, isLoading: summaryLoading } = useQuery({
+    queryKey: ['dashboardSummary', branchId, dateFrom, dateTo],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (branchId != null) params.append('branch_id', String(branchId));
-      params.append('date_from', dateFrom);
-      params.append('date_to', dateTo);
-      const response = await apiClient.get<DayOverviewResponse>(`/admin/reports/day-overview?${params.toString()}`);
+      const qs = buildReportParams(branchId, dateFrom, dateTo);
+      const response = await apiClient.get<DashboardSummary>(`/admin/reports/dashboard-summary?${qs}`);
       return response.data;
     },
     enabled: !!user,
   });
 
-  const { data: salesSummary } = useQuery({
-    queryKey: ['salesSummary', branchId, dateFrom, dateTo],
+  const { data: recentOrders, isLoading: recentLoading } = useQuery({
+    queryKey: ['recentOrders', branchId, dateFrom, dateTo],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (branchId != null) params.append('branch_id', String(branchId));
-      params.append('date_from', dateFrom);
-      params.append('date_to', dateTo);
-      const response = await apiClient.get<SalesSummaryResponse>(`/admin/reports/sales-summary?${params.toString()}`);
-      return response.data;
-    },
-    enabled: !!user,
-  });
-
-  const { data: topItems } = useQuery({
-    queryKey: ['topItems', branchId, dateFrom, dateTo],
-    queryFn: async () => {
-      const params = new URLSearchParams();
-      if (branchId != null) params.append('branch_id', String(branchId));
-      params.append('date_from', dateFrom);
-      params.append('date_to', dateTo);
-      const response = await apiClient.get<TopItemRow[]>(`/admin/reports/top-items?${params.toString()}`);
+      const qs = buildReportParams(branchId, dateFrom, dateTo, { limit: '15' });
+      const response = await apiClient.get<RecentOrder[]>(`/admin/reports/recent-orders?${qs}`);
       return Array.isArray(response.data) ? response.data : [];
     },
     enabled: !!user,
   });
 
-  const statusRows = useMemo(() => {
-    const byStatus = overview?.orders_by_status ?? {};
-    const bySource = overview?.orders_by_status_by_source ?? {};
-    const statuses = Array.from(new Set([
-      ...Object.keys(byStatus),
-      ...Object.values(bySource).flatMap((m) => Object.keys(m ?? {})),
-    ]));
+  const { data: inventory, isLoading: inventoryLoading } = useQuery({
+    queryKey: ['inventoryAlerts', branchId, dateFrom, dateTo],
+    queryFn: async () => {
+      const qs = buildReportParams(branchId, dateFrom, dateTo);
+      const response = await apiClient.get<InventoryAlerts>(`/admin/reports/inventory-alerts?${qs}`);
+      return response.data;
+    },
+    enabled: !!user,
+  });
 
-    const preferredOrder = ['placed', 'accepted', 'preparing', 'ready', 'completed', 'cancelled'];
-    statuses.sort((a, b) => {
-      const ai = preferredOrder.indexOf(a);
-      const bi = preferredOrder.indexOf(b);
-      if (ai !== -1 && bi !== -1) return ai - bi;
-      if (ai !== -1) return -1;
-      if (bi !== -1) return 1;
-      return a.localeCompare(b);
-    });
+  const k = summary?.kpis;
+  const hasOrders = (summary?.kpis.total_orders ?? 0) > 0;
 
-    const pos = bySource.pos ?? {};
-    const consumer = bySource.consumer_app ?? {};
-    return statuses.map((s) => ({
-      status: s,
-      total: Number(byStatus[s] ?? 0),
-      pos: Number(pos[s] ?? 0),
-      consumer_app: Number(consumer[s] ?? 0),
-    }));
-  }, [overview]);
-
-  const paymentsMethodRows = useMemo(() => {
-    const byMethod = overview?.payments_by_method ?? {};
-    const bySource = overview?.payments_by_method_by_source ?? {};
-    const methods = Array.from(new Set([
-      ...Object.keys(byMethod),
-      ...Object.values(bySource).flatMap((m) => Object.keys(m ?? {})),
-    ])).sort((a, b) => a.localeCompare(b));
-
-    const pos = bySource.pos ?? {};
-    const consumer = bySource.consumer_app ?? {};
-    return methods.map((m) => ({
-      method: m,
-      total: Number(byMethod[m] ?? 0),
-      pos: Number(pos[m] ?? 0),
-      consumer_app: Number(consumer[m] ?? 0),
-    }));
-  }, [overview]);
-
-  const totalOrders = useMemo(() => {
-    return Object.values(overview?.orders_by_status ?? {}).reduce((s, n) => s + Number(n ?? 0), 0);
-  }, [overview]);
-
-  const paymentsTotal = Number(overview?.payments_total ?? 0);
-  const posOrdersTotal = Object.values(overview?.orders_by_status_by_source?.pos ?? {}).reduce((s, n) => s + Number(n ?? 0), 0);
-  const consumerOrdersTotal = Object.values(overview?.orders_by_status_by_source?.consumer_app ?? {}).reduce((s, n) => s + Number(n ?? 0), 0);
-  const totalRevenue = Number(salesSummary?.total_revenue ?? 0);
-  const totalDiscounts = Number(salesSummary?.total_discounts ?? 0);
-  const averageOrderValue = Number(salesSummary?.average_order_value ?? 0);
-  const totalTax = Number(salesSummary?.total_tax ?? 0);
-  const totalDeliveryFee = Number(salesSummary?.total_delivery_fee ?? 0);
+  const kpiCards = useMemo(
+    () => [
+      {
+        label: 'Revenue',
+        value: formatCurrency(k?.total_revenue ?? 0),
+        sublabel: 'Completed orders',
+        delta: summary?.deltas.revenue_pct,
+        accent: 'text-emerald-600 dark:text-emerald-400',
+      },
+      {
+        label: 'Orders',
+        value: String(k?.total_orders ?? 0),
+        sublabel: `${k?.completed_orders ?? 0} completed`,
+        delta: summary?.deltas.orders_pct,
+        accent: 'text-blue-600 dark:text-blue-400',
+      },
+      {
+        label: 'Avg order value',
+        value: formatCurrency(k?.average_order_value ?? 0),
+        delta: summary?.deltas.aov_pct,
+        accent: 'text-indigo-600 dark:text-indigo-400',
+      },
+      {
+        label: 'Completion rate',
+        value: `${((k?.completion_rate ?? 0) * 100).toFixed(0)}%`,
+        sublabel: `${k?.completed_orders ?? 0} / ${k?.total_orders ?? 0}`,
+        accent: 'text-violet-600 dark:text-violet-400',
+      },
+      {
+        label: 'Active riders',
+        value: String(k?.active_riders ?? 0),
+        sublabel: 'Checked in now',
+        accent: 'text-cyan-600 dark:text-cyan-400',
+      },
+      {
+        label: 'Avg rating',
+        value: k?.avg_brand_rating != null ? k.avg_brand_rating.toFixed(1) : '—',
+        sublabel: 'Brand stars',
+        accent: 'text-amber-600 dark:text-amber-400',
+      },
+      {
+        label: 'Discounts',
+        value: formatCurrency(k?.total_discounts ?? 0),
+        accent: 'text-rose-600 dark:text-rose-400',
+      },
+      {
+        label: 'Delivery fees',
+        value: formatCurrency(k?.total_delivery_fee ?? 0),
+        accent: 'text-sky-600 dark:text-sky-400',
+      },
+    ],
+    [k, summary],
+  );
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-8"
+        className="mb-6"
       >
-        <h1 className="text-4xl font-bold text-gray-800 mb-2">Admin Dashboard</h1>
-        <p className="text-xl text-gray-600">Welcome back, <span className="font-semibold text-blue-600">{user?.name}</span>!</p>
+        <h1 className="text-3xl font-bold text-gray-800 dark:text-slate-100">Admin Dashboard</h1>
+        <p className="text-base text-gray-600 dark:text-slate-400">
+          Welcome back, <span className="font-semibold text-foodies-cta">{user?.name}</span>!
+        </p>
       </motion.div>
 
-      <div className="mb-8">
-        <div className="flex flex-wrap items-end justify-between gap-4 mb-4">
+      {/* Filters */}
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {presetRanges().map((p) => (
+            <button
+              key={p.key}
+              onClick={() => {
+                setDateFrom(p.from);
+                setDateTo(p.to);
+              }}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+                activePreset === p.key
+                  ? 'bg-foodies-cta text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <SearchableSelect
+            label="Branch"
+            value={branchId ? String(branchId) : ''}
+            onChange={(v) => setBranchId(v ? Number(v) : null)}
+            options={[
+              { value: '', label: 'All branches' },
+              ...(branches ?? []).map((b) => ({ value: String(b.id), label: `${b.name} (${b.code})` })),
+            ]}
+            placeholder="All branches"
+            minWidth="min-w-[200px]"
+          />
           <div>
-            <h2 className="text-2xl font-semibold text-gray-800">Overview</h2>
-            <p className="text-sm text-gray-600">Orders, payments, and sales for the selected date range.</p>
-          </div>
-          <div className="flex flex-wrap gap-4 items-end">
-            <SearchableSelect
-              label="Branch"
-              value={branchId ? String(branchId) : ''}
-              onChange={(v) => setBranchId(v ? Number(v) : null)}
-              options={[
-                { value: '', label: 'All branches' },
-                ...(branches ?? []).map((b) => ({ value: String(b.id), label: `${b.name} (${b.code})` })),
-              ]}
-              placeholder="All branches"
-              minWidth="min-w-[200px]"
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">From</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-foodies-cta"
             />
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">From</label>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">To</label>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">To</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-foodies-cta"
+            />
           </div>
         </div>
+      </div>
 
-        {overviewLoading ? (
-          <Loader fullScreen text="Loading overview..." />
-        ) : (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-6 mb-6">
-              <Card>
-                <h3 className="text-sm font-medium text-gray-500 mb-2">Total orders</h3>
-                <p className="text-3xl font-bold text-blue-600">{totalOrders}</p>
-                <p className="text-xs text-gray-500 mt-2">POS: {posOrdersTotal} · Consumer: {consumerOrdersTotal}</p>
-              </Card>
-              <Card>
-                <h3 className="text-sm font-medium text-gray-500 mb-2">Payments received</h3>
-                <p className="text-3xl font-bold text-emerald-600">{formatCurrency(paymentsTotal)}</p>
-                <p className="text-xs text-gray-500 mt-2">From completed orders</p>
-              </Card>
-              <Card>
-                <h3 className="text-sm font-medium text-gray-500 mb-2">Total revenue</h3>
-                <p className="text-3xl font-bold text-indigo-600">
-                  {formatCurrency(totalRevenue)}
-                </p>
-              </Card>
-              <Card>
-                <h3 className="text-sm font-medium text-gray-500 mb-2">Avg order value</h3>
-                <p className="text-3xl font-bold text-emerald-700">{formatCurrency(averageOrderValue)}</p>
-                <p className="text-xs text-gray-500 mt-2">Discounts: {formatCurrency(totalDiscounts)}</p>
-              </Card>
-              <Card>
-                <h3 className="text-sm font-medium text-gray-500 mb-2">Total tax</h3>
-                <p className="text-3xl font-bold text-purple-700">{formatCurrency(totalTax)}</p>
-              </Card>
-              <Card>
-                <h3 className="text-sm font-medium text-gray-500 mb-2">Delivery fees</h3>
-                <p className="text-3xl font-bold text-sky-700">{formatCurrency(totalDeliveryFee)}</p>
-              </Card>
-            </div>
+      {/* KPI row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        {kpiCards.map((card, i) => (
+          <KpiCard key={card.label} index={i} loading={summaryLoading} {...card} />
+        ))}
+      </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <Card className="p-0 overflow-hidden">
-                <div className="p-4 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-800">Orders by status</h3>
-                  <p className="text-sm text-gray-600">Totals and POS vs Consumer split.</p>
-                </div>
-                <div className="p-4 overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500">
-                        <th className="py-2 pr-3">Status</th>
-                        <th className="py-2 pr-3">Total</th>
-                        <th className="py-2 pr-3">POS</th>
-                        <th className="py-2 pr-3">Consumer</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {statusRows.length === 0 ? (
-                        <tr><td className="py-3 text-gray-500" colSpan={4}>No orders for this day.</td></tr>
-                      ) : statusRows.map((r) => (
-                        <tr key={r.status}>
-                          <td className="py-2 pr-3 font-medium text-gray-800">{r.status}</td>
-                          <td className="py-2 pr-3">{r.total}</td>
-                          <td className="py-2 pr-3">{r.pos}</td>
-                          <td className="py-2 pr-3">{r.consumer_app}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
+      {/* Revenue trend (full width) */}
+      <div className="mb-6">
+        <ChartCard
+          title="Revenue & orders trend"
+          subtitle="Daily revenue (area) and order count (line) for the selected range."
+          loading={summaryLoading}
+          isEmpty={!summaryLoading && !hasOrders}
+        >
+          {summary && <RevenueTrendChart data={summary.time_series} theme={theme} />}
+        </ChartCard>
+      </div>
 
-              <Card className="p-0 overflow-hidden">
-                <div className="p-4 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-800">Payments by method</h3>
-                  <p className="text-sm text-gray-600">From completed orders, split by POS vs Consumer.</p>
-                </div>
-                <div className="p-4 overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500">
-                        <th className="py-2 pr-3">Method</th>
-                        <th className="py-2 pr-3">Total</th>
-                        <th className="py-2 pr-3">POS</th>
-                        <th className="py-2 pr-3">Consumer</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {paymentsMethodRows.length === 0 ? (
-                        <tr><td className="py-3 text-gray-500" colSpan={4}>No payments for this day.</td></tr>
-                      ) : paymentsMethodRows.map((r) => (
-                        <tr key={r.method}>
-                          <td className="py-2 pr-3 font-medium text-gray-800">{r.method}</td>
-                          <td className="py-2 pr-3">{formatCurrency(r.total)}</td>
-                          <td className="py-2 pr-3">{formatCurrency(r.pos)}</td>
-                          <td className="py-2 pr-3">{formatCurrency(r.consumer_app)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
+      {/* Breakdown charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <ChartCard
+          title="Orders by status"
+          subtitle="Pipeline across the selected range."
+          loading={summaryLoading}
+          isEmpty={!summaryLoading && (summary?.orders_by_status.length ?? 0) === 0}
+        >
+          {summary && <OrdersByStatusChart data={summary.orders_by_status} theme={theme} />}
+        </ChartCard>
+        <ChartCard
+          title="Top items"
+          subtitle="Best sellers by quantity (completed orders)."
+          loading={summaryLoading}
+          isEmpty={!summaryLoading && (summary?.top_items.length ?? 0) === 0}
+        >
+          {summary && <TopItemsChart data={summary.top_items} theme={theme} />}
+        </ChartCard>
+      </div>
 
-              <Card className="p-0 overflow-hidden">
-                <div className="p-4 border-b border-gray-200">
-                  <h3 className="text-lg font-semibold text-gray-800">Top items</h3>
-                  <p className="text-sm text-gray-600">Best sellers (completed orders) in this range.</p>
-                </div>
-                <div className="p-4 overflow-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-gray-500">
-                        <th className="py-2 pr-3">Item</th>
-                        <th className="py-2 pr-3">Qty</th>
-                        <th className="py-2 pr-3">Revenue</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {(topItems ?? []).length === 0 ? (
-                        <tr><td className="py-3 text-gray-500" colSpan={3}>No sales for this range.</td></tr>
-                      ) : (topItems ?? []).slice(0, 10).map((row) => (
-                        <tr key={row.menu_item_id}>
-                          <td className="py-2 pr-3 font-medium text-gray-800">{row.name}</td>
-                          <td className="py-2 pr-3">{Number(row.quantity ?? 0)}</td>
-                          <td className="py-2 pr-3">{formatCurrency(Number(row.total_revenue ?? 0))}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </div>
-          </>
-        )}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <ChartCard
+          title="Order type"
+          subtitle="Delivery / pickup / dine-in."
+          loading={summaryLoading}
+          isEmpty={!summaryLoading && (summary?.orders_by_type.length ?? 0) === 0}
+        >
+          {summary && <OrderTypeDonut data={summary.orders_by_type} theme={theme} />}
+        </ChartCard>
+        <ChartCard
+          title="Order source"
+          subtitle="POS vs app vs web."
+          loading={summaryLoading}
+          isEmpty={!summaryLoading && (summary?.orders_by_source.length ?? 0) === 0}
+        >
+          {summary && <SourceSplitDonut data={summary.orders_by_source} theme={theme} />}
+        </ChartCard>
+        <ChartCard
+          title="Payments by method"
+          subtitle="From completed orders."
+          loading={summaryLoading}
+          isEmpty={!summaryLoading && (summary?.payments_by_method.length ?? 0) === 0}
+        >
+          {summary && <PaymentMethodDonut data={summary.payments_by_method} theme={theme} />}
+        </ChartCard>
+      </div>
+
+      {/* Operational panels */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <ChartCard title="Delivery operations" subtitle="Live riders + delivery status." loading={summaryLoading}>
+          {summary && <DeliveryStatusPanel delivery={summary.delivery} />}
+        </ChartCard>
+        <ChartCard title="Ratings & feedback" subtitle="Brand & rider stars, recent comments." loading={summaryLoading}>
+          {summary && <RatingsPanel ratings={summary.ratings} />}
+        </ChartCard>
+        <ChartCard title="Recent orders" subtitle="Latest 15 in range." loading={recentLoading}>
+          {recentOrders && <RecentOrdersPanel orders={recentOrders} />}
+        </ChartCard>
+      </div>
+
+      {/* Inventory (secondary) */}
+      <div className="mb-6">
+        <ChartCard title="Inventory alerts" subtitle="Low stock vs reorder point and recent wastage." loading={inventoryLoading}>
+          {inventory && <InventoryAlertsPanel data={inventory} />}
+        </ChartCard>
       </div>
     </div>
   );

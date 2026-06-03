@@ -12,6 +12,7 @@ import {
   RiderCompPlan,
   RiderPayrollRun,
   RiderOpsMetricsSnapshot,
+  RiderBreakSession,
 } from '../../types';
 
 export interface ModifierGroupResponse {
@@ -434,6 +435,19 @@ export const adminService = {
   }) => {
     const response = await apiClient.post('/admin/rider-hrm/attendance/check-out', data);
     return response.data;
+  },
+
+  getRiderBreaks: async (
+    riderUserId: number,
+    opts?: { from?: string; to?: string; limit?: number },
+  ): Promise<RiderBreakSession[]> => {
+    const params = new URLSearchParams();
+    params.append('rider_user_id', String(riderUserId));
+    if (opts?.from) params.append('from', opts.from);
+    if (opts?.to) params.append('to', opts.to);
+    if (opts?.limit != null) params.append('limit', String(opts.limit));
+    const response = await apiClient.get(`/admin/rider-hrm/attendance/breaks?${params.toString()}`);
+    return response.data?.items ?? [];
   },
 
   getRiderCompPlans: async (branchId?: number): Promise<RiderCompPlan[]> => {
