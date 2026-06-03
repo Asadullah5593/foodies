@@ -83,6 +83,77 @@ export class ReportsController {
         );
     }
 
+    @Get('dashboard-summary')
+    dashboardSummary(
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
+        @Query('branch_id') branchId: string,
+        @Query('date_from') dateFrom: string,
+        @Query('date_to') dateTo: string,
+    ) {
+        return this.service.dashboardSummary(
+            user.tenantId,
+            {
+                branch_id: branchId ? +branchId : undefined,
+                date_from: dateFrom,
+                date_to: dateTo,
+            },
+            user.allowedBranchIds,
+        );
+    }
+
+    @Get('recent-orders')
+    recentOrders(
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
+        @Query('branch_id') branchId: string,
+        @Query('limit') limit: string,
+        @Query('date_from') dateFrom: string,
+        @Query('date_to') dateTo: string,
+    ) {
+        return this.service.recentOrders(
+            user.tenantId,
+            {
+                branch_id: branchId ? +branchId : undefined,
+                limit: limit ? +limit : 15,
+                date_from: dateFrom,
+                date_to: dateTo,
+            },
+            user.allowedBranchIds,
+        );
+    }
+
+    @Get('inventory-alerts')
+    inventoryAlerts(
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
+        @Query('branch_id') branchId: string,
+        @Query('date_from') dateFrom: string,
+        @Query('date_to') dateTo: string,
+    ) {
+        return this.service.inventoryAlerts(
+            user.tenantId,
+            {
+                branch_id: branchId ? +branchId : undefined,
+                date_from: dateFrom,
+                date_to: dateTo,
+            },
+            user.allowedBranchIds,
+        );
+    }
+
     @Get('shift-summary')
     shiftSummary(
         @CurrentUser()

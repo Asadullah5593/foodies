@@ -1,10 +1,15 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
 import { Order } from '../entities/order.entity';
 import { OrderItem } from '../entities/order-item.entity';
 import { Shift } from '../entities/shift.entity';
 import { Payment } from '../entities/payment.entity';
+import { BrandOrderRating } from '../entities/brand-order-rating.entity';
+import { RiderOrderRating } from '../entities/rider-order-rating.entity';
+import { RiderPresence } from '../entities/rider-presence.entity';
+import { InventoryOnHand } from '../entities/inventory-on-hand.entity';
+import { WastageEvent } from '../entities/wastage-event.entity';
 
 @Injectable()
 export class ReportsService {
@@ -14,6 +19,16 @@ export class ReportsService {
         private orderItemRepo: Repository<OrderItem>,
         @InjectRepository(Shift) private shiftRepo: Repository<Shift>,
         @InjectRepository(Payment) private paymentRepo: Repository<Payment>,
+        @InjectRepository(BrandOrderRating)
+        private brandRatingRepo: Repository<BrandOrderRating>,
+        @InjectRepository(RiderOrderRating)
+        private riderRatingRepo: Repository<RiderOrderRating>,
+        @InjectRepository(RiderPresence)
+        private riderPresenceRepo: Repository<RiderPresence>,
+        @InjectRepository(InventoryOnHand)
+        private inventoryOnHandRepo: Repository<InventoryOnHand>,
+        @InjectRepository(WastageEvent)
+        private wastageRepo: Repository<WastageEvent>,
     ) {}
 
     private resolveDayRange(filters: {
@@ -32,6 +47,106 @@ export class ReportsService {
             dateTo.setHours(23, 59, 59, 999);
         }
         return { dateFrom, dateTo };
+    }
+
+    /**
+     * Throws if the caller asked for a specific branch they are not allowed to
+     * see. Mirrors the inline checks used by the existing report methods.
+     */
+    private assertBranchAccess(
+        allowedBranchIds: number[] | null | undefined,
+        branchId?: number,
+    ): void {
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0 &&
+            branchId != null &&
+            !allowedBranchIds.includes(branchId)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this branch',
+            );
+        }
+    }
+
+    /**
+     * Applies the shared tenant + branch-allowlist + single-branch filter to a
+     * query builder whose order/scoped alias is `alias`. The alias entity must
+     * expose `tenantId` and `branchId` columns.
+     */
+    private applyOrderScope<T extends ObjectLiteral>(
+        qb: SelectQueryBuilder<T>,
+        alias: string,
+        tenantId: number | null,
+        allowedBranchIds: number[] | null | undefined,
+        branchId?: number,
+    ): SelectQueryBuilder<T> {
+        if (tenantId != null)
+            qb.andWhere(`${alias}.tenantId = :tenantId`, { tenantId });
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0
+        ) {
+            qb.andWhere(`${alias}.branchId IN (:...allowedBranchIds)`, {
+                allowedBranchIds,
+            });
+        }
+        if (branchId)
+            qb.andWhere(`${alias}.branchId = :branchId`, { branchId });
+        return qb;
+    }
+
+    private formatDay(d: Date): string {
+        return d.toISOString().slice(0, 10);
+    }
+
+    /** Completed-order financial aggregate over a date range (KPIs / deltas). */
+    private async kpiAggregate(
+        range: { dateFrom: Date; dateTo: Date },
+        tenantId: number | null,
+        allowedBranchIds: number[] | null | undefined,
+        branchId?: number,
+    ): Promise<{
+        completed_orders: number;
+        total_revenue: number;
+        total_sales: number;
+        total_discounts: number;
+        total_tax: number;
+        total_service_charge: number;
+        total_delivery_fee: number;
+    }> {
+        const qb = this.orderRepo
+            .createQueryBuilder('o')
+            .where("o.status = 'completed'")
+            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', range)
+            .select('COUNT(*)', 'completed_orders')
+            .addSelect('COALESCE(SUM(o.totalAmount), 0)', 'total_revenue')
+            .addSelect('COALESCE(SUM(o.subtotal), 0)', 'total_sales')
+            .addSelect('COALESCE(SUM(o.discountAmount), 0)', 'total_discounts')
+            .addSelect('COALESCE(SUM(o.taxAmount), 0)', 'total_tax')
+            .addSelect(
+                'COALESCE(SUM(o.serviceCharge), 0)',
+                'total_service_charge',
+            )
+            .addSelect('COALESCE(SUM(o.deliveryFee), 0)', 'total_delivery_fee');
+        this.applyOrderScope(qb, 'o', tenantId, allowedBranchIds, branchId);
+        const r = await qb.getRawOne<Record<string, string>>();
+        return {
+            completed_orders: Number(r?.completed_orders ?? 0),
+            total_revenue: Number(r?.total_revenue ?? 0),
+            total_sales: Number(r?.total_sales ?? 0),
+            total_discounts: Number(r?.total_discounts ?? 0),
+            total_tax: Number(r?.total_tax ?? 0),
+            total_service_charge: Number(r?.total_service_charge ?? 0),
+            total_delivery_fee: Number(r?.total_delivery_fee ?? 0),
+        };
+    }
+
+    private pctDelta(curr: number, prev: number): number | null {
+        if (!prev) return null;
+        return ((curr - prev) / prev) * 100;
     }
 
     async dayOverview(
@@ -475,5 +590,699 @@ export class ReportsService {
                 closed_at: s.closedAt?.toISOString() ?? null,
             };
         });
+    }
+
+    /**
+     * Consolidated payload for the admin dashboard: KPIs (+ deltas vs the
+     * previous equal-length window), order/payment breakdowns, a daily
+     * time-series, top items, delivery ops and ratings. All aggregates run in
+     * parallel and are scoped by tenant + branch allowlist.
+     */
+    async dashboardSummary(
+        tenantId: number | null,
+        filters: { branch_id?: number; date_from?: string; date_to?: string },
+        allowedBranchIds?: number[] | null,
+    ) {
+        this.assertBranchAccess(allowedBranchIds, filters.branch_id);
+        const branchId = filters.branch_id;
+        const { dateFrom, dateTo } = this.resolveDayRange(filters);
+
+        // Previous window of equal length, ending the day before this one.
+        const spanMs = dateTo.getTime() - dateFrom.getTime();
+        const prevTo = new Date(dateFrom.getTime() - 1);
+        const prevFrom = new Date(prevTo.getTime() - spanMs);
+
+        const scope = (qb: SelectQueryBuilder<Order>) =>
+            this.applyOrderScope(qb, 'o', tenantId, allowedBranchIds, branchId);
+
+        // 1. KPI aggregate (current) + previous-period aggregate for deltas
+        const kpiCurrentP = this.kpiAggregate(
+            { dateFrom, dateTo },
+            tenantId,
+            allowedBranchIds,
+            branchId,
+        );
+        const kpiPrevP = this.kpiAggregate(
+            { dateFrom: prevFrom, dateTo: prevTo },
+            tenantId,
+            allowedBranchIds,
+            branchId,
+        );
+
+        // 2. Orders by status (all statuses, in range)
+        const ordersByStatusP = scope(
+            this.orderRepo
+                .createQueryBuilder('o')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('o.status', 'status')
+                .addSelect('COUNT(*)', 'count')
+                .groupBy('o.status'),
+        ).getRawMany<{ status: string; count: string }>();
+
+        // 3. Orders by type
+        const ordersByTypeP = scope(
+            this.orderRepo
+                .createQueryBuilder('o')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('o.orderType', 'type')
+                .addSelect('COUNT(*)', 'count')
+                .addSelect('COALESCE(SUM(o.totalAmount), 0)', 'revenue')
+                .groupBy('o.orderType'),
+        ).getRawMany<{ type: string; count: string; revenue: string }>();
+
+        // 4. Orders by source
+        const ordersBySourceP = scope(
+            this.orderRepo
+                .createQueryBuilder('o')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('o.source', 'source')
+                .addSelect('COUNT(*)', 'count')
+                .addSelect('COALESCE(SUM(o.totalAmount), 0)', 'revenue')
+                .groupBy('o.source'),
+        ).getRawMany<{ source: string; count: string; revenue: string }>();
+
+        // 5. Payments by method (completed orders, completedAt in range)
+        const paymentsByMethodP = this.applyOrderScope(
+            this.paymentRepo
+                .createQueryBuilder('p')
+                .innerJoin(Order, 'o', 'o.id = p.orderId')
+                .andWhere("o.status = 'completed'")
+                .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('p.paymentMethod', 'method')
+                .addSelect('COALESCE(SUM(p.amount), 0)', 'amount')
+                .addSelect('COUNT(*)', 'count')
+                .groupBy('p.paymentMethod'),
+            'o',
+            tenantId,
+            allowedBranchIds,
+            branchId,
+        ).getRawMany<{ method: string; amount: string; count: string }>();
+
+        // 6. Daily time-series
+        const timeSeriesP = scope(
+            this.orderRepo
+                .createQueryBuilder('o')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select("TO_CHAR(o.placedAt, 'YYYY-MM-DD')", 'day')
+                .addSelect('COUNT(*)', 'orders')
+                .addSelect('COALESCE(SUM(o.totalAmount), 0)', 'revenue')
+                .addSelect(
+                    "COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.totalAmount ELSE 0 END), 0)",
+                    'completed_revenue',
+                )
+                .addSelect(
+                    "SUM(CASE WHEN o.status = 'completed' THEN 1 ELSE 0 END)",
+                    'completed_orders',
+                )
+                .groupBy("TO_CHAR(o.placedAt, 'YYYY-MM-DD')")
+                .orderBy('day', 'ASC'),
+        ).getRawMany<{
+            day: string;
+            orders: string;
+            revenue: string;
+            completed_revenue: string;
+            completed_orders: string;
+        }>();
+
+        // 7. Top items (completed orders, by quantity)
+        const topItemsP = this.applyOrderScope(
+            this.orderItemRepo
+                .createQueryBuilder('oi')
+                .innerJoin('oi.order', 'o')
+                .leftJoin('oi.menuItem', 'mi')
+                .andWhere("o.status = 'completed'")
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('oi.menuItemId', 'menu_item_id')
+                .addSelect('MAX(COALESCE(mi.name, oi.nameSnapshot))', 'name')
+                .addSelect('SUM(oi.quantity)', 'quantity')
+                .addSelect('SUM(oi.subtotal)', 'total_revenue')
+                .groupBy('oi.menuItemId')
+                .orderBy('SUM(oi.quantity)', 'DESC')
+                .limit(10),
+            'o',
+            tenantId,
+            allowedBranchIds,
+            branchId,
+        ).getRawMany<{
+            menu_item_id: number;
+            name: string;
+            quantity: string;
+            total_revenue: string;
+        }>();
+
+        // 8. Delivery ops: counts by delivery status (delivery orders in range)
+        const deliveryByStatusP = scope(
+            this.orderRepo
+                .createQueryBuilder('o')
+                .andWhere("o.orderType = 'delivery'")
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select(
+                    "COALESCE(o.deliveryStatus, 'unassigned')",
+                    'status',
+                )
+                .addSelect('COUNT(*)', 'count')
+                .groupBy("COALESCE(o.deliveryStatus, 'unassigned')"),
+        ).getRawMany<{ status: string; count: string }>();
+
+        // 8b. Live rider presence (a "now" snapshot, not date filtered)
+        const presenceQb = this.riderPresenceRepo
+            .createQueryBuilder('rp')
+            .select(
+                'COUNT(*) FILTER (WHERE rp.isCheckedIn = true)',
+                'active',
+            )
+            .addSelect(
+                'COUNT(*) FILTER (WHERE rp.isPaused = true)',
+                'paused',
+            );
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0
+        ) {
+            presenceQb.andWhere('rp.branchId IN (:...allowedBranchIds)', {
+                allowedBranchIds,
+            });
+        }
+        if (branchId)
+            presenceQb.andWhere('rp.branchId = :branchId', { branchId });
+        const presenceP = presenceQb.getRawOne<{
+            active: string;
+            paused: string;
+        }>();
+
+        // 9. Ratings (scoped via the joined order)
+        const brandAvgP = this.applyOrderScope(
+            this.brandRatingRepo
+                .createQueryBuilder('r')
+                .innerJoin(Order, 'o', 'o.id = r.orderId')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('AVG(r.stars)', 'avg')
+                .addSelect('COUNT(*)', 'count'),
+            'o',
+            tenantId,
+            allowedBranchIds,
+            branchId,
+        ).getRawOne<{ avg: string | null; count: string }>();
+
+        const riderAvgP = this.applyOrderScope(
+            this.riderRatingRepo
+                .createQueryBuilder('r')
+                .innerJoin(Order, 'o', 'o.id = r.orderId')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('AVG(r.stars)', 'avg')
+                .addSelect('COUNT(*)', 'count'),
+            'o',
+            tenantId,
+            allowedBranchIds,
+            branchId,
+        ).getRawOne<{ avg: string | null; count: string }>();
+
+        // Per-brand rating breakdown (brand ratings are scoped to each brand).
+        const brandByP = this.applyOrderScope(
+            this.brandRatingRepo
+                .createQueryBuilder('r')
+                .innerJoin(Order, 'o', 'o.id = r.orderId')
+                .innerJoin('brands', 'b', 'b.id = r.brandId')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('r.brandId', 'id')
+                .addSelect('MAX(b.name)', 'name')
+                .addSelect('AVG(r.stars)', 'avg')
+                .addSelect('COUNT(*)', 'count')
+                .groupBy('r.brandId')
+                .orderBy('AVG(r.stars)', 'DESC'),
+            'o',
+            tenantId,
+            allowedBranchIds,
+            branchId,
+        ).getRawMany<{ id: number; name: string; avg: string; count: string }>();
+
+        // Per-rider rating breakdown (rider ratings are per individual rider).
+        const riderByP = this.applyOrderScope(
+            this.riderRatingRepo
+                .createQueryBuilder('r')
+                .innerJoin(Order, 'o', 'o.id = r.orderId')
+                .innerJoin('users', 'u', 'u.id = r.riderUserId')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('r.riderUserId', 'id')
+                .addSelect('MAX(u.name)', 'name')
+                .addSelect('AVG(r.stars)', 'avg')
+                .addSelect('COUNT(*)', 'count')
+                .groupBy('r.riderUserId')
+                .orderBy('AVG(r.stars)', 'DESC'),
+            'o',
+            tenantId,
+            allowedBranchIds,
+            branchId,
+        ).getRawMany<{ id: number; name: string; avg: string; count: string }>();
+
+        const brandCommentsP = this.applyOrderScope(
+            this.brandRatingRepo
+                .createQueryBuilder('r')
+                .innerJoin(Order, 'o', 'o.id = r.orderId')
+                .andWhere('r.comment IS NOT NULL')
+                .andWhere("r.comment <> ''")
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('r.stars', 'stars')
+                .addSelect('r.comment', 'comment')
+                .addSelect('r.createdAt', 'created_at')
+                .orderBy('r.createdAt', 'DESC')
+                .limit(5),
+            'o',
+            tenantId,
+            allowedBranchIds,
+            branchId,
+        ).getRawMany<{ stars: number; comment: string; created_at: Date }>();
+
+        const riderCommentsP = this.applyOrderScope(
+            this.riderRatingRepo
+                .createQueryBuilder('r')
+                .innerJoin(Order, 'o', 'o.id = r.orderId')
+                .andWhere('r.comment IS NOT NULL')
+                .andWhere("r.comment <> ''")
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('r.stars', 'stars')
+                .addSelect('r.comment', 'comment')
+                .addSelect('r.createdAt', 'created_at')
+                .orderBy('r.createdAt', 'DESC')
+                .limit(5),
+            'o',
+            tenantId,
+            allowedBranchIds,
+            branchId,
+        ).getRawMany<{ stars: number; comment: string; created_at: Date }>();
+
+        const [
+            kpiCurrent,
+            kpiPrev,
+            ordersByStatusRaw,
+            ordersByTypeRaw,
+            ordersBySourceRaw,
+            paymentsByMethodRaw,
+            timeSeriesRaw,
+            topItemsRaw,
+            deliveryByStatusRaw,
+            presence,
+            brandAvg,
+            riderAvg,
+            brandBy,
+            riderBy,
+            brandComments,
+            riderComments,
+        ] = await Promise.all([
+            kpiCurrentP,
+            kpiPrevP,
+            ordersByStatusP,
+            ordersByTypeP,
+            ordersBySourceP,
+            paymentsByMethodP,
+            timeSeriesP,
+            topItemsP,
+            deliveryByStatusP,
+            presenceP,
+            brandAvgP,
+            riderAvgP,
+            brandByP,
+            riderByP,
+            brandCommentsP,
+            riderCommentsP,
+        ]);
+
+        const orders_by_status = ordersByStatusRaw.map((r) => ({
+            status: r.status,
+            count: Number(r.count),
+        }));
+        const totalOrders = orders_by_status.reduce(
+            (s, r) => s + r.count,
+            0,
+        );
+
+        // Dense, zero-filled daily series for a continuous chart axis. Iterate
+        // in UTC over calendar-date strings so the keys line up exactly with
+        // the SQL TO_CHAR(...) day strings (no local-vs-UTC drift).
+        const seriesMap = new Map(timeSeriesRaw.map((r) => [r.day, r]));
+        const time_series: Array<{
+            day: string;
+            orders: number;
+            revenue: number;
+            completed_revenue: number;
+            completed_orders: number;
+        }> = [];
+        const startDayStr = filters.date_from ?? this.formatDay(dateFrom);
+        const lastDay = filters.date_to ?? this.formatDay(dateTo);
+        const cursor = new Date(`${startDayStr}T00:00:00.000Z`);
+        // Cap the fill to avoid pathological ranges.
+        for (let i = 0; i < 400; i++) {
+            const day = cursor.toISOString().slice(0, 10);
+            const row = seriesMap.get(day);
+            time_series.push({
+                day,
+                orders: Number(row?.orders ?? 0),
+                revenue: Number(row?.revenue ?? 0),
+                completed_revenue: Number(row?.completed_revenue ?? 0),
+                completed_orders: Number(row?.completed_orders ?? 0),
+            });
+            if (day === lastDay) break;
+            cursor.setUTCDate(cursor.getUTCDate() + 1);
+        }
+
+        const recent_comments = [
+            ...brandComments.map((c) => ({
+                type: 'brand' as const,
+                stars: Number(c.stars),
+                comment: c.comment,
+                created_at:
+                    c.created_at instanceof Date
+                        ? c.created_at.toISOString()
+                        : String(c.created_at),
+            })),
+            ...riderComments.map((c) => ({
+                type: 'rider' as const,
+                stars: Number(c.stars),
+                comment: c.comment,
+                created_at:
+                    c.created_at instanceof Date
+                        ? c.created_at.toISOString()
+                        : String(c.created_at),
+            })),
+        ]
+            .sort((a, b) => b.created_at.localeCompare(a.created_at))
+            .slice(0, 5);
+
+        const avgBrand = brandAvg?.avg != null ? Number(brandAvg.avg) : null;
+        const avgRider = riderAvg?.avg != null ? Number(riderAvg.avg) : null;
+        const activeRiders = Number(presence?.active ?? 0);
+
+        return {
+            date_from: filters.date_from ?? this.formatDay(dateFrom),
+            date_to: filters.date_to ?? this.formatDay(dateTo),
+            branch_id: branchId ?? null,
+            kpis: {
+                total_revenue: kpiCurrent.total_revenue,
+                completed_orders: kpiCurrent.completed_orders,
+                total_orders: totalOrders,
+                average_order_value: kpiCurrent.completed_orders
+                    ? kpiCurrent.total_revenue / kpiCurrent.completed_orders
+                    : 0,
+                completion_rate: totalOrders
+                    ? kpiCurrent.completed_orders / totalOrders
+                    : 0,
+                total_discounts: kpiCurrent.total_discounts,
+                total_tax: kpiCurrent.total_tax,
+                total_service_charge: kpiCurrent.total_service_charge,
+                total_delivery_fee: kpiCurrent.total_delivery_fee,
+                active_riders: activeRiders,
+                avg_brand_rating: avgBrand,
+                avg_rider_rating: avgRider,
+            },
+            deltas: {
+                revenue_pct: this.pctDelta(
+                    kpiCurrent.total_revenue,
+                    kpiPrev.total_revenue,
+                ),
+                orders_pct: this.pctDelta(
+                    kpiCurrent.completed_orders,
+                    kpiPrev.completed_orders,
+                ),
+                aov_pct: this.pctDelta(
+                    kpiCurrent.completed_orders
+                        ? kpiCurrent.total_revenue /
+                              kpiCurrent.completed_orders
+                        : 0,
+                    kpiPrev.completed_orders
+                        ? kpiPrev.total_revenue / kpiPrev.completed_orders
+                        : 0,
+                ),
+            },
+            orders_by_status,
+            orders_by_type: ordersByTypeRaw.map((r) => ({
+                type: r.type,
+                count: Number(r.count),
+                revenue: Number(r.revenue),
+            })),
+            orders_by_source: ordersBySourceRaw.map((r) => ({
+                source: r.source,
+                count: Number(r.count),
+                revenue: Number(r.revenue),
+            })),
+            payments_by_method: paymentsByMethodRaw.map((r) => ({
+                method: r.method,
+                amount: Number(r.amount),
+                count: Number(r.count),
+            })),
+            time_series,
+            top_items: topItemsRaw.map((r) => ({
+                menu_item_id: r.menu_item_id,
+                name: r.name,
+                quantity: Number(r.quantity),
+                total_revenue: Number(r.total_revenue),
+            })),
+            delivery: {
+                by_status: deliveryByStatusRaw.map((r) => ({
+                    status: r.status,
+                    count: Number(r.count),
+                })),
+                active_riders: activeRiders,
+                paused_riders: Number(presence?.paused ?? 0),
+            },
+            ratings: {
+                avg_brand: avgBrand,
+                brand_count: Number(brandAvg?.count ?? 0),
+                avg_rider: avgRider,
+                rider_count: Number(riderAvg?.count ?? 0),
+                by_brand: brandBy.map((r) => ({
+                    id: r.id,
+                    name: r.name,
+                    avg: Number(r.avg),
+                    count: Number(r.count),
+                })),
+                by_rider: riderBy.map((r) => ({
+                    id: r.id,
+                    name: r.name,
+                    avg: Number(r.avg),
+                    count: Number(r.count),
+                })),
+                recent_comments,
+            },
+        };
+    }
+
+    /** Most recent orders in the range (feed for the dashboard). */
+    async recentOrders(
+        tenantId: number | null,
+        filters: {
+            branch_id?: number;
+            date_from?: string;
+            date_to?: string;
+            limit?: number;
+        },
+        allowedBranchIds?: number[] | null,
+    ) {
+        this.assertBranchAccess(allowedBranchIds, filters.branch_id);
+        const { dateFrom, dateTo } = this.resolveDayRange(filters);
+        const limit = filters.limit ?? 15;
+
+        const qb = this.orderRepo
+            .createQueryBuilder('o')
+            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                dateFrom,
+                dateTo,
+            })
+            .select('o.id', 'id')
+            .addSelect('o.orderNumber', 'order_number')
+            .addSelect('o.orderType', 'order_type')
+            .addSelect('o.source', 'source')
+            .addSelect('o.status', 'status')
+            .addSelect('o.deliveryStatus', 'delivery_status')
+            .addSelect('o.totalAmount', 'total_amount')
+            .addSelect('o.customerName', 'customer_name')
+            .addSelect('o.placedAt', 'placed_at')
+            .orderBy('o.placedAt', 'DESC')
+            .limit(limit);
+        this.applyOrderScope(
+            qb,
+            'o',
+            tenantId,
+            allowedBranchIds,
+            filters.branch_id,
+        );
+        const rows = await qb.getRawMany<{
+            id: number;
+            order_number: string;
+            order_type: string;
+            source: string;
+            status: string;
+            delivery_status: string | null;
+            total_amount: string;
+            customer_name: string | null;
+            placed_at: Date;
+        }>();
+        return rows.map((r) => ({
+            id: r.id,
+            order_number: r.order_number,
+            order_type: r.order_type,
+            source: r.source,
+            status: r.status,
+            delivery_status: r.delivery_status,
+            total_amount: Number(r.total_amount),
+            customer_name: r.customer_name,
+            placed_at:
+                r.placed_at instanceof Date
+                    ? r.placed_at.toISOString()
+                    : String(r.placed_at),
+        }));
+    }
+
+    /** Low-stock items (vs effective reorder point) and recent wastage. */
+    async inventoryAlerts(
+        tenantId: number | null,
+        filters: { branch_id?: number; date_from?: string; date_to?: string },
+        allowedBranchIds?: number[] | null,
+    ) {
+        this.assertBranchAccess(allowedBranchIds, filters.branch_id);
+        const { dateFrom, dateTo } = this.resolveDayRange(filters);
+        const branchId = filters.branch_id;
+
+        // Low stock: total on-hand (summed across locations) per item+branch
+        // is at/under the effective reorder point (branch override, else item
+        // default). Only items that have a reorder point defined.
+        const effectiveReorder =
+            'MAX(COALESCE(s.reorderPoint, it.defaultReorderPoint))';
+        const lowQb = this.inventoryOnHandRepo
+            .createQueryBuilder('ioh')
+            .innerJoin('inventory_items', 'it', 'it.id = ioh.inventoryItemId')
+            .leftJoin(
+                'inventory_item_branch_settings',
+                's',
+                's.inventoryItemId = ioh.inventoryItemId AND s.branchId = ioh.branchId AND s.tenantId = ioh.tenantId',
+            )
+            .select('ioh.inventoryItemId', 'item_id')
+            .addSelect('MAX(it.name)', 'name')
+            .addSelect('ioh.branchId', 'branch_id')
+            .addSelect('SUM(ioh.qty)', 'qty')
+            .addSelect(effectiveReorder, 'reorder_point')
+            .groupBy('ioh.inventoryItemId')
+            .addGroupBy('ioh.branchId')
+            .having(`${effectiveReorder} IS NOT NULL`)
+            .andHaving(`SUM(ioh.qty) <= ${effectiveReorder}`)
+            .orderBy(`${effectiveReorder} - SUM(ioh.qty)`, 'DESC')
+            .limit(10);
+        if (tenantId != null)
+            lowQb.andWhere('ioh.tenantId = :tenantId', { tenantId });
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0
+        ) {
+            lowQb.andWhere('ioh.branchId IN (:...allowedBranchIds)', {
+                allowedBranchIds,
+            });
+        }
+        if (branchId)
+            lowQb.andWhere('ioh.branchId = :branchId', { branchId });
+
+        const wasteQb = this.wastageRepo
+            .createQueryBuilder('w')
+            .innerJoin('inventory_items', 'it', 'it.id = w.inventoryItemId')
+            .andWhere('w.createdAt BETWEEN :dateFrom AND :dateTo', {
+                dateFrom,
+                dateTo,
+            })
+            .select('w.inventoryItemId', 'item_id')
+            .addSelect('it.name', 'name')
+            .addSelect('w.qty', 'qty')
+            .addSelect('w.reason', 'reason')
+            .addSelect('w.createdAt', 'created_at')
+            .orderBy('w.createdAt', 'DESC')
+            .limit(10);
+        if (tenantId != null)
+            wasteQb.andWhere('w.tenantId = :tenantId', { tenantId });
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0
+        ) {
+            wasteQb.andWhere('w.branchId IN (:...allowedBranchIds)', {
+                allowedBranchIds,
+            });
+        }
+        if (branchId)
+            wasteQb.andWhere('w.branchId = :branchId', { branchId });
+
+        const [lowRaw, wasteRaw] = await Promise.all([
+            lowQb.getRawMany<{
+                item_id: number;
+                name: string;
+                branch_id: number;
+                qty: string;
+                reorder_point: string;
+            }>(),
+            wasteQb.getRawMany<{
+                item_id: number;
+                name: string;
+                qty: string;
+                reason: string;
+                created_at: Date;
+            }>(),
+        ]);
+
+        return {
+            low_stock: lowRaw.map((r) => ({
+                item_id: r.item_id,
+                name: r.name,
+                branch_id: r.branch_id,
+                qty: Number(r.qty),
+                reorder_point: Number(r.reorder_point),
+            })),
+            recent_wastage: wasteRaw.map((r) => ({
+                item_id: r.item_id,
+                name: r.name,
+                qty: Number(r.qty),
+                reason: r.reason,
+                created_at:
+                    r.created_at instanceof Date
+                        ? r.created_at.toISOString()
+                        : String(r.created_at),
+            })),
+        };
     }
 }
