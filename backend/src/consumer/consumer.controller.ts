@@ -771,6 +771,28 @@ export class ConsumerController {
         });
     }
 
+    @Get('tenant/menu/search')
+    @ApiOperation({
+        summary:
+            'Tenant-wide menu search across all brands (consumer header autocomplete)',
+    })
+    @ApiQuery({ name: 'q', required: true, example: 'burger' })
+    @ApiQuery({ name: 'limit', required: false, example: '8' })
+    searchTenantMenu(
+        @Query('q') qParam: string,
+        @Query('limit') limitParam: string,
+    ) {
+        const tenantId = this.getTenantIdFromEnv();
+        const q = qParam?.trim();
+        if (!q || q.length < 2) return [];
+        const parsed = limitParam ? parseInt(limitParam, 10) : 8;
+        const limit = Math.min(
+            Math.max(Number.isFinite(parsed) ? parsed : 8, 1),
+            20,
+        );
+        return this.menuService.searchTenantMenu(tenantId, q, limit);
+    }
+
     @Get('tenant/menu/items/:id')
     @ApiOperation({
         summary:

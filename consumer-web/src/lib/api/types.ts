@@ -67,6 +67,18 @@ export type MenuItem = {
   modifier_groups: ModifierGroup[];
 };
 
+/** Lightweight item returned by the tenant-wide menu search (header autocomplete). */
+export type MenuSearchResult = {
+  id: number;
+  name: string;
+  description?: string | null;
+  image_url?: string | null;
+  price: number;
+  category?: string | null;
+  brand_id: number | null;
+  brand_name?: string | null;
+};
+
 export type CartAddon = { addon_id: number; quantity?: number };
 export type CartModifier = { modifier_id: number; quantity?: number };
 

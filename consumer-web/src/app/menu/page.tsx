@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -11,6 +12,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { AppShell, Card } from "@/components/ui";
@@ -229,7 +231,9 @@ function categoryIconForLabel(label: string) {
   return IconGrid;
 }
 
-export default function MenuPage() {
+function MenuPageInner() {
+  const searchParams = useSearchParams();
+  const searchParam = (searchParams.get("search") ?? "").trim();
   const selectedBrandId = useSessionStore((s) => s.selectedBrandId);
   const setBrandId = useSessionStore((s) => s.setBrandId);
 
@@ -250,10 +254,17 @@ export default function MenuPage() {
   });
 
   const menuQuery = useQuery({
-    queryKey: ["tenant-menu", selectedBrandId],
-    queryFn: () => getTenantMenuByBrand(selectedBrandId!),
+    queryKey: ["tenant-menu", selectedBrandId, searchParam],
+    queryFn: () => getTenantMenuByBrand(selectedBrandId!, searchParam || undefined),
     enabled: Boolean(selectedBrandId),
   });
+
+  // A new header search lands here with ?search=…; reset to "All" so matches
+  // across every category are visible.
+  useEffect(() => {
+    setActiveNavId(ALL_NAV_ID);
+    setVisibleCount(ITEMS_PER_PAGE);
+  }, [searchParam]);
 
   const beginSwitch = useCallback(() => {
     setIsSwitching(true);
@@ -577,6 +588,20 @@ export default function MenuPage() {
               })}
             </div>
 
+              {searchParam ? (
+                <div
+                  className="mt-4 flex items-center justify-between gap-3 rounded-xl border px-4 py-2.5 text-sm"
+                  style={{ borderColor: R.line, backgroundColor: "#fff" }}
+                >
+                  <span style={{ color: R.text }}>
+                    Showing results for <span className="font-bold">“{searchParam}”</span>
+                  </span>
+                  <Link href="/menu" className="font-semibold text-red-600 hover:underline">
+                    Clear
+                  </Link>
+                </div>
+              ) : null}
+
               {!selectedBrandId ? (
                 <Card className="mt-8">
                   <p className="text-sm text-[var(--muted)]">Choose a brand to load its menu.</p>
@@ -603,6 +628,21 @@ export default function MenuPage() {
                         transition={{ duration: 0.16, ease: "easeInOut" }}
                       >
                         <MenuGridSkeleton count={9} />
+                      </motion.div>
+                    ) : menuList.length === 0 ? (
+                      <motion.div
+                        key="empty"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                      >
+                        <Card>
+                          <p className="text-sm" style={{ color: R.muted }}>
+                            {searchParam
+                              ? `No items match “${searchParam}” in this brand. Pick another brand above, or clear the search.`
+                              : "No items available in this brand yet."}
+                          </p>
+                        </Card>
                       </motion.div>
                     ) : (
                       <motion.div
@@ -729,5 +769,13 @@ export default function MenuPage() {
         <SiteFooter />
       </div>
     </AppShell>
+  );
+}
+
+export default function MenuPage() {
+  return (
+    <Suspense fallback={null}>
+      <MenuPageInner />
+    </Suspense>
   );
 }

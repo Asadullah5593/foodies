@@ -952,6 +952,66 @@ export class MenuService {
      *
      * Pricing uses the menu item's base_price (no branch overrides).
      */
+    /**
+     * Tenant-wide menu search across all of the tenant's brands — powers the
+     * consumer header search/autocomplete. Returns lightweight suggestions
+     * (name matches ranked first), capped at `limit`.
+     */
+    async searchTenantMenu(tenantId: number, query: string, limit = 8) {
+        const q = query.trim();
+        if (!q) return [];
+        const brands = await this.brandRepo.find({
+            where: { tenantId },
+            select: ['id', 'name'],
+        });
+        if (!brands.length) return [];
+        const brandNameById = new Map(brands.map((b) => [b.id, b.name]));
+        const brandIds = brands.map((b) => b.id);
+        const escaped = q.replace(/%/g, '\\%').replace(/_/g, '\\_');
+        const like = `%${escaped}%`;
+        const prefix = `${escaped}%`;
+
+        // Rank via an aliased select column (not a raw orderBy expression):
+        // a dotted CASE in orderBy() collides with TypeORM's join+take
+        // pagination rewrite and throws at runtime.
+        const items = await this.itemRepo
+            .createQueryBuilder('i')
+            .leftJoinAndSelect('i.category', 'c')
+            .addSelect(
+                'CASE WHEN LOWER(i.name) LIKE LOWER(:prefix) THEN 0 WHEN LOWER(i.name) LIKE LOWER(:like) THEN 1 ELSE 2 END',
+                'rank',
+            )
+            .where('i.brandId IN (:...brandIds)', { brandIds })
+            .andWhere('i.isActive = :active', { active: true })
+            .andWhere('(i.dealOnly IS NULL OR i.dealOnly = false)')
+            .andWhere(
+                '(LOWER(i.name) LIKE LOWER(:like) OR LOWER(i.description) LIKE LOWER(:like) OR LOWER(c.name) LIKE LOWER(:like))',
+                { like },
+            )
+            .setParameter('prefix', prefix)
+            .orderBy('rank', 'ASC')
+            .addOrderBy('i.name', 'ASC')
+            .take(limit)
+            .getMany();
+
+        return items.map((item) => {
+            const base = Number(item.basePrice ?? 0);
+            return {
+                id: item.id,
+                name: item.name,
+                description: item.description ?? null,
+                image_url: item.imageUrl ?? null,
+                price: base,
+                category: item.category?.name ?? null,
+                brand_id: item.brandId ?? null,
+                brand_name:
+                    item.brandId != null
+                        ? (brandNameById.get(item.brandId) ?? null)
+                        : null,
+            };
+        });
+    }
+
     async getTenantBrandMenu(
         tenantId: number,
         brandId: number,

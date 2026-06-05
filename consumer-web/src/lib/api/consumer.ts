@@ -9,6 +9,7 @@ import type {
   LoginResponse,
   LoyaltyBalance,
   MenuItem,
+  MenuSearchResult,
   OrderStatus,
   PlaceOrderResponse,
 } from "./types";
@@ -91,6 +92,21 @@ export async function getTenantMenuByBrand(brandId: number, search?: string) {
       search: search?.trim() || undefined,
     },
   });
+  return data;
+}
+
+export async function searchTenantMenu(q: string, limit = 8) {
+  const tenantId = process.env.NEXT_PUBLIC_TENANT_ID;
+  const { data } = await apiClient.get<MenuSearchResult[]>(
+    "/public/consumer/tenant/menu/search",
+    {
+      params: {
+        tenant_id: tenantId || undefined,
+        q: q.trim(),
+        limit,
+      },
+    },
+  );
   return data;
 }
 
