@@ -7,6 +7,7 @@ import Loader from '../../../components/Loader';
 import Button from '../../../components/Button';
 import Modal from '../../../components/Modal';
 import SearchableSelect from '../../../components/SearchableSelect';
+import ClearFiltersButton from '../../../components/ClearFiltersButton';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { procurementService } from '../../../services/api/procurementService';
@@ -82,6 +83,12 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
   const [grnFilterTo, setGrnFilterTo] = useState('');
   const [grnFilterBranch, setGrnFilterBranch] = useState('');
   const [grnSearchText, setGrnSearchText] = useState('');
+  const [poFilterStatus, setPoFilterStatus] = useState('');
+  const [poFilterBranch, setPoFilterBranch] = useState('');
+  const [poSearchText, setPoSearchText] = useState('');
+  const [prFilterStatus, setPrFilterStatus] = useState('');
+  const [prFilterBranch, setPrFilterBranch] = useState('');
+  const [prSearchText, setPrSearchText] = useState('');
   const [confirmPostGrnId, setConfirmPostGrnId] = useState<number | null>(null);
   const [confirmReverseGrnId, setConfirmReverseGrnId] = useState<number | null>(null);
 
@@ -615,6 +622,66 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     return rows;
   }, [grnsQ.data, grnFilterBranch, grnSearchText, poById]);
 
+  const branchFilterOptions = grnBranchFilterOptions;
+
+  const poStatusFilterOptions = useMemo(() => {
+    const set = new Set<string>(
+      (posQ.data ?? []).map((p: any) => String(p.status ?? '')).filter(Boolean),
+    );
+    return [
+      { value: '', label: 'All statuses' },
+      ...Array.from(set).map((s) => ({ value: s, label: prettyStatus(s) })),
+    ];
+  }, [posQ.data]);
+
+  const prStatusFilterOptions = useMemo(() => {
+    const set = new Set<string>(
+      (prsQ.data ?? []).map((p: any) => String(p.status ?? '')).filter(Boolean),
+    );
+    return [
+      { value: '', label: 'All statuses' },
+      ...Array.from(set).map((s) => ({ value: s, label: prettyStatus(s) })),
+    ];
+  }, [prsQ.data]);
+
+  const displayedPos = useMemo(() => {
+    let rows = [...(posQ.data ?? [])];
+    if (poFilterStatus) rows = rows.filter((p: any) => String(p.status) === poFilterStatus);
+    const bid = Number(poFilterBranch);
+    if (Number.isInteger(bid) && bid > 0) {
+      rows = rows.filter((p: any) => Number(p.buyerBranchId) === bid);
+    }
+    const q = poSearchText.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((p: any) => {
+        const pn = String(p.poNumber ?? '').toLowerCase();
+        const prn = String(p.purchaseRequisition?.prNumber ?? '').toLowerCase();
+        const vn = String(vendorById.get(Number(p.vendorId))?.name ?? '').toLowerCase();
+        return pn.includes(q) || prn.includes(q) || vn.includes(q);
+      });
+    }
+    return rows;
+  }, [posQ.data, poFilterStatus, poFilterBranch, poSearchText, vendorById]);
+
+  const displayedPrs = useMemo(() => {
+    let rows = [...(prsQ.data ?? [])];
+    if (prFilterStatus) rows = rows.filter((p: any) => String(p.status) === prFilterStatus);
+    const bid = Number(prFilterBranch);
+    if (Number.isInteger(bid) && bid > 0) {
+      rows = rows.filter((p: any) => Number(p.requestingBranchId) === bid);
+    }
+    const q = prSearchText.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((p: any) => {
+        const pn = String(p.prNumber ?? '').toLowerCase();
+        const vn = String(vendorById.get(Number(p.requestedFromVendorId))?.name ?? '').toLowerCase();
+        const bn = String(branchById.get(Number(p.requestingBranchId))?.name ?? '').toLowerCase();
+        return pn.includes(q) || vn.includes(q) || bn.includes(q);
+      });
+    }
+    return rows;
+  }, [prsQ.data, prFilterStatus, prFilterBranch, prSearchText, vendorById, branchById]);
+
   const selectedPOForCreateGRN = useMemo(
     () => poById.get(Number(grnForm.purchase_order_id)),
     [poById, grnForm.purchase_order_id],
@@ -1089,6 +1156,22 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
             <Button onClick={openCreatePRModal}>Create requisition</Button>
           </div>
 
+          <div className="flex flex-wrap items-end gap-3 mb-4 text-sm">
+            <label className="min-w-[140px]">
+              <div className="text-xs font-medium text-slate-600 mb-1">Status</div>
+              <SearchableSelect value={prFilterStatus} onChange={setPrFilterStatus} options={prStatusFilterOptions} placeholder="All statuses" searchPlaceholder="Search status…" minWidth="w-full" className="w-full" />
+            </label>
+            <label className="min-w-[160px]">
+              <div className="text-xs font-medium text-slate-600 mb-1">Requesting branch</div>
+              <SearchableSelect value={prFilterBranch} onChange={setPrFilterBranch} options={branchFilterOptions} placeholder="All branches" searchPlaceholder="Search branches…" minWidth="w-full" className="w-full" />
+            </label>
+            <label className="min-w-[200px] flex-1">
+              <div className="text-xs font-medium text-slate-600 mb-1">Search PR / vendor / branch</div>
+              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Type to filter…" value={prSearchText} onChange={(e) => setPrSearchText(e.target.value)} />
+            </label>
+            <ClearFiltersButton onClick={() => { setPrFilterStatus(''); setPrFilterBranch(''); setPrSearchText(''); }} />
+          </div>
+
           {prsQ.isLoading ? (
             <Loader />
           ) : (
@@ -1111,7 +1194,13 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                   </tr>
                 </thead>
                 <tbody className="text-slate-700 dark:text-slate-200">
-                  {(prsQ.data ?? []).map((pr: any, idx: number) => (
+                  {displayedPrs.length === 0 ? (
+                    <tr>
+                      <td colSpan={12} className="py-6 text-center text-slate-500">
+                        No purchase requisitions match your filters.
+                      </td>
+                    </tr>
+                  ) : displayedPrs.map((pr: any, idx: number) => (
                     <tr key={pr.id} className="border-t border-slate-100 dark:border-slate-700">
                       <td className="py-2 pr-4">{idx + 1}</td>
                       <td className="py-2 pr-4 font-medium">{pr.prNumber ?? `PR-${pr.id}`}</td>
@@ -1167,6 +1256,21 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
       {tab === 'pos' && canAccessPOModule && (
         <Card>
           <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Purchase orders</h2>
+          <div className="flex flex-wrap items-end gap-3 mb-4 text-sm">
+            <label className="min-w-[140px]">
+              <div className="text-xs font-medium text-slate-600 mb-1">Status</div>
+              <SearchableSelect value={poFilterStatus} onChange={setPoFilterStatus} options={poStatusFilterOptions} placeholder="All statuses" searchPlaceholder="Search status…" minWidth="w-full" className="w-full" />
+            </label>
+            <label className="min-w-[160px]">
+              <div className="text-xs font-medium text-slate-600 mb-1">Buyer branch</div>
+              <SearchableSelect value={poFilterBranch} onChange={setPoFilterBranch} options={branchFilterOptions} placeholder="All branches" searchPlaceholder="Search branches…" minWidth="w-full" className="w-full" />
+            </label>
+            <label className="min-w-[200px] flex-1">
+              <div className="text-xs font-medium text-slate-600 mb-1">Search PO / PR / vendor</div>
+              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Type to filter…" value={poSearchText} onChange={(e) => setPoSearchText(e.target.value)} />
+            </label>
+            <ClearFiltersButton onClick={() => { setPoFilterStatus(''); setPoFilterBranch(''); setPoSearchText(''); }} />
+          </div>
           {posQ.isLoading ? (
             <Loader />
           ) : (
@@ -1183,7 +1287,13 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                   </tr>
                 </thead>
                 <tbody className="text-slate-700 dark:text-slate-200">
-                  {(posQ.data ?? []).map((po: any) => (
+                  {displayedPos.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-6 text-center text-slate-500">
+                        No purchase orders match your filters.
+                      </td>
+                    </tr>
+                  ) : displayedPos.map((po: any) => (
                     <tr key={po.id} className="border-t border-slate-100 dark:border-slate-700">
                       <td className="py-2 pr-4 font-medium">{po.poNumber}</td>
                       <td className="py-2 pr-4">{po.purchaseRequisition?.prNumber ?? '—'}</td>
@@ -1991,12 +2101,21 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
             <Button
               variant="secondary"
               isLoading={updateGRNM.isPending}
+              disabled={updateGRNM.isPending || postGRNM.isPending}
               onClick={() => {
+                const id = Number(grnForm.grn_id);
+                if (!Number.isInteger(id) || id <= 0) {
+                  toast.error('No draft to save');
+                  return;
+                }
+                if (updateGRNM.isPending) return;
                 if (!validateGrnLinesForDraft()) return;
+                // Close the modal on save so a slow save can't be clicked
+                // repeatedly (which previously created duplicate GRN data).
                 updateGRNM.mutate({
-                  id: Number(grnForm.grn_id),
+                  id,
                   payload: buildGrnUpdatePayload(),
-                  keepOpen: true,
+                  keepOpen: false,
                 });
               }}
             >
@@ -2004,6 +2123,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
             </Button>
             <Button
               isLoading={updateGRNM.isPending || postGRNM.isPending}
+              disabled={updateGRNM.isPending || postGRNM.isPending}
               onClick={() => {
                 if (!canPostGrnFromForm()) return;
                 setConfirmPostGrnId(Number(grnForm.grn_id));
