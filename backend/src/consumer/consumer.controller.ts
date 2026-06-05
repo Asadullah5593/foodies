@@ -795,21 +795,23 @@ export class ConsumerController {
     }
 
     /**
-     * Consumer: list unique categories across all brands for the branch's tenant.
+     * Consumer: list unique categories across the brands actually present at the branch.
+     * Categories of other brands of the same tenant (not linked to this branch) are excluded.
      * Example response item:
      * { key: "milkshakes", name: "Milkshakes", brandCount: 3 }
      */
     @Get('categories/global')
     @ApiOperation({
         summary:
-            'List unique categories across all brands for a branch (consumer app)',
+            "List unique categories across the brands present at a branch (consumer app)",
     })
     @ApiQuery({ name: 'branch_id', required: true, example: '1' })
     async getGlobalCategories(@Query('branch_id') branchIdParam: string) {
         const branchId = branchIdParam ? +branchIdParam : undefined;
         if (!branchId) throw new NotFoundException('branch_id is required');
-        const tenantId = await this.getTenantIdFromBranch(branchId);
-        return this.menuService.getConsumerCategoriesForTenant(tenantId);
+        // Validates the branch exists (throws NotFound otherwise).
+        await this.getTenantIdFromBranch(branchId);
+        return this.menuService.getConsumerCategoriesForBranch(branchId);
     }
 
     /**
@@ -831,10 +833,11 @@ export class ConsumerController {
     ) {
         const branchId = branchIdParam ? +branchIdParam : undefined;
         if (!branchId) throw new NotFoundException('branch_id is required');
-        const tenantId = await this.getTenantIdFromBranch(branchId);
+        // Validates the branch exists (throws NotFound otherwise).
+        await this.getTenantIdFromBranch(branchId);
         const brandIds =
-            await this.menuService.getConsumerBrandIdsForCategoryKey(
-                tenantId,
+            await this.menuService.getConsumerBrandIdsForCategoryKeyAtBranch(
+                branchId,
                 categoryKey,
             );
         return this.brandsService.findAllPublicByIds(brandIds);

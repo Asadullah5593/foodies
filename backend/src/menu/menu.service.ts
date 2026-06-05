@@ -92,15 +92,28 @@ export class MenuService {
         });
     }
 
+    /** Resolve ids of the brands linked to a branch (via branch_brand). */
+    private async getBrandIdsForBranch(branchId: number): Promise<number[]> {
+        const branch = await this.branchRepo.findOne({
+            where: { id: branchId },
+            relations: ['branchBrands'],
+        });
+        return (branch?.branchBrands ?? []).map((bb) => bb.brandId);
+    }
+
     /**
-     * Consumer API: list unique category names across all active brands for a tenant.
-     * Used to show a single "Milkshakes" category even if multiple brands define it.
+     * Consumer API: list unique category names across the active brands linked to a branch.
+     * Only brands actually present at the branch are considered, so categories belonging to
+     * other brands of the same tenant are not shown. Still dedupes by name so a category like
+     * "Milkshakes" appears once even if multiple of the branch's brands define it.
      */
-    async getConsumerCategoriesForTenant(tenantId: number) {
+    async getConsumerCategoriesForBranch(branchId: number) {
+        const brandIds = await this.getBrandIdsForBranch(branchId);
+        if (brandIds.length === 0) return [];
         const rows = await this.categoryRepo
             .createQueryBuilder('c')
             .innerJoin('c.brand', 'b')
-            .where('b.tenantId = :tenantId', { tenantId })
+            .where('b.id IN (:...brandIds)', { brandIds })
             .andWhere('b.isActive = :active', { active: true })
             .andWhere('c.isActive = :cActive', { cActive: true })
             .select([
@@ -127,18 +140,21 @@ export class MenuService {
     }
 
     /**
-     * Consumer API: for a given category key (normalized name), return ids of active brands that have this category.
+     * Consumer API: for a given category key (normalized name), return ids of active brands
+     * that are linked to the branch and have this category.
      * The caller (e.g. BrandsService) is responsible for mapping ids to full brand responses.
      */
-    async getConsumerBrandIdsForCategoryKey(
-        tenantId: number,
+    async getConsumerBrandIdsForCategoryKeyAtBranch(
+        branchId: number,
         categoryKey: string,
     ): Promise<number[]> {
+        const brandIds = await this.getBrandIdsForBranch(branchId);
+        if (brandIds.length === 0) return [];
         const key = categoryKey.toLowerCase();
         const rawBrandIds = await this.categoryRepo
             .createQueryBuilder('c')
             .innerJoin('c.brand', 'b')
-            .where('b.tenantId = :tenantId', { tenantId })
+            .where('b.id IN (:...brandIds)', { brandIds })
             .andWhere('b.isActive = :active', { active: true })
             .andWhere('c.isActive = :cActive', { cActive: true })
             .andWhere('LOWER(c.name) = :key', { key })
