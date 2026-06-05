@@ -144,6 +144,10 @@ const MenuVariants: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.menu_item_id) {
+      toast.error('Select a menu item');
+      return;
+    }
     createMutation.mutate({
       menu_item_id: parseInt(formData.menu_item_id),
       name: formData.name,
@@ -250,22 +254,19 @@ const MenuVariants: React.FC = () => {
 
       <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Create Variant" size="medium">
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Menu Item *</label>
-            <select
-              value={formData.menu_item_id}
-              onChange={(e) => setFormData({ ...formData, menu_item_id: e.target.value })}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select Menu Item</option>
-              {menuItems?.map((item: any) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <SearchableSelect
+            label="Menu Item *"
+            value={formData.menu_item_id}
+            onChange={(v) => setFormData({ ...formData, menu_item_id: v })}
+            options={[
+              { value: '', label: 'Select Menu Item' },
+              ...(menuItems ?? []).map((item: { id: number; name: string }) => ({
+                value: String(item.id),
+                label: item.name,
+              })),
+            ]}
+            placeholder="Select Menu Item"
+          />
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Variant Name *</label>
@@ -351,17 +352,19 @@ const MenuVariants: React.FC = () => {
             className="space-y-4"
           >
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Menu Item (Brand)</label>
-              <select
+              <SearchableSelect
+                label="Menu Item (Brand)"
                 value={editVariantForm.menu_item_id}
-                onChange={(e) => setEditVariantForm((f) => ({ ...f, menu_item_id: e.target.value }))}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select menu item</option>
-                {menuItems?.map((item: any) => (
-                  <option key={item.id} value={item.id}>{item.name}</option>
-                ))}
-              </select>
+                onChange={(v) => setEditVariantForm((f) => ({ ...f, menu_item_id: v }))}
+                options={[
+                  { value: '', label: 'Select menu item' },
+                  ...(menuItems ?? []).map((item: { id: number; name: string }) => ({
+                    value: String(item.id),
+                    label: item.name,
+                  })),
+                ]}
+                placeholder="Select menu item"
+              />
               <p className="text-xs text-gray-500 mt-1">Changing the menu item moves this variant to another product (and brand).</p>
             </div>
             <div>

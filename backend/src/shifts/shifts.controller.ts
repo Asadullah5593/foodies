@@ -53,6 +53,23 @@ export class ShiftsController {
         return this.service.findOne(+id, user.tenantId, user.allowedBranchIds);
     }
 
+    @Get(':id/orders')
+    orders(
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+        },
+        @Param('id') id: string,
+    ) {
+        return this.service.getOrdersInShift(
+            +id,
+            user.tenantId,
+            user.allowedBranchIds,
+        );
+    }
+
     @Post()
     store(
         @CurrentUser()
@@ -64,14 +81,24 @@ export class ShiftsController {
         @Body()
         dto: {
             branch_id: number;
-            user_id: number;
+            // The shift owner is always the authenticated user; any user_id in
+            // the body is ignored.
+            user_id?: number;
             opening_cash: number;
             notes?: string;
         },
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.create(dto, user.allowedBranchIds);
+        return this.service.create(
+            {
+                branch_id: dto.branch_id,
+                user_id: user.id,
+                opening_cash: dto.opening_cash,
+                notes: dto.notes,
+            },
+            user.allowedBranchIds,
+        );
     }
 
     @Post(':id/close')
@@ -92,6 +119,7 @@ export class ShiftsController {
             dto,
             user.tenantId,
             user.allowedBranchIds,
+            user.id,
         );
     }
 }

@@ -3,6 +3,7 @@ import {
     PrimaryGeneratedColumn,
     Column,
     ManyToOne,
+    JoinColumn,
     CreateDateColumn,
     UpdateDateColumn,
     Unique,
@@ -43,6 +44,10 @@ export class Shift {
     @Column({ type: 'timestamp', nullable: true })
     closedAt: Date | null;
 
+    /** User who closed the shift (set from the authenticated user on close). */
+    @Column({ type: 'int', nullable: true })
+    closedByUserId: number | null;
+
     @Column({ type: 'text', nullable: true })
     notes: string | null;
 
@@ -57,4 +62,8 @@ export class Shift {
 
     @ManyToOne(() => User, (u) => u.shifts, { onDelete: 'CASCADE' })
     user: User;
+
+    @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
+    @JoinColumn({ name: 'closed_by_user_id' })
+    closer: User | null;
 }

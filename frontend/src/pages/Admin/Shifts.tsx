@@ -3,7 +3,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
-import { Shift, Branch, User } from '../../types';
+import { Shift, Branch } from '../../types';
+import { useAuth } from '../../contexts/AuthContext';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
@@ -15,6 +16,7 @@ import { AccentedList, AccentedListRow } from '../../components/AccentedListRow'
 
 const Shifts: React.FC = () => {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [showOpenForm, setShowOpenForm] = useState(false);
   const [showCloseForm, setShowCloseForm] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
@@ -24,7 +26,6 @@ const Shifts: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [formData, setFormData] = useState({
     branch_id: '',
-    user_id: '',
     opening_cash: '',
     notes: '',
   });
@@ -43,15 +44,6 @@ const Shifts: React.FC = () => {
     },
   });
 
-  // Fetch users
-  const { data: users } = useQuery({
-    queryKey: ['users'],
-    queryFn: async () => {
-      const response = await apiClient.get<User[]>('/admin/users');
-      return response.data;
-    },
-  });
-
   // Fetch shifts
   const { data: shifts, isLoading } = useQuery({
     queryKey: ['shifts', selectedBranch, statusFilter],
@@ -65,6 +57,16 @@ const Shifts: React.FC = () => {
   }, [shiftList, page]);
   React.useEffect(() => setPage(1), [selectedBranch, statusFilter]);
 
+  // Detect a shift already open for the branch chosen in the Open form — only one
+  // open shift is allowed per branch, so we point the user to the existing one.
+  const openFormBranchId = formData.branch_id ? parseInt(formData.branch_id, 10) : null;
+  const { data: openShiftsForBranch } = useQuery({
+    queryKey: ['shifts', 'open-for-branch', openFormBranchId],
+    queryFn: () => adminService.getShifts(openFormBranchId!, 'open'),
+    enabled: showOpenForm && openFormBranchId != null,
+  });
+  const existingOpenShift = (openShiftsForBranch ?? [])[0] ?? null;
+
   // Fetch shift detail for modal
   const { data: shiftDetail } = useQuery({
     queryKey: ['shift-detail', detailShiftId],
@@ -72,12 +74,19 @@ const Shifts: React.FC = () => {
     enabled: !!detailShiftId,
   });
 
+  // Completed orders for the shift being closed (closing-clearance review).
+  const { data: shiftOrders, isLoading: shiftOrdersLoading } = useQuery({
+    queryKey: ['shift-orders', selectedShift?.id],
+    queryFn: () => adminService.getShiftOrders(selectedShift!.id),
+    enabled: showCloseForm && !!selectedShift,
+  });
+
   const createMutation = useMutation({
     mutationFn: adminService.createShift,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shifts'] });
       setShowOpenForm(false);
-      setFormData({ branch_id: '', user_id: '', opening_cash: '', notes: '' });
+      setFormData({ branch_id: '', opening_cash: '', notes: '' });
       toast.success('Shift opened successfully!');
     },
     onError: (error: any) => {
@@ -102,9 +111,16 @@ const Shifts: React.FC = () => {
 
   const handleOpenShift = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.branch_id) {
+      toast.error('Select a branch');
+      return;
+    }
+    if (existingOpenShift) {
+      toast.error('A shift is already open for this branch. Use the open shift instead.');
+      return;
+    }
     createMutation.mutate({
       branch_id: parseInt(formData.branch_id),
-      user_id: parseInt(formData.user_id),
       opening_cash: parseFloat(formData.opening_cash),
       notes: formData.notes || undefined,
     });
@@ -118,6 +134,13 @@ const Shifts: React.FC = () => {
       actualCash: parseFloat(closeFormData.actual_cash),
       notes: closeFormData.notes || undefined,
     });
+  };
+
+  const startClose = (shift: Shift) => {
+    setSelectedShift(shift);
+    setCloseFormData({ actual_cash: '', notes: '' });
+    setShowOpenForm(false);
+    setShowCloseForm(true);
   };
 
   const isSubmitting = createMutation.isPending || closeMutation.isPending;
@@ -161,97 +184,168 @@ const Shifts: React.FC = () => {
 
       <Modal isOpen={showOpenForm} onClose={() => setShowOpenForm(false)} title="Open New Shift" size="medium">
         <form onSubmit={handleOpenShift} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Branch *</label>
-            <select
-              value={formData.branch_id}
-              onChange={(e) => setFormData({ ...formData, branch_id: e.target.value })}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select Branch</option>
-              {branches?.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name} ({branch.code})
-                </option>
-              ))}
-            </select>
-          </div>
+          <SearchableSelect
+            label="Branch *"
+            value={formData.branch_id}
+            onChange={(v) => setFormData({ ...formData, branch_id: v })}
+            options={[
+              { value: '', label: 'Select Branch' },
+              ...(branches ?? []).map((branch) => ({
+                value: String(branch.id),
+                label: `${branch.name} (${branch.code})`,
+              })),
+            ]}
+            placeholder="Select Branch"
+            searchPlaceholder="Search branches..."
+          />
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">User *</label>
-            <select
-              value={formData.user_id}
-              onChange={(e) => setFormData({ ...formData, user_id: e.target.value })}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select User</option>
-              {users?.map((user) => (
-                <option key={user.id} value={user.id}>
-                  {user.name} ({user.email})
-                </option>
-              ))}
-            </select>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Opened by</label>
+            <div className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-800">
+              {user?.name ?? '—'}{user?.email ? ` (${user.email})` : ''}
+            </div>
+            <p className="text-xs text-gray-500 mt-1">The shift is opened under your account.</p>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Opening Cash *</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={formData.opening_cash}
-              onChange={(e) => setFormData({ ...formData, opening_cash: e.target.value })}
-              required
-              placeholder="0.00"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+          {existingOpenShift ? (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 space-y-2">
+              <p>
+                A shift (<strong>{existingOpenShift.shift_number}</strong>) is already open for this branch.
+                Only one shift can be open per branch — use the existing one.
+              </p>
+              <Button
+                type="button"
+                size="small"
+                variant="view"
+                onClick={() => {
+                  setShowOpenForm(false);
+                  setDetailShiftId(existingOpenShift.id);
+                  setShowDetailModal(true);
+                }}
+              >
+                View open shift
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Opening Cash *</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={formData.opening_cash}
+                  onChange={(e) => setFormData({ ...formData, opening_cash: e.target.value })}
+                  required
+                  placeholder="0.00"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-            <textarea
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              rows={3}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
+                <textarea
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  rows={3}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </>
+          )}
 
           <div className="flex gap-2 justify-end">
             <Button type="button" variant="outline" onClick={() => setShowOpenForm(false)}>
               Cancel
             </Button>
-            <Button type="submit" isLoading={createMutation.isPending}>
+            <Button
+              type="submit"
+              isLoading={createMutation.isPending}
+              disabled={!!existingOpenShift || !formData.branch_id}
+            >
               Open Shift
             </Button>
           </div>
         </form>
       </Modal>
 
-      <Modal isOpen={showCloseForm} onClose={() => setShowCloseForm(false)} title="Close Shift" size="medium">
+      <Modal isOpen={showCloseForm} onClose={() => setShowCloseForm(false)} title="Close Shift" size="large">
         <form onSubmit={handleCloseShift} className="space-y-4">
           {selectedShift && (
             <>
-              <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+              <div className="bg-gray-50 p-4 rounded-lg space-y-1">
                 <p className="text-sm"><strong>Shift Number:</strong> {selectedShift.shift_number}</p>
                 <p className="text-sm"><strong>Opening Cash:</strong> {formatCurrency(selectedShift.opening_cash)}</p>
                 <p className="text-sm"><strong>Opened At:</strong> {new Date(selectedShift.opened_at).toLocaleString()}</p>
+                <p className="text-sm"><strong>Closing as:</strong> {user?.name ?? '—'}</p>
               </div>
 
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Actual Cash *</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={closeFormData.actual_cash}
-                  onChange={(e) => setCloseFormData({ ...closeFormData, actual_cash: e.target.value })}
-                  required
-                  placeholder="0.00"
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
+              {/* Closing clearance — completed orders during this shift */}
+              <div className="border border-gray-200 rounded-lg">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 border-b border-gray-100 bg-gray-50">
+                  <h4 className="text-sm font-semibold text-gray-700">
+                    Completed orders {shiftOrders ? `(${shiftOrders.order_count})` : ''}
+                  </h4>
+                  {shiftOrders && (
+                    <div className="text-xs text-gray-600 flex flex-wrap gap-x-4 gap-y-1">
+                      <span>Total: <strong>{formatCurrency(shiftOrders.total_amount)}</strong></span>
+                      <span>Cash: <strong>{formatCurrency(shiftOrders.cash_collected)}</strong></span>
+                      <span>Card: <strong>{formatCurrency(shiftOrders.card_collected)}</strong></span>
+                    </div>
+                  )}
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  {shiftOrdersLoading ? (
+                    <div className="p-4"><Loader text="Loading orders..." /></div>
+                  ) : shiftOrders && shiftOrders.orders.length > 0 ? (
+                    <table className="w-full text-sm">
+                      <thead className="text-left text-xs text-gray-500 sticky top-0 bg-white">
+                        <tr>
+                          <th className="px-4 py-2 font-medium">Order #</th>
+                          <th className="px-4 py-2 font-medium">Time</th>
+                          <th className="px-4 py-2 font-medium">Payment</th>
+                          <th className="px-4 py-2 font-medium text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {shiftOrders.orders.map((o) => (
+                          <tr key={o.id} className="border-t border-gray-100">
+                            <td className="px-4 py-2 text-gray-800">{o.order_number}</td>
+                            <td className="px-4 py-2 text-gray-600">
+                              {o.completed_at ? new Date(o.completed_at).toLocaleTimeString() : '—'}
+                            </td>
+                            <td className="px-4 py-2 text-gray-600 capitalize">{o.payment_method ?? '—'}</td>
+                            <td className="px-4 py-2 text-right text-gray-800">{formatCurrency(o.total_amount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="p-4 text-sm text-gray-500">No completed orders in this shift.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+                <div className="bg-gray-50 rounded-lg p-3">
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">Expected cash</p>
+                  <p className="text-gray-900">
+                    {selectedShift.expected_cash != null ? formatCurrency(selectedShift.expected_cash) : '—'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Actual Cash *</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={closeFormData.actual_cash}
+                    onChange={(e) => setCloseFormData({ ...closeFormData, actual_cash: e.target.value })}
+                    required
+                    placeholder="0.00"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
               </div>
 
               <div>
@@ -304,7 +398,7 @@ const Shifts: React.FC = () => {
                   actions={
                     <>
                       <Button size="small" variant="view" onClick={() => { setDetailShiftId(shift.id); setShowDetailModal(true); }}>View</Button>
-                      {shift.status === 'open' && <Button size="small" variant="danger" onClick={() => { setSelectedShift(shift); setCloseFormData({ actual_cash: '', notes: '' }); setShowCloseForm(true); }}>Close Shift</Button>}
+                      {shift.status === 'open' && <Button size="small" variant="danger" onClick={() => startClose(shift)}>Close Shift</Button>}
                     </>
                   }
                 />
@@ -326,8 +420,9 @@ const Shifts: React.FC = () => {
             <div className="grid grid-cols-2 gap-2 text-sm">
               <p><strong>Shift #:</strong> {shiftDetail.shift_number}</p>
               <p><strong>Status:</strong> {shiftDetail.status}</p>
-              <p><strong>Branch:</strong> {(shiftDetail as any).branch?.name ?? 'N/A'}</p>
-              <p><strong>User:</strong> {(shiftDetail as any).user?.name ?? 'N/A'}</p>
+              <p><strong>Branch:</strong> {shiftDetail.branch?.name ?? 'N/A'}</p>
+              <p><strong>Opened by:</strong> {shiftDetail.user?.name ?? 'N/A'}</p>
+              <p><strong>Closed by:</strong> {shiftDetail.closer?.name ?? 'N/A'}</p>
               <p><strong>Opening cash:</strong> {formatCurrency(Number(shiftDetail.opening_cash))}</p>
               <p><strong>Expected Total:</strong> {shiftDetail.expected_cash != null ? formatCurrency(Number(shiftDetail.expected_cash)) : 'N/A'}</p>
               <p><strong>Cash collected:</strong> {shiftDetail.cash_collected != null ? formatCurrency(Number(shiftDetail.cash_collected)) : 'N/A'}</p>
