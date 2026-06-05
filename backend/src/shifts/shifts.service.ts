@@ -43,6 +43,7 @@ export class ShiftsService {
             .createQueryBuilder('s')
             .leftJoinAndSelect('s.user', 'u')
             .leftJoinAndSelect('s.branch', 'b')
+            .leftJoinAndSelect('s.closer', 'c')
             .orderBy('s.createdAt', 'DESC');
         if (tenantId != null) {
             qb.innerJoin('b.branchBrands', 'bb').innerJoin(
@@ -83,6 +84,7 @@ export class ShiftsService {
             .createQueryBuilder('s')
             .leftJoinAndSelect('s.user', 'u')
             .leftJoinAndSelect('s.branch', 'b')
+            .leftJoinAndSelect('s.closer', 'c')
             .where('s.id = :id', { id });
         if (tenantId != null) {
             qb.innerJoin('b.branchBrands', 'bb').innerJoin(
@@ -245,6 +247,7 @@ export class ShiftsService {
         dto: { actual_cash: number; notes?: string },
         tenantId?: number | null,
         allowedBranchIds?: number[] | null,
+        closedByUserId?: number | null,
     ) {
         if (tenantId != null) {
             await this.findOne(id, tenantId, allowedBranchIds);
@@ -261,9 +264,75 @@ export class ShiftsService {
             shift.expectedCash = Number(shift.openingCash);
         shift.status = 'closed';
         shift.closedAt = new Date();
+        shift.closedByUserId = closedByUserId ?? null;
         if (dto.notes !== undefined) shift.notes = dto.notes;
         await this.repo.save(shift);
-        return this.toResponse(shift);
+        const loaded = await this.repo.findOne({
+            where: { id },
+            relations: ['user', 'branch', 'closer'],
+        });
+        return this.toResponse(loaded ?? shift);
+    }
+
+    /**
+     * Completed orders during this shift's branch + time window, with per-order
+     * payment method and aggregate cash/card subtotals — for the close-shift review.
+     */
+    async getOrdersInShift(
+        id: number,
+        tenantId?: number | null,
+        allowedBranchIds?: number[] | null,
+    ) {
+        // findOne enforces tenant/branch access (throws 403/404) and already
+        // returns the shift's window + cash/card collected — reuse both rather
+        // than re-querying the shift and re-running the payment aggregate.
+        const access = await this.findOne(id, tenantId, allowedBranchIds);
+        const openedAt = new Date(access.opened_at as string);
+
+        const qb = this.orderRepo
+            .createQueryBuilder('o')
+            .leftJoinAndSelect('o.payments', 'p')
+            .where('o.branchId = :branchId', { branchId: access.branch_id })
+            .andWhere("o.status = 'completed'")
+            .andWhere('o.completedAt >= :openedAt', { openedAt })
+            .orderBy('o.completedAt', 'DESC');
+        if (access.closed_at) {
+            qb.andWhere('o.completedAt <= :closedAt', {
+                closedAt: new Date(access.closed_at),
+            });
+        }
+        const orders = await qb.getMany();
+        const serialized = orders.map((o) => {
+            const methods = Array.from(
+                new Set(
+                    (o.payments ?? []).map(
+                        (p: Payment) => p.paymentMethod,
+                    ),
+                ),
+            );
+            return {
+                id: o.id,
+                order_number: o.orderNumber,
+                total_amount: Number(o.totalAmount),
+                completed_at: o.completedAt
+                    ? o.completedAt.toISOString()
+                    : null,
+                status: o.status,
+                payment_method: methods.length ? methods.join(' + ') : null,
+                customer_name: o.customerName ?? null,
+            };
+        });
+        return {
+            shift_id: id,
+            order_count: serialized.length,
+            total_amount: serialized.reduce(
+                (sum, o) => sum + o.total_amount,
+                0,
+            ),
+            cash_collected: access.cash_collected,
+            card_collected: access.card_collected,
+            orders: serialized,
+        };
     }
 
     private toResponse(s: Shift) {
@@ -283,6 +352,7 @@ export class ShiftsService {
             status: s.status,
             opened_at: s.openedAt?.toISOString() ?? null,
             closed_at: s.closedAt?.toISOString() ?? null,
+            closed_by_user_id: s.closedByUserId ?? null,
             notes: s.notes ?? null,
             user: (s as { user?: { id: number; name: string; email: string } })
                 .user
@@ -290,6 +360,17 @@ export class ShiftsService {
                       id: (s as { user: { id: number } }).user.id,
                       name: (s as { user: { name: string } }).user.name,
                       email: (s as { user: { email: string } }).user.email,
+                  }
+                : null,
+            closer: (
+                s as {
+                    closer?: { id: number; name: string; email: string };
+                }
+            ).closer
+                ? {
+                      id: (s as { closer: { id: number } }).closer.id,
+                      name: (s as { closer: { name: string } }).closer.name,
+                      email: (s as { closer: { email: string } }).closer.email,
                   }
                 : null,
             branch: (

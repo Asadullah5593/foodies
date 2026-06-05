@@ -69,10 +69,13 @@ const DEAL_TYPE_LABELS: Record<DealSlotType, string> = {
 const Deals: React.FC = () => {
   const queryClient = useQueryClient();
   const [brandFilter, setBrandFilter] = useState<string>('');
+  const [search, setSearch] = useState('');
   const [viewingDeal, setViewingDeal] = useState<DealDetail | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [formStep, setFormStep] = useState<'select' | 'slots'>('select');
-  const [formMenuItem, setFormMenuItem] = useState<MenuItemOption | null>(null);
+  const [editingDealId, setEditingDealId] = useState<number | null>(null);
+  const [formName, setFormName] = useState<string>('');
+  const [formPrice, setFormPrice] = useState<string>('');
   const [formSlots, setFormSlots] = useState<DealSlot[]>([]);
   const [formBrandId, setFormBrandId] = useState<string>('');
   const [formCategoryId, setFormCategoryId] = useState<string>('');
@@ -107,8 +110,42 @@ const Deals: React.FC = () => {
   });
 
   const saveDealMutation = useMutation({
-    mutationFn: ({ menuItemId, slots }: { menuItemId: number; slots: DealSlot[] }) =>
-      adminService.saveDeal(menuItemId, {
+    mutationFn: async ({
+      dealId,
+      name,
+      basePrice,
+      brandId,
+      categoryId,
+      slots,
+    }: {
+      dealId: number | null;
+      name: string;
+      basePrice: number;
+      brandId: number;
+      categoryId: number;
+      slots: DealSlot[];
+    }) => {
+      // A deal is a menu item plus slots. Create (or update) the menu item first,
+      // then replace its deal components.
+      let menuItemId: number;
+      if (dealId == null) {
+        const created = await adminService.createMenuItem({
+          brand_id: brandId,
+          category_id: categoryId,
+          name,
+          base_price: basePrice,
+          is_active: true,
+        });
+        menuItemId = created.id;
+      } else {
+        await adminService.updateMenuItem(dealId, {
+          name,
+          base_price: basePrice,
+          category_id: categoryId,
+        });
+        menuItemId = dealId;
+      }
+      return adminService.saveDeal(menuItemId, {
         slots: slots.map((s, i) => ({
           slot_index: i,
           type: s.type,
@@ -118,9 +155,11 @@ const Deals: React.FC = () => {
           quantity: s.quantity,
           allow_customization: s.allow_customization,
         })),
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['deals'] });
+      queryClient.invalidateQueries({ queryKey: ['menuItems'] });
       setFormOpen(false);
       resetForm();
       toast.success('Deal saved successfully');
@@ -145,7 +184,9 @@ const Deals: React.FC = () => {
 
   const resetForm = () => {
     setFormStep('select');
-    setFormMenuItem(null);
+    setEditingDealId(null);
+    setFormName('');
+    setFormPrice('');
     setFormSlots([]);
     setFormBrandId('');
     setFormCategoryId('');
@@ -164,13 +205,9 @@ const Deals: React.FC = () => {
     try {
       const detail = await adminService.getDeal(row.id);
       if (detail) {
-        setFormMenuItem({
-          id: detail.menu_item_id,
-          name: detail.name,
-          brand_id: detail.brand_id,
-          category_id: detail.category?.id,
-          category: detail.category ?? undefined,
-        });
+        setEditingDealId(detail.menu_item_id);
+        setFormName(detail.name ?? '');
+        setFormPrice(detail.base_price != null ? String(detail.base_price) : '');
         setFormBrandId(String(detail.brand_id ?? ''));
         setFormCategoryId(detail.category ? String(detail.category.id) : '');
         setFormSlots(detail.slots.map((s: DealSlot) => ({ ...s })));
@@ -187,14 +224,7 @@ const Deals: React.FC = () => {
     setFormOpen(true);
   };
 
-  const onSelectMenuItem = (item: MenuItemOption) => {
-    setFormMenuItem(item);
-    setFormStep('slots');
-    adminService.getDeal(item.id).then((detail: DealDetail | null) => {
-      if (detail?.slots?.length) setFormSlots(detail.slots.map((s: DealSlot) => ({ ...s })));
-      else setFormSlots([]);
-    }).catch(() => setFormSlots([]));
-  };
+  const canContinue = !!formBrandId && !!formCategoryId && formName.trim().length > 0;
 
   const addSlot = () => {
     setFormSlots((prev) => [
@@ -223,8 +253,25 @@ const Deals: React.FC = () => {
     setFormSlots((prev) => prev.filter((_, i) => i !== index).map((s, i) => ({ ...s, slot_index: i })));
   };
 
-  const handleSaveSlots = () => {
-    if (!formMenuItem) return;
+  const handleSave = () => {
+    const name = formName.trim();
+    if (!name) {
+      toast.error('Enter a deal name');
+      return;
+    }
+    if (!formBrandId || !formCategoryId) {
+      toast.error('Select a brand and category');
+      return;
+    }
+    const basePrice = parseFloat(formPrice);
+    if (!Number.isFinite(basePrice) || basePrice < 0) {
+      toast.error('Enter a valid deal price');
+      return;
+    }
+    if (formSlots.length === 0) {
+      toast.error('Add at least one slot to the deal');
+      return;
+    }
     const valid = formSlots.every((s: DealSlot) => {
       if (s.type === 'fixed') return s.source_menu_item_id != null;
       if (s.type === 'choice_category') return s.source_category_id != null;
@@ -235,21 +282,34 @@ const Deals: React.FC = () => {
       toast.error('Fill in source for each slot (fixed: one item, choice category: category, choice list: at least one item)');
       return;
     }
-    saveDealMutation.mutate({ menuItemId: formMenuItem.id, slots: formSlots });
+    saveDealMutation.mutate({
+      dealId: editingDealId,
+      name,
+      basePrice,
+      brandId: +formBrandId,
+      categoryId: +formCategoryId,
+      slots: formSlots,
+    });
   };
 
-  const menuItemsFiltered = useMemo(() => {
-    const list = (menuItemsForForm ?? []) as MenuItemOption[];
-    if (!formCategoryId) return list;
-    return list.filter((i) => String(i.category_id ?? i.category?.id) === formCategoryId);
-  }, [menuItemsForForm, formCategoryId]);
-
   const dealList = (deals ?? []) as DealListItem[];
+  const debouncedSearch = useDebouncedValue(search, 300);
+  const dealTypeahead = useTypeaheadSuggestions({
+    query: search,
+    options: dealList.map((d) => ({ id: String(d.id), label: d.name })),
+    minChars: 2,
+    limit: 8,
+  });
+  const filteredDeals = useMemo(() => {
+    if (!debouncedSearch.trim()) return dealList;
+    const q = debouncedSearch.trim().toLowerCase();
+    return dealList.filter((d) => d.name.toLowerCase().includes(q));
+  }, [dealList, debouncedSearch]);
   const paginatedDeals = useMemo(() => {
     const start = (page - 1) * DEFAULT_PAGE_SIZE;
-    return dealList.slice(start, start + DEFAULT_PAGE_SIZE);
-  }, [dealList, page]);
-  React.useEffect(() => setPage(1), [brandFilter]);
+    return filteredDeals.slice(start, start + DEFAULT_PAGE_SIZE);
+  }, [filteredDeals, page]);
+  React.useEffect(() => setPage(1), [brandFilter, debouncedSearch]);
 
   const isSubmitting = saveDealMutation.isPending || deleteDealMutation.isPending;
   if (isLoading || isSubmitting) {
@@ -279,13 +339,59 @@ const Deals: React.FC = () => {
             placeholder="All brands"
             minWidth="min-w-[180px]"
           />
+          <div>
+            <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Search deal name</label>
+            <div className="relative">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onFocus={() => dealTypeahead.setOpen(true)}
+                onKeyDown={(e) => {
+                  const suggestions = dealTypeahead.suggestions;
+                  if (!suggestions.length) return;
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    dealTypeahead.setActiveIndex(Math.min(dealTypeahead.activeIndex + 1, suggestions.length - 1));
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    dealTypeahead.setActiveIndex(Math.max(dealTypeahead.activeIndex - 1, 0));
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const opt = suggestions[dealTypeahead.activeIndex];
+                    if (opt?.label) setSearch(opt.label);
+                    dealTypeahead.setOpen(false);
+                  } else if (e.key === 'Escape') {
+                    dealTypeahead.setOpen(false);
+                  }
+                }}
+                placeholder="Deal name..."
+                className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
+              />
+              <TypeaheadDropdown
+                open={dealTypeahead.open && search.trim().length >= 2}
+                suggestions={dealTypeahead.suggestions}
+                activeIndex={dealTypeahead.activeIndex}
+                onHoverIndex={dealTypeahead.setActiveIndex}
+                onSelect={(opt) => {
+                  setSearch(opt.label);
+                  dealTypeahead.setOpen(false);
+                }}
+                onClose={() => dealTypeahead.setOpen(false)}
+              />
+            </div>
+          </div>
         </div>
       </Card>
 
       <div className="w-full space-y-3">
-        {dealList.length === 0 ? (
+        {filteredDeals.length === 0 ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">
-            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No deals yet. Add a deal by selecting a menu item and defining its slots.</p>
+            <p className="text-center text-gray-500 dark:text-slate-400 py-12">
+              {dealList.length === 0
+                ? 'No deals yet. Add a deal by entering a name, price and defining its slots.'
+                : 'No deals match your search.'}
+            </p>
           </Card>
         ) : (
           <>
@@ -315,8 +421,8 @@ const Deals: React.FC = () => {
                 />
               ))}
             </AccentedList>
-            {dealList.length > DEFAULT_PAGE_SIZE && (
-              <PaginationBar totalCount={dealList.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="deals" />
+            {filteredDeals.length > DEFAULT_PAGE_SIZE && (
+              <PaginationBar totalCount={filteredDeals.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="deals" />
             )}
           </>
         )}
@@ -385,64 +491,91 @@ const Deals: React.FC = () => {
       <Modal
         isOpen={formOpen}
         onClose={() => { setFormOpen(false); resetForm(); }}
-        title={formStep === 'select' ? 'Select menu item for deal' : `Edit deal: ${formMenuItem?.name ?? ''}`}
+        title={
+          formStep === 'select'
+            ? (editingDealId == null ? 'Create deal' : 'Edit deal')
+            : `${editingDealId == null ? 'Create deal' : 'Edit deal'}: ${formName.trim() || 'Untitled'}`
+        }
       >
         {formStep === 'select' && (
           <div className="space-y-4">
+            <SearchableSelect
+              label="Brand"
+              value={formBrandId}
+              onChange={(v) => { setFormBrandId(v); setFormCategoryId(''); }}
+              options={[
+                { value: '', label: 'Select brand' },
+                ...(brands ?? []).map((b) => ({
+                  value: String(b.id),
+                  label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+                })),
+              ]}
+              placeholder="Select brand"
+            />
+            <SearchableSelect
+              label="Category"
+              value={formCategoryId}
+              onChange={setFormCategoryId}
+              options={[
+                { value: '', label: 'Select category' },
+                ...((categoriesForForm ?? []) as { id: number; name: string }[]).map((c) => ({
+                  value: String(c.id),
+                  label: c.name,
+                })),
+              ]}
+              placeholder={formBrandId ? 'Select category' : 'Select a brand first'}
+              disabled={!formBrandId}
+            />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
-              <select
-                value={formBrandId}
-                onChange={(e) => { setFormBrandId(e.target.value); setFormCategoryId(''); setFormMenuItem(null); }}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Deal name</label>
+              <input
+                type="text"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                placeholder="e.g. Family Box"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select brand</option>
-                {brands?.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
+              />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
-              <select
-                value={formCategoryId}
-                onChange={(e) => { setFormCategoryId(e.target.value); setFormMenuItem(null); }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">All categories</option>
-                {((categoriesForForm ?? []) as { id: number; name: string }[]).map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+            <div className="flex items-center justify-between gap-3 pt-1">
+              {canContinue ? (
+                <span />
+              ) : (
+                <p className="text-sm text-amber-600">Select a brand, category and enter a deal name to continue.</p>
+              )}
+              <Button onClick={() => setFormStep('slots')} disabled={!canContinue}>Continue</Button>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Menu item</label>
-              <select
-                value={formMenuItem?.id ?? ''}
-                onChange={(e) => {
-                  const id = e.target.value ? +e.target.value : 0;
-                  const item = menuItemsFiltered.find((i) => i.id === id);
-                  if (item) onSelectMenuItem(item);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select menu item</option>
-                {menuItemsFiltered.map((i) => (
-                  <option key={i.id} value={i.id}>{i.name}</option>
-                ))}
-              </select>
-            </div>
-            {!formBrandId && (
-              <p className="text-sm text-amber-600">Select a brand to choose a menu item.</p>
-            )}
           </div>
         )}
 
-        {formStep === 'slots' && formMenuItem && (
+        {formStep === 'slots' && (
           <div className="space-y-4">
             <p className="text-sm text-gray-600">
               Define what goes into this deal. Add slots: fixed item, choice from category, or choice from a list.
             </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Deal name</label>
+                <input
+                  type="text"
+                  value={formName}
+                  onChange={(e) => setFormName(e.target.value)}
+                  placeholder="e.g. Family Box"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Deal price</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={formPrice}
+                  onChange={(e) => setFormPrice(e.target.value)}
+                  placeholder="0.00"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
             {formSlots.map((slot, idx) => (
               <SlotEditor
                 key={idx}
@@ -456,7 +589,7 @@ const Deals: React.FC = () => {
             <div className="flex gap-2">
               <Button variant="secondary" onClick={addSlot}>+ Add slot</Button>
               <Button
-                onClick={handleSaveSlots}
+                onClick={handleSave}
                 disabled={saveDealMutation.isPending}
               >
                 {saveDealMutation.isPending ? 'Saving...' : 'Save deal'}

@@ -92,15 +92,28 @@ export class MenuService {
         });
     }
 
+    /** Resolve ids of the brands linked to a branch (via branch_brand). */
+    private async getBrandIdsForBranch(branchId: number): Promise<number[]> {
+        const branch = await this.branchRepo.findOne({
+            where: { id: branchId },
+            relations: ['branchBrands'],
+        });
+        return (branch?.branchBrands ?? []).map((bb) => bb.brandId);
+    }
+
     /**
-     * Consumer API: list unique category names across all active brands for a tenant.
-     * Used to show a single "Milkshakes" category even if multiple brands define it.
+     * Consumer API: list unique category names across the active brands linked to a branch.
+     * Only brands actually present at the branch are considered, so categories belonging to
+     * other brands of the same tenant are not shown. Still dedupes by name so a category like
+     * "Milkshakes" appears once even if multiple of the branch's brands define it.
      */
-    async getConsumerCategoriesForTenant(tenantId: number) {
+    async getConsumerCategoriesForBranch(branchId: number) {
+        const brandIds = await this.getBrandIdsForBranch(branchId);
+        if (brandIds.length === 0) return [];
         const rows = await this.categoryRepo
             .createQueryBuilder('c')
             .innerJoin('c.brand', 'b')
-            .where('b.tenantId = :tenantId', { tenantId })
+            .where('b.id IN (:...brandIds)', { brandIds })
             .andWhere('b.isActive = :active', { active: true })
             .andWhere('c.isActive = :cActive', { cActive: true })
             .select([
@@ -127,18 +140,21 @@ export class MenuService {
     }
 
     /**
-     * Consumer API: for a given category key (normalized name), return ids of active brands that have this category.
+     * Consumer API: for a given category key (normalized name), return ids of active brands
+     * that are linked to the branch and have this category.
      * The caller (e.g. BrandsService) is responsible for mapping ids to full brand responses.
      */
-    async getConsumerBrandIdsForCategoryKey(
-        tenantId: number,
+    async getConsumerBrandIdsForCategoryKeyAtBranch(
+        branchId: number,
         categoryKey: string,
     ): Promise<number[]> {
+        const brandIds = await this.getBrandIdsForBranch(branchId);
+        if (brandIds.length === 0) return [];
         const key = categoryKey.toLowerCase();
         const rawBrandIds = await this.categoryRepo
             .createQueryBuilder('c')
             .innerJoin('c.brand', 'b')
-            .where('b.tenantId = :tenantId', { tenantId })
+            .where('b.id IN (:...brandIds)', { brandIds })
             .andWhere('b.isActive = :active', { active: true })
             .andWhere('c.isActive = :cActive', { cActive: true })
             .andWhere('LOWER(c.name) = :key', { key })
@@ -936,6 +952,66 @@ export class MenuService {
      *
      * Pricing uses the menu item's base_price (no branch overrides).
      */
+    /**
+     * Tenant-wide menu search across all of the tenant's brands — powers the
+     * consumer header search/autocomplete. Returns lightweight suggestions
+     * (name matches ranked first), capped at `limit`.
+     */
+    async searchTenantMenu(tenantId: number, query: string, limit = 8) {
+        const q = query.trim();
+        if (!q) return [];
+        const brands = await this.brandRepo.find({
+            where: { tenantId },
+            select: ['id', 'name'],
+        });
+        if (!brands.length) return [];
+        const brandNameById = new Map(brands.map((b) => [b.id, b.name]));
+        const brandIds = brands.map((b) => b.id);
+        const escaped = q.replace(/%/g, '\\%').replace(/_/g, '\\_');
+        const like = `%${escaped}%`;
+        const prefix = `${escaped}%`;
+
+        // Rank via an aliased select column (not a raw orderBy expression):
+        // a dotted CASE in orderBy() collides with TypeORM's join+take
+        // pagination rewrite and throws at runtime.
+        const items = await this.itemRepo
+            .createQueryBuilder('i')
+            .leftJoinAndSelect('i.category', 'c')
+            .addSelect(
+                'CASE WHEN LOWER(i.name) LIKE LOWER(:prefix) THEN 0 WHEN LOWER(i.name) LIKE LOWER(:like) THEN 1 ELSE 2 END',
+                'rank',
+            )
+            .where('i.brandId IN (:...brandIds)', { brandIds })
+            .andWhere('i.isActive = :active', { active: true })
+            .andWhere('(i.dealOnly IS NULL OR i.dealOnly = false)')
+            .andWhere(
+                '(LOWER(i.name) LIKE LOWER(:like) OR LOWER(i.description) LIKE LOWER(:like) OR LOWER(c.name) LIKE LOWER(:like))',
+                { like },
+            )
+            .setParameter('prefix', prefix)
+            .orderBy('rank', 'ASC')
+            .addOrderBy('i.name', 'ASC')
+            .take(limit)
+            .getMany();
+
+        return items.map((item) => {
+            const base = Number(item.basePrice ?? 0);
+            return {
+                id: item.id,
+                name: item.name,
+                description: item.description ?? null,
+                image_url: item.imageUrl ?? null,
+                price: base,
+                category: item.category?.name ?? null,
+                brand_id: item.brandId ?? null,
+                brand_name:
+                    item.brandId != null
+                        ? (brandNameById.get(item.brandId) ?? null)
+                        : null,
+            };
+        });
+    }
+
     async getTenantBrandMenu(
         tenantId: number,
         brandId: number,

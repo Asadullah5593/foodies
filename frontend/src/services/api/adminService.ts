@@ -5,6 +5,7 @@ import {
   BranchMenuItem,
   Discount,
   Shift,
+  ShiftOrdersResponse,
   User,
   Order,
   RiderProfile,
@@ -69,6 +70,18 @@ export const adminService = {
     if (params?.search) search.append('search', params.search);
     const query = search.toString();
     const response = await apiClient.get(`/admin/menu/items${query ? '?' + query : ''}`);
+    return response.data;
+  },
+  createMenuItem: async (data: {
+    brand_id: number;
+    category_id: number;
+    name: string;
+    base_price: number;
+    is_active?: boolean;
+    deal_only?: boolean;
+    description?: string;
+  }) => {
+    const response = await apiClient.post('/admin/menu/items', data);
     return response.data;
   },
   updateMenuItem: async (
@@ -309,6 +322,11 @@ export const adminService = {
 
   getShift: async (id: number): Promise<Shift> => {
     const response = await apiClient.get(`/admin/shifts/${id}`);
+    return response.data;
+  },
+
+  getShiftOrders: async (id: number): Promise<ShiftOrdersResponse> => {
+    const response = await apiClient.get(`/admin/shifts/${id}/orders`);
     return response.data;
   },
 

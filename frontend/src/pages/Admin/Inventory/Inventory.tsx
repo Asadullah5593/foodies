@@ -138,6 +138,16 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
   const [wastagePage, setWastagePage] = useState<number>(1);
   const [wastagePageSize, setWastagePageSize] = useState<number>(50);
 
+  // Client-side list filters for sub-modules that fetch a full list.
+  const [onHandSearch, setOnHandSearch] = useState('');
+  const [itemSearch, setItemSearch] = useState('');
+  const [vendorSearch, setVendorSearch] = useState('');
+  const [uomSearch, setUomSearch] = useState('');
+  const [adjustmentSearch, setAdjustmentSearch] = useState('');
+  const [adjustmentStatus, setAdjustmentStatus] = useState('');
+  const [transferSearch, setTransferSearch] = useState('');
+  const [transferStatus, setTransferStatus] = useState('');
+
   const { data: branches } = useQuery({
     queryKey: ['branches'],
     queryFn: async () => {
@@ -755,6 +765,113 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
         Number(o.sourceBranchId) === branchId || Number(o.destinationBranchId) === branchId,
     );
   }, [transferOrdersQ.data, branchId]);
+
+  const displayedOnHandRows = useMemo(() => {
+    const q = onHandSearch.trim().toLowerCase();
+    if (!q) return groupedOnHandRows;
+    return groupedOnHandRows.filter((r: any) => {
+      const it = itemById.get(Number(r.inventoryItemId));
+      return (
+        String(it?.name ?? '').toLowerCase().includes(q) ||
+        String(it?.code ?? '').toLowerCase().includes(q)
+      );
+    });
+  }, [groupedOnHandRows, onHandSearch, itemById]);
+
+  const displayedItems = useMemo(() => {
+    const list = (itemsQ.data ?? []) as any[];
+    const q = itemSearch.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter(
+      (it: any) =>
+        String(it?.name ?? '').toLowerCase().includes(q) ||
+        String(it?.code ?? '').toLowerCase().includes(q),
+    );
+  }, [itemsQ.data, itemSearch]);
+
+  const displayedVendors = useMemo(() => {
+    const list = (vendorsQ.data ?? []) as any[];
+    const q = vendorSearch.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((v: any) =>
+      [v?.name, v?.type, v?.email, v?.phone].some((f: any) =>
+        String(f ?? '').toLowerCase().includes(q),
+      ),
+    );
+  }, [vendorsQ.data, vendorSearch]);
+
+  const displayedUoms = useMemo(() => {
+    const list = (uomsQ.data ?? []) as any[];
+    const q = uomSearch.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter(
+      (u: any) =>
+        String(u?.code ?? '').toLowerCase().includes(q) ||
+        String(u?.name ?? '').toLowerCase().includes(q),
+    );
+  }, [uomsQ.data, uomSearch]);
+
+  const adjustmentStatusFilterOptions = useMemo(
+    () => [
+      { value: '', label: 'All statuses' },
+      { value: 'draft', label: 'Draft' },
+      { value: 'posted', label: 'Posted' },
+    ],
+    [],
+  );
+
+  const displayedAdjustments = useMemo(() => {
+    let rows = groupedAdjustments as any[];
+    if (adjustmentStatus) rows = rows.filter((g: any) => String(g.status) === adjustmentStatus);
+    const q = adjustmentSearch.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((g: any) => {
+        if (String(g.reference ?? '').toLowerCase().includes(q)) return true;
+        if (String(g.reason ?? '').toLowerCase().includes(q)) return true;
+        const itemIds: number[] = Array.from(g.itemIds ?? []);
+        return itemIds.some((id) =>
+          String(itemById.get(Number(id))?.name ?? '').toLowerCase().includes(q),
+        );
+      });
+    }
+    return rows;
+  }, [groupedAdjustments, adjustmentStatus, adjustmentSearch, itemById]);
+
+  const transferStatusFilterOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of transferRequestsForBranch) set.add(String((r as any).status ?? ''));
+    for (const o of transferOrdersForBranch) set.add(String((o as any).status ?? ''));
+    set.delete('');
+    return [
+      { value: '', label: 'All statuses' },
+      ...Array.from(set).map((s) => ({ value: s, label: s })),
+    ];
+  }, [transferRequestsForBranch, transferOrdersForBranch]);
+
+  const filterTransferRows = (rows: any[], prefix: string) => {
+    let out = rows;
+    if (transferStatus) out = out.filter((x: any) => String(x.status) === transferStatus);
+    const q = transferSearch.trim().toLowerCase();
+    if (q) {
+      out = out.filter((x: any) => {
+        const num = `${prefix}-${x.id}`.toLowerCase();
+        const src = String(branchById.get(Number(x.sourceBranchId))?.name ?? '').toLowerCase();
+        const dst = String(branchById.get(Number(x.destinationBranchId))?.name ?? '').toLowerCase();
+        return num.includes(q) || src.includes(q) || dst.includes(q);
+      });
+    }
+    return out;
+  };
+  const displayedTransferRequests = useMemo(
+    () => filterTransferRows(transferRequestsForBranch as any[], 'req'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [transferRequestsForBranch, transferStatus, transferSearch, branchById],
+  );
+  const displayedTransferOrders = useMemo(
+    () => filterTransferRows(transferOrdersForBranch as any[], 'to'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [transferOrdersForBranch, transferStatus, transferSearch, branchById],
+  );
 
   const formatDateTime = (value?: string | Date | null) => {
     if (!value) return '—';
@@ -1635,13 +1752,18 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             Track stock levels, expiry batches, wastage, and weekly stock counts per branch.
           </p>
         </div>
-        <div className="w-full max-w-md">
-          <SearchableSelect
-            value={selectedBranch}
-            onChange={setSelectedBranch}
-            options={[{ value: '', label: 'Select branch…' }, ...branchOptions]}
-          />
-        </div>
+        {/* Branch selector only applies to branch-scoped tabs; the catalog tabs
+            (units, vendors, items) are tenant-wide, so hide it there to avoid
+            a filter that appears to do nothing. */}
+        {tab !== 'uoms' && tab !== 'vendors' && tab !== 'items' && (
+          <div className="w-full max-w-md">
+            <SearchableSelect
+              value={selectedBranch}
+              onChange={setSelectedBranch}
+              options={[{ value: '', label: 'Select branch…' }, ...branchOptions]}
+            />
+          </div>
+        )}
       </div>
 
       <Card>
@@ -1692,6 +1814,14 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
 
       {tab === 'onhand' && (
         <Card>
+          {branchId && (
+            <div className="flex flex-wrap items-end gap-3 mb-3 text-sm">
+              <label className="min-w-[240px] flex-1">
+                <div className="text-xs font-medium text-slate-600 mb-1">Search item</div>
+                <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Item name or code…" value={onHandSearch} onChange={(e) => setOnHandSearch(e.target.value)} />
+              </label>
+            </div>
+          )}
           {!branchId ? (
             <div className="text-slate-500 dark:text-slate-400">Select a branch to view on-hand.</div>
           ) : onHandQ.isLoading ? (
@@ -1709,7 +1839,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                   </tr>
                 </thead>
                 <tbody className="text-slate-700 dark:text-slate-200">
-                  {groupedOnHandRows.map((r: any, index: number) => (
+                  {displayedOnHandRows.map((r: any, index: number) => (
                     <tr key={r.inventoryItemId} className="border-t border-slate-100 dark:border-slate-700">
                       <td className="py-2 pr-4">{index + 1}</td>
                       <td className="py-2 pr-4">
@@ -1982,6 +2112,19 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             <div className="text-slate-500 dark:text-slate-400">Select a branch.</div>
           ) : (
             <div className="space-y-4">
+              <div className="flex flex-wrap items-end gap-3 text-sm">
+                <label className="min-w-[150px]">
+                  <div className="text-xs font-medium text-slate-600 mb-1">Status</div>
+                  <SearchableSelect value={transferStatus} onChange={setTransferStatus} options={transferStatusFilterOptions} placeholder="All statuses" searchPlaceholder="Search status…" minWidth="w-full" className="w-full" />
+                </label>
+                <label className="min-w-[240px] flex-1">
+                  <div className="text-xs font-medium text-slate-600 mb-1">Search request / order / branch</div>
+                  <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="REQ-/TO- number or branch…" value={transferSearch} onChange={(e) => setTransferSearch(e.target.value)} />
+                </label>
+                {(transferStatus || transferSearch) && (
+                  <Button variant="secondary" onClick={() => { setTransferStatus(''); setTransferSearch(''); }}>Clear</Button>
+                )}
+              </div>
               <div className="text-xs text-slate-500 dark:text-slate-400">
                 Workflow: create a <span className="font-medium">transfer request</span>, approve it to create a{' '}
                 <span className="font-medium">transfer order</span>, then dispatch from the source branch and receive at
@@ -2021,8 +2164,8 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 </p>
                 {transferRequestsQ.isLoading ? (
                   <Loader />
-                ) : transferRequestsForBranch.length === 0 ? (
-                  <div className="text-sm text-slate-500 dark:text-slate-400">No transfer requests for this branch.</div>
+                ) : displayedTransferRequests.length === 0 ? (
+                  <div className="text-sm text-slate-500 dark:text-slate-400">No transfer requests match your filters.</div>
                 ) : (
                   <div className="overflow-auto">
                     <table className="min-w-full text-sm">
@@ -2038,7 +2181,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                         </tr>
                       </thead>
                       <tbody className="text-slate-700 dark:text-slate-200">
-                        {transferRequestsForBranch.map((r: any, index: number) => (
+                        {displayedTransferRequests.map((r: any, index: number) => (
                           <tr key={r.id} className="border-t border-slate-100 dark:border-slate-700">
                             <td className="py-2 pr-4">{index + 1}</td>
                             <td className="py-2 pr-4 font-medium">REQ-{r.id}</td>
@@ -2072,8 +2215,8 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 </p>
                 {transferOrdersQ.isLoading ? (
                   <Loader />
-                ) : transferOrdersForBranch.length === 0 ? (
-                  <div className="text-sm text-slate-500 dark:text-slate-400">No transfer orders for this branch.</div>
+                ) : displayedTransferOrders.length === 0 ? (
+                  <div className="text-sm text-slate-500 dark:text-slate-400">No transfer orders match your filters.</div>
                 ) : (
                   <div className="overflow-auto">
                     <table className="min-w-full text-sm">
@@ -2089,7 +2232,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                         </tr>
                       </thead>
                       <tbody className="text-slate-700 dark:text-slate-200">
-                        {transferOrdersForBranch.map((o: any, index: number) => (
+                        {displayedTransferOrders.map((o: any, index: number) => (
                           <tr key={o.id} className="border-t border-slate-100 dark:border-slate-700">
                             <td className="py-2 pr-4">{index + 1}</td>
                             <td className="py-2 pr-4 font-medium">TO-{o.id}</td>
@@ -2133,6 +2276,20 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 <Button onClick={openCreateAdjustment}>Create adjustment</Button>
               </div>
 
+              <div className="flex flex-wrap items-end gap-3 text-sm">
+                <label className="min-w-[150px]">
+                  <div className="text-xs font-medium text-slate-600 mb-1">Status</div>
+                  <SearchableSelect value={adjustmentStatus} onChange={setAdjustmentStatus} options={adjustmentStatusFilterOptions} placeholder="All statuses" searchPlaceholder="Search status…" minWidth="w-full" className="w-full" />
+                </label>
+                <label className="min-w-[240px] flex-1">
+                  <div className="text-xs font-medium text-slate-600 mb-1">Search reference / reason / item</div>
+                  <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="ADJ reference, reason or item…" value={adjustmentSearch} onChange={(e) => setAdjustmentSearch(e.target.value)} />
+                </label>
+                {(adjustmentStatus || adjustmentSearch) && (
+                  <Button variant="secondary" onClick={() => { setAdjustmentStatus(''); setAdjustmentSearch(''); }}>Clear</Button>
+                )}
+              </div>
+
               <div className="overflow-auto">
                 <table className="min-w-full text-sm">
                   <thead className="text-left text-slate-600 dark:text-slate-300">
@@ -2149,7 +2306,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                     </tr>
                   </thead>
                   <tbody className="text-slate-700 dark:text-slate-200">
-                    {groupedAdjustments.map((g: any, index: number) => (
+                    {displayedAdjustments.map((g: any, index: number) => (
                       <tr key={g.reference} className="border-t border-slate-100 dark:border-slate-700">
                         <td className="py-2 pr-4">{index + 1}</td>
                         <td className="py-2 pr-4 font-medium">
@@ -2302,6 +2459,12 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             </div>
             <Button onClick={openCreateUom}>Create unit</Button>
           </div>
+          <div className="flex flex-wrap items-end gap-3 mb-3 text-sm">
+            <label className="min-w-[240px] flex-1">
+              <div className="text-xs font-medium text-slate-600 mb-1">Search unit</div>
+              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Code or name…" value={uomSearch} onChange={(e) => setUomSearch(e.target.value)} />
+            </label>
+          </div>
           {uomsQ.isLoading ? (
             <Loader />
           ) : (
@@ -2320,7 +2483,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                     </tr>
                   </thead>
                   <tbody className="text-slate-700 dark:text-slate-200">
-                    {(uomsQ.data ?? []).map((u: any, index: number) => (
+                    {displayedUoms.map((u: any, index: number) => (
                       <tr key={u.id} className="border-t border-slate-100 dark:border-slate-700">
                         <td className="py-2 pr-4">{index + 1}</td>
                         <td className="py-2 pr-4">{u.code}</td>
@@ -2472,6 +2635,12 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             </div>
             <Button onClick={openCreateVendor}>Create vendor</Button>
           </div>
+          <div className="flex flex-wrap items-end gap-3 mb-3 text-sm">
+            <label className="min-w-[240px] flex-1">
+              <div className="text-xs font-medium text-slate-600 mb-1">Search vendor</div>
+              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Name, type, email or phone…" value={vendorSearch} onChange={(e) => setVendorSearch(e.target.value)} />
+            </label>
+          </div>
           {vendorsQ.isLoading ? <Loader /> : (
             <>
               <div className="overflow-auto">
@@ -2486,7 +2655,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                     </tr>
                   </thead>
                   <tbody className="text-slate-700 dark:text-slate-200">
-                    {(vendorsQ.data ?? []).map((v: any) => (
+                    {displayedVendors.map((v: any) => (
                       <tr key={v.id} className="border-t border-slate-100 dark:border-slate-700">
                         <td className="py-2 pr-4 font-medium">{v.name}</td>
                         <td className="py-2 pr-4">{v.type}</td>
@@ -2634,6 +2803,12 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             </div>
             <Button onClick={openCreateItem}>Create item</Button>
           </div>
+          <div className="flex flex-wrap items-end gap-3 mb-3 text-sm">
+            <label className="min-w-[240px] flex-1">
+              <div className="text-xs font-medium text-slate-600 mb-1">Search item</div>
+              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Item name or code…" value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} />
+            </label>
+          </div>
           {itemsQ.isLoading ? <Loader /> : (
             <>
               <div className="overflow-auto">
@@ -2650,7 +2825,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                     </tr>
                   </thead>
                   <tbody className="text-slate-700 dark:text-slate-200">
-                    {(itemsQ.data ?? []).map((it: any, index: number) => (
+                    {displayedItems.map((it: any, index: number) => (
                       <tr key={it.id} className="border-t border-slate-100 dark:border-slate-700">
                         <td className="py-2 pr-4">{index + 1}</td>
                         <td className="py-2 pr-4">{it.code}</td>

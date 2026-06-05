@@ -8,6 +8,8 @@ import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
+import SearchableSelect from '../../components/SearchableSelect';
+import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -18,6 +20,8 @@ const BranchMenuItems: React.FC = () => {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null);
+  const [search, setSearch] = useState('');
+  const debouncedSearch = useDebouncedValue(search, 300);
   const [formData, setFormData] = useState({
     branch_id: '',
     menu_item_id: '',
@@ -66,17 +70,39 @@ const BranchMenuItems: React.FC = () => {
     queryFn: () => adminService.getBranchMenuItems(),
   });
 
+  // Menu items already linked to the branch chosen in the form — these can't be
+  // added again (unique branch+item), so we hide them from the picker.
+  const linkedMenuItemIds = React.useMemo(() => {
+    const branchId = formData.branch_id ? parseInt(formData.branch_id, 10) : null;
+    if (branchId == null || !branchMenuItems) return new Set<number>();
+    return new Set(
+      branchMenuItems
+        .filter((bmi) => bmi.branch_id === branchId)
+        .map((bmi) => bmi.menu_item_id),
+    );
+  }, [branchMenuItems, formData.branch_id]);
+
+  // Brand-scoped items minus the ones already added to this branch.
+  const addableMenuItems = React.useMemo(
+    () => menuItemsForSelectedBranch.filter((item) => !linkedMenuItemIds.has(item.id)),
+    [menuItemsForSelectedBranch, linkedMenuItemIds],
+  );
+
   const filteredItems = React.useMemo(() => {
     if (!branchMenuItems) return [];
-    if (selectedBranch == null) return branchMenuItems;
-    return branchMenuItems.filter((item) => item.branch_id === selectedBranch);
-  }, [branchMenuItems, selectedBranch]);
+    let list = selectedBranch == null
+      ? branchMenuItems
+      : branchMenuItems.filter((item) => item.branch_id === selectedBranch);
+    const q = debouncedSearch.trim().toLowerCase();
+    if (q) list = list.filter((item) => (item.menu_item?.name || '').toLowerCase().includes(q));
+    return list;
+  }, [branchMenuItems, selectedBranch, debouncedSearch]);
 
   const paginatedItems = useMemo(() => {
     const start = (page - 1) * DEFAULT_PAGE_SIZE;
     return filteredItems.slice(start, start + DEFAULT_PAGE_SIZE);
   }, [filteredItems, page]);
-  React.useEffect(() => setPage(1), [selectedBranch]);
+  React.useEffect(() => setPage(1), [selectedBranch, debouncedSearch]);
 
   const createMutation = useMutation({
     mutationFn: adminService.createBranchMenuItem,
@@ -116,6 +142,14 @@ const BranchMenuItems: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!formData.branch_id) {
+      toast.error('Select a branch');
+      return;
+    }
+    if (!formData.menu_item_id) {
+      toast.error('Select a menu item');
+      return;
+    }
     createMutation.mutate({
       branch_id: parseInt(formData.branch_id),
       menu_item_id: parseInt(formData.menu_item_id),
@@ -140,62 +174,71 @@ const BranchMenuItems: React.FC = () => {
 
       <Card className="mb-4 p-4">
         <div className="flex flex-wrap gap-3 items-end">
+          <SearchableSelect
+            label="Filter by Branch"
+            value={selectedBranch != null ? String(selectedBranch) : ''}
+            onChange={(v) => setSelectedBranch(v ? parseInt(v, 10) : null)}
+            options={[
+              { value: '', label: 'All branches' },
+              ...(branches ?? []).map((branch) => ({
+                value: String(branch.id),
+                label: `${branch.name} (${branch.code})`,
+              })),
+            ]}
+            placeholder="All branches"
+            searchPlaceholder="Search branches..."
+            minWidth="min-w-[200px]"
+          />
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Branch</label>
-            <select
-              value={selectedBranch ?? ''}
-              onChange={(e) => setSelectedBranch(e.target.value ? parseInt(e.target.value) : null)}
+            <label className="block text-sm font-medium text-gray-700 mb-1">Search menu item</label>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Menu item name..."
               className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[200px]"
-            >
-              <option value="">All branches</option>
-              {branches?.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name} ({branch.code})
-                </option>
-              ))}
-            </select>
+            />
           </div>
-          <ClearFiltersButton onClick={() => setSelectedBranch(null)} />
+          <ClearFiltersButton onClick={() => { setSelectedBranch(null); setSearch(''); }} />
         </div>
       </Card>
 
       <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Add Branch Menu Item" size="medium">
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Branch *</label>
-            <select
-              value={formData.branch_id}
-              onChange={(e) => setFormData({ ...formData, branch_id: e.target.value, menu_item_id: '' })}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="">Select Branch</option>
-              {branches?.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name} ({branch.code})
-                </option>
-              ))}
-            </select>
-          </div>
+          <SearchableSelect
+            label="Branch *"
+            value={formData.branch_id}
+            onChange={(v) => setFormData({ ...formData, branch_id: v, menu_item_id: '' })}
+            options={[
+              { value: '', label: 'Select Branch' },
+              ...(branches ?? []).map((branch) => ({
+                value: String(branch.id),
+                label: `${branch.name} (${branch.code})`,
+              })),
+            ]}
+            placeholder="Select Branch"
+            searchPlaceholder="Search branches..."
+          />
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Menu Item *</label>
-            <select
+            <SearchableSelect
+              label="Menu Item *"
               value={formData.menu_item_id}
-              onChange={(e) => setFormData({ ...formData, menu_item_id: e.target.value })}
-              required
+              onChange={(v) => setFormData({ ...formData, menu_item_id: v })}
+              options={addableMenuItems.map((item) => ({
+                value: String(item.id),
+                label: `${item.name} (${formatCurrency(item.base_price)})`,
+              }))}
+              placeholder={formData.branch_id ? 'Select Menu Item' : 'Select Branch first'}
+              searchPlaceholder="Search menu items..."
               disabled={!formData.branch_id}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:opacity-60 disabled:bg-gray-100"
-            >
-              <option value="">
-                {formData.branch_id ? 'Select Menu Item' : 'Select Branch first'}
-              </option>
-              {menuItemsForSelectedBranch.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name} ({formatCurrency(item.base_price)})
-                </option>
-              ))}
-            </select>
+            />
+            {formData.branch_id && addableMenuItems.length === 0 && (
+              <p className="text-xs text-amber-600 mt-1">
+                No menu items available to add for this branch{' '}
+                {menuItemsForSelectedBranch.length > 0 ? '(all already added).' : '(this branch has no brand menu items).'}
+              </p>
+            )}
           </div>
 
           <div>
@@ -239,7 +282,13 @@ const BranchMenuItems: React.FC = () => {
       {filteredItems.length === 0 ? (
         <Card className="dark:bg-slate-800 dark:border-slate-700">
           <p className="text-center text-gray-500 dark:text-slate-400 py-12">
-            {branchMenuItems?.length === 0 ? 'No branch menu items yet. Add one above.' : selectedBranch ? 'No menu items for this branch. Change filter or add one.' : 'No branch menu items yet. Add one above.'}
+            {branchMenuItems?.length === 0
+              ? 'No branch menu items yet. Add one above.'
+              : debouncedSearch.trim()
+                ? 'No menu items match your search.'
+                : selectedBranch
+                  ? 'No menu items for this branch. Change filter or add one.'
+                  : 'No branch menu items yet. Add one above.'}
           </p>
         </Card>
       ) : (

@@ -297,9 +297,32 @@ export interface Shift {
   status: 'open' | 'closed';
   opened_at: string;
   closed_at?: string;
+  closed_by_user_id?: number | null;
   notes?: string;
   user?: User;
+  /** User who closed the shift. */
+  closer?: User;
   branch?: Branch;
+}
+
+/** A completed order within a shift, for the close-shift review list. */
+export interface ShiftOrder {
+  id: number;
+  order_number: string;
+  total_amount: number;
+  completed_at: string | null;
+  status: string;
+  payment_method: string | null;
+  customer_name: string | null;
+}
+
+export interface ShiftOrdersResponse {
+  shift_id: number;
+  order_count: number;
+  total_amount: number;
+  cash_collected: number;
+  card_collected: number;
+  orders: ShiftOrder[];
 }
 
 export interface Order {
