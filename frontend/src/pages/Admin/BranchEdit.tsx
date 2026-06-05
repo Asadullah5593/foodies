@@ -12,6 +12,7 @@ import { adminService } from '../../services/api/adminService';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
+import LocationPicker from '../../components/LocationPicker';
 
 const inputClass =
   'w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-red-500/50 dark:focus:ring-red-500/40 focus:border-red-500 dark:focus:border-red-500 transition-colors';
@@ -401,6 +402,15 @@ const BranchEdit: React.FC = () => {
                 <label className={labelClass}>Email</label>
                 <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className={inputClass} />
               </div>
+            </div>
+            <div>
+              <label className={labelClass}>Pin location on map</label>
+              <LocationPicker
+                latitude={formData.latitude}
+                longitude={formData.longitude}
+                onChange={(lat, lng) => setFormData((f) => ({ ...f, latitude: lat, longitude: lng }))}
+                onAddressResolve={(addr) => setFormData((f) => (f.address ? f : { ...f, address: addr }))}
+              />
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
