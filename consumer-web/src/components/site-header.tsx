@@ -82,10 +82,13 @@ function HeaderSearch({ onNavigate }: { onNavigate?: () => void }) {
     [enabled, data],
   );
 
-  // Reset the highlighted row whenever the (debounced) query changes.
-  useEffect(() => {
+  // Reset the highlighted row whenever the (debounced) query changes. Done
+  // during render (not in an effect) per the react-hooks set-state-in-effect rule.
+  const [prevTrimmed, setPrevTrimmed] = useState(trimmed);
+  if (prevTrimmed !== trimmed) {
+    setPrevTrimmed(trimmed);
     setActiveIndex(-1);
-  }, [trimmed]);
+  }
 
   // Close the panel on outside click.
   useEffect(() => {

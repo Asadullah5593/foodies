@@ -259,12 +259,15 @@ function MenuPageInner() {
     enabled: Boolean(selectedBrandId),
   });
 
-  // A new header search lands here with ?search=…; reset to "All" so matches
-  // across every category are visible.
-  useEffect(() => {
+  // A new header search lands here with ?search=…; reset to "All" + first page
+  // so matches across every category are visible. Done during render (not in an
+  // effect) per the react-hooks set-state-in-effect rule.
+  const [prevSearchParam, setPrevSearchParam] = useState(searchParam);
+  if (prevSearchParam !== searchParam) {
+    setPrevSearchParam(searchParam);
     setActiveNavId(ALL_NAV_ID);
     setVisibleCount(ITEMS_PER_PAGE);
-  }, [searchParam]);
+  }
 
   const beginSwitch = useCallback(() => {
     setIsSwitching(true);
