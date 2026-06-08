@@ -98,7 +98,10 @@ export class MenuService {
             where: { id: branchId },
             relations: ['branchBrands'],
         });
-        return (branch?.branchBrands ?? []).map((bb) => bb.brandId);
+        // Consumer-facing: a disabled-menu or inactive branch exposes no
+        // brands/categories (mirrors getBranchMenu returning an empty menu).
+        if (!branch || !branch.isActive || !branch.menuEnabled) return [];
+        return (branch.branchBrands ?? []).map((bb) => bb.brandId);
     }
 
     /**
@@ -839,7 +842,8 @@ export class MenuService {
         type BranchWithBrands = Branch & { branchBrands?: unknown[] };
         if (!branch || !(branch as BranchWithBrands).branchBrands?.length)
             return [];
-        if (!branch.menuEnabled) return [];
+        // Consumer-facing: no menu for a disabled-menu or inactive branch.
+        if (!branch.menuEnabled || !branch.isActive) return [];
 
         let linked = (branch.branchMenuItems ?? [])
             .filter((bmi) => bmi.isAvailable !== false)
