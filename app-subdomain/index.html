@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Foodies - Opening App...</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f8f9fa;
+            text-align: center;
+            padding: 20px;
+        }
+        .container {
+            max-width: 400px;
+        }
+        h1 {
+            color: #333;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+        p {
+            color: #666;
+            font-size: 16px;
+            margin-bottom: 30px;
+        }
+        .btn {
+            display: inline-block;
+            background-color: #E21B70; /* Using a generic food app brand color, adjust as needed */
+            color: white;
+            padding: 12px 24px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        .btn:hover {
+            background-color: #c0155e;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Opening Foodies...</h1>
+        <p>If the app does not open automatically, please download it from the app store.</p>
+        
+        <a id="store-link" href="#" class="btn" style="display: none;">Download App</a>
+    </div>
+
+    <script>
+        // Store URLs
+        const iosStoreUrl = 'https://apps.apple.com/us/app/foodies-pakistan/id6769331907';
+        const androidStoreUrl = 'https://play.google.com/store/apps/details?id=com.rex.technologies.foodiespk';
+        const fallbackUrl = 'https://foodies-pakistan.com'; 
+
+        function getMobileOperatingSystem() {
+            const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+
+            // iOS detection
+            if (/iPad|iPhone|iPod/.test(userAgent) && !window.MSStream) {
+                return 'iOS';
+            }
+            // Android detection
+            if (/android/i.test(userAgent)) {
+                return 'Android';
+            }
+            return 'unknown';
+        }
+
+        window.onload = function() {
+            const os = getMobileOperatingSystem();
+            const storeLinkBtn = document.getElementById('store-link');
+            
+            let redirectUrl = fallbackUrl;
+
+            if (os === 'iOS') {
+                redirectUrl = iosStoreUrl;
+                storeLinkBtn.href = iosStoreUrl;
+                storeLinkBtn.innerText = 'Download on the App Store';
+                storeLinkBtn.style.display = 'inline-block';
+            } else if (os === 'Android') {
+                redirectUrl = androidStoreUrl;
+                storeLinkBtn.href = androidStoreUrl;
+                storeLinkBtn.innerText = 'Get it on Google Play';
+                storeLinkBtn.style.display = 'inline-block';
+            }
+
+            // Immediately attempt to redirect to the store
+            // Since this page is only loaded if the Universal Link/App Link fails to open the app,
+            // we can safely assume the app is not installed and route to the store.
+            if (redirectUrl !== fallbackUrl) {
+                setTimeout(function() {
+                    window.location.href = redirectUrl;
+                }, 500);
+            }
+        };
+    </script>
+</body>
+</html>

@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.rex.technologies.foodiespk",
+    "sha256_cert_fingerprints": [
+      "0B:D2:CD:AE:57:71:20:91:A6:BF:4B:A4:A6:93:50:6B:77:CB:AF:FA:91:30:42:1E:82:AB:62:57:5C:F0:08:94"
+    ]
+  }
+}]
