@@ -3,8 +3,44 @@
  * Override via NEXT_PUBLIC_* in .env.local — see consumer-web/.env.example
  */
 
-const env = (key: string, fallback: string) =>
-  (typeof process !== "undefined" && process.env[key]) || fallback;
+/**
+ * NEXT_PUBLIC_* values must be referenced with STATIC keys so Next.js inlines
+ * them into the client bundle. Dynamic `process.env[key]` access is NOT replaced
+ * in production builds — the client falls back to defaults (it only "works" in
+ * `next dev`, which exposes process.env at runtime). Keep this map in sync with
+ * the keys used below.
+ */
+const PUBLIC_ENV: Record<string, string | undefined> = {
+  NEXT_PUBLIC_APP_DEEP_LINK: process.env.NEXT_PUBLIC_APP_DEEP_LINK,
+  NEXT_PUBLIC_APP_STORE_URL: process.env.NEXT_PUBLIC_APP_STORE_URL,
+  NEXT_PUBLIC_ORDER_BANNER_IMAGE_URL: process.env.NEXT_PUBLIC_ORDER_BANNER_IMAGE_URL,
+  NEXT_PUBLIC_ORDER_CTA_LABEL: process.env.NEXT_PUBLIC_ORDER_CTA_LABEL,
+  NEXT_PUBLIC_ORDER_DOWNLOAD_BODY: process.env.NEXT_PUBLIC_ORDER_DOWNLOAD_BODY,
+  NEXT_PUBLIC_ORDER_DOWNLOAD_TITLE: process.env.NEXT_PUBLIC_ORDER_DOWNLOAD_TITLE,
+  NEXT_PUBLIC_ORDER_HERO_BODY: process.env.NEXT_PUBLIC_ORDER_HERO_BODY,
+  NEXT_PUBLIC_ORDER_HERO_HIGHLIGHT: process.env.NEXT_PUBLIC_ORDER_HERO_HIGHLIGHT,
+  NEXT_PUBLIC_ORDER_HERO_IMAGE_URL: process.env.NEXT_PUBLIC_ORDER_HERO_IMAGE_URL,
+  NEXT_PUBLIC_ORDER_HERO_LINE1: process.env.NEXT_PUBLIC_ORDER_HERO_LINE1,
+  NEXT_PUBLIC_ORDER_HERO_LINE2: process.env.NEXT_PUBLIC_ORDER_HERO_LINE2,
+  NEXT_PUBLIC_ORDER_HERO_SUBTITLE: process.env.NEXT_PUBLIC_ORDER_HERO_SUBTITLE,
+  NEXT_PUBLIC_ORDER_HERO_TITLE: process.env.NEXT_PUBLIC_ORDER_HERO_TITLE,
+  NEXT_PUBLIC_ORDER_INFO_BODY: process.env.NEXT_PUBLIC_ORDER_INFO_BODY,
+  NEXT_PUBLIC_ORDER_INFO_HEADLINE: process.env.NEXT_PUBLIC_ORDER_INFO_HEADLINE,
+  NEXT_PUBLIC_ORDER_PAGE_TITLE: process.env.NEXT_PUBLIC_ORDER_PAGE_TITLE,
+  NEXT_PUBLIC_ORDER_PHONE_MOCKUP_URL: process.env.NEXT_PUBLIC_ORDER_PHONE_MOCKUP_URL,
+  NEXT_PUBLIC_ORDER_QR_IMAGE_URL: process.env.NEXT_PUBLIC_ORDER_QR_IMAGE_URL,
+  NEXT_PUBLIC_ORDER_QR_TARGET_URL: process.env.NEXT_PUBLIC_ORDER_QR_TARGET_URL,
+  NEXT_PUBLIC_ORDER_SECONDARY_FOOD_IMAGE_URL:
+    process.env.NEXT_PUBLIC_ORDER_SECONDARY_FOOD_IMAGE_URL,
+  NEXT_PUBLIC_ORDER_SHOWCASE_EYEBROW: process.env.NEXT_PUBLIC_ORDER_SHOWCASE_EYEBROW,
+  NEXT_PUBLIC_ORDER_SHOWCASE_TITLE: process.env.NEXT_PUBLIC_ORDER_SHOWCASE_TITLE,
+  NEXT_PUBLIC_PLAY_STORE_URL: process.env.NEXT_PUBLIC_PLAY_STORE_URL,
+};
+
+const env = (key: string, fallback: string) => {
+  const value = PUBLIC_ENV[key];
+  return typeof value === "string" && value.length > 0 ? value : fallback;
+};
 
 const defaultHeroLine1 = "Better Food.";
 const defaultHeroLine2 = "Better Experience.";
