@@ -220,11 +220,17 @@ export class ConsumerController {
             Number.isFinite(lat) &&
             Number.isFinite(lng)
         ) {
-            const radiusKm =
-                (radiusKmParam != null && radiusKmParam !== ''
-                    ? +radiusKmParam
-                    : 10) || 10;
-            return this.branchesService.findAllWithinRadius(lat, lng, radiusKm);
+            // Optional hard cap from the client. When omitted, each branch's own
+            // deliveryRadiusKm governs visibility (no extra cap).
+            const maxRadiusKm =
+                radiusKmParam != null && radiusKmParam !== ''
+                    ? +radiusKmParam || 100000
+                    : 100000;
+            return this.branchesService.findAllWithinRadius(
+                lat,
+                lng,
+                maxRadiusKm,
+            );
         }
         return this.branchesService.findAll(brandId ? +brandId : undefined);
     }

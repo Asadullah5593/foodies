@@ -85,8 +85,12 @@ export class BrandsService {
     async findAllPublicByBranchId(branchId: number, search?: string) {
         const branchBrands = await this.branchBrandRepo.find({
             where: { branchId },
-            select: ['brandId'],
+            relations: ['branch'],
         });
+        // Consumer-facing: a disabled-menu or inactive branch exposes no brands
+        // (mirrors POS, where the whole menu is hidden when menu is disabled).
+        const branch = branchBrands[0]?.branch;
+        if (branch && (!branch.isActive || !branch.menuEnabled)) return [];
         const brandIds = branchBrands.map((bb) => bb.brandId);
         if (brandIds.length === 0) return [];
         const list = await this.repo.find({

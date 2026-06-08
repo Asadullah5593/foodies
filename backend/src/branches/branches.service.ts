@@ -57,11 +57,16 @@ export class BranchesService {
                 .innerJoin('b.branchBrands', 'bb', 'bb.brandId = :brandId', {
                     brandId,
                 })
+                // Consumer-facing: only active branches with menu enabled.
+                .where('b.isActive = :active', { active: true })
+                .andWhere('b.menuEnabled = :menuEnabled', { menuEnabled: true })
                 .orderBy('b.id', 'ASC');
             const list = await qb.getMany();
             return list.map((b) => this.toResponse(b));
         }
         const list = await this.repo.find({
+            // Consumer-facing: only active branches with menu enabled.
+            where: { isActive: true, menuEnabled: true },
             order: { id: 'ASC' },
             relations: ['branchBrands', 'branchBrands.brand'],
         });
@@ -89,30 +94,25 @@ export class BranchesService {
     }
 
     /**
-     * Branches within radius (km) of a point. Only returns branches that have latitude and longitude set. Sorted by distance.
+     * Branches whose own delivery radius covers the given point. A branch is shown only when
+     * it is active, has its menu enabled, has latitude/longitude set, and the customer is within
+     * that branch's configured deliveryRadiusKm. The `maxRadiusKm` argument is an optional hard
+     * cap (e.g. from the client) so a branch with a very large radius can still be excluded when
+     * the customer is unreasonably far; pass a large value to disable the cap. Sorted by distance.
      */
     async findAllWithinRadius(
         latitude: number,
         longitude: number,
-        radiusKm: number = 100000,
+        maxRadiusKm: number = 100000,
     ) {
         const list = await this.repo.find({
-            where: {},
+            // Consumer-facing: only active branches with menu enabled.
+            where: { isActive: true, menuEnabled: true },
             relations: ['branchBrands', 'branchBrands.brand'],
             order: { id: 'ASC' },
         });
         const withDistance = list
-            .filter(
-                (b) =>
-                    b.latitude != null &&
-                    b.longitude != null &&
-                    this.haversineKm(
-                        latitude,
-                        longitude,
-                        Number(b.latitude),
-                        Number(b.longitude),
-                    ) <= radiusKm,
-            )
+            .filter((b) => b.latitude != null && b.longitude != null)
             .map((b) => ({
                 branch: b,
                 distanceKm: this.haversineKm(
@@ -122,6 +122,12 @@ export class BranchesService {
                     Number(b.longitude),
                 ),
             }))
+            // Customer must be inside the branch's own delivery radius (and the client cap).
+            .filter(
+                ({ branch, distanceKm }) =>
+                    distanceKm <= Number(branch.deliveryRadiusKm) &&
+                    distanceKm <= maxRadiusKm,
+            )
             .sort((a, b) => a.distanceKm - b.distanceKm);
         return withDistance.map(({ branch }) => this.toResponse(branch));
     }
