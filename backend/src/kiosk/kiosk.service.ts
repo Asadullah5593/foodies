@@ -7,12 +7,14 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { DataSource, Repository, QueryFailedError } from 'typeorm';
+import { DataSource, Repository, QueryFailedError, In } from 'typeorm';
 import {
     KioskOrder,
     KioskOrderPayload,
+    KioskOrderItemPayload,
 } from '../entities/kiosk-order.entity';
 import { Branch } from '../entities/branch.entity';
+import { MenuVariant } from '../entities/menu-variant.entity';
 import { OrdersService } from '../orders/orders.service';
 import { PaymentsService } from '../payments/payments.service';
 import { ShiftsService } from '../shifts/shifts.service';
@@ -35,6 +37,8 @@ export class KioskService {
         private readonly kioskRepo: Repository<KioskOrder>,
         @InjectRepository(Branch)
         private readonly branchRepo: Repository<Branch>,
+        @InjectRepository(MenuVariant)
+        private readonly variantRepo: Repository<MenuVariant>,
         private readonly ordersService: OrdersService,
         private readonly paymentsService: PaymentsService,
         private readonly shiftsService: ShiftsService,
@@ -56,6 +60,56 @@ export class KioskService {
 
     private todayDate(): string {
         return new Date().toISOString().slice(0, 10);
+    }
+
+    /**
+     * Reject items whose menu item has variants but no (valid) variant was
+     * chosen. The DB has no "variant required" flag — selection is enforced by
+     * the UI — so we guard the API here: a kiosk that has variants must send a
+     * variant_id for those lines, matching the cashier/web behaviour.
+     */
+    private async assertVariantSelections(
+        items: KioskOrderItemPayload[],
+    ): Promise<void> {
+        const lines: { menuItemId: number; variantId?: number }[] = [];
+        for (const it of items ?? []) {
+            if (it.deal_menu_item_id != null) {
+                for (const c of it.components ?? [])
+                    lines.push({
+                        menuItemId: c.menu_item_id,
+                        variantId: c.variant_id,
+                    });
+            } else if (it.menu_item_id != null) {
+                lines.push({
+                    menuItemId: it.menu_item_id,
+                    variantId: it.variant_id,
+                });
+            }
+        }
+        const ids = [...new Set(lines.map((l) => l.menuItemId))];
+        if (ids.length === 0) return;
+
+        const variants = await this.variantRepo.find({
+            where: { menuItemId: In(ids) },
+        });
+        const byItem = new Map<number, Set<number>>();
+        for (const v of variants) {
+            if (!byItem.has(v.menuItemId)) byItem.set(v.menuItemId, new Set());
+            byItem.get(v.menuItemId)!.add(v.id);
+        }
+        for (const l of lines) {
+            const set = byItem.get(l.menuItemId);
+            if (set && set.size > 0) {
+                if (l.variantId == null)
+                    throw new BadRequestException(
+                        `menu_item ${l.menuItemId} requires a variant selection (variant_id)`,
+                    );
+                if (!set.has(l.variantId))
+                    throw new BadRequestException(
+                        `variant_id ${l.variantId} is not valid for menu_item ${l.menuItemId}`,
+                    );
+            }
+        }
     }
 
     private quoteInput(payload: KioskOrderPayload) {
@@ -88,6 +142,9 @@ export class KioskService {
             );
 
         const tenantId = await this.getTenantIdFromBranch(payload.branch_id);
+
+        // Items with variants must specify which one (the API has no UI to enforce it).
+        await this.assertVariantSelections(payload.items);
 
         // Loyalty redemption is not honored for kiosk source — drop it defensively.
         const sanitized: KioskOrderPayload = {
@@ -297,6 +354,9 @@ export class KioskService {
                 ...(editedDto ?? row.payload),
                 branch_id: (editedDto ?? row.payload).branch_id ?? branchId,
             };
+
+            // Same variant guard at finalize, in case the cart was edited.
+            await this.assertVariantSelections(dto.items);
 
             // Validate the cashier's collected amount BEFORE creating the order
             // (a post-create rejection could not roll back the committed order).
