@@ -25,7 +25,8 @@ import {
   ItemConfigModal,
   DealConfigModal,
 } from './components';
-import type { OrderTypeOption, CartLine } from './components';
+import type { OrderTypeOption, CartLine, DealComponentLine } from './components';
+import type { KioskFinalizeRequest } from '../../services/api/orderService';
 import { defaultVariantIdForItem } from './components/types';
 import { isMenuItemAvailableForOrderType } from '../../utils/menu-order-type';
 
@@ -72,6 +73,13 @@ const OrderTaking: React.FC = () => {
   const [editingCartIndex, setEditingCartIndex] = useState<number | null>(null);
   const [editingDealIndex, setEditingDealIndex] = useState<number | null>(null);
   const [dealInitialComponents, setDealInitialComponents] = useState<import('./components/types').DealComponentLine[] | null>(null);
+  // Kiosk "pay at counter": a loaded kiosk cart links the in-progress order to a kiosk code.
+  const [activeKioskCode, setActiveKioskCode] = useState<string | null>(null);
+  const [kioskInfo, setKioskInfo] = useState<{ price_changed: boolean; items_dropped: boolean; snapshot_total: number; current_total: number } | null>(null);
+  const [showKioskModal, setShowKioskModal] = useState(false);
+  const [kioskCodeInput, setKioskCodeInput] = useState('');
+  const [kioskLoading, setKioskLoading] = useState(false);
+  const [pendingKioskCart, setPendingKioskCart] = useState<CartLine[] | null>(null);
   const queryClient = useQueryClient();
   const searchInputRefDesktop = useRef<HTMLInputElement>(null);
   const searchInputRefMobile = useRef<HTMLInputElement>(null);
@@ -178,6 +186,18 @@ const OrderTaking: React.FC = () => {
   React.useEffect(() => {
     setSelectedItems([]);
   }, [orderType]);
+
+  /**
+   * Load a kiosk cart AFTER the order-type change has cleared the cart above.
+   * Defined after the clear effect so it runs second in the same commit, otherwise
+   * setting orderType during a kiosk load would wipe the lines we just set.
+   */
+  React.useEffect(() => {
+    if (pendingKioskCart != null) {
+      setSelectedItems(pendingKioskCart);
+      setPendingKioskCart(null);
+    }
+  }, [pendingKioskCart]);
 
   const quotePayload =
     branchId != null && selectedItems.length > 0 && effectiveOrderType != null
@@ -316,6 +336,46 @@ const OrderTaking: React.FC = () => {
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to create order');
+    },
+  });
+
+  // Finalize a loaded kiosk cart. Payments are applied server-side, so onSuccess
+  // does NOT loop processPayment (unlike createOrderMutation).
+  const finalizeKioskMutation = useMutation({
+    mutationFn: async (arg: { code: string; body: KioskFinalizeRequest }) =>
+      orderService.finalizeKioskOrder(arg.code, arg.body),
+    onSuccess: (
+      data: { order_group_id: string; orders: Array<{ order_number: string; total_amount?: number }>; kiosk_code?: string },
+    ) => {
+      const orders = data?.orders ?? [];
+      const grossTotal = orders.reduce((sum, o) => sum + Number(o?.total_amount ?? 0), 0);
+      const groupId = data?.order_group_id ?? '';
+      if (groupId) {
+        setLastOrderGroupId(groupId);
+        setShowCustomerInvoiceModal(true);
+      }
+      toast.success(`Kiosk order #${data?.kiosk_code ?? activeKioskCode ?? ''} placed. Total: ${formatCurrency(grossTotal)}`);
+      queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['kitchen-display-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+      setShowCheckoutModal(false);
+      setDrawerOpen(false);
+      setSelectedItems([]);
+      setTableNumber('');
+      setDiscountCode('');
+      setCustomerName('');
+      setCustomerPhone('');
+      setDeliveryAddress('');
+      setLoyaltyPointsToRedeem('');
+      setPhoneError('');
+      setPaymentCashAmount('');
+      setPaymentCardAmount('');
+      setOrderType(null);
+      setActiveKioskCode(null);
+      setKioskInfo(null);
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to finalize kiosk order');
     },
   });
 
@@ -723,6 +783,206 @@ const OrderTaking: React.FC = () => {
     createOrderMutation.mutate({ order: payload, payments });
   };
 
+  /** Build editable cart lines from a stored kiosk payload, resolving against the loaded branch menu. */
+  const buildCartLinesFromKioskPayload = (
+    items: CreateOrderRequest['items'],
+    menuMap: Map<number, MenuItem>,
+  ): CartLine[] => {
+    const lines: CartLine[] = [];
+    for (const it of items ?? []) {
+      if ('deal_menu_item_id' in it && it.deal_menu_item_id != null) {
+        const dealItem = menuMap.get(it.deal_menu_item_id);
+        if (!dealItem) continue;
+        const components = (it.components ?? [])
+          .map((c): DealComponentLine | null => {
+            const cm = menuMap.get(c.menu_item_id);
+            if (!cm) return null;
+            return {
+              menuItem: cm,
+              quantity: c.quantity,
+              slot_index: c.slot_index,
+              variantId: c.variant_id,
+              addons: (c.addons ?? []).map((a) => ({ addonId: a.addon_id, quantity: a.quantity ?? 1 })),
+              modifiers: (c.modifiers ?? []).map((m) => ({ modifierId: m.modifier_id, quantity: m.quantity ?? 1 })),
+              notes: c.notes,
+            };
+          })
+          .filter((c): c is DealComponentLine => c != null);
+        if (components.length === 0) continue;
+        lines.push({
+          menuItem: dealItem,
+          quantity: it.quantity,
+          addons: [],
+          modifiers: [],
+          dealId: it.deal_menu_item_id,
+          dealName: dealItem.name,
+          dealPrice: dealItem.price ?? dealItem.base_price ?? 0,
+          components,
+        });
+      } else if ('menu_item_id' in it && it.menu_item_id != null) {
+        const mi = menuMap.get(it.menu_item_id);
+        if (!mi) continue;
+        lines.push({
+          menuItem: mi,
+          quantity: it.quantity,
+          variantId: it.variant_id,
+          addons: (it.addons ?? []).map((a) => ({ addonId: a.addon_id, quantity: a.quantity ?? 1 })),
+          modifiers: (it.modifiers ?? []).map((m) => ({ modifierId: m.modifier_id, quantity: m.quantity ?? 1 })),
+          notes: it.notes,
+        });
+      }
+    }
+    return lines;
+  };
+
+  /** Cashier loads a pending kiosk cart by its code into the editable POS cart. */
+  const loadKioskOrder = async () => {
+    const code = kioskCodeInput.trim();
+    if (!code) {
+      toast.error('Enter a kiosk order number');
+      return;
+    }
+    if (effectiveBranchId == null) {
+      toast.error('Select a branch first');
+      return;
+    }
+    setKioskLoading(true);
+    try {
+      const data = await orderService.lookupKioskOrder(code, effectiveBranchId);
+      const menuMap = new Map<number, MenuItem>();
+      (rawMenu as MenuItem[]).forEach((m) => menuMap.set(m.id, m));
+      const cartLines = buildCartLinesFromKioskPayload(data.payload?.items ?? data.items ?? [], menuMap);
+      if (cartLines.length === 0) {
+        toast.error('None of this kiosk order’s items are on the current branch menu.');
+        return;
+      }
+      setCustomerName(data.customer_name ?? '');
+      setCustomerPhone(data.customer_phone ?? '');
+      setDiscountCode(data.payload?.discount_code ?? '');
+      setOrderNotes(data.payload?.notes ?? '');
+      setOrderType(data.order_type as OrderTypeOption);
+      setPendingKioskCart(cartLines);
+      setActiveKioskCode(data.kiosk_code);
+      setKioskInfo({
+        price_changed: data.price_changed,
+        items_dropped: data.items_dropped,
+        snapshot_total: data.snapshot_total,
+        current_total: data.current_total,
+      });
+      setShowKioskModal(false);
+      setKioskCodeInput('');
+      if (data.items_dropped) toast('Some items are no longer available and were skipped.', { icon: '⚠️' });
+      if (data.price_changed) toast('Prices changed since the customer ordered — review the new total.', { icon: '⚠️' });
+      toast.success(`Loaded kiosk order #${data.kiosk_code}`);
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || 'Kiosk order not found');
+    } finally {
+      setKioskLoading(false);
+    }
+  };
+
+  /** Unlink the current order from its kiosk code (and clear the loaded cart). */
+  const clearKioskOrder = () => {
+    setActiveKioskCode(null);
+    setKioskInfo(null);
+    setSelectedItems([]);
+  };
+
+  /** Place a loaded kiosk cart — like handleCreateOrder, but customer name/phone are optional. */
+  const handleFinalizeKiosk = () => {
+    if (!activeKioskCode) return;
+    if (effectiveOrderType == null) {
+      toast.error('Select an order type before checkout');
+      return;
+    }
+    if (selectedItems.length === 0) {
+      toast.error('Please add items to the order');
+      return;
+    }
+    if (!branchId) {
+      toast.error('No branch assigned. Ask an admin to assign you to a branch in Branch Users.');
+      return;
+    }
+    if (!openShift) {
+      toast.error('No shift is open for this branch. Open a shift in Admin → Shifts before placing orders.');
+      return;
+    }
+    if (customerPhone.trim()) {
+      try {
+        validatePakistaniPhone(customerPhone.trim());
+      } catch {
+        setPhoneError('Use format 03XXXXXXXXX (e.g. 03001234567)');
+        toast.error('Invalid Pakistani phone number');
+        return;
+      }
+    }
+    setPhoneError('');
+    if (effectiveOrderType === 'dine_in' && !tableNumber.trim()) {
+      toast.error('Please enter a table number for dine-in orders');
+      return;
+    }
+    const orderTotal = Number(quote?.total_amount ?? total ?? 0);
+    if (orderTotal <= 0) {
+      toast.error('Order total must be greater than zero');
+      return;
+    }
+    const payments: Array<{ method: 'cash' | 'card'; amount: number }> = [];
+    if (paymentMode === 'cash') {
+      payments.push({ method: 'cash', amount: orderTotal });
+    } else if (paymentMode === 'card') {
+      payments.push({ method: 'card', amount: orderTotal });
+    } else {
+      const cash = parseFloat(paymentCashAmount || '0') || 0;
+      const card = parseFloat(paymentCardAmount || '0') || 0;
+      const sum = Math.round((cash + card) * 100) / 100;
+      if (Math.abs(sum - orderTotal) > 0.01) {
+        toast.error(`Cash + Card (${formatCurrency(sum)}) must equal total (${formatCurrency(orderTotal)})`);
+        return;
+      }
+      if (cash > 0) payments.push({ method: 'cash', amount: cash });
+      if (card > 0) payments.push({ method: 'card', amount: card });
+    }
+    if (payments.length === 0) {
+      toast.error('Please select payment method and ensure payment covers the total');
+      return;
+    }
+    const order: CreateOrderRequest = {
+      branch_id: branchId,
+      order_type: effectiveOrderType,
+      table_number: effectiveOrderType === 'dine_in' ? tableNumber : undefined,
+      customer_name: customerName.trim(),
+      customer_phone: customerPhone.trim(),
+      discount_code: discountCode.trim() || undefined,
+      items: selectedItems.map((item) => {
+        if (item.dealId != null && item.components?.length) {
+          return {
+            deal_menu_item_id: item.dealId,
+            quantity: item.quantity,
+            components: item.components.map((c) => ({
+              slot_index: c.slot_index ?? 0,
+              menu_item_id: c.menuItem.id,
+              quantity: c.quantity,
+              variant_id: c.variantId,
+              addons: c.addons.map((a) => ({ addon_id: a.addonId, quantity: a.quantity })),
+              modifiers: c.modifiers?.length ? c.modifiers.map((m) => ({ modifier_id: m.modifierId, quantity: m.quantity })) : undefined,
+              notes: c.notes,
+            })),
+          };
+        }
+        return {
+          menu_item_id: item.menuItem.id,
+          quantity: item.quantity,
+          variant_id: item.variantId,
+          addons: item.addons.map((a) => ({ addon_id: a.addonId, quantity: a.quantity })),
+          modifiers: item.modifiers?.length ? item.modifiers.map((m) => ({ modifier_id: m.modifierId, quantity: m.quantity })) : undefined,
+          notes: item.notes,
+        };
+      }),
+      notes: orderNotes.trim() || undefined,
+    };
+    finalizeKioskMutation.mutate({ code: activeKioskCode, body: { branch_id: branchId, order, payments } });
+  };
+
   const total = selectedItems.reduce((sum, item) => {
     if (item.dealPrice != null && item.components?.length) {
       const componentExtras = item.components.reduce((s, c) => {
@@ -825,7 +1085,7 @@ const OrderTaking: React.FC = () => {
     return <Loader fullScreen text="Loading menu..." />;
   }
 
-  const isSubmitting = createOrderMutation.isPending || addCustomerMutation.isPending;
+  const isSubmitting = createOrderMutation.isPending || finalizeKioskMutation.isPending || addCustomerMutation.isPending;
   if (isSubmitting) {
     return <Loader fullScreen text="Submitting..." />;
   }
@@ -917,8 +1177,42 @@ const OrderTaking: React.FC = () => {
   const checkoutSectionContent = (
       <>
         <div className="flex-shrink-0 px-6 py-4 bg-foodies-surface dark:bg-slate-800 border-b border-foodies-border dark:border-slate-700">
-          <h2 className="text-xl font-bold text-foodies-textPrimary dark:text-slate-100 tracking-tight">Cart</h2>
-          <p className="text-sm text-foodies-textSecondary dark:text-slate-400 mt-0.5">Review items here, then checkout</p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-foodies-textPrimary dark:text-slate-100 tracking-tight">Cart</h2>
+              <p className="text-sm text-foodies-textSecondary dark:text-slate-400 mt-0.5">Review items here, then checkout</p>
+            </div>
+            <Button
+              variant="outline"
+              size="small"
+              className="flex-shrink-0 whitespace-nowrap"
+              onClick={() => { setKioskCodeInput(''); setShowKioskModal(true); }}
+            >
+              Load Kiosk Order
+            </Button>
+          </div>
+          {activeKioskCode && (
+            <div className="mt-3 flex items-center justify-between gap-2 rounded-lg bg-foodies-primary/10 border border-foodies-primary/30 px-3 py-2">
+              <span className="text-sm font-semibold text-foodies-primary">Kiosk #{activeKioskCode}</span>
+              <button
+                type="button"
+                onClick={clearKioskOrder}
+                className="text-xs font-medium text-foodies-textSecondary hover:text-foodies-textPrimary"
+              >
+                Clear ✕
+              </button>
+            </div>
+          )}
+          {activeKioskCode && kioskInfo?.price_changed && (
+            <p className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-400">
+              ⚠️ Prices changed since the customer ordered — collect the updated total ({formatCurrency(kioskInfo.current_total)}).
+            </p>
+          )}
+          {activeKioskCode && kioskInfo?.items_dropped && (
+            <p className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-400">
+              ⚠️ Some items were no longer available and were skipped.
+            </p>
+          )}
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto p-6">
           <CartPanel
@@ -1076,8 +1370,8 @@ const OrderTaking: React.FC = () => {
               paymentCardAmount={paymentCardAmount}
               onPaymentCashAmountChange={setPaymentCashAmount}
               onPaymentCardAmountChange={setPaymentCardAmount}
-              onCreateOrder={handleCreateOrder}
-              isSubmitting={createOrderMutation.isPending}
+              onCreateOrder={activeKioskCode ? handleFinalizeKiosk : handleCreateOrder}
+              isSubmitting={activeKioskCode ? finalizeKioskMutation.isPending : createOrderMutation.isPending}
               itemCount={selectedItems.length}
               lastOrderGroupId={lastOrderGroupId}
               onViewInvoice={() => setShowCustomerInvoiceModal(true)}
@@ -1087,6 +1381,38 @@ const OrderTaking: React.FC = () => {
                 Close
               </Button>
             </div>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Load kiosk "pay at counter" order by code */}
+      <Modal
+        isOpen={showKioskModal}
+        onClose={() => setShowKioskModal(false)}
+        title="Load Kiosk Order"
+      >
+        <div className="space-y-4 p-1">
+          <p className="text-sm text-foodies-textSecondary dark:text-slate-400">
+            Enter the order number the customer received at the kiosk. The cart will load here so you can review it, take payment, and place the order.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-foodies-textPrimary dark:text-slate-100 mb-1">Kiosk order number</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              autoFocus
+              value={kioskCodeInput}
+              onChange={(e) => setKioskCodeInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') loadKioskOrder(); }}
+              placeholder="e.g. 001"
+              className="w-full rounded-lg border border-foodies-border dark:border-slate-600 bg-foodies-surface dark:bg-slate-800 px-3 py-2 text-foodies-textPrimary dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-foodies-primary/40"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setShowKioskModal(false)}>Cancel</Button>
+            <Button variant="gradient" onClick={loadKioskOrder} disabled={kioskLoading}>
+              {kioskLoading ? 'Loading…' : 'Load Order'}
+            </Button>
           </div>
         </div>
       </Modal>

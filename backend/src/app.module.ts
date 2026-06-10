@@ -31,6 +31,7 @@ import { ProcurementModule } from './procurement/procurement.module';
 import { RecipesModule } from './recipes/recipes.module';
 import { RiderHrmModule } from './rider-hrm/rider-hrm.module';
 import { FirebaseModule } from './firebase/firebase.module';
+import { KioskModule } from './kiosk/kiosk.module';
 @Module({
     imports: [
         ConfigModule.forRoot({
@@ -82,6 +83,7 @@ import { FirebaseModule } from './firebase/firebase.module';
         ProcurementModule,
         RecipesModule,
         RiderHrmModule,
+        KioskModule,
     ],
     controllers: [AppController],
     providers: [AppService],

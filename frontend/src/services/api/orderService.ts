@@ -110,4 +110,51 @@ export const orderService = {
     const response = await apiClient.post(`/pos/orders/${orderId}/pay`, payment);
     return response.data;
   },
+
+  /** Look up a pending kiosk "pay at counter" cart by its short code. */
+  lookupKioskOrder: async (code: string, branchId: number): Promise<KioskLookupResponse> => {
+    const response = await apiClient.get<KioskLookupResponse>(
+      `/pos/kiosk-orders/${encodeURIComponent(code)}`,
+      { params: { branch_id: branchId } },
+    );
+    return response.data;
+  },
+
+  /** Finalize a kiosk cart (possibly edited): creates the order with source=kiosk and records payments. */
+  finalizeKioskOrder: async (code: string, body: KioskFinalizeRequest): Promise<CreateOrderResponse> => {
+    const response = await apiClient.post<CreateOrderResponse>(
+      `/pos/kiosk-orders/${encodeURIComponent(code)}/finalize`,
+      body,
+    );
+    return response.data;
+  },
 };
+
+export interface KioskLookupResponse {
+  kiosk_code: string;
+  branch_id: number;
+  order_type: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  payload: {
+    branch_id: number;
+    order_type: string;
+    customer_name?: string;
+    customer_phone?: string;
+    items: CreateOrderRequest['items'];
+    notes?: string;
+    discount_code?: string;
+  };
+  items: CreateOrderRequest['items'];
+  snapshot_total: number;
+  current_total: number;
+  price_changed: boolean;
+  items_dropped: boolean;
+  quote: OrderQuoteResponse | null;
+}
+
+export interface KioskFinalizeRequest {
+  branch_id: number;
+  order?: CreateOrderRequest;
+  payments: Array<{ method: 'cash' | 'card'; amount: number }>;
+}
