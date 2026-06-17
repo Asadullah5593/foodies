@@ -17,10 +17,26 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         prefix: '/admin/business-settings',
         permissionNames: [Permissions.BUSINESS_SETTINGS_ACCESS],
     },
-    { prefix: '/admin/brands', permissionNames: [Permissions.BRANCHES_MANAGE] },
+    {
+        // Reads are needed by brand-scoped staff (menu dropdowns, shifts,
+        // branch-user pages); writes are guarded per-method with
+        // branches:manage in the controllers.
+        prefix: '/admin/brands',
+        permissionNames: [
+            Permissions.BRANCHES_MANAGE,
+            Permissions.MENU_MANAGE,
+            Permissions.BRANCH_MENU_MANAGE,
+            Permissions.SHIFTS_MANAGE,
+        ],
+    },
     {
         prefix: '/admin/branches',
-        permissionNames: [Permissions.BRANCHES_MANAGE],
+        permissionNames: [
+            Permissions.BRANCHES_MANAGE,
+            Permissions.BRANCH_USERS_ASSIGN,
+            Permissions.BRANCH_MENU_MANAGE,
+            Permissions.SHIFTS_MANAGE,
+        ],
     },
     { prefix: '/admin/users', permissionNames: [Permissions.USERS_MANAGE] },
     {
@@ -91,8 +107,26 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         permissionNames: [Permissions.DELIVERIES_VIEW],
     },
     {
+        // Owner/GM only: link riders to brands + approve share requests.
+        // Longer, more specific prefix wins over /admin/rider-hrm below.
+        prefix: '/admin/rider-sharing',
+        permissionNames: [Permissions.RIDER_SHARING_MANAGE],
+    },
+    {
+        // Brand-admin facing: browse the pool + submit/cancel share requests.
+        prefix: '/admin/rider-hrm/share-requests',
+        permissionNames: [Permissions.RIDER_SHARE_REQUEST],
+    },
+    {
+        prefix: '/admin/rider-hrm/pool-riders',
+        permissionNames: [Permissions.RIDER_SHARE_REQUEST],
+    },
+    {
         prefix: '/admin/rider-hrm',
-        permissionNames: [Permissions.DELIVERIES_VIEW, Permissions.SHIFTS_MANAGE],
+        permissionNames: [
+            Permissions.DELIVERIES_VIEW,
+            Permissions.SHIFTS_MANAGE,
+        ],
     },
     {
         prefix: '/admin/rider-ops',
@@ -138,6 +172,14 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
     {
         prefix: '/admin/recipes',
         permissionNames: [Permissions.RECIPES_MANAGE, Permissions.COSTING_VIEW],
+    },
+    {
+        prefix: '/admin/banners',
+        permissionNames: [Permissions.CMS_MANAGE],
+    },
+    {
+        prefix: '/admin/promotions',
+        permissionNames: [Permissions.PROMOTIONS_MANAGE],
     },
     { prefix: '/pos', permissionNames: [Permissions.ORDERS_CREATE] },
     {

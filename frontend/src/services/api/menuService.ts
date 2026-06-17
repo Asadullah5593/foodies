@@ -4,8 +4,12 @@ import { MenuItem } from '../../types';
 export type BranchMenuResponse = {
   branch_id: number | null;
   menu: MenuItem[];
-  /** Present when POS can accept orders (shift is open for this branch). */
+  /** Present when POS can accept orders (a shift is open here). Shifts are per brand. */
   open_shift?: { id: number; shift_number: string; opened_at: string } | null;
+  /** All open shifts at the branch (one per brand). */
+  open_shifts?: { id: number; brand_id: number | null; shift_number: string; opened_at: string }[];
+  /** Brands that currently have an open shift at this branch. */
+  open_shift_brand_ids?: number[];
   /** Branch order-type support (for POS order type dropdown). Omitted when branch not loaded. */
   supports_dine_in?: boolean;
   supports_takeaway?: boolean;

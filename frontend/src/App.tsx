@@ -2,6 +2,39 @@ import React, { useState, useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
+import type { IconType } from 'react-icons';
+import {
+  MdOutlineDashboard,
+  MdOutlineApartment,
+  MdOutlineSettings,
+  MdOutlineStorefront,
+  MdOutlineLocationOn,
+  MdOutlineGroup,
+  MdOutlinePerson,
+  MdOutlineManageAccounts,
+  MdOutlineFolder,
+  MdOutlineRestaurantMenu,
+  MdOutlineCardGiftcard,
+  MdOutlineShuffle,
+  MdOutlineAddCircleOutline,
+  MdOutlineTune,
+  MdOutlinePayments,
+  MdOutlineLocalOffer,
+  MdOutlineStarBorder,
+  MdOutlineLock,
+  MdOutlineReceiptLong,
+  MdOutlineDeliveryDining,
+  MdOutlineBadge,
+  MdOutlineSchedule,
+  MdOutlineTrendingUp,
+  MdOutlineInventory2,
+  MdOutlineDescription,
+  MdOutlineScience,
+  MdOutlineShoppingCart,
+  MdOutlineTv,
+  MdOutlineSoupKitchen,
+  MdOutlineImage,
+} from 'react-icons/md';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import Login from './pages/Admin/Login';
@@ -20,6 +53,8 @@ import Modifiers from './pages/Admin/Modifiers';
 import BranchMenuItems from './pages/Admin/BranchMenuItems';
 import BranchUsers from './pages/Admin/BranchUsers';
 import Discounts from './pages/Admin/Discounts';
+import Banners from './pages/Admin/Banners';
+import Promotions from './pages/Admin/Promotions';
 import Roles from './pages/Admin/Roles';
 import Shifts from './pages/Admin/Shifts';
 import Reports from './pages/Admin/Reports';
@@ -32,6 +67,8 @@ import RiderBreaks from './pages/Admin/RiderHRM/RiderBreaks';
 import RiderCompPlans from './pages/Admin/RiderHRM/RiderCompPlans';
 import RiderPayroll from './pages/Admin/RiderHRM/RiderPayroll';
 import RiderOpsMetrics from './pages/Admin/RiderHRM/RiderOpsMetrics';
+import RiderPoolSharing from './pages/Admin/RiderHRM/RiderPoolSharing';
+import RequestRiders from './pages/Admin/RiderHRM/RequestRiders';
 import LoyaltySettings from './pages/Admin/LoyaltySettings';
 import BusinessSettings from './pages/Admin/BusinessSettings';
 import Customers from './pages/Admin/Customers';
@@ -213,6 +250,19 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     });
   };
 
+  const collapseSidebar = () => {
+    setSidebarCollapsed(true);
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, 'true');
+    } catch {}
+  };
+
+  // Opening the POS auto-collapses the sidebar to maximise the order screen.
+  const handleNavLinkClick = (path: string) => {
+    setSidebarOpen(false);
+    if (path === '/pos/orders') collapseSidebar();
+  };
+
   useEffect(() => {
     setRouteChanging(true);
     const t = setTimeout(() => setRouteChanging(false), 400);
@@ -228,44 +278,59 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const isSuperAdmin = user?.is_super_admin === true;
   const isTenantUser = user?.tenant_id != null;
 
-  type MenuLink = { type: 'link'; path: string; label: string; icon: string };
+  type MenuLink = { type: 'link'; path: string; label: string; icon: IconType };
   type MenuGroup = {
     type: 'group';
-    id: 'inventory' | 'procurement' | 'recipes' | 'rider-hrm';
+    id: 'inventory' | 'procurement' | 'recipes' | 'rider-hrm' | 'cms';
     label: string;
-    icon: string;
+    icon: IconType;
     children: Array<{ path: string; label: string }>;
   };
   type MenuItem = MenuLink | MenuGroup;
 
   const allMenuItems: MenuItem[] = [
-    { path: '/admin/dashboard', label: 'Dashboard', icon: '📊' as const },
-    ...(isSuperAdmin ? [{ path: '/admin/tenants', label: 'Tenants', icon: '🏢' as const }] : []),
-    ...(isTenantUser ? [{ path: '/admin/business-settings', label: 'Business Settings', icon: '⚙️' as const }] : []),
-    { path: '/admin/brands', label: 'Brands', icon: '🏪' as const },
-    { path: '/admin/branches', label: 'Branches', icon: '📍' as const },
-    { path: '/admin/users', label: 'Users', icon: '👥' as const },
-    { path: '/admin/categories', label: 'Categories', icon: '📁' as const },
-    { path: '/admin/menu-items', label: 'Menu Items', icon: '🍽️' as const },
-    { path: '/admin/deals', label: 'Deals', icon: '🎁' as const },
-    { path: '/admin/menu-variants', label: 'Variants', icon: '🔀' as const },
-    { path: '/admin/menu-addons', label: 'Addons', icon: '➕' as const },
-    { path: '/admin/modifiers', label: 'Modifiers', icon: '🔧' as const },
-    { path: '/admin/branch-menu-items', label: 'Branch Pricing', icon: '💰' as const },
-    { path: '/admin/branch-users', label: 'Branch Users', icon: '👤' as const },
-    { path: '/admin/discounts', label: 'Discounts', icon: '🎫' as const },
-    { path: '/admin/loyalty-settings', label: 'Loyalty Settings', icon: '⭐' as const },
-    { path: '/admin/customers', label: 'Customers', icon: '👤' as const },
-    { path: '/admin/roles', label: 'Roles', icon: '🔐' as const },
-    { path: '/admin/orders', label: 'Orders', icon: '📋' as const },
-    { path: '/admin/deliveries', label: 'Deliveries', icon: '🛵' as const },
+    { path: '/admin/dashboard', label: 'Dashboard', icon: MdOutlineDashboard },
+    ...(isSuperAdmin ? [{ path: '/admin/tenants', label: 'Tenants', icon: MdOutlineApartment }] : []),
+    ...(isTenantUser ? [{ path: '/admin/business-settings', label: 'Business Settings', icon: MdOutlineSettings }] : []),
+    { path: '/admin/brands', label: 'Brands', icon: MdOutlineStorefront },
+    { path: '/admin/branches', label: 'Branches', icon: MdOutlineLocationOn },
+    { path: '/admin/users', label: 'Users', icon: MdOutlineGroup },
+    { path: '/admin/branch-users', label: 'Branch Users', icon: MdOutlineManageAccounts },
+    { path: '/admin/customers', label: 'Customers', icon: MdOutlinePerson },
+    { path: '/admin/categories', label: 'Categories', icon: MdOutlineFolder },
+    { path: '/admin/menu-items', label: 'Menu Items', icon: MdOutlineRestaurantMenu },
+    { path: '/admin/deals', label: 'Deals', icon: MdOutlineCardGiftcard },
+    { path: '/admin/menu-variants', label: 'Variants', icon: MdOutlineShuffle },
+    { path: '/admin/menu-addons', label: 'Addons', icon: MdOutlineAddCircleOutline },
+    { path: '/admin/modifiers', label: 'Modifiers', icon: MdOutlineTune },
+    { path: '/admin/branch-menu-items', label: 'Branch Pricing', icon: MdOutlinePayments },
+    { path: '/admin/discounts', label: 'Discounts', icon: MdOutlineLocalOffer },
+    { path: '/admin/loyalty-settings', label: 'Loyalty Settings', icon: MdOutlineStarBorder },
+    {
+      type: 'group',
+      id: 'cms',
+      label: 'CMS',
+      icon: MdOutlineImage,
+      children: [
+        { path: '/admin/banners', label: 'Banners' },
+        { path: '/admin/promotions', label: 'Promotions' },
+      ],
+    },
+    { path: '/admin/roles', label: 'Roles', icon: MdOutlineLock },
     {
       type: 'group',
       id: 'rider-hrm',
       label: 'Rider HRM',
-      icon: '🧑‍💼',
+      icon: MdOutlineBadge,
       children: [
         { path: '/admin/rider-hrm/profiles', label: 'Rider profiles' },
+        // Owner/GM manage the shared pool; brand admins request from it.
+        ...(isTenantUser && (user?.allowed_brand_ids == null)
+          ? [{ path: '/admin/rider-hrm/pool-sharing', label: 'Rider pool & sharing' }]
+          : []),
+        ...(Array.isArray(user?.allowed_brand_ids) && (user?.allowed_brand_ids?.length ?? 0) > 0
+          ? [{ path: '/admin/rider-hrm/request-riders', label: 'Request riders' }]
+          : []),
         { path: '/admin/rider-hrm/attendance', label: 'Attendance & on-duty' },
         { path: '/admin/rider-hrm/breaks', label: 'Breaks' },
         { path: '/admin/rider-hrm/comp-plans', label: 'Compensation plans' },
@@ -273,13 +338,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { path: '/admin/rider-hrm/metrics', label: 'Ops metrics' },
       ],
     },
-    { path: '/admin/shifts', label: 'Shifts', icon: '⏰' as const },
-    { path: '/admin/reports', label: 'Reports', icon: '📈' as const },
+    { path: '/admin/reports', label: 'Reports', icon: MdOutlineTrendingUp },
     {
       type: 'group',
       id: 'inventory',
       label: 'Inventory',
-      icon: '📦',
+      icon: MdOutlineInventory2,
       children: [
         { path: '/admin/inventory/uoms', label: 'Units of measure' },
         { path: '/admin/inventory/vendors', label: 'Vendors' },
@@ -298,7 +362,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       type: 'group',
       id: 'procurement',
       label: 'Procurement',
-      icon: '🧾',
+      icon: MdOutlineDescription,
       children: [
         { path: '/admin/procurement/prs', label: 'Purchase requisitions' },
         { path: '/admin/procurement/pos', label: 'Purchase orders' },
@@ -309,17 +373,20 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       type: 'group',
       id: 'recipes',
       label: 'Recipes',
-      icon: '🧪',
+      icon: MdOutlineScience,
       children: [
         { path: '/admin/recipes/manage', label: 'Recipe builder' },
         { path: '/admin/recipes/costing', label: 'Costing & margin' },
       ],
     },
-    { path: '/pos/orders', label: 'POS', icon: '🛒' as const },
-    { path: '/kitchen', label: 'Customer Display', icon: '📺' as const },
-    { path: '/kitchen/back', label: 'Back Kitchen', icon: '🍳' as const },
-    { path: '/foh/packing', label: 'FOH Packing', icon: '📦' as const },
-    // { path: '/admin/button-demo', label: 'Button demo', icon: '🎨' as const },
+    { path: '/admin/shifts', label: 'Shifts', icon: MdOutlineSchedule },
+    { path: '/pos/orders', label: 'POS', icon: MdOutlineShoppingCart },
+    { path: '/admin/orders', label: 'Orders', icon: MdOutlineReceiptLong },
+    { path: '/admin/deliveries', label: 'Deliveries', icon: MdOutlineDeliveryDining },
+    { path: '/kitchen', label: 'Customer Display', icon: MdOutlineTv },
+    { path: '/kitchen/back', label: 'Back Kitchen', icon: MdOutlineSoupKitchen },
+    { path: '/foh/packing', label: 'FOH Packing', icon: MdOutlineInventory2 },
+    // { path: '/admin/button-demo', label: 'Button demo' },
   ].map((it: any) => (it.type ? it : ({ ...it, type: 'link' } as MenuLink)));
 
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
@@ -327,6 +394,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     procurement: location.pathname.startsWith('/admin/procurement'),
     recipes: location.pathname.startsWith('/admin/recipes'),
     'rider-hrm': location.pathname.startsWith('/admin/rider-hrm'),
+    cms: location.pathname.startsWith('/admin/banners') || location.pathname.startsWith('/admin/promotions'),
   });
 
   useEffect(() => {
@@ -336,11 +404,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       procurement: location.pathname.startsWith('/admin/procurement') ? true : prev.procurement,
       recipes: location.pathname.startsWith('/admin/recipes') ? true : prev.recipes,
       'rider-hrm': location.pathname.startsWith('/admin/rider-hrm') ? true : prev['rider-hrm'],
+      cms: location.pathname.startsWith('/admin/banners') || location.pathname.startsWith('/admin/promotions') ? true : prev.cms,
     }));
   }, [location.pathname]);
 
   const menuItems: MenuItem[] = isRiderForAccess(user)
-    ? [{ type: 'link', path: '/rider', label: 'Deliveries', icon: '🛵' }]
+    ? [{ type: 'link', path: '/rider', label: 'Deliveries', icon: MdOutlineDeliveryDining }]
     : allMenuItems
         .map((item) => {
           if (item.type === 'link') return canAccessPath(user, item.path) ? item : null;
@@ -399,7 +468,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <Link
                 key={item.path}
                 to={item.path}
-                onClick={() => setSidebarOpen(false)}
+                onClick={() => handleNavLinkClick(item.path)}
                 title={collapsed ? item.label : undefined}
                 className={`flex items-center rounded-lg text-sm font-medium transition-all duration-200 ${
                   collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'
@@ -407,7 +476,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   isActive(item.path) ? 'bg-red-600 text-white shadow-lg shadow-red-600/30' : sidebarInactive
                 }`}
               >
-                <span className="text-lg w-6 text-center flex-shrink-0">{item.icon}</span>
+                <item.icon className="h-5 w-5 flex-shrink-0" />
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </Link>
             );
@@ -428,7 +497,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   groupActive ? 'bg-red-600 text-white shadow-lg shadow-red-600/30' : sidebarInactive
                 }`}
               >
-                <span className="text-lg w-6 text-center flex-shrink-0">{item.icon}</span>
+                <item.icon className="h-5 w-5 flex-shrink-0" />
               </Link>
             );
           }
@@ -442,7 +511,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                   groupActive ? 'bg-red-600 text-white shadow-lg shadow-red-600/30' : sidebarInactive
                 }`}
               >
-                <span className="text-lg w-6 text-center flex-shrink-0">{item.icon}</span>
+                <item.icon className="h-5 w-5 flex-shrink-0" />
                 <span className="truncate flex-1 text-left">{item.label}</span>
                 <svg
                   className={`h-4 w-4 flex-shrink-0 transition-transform ${expanded ? 'rotate-90' : 'rotate-0'}`}
@@ -852,6 +921,22 @@ const AppRoutes: React.FC = () => {
         }
       />
       <Route
+        path="/admin/banners"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><Banners /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/promotions"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><Promotions /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/admin/customers"
         element={
           <ProtectedRoute>
@@ -908,6 +993,8 @@ const AppRoutes: React.FC = () => {
         }
       />
       <Route path="/admin/rider-hrm/profiles" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderProfiles /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/rider-hrm/pool-sharing" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderPoolSharing /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/rider-hrm/request-riders" element={<ProtectedRoute><AdminOnlyRoute><Layout><RequestRiders /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/attendance" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderAttendance /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/breaks" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderBreaks /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/comp-plans" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderCompPlans /></Layout></AdminOnlyRoute></ProtectedRoute>} />

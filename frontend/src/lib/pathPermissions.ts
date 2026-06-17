@@ -6,7 +6,10 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/dashboard': ['dashboard:view'],
   '/admin/button-demo': ['dashboard:view'],
   '/admin/business-settings': ['business-settings:access'],
-  '/admin/brands': ['branches:manage'],
+  // Brand admins (menu:manage, brand-locked) see only their own brand and
+  // can configure its rules (delivery fee, logo); create/delete stays
+  // owner-level (enforced server-side).
+  '/admin/brands': ['branches:manage', 'menu:manage'],
   '/admin/branches': ['branches:manage'],
   '/admin/users': ['users:manage'],
   '/admin/categories': ['menu:manage', 'branch-menu:manage'],
@@ -19,11 +22,16 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/branch-users': ['branch-users:assign'],
   '/admin/discounts': ['discounts:manage'],
   '/admin/loyalty-settings': ['loyalty:manage'],
+  '/admin/banners': ['cms:manage'],
+  '/admin/promotions': ['promotions:manage'],
   '/admin/customers': ['customers:manage'],
   '/admin/roles': ['roles:manage'],
   '/admin/orders': ['orders:view'],
   '/admin/riders': ['deliveries:view', 'orders:view'],
   '/admin/deliveries': ['deliveries:view'],
+  // More specific rider-hrm sub-paths (longest-prefix match wins).
+  '/admin/rider-hrm/pool-sharing': ['rider-sharing:manage'],
+  '/admin/rider-hrm/request-riders': ['rider-share:request'],
   '/admin/rider-hrm': ['deliveries:view', 'shifts:manage'],
   '/admin/rider-ops': ['deliveries:view'],
   '/admin/shifts': ['shifts:manage'],
@@ -110,6 +118,8 @@ const ORDERED_LANDING_PATHS = [
   '/admin/branch-users',
   '/admin/discounts',
   '/admin/loyalty-settings',
+  '/admin/banners',
+  '/admin/promotions',
   '/admin/customers',
   '/admin/roles',
   '/admin/orders',
