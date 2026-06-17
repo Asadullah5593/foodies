@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -43,6 +44,7 @@ interface MenuItem {
   };
   variants?: { id: number; menu_item_id: number; name: string; price_modifier: number; is_default?: boolean }[];
   addons?: MenuItemAddon[];
+  modifier_groups?: { id: number; name: string; modifier_count?: number }[];
 }
 
 const ORDER_CHANNELS = [
@@ -1364,7 +1366,37 @@ const MenuItems: React.FC = () => {
                                 .join(' · ')
                             : 'All (delivery, pickup, dine-in)'}
                         </p>
-                        <p>{formatCurrency(item.base_price)}{(item.variants?.length || item.addons?.length) ? ` · ${item.variants?.length ?? 0} variants, ${item.addons?.length ?? 0} addons` : ''}</p>
+                        <p>{formatCurrency(item.base_price)}</p>
+                        {(() => {
+                          const brandQs = item.brand_id != null ? `brand_id=${item.brand_id}` : '';
+                          const variantCount = item.variants?.length ?? 0;
+                          const addonCount = item.addons?.length ?? 0;
+                          const groupCount = item.modifier_groups?.length ?? 0;
+                          const modifierCount = (item.modifier_groups ?? []).reduce(
+                            (sum, g) => sum + (g.modifier_count ?? 0),
+                            0,
+                          );
+                          const linkClass = 'text-blue-600 dark:text-blue-400 hover:underline';
+                          return (
+                            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
+                              <Link className={linkClass} to={`/admin/menu-variants?${[brandQs, `item_id=${item.id}`].filter(Boolean).join('&')}`}>
+                                {variantCount} variant{variantCount === 1 ? '' : 's'}
+                              </Link>
+                              <span className="text-gray-300 dark:text-slate-600">·</span>
+                              <Link className={linkClass} to={`/admin/menu-addons${brandQs ? `?${brandQs}` : ''}`}>
+                                {addonCount} addon{addonCount === 1 ? '' : 's'}
+                              </Link>
+                              <span className="text-gray-300 dark:text-slate-600">·</span>
+                              <Link className={linkClass} to={`/admin/modifiers${brandQs ? `?${brandQs}` : ''}`}>
+                                {groupCount} modifier group{groupCount === 1 ? '' : 's'}
+                              </Link>
+                              <span className="text-gray-300 dark:text-slate-600">·</span>
+                              <Link className={linkClass} to={`/admin/modifiers${brandQs ? `?${brandQs}` : ''}`}>
+                                {modifierCount} modifier{modifierCount === 1 ? '' : 's'}
+                              </Link>
+                            </p>
+                          );
+                        })()}
                       </>
                     }
                     statusLabel={item.is_active ? 'Active' : 'Inactive'}

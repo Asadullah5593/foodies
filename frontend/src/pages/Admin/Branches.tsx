@@ -5,7 +5,6 @@ import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { Branch } from '../../types';
 import Loader from '../../components/Loader';
-import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
@@ -201,7 +200,6 @@ const Branches: React.FC = () => {
                       <p>Code: <span className="font-mono font-medium">{branch.code}</span></p>
                       {branch.address && <p>Address: {branch.address}</p>}
                       <p>Menu: <span className={branch.menu_enabled !== false ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}>{branch.menu_enabled !== false ? 'Enabled' : 'Disabled'}</span></p>
-                      {branch.delivery_flat_fee != null && <p>Delivery fee: {formatCurrency(Number(branch.delivery_flat_fee))}</p>}
                       {branch.delivery_radius_km != null && <p>Delivery radius: {Number(branch.delivery_radius_km)} km</p>}
                       {(branch.latitude != null || branch.longitude != null) && (
                         <p>

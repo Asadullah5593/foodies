@@ -13,6 +13,7 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { formatCurrency } from '../../utils/currency';
 import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
@@ -26,16 +27,19 @@ function fullImageUrl(url: string | undefined): string | undefined {
   return `${API_BASE}${url}`;
 }
 
-const initialFormData = { name: '', logo_url: '', description: '', status: 'active' as 'active' | 'inactive' };
+const initialFormData = { name: '', logo_url: '', description: '', status: 'active' as 'active' | 'inactive', delivery_flat_fee: '' };
 
 const Brands: React.FC = () => {
   const { user } = useAuth();
   const isSuperAdmin = user?.is_super_admin ?? false;
+  /** Brand admins see only their own brand and may edit it (rules like the
+   *  delivery fee) but cannot create or delete brands. */
+  const isBrandLocked = user?.allowed_brand_ids != null;
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
-  const [formData, setFormData] = useState<{ name: string; logo_url: string; description: string; status: 'active' | 'inactive' }>(initialFormData);
+  const [formData, setFormData] = useState<{ name: string; logo_url: string; description: string; status: 'active' | 'inactive'; delivery_flat_fee: string }>(initialFormData);
   const [uploading, setUploading] = useState(false);
   const [filterTenantId, setFilterTenantId] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
@@ -105,6 +109,8 @@ const Brands: React.FC = () => {
       logo_url: brand.logo_url ?? '',
       description: brand.description ?? '',
       status: brand.status === 'inactive' ? 'inactive' : 'active',
+      delivery_flat_fee:
+        brand.delivery_flat_fee != null ? String(brand.delivery_flat_fee) : '',
     });
     setShowForm(true);
   };
@@ -147,6 +153,7 @@ const Brands: React.FC = () => {
         logo_url: data.logo_url || undefined,
         description: data.description || undefined,
         status: data.status,
+        delivery_flat_fee: data.delivery_flat_fee !== '' ? parseFloat(data.delivery_flat_fee) : undefined,
       });
       return response.data;
     },
@@ -167,6 +174,7 @@ const Brands: React.FC = () => {
         logo_url: data.logo_url || undefined,
         description: data.description || undefined,
         status: data.status,
+        delivery_flat_fee: data.delivery_flat_fee !== '' ? parseFloat(data.delivery_flat_fee) : undefined,
       });
       return response.data;
     },
@@ -206,7 +214,9 @@ const Brands: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Brands</h1>
-        <Button onClick={openCreate} variant="primary">Add Brand</Button>
+        {!isBrandLocked && (
+          <Button onClick={openCreate} variant="primary">Add Brand</Button>
+        )}
       </div>
 
       <Card className="mb-6 dark:bg-slate-800 dark:border-slate-700">
@@ -349,6 +359,21 @@ const Brands: React.FC = () => {
             />
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Fee (flat)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={formData.delivery_flat_fee}
+              onChange={(e) => setFormData({ ...formData, delivery_flat_fee: e.target.value })}
+              placeholder="0.00"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Charged on every delivery order of this brand. A customer ordering from two brands pays each brand's fee.
+            </p>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
             <select
               value={formData.status}
@@ -412,6 +437,13 @@ const Brands: React.FC = () => {
                             <span>no ratings yet</span>
                           )}
                         </span>
+                        <span className="block text-xs text-gray-500 dark:text-slate-500">
+                          Delivery fee:{' '}
+                          <strong className="text-gray-700 dark:text-slate-300">
+                            {formatCurrency(brand.delivery_flat_fee ?? 0)}
+                          </strong>
+                          <span> · per delivery order</span>
+                        </span>
                       </div>
                     }
                     statusLabel={brand.status}
@@ -422,24 +454,26 @@ const Brands: React.FC = () => {
                         <Button size="small" variant="edit" onClick={() => openEdit(brand)} disabled={updateMutation.isPending}>
                           Edit
                         </Button>
-                        <Button
-                          size="small"
-                          variant="danger"
-                          onClick={() => {
-                            (async () => {
-                              const ok = await confirmDialog({
-                                title: `Delete brand "${brand.name}"?`,
-                                text: 'This action cannot be undone.',
-                                confirmText: 'Delete',
-                              });
-                              if (!ok) return;
-                              deleteMutation.mutate(brand.id);
-                            })();
-                          }}
-                          isLoading={deleteMutation.isPending}
-                        >
-                          Delete
-                        </Button>
+                        {!isBrandLocked && (
+                          <Button
+                            size="small"
+                            variant="danger"
+                            onClick={() => {
+                              (async () => {
+                                const ok = await confirmDialog({
+                                  title: `Delete brand "${brand.name}"?`,
+                                  text: 'This action cannot be undone.',
+                                  confirmText: 'Delete',
+                                });
+                                if (!ok) return;
+                                deleteMutation.mutate(brand.id);
+                              })();
+                            }}
+                            isLoading={deleteMutation.isPending}
+                          >
+                            Delete
+                          </Button>
+                        )}
                       </>
                     }
                   />

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -18,6 +19,7 @@ import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 
 const Modifiers: React.FC = () => {
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [showGroupForm, setShowGroupForm] = useState(false);
   const [showModifierForm, setShowModifierForm] = useState(false);
   const [editingGroup, setEditingGroup] = useState<ModifierGroupResponse | null>(null);
@@ -37,7 +39,8 @@ const Modifiers: React.FC = () => {
   });
   const [editGroupFormData, setEditGroupFormData] = useState({ name: '', min_select: '0', max_select: '1' });
   const [editModifierFormData, setEditModifierFormData] = useState({ name: '', price: '' });
-  const [filters, setFilters] = useState<{ brand_id: string; search: string }>({ brand_id: '', search: '' });
+  // Deep-link from the Menu Items page: ?brand_id= pre-filters the list.
+  const [filters, setFilters] = useState<{ brand_id: string; search: string }>({ brand_id: searchParams.get('brand_id') ?? '', search: '' });
   const debouncedModifierSearch = useDebouncedValue(filters.search, 300);
   const [linkingInProgress, setLinkingInProgress] = useState(false);
   const [page, setPage] = useState(1);

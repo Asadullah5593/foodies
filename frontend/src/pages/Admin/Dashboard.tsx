@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
@@ -30,9 +30,11 @@ function buildReportParams(
   from: string,
   to: string,
   extra?: Record<string, string>,
+  brandId?: number | null,
 ): string {
   const params = new URLSearchParams();
   if (branchId != null) params.append('branch_id', String(branchId));
+  if (brandId != null) params.append('brand_id', String(brandId));
   params.append('date_from', from);
   params.append('date_to', to);
   if (extra) for (const [k, v] of Object.entries(extra)) params.append(k, v);
@@ -44,6 +46,7 @@ const Dashboard: React.FC = () => {
   const { theme } = useTheme();
   const initial = defaultRange();
   const [branchId, setBranchId] = useState<number | null>(null);
+  const [brandId, setBrandId] = useState<number | null>(null);
   const [dateFrom, setDateFrom] = useState<string>(initial.from);
   const [dateTo, setDateTo] = useState<string>(initial.to);
 
@@ -52,15 +55,25 @@ const Dashboard: React.FC = () => {
   const { data: branches } = useQuery({
     queryKey: ['branches'],
     queryFn: async () => {
-      const response = await apiClient.get<Array<{ id: number; name: string; code: string }>>('/admin/branches');
+      const response = await apiClient.get<Array<{ id: number; name: string; code: string; brand_ids?: number[] }>>('/admin/branches');
+      return response.data ?? [];
+    },
+  });
+
+  // Owner sees all brands and can drill into one; brand-locked users get
+  // only their own brand back from the server.
+  const { data: brands } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => {
+      const response = await apiClient.get<Array<{ id: number; name: string }>>('/admin/brands');
       return response.data ?? [];
     },
   });
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['dashboardSummary', branchId, dateFrom, dateTo],
+    queryKey: ['dashboardSummary', branchId, brandId, dateFrom, dateTo],
     queryFn: async () => {
-      const qs = buildReportParams(branchId, dateFrom, dateTo);
+      const qs = buildReportParams(branchId, dateFrom, dateTo, undefined, brandId);
       const response = await apiClient.get<DashboardSummary>(`/admin/reports/dashboard-summary?${qs}`);
       return response.data;
     },
@@ -68,9 +81,9 @@ const Dashboard: React.FC = () => {
   });
 
   const { data: recentOrders, isLoading: recentLoading } = useQuery({
-    queryKey: ['recentOrders', branchId, dateFrom, dateTo],
+    queryKey: ['recentOrders', branchId, brandId, dateFrom, dateTo],
     queryFn: async () => {
-      const qs = buildReportParams(branchId, dateFrom, dateTo, { limit: '15' });
+      const qs = buildReportParams(branchId, dateFrom, dateTo, { limit: '15' }, brandId);
       const response = await apiClient.get<RecentOrder[]>(`/admin/reports/recent-orders?${qs}`);
       return Array.isArray(response.data) ? response.data : [];
     },
@@ -86,6 +99,75 @@ const Dashboard: React.FC = () => {
     },
     enabled: !!user,
   });
+
+  // —— Role-aware scope: owner/admin (all brands & branches) vs brand owner
+  // (one brand, possibly many branches) vs branch manager (one brand+branch).
+  const allowedBrandIds = user?.allowed_brand_ids ?? null;
+  const isBrandLocked =
+    Array.isArray(allowedBrandIds) && allowedBrandIds.length > 0;
+  // "Brand-specific" = locked to exactly one brand.
+  const isBrandSpecific = isBrandLocked && allowedBrandIds!.length === 1;
+  const lockedBrandId = isBrandSpecific ? Number(allowedBrandIds![0]) : null;
+  // Effective brand in scope: the locked brand, or the owner's chosen brand.
+  const effectiveBrandId = lockedBrandId ?? brandId;
+
+  // Branches relevant to the effective brand (branches carry brand_ids).
+  const relevantBranches = useMemo(() => {
+    const list = branches ?? [];
+    if (effectiveBrandId == null) return list;
+    return list.filter(
+      (b) => !b.brand_ids || b.brand_ids.includes(effectiveBrandId),
+    );
+  }, [branches, effectiveBrandId]);
+  const multiBranch = relevantBranches.length > 1;
+
+  // Hide the brand filter for a single-brand dashboard; hide the branch filter
+  // when a brand-locked user only has one branch in scope.
+  const showBrandFilter = !isBrandSpecific;
+  const showBranchFilter = !isBrandLocked || multiBranch;
+  // Brand-specific dashboards break sales down by branch (when >1) not by brand.
+  const breakdownMode: 'brand' | 'branch' | 'none' = isBrandSpecific
+    ? multiBranch
+      ? 'branch'
+      : 'none'
+    : 'brand';
+
+  const brandName = isBrandLocked ? (brands?.[0]?.name ?? null) : null;
+  const singleBranchName =
+    isBrandSpecific && !multiBranch
+      ? (relevantBranches[0]?.name ?? branches?.[0]?.name ?? null)
+      : null;
+  const dashboardTitle = singleBranchName
+    ? `${brandName ?? 'Brand'} · ${singleBranchName}`
+    : isBrandSpecific
+      ? `${brandName ?? 'Brand'} Dashboard`
+      : 'Admin Dashboard';
+
+  // Reset the branch filter if the brand scope no longer includes it.
+  useEffect(() => {
+    if (branchId != null && !relevantBranches.some((b) => b.id === branchId)) {
+      setBranchId(null);
+    }
+  }, [relevantBranches, branchId]);
+
+  const breakdownRows = useMemo(() => {
+    if (breakdownMode === 'branch') {
+      return (summary?.sales_by_branch ?? []).map((r) => ({
+        id: r.branch_id,
+        name: r.branch_name,
+        orders: r.orders,
+        completed: r.completed_orders,
+        revenue: r.revenue,
+      }));
+    }
+    return (summary?.sales_by_brand ?? []).map((r) => ({
+      id: r.brand_id,
+      name: r.brand_name,
+      orders: r.orders,
+      completed: r.completed_orders,
+      revenue: r.revenue,
+    }));
+  }, [breakdownMode, summary]);
 
   const k = summary?.kpis;
   const hasOrders = (summary?.kpis.total_orders ?? 0) > 0;
@@ -151,9 +233,16 @@ const Dashboard: React.FC = () => {
         animate={{ opacity: 1, y: 0 }}
         className="mb-6"
       >
-        <h1 className="text-3xl font-bold text-gray-800 dark:text-slate-100">Admin Dashboard</h1>
+        <h1 className="text-3xl font-bold text-gray-800 dark:text-slate-100">{dashboardTitle}</h1>
         <p className="text-base text-gray-600 dark:text-slate-400">
           Welcome back, <span className="font-semibold text-foodies-cta">{user?.name}</span>!
+          {isBrandSpecific && (
+            <span className="ml-1">
+              {multiBranch
+                ? 'Showing your brand across all its branches.'
+                : 'Showing your branch only.'}
+            </span>
+          )}
         </p>
       </motion.div>
 
@@ -178,17 +267,32 @@ const Dashboard: React.FC = () => {
           ))}
         </div>
         <div className="flex flex-wrap items-end gap-3">
-          <SearchableSelect
-            label="Branch"
-            value={branchId ? String(branchId) : ''}
-            onChange={(v) => setBranchId(v ? Number(v) : null)}
-            options={[
-              { value: '', label: 'All branches' },
-              ...(branches ?? []).map((b) => ({ value: String(b.id), label: `${b.name} (${b.code})` })),
-            ]}
-            placeholder="All branches"
-            minWidth="min-w-[200px]"
-          />
+          {showBranchFilter && (
+            <SearchableSelect
+              label="Branch"
+              value={branchId ? String(branchId) : ''}
+              onChange={(v) => setBranchId(v ? Number(v) : null)}
+              options={[
+                { value: '', label: 'All branches' },
+                ...relevantBranches.map((b) => ({ value: String(b.id), label: `${b.name} (${b.code})` })),
+              ]}
+              placeholder="All branches"
+              minWidth="min-w-[200px]"
+            />
+          )}
+          {showBrandFilter && (
+            <SearchableSelect
+              label="Brand"
+              value={brandId ? String(brandId) : ''}
+              onChange={(v) => setBrandId(v ? Number(v) : null)}
+              options={[
+                { value: '', label: 'All brands' },
+                ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name })),
+              ]}
+              placeholder="All brands"
+              minWidth="min-w-[180px]"
+            />
+          )}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">From</label>
             <input
@@ -216,6 +320,48 @@ const Dashboard: React.FC = () => {
           <KpiCard key={card.label} index={i} loading={summaryLoading} {...card} />
         ))}
       </div>
+
+      {/* Sales breakdown — by brand for owner/admin, by branch for a brand-specific
+          dashboard with multiple branches (hidden when only one branch). */}
+      {breakdownMode !== 'none' && (
+        <div className="mb-6">
+          <ChartCard
+            title={breakdownMode === 'branch' ? 'Sales by branch' : 'Sales by brand'}
+            subtitle={
+              breakdownMode === 'branch'
+                ? "What each branch is selling in the selected range (completed revenue)."
+                : "What each brand is selling in the selected range (completed revenue)."
+            }
+            loading={summaryLoading}
+            isEmpty={!summaryLoading && breakdownRows.length === 0}
+          >
+            {breakdownRows.length > 0 && (
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs text-gray-500 dark:text-slate-400">
+                  <tr>
+                    <th className="py-2 font-medium">{breakdownMode === 'branch' ? 'Branch' : 'Brand'}</th>
+                    <th className="py-2 font-medium text-right">Orders</th>
+                    <th className="py-2 font-medium text-right">Completed</th>
+                    <th className="py-2 font-medium text-right">Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {breakdownRows.map((row) => (
+                    <tr key={row.id} className="border-t border-gray-100 dark:border-slate-700">
+                      <td className="py-2 text-gray-800 dark:text-slate-100">{row.name}</td>
+                      <td className="py-2 text-right text-gray-600 dark:text-slate-300">{row.orders}</td>
+                      <td className="py-2 text-right text-gray-600 dark:text-slate-300">{row.completed}</td>
+                      <td className="py-2 text-right font-medium text-gray-800 dark:text-slate-100">
+                        {formatCurrency(row.revenue)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </ChartCard>
+        </div>
+      )}
 
       {/* Revenue trend (full width) */}
       <div className="mb-6">

@@ -19,6 +19,7 @@ type Customer = {
   phone: string;
   loyaltyPointsBalance?: number;
   createdAt?: string;
+  brands?: { id: number; name: string }[];
 };
 
 const Customers: React.FC = () => {
@@ -225,7 +226,24 @@ const Customers: React.FC = () => {
                   accent="active"
                   initial={(c.name ?? 'C').charAt(0)}
                   title={c.name ?? '—'}
-                  subtitle={<><p className="font-mono">{c.phone}</p><p>Loyalty: {c.loyaltyPointsBalance ?? 0} pts</p></>}
+                  subtitle={
+                    <>
+                      <p className="font-mono">{c.phone}</p>
+                      <p>Loyalty: {c.loyaltyPointsBalance ?? 0} pts</p>
+                      {c.brands && c.brands.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {c.brands.map((b) => (
+                            <span
+                              key={b.id}
+                              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200"
+                            >
+                              {b.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  }
                   animationIndex={i}
                   actions={
                     <>

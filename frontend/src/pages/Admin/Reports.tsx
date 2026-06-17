@@ -10,6 +10,7 @@ import { formatCurrency } from '../../utils/currency';
 
 const Reports: React.FC = () => {
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null);
+  const [selectedBrand, setSelectedBrand] = useState<number | null>(null);
   const [dateFrom, setDateFrom] = useState(new Date().toISOString().split('T')[0]);
   const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0]);
 
@@ -22,15 +23,29 @@ const Reports: React.FC = () => {
     },
   });
 
+  // Brands (brand-locked users get only their own brand back)
+  const { data: brands } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => {
+      const response = await apiClient.get<Array<{ id: number; name: string }>>('/admin/brands');
+      return response.data;
+    },
+  });
+
+  const reportParams = () => {
+    const params = new URLSearchParams();
+    if (selectedBranch) params.append('branch_id', selectedBranch.toString());
+    if (selectedBrand) params.append('brand_id', selectedBrand.toString());
+    params.append('date_from', dateFrom);
+    params.append('date_to', dateTo);
+    return params.toString();
+  };
+
   // Fetch sales summary
   const { data: salesSummary, isLoading: loadingSales } = useQuery({
-    queryKey: ['salesSummary', selectedBranch, dateFrom, dateTo],
+    queryKey: ['salesSummary', selectedBranch, selectedBrand, dateFrom, dateTo],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (selectedBranch) params.append('branch_id', selectedBranch.toString());
-      params.append('date_from', dateFrom);
-      params.append('date_to', dateTo);
-      const response = await apiClient.get(`/admin/reports/sales-summary?${params.toString()}`);
+      const response = await apiClient.get(`/admin/reports/sales-summary?${reportParams()}`);
       return response.data;
     },
     enabled: true,
@@ -38,13 +53,9 @@ const Reports: React.FC = () => {
 
   // Fetch top items
   const { data: topItems, isLoading: loadingTopItems } = useQuery({
-    queryKey: ['topItems', selectedBranch, dateFrom, dateTo],
+    queryKey: ['topItems', selectedBranch, selectedBrand, dateFrom, dateTo],
     queryFn: async () => {
-      const params = new URLSearchParams();
-      if (selectedBranch) params.append('branch_id', selectedBranch.toString());
-      params.append('date_from', dateFrom);
-      params.append('date_to', dateTo);
-      const response = await apiClient.get(`/admin/reports/top-items?${params.toString()}`);
+      const response = await apiClient.get(`/admin/reports/top-items?${reportParams()}`);
       return response.data;
     },
     enabled: true,
@@ -72,6 +83,20 @@ const Reports: React.FC = () => {
             placeholder="All Branches"
             minWidth="min-w-[180px]"
           />
+          <SearchableSelect
+            label="Brand"
+            value={selectedBrand ? String(selectedBrand) : ''}
+            onChange={(v) => setSelectedBrand(v ? parseInt(v, 10) : null)}
+            options={[
+              { value: '', label: 'All Brands' },
+              ...(brands ?? []).map((brand) => ({
+                value: String(brand.id),
+                label: brand.name,
+              })),
+            ]}
+            placeholder="All Brands"
+            minWidth="min-w-[160px]"
+          />
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">From Date</label>
             <input
@@ -93,6 +118,7 @@ const Reports: React.FC = () => {
           <ClearFiltersButton
             onClick={() => {
               setSelectedBranch(null);
+              setSelectedBrand(null);
               const today = new Date().toISOString().split('T')[0];
               setDateFrom(today);
               setDateTo(today);
