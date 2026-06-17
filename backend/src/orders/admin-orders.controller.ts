@@ -23,13 +23,25 @@ export class AdminOrdersController {
     constructor(private service: OrdersService) {}
 
     @Get('riders')
-    listRiders(@CurrentUser() user: { id: number; tenantId: number | null }) {
+    listRiders(
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
+        @Query('brand_id') brandId?: string,
+    ) {
         if (user.tenantId == null) {
             throw new BadRequestException(
                 'Riders are listed per tenant; super admin must specify tenant context',
             );
         }
-        return this.service.listRiders(user.tenantId);
+        return this.service.listRiders(
+            user.tenantId,
+            user.allowedBrandIds,
+            brandId ? +brandId : undefined,
+        );
     }
 
     @Put('group/:orderGroupId/rider')
@@ -40,6 +52,7 @@ export class AdminOrdersController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Body() body: { rider_id: number },
     ) {
@@ -57,6 +70,7 @@ export class AdminOrdersController {
             user.tenantId,
             riderId,
             user.allowedBranchIds,
+            user.allowedBrandIds,
         );
     }
 
@@ -68,6 +82,7 @@ export class AdminOrdersController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Body() body: { rider_id: number },
     ) {
@@ -85,6 +100,7 @@ export class AdminOrdersController {
             user.tenantId,
             riderId,
             user.allowedBranchIds,
+            user.allowedBrandIds,
         );
     }
 
@@ -95,8 +111,10 @@ export class AdminOrdersController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Query('branch_id') branchId: string,
+        @Query('brand_id') brandId: string,
         @Query('status') status: string,
         @Query('order_type') orderType: string,
         @Query('date_from') dateFrom: string,
@@ -107,6 +125,7 @@ export class AdminOrdersController {
             user.tenantId,
             {
                 branch_id: branchId ? +branchId : undefined,
+                brand_id: brandId ? +brandId : undefined,
                 status,
                 order_type: orderType || undefined,
                 date_from: dateFrom,
@@ -115,6 +134,7 @@ export class AdminOrdersController {
                     hasRider === '1' || hasRider === 'true' ? true : undefined,
             },
             user.allowedBranchIds,
+            user.allowedBrandIds,
         );
     }
 
@@ -126,12 +146,14 @@ export class AdminOrdersController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
     ) {
         return this.service.findForAdmin(
             +id,
             user.tenantId,
             user.allowedBranchIds,
+            user.allowedBrandIds,
         );
     }
 
@@ -143,6 +165,7 @@ export class AdminOrdersController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Body() body: { status: string },
     ) {
@@ -151,6 +174,7 @@ export class AdminOrdersController {
             user.tenantId,
             body.status,
             user.allowedBranchIds,
+            user.allowedBrandIds,
         );
     }
 
@@ -162,6 +186,7 @@ export class AdminOrdersController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Body() body: { rider_id: number },
     ) {
@@ -179,6 +204,7 @@ export class AdminOrdersController {
             user.tenantId,
             riderId,
             user.allowedBranchIds,
+            user.allowedBrandIds,
         );
     }
 
@@ -190,6 +216,7 @@ export class AdminOrdersController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Body() body: { rider_id: number },
     ) {
@@ -207,6 +234,7 @@ export class AdminOrdersController {
             user.tenantId,
             riderId,
             user.allowedBranchIds,
+            user.allowedBrandIds,
         );
     }
 
@@ -218,6 +246,7 @@ export class AdminOrdersController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
     ) {
         if (user.tenantId == null) {
@@ -229,6 +258,7 @@ export class AdminOrdersController {
             +id,
             user.tenantId,
             user.allowedBranchIds,
+            user.allowedBrandIds,
         );
     }
 }

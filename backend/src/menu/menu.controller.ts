@@ -9,6 +9,7 @@ import {
     Query,
     UseGuards,
     NotFoundException,
+    ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiBody, ApiOperation } from '@nestjs/swagger';
 import { MenuService } from './menu.service';
@@ -19,6 +20,12 @@ import { RequirePermission } from '../roles/require-permission.decorator';
 import { RequirePermissionGuard } from '../roles/require-permission.guard';
 import { Permissions } from '../roles/permissions.dto';
 
+type MenuUser = {
+    id: number;
+    tenantId: number | null;
+    allowedBrandIds?: number[] | null;
+};
+
 @ApiTags('Admin – Menu')
 @ApiBearerAuth()
 @Controller('admin/menu')
@@ -26,12 +33,61 @@ import { Permissions } from '../roles/permissions.dto';
 export class MenuController {
     constructor(private service: MenuService) {}
 
+    /**
+     * Resolve the effective brand filter for list/create endpoints.
+     * Brand-locked users may only address their own brand; with no explicit
+     * brand_id their single locked brand is used.
+     */
+    private resolveBrandScope(
+        user: MenuUser,
+        brandId: number | null,
+    ): number | null {
+        const allowed = user.allowedBrandIds;
+        if (allowed == null) return brandId;
+        if (brandId != null) {
+            if (!allowed.includes(brandId)) {
+                throw new ForbiddenException(
+                    'You do not have access to this brand',
+                );
+            }
+            return brandId;
+        }
+        if (allowed.length === 1) return allowed[0];
+        throw new ForbiddenException(
+            'brand_id is required for brand-locked accounts',
+        );
+    }
+
+    /** Throw unless the menu entity belongs to one of the user's brands. */
+    private async assertEntityBrand(
+        user: MenuUser,
+        kind:
+            | 'category'
+            | 'item'
+            | 'addon'
+            | 'variant'
+            | 'modifier-group'
+            | 'modifier',
+        id: number,
+    ): Promise<void> {
+        if (user.allowedBrandIds == null) return;
+        const brandId = await this.service.getEntityBrandId(kind, id);
+        if (brandId == null || !user.allowedBrandIds.includes(brandId)) {
+            throw new ForbiddenException(
+                'You do not have access to this brand',
+            );
+        }
+    }
+
     @Get('categories')
     async categories(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Query('brand_id') brandIdParam: string,
     ) {
-        const brandId = brandIdParam ? +brandIdParam : null;
+        const brandId = this.resolveBrandScope(
+            user,
+            brandIdParam ? +brandIdParam : null,
+        );
         if (brandId != null && user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 brandId,
@@ -42,9 +98,10 @@ export class MenuController {
 
     @Post('categories')
     async createCategory(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Body() dto: { brand_id: number; name: string; is_active?: boolean },
     ) {
+        this.resolveBrandScope(user, dto.brand_id);
         if (user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 dto.brand_id,
@@ -54,28 +111,37 @@ export class MenuController {
     }
 
     @Put('categories/:id')
-    updateCategory(
+    async updateCategory(
+        @CurrentUser() user: MenuUser,
         @Param('id') id: string,
         @Body()
         dto: { name?: string; is_active?: boolean; sort_order?: number },
     ) {
+        await this.assertEntityBrand(user, 'category', +id);
         return this.service.updateCategory(+id, dto);
     }
 
     @Delete('categories/:id')
-    deleteCategory(@Param('id') id: string) {
+    async deleteCategory(
+        @CurrentUser() user: MenuUser,
+        @Param('id') id: string,
+    ) {
+        await this.assertEntityBrand(user, 'category', +id);
         return this.service.deleteCategory(+id);
     }
 
     @Get('items')
     async items(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Query('brand_id') brandIdParam: string,
         @Query('category_id') categoryIdParam: string,
         @Query('is_active') isActiveParam: string,
         @Query('search') searchParam: string,
     ) {
-        const brandId = brandIdParam ? +brandIdParam : null;
+        const brandId = this.resolveBrandScope(
+            user,
+            brandIdParam ? +brandIdParam : null,
+        );
         if (brandId != null && user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 brandId,
@@ -136,7 +202,7 @@ export class MenuController {
         },
     })
     async createItem(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Body()
         dto: {
             brand_id: number;
@@ -151,6 +217,7 @@ export class MenuController {
             available_for_order_types?: string[] | null;
         },
     ) {
+        this.resolveBrandScope(user, dto.brand_id);
         if (user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 dto.brand_id,
@@ -198,7 +265,7 @@ export class MenuController {
         },
     })
     async updateItem(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Param('id') id: string,
         @Body()
         dto: {
@@ -214,6 +281,8 @@ export class MenuController {
             available_for_order_types?: string[] | null;
         },
     ) {
+        await this.assertEntityBrand(user, 'item', +id);
+        if (dto.brand_id != null) this.resolveBrandScope(user, dto.brand_id);
         if (dto.brand_id != null && user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 dto.brand_id,
@@ -223,24 +292,33 @@ export class MenuController {
     }
 
     @Delete('items/:id')
-    deleteItem(@Param('id') id: string) {
+    async deleteItem(@CurrentUser() user: MenuUser, @Param('id') id: string) {
+        await this.assertEntityBrand(user, 'item', +id);
         return this.service.deleteItem(+id);
     }
 
     @Post('items/:id/link-addons')
-    linkAddons(@Param('id') id: string, @Body() body: { addon_ids: number[] }) {
+    async linkAddons(
+        @CurrentUser() user: MenuUser,
+        @Param('id') id: string,
+        @Body() body: { addon_ids: number[] },
+    ) {
+        await this.assertEntityBrand(user, 'item', +id);
         return this.service.linkAddons(+id, body.addon_ids ?? []);
     }
 
     @Get('addons')
     async addons(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Query('brand_id') brandIdParam: string,
         @Query('category_id') categoryId: string,
         @Query('search') searchParam: string,
         @Query('is_active') isActiveParam: string,
     ) {
-        const brandId = brandIdParam ? +brandIdParam : null;
+        const brandId = this.resolveBrandScope(
+            user,
+            brandIdParam ? +brandIdParam : null,
+        );
         if (brandId != null && user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 brandId,
@@ -264,7 +342,7 @@ export class MenuController {
 
     @Post('addons')
     async createAddon(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Body()
         dto: {
             brand_id: number;
@@ -274,6 +352,7 @@ export class MenuController {
             is_active?: boolean;
         },
     ) {
+        this.resolveBrandScope(user, dto.brand_id);
         if (user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 dto.brand_id,
@@ -284,7 +363,7 @@ export class MenuController {
 
     @Put('addons/:id')
     async updateAddon(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Param('id') id: string,
         @Body()
         dto: {
@@ -295,6 +374,8 @@ export class MenuController {
             brand_id?: number;
         },
     ) {
+        await this.assertEntityBrand(user, 'addon', +id);
+        if (dto.brand_id != null) this.resolveBrandScope(user, dto.brand_id);
         if (dto.brand_id != null && user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 dto.brand_id,
@@ -304,28 +385,36 @@ export class MenuController {
     }
 
     @Delete('addons/:id')
-    deleteAddon(@Param('id') id: string) {
+    async deleteAddon(@CurrentUser() user: MenuUser, @Param('id') id: string) {
+        await this.assertEntityBrand(user, 'addon', +id);
         return this.service.deleteAddon(+id);
     }
 
     @Get('variants')
     async variants(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Query('menu_item_id') menuItemId: string,
         @Query('brand_id') brandIdParam: string,
     ) {
-        const brandId = brandIdParam ? +brandIdParam : null;
+        if (menuItemId) {
+            await this.assertEntityBrand(user, 'item', +menuItemId);
+            return this.service.getVariants(+menuItemId);
+        }
+        const brandId = this.resolveBrandScope(
+            user,
+            brandIdParam ? +brandIdParam : null,
+        );
         if (brandId != null && user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 brandId,
                 user.tenantId,
             );
-        if (menuItemId) return this.service.getVariants(+menuItemId);
         return this.service.getVariantsForBrand(brandId, user.tenantId);
     }
 
     @Post('variants')
-    createVariant(
+    async createVariant(
+        @CurrentUser() user: MenuUser,
         @Body()
         dto: {
             menu_item_id: number;
@@ -335,11 +424,13 @@ export class MenuController {
             sort_order?: number;
         },
     ) {
+        await this.assertEntityBrand(user, 'item', dto.menu_item_id);
         return this.service.createVariant(dto);
     }
 
     @Put('variants/:id')
-    updateVariant(
+    async updateVariant(
+        @CurrentUser() user: MenuUser,
         @Param('id') id: string,
         @Body()
         dto: {
@@ -350,20 +441,30 @@ export class MenuController {
             sort_order?: number;
         },
     ) {
+        await this.assertEntityBrand(user, 'variant', +id);
+        if (dto.menu_item_id != null)
+            await this.assertEntityBrand(user, 'item', dto.menu_item_id);
         return this.service.updateVariant(+id, dto);
     }
 
     @Delete('variants/:id')
-    deleteVariant(@Param('id') id: string) {
+    async deleteVariant(
+        @CurrentUser() user: MenuUser,
+        @Param('id') id: string,
+    ) {
+        await this.assertEntityBrand(user, 'variant', +id);
         return this.service.deleteVariant(+id);
     }
 
     @Get('modifier-groups')
     async modifierGroups(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Query('brand_id') brandIdParam: string,
     ) {
-        const brandId = brandIdParam ? +brandIdParam : null;
+        const brandId = this.resolveBrandScope(
+            user,
+            brandIdParam ? +brandIdParam : null,
+        );
         if (brandId != null && user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 brandId,
@@ -374,7 +475,7 @@ export class MenuController {
 
     @Post('modifier-groups')
     async createModifierGroup(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Body()
         dto: {
             brand_id: number;
@@ -383,6 +484,7 @@ export class MenuController {
             max_select?: number;
         },
     ) {
+        this.resolveBrandScope(user, dto.brand_id);
         if (user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 dto.brand_id,
@@ -393,29 +495,44 @@ export class MenuController {
 
     @Put('modifier-groups/:id')
     async updateModifierGroup(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Param('id') id: string,
         @Body()
         dto: { name?: string; min_select?: number; max_select?: number },
     ) {
+        await this.assertEntityBrand(user, 'modifier-group', +id);
         return this.service.updateModifierGroup(+id, dto);
     }
 
     @Delete('modifier-groups/:id')
-    deleteModifierGroup(@Param('id') id: string) {
+    async deleteModifierGroup(
+        @CurrentUser() user: MenuUser,
+        @Param('id') id: string,
+    ) {
+        await this.assertEntityBrand(user, 'modifier-group', +id);
         return this.service.deleteModifierGroup(+id);
     }
 
     @Get('modifiers')
     async modifiers(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Query('modifier_group_id') modifierGroupIdParam: string,
         @Query('brand_id') brandIdParam: string,
     ) {
         const modifierGroupId = modifierGroupIdParam
             ? +modifierGroupIdParam
             : null;
-        const brandId = brandIdParam ? +brandIdParam : null;
+        if (modifierGroupId != null) {
+            await this.assertEntityBrand(
+                user,
+                'modifier-group',
+                modifierGroupId,
+            );
+        }
+        const brandId = this.resolveBrandScope(
+            user,
+            brandIdParam ? +brandIdParam : null,
+        );
         if (brandId != null && user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 brandId,
@@ -430,10 +547,15 @@ export class MenuController {
 
     @Post('modifiers')
     async createModifier(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Body()
         dto: { modifier_group_id: number; name: string; price?: number },
     ) {
+        await this.assertEntityBrand(
+            user,
+            'modifier-group',
+            dto.modifier_group_id,
+        );
         if (user.tenantId != null)
             await this.service.assertModifierGroupBelongsToTenant(
                 dto.modifier_group_id,
@@ -443,24 +565,31 @@ export class MenuController {
     }
 
     @Put('modifiers/:id')
-    updateModifier(
+    async updateModifier(
+        @CurrentUser() user: MenuUser,
         @Param('id') id: string,
         @Body() dto: { name?: string; price?: number },
     ) {
+        await this.assertEntityBrand(user, 'modifier', +id);
         return this.service.updateModifier(+id, dto);
     }
 
     @Delete('modifiers/:id')
-    deleteModifier(@Param('id') id: string) {
+    async deleteModifier(
+        @CurrentUser() user: MenuUser,
+        @Param('id') id: string,
+    ) {
+        await this.assertEntityBrand(user, 'modifier', +id);
         return this.service.deleteModifier(+id);
     }
 
     @Post('items/:id/link-modifier-groups')
     async linkModifierGroups(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Param('id') id: string,
         @Body() body: { modifier_group_ids: number[] },
     ) {
+        await this.assertEntityBrand(user, 'item', +id);
         return this.service.linkModifierGroups(
             +id,
             body.modifier_group_ids ?? [],
@@ -471,10 +600,13 @@ export class MenuController {
     @UseGuards(RequirePermissionGuard)
     @RequirePermission(Permissions.DEALS_VIEW)
     async listDeals(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Query('brand_id') brandIdParam: string,
     ) {
-        const brandId = brandIdParam ? +brandIdParam : null;
+        const brandId = this.resolveBrandScope(
+            user,
+            brandIdParam ? +brandIdParam : null,
+        );
         if (brandId != null && user.tenantId != null)
             await this.service.assertBrandBelongsToTenant(
                 brandId,
@@ -487,10 +619,11 @@ export class MenuController {
     @UseGuards(RequirePermissionGuard)
     @RequirePermission(Permissions.DEALS_VIEW)
     async getDeal(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Param('menuItemId') menuItemIdParam: string,
     ) {
         const menuItemId = +menuItemIdParam;
+        await this.assertEntityBrand(user, 'item', menuItemId);
         const item = await this.service.findMenuItem(menuItemId);
         if (!item) return null;
         if (user.tenantId != null) {
@@ -510,7 +643,7 @@ export class MenuController {
     @UseGuards(RequirePermissionGuard)
     @RequirePermission(Permissions.DEALS_EDIT)
     async saveDeal(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Param('menuItemId') menuItemIdParam: string,
         @Body()
         body: {
@@ -526,6 +659,7 @@ export class MenuController {
         },
     ) {
         const menuItemId = +menuItemIdParam;
+        await this.assertEntityBrand(user, 'item', menuItemId);
         const item = await this.service.findMenuItem(menuItemId);
         if (!item) return null;
         if (user.tenantId != null) {
@@ -545,10 +679,11 @@ export class MenuController {
     @UseGuards(RequirePermissionGuard)
     @RequirePermission(Permissions.DEALS_DELETE)
     async deleteDeal(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: MenuUser,
         @Param('menuItemId') menuItemIdParam: string,
     ) {
         const menuItemId = +menuItemIdParam;
+        await this.assertEntityBrand(user, 'item', menuItemId);
         const item = await this.service.findMenuItem(menuItemId);
         if (!item) throw new NotFoundException('Menu item not found');
         if (user.tenantId != null) {

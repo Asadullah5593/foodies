@@ -4,6 +4,8 @@ import {
     ConflictException,
     BadRequestException,
     UnauthorizedException,
+    Optional,
+    Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, Repository } from 'typeorm';
@@ -13,31 +15,86 @@ import {
     validatePakistaniPhone,
     normalizePakistaniPhone,
 } from '../utils/phone';
+import { PromotionsService } from '../promotions/promotions.service';
 
 @Injectable()
 export class CustomersService {
+    private readonly logger = new Logger(CustomersService.name);
+
     constructor(
         @InjectRepository(Customer) private repo: Repository<Customer>,
         private dataSource: DataSource,
+        @Optional() private promotionsService: PromotionsService,
     ) {}
 
     /**
      * Admin listing must be tenant-scoped.
      * - tenant users: only their tenant's customers
      * - super admin (tenantId null): all customers
+     * - brand-locked users: only customers who have ordered from their brand
      */
-    async findAll(tenantId: number | null) {
-        return this.repo.find({
+    async findAll(tenantId: number | null, allowedBrandIds?: number[] | null) {
+        if (allowedBrandIds != null) {
+            // Brand-locked: show only customers who ordered from their brands
+            const qb = this.repo
+                .createQueryBuilder('c')
+                .where(
+                    'EXISTS (SELECT 1 FROM orders o WHERE o.customer_id = c.id AND o.brand_id IN (:...allowedBrandIds))',
+                    { allowedBrandIds },
+                )
+                .orderBy('c.id', 'ASC');
+            if (tenantId != null)
+                qb.andWhere('c.tenantId = :tenantId', { tenantId });
+            return qb.getMany();
+        }
+
+        // Owner / unrestricted: return all customers with brand badges
+        const customers = await this.repo.find({
             where: tenantId != null ? { tenantId } : {},
             order: { id: 'ASC' },
         });
+        if (!customers.length) return customers;
+
+        const brandRows = await this.dataSource.query<
+            { customer_id: number; id: number; name: string }[]
+        >(
+            `SELECT DISTINCT o.customer_id, b.id, b.name
+             FROM orders o
+             JOIN brands b ON b.id = o.brand_id
+             WHERE o.customer_id = ANY($1)`,
+            [customers.map((c) => c.id)],
+        );
+
+        const brandMap = new Map<number, { id: number; name: string }[]>();
+        for (const row of brandRows) {
+            if (!brandMap.has(row.customer_id))
+                brandMap.set(row.customer_id, []);
+            brandMap.get(row.customer_id)!.push({ id: row.id, name: row.name });
+        }
+
+        return customers.map((c) => ({ ...c, brands: brandMap.get(c.id) ?? [] }));
     }
 
-    async findOne(id: number, tenantId: number | null) {
+    async findOne(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ) {
         const customer = await this.repo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
         });
         if (!customer) throw new NotFoundException('Customer not found');
+        if (allowedBrandIds != null) {
+            const rows = await this.dataSource.query(
+                `SELECT 1 FROM orders o
+                 WHERE o.customer_id = $1 AND o.brand_id = ANY($2::int[])
+                 LIMIT 1`,
+                [customer.id, allowedBrandIds],
+            );
+            if (rows.length === 0) {
+                throw new NotFoundException('Customer not found');
+            }
+        }
         return customer;
     }
 
@@ -221,7 +278,11 @@ export class CustomersService {
             email?: string | null;
             profile_image_url?: string | null;
         },
+        allowedBrandIds?: number[] | null,
     ) {
+        if (allowedBrandIds != null) {
+            await this.findOne(id, tenantId, allowedBrandIds);
+        }
         const customer = await this.repo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
         });
@@ -269,7 +330,14 @@ export class CustomersService {
         return { message: 'Password updated' };
     }
 
-    async remove(id: number, tenantId: number | null): Promise<void> {
+    async remove(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ): Promise<void> {
+        if (allowedBrandIds != null) {
+            await this.findOne(id, tenantId, allowedBrandIds);
+        }
         const customer = await this.repo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
         });
@@ -292,8 +360,7 @@ export class CustomersService {
                 'This account has no password set. Contact support to delete your account.',
             );
         }
-        const trimmed =
-            typeof password === 'string' ? password : '';
+        const trimmed = typeof password === 'string' ? password : '';
         if (!trimmed) {
             throw new BadRequestException('password is required');
         }
@@ -356,8 +423,7 @@ export class CustomersService {
             }
             if (
                 absorbEmail &&
-                (!tenantCustomer.email ||
-                    tenantCustomer.email.trim() === '')
+                (!tenantCustomer.email || tenantCustomer.email.trim() === '')
             ) {
                 const emailTaken = await qr.manager
                     .createQueryBuilder(Customer, 'c')
@@ -388,14 +454,17 @@ export class CustomersService {
             if (tenantCustomer.latitude == null && consumer.latitude != null) {
                 tenantCustomer.latitude = consumer.latitude;
             }
-            if (tenantCustomer.longitude == null && consumer.longitude != null) {
+            if (
+                tenantCustomer.longitude == null &&
+                consumer.longitude != null
+            ) {
                 tenantCustomer.longitude = consumer.longitude;
             }
             tenantCustomer.loyaltyPointsBalance =
                 (tenantCustomer.loyaltyPointsBalance || 0) +
                 (consumer.loyaltyPointsBalance || 0);
-            tenantCustomer.phone = normalizePakistaniPhone(consumer.phone)
-                ?? tenantCustomer.phone;
+            tenantCustomer.phone =
+                normalizePakistaniPhone(consumer.phone) ?? tenantCustomer.phone;
 
             await qr.manager.save(tenantCustomer);
 
@@ -468,7 +537,7 @@ export class CustomersService {
             return this.linkConsumerToTenant(consumer.id, tenantId);
         }
 
-        return this.repo.save(
+        const newCustomer = await this.repo.save(
             this.repo.create({
                 tenantId,
                 phone: normalized,
@@ -476,6 +545,18 @@ export class CustomersService {
                 loyaltyPointsBalance: 0,
             }),
         );
+        // Fire-and-forget: assign any active new_customer promotions
+        if (this.promotionsService) {
+            this.promotionsService
+                .assignNewCustomerPromotions(tenantId, newCustomer.id)
+                .catch((err) =>
+                    this.logger.warn(
+                        `Promotion auto-assign failed for customer ${newCustomer.id}`,
+                        err,
+                    ),
+                );
+        }
+        return newCustomer;
     }
 
     /**

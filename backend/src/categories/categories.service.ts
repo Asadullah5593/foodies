@@ -47,8 +47,28 @@ export class CategoriesService {
             throw new ForbiddenException('Brand not found or access denied');
     }
 
-    async findAll(tenantId: number | null, filters?: CategoryFilters) {
-        const brandIds = await this.getBrandIdsForTenant(tenantId);
+    async findAll(
+        tenantId: number | null,
+        filters?: CategoryFilters,
+        allowedBrandIds?: number[] | null,
+    ) {
+        const tenantBrandIds = await this.getBrandIdsForTenant(tenantId);
+        // Brand-locked users only see their own brand's categories.
+        const brandIds =
+            allowedBrandIds == null
+                ? tenantBrandIds
+                : tenantBrandIds == null
+                  ? allowedBrandIds
+                  : tenantBrandIds.filter((id) => allowedBrandIds.includes(id));
+        if (
+            allowedBrandIds != null &&
+            filters?.brand_id != null &&
+            !allowedBrandIds.includes(filters.brand_id)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this brand',
+            );
+        }
         const qb = this.repo
             .createQueryBuilder('c')
             .leftJoinAndSelect('c.brand', 'b', 'b.id = c.brandId')
@@ -104,7 +124,11 @@ export class CategoriesService {
         return list.map((c) => this.toResponse(c));
     }
 
-    async findOne(id: number, tenantId: number | null) {
+    async findOne(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ) {
         const cat = await this.repo.findOne({
             where: { id },
             relations: ['brand'],
@@ -112,6 +136,8 @@ export class CategoriesService {
         if (!cat) throw new NotFoundException('Category not found');
         const brandIds = await this.getBrandIdsForTenant(tenantId);
         if (brandIds !== null && !brandIds.includes(cat.brandId))
+            throw new ForbiddenException('Category not found or access denied');
+        if (allowedBrandIds != null && !allowedBrandIds.includes(cat.brandId))
             throw new ForbiddenException('Category not found or access denied');
         return this.toResponse(cat);
     }
@@ -124,7 +150,16 @@ export class CategoriesService {
             sort_order?: number;
         },
         tenantId: number | null,
+        allowedBrandIds?: number[] | null,
     ) {
+        if (
+            allowedBrandIds != null &&
+            !allowedBrandIds.includes(dto.brand_id)
+        ) {
+            throw new ForbiddenException(
+                'You can only create categories for your own brand',
+            );
+        }
         if (tenantId != null)
             await this.assertBrandAccess(dto.brand_id, tenantId);
         const name = String(dto.name ?? '').trim();
@@ -144,11 +179,14 @@ export class CategoriesService {
         id: number,
         dto: { name?: string; is_active?: boolean; sort_order?: number },
         tenantId: number | null,
+        allowedBrandIds?: number[] | null,
     ) {
         const cat = await this.repo.findOne({ where: { id } });
         if (!cat) throw new NotFoundException('Category not found');
         const brandIds = await this.getBrandIdsForTenant(tenantId);
         if (brandIds !== null && !brandIds.includes(cat.brandId))
+            throw new ForbiddenException('Category not found or access denied');
+        if (allowedBrandIds != null && !allowedBrandIds.includes(cat.brandId))
             throw new ForbiddenException('Category not found or access denied');
         if (dto.name !== undefined) {
             const name = String(dto.name).trim();
@@ -161,11 +199,17 @@ export class CategoriesService {
         return this.toResponse(cat);
     }
 
-    async remove(id: number, tenantId: number | null) {
+    async remove(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ) {
         const cat = await this.repo.findOne({ where: { id } });
         if (!cat) throw new NotFoundException('Category not found');
         const brandIds = await this.getBrandIdsForTenant(tenantId);
         if (brandIds !== null && !brandIds.includes(cat.brandId))
+            throw new ForbiddenException('Category not found or access denied');
+        if (allowedBrandIds != null && !allowedBrandIds.includes(cat.brandId))
             throw new ForbiddenException('Category not found or access denied');
         await this.repo.remove(cat);
         return { message: 'Category deleted successfully' };

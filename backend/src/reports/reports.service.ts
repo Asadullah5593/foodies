@@ -71,6 +71,25 @@ export class ReportsService {
     }
 
     /**
+     * Throws if the caller asked for a specific brand they are not allowed to
+     * see (brand-locked users may only report on their own brands).
+     */
+    private assertBrandAccess(
+        allowedBrandIds: number[] | null | undefined,
+        brandId?: number,
+    ): void {
+        if (
+            allowedBrandIds != null &&
+            brandId != null &&
+            !allowedBrandIds.includes(brandId)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this brand',
+            );
+        }
+    }
+
+    /**
      * Applies the shared tenant + branch-allowlist + single-branch filter to a
      * query builder whose order/scoped alias is `alias`. The alias entity must
      * expose `tenantId` and `branchId` columns.
@@ -81,6 +100,8 @@ export class ReportsService {
         tenantId: number | null,
         allowedBranchIds: number[] | null | undefined,
         branchId?: number,
+        allowedBrandIds?: number[] | null,
+        brandId?: number,
     ): SelectQueryBuilder<T> {
         if (tenantId != null)
             qb.andWhere(`${alias}.tenantId = :tenantId`, { tenantId });
@@ -95,6 +116,31 @@ export class ReportsService {
         }
         if (branchId)
             qb.andWhere(`${alias}.branchId = :branchId`, { branchId });
+        this.applyBrandScope(qb, alias, allowedBrandIds, brandId);
+        return qb;
+    }
+
+    /**
+     * Brand filter for any query with an orders-like alias exposing brandId:
+     * brand-locked users are restricted to their brands, and an explicit
+     * brand_id report filter narrows further.
+     */
+    private applyBrandScope<T extends ObjectLiteral>(
+        qb: SelectQueryBuilder<T>,
+        alias: string,
+        allowedBrandIds?: number[] | null,
+        brandId?: number,
+    ): SelectQueryBuilder<T> {
+        if (allowedBrandIds != null) {
+            qb.andWhere(`${alias}.brandId IN (:...allowedBrandIds)`, {
+                allowedBrandIds,
+            });
+        }
+        if (brandId) {
+            qb.andWhere(`${alias}.brandId = :reportBrandId`, {
+                reportBrandId: brandId,
+            });
+        }
         return qb;
     }
 
@@ -108,6 +154,8 @@ export class ReportsService {
         tenantId: number | null,
         allowedBranchIds: number[] | null | undefined,
         branchId?: number,
+        allowedBrandIds?: number[] | null,
+        brandId?: number,
     ): Promise<{
         completed_orders: number;
         total_revenue: number;
@@ -131,7 +179,15 @@ export class ReportsService {
                 'total_service_charge',
             )
             .addSelect('COALESCE(SUM(o.deliveryFee), 0)', 'total_delivery_fee');
-        this.applyOrderScope(qb, 'o', tenantId, allowedBranchIds, branchId);
+        this.applyOrderScope(
+            qb,
+            'o',
+            tenantId,
+            allowedBranchIds,
+            branchId,
+            allowedBrandIds,
+            brandId,
+        );
         const r = await qb.getRawOne<Record<string, string>>();
         return {
             completed_orders: Number(r?.completed_orders ?? 0),
@@ -151,8 +207,14 @@ export class ReportsService {
 
     async dayOverview(
         tenantId: number | null,
-        filters: { branch_id?: number; date_from?: string; date_to?: string },
+        filters: {
+            branch_id?: number;
+            brand_id?: number;
+            date_from?: string;
+            date_to?: string;
+        },
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         if (
             allowedBranchIds != null &&
@@ -165,6 +227,7 @@ export class ReportsService {
                 'You do not have access to this branch',
             );
         }
+        this.assertBrandAccess(allowedBrandIds, filters.brand_id);
 
         const { dateFrom, dateTo } = this.resolveDayRange(filters);
 
@@ -193,6 +256,12 @@ export class ReportsService {
             ordersStatusQb.andWhere('o.branchId = :branchId', {
                 branchId: filters.branch_id,
             });
+        this.applyBrandScope(
+            ordersStatusQb,
+            'o',
+            allowedBrandIds,
+            filters.brand_id,
+        );
         const ordersByStatusRows = await ordersStatusQb.getRawMany<{
             status: string;
             count: string;
@@ -235,6 +304,12 @@ export class ReportsService {
             ordersStatusSourceQb.andWhere('o.branchId = :branchId', {
                 branchId: filters.branch_id,
             });
+        this.applyBrandScope(
+            ordersStatusSourceQb,
+            'o',
+            allowedBrandIds,
+            filters.brand_id,
+        );
         const ordersByStatusSourceRows = await ordersStatusSourceQb.getRawMany<{
             source: string | null;
             status: string;
@@ -278,6 +353,12 @@ export class ReportsService {
             paymentsTotalQb.andWhere('o.branchId = :branchId', {
                 branchId: filters.branch_id,
             });
+        this.applyBrandScope(
+            paymentsTotalQb,
+            'o',
+            allowedBrandIds,
+            filters.brand_id,
+        );
         const paymentsTotalRow = await paymentsTotalQb.getRawOne<{
             total: string | null;
         }>();
@@ -312,6 +393,12 @@ export class ReportsService {
             paymentsByMethodQb.andWhere('o.branchId = :branchId', {
                 branchId: filters.branch_id,
             });
+        this.applyBrandScope(
+            paymentsByMethodQb,
+            'o',
+            allowedBrandIds,
+            filters.brand_id,
+        );
         const paymentsByMethodRows = await paymentsByMethodQb.getRawMany<{
             method: string;
             total: string;
@@ -354,6 +441,12 @@ export class ReportsService {
             paymentsByMethodSourceQb.andWhere('o.branchId = :branchId', {
                 branchId: filters.branch_id,
             });
+        this.applyBrandScope(
+            paymentsByMethodSourceQb,
+            'o',
+            allowedBrandIds,
+            filters.brand_id,
+        );
         const paymentsByMethodSourceRows =
             await paymentsByMethodSourceQb.getRawMany<{
                 source: string | null;
@@ -387,8 +480,14 @@ export class ReportsService {
 
     async salesSummary(
         tenantId: number | null,
-        filters: { branch_id?: number; date_from?: string; date_to?: string },
+        filters: {
+            branch_id?: number;
+            brand_id?: number;
+            date_from?: string;
+            date_to?: string;
+        },
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         if (
             allowedBranchIds != null &&
@@ -401,6 +500,7 @@ export class ReportsService {
                 'You do not have access to this branch',
             );
         }
+        this.assertBrandAccess(allowedBrandIds, filters.brand_id);
         const { dateFrom, dateTo } = this.resolveDayRange(filters);
 
         const qb = this.orderRepo
@@ -425,6 +525,7 @@ export class ReportsService {
             qb.andWhere('o.branchId = :branchId', {
                 branchId: filters.branch_id,
             });
+        this.applyBrandScope(qb, 'o', allowedBrandIds, filters.brand_id);
 
         const orders = await qb.getMany();
         const totalRevenue = orders.reduce(
@@ -467,11 +568,13 @@ export class ReportsService {
         tenantId: number | null,
         filters: {
             branch_id?: number;
+            brand_id?: number;
             limit?: number;
             date_from?: string;
             date_to?: string;
         },
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         if (
             allowedBranchIds != null &&
@@ -484,6 +587,7 @@ export class ReportsService {
                 'You do not have access to this branch',
             );
         }
+        this.assertBrandAccess(allowedBrandIds, filters.brand_id);
         const limit = filters.limit ?? 10;
         const { dateFrom, dateTo } = this.resolveDayRange(filters);
 
@@ -518,14 +622,21 @@ export class ReportsService {
             qb.andWhere('o.branchId = :branchId', {
                 branchId: filters.branch_id,
             });
+        this.applyBrandScope(qb, 'o', allowedBrandIds, filters.brand_id);
 
         return qb.getRawMany();
     }
 
     async shiftSummary(
         tenantId: number | null,
-        filters: { branch_id?: number; date_from?: string; date_to?: string },
+        filters: {
+            branch_id?: number;
+            brand_id?: number;
+            date_from?: string;
+            date_to?: string;
+        },
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         if (
             allowedBranchIds != null &&
@@ -538,12 +649,14 @@ export class ReportsService {
                 'You do not have access to this branch',
             );
         }
+        this.assertBrandAccess(allowedBrandIds, filters.brand_id);
         const { dateFrom, dateTo } = this.resolveDayRange(filters);
 
         const qb = this.shiftRepo
             .createQueryBuilder('s')
             .leftJoinAndSelect('s.branch', 'b')
             .leftJoinAndSelect('s.user', 'u')
+            .leftJoinAndSelect('s.brand', 'shiftBrand')
             .innerJoin('s.branch', 'b')
             .innerJoin('b.branchBrands', 'bb')
             .innerJoin('bb.brand', 'br')
@@ -567,6 +680,7 @@ export class ReportsService {
             qb.andWhere('s.branchId = :branchId', {
                 branchId: filters.branch_id,
             });
+        this.applyBrandScope(qb, 's', allowedBrandIds, filters.brand_id);
 
         const shiftsList = await qb.getMany();
         return shiftsList.map((s) => {
@@ -578,6 +692,8 @@ export class ReportsService {
                 id: s.id,
                 branch_id: s.branchId,
                 branch_name: sRel.branch?.name,
+                brand_id: s.brandId ?? null,
+                brand_name: s.brand?.name ?? null,
                 user_name: sRel.user?.name,
                 shift_number: s.shiftNumber,
                 opening_cash: Number(s.openingCash),
@@ -600,11 +716,19 @@ export class ReportsService {
      */
     async dashboardSummary(
         tenantId: number | null,
-        filters: { branch_id?: number; date_from?: string; date_to?: string },
+        filters: {
+            branch_id?: number;
+            brand_id?: number;
+            date_from?: string;
+            date_to?: string;
+        },
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         this.assertBranchAccess(allowedBranchIds, filters.branch_id);
+        this.assertBrandAccess(allowedBrandIds, filters.brand_id);
         const branchId = filters.branch_id;
+        const brandId = filters.brand_id;
         const { dateFrom, dateTo } = this.resolveDayRange(filters);
 
         // Previous window of equal length, ending the day before this one.
@@ -613,7 +737,15 @@ export class ReportsService {
         const prevFrom = new Date(prevTo.getTime() - spanMs);
 
         const scope = (qb: SelectQueryBuilder<Order>) =>
-            this.applyOrderScope(qb, 'o', tenantId, allowedBranchIds, branchId);
+            this.applyOrderScope(
+                qb,
+                'o',
+                tenantId,
+                allowedBranchIds,
+                branchId,
+                allowedBrandIds,
+                brandId,
+            );
 
         // 1. KPI aggregate (current) + previous-period aggregate for deltas
         const kpiCurrentP = this.kpiAggregate(
@@ -621,13 +753,79 @@ export class ReportsService {
             tenantId,
             allowedBranchIds,
             branchId,
+            allowedBrandIds,
+            brandId,
         );
         const kpiPrevP = this.kpiAggregate(
             { dateFrom: prevFrom, dateTo: prevTo },
             tenantId,
             allowedBranchIds,
             branchId,
+            allowedBrandIds,
+            brandId,
         );
+
+        // 1b. Per-brand sales breakdown (orders are single-brand): the owner
+        // sees what each brand is selling; brand-locked users see their own.
+        const salesByBrandP = scope(
+            this.orderRepo
+                .createQueryBuilder('o')
+                .innerJoin('o.brand', 'sbb')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('o.brandId', 'brand_id')
+                .addSelect('MAX(sbb.name)', 'brand_name')
+                .addSelect('COUNT(*)', 'orders')
+                .addSelect(
+                    "SUM(CASE WHEN o.status = 'completed' THEN 1 ELSE 0 END)",
+                    'completed_orders',
+                )
+                .addSelect(
+                    "COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.totalAmount ELSE 0 END), 0)",
+                    'revenue',
+                )
+                .groupBy('o.brandId')
+                .orderBy('revenue', 'DESC'),
+        ).getRawMany<{
+            brand_id: number;
+            brand_name: string;
+            orders: string;
+            completed_orders: string;
+            revenue: string;
+        }>();
+
+        // 1c. Per-branch sales breakdown: used by brand-specific dashboards
+        // (one brand across multiple branches) in place of the per-brand table.
+        const salesByBranchP = scope(
+            this.orderRepo
+                .createQueryBuilder('o')
+                .innerJoin('o.branch', 'sbr')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('o.branchId', 'branch_id')
+                .addSelect('MAX(sbr.name)', 'branch_name')
+                .addSelect('COUNT(*)', 'orders')
+                .addSelect(
+                    "SUM(CASE WHEN o.status = 'completed' THEN 1 ELSE 0 END)",
+                    'completed_orders',
+                )
+                .addSelect(
+                    "COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.totalAmount ELSE 0 END), 0)",
+                    'revenue',
+                )
+                .groupBy('o.branchId')
+                .orderBy('revenue', 'DESC'),
+        ).getRawMany<{
+            branch_id: number;
+            branch_name: string;
+            orders: string;
+            completed_orders: string;
+            revenue: string;
+        }>();
 
         // 2. Orders by status (all statuses, in range)
         const ordersByStatusP = scope(
@@ -688,6 +886,8 @@ export class ReportsService {
             tenantId,
             allowedBranchIds,
             branchId,
+            allowedBrandIds,
+            brandId,
         ).getRawMany<{ method: string; amount: string; count: string }>();
 
         // 6. Daily time-series
@@ -741,6 +941,8 @@ export class ReportsService {
             tenantId,
             allowedBranchIds,
             branchId,
+            allowedBrandIds,
+            brandId,
         ).getRawMany<{
             menu_item_id: number;
             name: string;
@@ -757,10 +959,7 @@ export class ReportsService {
                     dateFrom,
                     dateTo,
                 })
-                .select(
-                    "COALESCE(o.deliveryStatus, 'unassigned')",
-                    'status',
-                )
+                .select("COALESCE(o.deliveryStatus, 'unassigned')", 'status')
                 .addSelect('COUNT(*)', 'count')
                 .groupBy("COALESCE(o.deliveryStatus, 'unassigned')"),
         ).getRawMany<{ status: string; count: string }>();
@@ -768,14 +967,8 @@ export class ReportsService {
         // 8b. Live rider presence (a "now" snapshot, not date filtered)
         const presenceQb = this.riderPresenceRepo
             .createQueryBuilder('rp')
-            .select(
-                'COUNT(*) FILTER (WHERE rp.isCheckedIn = true)',
-                'active',
-            )
-            .addSelect(
-                'COUNT(*) FILTER (WHERE rp.isPaused = true)',
-                'paused',
-            );
+            .select('COUNT(*) FILTER (WHERE rp.isCheckedIn = true)', 'active')
+            .addSelect('COUNT(*) FILTER (WHERE rp.isPaused = true)', 'paused');
         if (
             allowedBranchIds != null &&
             Array.isArray(allowedBranchIds) &&
@@ -807,6 +1000,8 @@ export class ReportsService {
             tenantId,
             allowedBranchIds,
             branchId,
+            allowedBrandIds,
+            brandId,
         ).getRawOne<{ avg: string | null; count: string }>();
 
         const riderAvgP = this.applyOrderScope(
@@ -823,6 +1018,8 @@ export class ReportsService {
             tenantId,
             allowedBranchIds,
             branchId,
+            allowedBrandIds,
+            brandId,
         ).getRawOne<{ avg: string | null; count: string }>();
 
         // Per-brand rating breakdown (brand ratings are scoped to each brand).
@@ -845,7 +1042,14 @@ export class ReportsService {
             tenantId,
             allowedBranchIds,
             branchId,
-        ).getRawMany<{ id: number; name: string; avg: string; count: string }>();
+            allowedBrandIds,
+            brandId,
+        ).getRawMany<{
+            id: number;
+            name: string;
+            avg: string;
+            count: string;
+        }>();
 
         // Per-rider rating breakdown (rider ratings are per individual rider).
         const riderByP = this.applyOrderScope(
@@ -867,7 +1071,14 @@ export class ReportsService {
             tenantId,
             allowedBranchIds,
             branchId,
-        ).getRawMany<{ id: number; name: string; avg: string; count: string }>();
+            allowedBrandIds,
+            brandId,
+        ).getRawMany<{
+            id: number;
+            name: string;
+            avg: string;
+            count: string;
+        }>();
 
         const brandCommentsP = this.applyOrderScope(
             this.brandRatingRepo
@@ -888,6 +1099,8 @@ export class ReportsService {
             tenantId,
             allowedBranchIds,
             branchId,
+            allowedBrandIds,
+            brandId,
         ).getRawMany<{ stars: number; comment: string; created_at: Date }>();
 
         const riderCommentsP = this.applyOrderScope(
@@ -909,11 +1122,15 @@ export class ReportsService {
             tenantId,
             allowedBranchIds,
             branchId,
+            allowedBrandIds,
+            brandId,
         ).getRawMany<{ stars: number; comment: string; created_at: Date }>();
 
         const [
             kpiCurrent,
             kpiPrev,
+            salesByBrandRaw,
+            salesByBranchRaw,
             ordersByStatusRaw,
             ordersByTypeRaw,
             ordersBySourceRaw,
@@ -931,6 +1148,8 @@ export class ReportsService {
         ] = await Promise.all([
             kpiCurrentP,
             kpiPrevP,
+            salesByBrandP,
+            salesByBranchP,
             ordersByStatusP,
             ordersByTypeP,
             ordersBySourceP,
@@ -951,10 +1170,7 @@ export class ReportsService {
             status: r.status,
             count: Number(r.count),
         }));
-        const totalOrders = orders_by_status.reduce(
-            (s, r) => s + r.count,
-            0,
-        );
+        const totalOrders = orders_by_status.reduce((s, r) => s + r.count, 0);
 
         // Dense, zero-filled daily series for a continuous chart axis. Iterate
         // in UTC over calendar-date strings so the keys line up exactly with
@@ -1016,6 +1232,21 @@ export class ReportsService {
             date_from: filters.date_from ?? this.formatDay(dateFrom),
             date_to: filters.date_to ?? this.formatDay(dateTo),
             branch_id: branchId ?? null,
+            brand_id: brandId ?? null,
+            sales_by_brand: salesByBrandRaw.map((r) => ({
+                brand_id: r.brand_id,
+                brand_name: r.brand_name,
+                orders: Number(r.orders),
+                completed_orders: Number(r.completed_orders),
+                revenue: Number(r.revenue),
+            })),
+            sales_by_branch: salesByBranchRaw.map((r) => ({
+                branch_id: r.branch_id,
+                branch_name: r.branch_name,
+                orders: Number(r.orders),
+                completed_orders: Number(r.completed_orders),
+                revenue: Number(r.revenue),
+            })),
             kpis: {
                 total_revenue: kpiCurrent.total_revenue,
                 completed_orders: kpiCurrent.completed_orders,
@@ -1045,8 +1276,7 @@ export class ReportsService {
                 ),
                 aov_pct: this.pctDelta(
                     kpiCurrent.completed_orders
-                        ? kpiCurrent.total_revenue /
-                              kpiCurrent.completed_orders
+                        ? kpiCurrent.total_revenue / kpiCurrent.completed_orders
                         : 0,
                     kpiPrev.completed_orders
                         ? kpiPrev.total_revenue / kpiPrev.completed_orders
@@ -1111,13 +1341,16 @@ export class ReportsService {
         tenantId: number | null,
         filters: {
             branch_id?: number;
+            brand_id?: number;
             date_from?: string;
             date_to?: string;
             limit?: number;
         },
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         this.assertBranchAccess(allowedBranchIds, filters.branch_id);
+        this.assertBrandAccess(allowedBrandIds, filters.brand_id);
         const { dateFrom, dateTo } = this.resolveDayRange(filters);
         const limit = filters.limit ?? 15;
 
@@ -1144,6 +1377,8 @@ export class ReportsService {
             tenantId,
             allowedBranchIds,
             filters.branch_id,
+            allowedBrandIds,
+            filters.brand_id,
         );
         const rows = await qb.getRawMany<{
             id: number;
@@ -1217,8 +1452,7 @@ export class ReportsService {
                 allowedBranchIds,
             });
         }
-        if (branchId)
-            lowQb.andWhere('ioh.branchId = :branchId', { branchId });
+        if (branchId) lowQb.andWhere('ioh.branchId = :branchId', { branchId });
 
         const wasteQb = this.wastageRepo
             .createQueryBuilder('w')
@@ -1245,8 +1479,7 @@ export class ReportsService {
                 allowedBranchIds,
             });
         }
-        if (branchId)
-            wasteQb.andWhere('w.branchId = :branchId', { branchId });
+        if (branchId) wasteQb.andWhere('w.branchId = :branchId', { branchId });
 
         const [lowRaw, wasteRaw] = await Promise.all([
             lowQb.getRawMany<{

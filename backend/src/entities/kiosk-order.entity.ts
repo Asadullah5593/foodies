@@ -64,6 +64,10 @@ export class KioskOrder {
     @Column()
     branchId: number;
 
+    /** Brand of the cart (kiosk carts are single-brand; null only on legacy rows). */
+    @Column({ type: 'int', nullable: true })
+    brandId: number | null;
+
     /** Short human-readable code the customer reads at the counter (e.g. "001"). */
     @Column({ type: 'varchar', length: 8 })
     kioskCode: string;

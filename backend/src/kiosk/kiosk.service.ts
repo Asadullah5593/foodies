@@ -158,13 +158,20 @@ export class KioskService {
             discount_code: payload.discount_code,
         };
 
-        // Validate items + compute the price (throws if no valid items).
+        // Validate items + compute the price (throws if no valid items, or if
+        // the cart mixes brands — kiosk carts are single-brand).
         const quote = await this.ordersService.quote(
             this.quoteInput(sanitized),
             tenantId,
             'kiosk',
         );
         const total = Number(quote.total_amount);
+        const cartBrandIds = new Set(
+            (quote.line_breakdown ?? [])
+                .map((l) => l.brand_id)
+                .filter((id): id is number => id != null),
+        );
+        const brandId = cartBrandIds.size === 1 ? [...cartBrandIds][0] : null;
 
         // Idempotent re-submit: same key on the same branch returns the existing row.
         if (idempotencyKey) {
@@ -187,6 +194,7 @@ export class KioskService {
             const row = this.kioskRepo.create({
                 tenantId,
                 branchId: payload.branch_id,
+                brandId,
                 kioskCode,
                 codeDate,
                 status: 'pending',
@@ -227,7 +235,10 @@ export class KioskService {
     }
 
     /** Next zero-padded daily-per-branch sequence among pending rows. */
-    private async nextCode(branchId: number, codeDate: string): Promise<string> {
+    private async nextCode(
+        branchId: number,
+        codeDate: string,
+    ): Promise<string> {
         const res: Array<{ max: number | string | null }> =
             await this.kioskRepo.query(
                 `SELECT COALESCE(MAX(kiosk_code::int), 0) AS max
@@ -241,8 +252,11 @@ export class KioskService {
 
     private uniqueConstraintOf(e: unknown): string | null {
         if (e instanceof QueryFailedError) {
-            const driver = (e as unknown as { driverError?: { code?: string; constraint?: string } })
-                .driverError;
+            const driver = (
+                e as unknown as {
+                    driverError?: { code?: string; constraint?: string };
+                }
+            ).driverError;
             if (driver?.code === '23505') return driver.constraint ?? 'unknown';
         }
         return null;
@@ -252,7 +266,13 @@ export class KioskService {
      * Cashier looks up a pending kiosk cart by its code. Returns the stored cart
      * plus a freshly recomputed total so price changes are visible.
      */
-    async lookup(code: string, branchId: number, tenantId: number) {
+    async lookup(
+        code: string,
+        branchId: number,
+        tenantId: number,
+        /** Brand lock of the cashier (null = unrestricted). */
+        allowedBrandIds: number[] | null = null,
+    ) {
         const row = await this.kioskRepo.findOne({
             where: { branchId, kioskCode: code, status: 'pending' },
         });
@@ -260,6 +280,7 @@ export class KioskService {
             throw new NotFoundException(
                 'Kiosk order not found, already paid, or expired',
             );
+        this.assertCashierBrandAccess(row, allowedBrandIds);
 
         const submittedCount = row.payload.items?.length ?? 0;
         let currentTotal = 0;
@@ -287,6 +308,7 @@ export class KioskService {
         return {
             kiosk_code: row.kioskCode,
             branch_id: row.branchId,
+            brand_id: row.brandId ?? null,
             order_type: row.orderType,
             customer_name: row.customerName,
             customer_phone: row.customerPhone,
@@ -306,6 +328,19 @@ export class KioskService {
      * with source='kiosk', records payments, and marks the kiosk row finalized.
      * Idempotent: re-finalizing a finalized code returns its existing group.
      */
+    /** A brand-locked cashier may only handle kiosk carts of their own brand. */
+    private assertCashierBrandAccess(
+        row: { brandId: number | null },
+        allowedBrandIds: number[] | null,
+    ) {
+        if (allowedBrandIds == null) return;
+        if (row.brandId == null || !allowedBrandIds.includes(row.brandId)) {
+            throw new NotFoundException(
+                'Kiosk order not found, already paid, or expired',
+            );
+        }
+    }
+
     async finalize(
         code: string,
         branchId: number,
@@ -313,6 +348,8 @@ export class KioskService {
         editedDto: KioskOrderPayload | undefined,
         payments: KioskPaymentInput[],
         userId: number,
+        /** Brand lock of the cashier (null = unrestricted). */
+        allowedBrandIds: number[] | null = null,
     ) {
         const result = await this.dataSource.transaction(async (manager) => {
             const repo = manager.getRepository(KioskOrder);
@@ -328,13 +365,18 @@ export class KioskService {
 
             if (!row || row.tenantId !== tenantId)
                 throw new NotFoundException('Kiosk order not found');
+            this.assertCashierBrandAccess(row, allowedBrandIds);
 
             // Idempotent retry — already finalized.
             if (row.status === 'finalized' && row.finalizedOrderGroupId) {
                 const group = await this.ordersService.getOrderGroup(
                     row.finalizedOrderGroupId,
                 );
-                return { group, kioskCode: row.kioskCode, alreadyFinalized: true };
+                return {
+                    group,
+                    kioskCode: row.kioskCode,
+                    alreadyFinalized: true,
+                };
             }
             if (row.status !== 'pending')
                 throw new BadRequestException(
@@ -342,9 +384,8 @@ export class KioskService {
                 );
 
             // Cash-drawer reconciliation: require an open shift for this branch.
-            const openShift = await this.shiftsService.findOpenByBranch(
-                branchId,
-            );
+            const openShift =
+                await this.shiftsService.findOpenByBranch(branchId);
             if (!openShift)
                 throw new ForbiddenException(
                     `No shift is open for branch ID ${branchId}. Open a shift in Admin → Shifts before finalizing kiosk orders.`,
@@ -385,6 +426,8 @@ export class KioskService {
                 tenantId,
                 userId,
                 'kiosk',
+                null,
+                allowedBrandIds,
             );
 
             // Link + mark finalized immediately (before payments) so a retry is
@@ -446,9 +489,12 @@ export class KioskService {
                 .createQueryBuilder()
                 .update(KioskOrder)
                 .set({ status: 'expired' })
-                .where('status = :s AND expires_at IS NOT NULL AND expires_at < now()', {
-                    s: 'pending',
-                })
+                .where(
+                    'status = :s AND expires_at IS NOT NULL AND expires_at < now()',
+                    {
+                        s: 'pending',
+                    },
+                )
                 .execute();
             if (res.affected)
                 this.logger.log(`Expired ${res.affected} stale kiosk order(s)`);

@@ -214,6 +214,7 @@ export class MenuService {
             .leftJoinAndSelect('i.variants', 'v')
             .leftJoinAndSelect('i.addons', 'a')
             .leftJoinAndSelect('i.modifierGroups', 'mg')
+            .leftJoinAndSelect('mg.modifiers', 'mgm')
             .orderBy('i.sortOrder', 'ASC')
             .addOrderBy('i.id', 'ASC');
 
@@ -281,6 +282,7 @@ export class MenuService {
             modifier_groups: (i.modifierGroups ?? []).map((mg) => ({
                 id: mg.id,
                 name: mg.name,
+                modifier_count: mg.modifiers?.length ?? 0,
             })),
         }));
     }
@@ -901,9 +903,7 @@ export class MenuService {
                 name: item?.name,
                 description: item?.description,
                 image_url: item?.imageUrl ?? null,
-                gallery_image_urls: item
-                    ? galleryUrlsForApi(item)
-                    : [],
+                gallery_image_urls: item ? galleryUrlsForApi(item) : [],
                 price,
                 base_price: Number(item?.basePrice ?? 0),
                 category: item?.category?.name,
@@ -1099,7 +1099,11 @@ export class MenuService {
     }
 
     /** Single tenant-brand menu item (includes gallery for consumer PDP). */
-    async getTenantMenuItem(tenantId: number, brandId: number, menuItemId: number) {
+    async getTenantMenuItem(
+        tenantId: number,
+        brandId: number,
+        menuItemId: number,
+    ) {
         await this.assertBrandBelongsToTenant(brandId, tenantId);
 
         const item = await this.itemRepo.findOne({
@@ -1775,5 +1779,70 @@ export class MenuService {
         });
         if (!mg) throw new NotFoundException('Modifier group not found');
         await this.assertBrandBelongsToTenant(mg.brandId, tenantId);
+    }
+
+    /**
+     * Brand that owns the given menu entity (variants and modifiers resolve
+     * through their parent item / group). Null when the entity is missing.
+     */
+    async getEntityBrandId(
+        kind:
+            | 'category'
+            | 'item'
+            | 'addon'
+            | 'variant'
+            | 'modifier-group'
+            | 'modifier',
+        id: number,
+    ): Promise<number | null> {
+        switch (kind) {
+            case 'category': {
+                const row = await this.categoryRepo.findOne({
+                    where: { id },
+                    select: ['brandId'],
+                });
+                return row?.brandId ?? null;
+            }
+            case 'item': {
+                const row = await this.itemRepo.findOne({
+                    where: { id },
+                    select: ['brandId'],
+                });
+                return row?.brandId ?? null;
+            }
+            case 'addon': {
+                const row = await this.addonRepo.findOne({
+                    where: { id },
+                    select: ['brandId'],
+                });
+                return row?.brandId ?? null;
+            }
+            case 'variant': {
+                const variant = await this.variantRepo.findOne({
+                    where: { id },
+                    select: ['menuItemId'],
+                });
+                if (!variant) return null;
+                return this.getEntityBrandId('item', variant.menuItemId);
+            }
+            case 'modifier-group': {
+                const row = await this.modifierGroupRepo.findOne({
+                    where: { id },
+                    select: ['brandId'],
+                });
+                return row?.brandId ?? null;
+            }
+            case 'modifier': {
+                const mod = await this.modifierRepo.findOne({
+                    where: { id },
+                    select: ['modifierGroupId'],
+                });
+                if (!mod) return null;
+                return this.getEntityBrandId(
+                    'modifier-group',
+                    mod.modifierGroupId,
+                );
+            }
+        }
     }
 }

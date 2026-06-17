@@ -16,6 +16,12 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
+type CategoriesUser = {
+    id: number;
+    tenantId: number | null;
+    allowedBrandIds?: number[] | null;
+};
+
 @ApiTags('Admin – Categories')
 @ApiBearerAuth()
 @Controller('admin/categories')
@@ -25,7 +31,7 @@ export class CategoriesController {
 
     @Get()
     index(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: CategoriesUser,
         @Query('brand_id') brandIdParam?: string,
         @Query('is_active') isActiveParam?: string,
         @Query('search') search?: string,
@@ -47,20 +53,18 @@ export class CategoriesController {
         return this.service.findAll(
             user.tenantId,
             Object.keys(filters).length ? filters : undefined,
+            user.allowedBrandIds,
         );
     }
 
     @Get(':id')
-    show(
-        @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
-    ) {
-        return this.service.findOne(+id, user.tenantId);
+    show(@Param('id') id: string, @CurrentUser() user: CategoriesUser) {
+        return this.service.findOne(+id, user.tenantId, user.allowedBrandIds);
     }
 
     @Post()
     store(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: CategoriesUser,
         @Body()
         dto: {
             brand_id: number;
@@ -73,24 +77,26 @@ export class CategoriesController {
             throw new ForbiddenException(
                 'Tenant context required to create categories',
             );
-        return this.service.create(dto, user.tenantId);
+        return this.service.create(dto, user.tenantId, user.allowedBrandIds);
     }
 
     @Put(':id')
     update(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser() user: CategoriesUser,
         @Body()
         dto: { name?: string; is_active?: boolean; sort_order?: number },
     ) {
-        return this.service.update(+id, dto, user.tenantId);
+        return this.service.update(
+            +id,
+            dto,
+            user.tenantId,
+            user.allowedBrandIds,
+        );
     }
 
     @Delete(':id')
-    destroy(
-        @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
-    ) {
-        return this.service.remove(+id, user.tenantId);
+    destroy(@Param('id') id: string, @CurrentUser() user: CategoriesUser) {
+        return this.service.remove(+id, user.tenantId, user.allowedBrandIds);
     }
 }

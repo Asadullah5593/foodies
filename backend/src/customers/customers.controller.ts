@@ -23,16 +23,28 @@ export class CustomersController {
     constructor(private service: CustomersService) {}
 
     @Get()
-    index(@CurrentUser() user: { id: number; tenantId: number | null }) {
-        return this.service.findAll(user.tenantId);
+    index(
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
+    ) {
+        return this.service.findAll(user.tenantId, user.allowedBrandIds);
     }
 
     @Get(':id')
     show(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
     ) {
-        return this.service.findOne(+id, user.tenantId);
+        return this.service.findOne(+id, user.tenantId, user.allowedBrandIds);
     }
 
     @Post()
@@ -48,21 +60,36 @@ export class CustomersController {
     @Put(':id')
     update(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
         @Body() dto: { name?: string },
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.update(+id, user.tenantId, dto);
+        return this.service.update(
+            +id,
+            user.tenantId,
+            dto,
+            user.allowedBrandIds,
+        );
     }
 
     @Delete(':id')
     async remove(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        await this.service.remove(+id, user.tenantId);
+        await this.service.remove(+id, user.tenantId, user.allowedBrandIds);
     }
 }

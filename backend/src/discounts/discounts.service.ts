@@ -3,6 +3,7 @@ import {
     NotFoundException,
     ConflictException,
     BadRequestException,
+    ForbiddenException,
     Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -18,13 +19,64 @@ export class DiscountsService {
         private repo: Repository<Discount>,
     ) {}
 
-    async findAll(tenantId: number | null) {
+    /**
+     * A brand-locked user may only manage discounts that are explicitly
+     * scoped (via eligibility_brand_ids) to a subset of their own brands.
+     * Tenant-wide discounts (null eligibility) belong to the owner.
+     */
+    private assertDiscountManageable(
+        d: Discount,
+        allowedBrandIds: number[] | null | undefined,
+    ): void {
+        if (allowedBrandIds == null) return;
+        const ids = d.eligibilityBrandIds;
+        if (
+            !Array.isArray(ids) ||
+            ids.length === 0 ||
+            ids.some((id) => !allowedBrandIds.includes(Number(id)))
+        ) {
+            throw new ForbiddenException(
+                'You can only manage discounts that belong to your own brand',
+            );
+        }
+    }
+
+    /** Validate / default eligibility_brand_ids for a brand-locked user. */
+    private resolveEligibilityBrandIds(
+        requested: number[] | undefined,
+        allowedBrandIds: number[] | null | undefined,
+    ): number[] | null {
+        if (allowedBrandIds == null) {
+            return Array.isArray(requested) ? requested : null;
+        }
+        if (!Array.isArray(requested) || requested.length === 0) {
+            return [...allowedBrandIds];
+        }
+        if (requested.some((id) => !allowedBrandIds.includes(Number(id)))) {
+            throw new ForbiddenException(
+                'You can only create discounts for your own brand',
+            );
+        }
+        return requested;
+    }
+
+    async findAll(tenantId: number | null, allowedBrandIds?: number[] | null) {
         if (tenantId == null) return [];
         const list = await this.repo.find({
             where: { tenantId },
             order: { createdAt: 'DESC' },
         });
-        return list.map((d) => this.toResponse(d));
+        const visible =
+            allowedBrandIds == null
+                ? list
+                : list.filter(
+                      (d) =>
+                          Array.isArray(d.eligibilityBrandIds) &&
+                          d.eligibilityBrandIds.some((id) =>
+                              allowedBrandIds.includes(Number(id)),
+                          ),
+                  );
+        return visible.map((d) => this.toResponse(d));
     }
 
     async findOne(id: number, tenantId: number | null) {
@@ -55,7 +107,12 @@ export class DiscountsService {
             valid_until?: string;
         },
         tenantId: number,
+        allowedBrandIds?: number[] | null,
     ) {
+        const eligibilityBrandIds = this.resolveEligibilityBrandIds(
+            dto.eligibility_brand_ids,
+            allowedBrandIds,
+        );
         const name = String(dto.name ?? '').trim();
         if (!name) throw new BadRequestException('Name is required.');
         const type =
@@ -120,11 +177,7 @@ export class DiscountsService {
                     )
                         ? dto.eligibility_branch_ids
                         : null,
-                    eligibilityBrandIds: Array.isArray(
-                        dto.eligibility_brand_ids,
-                    )
-                        ? dto.eligibility_brand_ids
-                        : null,
+                    eligibilityBrandIds,
                     isActive: dto.is_active ?? true,
                     validFrom: dto.valid_from ? new Date(dto.valid_from) : null,
                     validUntil: dto.valid_until
@@ -180,9 +233,11 @@ export class DiscountsService {
             valid_from?: string;
             valid_until?: string;
         },
+        allowedBrandIds?: number[] | null,
     ) {
         const d = await this.repo.findOne({ where: { id, tenantId } });
         if (!d) throw new NotFoundException('Discount not found');
+        this.assertDiscountManageable(d, allowedBrandIds);
         if (dto.name !== undefined) {
             const name = String(dto.name).trim();
             if (!name) throw new BadRequestException('Name cannot be empty.');
@@ -254,9 +309,12 @@ export class DiscountsService {
                     ? dto.eligibility_branch_ids
                     : null;
             if (dto.eligibility_brand_ids !== undefined)
-                d.eligibilityBrandIds = Array.isArray(dto.eligibility_brand_ids)
-                    ? dto.eligibility_brand_ids
-                    : null;
+                d.eligibilityBrandIds = this.resolveEligibilityBrandIds(
+                    Array.isArray(dto.eligibility_brand_ids)
+                        ? dto.eligibility_brand_ids
+                        : undefined,
+                    allowedBrandIds,
+                );
             if (dto.is_active !== undefined) d.isActive = dto.is_active;
             if (dto.valid_from !== undefined)
                 d.validFrom = dto.valid_from ? new Date(dto.valid_from) : null;
@@ -292,9 +350,14 @@ export class DiscountsService {
         }
     }
 
-    async remove(id: number, tenantId: number) {
+    async remove(
+        id: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+    ) {
         const d = await this.repo.findOne({ where: { id, tenantId } });
         if (!d) throw new NotFoundException('Discount not found');
+        this.assertDiscountManageable(d, allowedBrandIds);
         await this.repo.remove(d);
         return { message: 'Discount deleted successfully' };
     }

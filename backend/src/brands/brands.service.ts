@@ -18,11 +18,17 @@ export class BrandsService {
         private mediaStorage: MediaStorageService,
     ) {}
 
-    /** Admin: tenant user sees only their tenant's brands; super admin (tenantId null) sees all with tenant_name */
-    async findAllForAdmin(tenantId: number | null) {
+    /** Admin: tenant user sees only their tenant's brands (brand-locked users only their own); super admin (tenantId null) sees all with tenant_name */
+    async findAllForAdmin(
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ) {
         if (tenantId != null) {
             const list = await this.repo.find({
-                where: { tenantId },
+                where:
+                    allowedBrandIds != null
+                        ? { tenantId, id: In(allowedBrandIds) }
+                        : { tenantId },
                 order: { id: 'ASC' },
             });
             const aggMap = await this.loadRatingAggregates(
@@ -205,7 +211,14 @@ export class BrandsService {
     }
 
     /** Admin: tenant user can only view own tenant's brand; super admin can view any */
-    async findOneForAdmin(id: number, tenantId: number | null) {
+    async findOneForAdmin(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ) {
+        if (allowedBrandIds != null && !allowedBrandIds.includes(id)) {
+            throw new NotFoundException('Brand not found');
+        }
         const brand = await this.repo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
             relations: tenantId == null ? ['tenant'] : undefined,
@@ -240,6 +253,7 @@ export class BrandsService {
             description?: string;
             is_active?: boolean;
             status?: string;
+            delivery_flat_fee?: number;
         },
         tenantId: number,
     ) {
@@ -257,6 +271,10 @@ export class BrandsService {
                 description: dto.description ?? null,
                 logoUrl: dto.logo_url ?? null,
                 isActive,
+                deliveryFlatFee:
+                    dto.delivery_flat_fee != null
+                        ? Number(dto.delivery_flat_fee)
+                        : 0,
             }),
         );
         return this.toResponse(brand);
@@ -312,6 +330,7 @@ export class BrandsService {
             description?: string;
             is_active?: boolean;
             status?: string;
+            delivery_flat_fee?: number;
         },
     ) {
         const where = tenantId != null ? { id, tenantId } : { id };
@@ -330,6 +349,8 @@ export class BrandsService {
         if (dto.is_active !== undefined) brand.isActive = dto.is_active;
         if (dto.status !== undefined)
             brand.isActive = dto.status !== 'inactive';
+        if (dto.delivery_flat_fee !== undefined)
+            brand.deliveryFlatFee = Number(dto.delivery_flat_fee) || 0;
         await this.repo.save(brand);
         if (
             dto.logo_url !== undefined &&
@@ -368,6 +389,7 @@ export class BrandsService {
             logo_url: b.logoUrl,
             is_active: b.isActive,
             status: b.isActive ? 'active' : 'inactive',
+            delivery_flat_fee: Number(b.deliveryFlatFee ?? 0),
             tenant_id: b.tenantId,
             created_at: b.createdAt?.toISOString() ?? null,
             updated_at: b.updatedAt?.toISOString() ?? null,

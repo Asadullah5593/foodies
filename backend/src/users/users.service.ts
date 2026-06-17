@@ -3,6 +3,7 @@ import {
     NotFoundException,
     ConflictException,
     BadRequestException,
+    ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, QueryFailedError } from 'typeorm';
@@ -25,12 +26,111 @@ export class UsersService {
         private dataSource: DataSource,
     ) {}
 
-    async findAll(tenantId: number) {
+    /**
+     * True when the user is linked to one of the given brands — via a branch
+     * assignment (branch_users.brand_id) or the recorded home brand
+     * (tenant_users.brand_id, for users created without a branch).
+     */
+    private async userBelongsToBrands(
+        userId: number,
+        brandIds: number[],
+    ): Promise<boolean> {
+        if (brandIds.length === 0) return false;
+        const count = await this.branchUserRepo
+            .createQueryBuilder('bu')
+            .where('bu.userId = :userId', { userId })
+            .andWhere('bu.brandId IN (:...brandIds)', { brandIds })
+            .getCount();
+        if (count > 0) return true;
+        const result: unknown = await this.dataSource.query(
+            `SELECT 1 AS ok FROM tenant_users
+             WHERE user_id = $1 AND brand_id = ANY($2::int[]) LIMIT 1`,
+            [userId, brandIds],
+        );
+        const rows = result as Array<{ ok: number }>;
+        return rows.length > 0;
+    }
+
+    /** Owner / super admin — the only roles allowed to manage their own account. */
+    private async isOwner(userId: number, tenantId: number): Promise<boolean> {
+        const result: unknown = await this.dataSource.query(
+            `SELECT 1 AS ok FROM tenant_users tu
+             INNER JOIN roles r ON r.id = tu.role_id
+             WHERE tu.user_id = $1 AND tu.tenant_id = $2 AND LOWER(r.slug) IN ('owner', 'super_admin')
+             UNION
+             SELECT 1 AS ok FROM branch_users bu
+             INNER JOIN roles r ON r.id = bu.role_id
+             WHERE bu.user_id = $1 AND LOWER(r.slug) IN ('owner', 'super_admin')
+             LIMIT 1`,
+            [userId, tenantId],
+        );
+        return (result as Array<{ ok: number }>).length > 0;
+    }
+
+    /**
+     * A non-owner may not modify or delete their own account, even with
+     * users-module access. Owners (and super admin) may manage themselves.
+     */
+    private async assertNotSelfUnlessOwner(
+        actingUserId: number | null | undefined,
+        targetUserId: number,
+        tenantId: number,
+        action: 'modify' | 'delete',
+    ): Promise<void> {
+        if (actingUserId == null || actingUserId !== targetUserId) return;
+        if (await this.isOwner(actingUserId, tenantId)) return;
+        throw new ForbiddenException(`You cannot ${action} your own account`);
+    }
+
+    /** Brand-locked admins may not grant roles that carry tenant-wide access. */
+    private async assertRoleAssignableByBrandAdmin(
+        roleId: number | null,
+    ): Promise<void> {
+        if (roleId == null) return;
+        const rows = await this.dataSource.query(
+            `SELECT 1
+             FROM role_permissions rp
+             INNER JOIN permissions p ON p.id = rp.permission_id
+             WHERE rp.role_id = $1
+               AND p.name IN ('all-branches:access', 'roles:manage', 'branches:manage', 'business-settings:access')
+             LIMIT 1`,
+            [roleId],
+        );
+        if (rows.length > 0) {
+            throw new ForbiddenException(
+                'You cannot assign roles with tenant-wide access',
+            );
+        }
+    }
+
+    async findAll(tenantId: number, allowedBrandIds?: number[] | null) {
         const tenantUsers = await this.tenantUserRepo.find({
             where: { tenantId },
             relations: ['user', 'role'],
             order: { id: 'ASC' },
         });
+        // Brand-locked admins see staff linked to their brand — either via a
+        // branch assignment (branch_users.brand_id) or the recorded home brand
+        // (tenant_users.brand_id, set at creation before any branch is given).
+        if (allowedBrandIds != null) {
+            const rows = (await this.dataSource.query(
+                `SELECT DISTINCT bu.user_id FROM branch_users bu
+                 WHERE bu.brand_id = ANY($1::int[])`,
+                [allowedBrandIds],
+            )) as unknown as Array<{ user_id: number }>;
+            const brandUserIds = new Set(rows.map((r) => Number(r.user_id)));
+            const allowed = new Set(allowedBrandIds.map((b) => Number(b)));
+            const filtered = tenantUsers.filter(
+                (tu) =>
+                    brandUserIds.has(tu.userId) ||
+                    (tu.brandId != null && allowed.has(Number(tu.brandId))),
+            );
+            return this.mapTenantUsers(filtered, tenantId);
+        }
+        return this.mapTenantUsers(tenantUsers, tenantId);
+    }
+
+    private async mapTenantUsers(tenantUsers: TenantUser[], tenantId: number) {
         const fallbackRoleByUserId = await this.getBranchRoleSlugByUserIds(
             tenantUsers
                 .filter((tu) => tu.roleId == null)
@@ -53,8 +153,11 @@ export class UsersService {
     }
 
     /** Super admin (tenantId null): all users with tenant/role; tenant user: same as findAll */
-    async findAllForAdmin(tenantId: number | null) {
-        if (tenantId != null) return this.findAll(tenantId);
+    async findAllForAdmin(
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ) {
+        if (tenantId != null) return this.findAll(tenantId, allowedBrandIds);
         const tenantUsers = await this.tenantUserRepo.find({
             relations: ['user', 'role', 'tenant'],
             order: { id: 'ASC' },
@@ -104,8 +207,13 @@ export class UsersService {
     }
 
     /** Super admin (tenantId null): can view any user by id; tenant user: own tenant only */
-    async findOneForAdmin(id: number, tenantId: number | null) {
-        if (tenantId != null) return this.findOne(id, tenantId);
+    async findOneForAdmin(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ) {
+        if (tenantId != null)
+            return this.findOne(id, tenantId, allowedBrandIds);
         const tenantUser = await this.tenantUserRepo.findOne({
             where: { userId: id },
             relations: ['user', 'user.branchUsers', 'role', 'tenant'],
@@ -137,12 +245,22 @@ export class UsersService {
         return out;
     }
 
-    async findOne(id: number, tenantId: number) {
+    async findOne(
+        id: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+    ) {
         const tenantUser = await this.tenantUserRepo.findOne({
             where: { userId: id, tenantId },
             relations: ['user', 'user.branchUsers', 'role'],
         });
         if (!tenantUser) throw new NotFoundException('User not found');
+        if (
+            allowedBrandIds != null &&
+            !(await this.userBelongsToBrands(id, allowedBrandIds))
+        ) {
+            throw new NotFoundException('User not found');
+        }
         const branchIds =
             tenantUser.user.branchUsers?.map((bu) => bu.branchId) ?? [];
         const roleSlug =
@@ -175,9 +293,40 @@ export class UsersService {
             branch_ids?: number[];
             role_id?: number;
             role?: string;
+            brand_id?: number;
         },
         tenantId: number,
+        allowedBrandIds?: number[] | null,
     ) {
+        // Brand-locked admins create staff for their own brand only: every
+        // branch assignment is locked to their brand and privileged roles
+        // are rejected.
+        let lockedBrandId: number | null = null;
+        if (allowedBrandIds != null) {
+            if (allowedBrandIds.length !== 1) {
+                throw new ForbiddenException(
+                    'Your account must be locked to a single brand to create users',
+                );
+            }
+            lockedBrandId = allowedBrandIds[0];
+        }
+        // Brand to record on the new user. Brand-locked admins always use their
+        // own brand; unrestricted admins (owner/GM) may choose one explicitly
+        // (validated against the tenant). Omitting it leaves the user brand-less.
+        let targetBrandId: number | null = lockedBrandId;
+        if (allowedBrandIds == null && dto.brand_id != null) {
+            const result: unknown = await this.dataSource.query(
+                `SELECT 1 AS ok FROM brands WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+                [dto.brand_id, tenantId],
+            );
+            const rows = result as Array<{ ok: number }>;
+            if (rows.length === 0) {
+                throw new BadRequestException(
+                    'Selected brand was not found for this tenant',
+                );
+            }
+            targetBrandId = dto.brand_id;
+        }
         const email =
             typeof dto.email === 'string' ? dto.email.trim().toLowerCase() : '';
         if (!email) {
@@ -223,11 +372,18 @@ export class UsersService {
             );
             roleId = role.id;
         }
+        if (lockedBrandId != null) {
+            await this.assertRoleAssignableByBrandAdmin(roleId);
+        }
         await this.tenantUserRepo.save(
             this.tenantUserRepo.create({
                 tenantId,
                 userId: user.id,
-                roleId,
+                roleId: targetBrandId != null ? null : roleId,
+                // Record the home brand so the user is linked to a brand (and
+                // visible / assignable as a branch user) even before any branch
+                // assignment / role is given.
+                brandId: targetBrandId,
             }),
         );
         if (roleId != null && dto.branch_ids?.length) {
@@ -237,6 +393,7 @@ export class UsersService {
                         branchId,
                         userId: user.id,
                         roleId,
+                        brandId: targetBrandId,
                     }),
                 );
             }
@@ -255,12 +412,28 @@ export class UsersService {
             status?: string;
             role_id?: number | null;
         },
+        allowedBrandIds?: number[] | null,
+        actingUserId?: number | null,
     ) {
+        await this.assertNotSelfUnlessOwner(
+            actingUserId,
+            id,
+            tenantId,
+            'modify',
+        );
         const tenantUser = await this.tenantUserRepo.findOne({
             where: { userId: id, tenantId },
             relations: ['user', 'role'],
         });
         if (!tenantUser) throw new NotFoundException('User not found');
+        if (allowedBrandIds != null) {
+            if (!(await this.userBelongsToBrands(id, allowedBrandIds))) {
+                throw new NotFoundException('User not found');
+            }
+            if (dto.role_id != null) {
+                await this.assertRoleAssignableByBrandAdmin(dto.role_id);
+            }
+        }
         const user = tenantUser.user;
         if (dto.password) user.password = await bcrypt.hash(dto.password, 10);
         Object.assign(user, {
@@ -278,11 +451,28 @@ export class UsersService {
         return this.findOne(id, tenantId);
     }
 
-    async remove(id: number, tenantId: number) {
+    async remove(
+        id: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+        actingUserId?: number | null,
+    ) {
+        await this.assertNotSelfUnlessOwner(
+            actingUserId,
+            id,
+            tenantId,
+            'delete',
+        );
         const tenantUser = await this.tenantUserRepo.findOne({
             where: { userId: id, tenantId },
         });
         if (!tenantUser) throw new NotFoundException('User not found');
+        if (
+            allowedBrandIds != null &&
+            !(await this.userBelongsToBrands(id, allowedBrandIds))
+        ) {
+            throw new NotFoundException('User not found');
+        }
         await this.tenantUserRepo.remove(tenantUser);
         await this.branchUserRepo.delete({ userId: id });
         await this.repo.delete(id);

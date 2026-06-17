@@ -28,18 +28,32 @@ export class BranchMenuItemsController {
 
     @Get('branch-menu-items')
     index(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
         @Query('branch_id') branchId: string,
     ) {
-        if (branchId) return this.service.findAll(+branchId);
-        return this.service.findAllForAdmin(user.tenantId);
+        if (branchId)
+            return this.service.findAll(+branchId, user.allowedBrandIds);
+        return this.service.findAllForAdmin(
+            user.tenantId,
+            user.allowedBrandIds,
+        );
     }
 
     @Post('branch-menu-items')
     @UseGuards(RequirePermissionGuard)
     @RequirePermission(Permissions.BRANCH_MENU_MANAGE)
     store(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
         @Body()
         dto: {
             branch_id: number;
@@ -52,25 +66,37 @@ export class BranchMenuItemsController {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
         if (!dto.menu_item_id) return { message: 'menu_item_id is required' };
-        return this.service.linkBrandMenuItem({
-            branch_id: dto.branch_id,
-            menu_item_id: dto.menu_item_id,
-            price_override: dto.price_override,
-            is_enabled: dto.is_enabled,
-            is_hidden_online: dto.is_hidden_online,
-        });
+        return this.service.linkBrandMenuItem(
+            {
+                branch_id: dto.branch_id,
+                menu_item_id: dto.menu_item_id,
+                price_override: dto.price_override,
+                is_enabled: dto.is_enabled,
+                is_hidden_online: dto.is_hidden_online,
+            },
+            user.allowedBrandIds,
+        );
     }
 
     @Put('branch-menu-items/sync')
     @UseGuards(RequirePermissionGuard)
     @RequirePermission(Permissions.BRANCH_MENU_MANAGE)
     sync(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
         @Body() dto: { branch_id: number; menu_item_ids: number[] },
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.sync(dto.branch_id, dto.menu_item_ids ?? []);
+        return this.service.sync(
+            dto.branch_id,
+            dto.menu_item_ids ?? [],
+            user.allowedBrandIds,
+        );
     }
 
     @Put('branch-menu-items/:id')
@@ -78,7 +104,12 @@ export class BranchMenuItemsController {
     @RequirePermission(Permissions.BRANCH_MENU_MANAGE)
     update(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
         @Body()
         dto: {
             price_override?: number | null;
@@ -88,7 +119,7 @@ export class BranchMenuItemsController {
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.update(+id, dto);
+        return this.service.update(+id, dto, user.allowedBrandIds);
     }
 
     @Delete('branch-menu-items/:id')
@@ -96,10 +127,15 @@ export class BranchMenuItemsController {
     @RequirePermission(Permissions.BRANCH_MENU_MANAGE)
     destroy(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.remove(+id);
+        return this.service.remove(+id, user.allowedBrandIds);
     }
 }

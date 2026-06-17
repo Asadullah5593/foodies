@@ -24,16 +24,35 @@ export class UsersController {
     constructor(private service: UsersService) {}
 
     @Get()
-    index(@CurrentUser() user: { id: number; tenantId: number | null }) {
-        return this.service.findAllForAdmin(user.tenantId);
+    index(
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
+    ) {
+        return this.service.findAllForAdmin(
+            user.tenantId,
+            user.allowedBrandIds,
+        );
     }
 
     @Get(':id')
     show(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
     ) {
-        return this.service.findOneForAdmin(+id, user.tenantId);
+        return this.service.findOneForAdmin(
+            +id,
+            user.tenantId,
+            user.allowedBrandIds,
+        );
     }
 
     @Post()
@@ -48,21 +67,33 @@ export class UsersController {
             tenant_id?: number;
             role?: string;
             role_id?: number;
+            /** Home brand for the new user (owner/GM only; brand-locked admins use their own brand). */
+            brand_id?: number;
         },
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
     ) {
         const tenantId = user.tenantId ?? dto.tenant_id ?? null;
         if (tenantId == null)
             throw new ForbiddenException(
                 'Tenant required to create user. When creating users as super admin, provide tenant_id.',
             );
-        return this.service.create(dto, tenantId);
+        return this.service.create(dto, tenantId, user.allowedBrandIds);
     }
 
     @Put(':id')
     update(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
         @Body() dto: UpdateUserDto,
     ) {
         const tenantId = user.tenantId;
@@ -70,19 +101,35 @@ export class UsersController {
             throw new ForbiddenException(
                 'Tenant context required to update user',
             );
-        return this.service.update(+id, tenantId, dto);
+        return this.service.update(
+            +id,
+            tenantId,
+            dto,
+            user.allowedBrandIds,
+            user.id,
+        );
     }
 
     @Delete(':id')
     destroy(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
     ) {
         const tenantId = user.tenantId;
         if (tenantId == null)
             throw new ForbiddenException(
                 'Tenant context required to delete user',
             );
-        return this.service.remove(+id, tenantId);
+        return this.service.remove(
+            +id,
+            tenantId,
+            user.allowedBrandIds,
+            user.id,
+        );
     }
 }

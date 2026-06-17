@@ -15,6 +15,9 @@ import { BranchMenuItemsService } from '../branch-menu-items/branch-menu-items.s
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – Branches')
 @ApiBearerAuth()
@@ -52,6 +55,8 @@ export class BranchesController {
     }
 
     @Post()
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.BRANCHES_MANAGE)
     async store(
         @Body()
         dto: {
@@ -91,6 +96,8 @@ export class BranchesController {
     }
 
     @Put(':id')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.BRANCHES_MANAGE)
     async update(
         @Param('id') id: string,
         @Body()
@@ -131,6 +138,8 @@ export class BranchesController {
     }
 
     @Delete(':id')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.BRANCHES_MANAGE)
     destroy(
         @Param('id') id: string,
         @CurrentUser() user: { id: number; tenantId: number | null },
