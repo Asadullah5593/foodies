@@ -36,7 +36,22 @@ export class Order {
     @Column()
     branchId: number;
 
-    @Column({ unique: true })
+    /**
+     * Permanent, globally-unique tracking reference shared with the customer.
+     * Format: `BR-{brandId}-{branchId}-{YYYYMMDD}-{seq}` (e.g. `BR-23-10-20260617-001`).
+     * Null on orders created before migration ShortOrderNumber (legacy rows).
+     * Unique index: `UQ_orders_order_id`.
+     */
+    @Column({ type: 'varchar', nullable: true })
+    orderId: string | null;
+
+    /**
+     * Short daily call-out number shown to staff and printed on receipts/KDS.
+     * Format: `001`, `002` … resets to `001` every day per branch+brand.
+     * NOT globally unique — the permanent tracking key is `orderId`.
+     * Uniqueness within a day is enforced by `UQ_orders_branch_brand_day_number`.
+     */
+    @Column()
     orderNumber: string;
 
     @Column({ type: 'varchar' })

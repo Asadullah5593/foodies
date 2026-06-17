@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { randomBytes } from 'crypto';
 import { Branch } from '../entities/branch.entity';
 import { Brand } from '../entities/brand.entity';
 import { BranchBrand } from '../entities/branch-brand.entity';
@@ -235,9 +234,21 @@ export class BranchesService {
         return this.create(dto);
     }
 
-    private generateBranchCode(firstBrandId: number): string {
-        const hex = randomBytes(4).toString('hex').toUpperCase();
-        return `BR-${firstBrandId}-${hex}`;
+    /**
+     * Auto-generate a short, human-friendly branch code like `BR-23` (BR + first
+     * brand id). This becomes the prefix of every order number for the branch
+     * (e.g. `BR-23-001`). `branches.code` is unique, so when the base is already
+     * taken (another branch shares the brand) we append a numeric suffix:
+     * `BR-23-2`, `BR-23-3`, …
+     */
+    private async generateBranchCode(firstBrandId: number): Promise<string> {
+        const base = `BR-${firstBrandId}`;
+        if (!(await this.repo.findOne({ where: { code: base } }))) return base;
+        for (let n = 2; ; n++) {
+            const candidate = `${base}-${n}`;
+            if (!(await this.repo.findOne({ where: { code: candidate } })))
+                return candidate;
+        }
     }
 
     private assertAtLeastOneOrderType(supports: {
@@ -293,7 +304,7 @@ export class BranchesService {
         const code =
             dto.code && dto.code.trim() !== ''
                 ? dto.code.trim()
-                : this.generateBranchCode(brandIds[0]);
+                : await this.generateBranchCode(brandIds[0]);
         const branch = await this.repo.save(
             this.repo.create({
                 name: dto.name,
