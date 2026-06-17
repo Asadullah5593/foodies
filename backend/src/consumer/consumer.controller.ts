@@ -50,6 +50,8 @@ import { DeleteAccountDto } from './dto/delete-account.dto';
 import { MediaStorageService } from '../media/media-storage.service';
 import { MAX_UPLOAD_FILE_BYTES } from '../upload/upload.constants';
 import { RatingsService } from '../ratings/ratings.service';
+import { BannersService } from '../banners/banners.service';
+import { PromotionsService } from '../promotions/promotions.service';
 
 type BranchWithBrands = Branch & {
     branchBrands: Array<{ brand: { tenantId: number } }>;
@@ -75,6 +77,8 @@ export class ConsumerController {
         private mediaStorage: MediaStorageService,
         private ratingsService: RatingsService,
         @InjectRepository(Branch) private branchRepo: Repository<Branch>,
+        private bannersService: BannersService,
+        private promotionsService: PromotionsService,
     ) {}
 
     /** Resolve tenant id from branch (for customer-scoped APIs). */
@@ -831,7 +835,7 @@ export class ConsumerController {
     @Get('categories/global')
     @ApiOperation({
         summary:
-            "List unique categories across the brands present at a branch (consumer app)",
+            'List unique categories across the brands present at a branch (consumer app)',
     })
     @ApiQuery({ name: 'branch_id', required: true, example: '1' })
     async getGlobalCategories(@Query('branch_id') branchIdParam: string) {
@@ -1169,7 +1173,8 @@ export class ConsumerController {
         },
     })
     @ApiOkResponse({
-        description: 'Upserted rider rating row (same shape as GET .../ratings `rider_rating`).',
+        description:
+            'Upserted rider rating row (same shape as GET .../ratings `rider_rating`).',
         schema: {
             type: 'object',
             required: [
@@ -1189,15 +1194,24 @@ export class ConsumerController {
                 comment: {
                     type: 'string',
                     nullable: true,
-                    description: 'Customer comment if provided; otherwise null.',
+                    description:
+                        'Customer comment if provided; otherwise null.',
                 },
                 order_item_ids: {
                     type: 'array',
                     items: { type: 'integer' },
                     example: [101, 102],
                 },
-                created_at: { type: 'string', format: 'date-time', nullable: true },
-                updated_at: { type: 'string', format: 'date-time', nullable: true },
+                created_at: {
+                    type: 'string',
+                    format: 'date-time',
+                    nullable: true,
+                },
+                updated_at: {
+                    type: 'string',
+                    format: 'date-time',
+                    nullable: true,
+                },
             },
         },
     })
@@ -1307,15 +1321,24 @@ export class ConsumerController {
                 comment: {
                     type: 'string',
                     nullable: true,
-                    description: 'Customer comment if provided; otherwise null.',
+                    description:
+                        'Customer comment if provided; otherwise null.',
                 },
                 order_item_ids: {
                     type: 'array',
                     items: { type: 'integer' },
                     example: [101],
                 },
-                created_at: { type: 'string', format: 'date-time', nullable: true },
-                updated_at: { type: 'string', format: 'date-time', nullable: true },
+                created_at: {
+                    type: 'string',
+                    format: 'date-time',
+                    nullable: true,
+                },
+                updated_at: {
+                    type: 'string',
+                    format: 'date-time',
+                    nullable: true,
+                },
             },
         },
     })
@@ -1361,7 +1384,8 @@ export class ConsumerController {
                 rider_rating: {
                     type: 'object',
                     nullable: true,
-                    description: 'Your rider rating for this order, or null if not submitted.',
+                    description:
+                        'Your rider rating for this order, or null if not submitted.',
                     properties: {
                         id: { type: 'integer' },
                         order_id: { type: 'integer' },
@@ -1371,14 +1395,23 @@ export class ConsumerController {
                         comment: {
                             type: 'string',
                             nullable: true,
-                            description: 'Optional text submitted with the rider rating.',
+                            description:
+                                'Optional text submitted with the rider rating.',
                         },
                         order_item_ids: {
                             type: 'array',
                             items: { type: 'integer' },
                         },
-                        created_at: { type: 'string', format: 'date-time', nullable: true },
-                        updated_at: { type: 'string', format: 'date-time', nullable: true },
+                        created_at: {
+                            type: 'string',
+                            format: 'date-time',
+                            nullable: true,
+                        },
+                        updated_at: {
+                            type: 'string',
+                            format: 'date-time',
+                            nullable: true,
+                        },
                     },
                 },
                 brand_ratings: {
@@ -1394,14 +1427,23 @@ export class ConsumerController {
                             comment: {
                                 type: 'string',
                                 nullable: true,
-                                description: 'Optional text submitted with this brand rating.',
+                                description:
+                                    'Optional text submitted with this brand rating.',
                             },
                             order_item_ids: {
                                 type: 'array',
                                 items: { type: 'integer' },
                             },
-                            created_at: { type: 'string', format: 'date-time', nullable: true },
-                            updated_at: { type: 'string', format: 'date-time', nullable: true },
+                            created_at: {
+                                type: 'string',
+                                format: 'date-time',
+                                nullable: true,
+                            },
+                            updated_at: {
+                                type: 'string',
+                                format: 'date-time',
+                                nullable: true,
+                            },
                         },
                     },
                 },
@@ -1719,5 +1761,43 @@ export class ConsumerController {
             throw new NotFoundException('phone and branch_id are required');
         const customer = await this.resolveCartCustomerOrThrow(phone);
         return this.cartService.clearCart(customer.id, +branchIdParam);
+    }
+
+    // ─── CMS Banners ─────────────────────────────────────────────────────────
+
+    @Get('banners')
+    @ApiOperation({ summary: 'List active banners for a tenant (mobile app)' })
+    @ApiQuery({ name: 'tenant_id', required: true, type: Number })
+    async getActiveBanners(@Query('tenant_id') tenantIdParam: string) {
+        const tenantId = Number(tenantIdParam);
+        if (!Number.isFinite(tenantId) || tenantId <= 0)
+            throw new BadRequestException('tenant_id is required');
+        return this.bannersService.findActiveForTenant(tenantId);
+    }
+
+    // ─── Customer Promotions ─────────────────────────────────────────────────
+
+    @Get('promotions')
+    @UseGuards(CustomerJwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'List promotions assigned to the authenticated customer' })
+    @ApiQuery({ name: 'status', required: false, example: 'pending' })
+    async getMyPromotions(
+        @Req() req: { user: Customer },
+        @Query('status') status?: string,
+    ) {
+        return this.promotionsService.getCustomerPromotions(req.user.id, status);
+    }
+
+    @Post('promotions/:id/claim')
+    @UseGuards(CustomerJwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: 'Claim a pending promotion and receive a coupon code' })
+    @ApiParam({ name: 'id', description: 'CustomerPromotion id' })
+    async claimPromotion(
+        @Req() req: { user: Customer },
+        @Param('id') id: string,
+    ) {
+        return this.promotionsService.claimPromotion(+id, req.user.id);
     }
 }

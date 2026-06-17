@@ -10,6 +10,8 @@ import { Brand } from './brand.entity';
 import { Order } from './order.entity';
 import { Discount } from './discount.entity';
 import { TenantUser } from './tenant-user.entity';
+import { Banner } from './banner.entity';
+import { Promotion } from './promotion.entity';
 
 @Entity('tenants')
 export class Tenant {
@@ -75,4 +77,10 @@ export class Tenant {
 
     @OneToMany(() => Discount, (d) => d.tenant)
     discounts: Discount[];
+
+    @OneToMany(() => Banner, (b) => b.tenant)
+    banners: Banner[];
+
+    @OneToMany(() => Promotion, (p) => p.tenant)
+    promotions: Promotion[];
 }

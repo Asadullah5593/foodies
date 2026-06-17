@@ -18,6 +18,8 @@ import { ConsumerController } from './consumer.controller';
 import { ConsumerRiderLocationController } from './consumer-rider-location.controller';
 import { RatingsModule } from '../ratings/ratings.module';
 import { getJwtSecret } from '../auth/jwt-secret.util';
+import { BannersModule } from '../banners/banners.module';
+import { PromotionsModule } from '../promotions/promotions.module';
 
 @Module({
     imports: [
@@ -43,6 +45,8 @@ import { getJwtSecret } from '../auth/jwt-secret.util';
         MailModule,
         MediaModule,
         RatingsModule,
+        BannersModule,
+        PromotionsModule,
     ],
     controllers: [ConsumerController, ConsumerRiderLocationController],
 })
