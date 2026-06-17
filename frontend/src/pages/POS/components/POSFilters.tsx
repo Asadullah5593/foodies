@@ -1,4 +1,5 @@
 import React from 'react';
+import { MdSearch } from 'react-icons/md';
 import SearchableSelect from '../../../components/SearchableSelect';
 import type { OrderTypeOption } from './types';
 import TypeaheadDropdown from '../../../components/TypeaheadDropdown';
@@ -32,10 +33,14 @@ export type POSFiltersProps = {
   orderTypeOptions?: Array<{ value: OrderTypeOption; label: string }>;
   orderType?: OrderTypeOption | null;
   onOrderTypeChange?: (value: OrderTypeOption) => void;
+  /** Render the inline order-type buttons. Off when a dedicated selector is shown elsewhere. */
+  showOrderType?: boolean;
   /** 'bar' = horizontal top bar (default), 'rail' = vertical left rail */
   variant?: 'bar' | 'rail';
   /** When false, search input is not rendered (e.g. for left rail; use search in center) */
   showSearch?: boolean;
+  /** When false, the "Tap an item to add to order" hint is hidden (e.g. compact top-right placement). */
+  showHint?: boolean;
   /** Optional ref to focus the search input (e.g. for keyboard shortcut) */
   searchInputRef?: React.RefObject<HTMLInputElement>;
 };
@@ -63,15 +68,17 @@ const POSFilters: React.FC<POSFiltersProps> = ({
   orderTypeOptions,
   orderType,
   onOrderTypeChange,
+  showOrderType = true,
   variant = 'bar',
   showSearch = true,
+  showHint = true,
   searchInputRef,
 }) => {
   const isRail = variant === 'rail';
 
   const filtersContent = (
     <>
-      {orderTypeOptions && orderTypeOptions.length > 0 && onOrderTypeChange && (
+      {showOrderType && orderTypeOptions && orderTypeOptions.length > 0 && onOrderTypeChange && (
         <div className={isRail ? 'space-y-1' : ''}>
           <span className="text-foodies-textSecondary font-medium text-xs uppercase tracking-wide block mb-1">
             Order type
@@ -171,7 +178,7 @@ const POSFilters: React.FC<POSFiltersProps> = ({
               }}
               className={isRail ? "pl-9 pr-3 py-2 text-sm border border-foodies-border rounded-lg bg-foodies-surfaceMuted text-foodies-textPrimary placeholder-foodies-textSecondary focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary w-full" : "pl-9 pr-3 py-2 text-sm border border-foodies-border rounded-lg bg-foodies-surfaceMuted text-foodies-textPrimary placeholder-foodies-textSecondary focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary focus:bg-foodies-surface min-w-[160px] max-w-[220px] transition-colors"}
             />
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-foodies-textSecondary text-sm pointer-events-none">🔍</span>
+            <MdSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-foodies-textSecondary pointer-events-none" />
             <TypeaheadDropdown
               open={Boolean(searchSuggestionsOpen) && (search?.trim()?.length ?? 0) >= 2}
               suggestions={searchSuggestions ?? []}
@@ -204,7 +211,9 @@ const POSFilters: React.FC<POSFiltersProps> = ({
           {filtersContent}
         </div>
       </div>
-      <span className="text-foodies-textSecondary text-xs hidden sm:inline">Tap an item to add to order</span>
+      {showHint && (
+        <span className="text-foodies-textSecondary text-xs hidden sm:inline">Tap an item to add to order</span>
+      )}
     </div>
   );
 };

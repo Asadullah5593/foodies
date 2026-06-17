@@ -12,6 +12,7 @@ import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
+import { groupOrderItems } from '../../utils/orderItemGrouping';
 
 type OrderDetailItem = {
   id: number;
@@ -23,8 +24,11 @@ type OrderDetailItem = {
   notes?: string;
   variant_id?: number | null;
   variant_name?: string | null;
+  deal_id?: number | null;
+  deal_slot_index?: number | null;
+  deal_name?: string | null;
   addons?: Array<{ name: string; unit_price: number; quantity: number; subtotal?: number }>;
-  modifiers?: Array<{ name: string | null; unit_price: number }>;
+  modifiers?: Array<{ name: string | null; unit_price: number; group?: string | null }>;
 };
 
 type OrderRatingsResponse = {
@@ -264,57 +268,80 @@ const OrderDetail: React.FC = () => {
       <Card className="p-6 mb-6 border border-gray-200 dark:border-slate-700 dark:bg-slate-800 shadow-sm">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-slate-100 mb-4">Items</h2>
         <div className="space-y-4">
-          {o.items?.map((item) => {
-            const baseAmount = Number(item.unit_price ?? 0) * (item.quantity ?? 1);
-            const addonTotal = (a: { quantity: number; unit_price: number; subtotal?: number }) =>
-              a.subtotal != null ? Number(a.subtotal) : Number(a.unit_price) * (a.quantity ?? 1);
-            const hasExtras = (item.addons?.length ?? 0) > 0 || (item.modifiers?.length ?? 0) > 0;
-            return (
-              <div
-                key={item.id}
-                className="rounded-xl border border-gray-100 dark:border-slate-600 bg-gray-50/50 dark:bg-slate-700/50 p-4"
-              >
-                <div className="flex justify-between items-start gap-4">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-gray-900 dark:text-slate-100">
-                      {item.name_snapshot ?? 'Item'}
-                      {item.variant_name && (
-                        <span className="text-gray-600 dark:text-slate-400 font-normal"> (Variant: {item.variant_name})</span>
-                      )}
-                      {' '}× {item.quantity}
-                    </p>
+          {(() => {
+            const renderItem = (item: OrderDetailItem) => {
+              const baseAmount = Number(item.unit_price ?? 0) * (item.quantity ?? 1);
+              const addonTotal = (a: { quantity: number; unit_price: number; subtotal?: number }) =>
+                a.subtotal != null ? Number(a.subtotal) : Number(a.unit_price) * (a.quantity ?? 1);
+              const hasExtras = (item.addons?.length ?? 0) > 0 || (item.modifiers?.length ?? 0) > 0;
+              return (
+                <div
+                  key={item.id}
+                  className="rounded-xl border border-gray-100 dark:border-slate-600 bg-gray-50/50 dark:bg-slate-700/50 p-4"
+                >
+                  <div className="flex justify-between items-start gap-4">
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 dark:text-slate-100">
+                        {item.name_snapshot ?? 'Item'}
+                        {item.variant_name && (
+                          <span className="text-gray-600 dark:text-slate-400 font-normal"> (Variant: {item.variant_name})</span>
+                        )}
+                        {' '}× {item.quantity}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm text-gray-600 dark:text-slate-400">
+                        {formatCurrency(Number(item.unit_price ?? 0))} × {item.quantity}
+                      </p>
+                      <p className="font-semibold text-gray-900 dark:text-slate-100">{formatCurrency(baseAmount)}</p>
+                    </div>
                   </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-sm text-gray-600 dark:text-slate-400">
-                      {formatCurrency(Number(item.unit_price ?? 0))} × {item.quantity}
+                  {(item.addons ?? []).map((a, i) => (
+                    <div key={`a-${i}`} className="flex justify-between items-center mt-1.5 pl-4 text-sm text-gray-600 dark:text-slate-400 border-b border-gray-100 dark:border-slate-600 pb-1">
+                      <span>Add-on: {a.name ?? '—'}{Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</span>
+                      <span>{formatCurrency(addonTotal(a))}</span>
+                    </div>
+                  ))}
+                  {(item.modifiers ?? []).map((m, i) => (
+                    <div key={`m-${i}`} className="flex justify-between items-center mt-1.5 pl-4 text-sm text-gray-600 dark:text-slate-400 border-b border-gray-100 dark:border-slate-600 pb-1">
+                      <span>{m.group ?? 'Modifier'}: {m.name ?? '—'}</span>
+                      <span>{formatCurrency(Number(m.unit_price))}</span>
+                    </div>
+                  ))}
+                  {hasExtras && (
+                    <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-200 dark:border-slate-600 text-sm">
+                      <span className="font-medium text-gray-700 dark:text-slate-300">Line total</span>
+                      <span className="font-semibold text-gray-900 dark:text-slate-100">{formatCurrency(Number(item.subtotal ?? 0))}</span>
+                    </div>
+                  )}
+                  {item.notes && (
+                    <p className="text-sm text-gray-500 dark:text-slate-400 italic mt-2">Note: {item.notes}</p>
+                  )}
+                </div>
+              );
+            };
+            return groupOrderItems(o.items).map((group, gi) => {
+              if (group.dealId == null) return group.lines.map(renderItem);
+              const dealTotal = group.lines.reduce((s, l) => s + Number(l.subtotal ?? 0), 0);
+              return (
+                <div
+                  key={`deal-${gi}`}
+                  className="rounded-xl border-2 border-indigo-200 dark:border-indigo-800 bg-indigo-50/40 dark:bg-indigo-900/10 p-4"
+                >
+                  <div className="flex justify-between items-center mb-3">
+                    <p className="font-bold text-indigo-700 dark:text-indigo-300">
+                      <span className="mr-1.5 text-xs font-semibold uppercase tracking-wide text-indigo-500 dark:text-indigo-400">Deal</span>
+                      {group.dealName ?? 'Deal'}
                     </p>
-                    <p className="font-semibold text-gray-900 dark:text-slate-100">{formatCurrency(baseAmount)}</p>
+                    <p className="font-semibold text-gray-900 dark:text-slate-100">{formatCurrency(dealTotal)}</p>
+                  </div>
+                  <div className="space-y-3 border-l-2 border-indigo-200 dark:border-indigo-800 pl-3">
+                    {group.lines.map(renderItem)}
                   </div>
                 </div>
-                {(item.addons ?? []).map((a, i) => (
-                  <div key={`a-${i}`} className="flex justify-between items-center mt-1.5 pl-4 text-sm text-gray-600 dark:text-slate-400 border-b border-gray-100 dark:border-slate-600 pb-1">
-                    <span>Add-on: {a.name ?? '—'}{Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</span>
-                    <span>{formatCurrency(addonTotal(a))}</span>
-                  </div>
-                ))}
-                {(item.modifiers ?? []).map((m, i) => (
-                  <div key={`m-${i}`} className="flex justify-between items-center mt-1.5 pl-4 text-sm text-gray-600 dark:text-slate-400 border-b border-gray-100 dark:border-slate-600 pb-1">
-                    <span>Modifier: {m.name ?? '—'}</span>
-                    <span>{formatCurrency(Number(m.unit_price))}</span>
-                  </div>
-                ))}
-                {hasExtras && (
-                  <div className="flex justify-between items-center mt-2 pt-2 border-t border-gray-200 dark:border-slate-600 text-sm">
-                    <span className="font-medium text-gray-700 dark:text-slate-300">Line total</span>
-                    <span className="font-semibold text-gray-900 dark:text-slate-100">{formatCurrency(Number(item.subtotal ?? 0))}</span>
-                  </div>
-                )}
-                {item.notes && (
-                  <p className="text-sm text-gray-500 dark:text-slate-400 italic mt-2">Note: {item.notes}</p>
-                )}
-              </div>
-            );
-          })}
+              );
+            });
+          })()}
         </div>
       </Card>
 

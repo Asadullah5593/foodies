@@ -44,9 +44,27 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
   lastOrderGroupId,
   onViewInvoice,
 }) => {
-  const total = quote?.total_amount ?? subtotal;
+  const total = Number(quote?.total_amount ?? subtotal) || 0;
   const taxAmount = Number(quote?.tax_amount ?? 0);
   const deliveryFee = Number(quote?.delivery_fee ?? 0);
+
+  // Clamp a multipay field so cash + card can never exceed the order total:
+  // the max a field may hold is (total - the other field's current value).
+  const clampSplit = (raw: string, other: string): string => {
+    if (raw === '') return raw;
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n < 0) return raw;
+    const otherVal = parseFloat(other || '0') || 0;
+    const maxForThis = Math.max(0, Math.round((total - otherVal) * 100) / 100);
+    if (n > maxForThis) return String(maxForThis);
+    return raw;
+  };
+
+  const cashVal = parseFloat(paymentCashAmount || '0') || 0;
+  const cardVal = parseFloat(paymentCardAmount || '0') || 0;
+  const splitSum = Math.round((cashVal + cardVal) * 100) / 100;
+  const splitMismatch = paymentMode === 'multipay' && Math.abs(splitSum - total) > 0.01;
+
   return (
     <div className="mt-auto rounded-2xl border border-foodies-border dark:border-slate-600 bg-foodies-surface dark:bg-slate-800 p-5 shadow-lg">
       <div className="space-y-2 text-sm">
@@ -125,9 +143,10 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
               <input
                 type="number"
                 min={0}
+                max={Math.max(0, Math.round((total - cardVal) * 100) / 100)}
                 step={0.01}
                 value={paymentCashAmount}
-                onChange={(e) => onPaymentCashAmountChange(e.target.value)}
+                onChange={(e) => onPaymentCashAmountChange(clampSplit(e.target.value, paymentCardAmount))}
                 placeholder="0"
                 className="w-full px-3 py-2 border border-foodies-border dark:border-slate-600 rounded-xl bg-foodies-surface dark:bg-slate-800 text-foodies-textPrimary dark:text-slate-100 text-sm focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
               />
@@ -137,15 +156,18 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
               <input
                 type="number"
                 min={0}
+                max={Math.max(0, Math.round((total - cashVal) * 100) / 100)}
                 step={0.01}
                 value={paymentCardAmount}
-                onChange={(e) => onPaymentCardAmountChange(e.target.value)}
+                onChange={(e) => onPaymentCardAmountChange(clampSplit(e.target.value, paymentCashAmount))}
                 placeholder="0"
                 className="w-full px-3 py-2 border border-foodies-border dark:border-slate-600 rounded-xl bg-foodies-surface dark:bg-slate-800 text-foodies-textPrimary dark:text-slate-100 text-sm focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
               />
             </div>
-            <p className="col-span-2 text-xs text-foodies-textSecondary dark:text-slate-400">
-              Sum must equal {formatCurrency(total)}
+            <p className={`col-span-2 text-xs ${splitMismatch ? 'text-red-600 dark:text-red-400 font-medium' : 'text-foodies-textSecondary dark:text-slate-400'}`}>
+              {splitMismatch
+                ? `Cash + Card (${formatCurrency(splitSum)}) must equal ${formatCurrency(total)}`
+                : `Sum must equal ${formatCurrency(total)}`}
             </p>
           </div>
         )}
@@ -155,7 +177,7 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
         <Button
           variant="gradient"
           onClick={onCreateOrder}
-          disabled={isSubmitting || itemCount === 0}
+          disabled={isSubmitting || itemCount === 0 || splitMismatch}
           isLoading={isSubmitting}
           className="w-full mt-4 font-semibold py-3 rounded-xl"
           size="large"

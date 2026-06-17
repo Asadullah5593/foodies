@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { MdOutlineLocationOn } from 'react-icons/md';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { riderService, RiderOrder } from '../../services/api/riderService';
 import Loader from '../../components/Loader';
@@ -131,7 +132,7 @@ const RiderDashboard: React.FC = () => {
                 <>
                   {first?.brand_name && <p>{first.brand_name}</p>}
                   {first?.delivery_address && (
-                    <p className="truncate max-w-full" title={first.delivery_address}>📍 {first.delivery_address}</p>
+                    <p className="truncate max-w-full" title={first.delivery_address}><MdOutlineLocationOn className="inline h-4 w-4 mr-1 align-text-bottom" />{first.delivery_address}</p>
                   )}
                   {first?.placed_at && (
                     <p className="text-xs text-gray-500 dark:text-slate-500">{new Date(first.placed_at).toLocaleString()}</p>

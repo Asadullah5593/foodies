@@ -135,7 +135,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span className="truncate">{value ? selectedLabel : placeholder}</span>
+        <span className="truncate">{selectedLabel || placeholder}</span>
         <svg
           className={`w-4 h-4 flex-shrink-0 text-gray-500 dark:text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
           fill="none"

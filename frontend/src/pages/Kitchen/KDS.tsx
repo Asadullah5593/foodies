@@ -8,6 +8,7 @@ import Button from '../../components/Button';
 import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import { formatOrderType } from '../../utils/format';
+import { groupOrderItems } from '../../utils/orderItemGrouping';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 
 function todayIsoDate(): string {
@@ -25,22 +26,29 @@ interface KitchenOrder {
   order_number: string;
   order_group_id?: string | null;
   brand_id?: number | null;
+  brand_name?: string | null;
   order_type: string;
   status: string;
   table_number?: string;
   customer_name?: string;
   placed_at?: string;
-  items: Array<{
-    id: number;
-    name?: string;
-    name_snapshot?: string;
-    quantity: number;
-    notes?: string;
-    variant_name?: string | null;
-    brand_name?: string | null;
-    addons?: Array<{ name: string; quantity: number }>;
-  }>;
+  items: Array<KitchenItem>;
 }
+
+type KitchenItem = {
+  id: number;
+  name?: string;
+  name_snapshot?: string;
+  quantity: number;
+  notes?: string;
+  variant_name?: string | null;
+  brand_name?: string | null;
+  deal_id?: number | null;
+  deal_slot_index?: number | null;
+  deal_name?: string | null;
+  addons?: Array<{ name: string; quantity: number }>;
+  modifiers?: Array<{ name: string; quantity: number; group?: string | null }>;
+};
 
 const KDS: React.FC = () => {
   const queryClient = useQueryClient();
@@ -126,7 +134,9 @@ const KDS: React.FC = () => {
         const notesLine = i.notes ? `<div class="kot-note">Note: ${escapeHtml(i.notes)}</div>` : '';
         const addonsStr = (i.addons ?? []).map((a: any) => `${a.name} ×${a.quantity ?? 1}`).join(', ');
         const addonsLine = addonsStr ? `<div class="kot-addons">Add-ons: ${escapeHtml(addonsStr)}</div>` : '';
-        return `<div class="kot-item">${brandLine}${escapeHtml(nameLine)}${addonsLine}${notesLine}</div>`;
+        const modifiersStr = (i.modifiers ?? []).map((m: any) => `${m.name}${(m.quantity ?? 1) > 1 ? ` ×${m.quantity}` : ''}`).join(', ');
+        const modifiersLine = modifiersStr ? `<div class="kot-addons">${escapeHtml(modifiersStr)}</div>` : '';
+        return `<div class="kot-item">${brandLine}${escapeHtml(nameLine)}${modifiersLine}${addonsLine}${notesLine}</div>`;
       }).join('');
       const w = window.open('', '_blank');
       if (w) {
@@ -197,8 +207,8 @@ const KDS: React.FC = () => {
   }, [branchId, brands, brandId]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 text-gray-900 dark:text-gray-100">
+      <div className="w-full">
         <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Back Kitchen</h1>
@@ -316,6 +326,9 @@ const KDS: React.FC = () => {
                       <span className="ml-2 px-2.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700">
                         {order.status}
                       </span>
+                      {order.brand_name && (
+                        <span className="block text-xs font-medium text-indigo-600 dark:text-indigo-400 mt-0.5">{order.brand_name}</span>
+                      )}
                     </div>
                   </div>
                   <Button
@@ -328,11 +341,22 @@ const KDS: React.FC = () => {
                 </div>
                 {/* Order type, table, time, customer */}
                 <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-600">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
-                    <span className="font-semibold text-gray-900 dark:text-gray-100">{formatOrderType(order.order_type)}</span>
-                    {order.table_number && <span className="text-gray-600 dark:text-gray-300">Table {order.table_number}</span>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wide border ${
+                      order.order_type === 'dine_in' ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 border-green-200 dark:border-green-700' :
+                      order.order_type === 'delivery' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 border-blue-200 dark:border-blue-700' :
+                      order.order_type === 'takeaway' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700' :
+                      'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-600'
+                    }`}>
+                      {formatOrderType(order.order_type)}
+                    </span>
+                    {order.order_type === 'dine_in' && order.table_number && (
+                      <span className="px-3 py-1 rounded-md bg-green-600 text-white text-sm font-bold">
+                        Table {order.table_number}
+                      </span>
+                    )}
                     {order.placed_at && (
-                      <span className="text-gray-500 dark:text-gray-400">{new Date(order.placed_at).toLocaleTimeString()}</span>
+                      <span className="text-gray-500 dark:text-gray-400 text-sm">{new Date(order.placed_at).toLocaleTimeString()}</span>
                     )}
                   </div>
                   {order.customer_name && (
@@ -341,29 +365,56 @@ const KDS: React.FC = () => {
                 </div>
                 {/* Items with variant, add-ons, notes */}
                 <div className="px-4 py-3 space-y-3">
-                  {order.items?.map((item) => (
-                    <div key={item.id} className="border-l-2 border-gray-200 dark:border-gray-600 pl-3">
-                      {item.brand_name && (
-                        <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-0.5">{item.brand_name}</p>
-                      )}
-                      <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
-                        {item.quantity}× {item.name ?? item.name_snapshot ?? 'Item'}
-                        {item.variant_name && (
-                          <span className="font-normal text-gray-600 dark:text-gray-400"> — {item.variant_name}</span>
+                  {(() => {
+                    const renderItem = (item: KitchenItem) => (
+                      <div key={item.id} className="border-l-2 border-gray-200 dark:border-gray-600 pl-3">
+                        <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                          {item.quantity}× {item.name ?? item.name_snapshot ?? 'Item'}
+                          {item.variant_name && (
+                            <span className="font-normal text-gray-600 dark:text-gray-400"> — {item.variant_name}</span>
+                          )}
+                        </p>
+                        {item.modifiers?.length ? (
+                          <ul className="mt-1 space-y-0.5">
+                            {item.modifiers.map((m, idx) => (
+                              <li key={idx} className="flex gap-1.5 text-sm text-gray-700 dark:text-gray-300">
+                                <span className="text-gray-400 dark:text-gray-500" aria-hidden>•</span>
+                                <span>
+                                  {m.group ? <span className="text-gray-500 dark:text-gray-400">{m.group}: </span> : null}
+                                  {m.name}
+                                  {m.quantity > 1 ? ` ×${m.quantity}` : ''}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        {item.addons?.length ? (
+                          <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">
+                            Add-ons: {item.addons.map((a) => `${a.name} ×${a.quantity ?? 1}`).join(', ')}
+                          </p>
+                        ) : null}
+                        {item.notes && (
+                          <p className="text-sm mt-0.5 text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/40 px-2 py-1 rounded border border-amber-200 dark:border-amber-700">
+                            Note: {item.notes}
+                          </p>
                         )}
-                      </p>
-                      {item.addons?.length ? (
-                        <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">
-                          Add-ons: {item.addons.map((a) => `${a.name} ×${a.quantity ?? 1}`).join(', ')}
-                        </p>
-                      ) : null}
-                      {item.notes && (
-                        <p className="text-sm mt-0.5 text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/40 px-2 py-1 rounded border border-amber-200 dark:border-amber-700">
-                          Note: {item.notes}
-                        </p>
-                      )}
-                    </div>
-                  ))}
+                      </div>
+                    );
+                    return groupOrderItems(order.items).map((group, gi) => {
+                      if (group.dealId == null) return group.lines.map(renderItem);
+                      return (
+                        <div
+                          key={`deal-${gi}`}
+                          className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-900/10 p-2.5"
+                        >
+                          <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+                            Deal · {group.dealName ?? 'Deal'}
+                          </p>
+                          <div className="space-y-2">{group.lines.map(renderItem)}</div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
                 {/* Actions */}
                 <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-200 dark:border-gray-600 flex gap-2 flex-wrap">
@@ -375,7 +426,7 @@ const KDS: React.FC = () => {
                       isLoading={updatingOrderId === order.id}
                       disabled={updatingOrderId === order.id}
                     >
-                      → {nextStatus[order.status]}
+                      Change status to {nextStatus[order.status].charAt(0).toUpperCase() + nextStatus[order.status].slice(1)}
                     </Button>
                   )}
                   {order.status === 'ready' && (

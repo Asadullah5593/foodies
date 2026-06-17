@@ -2,6 +2,17 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  MdOutlineDashboard,
+  MdOutlineReceiptLong,
+  MdOutlineDeliveryDining,
+  MdOutlineShoppingCart,
+  MdOutlineSoupKitchen,
+  MdOutlineInventory2,
+  MdOutlineStorefront,
+  MdOutlineRestaurantMenu,
+  MdClose,
+} from 'react-icons/md';
 import apiClient from '../../utils/apiClient';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
@@ -64,14 +75,14 @@ function todayIsoDate(): string {
  * Use /kitchen/back for staff (KDS with status updates).
  */
 const NAV_LINKS = [
-  { path: '/admin/dashboard', label: 'Dashboard', icon: '📊' },
-  { path: '/admin/orders', label: 'Orders', icon: '📋' },
-  { path: '/admin/deliveries', label: 'Deliveries', icon: '🛵' },
-  { path: '/pos/orders', label: 'POS', icon: '🛒' },
-  { path: '/kitchen/back', label: 'Back Kitchen', icon: '🍳' },
-  { path: '/foh/packing', label: 'FOH Packing', icon: '📦' },
-  { path: '/admin/brands', label: 'Brands', icon: '🏪' },
-  { path: '/admin/menu-items', label: 'Menu Items', icon: '🍽️' },
+  { path: '/admin/dashboard', label: 'Dashboard', icon: MdOutlineDashboard },
+  { path: '/admin/orders', label: 'Orders', icon: MdOutlineReceiptLong },
+  { path: '/admin/deliveries', label: 'Deliveries', icon: MdOutlineDeliveryDining },
+  { path: '/pos/orders', label: 'POS', icon: MdOutlineShoppingCart },
+  { path: '/kitchen/back', label: 'Back Kitchen', icon: MdOutlineSoupKitchen },
+  { path: '/foh/packing', label: 'FOH Packing', icon: MdOutlineInventory2 },
+  { path: '/admin/brands', label: 'Brands', icon: MdOutlineStorefront },
+  { path: '/admin/menu-items', label: 'Menu Items', icon: MdOutlineRestaurantMenu },
 ];
 
 const KitchenDisplay: React.FC = () => {
@@ -169,18 +180,18 @@ const KitchenDisplay: React.FC = () => {
                   className="p-2 rounded-lg hover:bg-slate-700 text-slate-300"
                   aria-label="Close menu"
                 >
-                  ✕
+                  <MdClose className="h-5 w-5" />
                 </button>
               </div>
               <nav className="p-2 flex-1 overflow-auto">
-                {NAV_LINKS.map(({ path, label, icon }) => (
+                {NAV_LINKS.map(({ path, label, icon: Icon }) => (
                   <Link
                     key={path}
                     to={path}
                     onClick={() => setSidebarOpen(false)}
                     className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-200 hover:bg-slate-700 hover:text-white transition-colors"
                   >
-                    <span className="text-lg">{icon}</span>
+                    <Icon className="h-5 w-5" />
                     <span>{label}</span>
                   </Link>
                 ))}

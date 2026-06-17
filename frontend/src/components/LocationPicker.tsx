@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { toast } from 'react-hot-toast';
+import { MdOutlineLocationOn } from 'react-icons/md';
 import 'leaflet/dist/leaflet.css';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { reverseGeocode, searchPlaces, PlaceResult } from '../utils/geocode';
@@ -157,7 +158,7 @@ const LocationPicker: React.FC<LocationPickerProps> = ({
           onClick={handleUseMyLocation}
           className="px-4 py-2.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors whitespace-nowrap text-sm font-medium"
         >
-          📍 Use my location
+          <MdOutlineLocationOn className="inline h-4 w-4 mr-1 align-text-bottom" /> Use my location
         </button>
       </div>
 

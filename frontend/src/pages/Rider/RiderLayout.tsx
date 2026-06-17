@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { motion } from 'framer-motion';
+import { MdOutlineDeliveryDining } from 'react-icons/md';
 import Button from '../../components/Button';
 import { riderService } from '../../services/api/riderService';
 import RiderDutyBar from './RiderDutyBar';
@@ -213,7 +214,7 @@ const RiderLayout: React.FC = () => {
               to="/rider"
               className="text-lg font-bold text-gray-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
             >
-              🛵 Rider
+              <MdOutlineDeliveryDining className="inline h-5 w-5 mr-1 align-text-bottom" /> Rider
             </Link>
             <div className="flex items-center gap-3">
               <button
