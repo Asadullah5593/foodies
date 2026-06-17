@@ -134,6 +134,35 @@ export class RiderHrmService {
         return Math.floor(diffMs / (60 * 1000));
     }
 
+    /**
+     * A brand-locked admin may only manage HR profiles for riders linked to one
+     * of their brands (owner/GM unrestricted).
+     */
+    private async assertRiderManageable(
+        riderUserId: number,
+        tenantId: number,
+        allowedBrandIds: number[] | null | undefined,
+    ): Promise<void> {
+        if (allowedBrandIds == null) return;
+        if (allowedBrandIds.length === 0) {
+            throw new ForbiddenException(
+                'You can only manage riders that belong to your own brand',
+            );
+        }
+        const result: unknown = await this.dataSource.query(
+            `SELECT 1 AS ok FROM rider_brands
+             WHERE rider_user_id = $1 AND tenant_id = $2 AND brand_id = ANY($3::int[])
+             LIMIT 1`,
+            [riderUserId, tenantId, allowedBrandIds],
+        );
+        const rows = result as Array<{ ok: number }>;
+        if (rows.length === 0) {
+            throw new ForbiddenException(
+                'You can only manage riders that belong to your own brand',
+            );
+        }
+    }
+
     async upsertRiderProfile(
         tenantId: number,
         dto: {
@@ -149,7 +178,13 @@ export class RiderHrmService {
             is_active?: boolean;
             metadata?: Record<string, unknown>;
         },
+        allowedBrandIds?: number[] | null,
     ) {
+        await this.assertRiderManageable(
+            dto.user_id,
+            tenantId,
+            allowedBrandIds,
+        );
         const existing = await this.riderProfileRepo.findOne({
             where: { userId: dto.user_id },
         });
@@ -196,34 +231,80 @@ export class RiderHrmService {
         };
     }
 
-    async listRiderProfiles(tenantId: number) {
+    async listRiderProfiles(
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+    ) {
         const rows = await this.riderProfileRepo.find({
             where: { tenantId },
             relations: ['user'],
             order: { createdAt: 'DESC' },
         });
-        return rows.map((saved) => ({
-            id: saved.id,
-            user_id: saved.userId,
-            user_name: saved.user?.name ?? null,
-            user_phone: saved.user?.phone ?? null,
-            tenant_id: saved.tenantId,
-            employment_status: saved.employmentStatus,
-            salary_type: saved.salaryType,
-            employee_code: saved.employeeCode,
-            base_salary: Number(saved.baseSalary),
-            default_per_ride_commission: Number(saved.defaultPerRideCommission),
-            max_active_orders: saved.maxActiveOrders,
-            min_rating:
-                saved.minRating != null ? Number(saved.minRating) : null,
-            min_timely_rate:
-                saved.minTimelyRate != null
-                    ? Number(saved.minTimelyRate)
-                    : null,
-            is_active: saved.isActive,
-            metadata: saved.metadata ?? {},
-            updated_at: saved.updatedAt?.toISOString() ?? null,
-        }));
+        const ids = rows.map((r) => r.userId);
+        const linkRows: Array<{
+            rider_user_id: number;
+            brand_id: number;
+            source: 'owned' | 'shared';
+            brand_name: string;
+        }> = ids.length
+            ? await this.dataSource.query(
+                  `SELECT rb.rider_user_id, rb.brand_id, rb.source, b.name AS brand_name
+                   FROM rider_brands rb
+                   INNER JOIN brands b ON b.id = rb.brand_id
+                   WHERE rb.tenant_id = $1 AND rb.rider_user_id = ANY($2::int[])
+                   ORDER BY b.name ASC`,
+                  [tenantId, ids],
+              )
+            : [];
+        const linksByRider = new Map<number, typeof linkRows>();
+        for (const l of linkRows) {
+            const list = linksByRider.get(l.rider_user_id) ?? [];
+            list.push(l);
+            linksByRider.set(l.rider_user_id, list);
+        }
+        let result = rows.map((saved) => {
+            const links = linksByRider.get(saved.userId) ?? [];
+            const owned = links.find((l) => l.source === 'owned');
+            return {
+                id: saved.id,
+                user_id: saved.userId,
+                user_name: saved.user?.name ?? null,
+                user_phone: saved.user?.phone ?? null,
+                tenant_id: saved.tenantId,
+                employment_status: saved.employmentStatus,
+                salary_type: saved.salaryType,
+                employee_code: saved.employeeCode,
+                base_salary: Number(saved.baseSalary),
+                default_per_ride_commission: Number(
+                    saved.defaultPerRideCommission,
+                ),
+                max_active_orders: saved.maxActiveOrders,
+                min_rating:
+                    saved.minRating != null ? Number(saved.minRating) : null,
+                min_timely_rate:
+                    saved.minTimelyRate != null
+                        ? Number(saved.minTimelyRate)
+                        : null,
+                is_active: saved.isActive,
+                metadata: saved.metadata ?? {},
+                updated_at: saved.updatedAt?.toISOString() ?? null,
+                owner_brand_id: owned ? owned.brand_id : null,
+                owner_brand_name: owned ? owned.brand_name : null,
+                brand_ids: links.map((l) => l.brand_id),
+                brands: links.map((l) => ({
+                    id: l.brand_id,
+                    name: l.brand_name,
+                    source: l.source,
+                })),
+            };
+        });
+        if (allowedBrandIds != null) {
+            const allowed = new Set(allowedBrandIds.map((b) => Number(b)));
+            result = result.filter((p) =>
+                p.brand_ids.some((id) => allowed.has(Number(id))),
+            );
+        }
+        return result;
     }
 
     async checkIn(riderUserId: number, branchId: number, notes?: string) {
@@ -907,23 +988,18 @@ export class RiderHrmService {
                 expectedMonthlyMinutes,
             );
             if (baseSalary > 0) {
-                pushItem(
-                    'base_salary',
-                    'Base Salary',
-                    proratedBase,
-                    {
-                        base_salary: baseSalary,
-                        attendance_minutes: attendanceMinutes,
-                        expected_monthly_minutes: expectedMonthlyMinutes,
-                        attendance_ratio:
-                            expectedMonthlyMinutes > 0
-                                ? Math.min(
-                                      1,
-                                      attendanceMinutes / expectedMonthlyMinutes,
-                                  )
-                                : 0,
-                    },
-                );
+                pushItem('base_salary', 'Base Salary', proratedBase, {
+                    base_salary: baseSalary,
+                    attendance_minutes: attendanceMinutes,
+                    expected_monthly_minutes: expectedMonthlyMinutes,
+                    attendance_ratio:
+                        expectedMonthlyMinutes > 0
+                            ? Math.min(
+                                  1,
+                                  attendanceMinutes / expectedMonthlyMinutes,
+                              )
+                            : 0,
+                });
             }
 
             const defaultPerRide = Number(

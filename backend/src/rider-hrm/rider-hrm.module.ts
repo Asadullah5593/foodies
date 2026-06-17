@@ -20,6 +20,11 @@ import { RiderPayrollAdminController } from './rider-payroll.admin.controller';
 import { RiderAttendanceController } from './rider-attendance.controller';
 import { RiderOpsMetricsService } from './rider-ops-metrics.service';
 import { AdminRiderOpsController } from './admin-rider-ops.controller';
+import { RiderSharingService } from './rider-sharing.service';
+import {
+    RiderSharingAdminController,
+    RiderShareRequestsController,
+} from './rider-sharing.admin.controller';
 
 @Module({
     imports: [
@@ -45,8 +50,10 @@ import { AdminRiderOpsController } from './admin-rider-ops.controller';
         RiderPayrollAdminController,
         RiderAttendanceController,
         AdminRiderOpsController,
+        RiderSharingAdminController,
+        RiderShareRequestsController,
     ],
-    providers: [RiderHrmService, RiderOpsMetricsService],
-    exports: [RiderHrmService, RiderOpsMetricsService],
+    providers: [RiderHrmService, RiderOpsMetricsService, RiderSharingService],
+    exports: [RiderHrmService, RiderOpsMetricsService, RiderSharingService],
 })
 export class RiderHrmModule {}

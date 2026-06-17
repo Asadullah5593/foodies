@@ -241,9 +241,39 @@ const RiderProfiles: React.FC = () => {
                       {profile.salary_type} · base {formatCurrency(profile.base_salary)} · ride {formatCurrency(profile.default_per_ride_commission)}
                     </p>
                   </div>
-                  <span className={`text-xs font-medium ${profile.is_active ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                    {profile.is_active ? 'Active' : 'Inactive'}
-                  </span>
+                  <div className="flex flex-col items-end gap-1">
+                    <span
+                      className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
+                        profile.owner_brand_id
+                          ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
+                          : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                      }`}
+                    >
+                      {profile.owner_brand_id
+                        ? `Owned · ${profile.owner_brand_name}`
+                        : 'Foodies pool'}
+                    </span>
+                    <span className={`text-xs font-medium ${profile.is_active ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
+                      {profile.is_active ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {(profile.brands ?? []).length === 0 ? (
+                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                      No brands linked — not dispatchable
+                    </span>
+                  ) : (
+                    (profile.brands ?? []).map((b) => (
+                      <span
+                        key={b.brand_id ?? b.id}
+                        className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-200"
+                      >
+                        {b.brand_name ?? b.name}
+                        {b.source === 'shared' ? ' · shared' : ''}
+                      </span>
+                    ))
+                  )}
                 </div>
               </div>
             ))

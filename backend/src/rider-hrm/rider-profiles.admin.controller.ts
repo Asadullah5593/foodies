@@ -21,7 +21,8 @@ export class RiderProfilesAdminController {
 
     @Post('profiles')
     upsertProfile(
-        @CurrentUser() user: { tenantId: number | null },
+        @CurrentUser()
+        user: { tenantId: number | null; allowedBrandIds?: number[] | null },
         @Body()
         dto: {
             user_id: number;
@@ -40,14 +41,27 @@ export class RiderProfilesAdminController {
         if (user.tenantId == null) {
             throw new BadRequestException('Tenant context required');
         }
-        return this.riderHrmService.upsertRiderProfile(user.tenantId, dto);
+        return this.riderHrmService.upsertRiderProfile(
+            user.tenantId,
+            dto,
+            user.allowedBrandIds,
+        );
     }
 
     @Get('profiles')
-    listProfiles(@CurrentUser() user: { tenantId: number | null }) {
+    listProfiles(
+        @CurrentUser()
+        user: {
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
+    ) {
         if (user.tenantId == null) {
             throw new BadRequestException('Tenant context required');
         }
-        return this.riderHrmService.listRiderProfiles(user.tenantId);
+        return this.riderHrmService.listRiderProfiles(
+            user.tenantId,
+            user.allowedBrandIds,
+        );
     }
 }

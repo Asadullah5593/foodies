@@ -37,6 +37,10 @@ export class Brand {
     @Column({ default: true })
     isActive: boolean;
 
+    /** Flat delivery fee charged on each delivery order of this brand. */
+    @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+    deliveryFlatFee: number;
+
     @CreateDateColumn()
     createdAt: Date;
 
