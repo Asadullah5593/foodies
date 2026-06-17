@@ -173,7 +173,9 @@ describe('InventoryTransferService', () => {
         expect(orderSave).toHaveBeenCalled();
         expect(orderSave.mock.calls[0][0].status).toBe('closed');
         expect(mockManager.query).toHaveBeenCalledWith(
-            expect.stringContaining("l.event_type IN ('transfer_receipt', 'transfer_in')"),
+            expect.stringContaining(
+                "l.event_type IN ('transfer_receipt', 'transfer_in')",
+            ),
             expect.any(Array),
         );
     });

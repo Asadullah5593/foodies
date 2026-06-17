@@ -126,12 +126,14 @@ export class RiderAttendanceController {
     @ApiQuery({
         name: 'from',
         required: false,
-        description: 'Optional ISO date/time — filter breaks with started_at on or after this instant.',
+        description:
+            'Optional ISO date/time — filter breaks with started_at on or after this instant.',
     })
     @ApiQuery({
         name: 'to',
         required: false,
-        description: 'Optional ISO date/time — filter breaks with started_at on or before this instant.',
+        description:
+            'Optional ISO date/time — filter breaks with started_at on or before this instant.',
     })
     @ApiQuery({
         name: 'limit',
@@ -150,7 +152,10 @@ export class RiderAttendanceController {
                         properties: {
                             id: { type: 'number' },
                             rider_user_id: { type: 'number' },
-                            attendance_session_id: { type: 'number', nullable: true },
+                            attendance_session_id: {
+                                type: 'number',
+                                nullable: true,
+                            },
                             branch_id: { type: 'number', nullable: true },
                             started_at: { type: 'string' },
                             ended_at: { type: 'string', nullable: true },
@@ -168,9 +173,10 @@ export class RiderAttendanceController {
         @Query('to') to?: string,
         @Query('limit') limit?: string,
     ) {
-        const parsedLimit = limit != null && String(limit).trim() !== ''
-            ? Number(limit)
-            : undefined;
+        const parsedLimit =
+            limit != null && String(limit).trim() !== ''
+                ? Number(limit)
+                : undefined;
         if (
             parsedLimit != null &&
             (!Number.isFinite(parsedLimit) || parsedLimit < 1)
@@ -216,8 +222,16 @@ export class RiderAttendanceController {
                     type: 'string',
                     example: '2026-05-13T08:00:00.000Z',
                 },
-                checked_out_at: { type: 'string', nullable: true, example: null },
-                notes: { type: 'string', nullable: true, example: 'Morning shift' },
+                checked_out_at: {
+                    type: 'string',
+                    nullable: true,
+                    example: null,
+                },
+                notes: {
+                    type: 'string',
+                    nullable: true,
+                    example: 'Morning shift',
+                },
             },
         },
     })
@@ -242,7 +256,10 @@ export class RiderAttendanceController {
         type: RiderCheckOutDto,
         examples: {
             empty: { summary: 'No note', value: {} },
-            withNote: { summary: 'With note', value: { notes: 'End of shift' } },
+            withNote: {
+                summary: 'With note',
+                value: { notes: 'End of shift' },
+            },
         },
     })
     @ApiOkResponse({

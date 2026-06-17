@@ -74,7 +74,9 @@ export class ImageOptimizeService {
 
         const mimetype = (file.mimetype || '').toLowerCase();
         if (mimetype === 'image/svg+xml' || mimetype.includes('svg')) {
-            throw new Error('SVG uploads are not supported for menu-item variants');
+            throw new Error(
+                'SVG uploads are not supported for menu-item variants',
+            );
         }
         if (!/^image\/(png|jpe?g|gif|webp)$/i.test(mimetype)) {
             throw new Error('Unsupported image type for menu-item variants');

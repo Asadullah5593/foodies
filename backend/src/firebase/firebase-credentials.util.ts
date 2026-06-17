@@ -1,7 +1,9 @@
 /**
  * Normalizes FIREBASE_PRIVATE_KEY from .env (common deployment formats).
  */
-export function normalizeFirebasePrivateKey(raw: string | undefined): string | null {
+export function normalizeFirebasePrivateKey(
+    raw: string | undefined,
+): string | null {
     if (raw == null) return null;
 
     let key = raw.trim();

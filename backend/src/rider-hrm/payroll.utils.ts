@@ -22,8 +22,7 @@ export function componentAmount(
     if (!Number.isFinite(value)) return 0;
     if (calcBasis === 'flat') return value;
     if (calcBasis === 'per_ride') return value * facts.completedRides;
-    if (calcBasis === 'timely_delivery')
-        return value * facts.timelyDeliveries;
+    if (calcBasis === 'timely_delivery') return value * facts.timelyDeliveries;
     if (calcBasis === 'rating_threshold_bonus') {
         const min = facts.minRating ?? 0;
         if (facts.avgRating != null && facts.avgRating >= min) return value;

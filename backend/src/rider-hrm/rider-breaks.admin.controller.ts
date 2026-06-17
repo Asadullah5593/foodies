@@ -5,7 +5,13 @@ import {
     Query,
     UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags, ApiOperation, ApiQuery, ApiOkResponse } from '@nestjs/swagger';
+import {
+    ApiBearerAuth,
+    ApiTags,
+    ApiOperation,
+    ApiQuery,
+    ApiOkResponse,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -33,7 +39,11 @@ export class RiderBreaksAdminController {
         description:
             'Tenant-scoped. Returns `rider_break_sessions` rows (newest first). Use for audits and payroll adjustments.',
     })
-    @ApiQuery({ name: 'rider_user_id', required: true, description: 'Rider staff user id (`users.id`).' })
+    @ApiQuery({
+        name: 'rider_user_id',
+        required: true,
+        description: 'Rider staff user id (`users.id`).',
+    })
     @ApiQuery({
         name: 'from',
         required: false,
@@ -61,7 +71,10 @@ export class RiderBreaksAdminController {
                         properties: {
                             id: { type: 'number' },
                             rider_user_id: { type: 'number' },
-                            attendance_session_id: { type: 'number', nullable: true },
+                            attendance_session_id: {
+                                type: 'number',
+                                nullable: true,
+                            },
                             branch_id: { type: 'number', nullable: true },
                             started_at: { type: 'string' },
                             ended_at: { type: 'string', nullable: true },
@@ -87,9 +100,10 @@ export class RiderBreaksAdminController {
         if (!Number.isFinite(riderUserId) || riderUserId <= 0) {
             throw new BadRequestException('rider_user_id is required');
         }
-        const parsedLimit = limit != null && String(limit).trim() !== ''
-            ? Number(limit)
-            : undefined;
+        const parsedLimit =
+            limit != null && String(limit).trim() !== ''
+                ? Number(limit)
+                : undefined;
         if (
             parsedLimit != null &&
             (!Number.isFinite(parsedLimit) || parsedLimit < 1)

@@ -58,11 +58,12 @@ export class LoyaltyService {
         if (!customer && phone) {
             const normalized = normalizePakistaniPhone(phone);
             if (normalized) {
-                customer = await this.customersService.findOrCreateTenantCustomerForPhone(
-                    order.tenantId,
-                    normalized,
-                    order.customerName ?? 'Customer',
-                );
+                customer =
+                    await this.customersService.findOrCreateTenantCustomerForPhone(
+                        order.tenantId,
+                        normalized,
+                        order.customerName ?? 'Customer',
+                    );
                 if (order.customerId == null) {
                     await this.orderRepo.update(orderId, {
                         customerId: customer.id,

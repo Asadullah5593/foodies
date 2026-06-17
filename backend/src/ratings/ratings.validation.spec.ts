@@ -1,8 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import {
-    assertStars,
-    normalizeOptionalComment,
-} from './ratings.service';
+import { assertStars, normalizeOptionalComment } from './ratings.service';
 
 describe('ratings validation helpers', () => {
     it('accepts star range 1..5 and rejects outside values', () => {
@@ -16,8 +13,12 @@ describe('ratings validation helpers', () => {
     it('normalizes optional comment and enforces max length', () => {
         expect(normalizeOptionalComment(undefined)).toBeNull();
         expect(normalizeOptionalComment('   ')).toBeNull();
-        expect(normalizeOptionalComment(' Great service ')).toBe('Great service');
-        expect(() => normalizeOptionalComment(123)).toThrow(BadRequestException);
+        expect(normalizeOptionalComment(' Great service ')).toBe(
+            'Great service',
+        );
+        expect(() => normalizeOptionalComment(123)).toThrow(
+            BadRequestException,
+        );
         expect(() => normalizeOptionalComment('a'.repeat(501))).toThrow(
             BadRequestException,
         );

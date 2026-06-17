@@ -260,7 +260,7 @@ const Deliveries: React.FC = () => {
                   key={riderId}
                   accent="active"
                   initial={riderName.charAt(0)}
-                  title={`🛵 ${riderName}`}
+                  title={riderName}
                   subtitle={subtitle}
                   animationIndex={i}
                   actions={<></>}
