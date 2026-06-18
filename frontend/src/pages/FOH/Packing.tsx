@@ -208,7 +208,7 @@ const FOHPacking: React.FC = () => {
               ].join(' ')}
               title="Toggle completed orders"
             >
-              {showCompleted ? 'Showing completed' : 'Hide completed'}
+              {showCompleted ? 'Hide Completed' : 'Show Completed'}
             </button>
           </div>
         </div>
@@ -235,33 +235,40 @@ const FOHPacking: React.FC = () => {
                     key={order.id}
                     className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden"
                   >
-                    <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600 flex justify-between items-center">
+                    <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600 flex justify-between items-start">
+                      {/* Left: order number + brand */}
                       <div>
                         <span className="text-lg font-bold text-gray-900 dark:text-gray-100">Order #{order.order_number}</span>
-                        <span className="ml-2 px-2.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700">
-                          {order.status}
-                        </span>
                         {order.brand_name && (
                           <span className="block text-xs font-medium text-indigo-600 dark:text-indigo-400 mt-0.5">{order.brand_name}</span>
                         )}
+                      </div>
+                      {/* Right: order type (+ table if dine-in) on top, status below */}
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`px-3 py-1 rounded-md text-sm font-bold uppercase tracking-wide border ${
+                            order.order_type === 'dine_in' ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 border-green-200 dark:border-green-700' :
+                            order.order_type === 'delivery' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 border-blue-200 dark:border-blue-700' :
+                            order.order_type === 'takeaway' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700' :
+                            'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-600'
+                          }`}>
+                            {formatOrderType(order.order_type)}
+                          </span>
+                          {order.order_type === 'dine_in' && order.table_number && (
+                            <span className="px-3 py-1 rounded-md bg-green-600 text-white text-sm font-bold">
+                              Table {order.table_number}
+                            </span>
+                          )}
+                        </div>
+                        <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700">
+                          {order.status}
+                        </span>
                       </div>
                     </div>
 
                     <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-600">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className={`px-2.5 py-1 rounded-md text-xs font-bold uppercase tracking-wide border ${
-                          order.order_type === 'dine_in' ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 border-green-200 dark:border-green-700' :
-                          order.order_type === 'delivery' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 border-blue-200 dark:border-blue-700' :
-                          order.order_type === 'takeaway' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700' :
-                          'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-600'
-                        }`}>
-                          {formatOrderType(order.order_type)}
-                        </span>
-                        {order.order_type === 'dine_in' && order.table_number && (
-                          <span className="px-3 py-1 rounded-md bg-green-600 text-white text-sm font-bold">
-                            Table {order.table_number}
-                          </span>
-                        )}
+                        {/* table number moved to card header for dine-in */}
                         {order.placed_at && (
                           <span className="text-gray-500 dark:text-gray-400 text-sm">
                             {new Date(order.placed_at).toLocaleTimeString()}

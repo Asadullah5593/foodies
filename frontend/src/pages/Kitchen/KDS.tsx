@@ -294,7 +294,7 @@ const KDS: React.FC = () => {
               ].join(' ')}
               title="Toggle completed orders"
             >
-              {showCompleted ? 'Showing completed' : 'Hide completed'}
+              {showCompleted ? 'Hide Completed' : 'Show Completed'}
             </button>
           </div>
         </div>
