@@ -322,7 +322,13 @@ const Roles: React.FC = () => {
     if (editingRole) {
       updateMutation.mutate({ id: editingRole.id, data: formData });
     } else {
-      createMutation.mutate(formData);
+      // Slug is auto-generated from the role name (not shown in the form).
+      const slug = formData.name
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9-]/g, '');
+      createMutation.mutate({ ...formData, slug });
     }
   };
 
@@ -484,51 +490,22 @@ const Roles: React.FC = () => {
         size="large"
       >
         <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Role name *</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) =>
-                  !isRoleViewOnly && setFormData({ ...formData, name: e.target.value })
-                }
-                required
-                readOnly={isRoleViewOnly}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-                placeholder="e.g. Accountant"
-              />
-              {isRoleViewOnly && (
-                <p className="text-xs text-amber-600 mt-1">Super Admin role cannot be edited.</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {editingRole ? 'Slug' : 'Slug *'}
-              </label>
-              {editingRole ? (
-                <p className="px-4 py-2 bg-gray-100 rounded-lg font-mono text-sm">
-                  {formData.slug}
-                </p>
-              ) : (
-                <input
-                  type="text"
-                  value={formData.slug}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      slug: e.target.value
-                        .toLowerCase()
-                        .replace(/\s+/g, '-')
-                        .replace(/[^a-z0-9-]/g, ''),
-                    })
-                  }
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. accountant"
-                />
-              )}
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Role name *</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) =>
+                !isRoleViewOnly && setFormData({ ...formData, name: e.target.value })
+              }
+              required
+              readOnly={isRoleViewOnly}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+              placeholder="e.g. Accountant"
+            />
+            {isRoleViewOnly && (
+              <p className="text-xs text-amber-600 mt-1">Super Admin role cannot be edited.</p>
+            )}
           </div>
 
           <div>
