@@ -1119,13 +1119,23 @@ const OrderTaking: React.FC = () => {
 
   if (posBranches && posBranches.length === 0) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
-        <Card>
-          <div className="text-center py-8 max-w-md">
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-slate-100 mb-2">No branches available for POS</h2>
-            <p className="text-gray-600 dark:text-slate-400">No branch has an open shift. Open a shift in Admin → Shifts. If you are not a super admin, you also need to be assigned to a branch in Admin → Branch Users.</p>
-          </div>
-        </Card>
+      <div className="flex min-h-[calc(100vh-4rem)] flex-col items-center bg-foodies-surfaceMuted dark:bg-slate-900 px-6 pt-16 pb-12 text-center">
+        <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-foodies-primary/10 text-foodies-primary ring-1 ring-foodies-primary/20">
+          <MdOutlineSchedule className="h-10 w-10" />
+        </div>
+        <h2 className="mt-6 text-2xl font-bold text-foodies-textPrimary dark:text-slate-100">
+          No branch is open for POS
+        </h2>
+        <p className="mt-2 max-w-sm text-sm leading-relaxed text-foodies-textSecondary dark:text-slate-400">
+          No branch has an open shift yet. Open a shift to start taking orders. If you’re not a
+          super admin, make sure you’re assigned to a branch in Admin → Branch Users.
+        </p>
+
+        <Link to="/admin/shifts" className="mt-8 w-full max-w-xs">
+          <Button variant="gradient" className="w-full rounded-xl py-3 font-semibold">
+            Open a shift
+          </Button>
+        </Link>
       </div>
     );
   }
