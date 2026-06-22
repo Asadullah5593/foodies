@@ -128,7 +128,10 @@ export class BranchUsersController {
                 'You do not have access to one or more selected branches',
             );
         }
-        return this.service.bulkAssignUserToBranches(body, user.allowedBrandIds);
+        return this.service.bulkAssignUserToBranches(
+            body,
+            user.allowedBrandIds,
+        );
     }
 
     @Delete(':branchId/users/:userId')

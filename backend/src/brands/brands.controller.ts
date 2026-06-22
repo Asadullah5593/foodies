@@ -3,6 +3,7 @@ import {
     Get,
     Post,
     Put,
+    Patch,
     Delete,
     Body,
     Param,
@@ -117,6 +118,103 @@ export class BrandsController {
             throw new ForbiddenException('You can only manage your own brand');
         }
         return this.service.updateForAdmin(+id, user.tenantId, dto);
+    }
+
+    @Get(':id/loyalty-settings')
+    getLoyaltySettings(
+        @Param('id') id: string,
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
+    ) {
+        return this.service.getLoyaltySettings(
+            +id,
+            user.tenantId,
+            user.allowedBrandIds,
+        );
+    }
+
+    @Put(':id/loyalty-settings')
+    updateLoyaltySettings(
+        @Param('id') id: string,
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
+        @Body()
+        dto: {
+            loyalty_enabled?: boolean;
+            display_name?: string;
+            spend_per_point?: number;
+            min_order_to_earn?: number;
+            cash_value_per_point?: number;
+            min_order_to_redeem?: number;
+            expiry_period?: number;
+            expiry_unit?: 'day' | 'month' | 'year';
+        },
+    ) {
+        // Brand admins manage their OWN brand's loyalty program; owner/GM (unlocked)
+        // are tenant-scoped in the service. Mirrors the brand update authorization.
+        if (
+            user.allowedBrandIds != null &&
+            !user.allowedBrandIds.includes(+id)
+        ) {
+            throw new ForbiddenException('You can only manage your own brand');
+        }
+        return this.service.updateLoyaltySettings(
+            +id,
+            user.tenantId,
+            user.allowedBrandIds,
+            dto,
+        );
+    }
+
+    /** Branches this brand is at, with each branch's online open state (for the picker). */
+    @Get(':id/branch-availability')
+    branchAvailability(
+        @Param('id') id: string,
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+            allowedBranchIds?: number[] | null;
+        },
+    ) {
+        return this.service.getBranchAvailability(
+            +id,
+            user.tenantId,
+            user.allowedBrandIds,
+            user.allowedBranchIds,
+        );
+    }
+
+    /** Open/close this brand's online ordering across all its branches. */
+    @Patch(':id/availability')
+    setAvailabilityEverywhere(
+        @Param('id') id: string,
+        @Body() dto: { is_open: boolean },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+            allowedBranchIds?: number[] | null;
+        },
+    ) {
+        return this.service.setAvailabilityEverywhere(
+            +id,
+            dto.is_open !== false,
+            user.id,
+            user.tenantId,
+            user.allowedBrandIds,
+            user.allowedBranchIds,
+        );
     }
 
     @Delete(':id')

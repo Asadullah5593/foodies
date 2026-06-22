@@ -242,6 +242,31 @@ export class BranchMenuItemsService {
                 .map((x) => +x)
                 .filter((x) => Number.isFinite(x)),
         );
+        // Ignore items whose brand is not (or no longer) linked to this branch.
+        // The branch-edit UI can submit stale ids (e.g. after switching brands);
+        // silently dropping them prevents a 403 and avoids re-creating orphans.
+        if (desired.size) {
+            const branch = (await this.branchRepo.findOne({
+                where: { id: branchId },
+                relations: ['branchBrands'],
+            })) as
+                | (Branch & { branchBrands?: Array<{ brandId: number }> })
+                | null;
+            const branchBrandIds = new Set(
+                (branch?.branchBrands ?? []).map((bb) => bb.brandId),
+            );
+            const items = await this.itemRepo.find({
+                where: { id: In([...desired]) },
+                select: ['id', 'brandId'],
+            });
+            const itemBrand = new Map(items.map((i) => [i.id, i.brandId]));
+            for (const menuItemId of [...desired]) {
+                const brandId = itemBrand.get(menuItemId);
+                if (brandId == null || !branchBrandIds.has(brandId)) {
+                    desired.delete(menuItemId);
+                }
+            }
+        }
         for (const menuItemId of desired) {
             await this.assertMenuItemBrandAllowed(menuItemId, allowedBrandIds);
         }

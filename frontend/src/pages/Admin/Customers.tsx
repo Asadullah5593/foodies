@@ -13,11 +13,19 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 
+type LoyaltyWallet = {
+  wallet_type: 'pos' | 'app';
+  brand_id: number | null;
+  brand_name: string | null;
+  balance: number;
+};
+
 type Customer = {
   id: number;
   name: string | null;
   phone: string;
   loyaltyPointsBalance?: number;
+  loyaltyWallets?: LoyaltyWallet[];
   createdAt?: string;
   brands?: { id: number; name: string }[];
 };
@@ -33,6 +41,7 @@ const Customers: React.FC = () => {
   const debouncedFilter = useDebouncedValue(filter, 300);
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
+  const [linkConfirm, setLinkConfirm] = useState<{ name: string; phone: string; existingName: string | null } | null>(null);
 
   const { data: customers, isLoading } = useQuery({
     queryKey: ['customers'],
@@ -40,15 +49,22 @@ const Customers: React.FC = () => {
   });
 
   const createMutation = useMutation({
-    mutationFn: (data: { name: string; phone: string }) =>
+    mutationFn: (data: { name: string; phone: string; link?: boolean }) =>
       adminService.createCustomer(data),
-    onSuccess: () => {
+    onSuccess: (created: { linked?: boolean }) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       setShowForm(false);
+      setLinkConfirm(null);
       resetForm();
-      toast.success('Customer added');
+      toast.success(created?.linked ? 'Linked existing customer' : 'Customer added');
     },
-    onError: (err: any) => {
+    onError: (err: any, variables) => {
+      const existing = err.response?.status === 409 ? err.response?.data?.existing : null;
+      if (existing) {
+        setShowForm(false);
+        setLinkConfirm({ name: variables.name, phone: variables.phone, existingName: existing.name ?? null });
+        return;
+      }
       toast.error(err.response?.data?.message || 'Failed to add customer');
     },
   });
@@ -229,7 +245,21 @@ const Customers: React.FC = () => {
                   subtitle={
                     <>
                       <p className="font-mono">{c.phone}</p>
-                      <p>Loyalty: {c.loyaltyPointsBalance ?? 0} pts</p>
+                      {c.loyaltyWallets && c.loyaltyWallets.length > 0 ? (
+                        <p>
+                          Loyalty:{' '}
+                          {c.loyaltyWallets
+                            .map((w) =>
+                              w.wallet_type === 'app'
+                                ? `App ${w.balance}`
+                                : `${w.brand_name ?? 'Brand'} ${w.balance}`,
+                            )
+                            .join(' · ')}{' '}
+                          pts
+                        </p>
+                      ) : (
+                        <p>Loyalty: 0 pts</p>
+                      )}
                       {c.brands && c.brands.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
                           {c.brands.map((b) => (
@@ -258,6 +288,31 @@ const Customers: React.FC = () => {
           </>
         )}
       </div>
+
+      <Modal
+        isOpen={linkConfirm != null}
+        onClose={() => setLinkConfirm(null)}
+        title="Customer already exists"
+      >
+        {linkConfirm && (
+          <div className="space-y-4">
+            <p className="text-gray-700">
+              <span className="font-mono">{linkConfirm.phone}</span> already belongs to{' '}
+              <strong>{linkConfirm.existingName ?? 'an existing customer'}</strong> under another brand.
+              Link this customer to your brand?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setLinkConfirm(null)}>Cancel</Button>
+              <Button
+                isLoading={createMutation.isPending}
+                onClick={() => createMutation.mutate({ name: linkConfirm.name, phone: linkConfirm.phone, link: true })}
+              >
+                Link customer
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         isOpen={!!deleteTarget}

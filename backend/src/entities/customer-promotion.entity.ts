@@ -46,6 +46,8 @@ export class CustomerPromotion {
     @ManyToOne(() => Customer, { onDelete: 'CASCADE' })
     customer: Customer;
 
-    @ManyToOne(() => Promotion, (p) => p.customerPromotions, { onDelete: 'CASCADE' })
+    @ManyToOne(() => Promotion, (p) => p.customerPromotions, {
+        onDelete: 'CASCADE',
+    })
     promotion: Promotion;
 }

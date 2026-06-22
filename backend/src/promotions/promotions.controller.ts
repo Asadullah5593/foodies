@@ -24,7 +24,8 @@ export class PromotionsController {
 
     @Get()
     index(@CurrentUser() user: { tenantId: number | null }) {
-        if (!user.tenantId) throw new ForbiddenException('Tenant context required');
+        if (!user.tenantId)
+            throw new ForbiddenException('Tenant context required');
         return this.service.findAll(user.tenantId);
     }
 
@@ -47,7 +48,8 @@ export class PromotionsController {
             valid_until?: string;
         },
     ) {
-        if (!user.tenantId) throw new ForbiddenException('Tenant context required');
+        if (!user.tenantId)
+            throw new ForbiddenException('Tenant context required');
         return this.service.create(user.tenantId, dto);
     }
 
@@ -66,7 +68,8 @@ export class PromotionsController {
             valid_until?: string;
         },
     ) {
-        if (!user.tenantId) throw new ForbiddenException('Tenant context required');
+        if (!user.tenantId)
+            throw new ForbiddenException('Tenant context required');
         return this.service.update(+id, user.tenantId, dto);
     }
 
@@ -75,7 +78,8 @@ export class PromotionsController {
         @Param('id') id: string,
         @CurrentUser() user: { tenantId: number | null },
     ) {
-        if (!user.tenantId) throw new ForbiddenException('Tenant context required');
+        if (!user.tenantId)
+            throw new ForbiddenException('Tenant context required');
         return this.service.remove(+id, user.tenantId);
     }
 
@@ -84,7 +88,8 @@ export class PromotionsController {
         @Param('id') id: string,
         @CurrentUser() user: { tenantId: number | null },
     ) {
-        if (!user.tenantId) throw new ForbiddenException('Tenant context required');
+        if (!user.tenantId)
+            throw new ForbiddenException('Tenant context required');
         return this.service.getAssignments(+id, user.tenantId);
     }
 
@@ -94,7 +99,8 @@ export class PromotionsController {
         @CurrentUser() user: { tenantId: number | null },
         @Body() dto: { customer_id: number },
     ) {
-        if (!user.tenantId) throw new ForbiddenException('Tenant context required');
+        if (!user.tenantId)
+            throw new ForbiddenException('Tenant context required');
         return this.service.manualAssign(+id, dto.customer_id, user.tenantId);
     }
 }

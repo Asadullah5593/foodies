@@ -28,9 +28,8 @@ const LoyaltySettings: React.FC = () => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const tenantId = user?.tenant_id ?? null;
-  const isSuperAdmin = user?.is_super_admin === true;
 
-  const [selectedTenantId, setSelectedTenantId] = useState<number | null>(tenantId);
+  const [selectedBrandId, setSelectedBrandId] = useState<number | null>(null);
   const [form, setForm] = useState<LoyaltySettingsData>({
     loyalty_enabled: false,
     display_name: 'Reward Points',
@@ -42,17 +41,18 @@ const LoyaltySettings: React.FC = () => {
     expiry_unit: 'day',
   });
 
-  const { data: tenants } = useQuery({
-    queryKey: ['tenants'],
-    queryFn: adminService.getTenants,
-    enabled: isSuperAdmin,
+  // Loyalty is now configured per brand. Owner/GM see all their brands; a
+  // brand-locked admin only sees their own (enforced server-side).
+  const { data: brands } = useQuery({
+    queryKey: ['brands', 'loyalty'],
+    queryFn: adminService.getBrands,
   });
 
-  const effectiveTenantId = selectedTenantId ?? (tenants?.[0]?.id ?? tenantId);
+  const effectiveBrandId = selectedBrandId ?? (brands?.[0]?.id ?? null);
   const { data: settings, isLoading } = useQuery({
-    queryKey: ['loyalty-settings', effectiveTenantId],
-    queryFn: () => adminService.getLoyaltySettings(effectiveTenantId!),
-    enabled: effectiveTenantId != null,
+    queryKey: ['loyalty-settings', 'brand', effectiveBrandId],
+    queryFn: () => adminService.getLoyaltySettings(effectiveBrandId!),
+    enabled: effectiveBrandId != null,
   });
 
   useEffect(() => {
@@ -72,7 +72,7 @@ const LoyaltySettings: React.FC = () => {
 
   const updateMutation = useMutation({
     mutationFn: (data: Partial<LoyaltySettingsData>) =>
-      adminService.updateLoyaltySettings(effectiveTenantId!, {
+      adminService.updateLoyaltySettings(effectiveBrandId!, {
         loyalty_enabled: data.loyalty_enabled,
         display_name: data.display_name,
         spend_per_point: data.spend_per_point,
@@ -83,7 +83,7 @@ const LoyaltySettings: React.FC = () => {
         expiry_unit: data.expiry_unit,
       }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['loyalty-settings', effectiveTenantId] });
+      queryClient.invalidateQueries({ queryKey: ['loyalty-settings', 'brand', effectiveBrandId] });
       toast.success('Loyalty settings updated');
     },
     onError: (err: any) => {
@@ -91,7 +91,7 @@ const LoyaltySettings: React.FC = () => {
     },
   });
 
-  if (effectiveTenantId == null && !isSuperAdmin) {
+  if (effectiveBrandId == null && tenantId == null) {
     return (
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6 max-w-7xl mx-auto">
         <Card className="p-6">
@@ -110,17 +110,17 @@ const LoyaltySettings: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6 max-w-7xl mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Reward Point Settings</h1>
-        <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Configure how customers earn and redeem reward points.</p>
+        <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Configure how customers earn and redeem reward points for each brand. Each brand runs its own program.</p>
       </div>
 
-      {isSuperAdmin && tenants && tenants.length > 1 && (
+      {brands && brands.length > 1 && (
         <Card className="mb-6 p-4 sm:p-5">
           <SearchableSelect
-            label="Tenant"
-            value={effectiveTenantId != null ? String(effectiveTenantId) : ''}
-            onChange={(v) => setSelectedTenantId(v ? +v : null)}
-            options={tenants.map((t) => ({ value: String(t.id), label: t.name }))}
-            placeholder="Select tenant"
+            label="Brand"
+            value={effectiveBrandId != null ? String(effectiveBrandId) : ''}
+            onChange={(v) => setSelectedBrandId(v ? +v : null)}
+            options={brands.map((b) => ({ value: String(b.id), label: b.name }))}
+            placeholder="Select brand"
             minWidth="min-w-[200px]"
           />
         </Card>

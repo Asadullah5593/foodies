@@ -7,7 +7,11 @@ import { CustomersService } from './customers.service';
 import { PromotionsModule } from '../promotions/promotions.module';
 
 @Module({
-    imports: [RoleAccessModule, TypeOrmModule.forFeature([Customer]), PromotionsModule],
+    imports: [
+        RoleAccessModule,
+        TypeOrmModule.forFeature([Customer]),
+        PromotionsModule,
+    ],
     controllers: [CustomersController],
     providers: [CustomersService],
     exports: [CustomersService],

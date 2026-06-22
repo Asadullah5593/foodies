@@ -3,6 +3,8 @@ import { MenuItem } from '../../types';
 
 export type BranchMenuResponse = {
   branch_id: number | null;
+  /** False when the selected branch is marked inactive (takes no orders). */
+  branch_active?: boolean;
   menu: MenuItem[];
   /** Present when POS can accept orders (a shift is open here). Shifts are per brand. */
   open_shift?: { id: number; shift_number: string; opened_at: string } | null;

@@ -550,6 +550,14 @@ const Promotions: React.FC = () => {
                       <Button size="small" variant="edit" onClick={() => handleEdit(promo)}>Edit</Button>
                       <Button
                         size="small"
+                        variant={promo.is_active ? 'outline' : 'primary'}
+                        isLoading={updateMutation.isPending}
+                        onClick={() => updateMutation.mutate({ id: promo.id, data: { is_active: !promo.is_active } })}
+                      >
+                        {promo.is_active ? 'Set inactive' : 'Set active'}
+                      </Button>
+                      <Button
+                        size="small"
                         variant="danger"
                         isLoading={deleteMutation.isPending}
                         onClick={() => {

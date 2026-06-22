@@ -361,6 +361,14 @@ const MenuAddons: React.FC = () => {
                         <Button size="small" variant="edit" onClick={() => handleEdit(addon)}>Edit</Button>
                         <Button
                           size="small"
+                          variant={isActive ? 'outline' : 'primary'}
+                          isLoading={updateMutation.isPending}
+                          onClick={() => updateMutation.mutate({ id: addon.id, data: { is_active: !isActive } })}
+                        >
+                          {isActive ? 'Set inactive' : 'Set active'}
+                        </Button>
+                        <Button
+                          size="small"
                           variant="danger"
                           onClick={() => {
                             (async () => {

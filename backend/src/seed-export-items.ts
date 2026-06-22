@@ -258,7 +258,6 @@ async function ensureBranchesForBrand(brandId: number, brandSlug: string) {
                 supportsDelivery: false,
                 deliveryFlatFee: 0,
                 isActive: true,
-                menuEnabled: true,
                 status: 'active',
                 settings: null,
                 latitude: null,

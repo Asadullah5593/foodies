@@ -24,7 +24,8 @@ export class BannersController {
 
     @Get()
     index(@CurrentUser() user: { tenantId: number | null }) {
-        if (!user.tenantId) throw new ForbiddenException('Tenant context required');
+        if (!user.tenantId)
+            throw new ForbiddenException('Tenant context required');
         return this.service.findAll(user.tenantId);
     }
 
@@ -43,7 +44,8 @@ export class BannersController {
             valid_until?: string;
         },
     ) {
-        if (!user.tenantId) throw new ForbiddenException('Tenant context required');
+        if (!user.tenantId)
+            throw new ForbiddenException('Tenant context required');
         return this.service.create(user.tenantId, dto);
     }
 
@@ -63,7 +65,8 @@ export class BannersController {
             valid_until?: string;
         },
     ) {
-        if (!user.tenantId) throw new ForbiddenException('Tenant context required');
+        if (!user.tenantId)
+            throw new ForbiddenException('Tenant context required');
         return this.service.update(+id, user.tenantId, dto);
     }
 
@@ -72,7 +75,8 @@ export class BannersController {
         @Param('id') id: string,
         @CurrentUser() user: { tenantId: number | null },
     ) {
-        if (!user.tenantId) throw new ForbiddenException('Tenant context required');
+        if (!user.tenantId)
+            throw new ForbiddenException('Tenant context required');
         return this.service.remove(+id, user.tenantId);
     }
 }

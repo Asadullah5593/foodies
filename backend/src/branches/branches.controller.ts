@@ -3,11 +3,13 @@ import {
     Get,
     Post,
     Put,
+    Patch,
     Delete,
     Body,
     Param,
     Query,
     UseGuards,
+    ForbiddenException,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { BranchesService } from './branches.service';
@@ -75,7 +77,6 @@ export class BranchesController {
             delivery_flat_fee?: number;
             delivery_radius_km?: number;
             is_active?: boolean;
-            menu_enabled?: boolean;
             status?: string;
             latitude?: number | null;
             longitude?: number | null;
@@ -116,7 +117,6 @@ export class BranchesController {
             delivery_flat_fee?: number;
             delivery_radius_km?: number;
             is_active?: boolean;
-            menu_enabled?: boolean;
             status?: string;
             latitude?: number | null;
             longitude?: number | null;
@@ -145,5 +145,76 @@ export class BranchesController {
         @CurrentUser() user: { id: number; tenantId: number | null },
     ) {
         return this.service.removeForAdmin(+id, user.tenantId);
+    }
+
+    // --- Per-(branch,brand) online open/close ---
+
+    @Get(':id/brand-availability')
+    brandAvailability(
+        @Param('id') id: string,
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
+        },
+    ) {
+        return this.service.getBrandAvailability(
+            +id,
+            user.tenantId,
+            user.allowedBrandIds,
+            user.allowedBranchIds,
+        );
+    }
+
+    /** Toggle ONE brand's online availability at this branch. */
+    @Patch(':id/brands/:brandId/availability')
+    setBrandAvailability(
+        @Param('id') id: string,
+        @Param('brandId') brandId: string,
+        @Body() dto: { is_open: boolean },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
+        },
+    ) {
+        return this.service.setBrandAvailability(
+            +id,
+            +brandId,
+            dto.is_open !== false,
+            user.id,
+            user.allowedBrandIds,
+            user.allowedBranchIds,
+        );
+    }
+
+    /** Bulk: close/open ALL brands at this branch (GM / branch-manager only). */
+    @Patch(':id/brands-availability')
+    setAllBrandsAvailability(
+        @Param('id') id: string,
+        @Body() dto: { is_open: boolean },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
+        },
+    ) {
+        if (user.allowedBrandIds != null) {
+            throw new ForbiddenException(
+                'Closing all brands at a branch is a manager action',
+            );
+        }
+        return this.service.setAllBrandsAvailabilityAtBranch(
+            +id,
+            dto.is_open !== false,
+            user.id,
+            user.allowedBranchIds,
+        );
     }
 }

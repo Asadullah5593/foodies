@@ -3,6 +3,7 @@ import {
     NotFoundException,
     BadRequestException,
     ForbiddenException,
+    ConflictException,
     Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -14,6 +15,7 @@ import {
     KioskOrderItemPayload,
 } from '../entities/kiosk-order.entity';
 import { Branch } from '../entities/branch.entity';
+import { BranchBrand } from '../entities/branch-brand.entity';
 import { MenuVariant } from '../entities/menu-variant.entity';
 import { OrdersService } from '../orders/orders.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -172,6 +174,19 @@ export class KioskService {
                 .filter((id): id is number => id != null),
         );
         const brandId = cartBrandIds.size === 1 ? [...cartBrandIds][0] : null;
+
+        // Kiosk is an online self-order channel: honor the per-(branch,brand)
+        // open/close switch (POS finalize by a cashier is unaffected).
+        if (brandId != null) {
+            const bb = await this.dataSource
+                .getRepository(BranchBrand)
+                .findOne({ where: { branchId: payload.branch_id, brandId } });
+            if (bb && bb.isOpen === false) {
+                throw new ConflictException(
+                    'This brand is currently closed at this branch.',
+                );
+            }
+        }
 
         // Idempotent re-submit: same key on the same branch returns the existing row.
         if (idempotencyKey) {

@@ -86,6 +86,20 @@ const Branches: React.FC = () => {
     },
   });
 
+  // Toggle active/inactive directly from the row.
+  const activeMutation = useMutation({
+    mutationFn: async ({ id, is_active }: { id: number; is_active: boolean }) => {
+      await apiClient.put(`/admin/branches/${id}`, { is_active });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['branches'] });
+      toast.success('Branch status updated');
+    },
+    onError: (error: unknown) => {
+      toast.error((error as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Failed to update status');
+    },
+  });
+
   const isSubmitting = deleteMutation.isPending;
   if (isLoading || isSubmitting) {
     return <Loader fullScreen text={isSubmitting ? 'Deleting...' : 'Loading branches...'} />;
@@ -199,7 +213,6 @@ const Branches: React.FC = () => {
                       )}
                       <p>Code: <span className="font-mono font-medium">{branch.code}</span></p>
                       {branch.address && <p>Address: {branch.address}</p>}
-                      <p>Menu: <span className={branch.menu_enabled !== false ? 'text-green-600 dark:text-green-400' : 'text-amber-600 dark:text-amber-400'}>{branch.menu_enabled !== false ? 'Enabled' : 'Disabled'}</span></p>
                       {branch.delivery_radius_km != null && <p>Delivery radius: {Number(branch.delivery_radius_km)} km</p>}
                       {(branch.latitude != null || branch.longitude != null) && (
                         <p>
@@ -214,6 +227,15 @@ const Branches: React.FC = () => {
                   actions={
                     <>
                       <Button size="small" variant="edit" onClick={() => navigate(`/admin/branches/${branch.id}`)}>Edit</Button>
+                      <Button
+                        size="small"
+                        variant={branch.status === 'active' ? 'outline' : 'primary'}
+                        title="An inactive branch is hidden from customers and takes no orders (online and POS)."
+                        onClick={() => activeMutation.mutate({ id: branch.id, is_active: branch.status !== 'active' })}
+                        isLoading={activeMutation.isPending}
+                      >
+                        {branch.status === 'active' ? 'Set inactive' : 'Set active'}
+                      </Button>
                       <Button
                         size="small"
                         variant="danger"

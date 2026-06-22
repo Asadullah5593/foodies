@@ -49,12 +49,22 @@ export class CustomersController {
 
     @Post()
     store(
-        @CurrentUser() user: { id: number; tenantId: number | null },
-        @Body() dto: { phone: string; name: string },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
+        @Body() dto: { phone: string; name: string; link?: boolean },
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.create(user.tenantId, dto);
+        return this.service.create(
+            user.tenantId,
+            dto,
+            user.allowedBrandIds,
+            dto.link,
+        );
     }
 
     @Put(':id')

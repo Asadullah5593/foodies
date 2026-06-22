@@ -41,6 +41,10 @@ export interface Brand {
   logo_url?: string;
   description?: string;
   status: string;
+  /** Aggregate online open/close across this brand's branches (admin list). */
+  online_status?: 'open' | 'closed' | 'partial' | 'none';
+  /** Number of branches this brand is at (admin list). */
+  online_branch_count?: number;
   /** Flat delivery fee charged on each delivery order of this brand. */
   delivery_flat_fee?: number;
   /** Present when super admin lists brands (to show which tenant) */
@@ -69,8 +73,6 @@ export interface Branch {
   latitude?: number | null;
   longitude?: number | null;
   is_active?: boolean;
-  /** When false, POS/KDS/consumer menu for this branch returns empty */
-  menu_enabled?: boolean;
   status: string;
   /** Present when super admin lists branches */
   tenant_id?: number;

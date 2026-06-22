@@ -56,16 +56,15 @@ export class BranchesService {
                 .innerJoin('b.branchBrands', 'bb', 'bb.brandId = :brandId', {
                     brandId,
                 })
-                // Consumer-facing: only active branches with menu enabled.
+                // Consumer-facing: only active branches.
                 .where('b.isActive = :active', { active: true })
-                .andWhere('b.menuEnabled = :menuEnabled', { menuEnabled: true })
                 .orderBy('b.id', 'ASC');
             const list = await qb.getMany();
             return list.map((b) => this.toResponse(b));
         }
         const list = await this.repo.find({
-            // Consumer-facing: only active branches with menu enabled.
-            where: { isActive: true, menuEnabled: true },
+            // Consumer-facing: only active branches.
+            where: { isActive: true },
             order: { id: 'ASC' },
             relations: ['branchBrands', 'branchBrands.brand'],
         });
@@ -104,9 +103,27 @@ export class BranchesService {
         longitude: number,
         maxRadiusKm: number = 100000,
     ) {
+        const withDistance = await this.findNearbyWithBrands(
+            latitude,
+            longitude,
+            maxRadiusKm,
+        );
+        return withDistance.map(({ branch }) => this.toResponse(branch));
+    }
+
+    /**
+     * Same in-range rule as {@link findAllWithinRadius}, but returns the raw branch entities
+     * (with `branchBrands.brand` loaded) plus each branch's distance, sorted by distance. Used
+     * by consumer brand/category-by-location endpoints that need the branch↔brand links.
+     */
+    async findNearbyWithBrands(
+        latitude: number,
+        longitude: number,
+        maxRadiusKm: number = 100000,
+    ): Promise<Array<{ branch: Branch; distanceKm: number }>> {
         const list = await this.repo.find({
-            // Consumer-facing: only active branches with menu enabled.
-            where: { isActive: true, menuEnabled: true },
+            // Consumer-facing: only active branches.
+            where: { isActive: true },
             relations: ['branchBrands', 'branchBrands.brand'],
             order: { id: 'ASC' },
         });
@@ -128,7 +145,7 @@ export class BranchesService {
                     distanceKm <= maxRadiusKm,
             )
             .sort((a, b) => a.distanceKm - b.distanceKm);
-        return withDistance.map(({ branch }) => this.toResponse(branch));
+        return withDistance;
     }
 
     /** Admin: tenant user can only view own tenant's branch; super admin any */
@@ -209,7 +226,6 @@ export class BranchesService {
             delivery_flat_fee?: number;
             delivery_radius_km?: number;
             is_active?: boolean;
-            menu_enabled?: boolean;
             status?: string;
             latitude?: number | null;
             longitude?: number | null;
@@ -285,7 +301,6 @@ export class BranchesService {
         delivery_flat_fee?: number;
         delivery_radius_km?: number;
         is_active?: boolean;
-        menu_enabled?: boolean;
         status?: string;
         latitude?: number | null;
         longitude?: number | null;
@@ -321,7 +336,6 @@ export class BranchesService {
                 deliveryFlatFee: dto.delivery_flat_fee ?? 0,
                 deliveryRadiusKm: dto.delivery_radius_km ?? 10,
                 isActive: dto.is_active ?? true,
-                menuEnabled: dto.menu_enabled ?? true,
                 // Single source of truth: status derived from is_active.
                 status: (dto.is_active ?? true) ? 'active' : 'inactive',
                 latitude: dto.latitude ?? null,
@@ -364,7 +378,6 @@ export class BranchesService {
             delivery_flat_fee?: number;
             delivery_radius_km?: number;
             is_active?: boolean;
-            menu_enabled?: boolean;
             status?: string;
         },
     ) {
@@ -407,6 +420,19 @@ export class BranchesService {
                     this.branchBrandRepo.create({ branchId: id, brandId }),
                 ),
             );
+            // Drop per-branch menu mappings for brands no longer linked here,
+            // otherwise they linger as orphans (counted as "linked" and, worse,
+            // still sellable). See getBranchMenu's brand guard.
+            await this.repo.manager
+                .createQueryBuilder()
+                .delete()
+                .from('branch_menu_items')
+                .where('branch_id = :branchId', { branchId: id })
+                .andWhere(
+                    'menu_item_id IN (SELECT id FROM menu_items WHERE brand_id NOT IN (:...brandIds))',
+                    { brandIds },
+                )
+                .execute();
         }
         return this.update(id, dto);
     }
@@ -428,7 +454,6 @@ export class BranchesService {
             delivery_flat_fee?: number;
             delivery_radius_km?: number;
             is_active?: boolean;
-            menu_enabled?: boolean;
             status?: string;
             latitude?: number | null;
             longitude?: number | null;
@@ -463,8 +488,6 @@ export class BranchesService {
         if (dto.delivery_radius_km !== undefined)
             branch.deliveryRadiusKm = dto.delivery_radius_km;
         if (dto.is_active !== undefined) branch.isActive = dto.is_active;
-        if (dto.menu_enabled !== undefined)
-            branch.menuEnabled = dto.menu_enabled;
         // Single source of truth: status derived from isActive.
         branch.status = branch.isActive ? 'active' : 'inactive';
         if (dto.latitude !== undefined) branch.latitude = dto.latitude;
@@ -533,7 +556,6 @@ export class BranchesService {
         delivery_flat_fee: number;
         delivery_radius_km: number;
         is_active: boolean;
-        menu_enabled: boolean;
         status: string;
         created_at: string | null;
         updated_at: string | null;
@@ -566,7 +588,6 @@ export class BranchesService {
             delivery_flat_fee: Number(b.deliveryFlatFee),
             delivery_radius_km: Number(b.deliveryRadiusKm),
             is_active: b.isActive,
-            menu_enabled: b.menuEnabled,
             status: b.status,
             latitude: b.latitude != null ? Number(b.latitude) : null,
             longitude: b.longitude != null ? Number(b.longitude) : null,
@@ -595,7 +616,6 @@ export class BranchesService {
             delivery_flat_fee: number;
             delivery_radius_km: number;
             is_active: boolean;
-            menu_enabled: boolean;
             status: string;
             created_at: string | null;
             updated_at: string | null;
@@ -603,5 +623,103 @@ export class BranchesService {
             tenant_id?: number;
             tenant_name?: string | null;
         };
+    }
+
+    // ---------------------------------------------------------------------
+    // Per-(branch,brand) online open/close
+    // ---------------------------------------------------------------------
+
+    private assertBranchAccess(
+        branchId: number,
+        allowedBranchIds?: number[] | null,
+    ) {
+        if (allowedBranchIds != null && !allowedBranchIds.includes(branchId)) {
+            throw new ForbiddenException(
+                'You do not have access to this branch',
+            );
+        }
+    }
+
+    /** List brands at a branch with their online open/close state (admin UI). */
+    async getBrandAvailability(
+        branchId: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+        allowedBranchIds?: number[] | null,
+    ) {
+        this.assertBranchAccess(branchId, allowedBranchIds);
+        const rows = await this.branchBrandRepo.find({
+            where: { branchId },
+            relations: ['brand'],
+        });
+        return rows
+            .filter(
+                (r) =>
+                    (allowedBrandIds == null ||
+                        allowedBrandIds.includes(r.brandId)) &&
+                    (tenantId == null || r.brand?.tenantId === tenantId),
+            )
+            .map((r) => ({
+                brand_id: r.brandId,
+                name: r.brand?.name ?? null,
+                is_open: r.isOpen !== false,
+                closed_at: r.closedAt ? r.closedAt.toISOString() : null,
+            }))
+            .sort((a, b) => a.brand_id - b.brand_id);
+    }
+
+    /** Toggle ONE brand's online availability at ONE branch. */
+    async setBrandAvailability(
+        branchId: number,
+        brandId: number,
+        isOpen: boolean,
+        userId: number | null,
+        allowedBrandIds?: number[] | null,
+        allowedBranchIds?: number[] | null,
+    ) {
+        this.assertBranchAccess(branchId, allowedBranchIds);
+        if (allowedBrandIds != null && !allowedBrandIds.includes(brandId)) {
+            throw new ForbiddenException('You can only manage your own brand');
+        }
+        const row = await this.branchBrandRepo.findOne({
+            where: { branchId, brandId },
+        });
+        if (!row)
+            throw new NotFoundException('Brand is not assigned to this branch');
+        this.applyOpenState(row, isOpen, userId);
+        await this.branchBrandRepo.save(row);
+        return { branch_id: branchId, brand_id: brandId, is_open: isOpen };
+    }
+
+    /** Bulk: set ALL brands at a branch open/closed (GM/branch-manager). */
+    async setAllBrandsAvailabilityAtBranch(
+        branchId: number,
+        isOpen: boolean,
+        userId: number | null,
+        allowedBranchIds?: number[] | null,
+    ) {
+        this.assertBranchAccess(branchId, allowedBranchIds);
+        const rows = await this.branchBrandRepo.find({ where: { branchId } });
+        for (const r of rows) this.applyOpenState(r, isOpen, userId);
+        await this.branchBrandRepo.save(rows);
+        return { branch_id: branchId, is_open: isOpen, updated: rows.length };
+    }
+
+    private applyOpenState(
+        row: BranchBrand,
+        isOpen: boolean,
+        userId: number | null,
+    ) {
+        row.isOpen = isOpen;
+        row.closedAt = isOpen ? null : new Date();
+        row.closedByUserId = isOpen ? null : (userId ?? null);
+    }
+
+    /** Is a brand currently accepting online orders at a branch? (default true). */
+    async isBrandOpenAt(branchId: number, brandId: number): Promise<boolean> {
+        const row = await this.branchBrandRepo.findOne({
+            where: { branchId, brandId },
+        });
+        return row ? row.isOpen !== false : true;
     }
 }

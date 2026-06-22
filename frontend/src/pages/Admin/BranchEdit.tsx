@@ -9,6 +9,7 @@ import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import { adminService } from '../../services/api/adminService';
+import { useAuth } from '../../contexts/AuthContext';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
@@ -32,7 +33,6 @@ const emptyForm = {
   supports_delivery: false,
   delivery_radius_km: '10',
   is_active: true,
-  menu_enabled: true,
 };
 // ssh -i ~/Downloads/sera.pem ubuntu@3.148.166.208
 // asad@asad:~$ ssh -i ~/Downloads/foodies-dev.pem ubuntu@13.250.34.49
@@ -70,6 +70,40 @@ const BranchEdit: React.FC = () => {
     enabled: branchId != null && !isNaN(branchId),
   });
 
+  // Per-brand online open/close at this branch.
+  const { user } = useAuth();
+  const isBrandLocked = user?.allowed_brand_ids != null;
+  const { data: brandAvailability } = useQuery({
+    queryKey: ['branch-brand-availability', branchId],
+    queryFn: async () => {
+      const res = await apiClient.get<
+        { brand_id: number; name: string | null; is_open: boolean; closed_at: string | null }[]
+      >(`/admin/branches/${branchId}/brand-availability`);
+      return res.data;
+    },
+    enabled: branchId != null && !isNaN(branchId),
+  });
+
+  const toggleBrandOpen = useMutation({
+    mutationFn: ({ brandId: bid, is_open }: { brandId: number; is_open: boolean }) =>
+      apiClient.patch(`/admin/branches/${branchId}/brands/${bid}/availability`, { is_open }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['branch-brand-availability', branchId] });
+      toast.success('Brand availability updated');
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to update'),
+  });
+
+  const closeAllBrands = useMutation({
+    mutationFn: (is_open: boolean) =>
+      apiClient.patch(`/admin/branches/${branchId}/brands-availability`, { is_open }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['branch-brand-availability', branchId] });
+      toast.success('All brands updated');
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to update'),
+  });
+
   useEffect(() => {
     if (branch) {
       setFormData({
@@ -88,7 +122,6 @@ const BranchEdit: React.FC = () => {
         supports_delivery: branch.supports_delivery ?? false,
         delivery_radius_km: branch.delivery_radius_km != null ? String(branch.delivery_radius_km) : '10',
         is_active: branch.is_active ?? true,
-        menu_enabled: branch.menu_enabled ?? true,
       });
     } else if (isNew) {
       setFormData(emptyForm);
@@ -204,7 +237,6 @@ const BranchEdit: React.FC = () => {
         supports_delivery: data.supports_delivery,
         delivery_radius_km: data.delivery_radius_km ? +data.delivery_radius_km : 10,
         is_active: data.is_active,
-        menu_enabled: data.menu_enabled,
       };
       if (linkedMenuItemIds.length) payload.menu_item_ids = linkedMenuItemIds;
       const response = await apiClient.post('/admin/branches', payload);
@@ -235,7 +267,6 @@ const BranchEdit: React.FC = () => {
         supports_delivery: data.supports_delivery,
         delivery_radius_km: data.delivery_radius_km ? +data.delivery_radius_km : 10,
         is_active: data.is_active,
-        menu_enabled: data.menu_enabled,
       };
       if (data.brand_ids.length) payload.brand_ids = data.brand_ids;
       payload.menu_item_ids = linkedMenuItemIds;
@@ -446,26 +477,50 @@ const BranchEdit: React.FC = () => {
           <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-600 pb-2 mb-4">Status</h2>
           <div className="space-y-4">
             <div className="flex flex-wrap items-start gap-6">
-              <label className="flex items-start gap-2 cursor-pointer max-w-xs">
+              <label className="flex items-start gap-2 cursor-pointer max-w-md">
                 <input type="checkbox" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} className="mt-1 rounded border-gray-300 dark:border-slate-500 text-red-600 focus:ring-red-500" />
                 <span>
-                  <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Active</span>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Branch is available in admin lists and can receive orders. Turn off to hide or disable the branch.</p>
-                </span>
-              </label>
-              <label className="flex items-start gap-2 cursor-pointer max-w-xs">
-                <input type="checkbox" checked={formData.menu_enabled} onChange={(e) => setFormData({ ...formData, menu_enabled: e.target.checked })} className="mt-1 rounded border-gray-300 dark:border-slate-500 text-red-600 focus:ring-red-500" />
-                <span>
-                  <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Menu enabled</span>
-                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">When on, POS and consumer menu show the items you link below. When off, the branch menu is empty (no items visible).</p>
+                  <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Branch active</span>
+                  <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Master switch for the whole location. When OFF, this branch is hidden from customers and accepts <strong>no orders on any channel — online AND POS</strong>. To pause just one brand's online ordering (without closing the branch or POS), use the per-brand Open/Closed toggles below.</p>
                 </span>
               </label>
             </div>
-            {/* <p className="text-xs text-gray-500 dark:text-slate-400 pt-2 border-t border-gray-200 dark:border-slate-600">
-              The “Active/Inactive” label in admin is derived automatically from the Active checkbox.
-            </p> */}
           </div>
         </Card>
+
+        {!isNew && (
+          <Card className="p-6 dark:bg-slate-800 dark:border-slate-700">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 dark:border-slate-600 pb-2 mb-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">Brand online availability</h2>
+              {!isBrandLocked && (brandAvailability?.length ?? 0) > 0 && (
+                <div className="flex gap-2">
+                  <Button type="button" size="small" variant="outline" onClick={() => closeAllBrands.mutate(false)} isLoading={closeAllBrands.isPending}>Close all brands</Button>
+                  <Button type="button" size="small" variant="outline" onClick={() => closeAllBrands.mutate(true)} isLoading={closeAllBrands.isPending}>Open all</Button>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-slate-400 mb-4">Pause a single brand's <strong>online</strong> orders (consumer app/web/kiosk) at this branch. POS is unaffected. This is separate from the branch's Active switch above.</p>
+            {!brandAvailability?.length ? (
+              <p className="text-sm text-gray-500 dark:text-slate-400 py-2">No brands assigned to this branch.</p>
+            ) : (
+              <div className="space-y-2">
+                {brandAvailability.map((b) => (
+                  <div key={b.brand_id} className="flex items-center justify-between gap-3 py-2 border-b border-gray-100 dark:border-slate-700 last:border-0">
+                    <span className="text-sm font-medium text-gray-700 dark:text-slate-200">{b.name ?? `Brand ${b.brand_id}`}</span>
+                    <div className="flex items-center gap-3">
+                      <span className={b.is_open ? 'text-xs font-semibold text-green-600 dark:text-green-400' : 'text-xs font-semibold text-amber-600 dark:text-amber-400'}>
+                        {b.is_open ? 'Open' : 'Closed'}
+                      </span>
+                      <Button type="button" size="small" variant={b.is_open ? 'danger' : 'primary'} onClick={() => toggleBrandOpen.mutate({ brandId: b.brand_id, is_open: !b.is_open })} isLoading={toggleBrandOpen.isPending}>
+                        {b.is_open ? 'Close' : 'Open'}
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
 
         <Card className="p-6 dark:bg-slate-800 dark:border-slate-700">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-600 pb-2 mb-4">Menu items at this branch</h2>

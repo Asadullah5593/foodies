@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { Brand } from '../entities/brand.entity';
+import { Branch } from '../entities/branch.entity';
 import { BranchBrand } from '../entities/branch-brand.entity';
 import { BrandOrderRating } from '../entities/brand-order-rating.entity';
 import { MediaStorageService } from '../media/media-storage.service';
@@ -34,9 +35,14 @@ export class BrandsService {
             const aggMap = await this.loadRatingAggregates(
                 list.map((b) => b.id),
             );
+            const statusMap = await this.loadOnlineStatus(
+                list.map((b) => b.id),
+            );
             return list.map((b) => ({
                 ...this.toResponse(b),
                 ...this.mergeAdminRatingFields(b.id, aggMap),
+                online_status: statusMap.get(b.id)?.status ?? 'none',
+                online_branch_count: statusMap.get(b.id)?.count ?? 0,
             }));
         }
         const list = await this.repo.find({
@@ -44,13 +50,65 @@ export class BrandsService {
             order: { id: 'ASC' },
         });
         const aggMap = await this.loadRatingAggregates(list.map((b) => b.id));
+        const statusMap = await this.loadOnlineStatus(list.map((b) => b.id));
         return list.map((b) => ({
             ...this.toResponse(b),
             ...this.mergeAdminRatingFields(b.id, aggMap),
+            online_status: statusMap.get(b.id)?.status ?? 'none',
+            online_branch_count: statusMap.get(b.id)?.count ?? 0,
             tenant_name:
                 (b as Brand & { tenant?: { name: string } }).tenant?.name ??
                 null,
         }));
+    }
+
+    /**
+     * Aggregate online open/close status per brand across its branches:
+     * 'open' (all branches open), 'closed' (all closed), 'partial' (mixed),
+     * 'none' (brand not at any branch).
+     */
+    private async loadOnlineStatus(
+        brandIds: number[],
+    ): Promise<
+        Map<
+            number,
+            { status: 'open' | 'closed' | 'partial' | 'none'; count: number }
+        >
+    > {
+        const map = new Map<
+            number,
+            { status: 'open' | 'closed' | 'partial' | 'none'; count: number }
+        >();
+        if (brandIds.length === 0) return map;
+        const rows = await this.branchBrandRepo
+            .createQueryBuilder('bb')
+            .select('bb.brandId', 'brandId')
+            .addSelect('COUNT(*)', 'total')
+            .addSelect(
+                'COUNT(*) FILTER (WHERE bb.is_open = true)',
+                'open_count',
+            )
+            .where('bb.brandId IN (:...brandIds)', { brandIds })
+            .groupBy('bb.brandId')
+            .getRawMany<{
+                brandId: string | number;
+                total: string | number;
+                open_count: string | number;
+            }>();
+        for (const r of rows) {
+            const total = Number(r.total);
+            const open = Number(r.open_count);
+            const status =
+                total === 0
+                    ? 'none'
+                    : open === total
+                      ? 'open'
+                      : open === 0
+                        ? 'closed'
+                        : 'partial';
+            map.set(Number(r.brandId), { status, count: total });
+        }
+        return map;
     }
 
     async findAll(tenantId: number) {
@@ -93,12 +151,15 @@ export class BrandsService {
             where: { branchId },
             relations: ['branch'],
         });
-        // Consumer-facing: a disabled-menu or inactive branch exposes no brands
-        // (mirrors POS, where the whole menu is hidden when menu is disabled).
+        // Consumer-facing: an inactive branch exposes no brands.
         const branch = branchBrands[0]?.branch;
-        if (branch && (!branch.isActive || !branch.menuEnabled)) return [];
+        if (branch && !branch.isActive) return [];
         const brandIds = branchBrands.map((bb) => bb.brandId);
         if (brandIds.length === 0) return [];
+        // Per-(branch,brand) online open/close: brands stay listed but carry is_open.
+        const openByBrand = new Map<number, boolean>(
+            branchBrands.map((bb) => [bb.brandId, bb.isOpen !== false]),
+        );
         const list = await this.repo.find({
             where: { id: In(brandIds), isActive: true },
             order: { id: 'ASC' },
@@ -107,7 +168,10 @@ export class BrandsService {
         const aggMap = await this.loadRatingAggregates(
             filtered.map((b) => b.id),
         );
-        return filtered.map((b) => this.toPublicResponse(b, aggMap.get(b.id)));
+        return filtered.map((b) => ({
+            ...this.toPublicResponse(b, aggMap.get(b.id)),
+            is_open: openByBrand.get(b.id) ?? true,
+        }));
     }
 
     /** Public: active brands by explicit id list (for consumer app helpers). */
@@ -119,6 +183,58 @@ export class BrandsService {
         });
         const aggMap = await this.loadRatingAggregates(list.map((b) => b.id));
         return list.map((b) => this.toPublicResponse(b, aggMap.get(b.id)));
+    }
+
+    /**
+     * Public (consumer app): flatten nearby branches into one row per (brand, branch).
+     * Each row is the public brand response plus the branch it is served from and the
+     * customer's distance to that branch. A brand available at several nearby branches
+     * yields one row per branch. Optional `search` filters by brand name; optional
+     * `brandIdFilter` restricts to a set of brand ids (e.g. brands offering a category).
+     */
+    async findPublicNearbyRows(
+        nearby: Array<{ branch: Branch; distanceKm: number }>,
+        search?: string,
+        brandIdFilter?: Set<number>,
+    ) {
+        // Collect candidate brand ids across all nearby branches.
+        const brandIds = new Set<number>();
+        for (const { branch } of nearby) {
+            for (const bb of branch.branchBrands ?? []) {
+                brandIds.add(bb.brandId);
+            }
+        }
+        if (brandIds.size === 0) return [];
+        const list = await this.repo.find({
+            where: { id: In([...brandIds]), isActive: true },
+        });
+        const allowed = this.filterBrandsBySearch(list, search).filter(
+            (b) => !brandIdFilter || brandIdFilter.has(b.id),
+        );
+        const brandById = new Map(allowed.map((b) => [b.id, b]));
+        const aggMap = await this.loadRatingAggregates(
+            allowed.map((b) => b.id),
+        );
+        const rows = nearby.flatMap(({ branch, distanceKm }) =>
+            (branch.branchBrands ?? []).flatMap((bb) => {
+                const brand = brandById.get(bb.brandId);
+                if (!brand) return [];
+                return [
+                    {
+                        ...this.toPublicResponse(brand, aggMap.get(brand.id)),
+                        is_open: bb.isOpen !== false,
+                        branch_id: branch.id,
+                        branch_name: branch.name,
+                        distance_km: Math.round(distanceKm * 10) / 10,
+                    },
+                ];
+            }),
+        );
+        rows.sort(
+            (a, b) =>
+                a.distance_km - b.distance_km || a.name.localeCompare(b.name),
+        );
+        return rows;
     }
 
     private async loadRatingAggregates(
@@ -363,6 +479,170 @@ export class BrandsService {
             );
         }
         return this.toResponse(brand);
+    }
+
+    private static readonly LOYALTY_DEFAULTS = {
+        displayName: 'Reward Points',
+        spendPerPoint: 1000,
+        minOrderToEarn: 1,
+        cashValuePerPoint: 10,
+        minOrderToRedeem: 1,
+        expiryPeriod: 365,
+        expiryUnit: 'day' as const,
+    };
+
+    private async findBrandForLoyalty(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ): Promise<Brand> {
+        if (allowedBrandIds != null && !allowedBrandIds.includes(id)) {
+            throw new NotFoundException('Brand not found');
+        }
+        const brand = await this.repo.findOne({
+            where: tenantId != null ? { id, tenantId } : { id },
+        });
+        if (!brand) throw new NotFoundException('Brand not found');
+        return brand;
+    }
+
+    private toLoyaltyResponse(brand: Brand) {
+        const def = BrandsService.LOYALTY_DEFAULTS;
+        const s = brand.loyaltySettings ?? {};
+        return {
+            loyalty_enabled: brand.loyaltyEnabled,
+            display_name: s.displayName ?? def.displayName,
+            spend_per_point: s.spendPerPoint ?? def.spendPerPoint,
+            min_order_to_earn: s.minOrderToEarn ?? def.minOrderToEarn,
+            cash_value_per_point: s.cashValuePerPoint ?? def.cashValuePerPoint,
+            min_order_to_redeem: s.minOrderToRedeem ?? def.minOrderToRedeem,
+            expiry_period: s.expiryPeriod ?? def.expiryPeriod,
+            expiry_unit: s.expiryUnit ?? def.expiryUnit,
+        };
+    }
+
+    /** Get loyalty settings for a brand (admin). Brand-locked users only their own. */
+    async getLoyaltySettings(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ) {
+        const brand = await this.findBrandForLoyalty(
+            id,
+            tenantId,
+            allowedBrandIds,
+        );
+        return this.toLoyaltyResponse(brand);
+    }
+
+    /** Update loyalty settings for a brand (admin). Brand-locked users only their own. */
+    async updateLoyaltySettings(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds: number[] | null | undefined,
+        dto: {
+            loyalty_enabled?: boolean;
+            display_name?: string;
+            spend_per_point?: number;
+            min_order_to_earn?: number;
+            cash_value_per_point?: number;
+            min_order_to_redeem?: number;
+            expiry_period?: number;
+            expiry_unit?: 'day' | 'month' | 'year';
+        },
+    ) {
+        const brand = await this.findBrandForLoyalty(
+            id,
+            tenantId,
+            allowedBrandIds,
+        );
+        const def = BrandsService.LOYALTY_DEFAULTS;
+        const cur = brand.loyaltySettings ?? {};
+        if (dto.loyalty_enabled !== undefined)
+            brand.loyaltyEnabled = dto.loyalty_enabled;
+        brand.loyaltySettings = {
+            displayName: dto.display_name ?? cur.displayName ?? def.displayName,
+            spendPerPoint:
+                dto.spend_per_point ?? cur.spendPerPoint ?? def.spendPerPoint,
+            minOrderToEarn:
+                dto.min_order_to_earn ??
+                cur.minOrderToEarn ??
+                def.minOrderToEarn,
+            cashValuePerPoint:
+                dto.cash_value_per_point ??
+                cur.cashValuePerPoint ??
+                def.cashValuePerPoint,
+            minOrderToRedeem:
+                dto.min_order_to_redeem ??
+                cur.minOrderToRedeem ??
+                def.minOrderToRedeem,
+            expiryPeriod:
+                dto.expiry_period ?? cur.expiryPeriod ?? def.expiryPeriod,
+            expiryUnit: dto.expiry_unit ?? cur.expiryUnit ?? def.expiryUnit,
+        };
+        await this.repo.save(brand);
+        return this.toLoyaltyResponse(brand);
+    }
+
+    /** List the branches this brand is at (scoped to the user) with each branch's online open state. */
+    async getBranchAvailability(
+        brandId: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+        allowedBranchIds?: number[] | null,
+    ) {
+        if (allowedBrandIds != null && !allowedBrandIds.includes(brandId)) {
+            throw new NotFoundException('Brand not found');
+        }
+        const brand = await this.repo.findOne({
+            where:
+                tenantId != null ? { id: brandId, tenantId } : { id: brandId },
+        });
+        if (!brand) throw new NotFoundException('Brand not found');
+        let rows = await this.branchBrandRepo.find({
+            where: { brandId },
+            relations: ['branch'],
+        });
+        if (allowedBranchIds != null) {
+            rows = rows.filter((r) => allowedBranchIds.includes(r.branchId));
+        }
+        return rows
+            .map((r) => ({
+                branch_id: r.branchId,
+                branch_name: r.branch?.name ?? null,
+                is_open: r.isOpen !== false,
+            }))
+            .sort((a, b) => a.branch_id - b.branch_id);
+    }
+
+    /** Set a brand's online availability across all its branches (restricted to allowedBranchIds when brand-locked/branch-locked). */
+    async setAvailabilityEverywhere(
+        brandId: number,
+        isOpen: boolean,
+        userId: number | null,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+        allowedBranchIds?: number[] | null,
+    ) {
+        if (allowedBrandIds != null && !allowedBrandIds.includes(brandId)) {
+            throw new NotFoundException('Brand not found');
+        }
+        const brand = await this.repo.findOne({
+            where:
+                tenantId != null ? { id: brandId, tenantId } : { id: brandId },
+        });
+        if (!brand) throw new NotFoundException('Brand not found');
+        let rows = await this.branchBrandRepo.find({ where: { brandId } });
+        if (allowedBranchIds != null) {
+            rows = rows.filter((r) => allowedBranchIds.includes(r.branchId));
+        }
+        for (const r of rows) {
+            r.isOpen = isOpen;
+            r.closedAt = isOpen ? null : new Date();
+            r.closedByUserId = isOpen ? null : (userId ?? null);
+        }
+        await this.branchBrandRepo.save(rows);
+        return { brand_id: brandId, is_open: isOpen, updated: rows.length };
     }
 
     async remove(id: number, tenantId: number) {

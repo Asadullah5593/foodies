@@ -312,7 +312,10 @@ export class BranchUsersService {
             }
             lockedBrandId = allowedBrandIds[0];
             for (const a of assignments) {
-                if (a.brand_id != null && Number(a.brand_id) !== lockedBrandId) {
+                if (
+                    a.brand_id != null &&
+                    Number(a.brand_id) !== lockedBrandId
+                ) {
                     throw new ForbiddenException(
                         'You can only assign users to your own brand',
                     );
@@ -384,7 +387,9 @@ export class BranchUsersService {
         allowedBrandIds?: number[] | null,
     ): Promise<{ message: string; assigned_count: number }> {
         if (!dto.branch_ids?.length) {
-            throw new BadRequestException('At least one branch must be selected');
+            throw new BadRequestException(
+                'At least one branch must be selected',
+            );
         }
         const assignment = {
             user_id: dto.user_id,
@@ -392,7 +397,11 @@ export class BranchUsersService {
             brand_id: dto.brand_id ?? null,
         };
         for (const branchId of dto.branch_ids) {
-            await this.assignUsersWithRoles(branchId, [assignment], allowedBrandIds);
+            await this.assignUsersWithRoles(
+                branchId,
+                [assignment],
+                allowedBrandIds,
+            );
         }
         return {
             message: `User assigned to ${dto.branch_ids.length} branch(es)`,

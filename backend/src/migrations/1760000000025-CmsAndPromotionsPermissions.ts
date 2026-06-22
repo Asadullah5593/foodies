@@ -49,10 +49,9 @@ export class CmsAndPromotionsPermissions1760000000025 implements MigrationInterf
 
     public async down(queryRunner: QueryRunner): Promise<void> {
         for (const p of this.permissions) {
-            await queryRunner.query(
-                `DELETE FROM permissions WHERE name = $1`,
-                [p.name],
-            );
+            await queryRunner.query(`DELETE FROM permissions WHERE name = $1`, [
+                p.name,
+            ]);
         }
     }
 }

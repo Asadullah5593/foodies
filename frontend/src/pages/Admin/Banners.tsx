@@ -326,6 +326,14 @@ const Banners: React.FC = () => {
                       <Button size="small" variant="edit" onClick={() => handleEdit(banner)}>Edit</Button>
                       <Button
                         size="small"
+                        variant={banner.is_active ? 'outline' : 'primary'}
+                        isLoading={updateMutation.isPending}
+                        onClick={() => updateMutation.mutate({ id: banner.id, data: { is_active: !banner.is_active } })}
+                      >
+                        {banner.is_active ? 'Set inactive' : 'Set active'}
+                      </Button>
+                      <Button
+                        size="small"
                         variant="danger"
                         isLoading={deleteMutation.isPending}
                         onClick={() => {

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
-import { MdClose, MdOutlineWarningAmber, MdOutlineSchedule } from 'react-icons/md';
+import { MdClose, MdOutlineWarningAmber, MdOutlineSchedule, MdOutlineRestaurantMenu, MdOutlineStorefront } from 'react-icons/md';
 import { Link } from 'react-router-dom';
 import apiClient from '../../utils/apiClient';
 import { menuService, orderService, adminService, CreateOrderRequest } from '../../services/api';
@@ -60,6 +60,7 @@ const OrderTaking: React.FC = () => {
   const [addCustomerName, setAddCustomerName] = useState('');
   const [addCustomerPhone, setAddCustomerPhone] = useState('');
   const [addCustomerPhoneError, setAddCustomerPhoneError] = useState('');
+  const [linkConfirm, setLinkConfirm] = useState<{ name: string; phone: string; existingName: string | null } | null>(null);
   const [orderNotes, setOrderNotes] = useState('');
   const [selectedBrandId, setSelectedBrandId] = useState<number | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
@@ -250,15 +251,17 @@ const OrderTaking: React.FC = () => {
   });
 
   const normalizedPhone = customerPhone.trim() ? normalizePakistaniPhone(customerPhone.trim()) : null;
+  // POS redeems against the brand-scoped POS wallet, so the balance depends on
+  // the cart's brand. Refetch when the cart brand changes.
   const { data: loyaltyBalance } = useQuery({
-    queryKey: ['loyalty-balance', branchId, normalizedPhone],
+    queryKey: ['loyalty-balance', branchId, normalizedPhone, cartBrandId],
     queryFn: async () => {
       const res = await apiClient.get<{ balance: number; displayName: string }>('/public/consumer/loyalty/balance', {
-        params: { branch_id: branchId, phone: normalizedPhone },
+        params: { branch_id: branchId, phone: normalizedPhone, wallet_type: 'pos', brand_id: cartBrandId },
       });
       return res.data;
     },
-    enabled: branchId != null && normalizedPhone != null,
+    enabled: branchId != null && normalizedPhone != null && cartBrandId != null,
   });
 
   React.useEffect(() => {
@@ -269,8 +272,8 @@ const OrderTaking: React.FC = () => {
   }, [loyaltyBalance?.balance]);
 
   const addCustomerMutation = useMutation({
-    mutationFn: (data: { name: string; phone: string }) => adminService.createCustomer(data),
-    onSuccess: (newCustomer: { id: number; name: string | null; phone: string }) => {
+    mutationFn: (data: { name: string; phone: string; link?: boolean }) => adminService.createCustomer(data),
+    onSuccess: (newCustomer: { id: number; name: string | null; phone: string; linked?: boolean }) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       setCustomerName((newCustomer.name ?? '').trim());
       setCustomerPhone((newCustomer.phone ?? '').trim());
@@ -279,9 +282,17 @@ const OrderTaking: React.FC = () => {
       setAddCustomerName('');
       setAddCustomerPhone('');
       setAddCustomerPhoneError('');
-      toast.success('Customer added');
+      setLinkConfirm(null);
+      toast.success(newCustomer.linked ? 'Linked existing customer' : 'Customer added');
     },
-    onError: (err: any) => {
+    onError: (err: any, variables) => {
+      const existing = err.response?.status === 409 ? err.response?.data?.existing : null;
+      if (existing) {
+        // Phone belongs to a sibling brand's customer — confirm before linking.
+        setShowAddCustomerModal(false);
+        setLinkConfirm({ name: variables.name, phone: variables.phone, existingName: existing.name ?? null });
+        return;
+      }
       toast.error(err.response?.data?.message || 'Failed to add customer');
     },
   });
@@ -1205,17 +1216,53 @@ const OrderTaking: React.FC = () => {
   }
 
   if (rawMenu.length === 0) {
+    const branchInactive = branchMenu?.branch_active === false;
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-4rem)] bg-foodies-surfaceMuted dark:bg-slate-900 p-6">
-        <Card className="w-full max-w-md">
-          <div className="mb-4">
-            <POSFilters {...filtersProps} />
+      <div className="flex min-h-[calc(100vh-4rem)] flex-col items-center bg-foodies-surfaceMuted dark:bg-slate-900 px-6 pt-16 pb-12 text-center">
+        <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-foodies-primary/10 text-foodies-primary ring-1 ring-foodies-primary/20">
+          {branchInactive ? (
+            <MdOutlineStorefront className="h-10 w-10" />
+          ) : (
+            <MdOutlineRestaurantMenu className="h-10 w-10" />
+          )}
+        </div>
+        <h2 className="mt-6 text-2xl font-bold text-foodies-textPrimary dark:text-slate-100">
+          {branchInactive ? 'This branch is inactive' : 'No menu items for this branch'}
+        </h2>
+        <p className="mt-2 max-w-sm text-sm leading-relaxed text-foodies-textSecondary dark:text-slate-400">
+          {branchInactive
+            ? 'This branch is currently marked inactive, so it takes no orders. Reactivate it before taking orders, or switch to another branch.'
+            : 'No menu items are linked to this branch yet. Link items from its brands before taking orders, or switch to another branch.'}
+        </p>
+
+        <Link
+          to={branchInactive ? '/admin/branches' : `/admin/branches/${effectiveBranchId}`}
+          className="mt-8 w-full max-w-xs"
+        >
+          <Button variant="gradient" className="w-full rounded-xl py-3 font-semibold">
+            {branchInactive ? 'Manage branches' : 'Link menu items'}
+          </Button>
+        </Link>
+
+        {(posBranches?.length ?? 0) > 1 && (
+          <div className="mt-8 w-full max-w-xs">
+            <div className="mb-3 flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-foodies-textSecondary dark:text-slate-500">
+              <span className="h-px flex-1 bg-foodies-border dark:bg-slate-700" />
+              or switch branch
+              <span className="h-px flex-1 bg-foodies-border dark:bg-slate-700" />
+            </div>
+            <SearchableSelect
+              value={effectiveBranchId != null ? String(effectiveBranchId) : ''}
+              onChange={(v) => filtersProps.onBranchChange(v === '' ? null : Number(v))}
+              options={(posBranches ?? []).map((b) => ({
+                value: String(b.id),
+                label: `${b.name} (${b.code})`,
+              }))}
+              placeholder="Select branch"
+              className="w-full"
+            />
           </div>
-          <div className="text-center py-8">
-            <h2 className="text-2xl font-bold text-foodies-textPrimary dark:text-slate-100 mb-2">No menu items for this branch</h2>
-            <p className="text-foodies-textSecondary dark:text-slate-400">Add menu items and enable the menu for this branch in the admin panel. You can switch branch above.</p>
-          </div>
-        </Card>
+        )}
       </div>
     );
   }
@@ -1609,6 +1656,34 @@ const OrderTaking: React.FC = () => {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Link existing customer confirmation (phone belongs to a sibling brand) */}
+      <Modal
+        isOpen={linkConfirm != null}
+        onClose={() => setLinkConfirm(null)}
+        title="Customer already exists"
+      >
+        {linkConfirm && (
+          <div className="space-y-4">
+            <p className="text-gray-700">
+              <span className="font-mono">{linkConfirm.phone}</span> already belongs to{' '}
+              <strong>{linkConfirm.existingName ?? 'an existing customer'}</strong> under another brand.
+              Link this customer to your brand so you can use them here?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setLinkConfirm(null)}>Cancel</Button>
+              <Button
+                isLoading={addCustomerMutation.isPending}
+                onClick={() =>
+                  addCustomerMutation.mutate({ name: linkConfirm.name, phone: linkConfirm.phone, link: true })
+                }
+              >
+                Link customer
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <ItemConfigModal

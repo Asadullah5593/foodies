@@ -47,9 +47,7 @@ export class ShortOrderNumber1760000000022 implements MigrationInterface {
         await queryRunner.query(
             `DROP INDEX IF EXISTS "UQ_orders_branch_brand_day_number"`,
         );
-        await queryRunner.query(
-            `DROP INDEX IF EXISTS "UQ_orders_order_id"`,
-        );
+        await queryRunner.query(`DROP INDEX IF EXISTS "UQ_orders_order_id"`);
         await queryRunner.query(`
             ALTER TABLE "orders" DROP COLUMN IF EXISTS "order_id"
         `);

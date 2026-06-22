@@ -29,7 +29,9 @@ export class CmsBannersTable1760000000023 implements MigrationInterface {
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`DROP INDEX IF EXISTS "IDX_banners_tenant_active"`);
+        await queryRunner.query(
+            `DROP INDEX IF EXISTS "IDX_banners_tenant_active"`,
+        );
         await queryRunner.query(`DROP TABLE IF EXISTS "banners"`);
     }
 }

@@ -84,9 +84,11 @@ export class BannersService {
             if (!t) throw new BadRequestException('Title cannot be empty');
             b.title = t;
         }
-        if (dto.subtitle !== undefined) b.subtitle = dto.subtitle?.trim() || null;
+        if (dto.subtitle !== undefined)
+            b.subtitle = dto.subtitle?.trim() || null;
         if (dto.image_url !== undefined) b.imageUrl = dto.image_url.trim();
-        if (dto.link_url !== undefined) b.linkUrl = dto.link_url?.trim() || null;
+        if (dto.link_url !== undefined)
+            b.linkUrl = dto.link_url?.trim() || null;
         if (dto.is_active !== undefined) b.isActive = dto.is_active;
         if (dto.sort_order !== undefined) b.sortOrder = dto.sort_order;
         if (dto.valid_from !== undefined)

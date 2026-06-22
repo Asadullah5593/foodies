@@ -34,7 +34,14 @@ export class UploadController {
                 file: { type: 'string', format: 'binary' },
                 folder: {
                     type: 'string',
-                    enum: ['brands', 'menu-items', 'customer-profiles', 'misc', 'banners', 'promotions'],
+                    enum: [
+                        'brands',
+                        'menu-items',
+                        'customer-profiles',
+                        'misc',
+                        'banners',
+                        'promotions',
+                    ],
                 },
             },
         },

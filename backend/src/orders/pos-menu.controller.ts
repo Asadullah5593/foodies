@@ -208,6 +208,7 @@ export class PosMenuController {
                 : openShifts;
         return {
             branch_id: branchId,
+            branch_active: branch?.isActive === true,
             menu: scopedMenu,
             open_shift: visibleShifts[0] ?? null,
             open_shifts: visibleShifts,

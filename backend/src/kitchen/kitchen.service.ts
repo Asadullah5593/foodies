@@ -250,9 +250,13 @@ export class KitchenService {
                         modifiers:
                             oi.modifiers
                                 ?.map((m) => ({
-                                    name: m.nameSnapshot ?? m.modifier?.name ?? '',
+                                    name:
+                                        m.nameSnapshot ??
+                                        m.modifier?.name ??
+                                        '',
                                     quantity: m.quantity ?? 1,
-                                    group: m.modifier?.modifierGroup?.name ?? null,
+                                    group:
+                                        m.modifier?.modifierGroup?.name ?? null,
                                 }))
                                 .filter((m) => m.name) ?? [],
                     };
@@ -288,7 +292,9 @@ export class KitchenService {
             status: order.status,
             placed_at: order.placedAt?.toISOString() ?? null,
             rider_id: order.riderId ?? null,
-            rider: order.rider ? { id: order.rider.id, name: order.rider.name } : null,
+            rider: order.rider
+                ? { id: order.rider.id, name: order.rider.name }
+                : null,
             items:
                 sortedItems.map((oi) => {
                     type OI = typeof oi & {
@@ -328,9 +334,13 @@ export class KitchenService {
                         modifiers:
                             o.modifiers
                                 ?.map((m) => ({
-                                    name: m.nameSnapshot ?? m.modifier?.name ?? '',
+                                    name:
+                                        m.nameSnapshot ??
+                                        m.modifier?.name ??
+                                        '',
                                     quantity: m.quantity ?? 1,
-                                    group: m.modifier?.modifierGroup?.name ?? null,
+                                    group:
+                                        m.modifier?.modifierGroup?.name ?? null,
                                 }))
                                 .filter((m) => m.name) ?? [],
                     };

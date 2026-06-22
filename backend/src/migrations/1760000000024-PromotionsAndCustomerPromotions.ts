@@ -62,10 +62,16 @@ export class PromotionsAndCustomerPromotions1760000000024 implements MigrationIn
     }
 
     public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`DROP INDEX IF EXISTS "IDX_customer_promotions_customer_status"`);
+        await queryRunner.query(
+            `DROP INDEX IF EXISTS "IDX_customer_promotions_customer_status"`,
+        );
         await queryRunner.query(`DROP TABLE IF EXISTS "customer_promotions"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "IDX_promotions_eligibility"`);
-        await queryRunner.query(`DROP INDEX IF EXISTS "IDX_promotions_tenant_active"`);
+        await queryRunner.query(
+            `DROP INDEX IF EXISTS "IDX_promotions_eligibility"`,
+        );
+        await queryRunner.query(
+            `DROP INDEX IF EXISTS "IDX_promotions_tenant_active"`,
+        );
         await queryRunner.query(`DROP TABLE IF EXISTS "promotions"`);
     }
 }

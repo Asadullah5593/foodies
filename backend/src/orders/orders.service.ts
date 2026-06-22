@@ -3,6 +3,7 @@ import {
     NotFoundException,
     BadRequestException,
     ForbiddenException,
+    ConflictException,
     Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,12 +14,17 @@ import { OrderItem } from '../entities/order-item.entity';
 import { OrderItemAddon } from '../entities/order-item-addon.entity';
 import { OrderItemModifier } from '../entities/order-item-modifier.entity';
 import { Branch } from '../entities/branch.entity';
+import { Brand } from '../entities/brand.entity';
 import { Tenant } from '../entities/tenant.entity';
 import { Discount } from '../entities/discount.entity';
 import { User } from '../entities/user.entity';
 import { MenuService } from '../menu/menu.service';
-import { LoyaltyService } from '../loyalty/loyalty.service';
+import {
+    LoyaltyService,
+    mapSourceToWalletType,
+} from '../loyalty/loyalty.service';
 import { ShiftsService } from '../shifts/shifts.service';
+import { BranchesService } from '../branches/branches.service';
 import { CustomersService } from '../customers/customers.service';
 import { InventoryConsumptionService } from '../inventory/inventory-consumption.service';
 import { normalizePakistaniPhone } from '../utils/phone';
@@ -51,6 +57,7 @@ export class OrdersService {
         private menuService: MenuService,
         private loyaltyService: LoyaltyService,
         private shiftsService: ShiftsService,
+        private branchesService: BranchesService,
         private customersService: CustomersService,
         private inventoryConsumptionService: InventoryConsumptionService,
         private riderOpsMetrics: RiderOpsMetricsService,
@@ -708,8 +715,7 @@ export class OrdersService {
             // optional; takeaway & delivery require a name + phone (delivery
             // also needs a delivery address).
             const customerRequired =
-                dto.order_type === 'takeaway' ||
-                dto.order_type === 'delivery';
+                dto.order_type === 'takeaway' || dto.order_type === 'delivery';
             if (customerRequired) {
                 if (!dto.customer_name?.trim()) {
                     throw new BadRequestException(
@@ -948,6 +954,25 @@ export class OrdersService {
             }
         }
 
+        // Online channels (app/web) respect the per-(branch,brand) open/close
+        // switch. POS is exempt (gated by shifts above); kiosk is gated at submit.
+        if (source === 'consumer_app' || source === 'consumer_web') {
+            const pairs = new Set(
+                lineDetails.map((l) => `${l.branchId}-${l.brandId}`),
+            );
+            for (const pair of pairs) {
+                const [bid, brid] = pair.split('-').map(Number);
+                if (!(await this.branchesService.isBrandOpenAt(bid, brid))) {
+                    const brand = await this.branchRepo.manager
+                        .getRepository(Brand)
+                        .findOne({ where: { id: brid } });
+                    throw new ConflictException(
+                        `${brand?.name ?? 'This brand'} is currently closed at this branch.`,
+                    );
+                }
+            }
+        }
+
         // Resolve discounts at full-cart level and allocate to each line (use primary branch for discount context)
         const auto = await this.resolveAutoDiscount(
             tenantId,
@@ -1057,6 +1082,7 @@ export class OrdersService {
         let loyaltyDiscountAmount = 0;
         let loyaltyPointsToRedeem = 0;
         const firstKey = sortedGroups[0];
+        const firstBrandId = Number(firstKey.split('-')[1]);
         const firstIndices = groupToIndices.get(firstKey)!;
         const firstOrderSubtotal = firstIndices.reduce(
             (s, i) => s + lineDetails[i].itemSubtotal,
@@ -1070,9 +1096,7 @@ export class OrdersService {
             Math.round((firstOrderSubtotal - firstOrderLineDiscount) * 100) /
             100;
         if (
-            (source === 'pos' ||
-                source === 'consumer_web' ||
-                source === 'consumer_app') &&
+            (source === 'pos' || source === 'consumer_app') &&
             dto.customer_phone?.trim() &&
             (dto.loyalty_points_to_redeem ?? 0) > 0
         ) {
@@ -1080,6 +1104,8 @@ export class OrdersService {
                 tenantId,
                 customerPhoneNormalized ?? dto.customer_phone.trim(),
                 firstOrderAfterDiscount,
+                source,
+                firstBrandId,
             );
             if (preview) {
                 loyaltyPointsToRedeem = Math.min(
@@ -1353,6 +1379,8 @@ export class OrdersService {
                 firstOrderIdForLoyalty,
                 loyaltyPointsToRedeem,
                 firstOrderAfterDiscount,
+                source,
+                firstBrandId,
             );
         }
 
@@ -1391,11 +1419,14 @@ export class OrdersService {
         const orders = await Promise.all(
             createdOrderIds.map((id) => this.findOne(id)),
         );
+        const responseWalletType = mapSourceToWalletType(source);
         const loyalty =
-            customerPhoneNormalized != null
-                ? await this.loyaltyService.getBalanceByPhone(
+            customerPhoneNormalized != null && responseWalletType != null
+                ? await this.loyaltyService.getWalletBalance(
                       tenantId,
                       customerPhoneNormalized,
+                      responseWalletType,
+                      firstBrandId,
                   )
                 : null;
         const loyaltyPointsBalance = loyalty?.balance ?? 0;
@@ -1727,9 +1758,141 @@ export class OrdersService {
                 delivery_fee: Number(o.deliveryFee),
                 total_amount: Number(o.totalAmount),
                 items:
-                    [...(o.orderItems ?? [])].sort((a, b) => a.id - b.id).map((oi) => ({
-                        id: oi.id,
-                        name_snapshot:
+                    [...(o.orderItems ?? [])]
+                        .sort((a, b) => a.id - b.id)
+                        .map((oi) => ({
+                            id: oi.id,
+                            name_snapshot:
+                                oi.nameSnapshot ??
+                                (oi.menuItem as { name?: string } | null)?.name,
+                            quantity: oi.quantity,
+                            unit_price: Number(oi.unitPrice),
+                            subtotal: Number(oi.subtotal),
+                            deal_id: oi.dealId ?? null,
+                            deal_slot_index: oi.dealSlotIndex ?? null,
+                            deal_name: oi.dealMenuItem?.name ?? null,
+                            variant_name:
+                                (oi.variant as { name?: string } | null)
+                                    ?.name ?? null,
+                            addons:
+                                oi.addons?.map((a) => ({
+                                    name: (
+                                        a.addon as { name?: string } | undefined
+                                    )?.name,
+                                    quantity: a.quantity,
+                                    unit_price: Number(a.unitPrice),
+                                    subtotal: Number(a.subtotal),
+                                })) ?? [],
+                            modifiers:
+                                (
+                                    oi as {
+                                        modifiers?: Array<{
+                                            nameSnapshot: string | null;
+                                            priceSnapshot: number | null;
+                                            modifier?: {
+                                                name?: string;
+                                                price?: number;
+                                            };
+                                        }>;
+                                    }
+                                ).modifiers?.map((m) => ({
+                                    group:
+                                        (
+                                            m.modifier as
+                                                | {
+                                                      modifierGroup?: {
+                                                          name?: string;
+                                                      };
+                                                  }
+                                                | undefined
+                                        )?.modifierGroup?.name ?? null,
+                                    name:
+                                        m.nameSnapshot ??
+                                        (
+                                            m.modifier as
+                                                | { name?: string }
+                                                | undefined
+                                        )?.name ??
+                                        null,
+                                    unit_price:
+                                        m.priceSnapshot != null
+                                            ? Number(m.priceSnapshot)
+                                            : Number(
+                                                  (
+                                                      m.modifier as
+                                                          | { price?: number }
+                                                          | undefined
+                                                  )?.price ?? 0,
+                                              ),
+                                })) ?? [],
+                            category:
+                                (
+                                    oi.menuItem as {
+                                        category?: { name: string };
+                                    } | null
+                                )?.category?.name ?? null,
+                        })) ?? [],
+                loyalty_points_earned: o.loyaltyPointsEarned ?? 0,
+                loyalty_points_redeemed: o.loyaltyPointsRedeemed ?? 0,
+            })),
+        };
+    }
+
+    /** Per-brand invoice: brand, category, item breakdown for one order. */
+    async getOrderInvoice(orderId: number) {
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId },
+            relations: [
+                'brand',
+                'branch',
+                'orderItems',
+                'orderItems.menuItem',
+                'orderItems.menuItem.category',
+                'orderItems.variant',
+                'orderItems.addons',
+                'orderItems.addons.addon',
+                'orderItems.modifiers',
+                'orderItems.modifiers.modifier',
+                'orderItems.modifiers.modifier.modifierGroup',
+                'orderItems.dealMenuItem',
+            ],
+        });
+        if (!order) throw new NotFoundException('Order not found');
+        const orderWalletType = mapSourceToWalletType(order.source);
+        const loyalty =
+            order.customerPhone && orderWalletType != null
+                ? await this.loyaltyService.getWalletBalance(
+                      order.tenantId,
+                      order.customerPhone,
+                      orderWalletType,
+                      order.brandId,
+                  )
+                : null;
+        const loyaltyBalance = loyalty?.balance ?? 0;
+        return {
+            order_id: order.id,
+            order_number: order.orderNumber,
+            order_group_id: order.orderGroupId ?? null,
+            brand: order.brand
+                ? { id: order.brand.id, name: order.brand.name }
+                : null,
+            branch: order.branch
+                ? { id: order.branch.id, name: order.branch.name }
+                : null,
+            order_type: order.orderType,
+            table_number: order.tableNumber,
+            placed_at: order.placedAt?.toISOString() ?? null,
+            items:
+                [...(order.orderItems ?? [])]
+                    .sort((a, b) => a.id - b.id)
+                    .map((oi) => ({
+                        category:
+                            (
+                                oi.menuItem as {
+                                    category?: { name: string };
+                                } | null
+                            )?.category?.name ?? null,
+                        name:
                             oi.nameSnapshot ??
                             (oi.menuItem as { name?: string } | null)?.name,
                         quantity: oi.quantity,
@@ -1765,7 +1928,11 @@ export class OrdersService {
                                 group:
                                     (
                                         m.modifier as
-                                            | { modifierGroup?: { name?: string } }
+                                            | {
+                                                  modifierGroup?: {
+                                                      name?: string;
+                                                  };
+                                              }
                                             | undefined
                                     )?.modifierGroup?.name ?? null,
                                 name:
@@ -1787,119 +1954,7 @@ export class OrdersService {
                                               )?.price ?? 0,
                                           ),
                             })) ?? [],
-                        category:
-                            (
-                                oi.menuItem as {
-                                    category?: { name: string };
-                                } | null
-                            )?.category?.name ?? null,
                     })) ?? [],
-                loyalty_points_earned: o.loyaltyPointsEarned ?? 0,
-                loyalty_points_redeemed: o.loyaltyPointsRedeemed ?? 0,
-            })),
-        };
-    }
-
-    /** Per-brand invoice: brand, category, item breakdown for one order. */
-    async getOrderInvoice(orderId: number) {
-        const order = await this.orderRepo.findOne({
-            where: { id: orderId },
-            relations: [
-                'brand',
-                'branch',
-                'orderItems',
-                'orderItems.menuItem',
-                'orderItems.menuItem.category',
-                'orderItems.variant',
-                'orderItems.addons',
-                'orderItems.addons.addon',
-                'orderItems.modifiers',
-                'orderItems.modifiers.modifier',
-                'orderItems.modifiers.modifier.modifierGroup',
-                'orderItems.dealMenuItem',
-            ],
-        });
-        if (!order) throw new NotFoundException('Order not found');
-        const loyalty = order.customerPhone
-            ? await this.loyaltyService.getBalanceByPhone(
-                  order.tenantId,
-                  order.customerPhone,
-              )
-            : null;
-        const loyaltyBalance = loyalty?.balance ?? 0;
-        return {
-            order_id: order.id,
-            order_number: order.orderNumber,
-            order_group_id: order.orderGroupId ?? null,
-            brand: order.brand
-                ? { id: order.brand.id, name: order.brand.name }
-                : null,
-            branch: order.branch
-                ? { id: order.branch.id, name: order.branch.name }
-                : null,
-            order_type: order.orderType,
-            table_number: order.tableNumber,
-            placed_at: order.placedAt?.toISOString() ?? null,
-            items:
-                [...(order.orderItems ?? [])].sort((a, b) => a.id - b.id).map((oi) => ({
-                    category:
-                        (oi.menuItem as { category?: { name: string } } | null)
-                            ?.category?.name ?? null,
-                    name:
-                        oi.nameSnapshot ??
-                        (oi.menuItem as { name?: string } | null)?.name,
-                    quantity: oi.quantity,
-                    unit_price: Number(oi.unitPrice),
-                    subtotal: Number(oi.subtotal),
-                    deal_id: oi.dealId ?? null,
-                    deal_slot_index: oi.dealSlotIndex ?? null,
-                    deal_name: oi.dealMenuItem?.name ?? null,
-                    variant_name:
-                        (oi.variant as { name?: string } | null)?.name ?? null,
-                    addons:
-                        oi.addons?.map((a) => ({
-                            name: (a.addon as { name?: string } | undefined)
-                                ?.name,
-                            quantity: a.quantity,
-                            unit_price: Number(a.unitPrice),
-                            subtotal: Number(a.subtotal),
-                        })) ?? [],
-                    modifiers:
-                        (
-                            oi as {
-                                modifiers?: Array<{
-                                    nameSnapshot: string | null;
-                                    priceSnapshot: number | null;
-                                    modifier?: {
-                                        name?: string;
-                                        price?: number;
-                                    };
-                                }>;
-                            }
-                        ).modifiers?.map((m) => ({
-                            group:
-                                (
-                                    m.modifier as
-                                        | { modifierGroup?: { name?: string } }
-                                        | undefined
-                                )?.modifierGroup?.name ?? null,
-                            name:
-                                m.nameSnapshot ??
-                                (m.modifier as { name?: string } | undefined)
-                                    ?.name ??
-                                null,
-                            unit_price:
-                                m.priceSnapshot != null
-                                    ? Number(m.priceSnapshot)
-                                    : Number(
-                                          (
-                                              m.modifier as
-                                                  | { price?: number }
-                                                  | undefined
-                                          )?.price ?? 0,
-                                      ),
-                        })) ?? [],
-                })) ?? [],
             subtotal: Number(order.subtotal),
             discount_amount: Number(order.discountAmount),
             tax_amount: Number(order.taxAmount),
@@ -1917,14 +1972,20 @@ export class OrdersService {
         const group = await this.getOrderGroup(orderGroupId);
         const firstOrder = await this.orderRepo.findOne({
             where: { orderGroupId },
-            select: ['id', 'tenantId', 'customerPhone'],
+            select: ['id', 'tenantId', 'customerPhone', 'source', 'brandId'],
         });
-        const groupLoyalty = firstOrder?.customerPhone
-            ? await this.loyaltyService.getBalanceByPhone(
-                  firstOrder.tenantId,
-                  firstOrder.customerPhone,
-              )
+        const groupWalletType = firstOrder
+            ? mapSourceToWalletType(firstOrder.source)
             : null;
+        const groupLoyalty =
+            firstOrder?.customerPhone && groupWalletType != null
+                ? await this.loyaltyService.getWalletBalance(
+                      firstOrder.tenantId,
+                      firstOrder.customerPhone,
+                      groupWalletType,
+                      firstOrder.brandId,
+                  )
+                : null;
         const groupLoyaltyBalance = groupLoyalty?.balance ?? 0;
         const grossTotal = group.orders.reduce(
             (sum, o) => sum + Number(o.total_amount),
@@ -2117,68 +2178,77 @@ export class OrdersService {
                 : null,
             brand_id: order.brandId ?? null,
             items:
-                [...(order.orderItems ?? [])].sort((a, b) => a.id - b.id).map((oi) => ({
-                    id: oi.id,
-                    brand_id: oi.brandId ?? null,
-                    name_snapshot: oi.nameSnapshot ?? oi.menuItem?.name,
-                    price_snapshot:
-                        oi.priceSnapshot != null
-                            ? Number(oi.priceSnapshot)
-                            : Number(oi.unitPrice),
-                    quantity: oi.quantity,
-                    unit_price: Number(oi.unitPrice),
-                    subtotal: Number(oi.subtotal),
-                    notes: oi.notes,
-                    deal_id: oi.dealId ?? null,
-                    deal_slot_index: oi.dealSlotIndex ?? null,
-                    deal_name: oi.dealMenuItem?.name ?? null,
-                    variant_id: oi.variantId ?? null,
-                    variant_name:
-                        (oi as { variant?: { name: string } }).variant?.name ??
-                        null,
-                    addons:
-                        oi.addons?.map((a) => ({
-                            name: a.addon?.name,
-                            unit_price: Number(a.unitPrice),
-                            quantity: a.quantity,
-                            subtotal: Number(a.subtotal),
-                        })) ?? [],
-                    modifiers:
-                        (
-                            oi as {
-                                modifiers?: Array<{
-                                    nameSnapshot: string | null;
-                                    priceSnapshot: number | null;
-                                    modifier?: {
-                                        name?: string;
-                                        price?: number;
-                                    };
-                                }>;
-                            }
-                        ).modifiers?.map((m) => ({
-                            group:
-                                (
-                                    m.modifier as
-                                        | { modifierGroup?: { name?: string } }
-                                        | undefined
-                                )?.modifierGroup?.name ?? null,
-                            name:
-                                m.nameSnapshot ??
-                                (m.modifier as { name?: string } | undefined)
-                                    ?.name ??
-                                null,
-                            unit_price:
-                                m.priceSnapshot != null
-                                    ? Number(m.priceSnapshot)
-                                    : Number(
-                                          (
-                                              m.modifier as
-                                                  | { price?: number }
-                                                  | undefined
-                                          )?.price ?? 0,
-                                      ),
-                        })) ?? [],
-                })) ?? [],
+                [...(order.orderItems ?? [])]
+                    .sort((a, b) => a.id - b.id)
+                    .map((oi) => ({
+                        id: oi.id,
+                        brand_id: oi.brandId ?? null,
+                        name_snapshot: oi.nameSnapshot ?? oi.menuItem?.name,
+                        price_snapshot:
+                            oi.priceSnapshot != null
+                                ? Number(oi.priceSnapshot)
+                                : Number(oi.unitPrice),
+                        quantity: oi.quantity,
+                        unit_price: Number(oi.unitPrice),
+                        subtotal: Number(oi.subtotal),
+                        notes: oi.notes,
+                        deal_id: oi.dealId ?? null,
+                        deal_slot_index: oi.dealSlotIndex ?? null,
+                        deal_name: oi.dealMenuItem?.name ?? null,
+                        variant_id: oi.variantId ?? null,
+                        variant_name:
+                            (oi as { variant?: { name: string } }).variant
+                                ?.name ?? null,
+                        addons:
+                            oi.addons?.map((a) => ({
+                                name: a.addon?.name,
+                                unit_price: Number(a.unitPrice),
+                                quantity: a.quantity,
+                                subtotal: Number(a.subtotal),
+                            })) ?? [],
+                        modifiers:
+                            (
+                                oi as {
+                                    modifiers?: Array<{
+                                        nameSnapshot: string | null;
+                                        priceSnapshot: number | null;
+                                        modifier?: {
+                                            name?: string;
+                                            price?: number;
+                                        };
+                                    }>;
+                                }
+                            ).modifiers?.map((m) => ({
+                                group:
+                                    (
+                                        m.modifier as
+                                            | {
+                                                  modifierGroup?: {
+                                                      name?: string;
+                                                  };
+                                              }
+                                            | undefined
+                                    )?.modifierGroup?.name ?? null,
+                                name:
+                                    m.nameSnapshot ??
+                                    (
+                                        m.modifier as
+                                            | { name?: string }
+                                            | undefined
+                                    )?.name ??
+                                    null,
+                                unit_price:
+                                    m.priceSnapshot != null
+                                        ? Number(m.priceSnapshot)
+                                        : Number(
+                                              (
+                                                  m.modifier as
+                                                      | { price?: number }
+                                                      | undefined
+                                              )?.price ?? 0,
+                                          ),
+                            })) ?? [],
+                    })) ?? [],
             payments:
                 order.payments?.map((p) => ({
                     id: p.id,
@@ -3042,9 +3112,7 @@ export class OrdersService {
         let loyaltyDiscount = 0;
         let loyaltyPointsRedeemed = 0;
         if (
-            (source === 'pos' ||
-                source === 'consumer_web' ||
-                source === 'consumer_app') &&
+            (source === 'pos' || source === 'consumer_app') &&
             dto.customer_phone?.trim() &&
             (dto.loyalty_points_to_redeem ?? 0) > 0
         ) {
@@ -3056,6 +3124,8 @@ export class OrdersService {
                     tenantId,
                     normalized,
                     afterDiscount,
+                    source,
+                    orderBrandId,
                 );
                 if (preview) {
                     loyaltyPointsRedeemed = Math.min(

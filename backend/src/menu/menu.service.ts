@@ -98,9 +98,9 @@ export class MenuService {
             where: { id: branchId },
             relations: ['branchBrands'],
         });
-        // Consumer-facing: a disabled-menu or inactive branch exposes no
-        // brands/categories (mirrors getBranchMenu returning an empty menu).
-        if (!branch || !branch.isActive || !branch.menuEnabled) return [];
+        // An inactive branch exposes no brands/categories (mirrors getBranchMenu
+        // returning an empty menu).
+        if (!branch || !branch.isActive) return [];
         return (branch.branchBrands ?? []).map((bb) => bb.brandId);
     }
 
@@ -112,6 +112,15 @@ export class MenuService {
      */
     async getConsumerCategoriesForBranch(branchId: number) {
         const brandIds = await this.getBrandIdsForBranch(branchId);
+        return this.getConsumerCategoriesForBrandIds(brandIds);
+    }
+
+    /**
+     * Consumer API: list unique category names across a given set of active brands. Same
+     * shape/dedupe as {@link getConsumerCategoriesForBranch}, but driven by brand ids directly
+     * so it can aggregate across multiple branches (e.g. brands available near a location).
+     */
+    async getConsumerCategoriesForBrandIds(brandIds: number[]) {
         if (brandIds.length === 0) return [];
         const rows = await this.categoryRepo
             .createQueryBuilder('c')
@@ -152,6 +161,18 @@ export class MenuService {
         categoryKey: string,
     ): Promise<number[]> {
         const brandIds = await this.getBrandIdsForBranch(branchId);
+        return this.getConsumerBrandIdsForCategoryKey(brandIds, categoryKey);
+    }
+
+    /**
+     * Consumer API: from a given set of brand ids, return those that are active and define the
+     * category. Brand-ids variant of {@link getConsumerBrandIdsForCategoryKeyAtBranch} so it can
+     * span multiple branches (e.g. brands available near a location).
+     */
+    async getConsumerBrandIdsForCategoryKey(
+        brandIds: number[],
+        categoryKey: string,
+    ): Promise<number[]> {
         if (brandIds.length === 0) return [];
         const key = categoryKey.toLowerCase();
         const rawBrandIds = await this.categoryRepo
@@ -844,10 +865,35 @@ export class MenuService {
         type BranchWithBrands = Branch & { branchBrands?: unknown[] };
         if (!branch || !(branch as BranchWithBrands).branchBrands?.length)
             return [];
-        // Consumer-facing: no menu for a disabled-menu or inactive branch.
-        if (!branch.menuEnabled || !branch.isActive) return [];
+        // No menu for an inactive branch.
+        if (!branch.isActive) return [];
+
+        // Only items whose brand is still linked to this branch AND active may be
+        // sold. Guards against orphaned branch_menu_items left behind when a brand
+        // is unlinked, and mirrors the branch-level switch: an inactive brand is
+        // fully off everywhere — hidden from customers and not sellable at POS.
+        const linkedBrandIds = new Set(
+            (
+                (
+                    branch as BranchWithBrands & {
+                        branchBrands?: Array<{
+                            brandId?: number;
+                            brand?: { isActive?: boolean };
+                        }>;
+                    }
+                ).branchBrands ?? []
+            )
+                .filter((bb) => bb.brand?.isActive !== false)
+                .map((bb) => bb.brandId)
+                .filter((id): id is number => id != null),
+        );
 
         let linked = (branch.branchMenuItems ?? [])
+            .filter(
+                (bmi) =>
+                    bmi.menuItem?.brandId != null &&
+                    linkedBrandIds.has(bmi.menuItem.brandId),
+            )
             .filter((bmi) => bmi.isAvailable !== false)
             .filter(
                 (bmi) =>

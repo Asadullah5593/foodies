@@ -7,7 +7,6 @@ import type {
   CartAddon,
   Customer,
   LoginResponse,
-  LoyaltyBalance,
   MenuItem,
   MenuSearchResult,
   OrderStatus,
@@ -204,13 +203,6 @@ export async function clearCart(phone: string, branchId: number) {
   return data;
 }
 
-export async function getLoyaltyBalance(phone: string, branchId: number) {
-  const { data } = await apiClient.get<LoyaltyBalance>("/public/consumer/loyalty/balance", {
-    params: { phone, branch_id: branchId },
-  });
-  return data;
-}
-
 export async function placeOrder(input: {
   branch_id: number;
   order_type: "delivery" | "pickup";
@@ -227,7 +219,6 @@ export async function placeOrder(input: {
   }>;
   notes?: string;
   discount_code?: string;
-  loyalty_points_to_redeem?: number;
 }) {
   const { data } = await apiClient.post<PlaceOrderResponse>("/public/consumer/orders", input, {
     headers: withPlatformHeaders(),

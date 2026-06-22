@@ -745,14 +745,22 @@ export const adminService = {
     return response.data;
   },
 
-  // Loyalty settings (per tenant)
-  getLoyaltySettings: async (tenantId: number) => {
-    const response = await apiClient.get(`/admin/tenants/${tenantId}/loyalty-settings`);
+  // Brands (for the per-brand loyalty selector)
+  getBrands: async (): Promise<
+    Array<{ id: number; name: string; loyalty_enabled?: boolean }>
+  > => {
+    const response = await apiClient.get('/admin/brands');
+    return response.data ?? [];
+  },
+
+  // Loyalty settings (per brand)
+  getLoyaltySettings: async (brandId: number) => {
+    const response = await apiClient.get(`/admin/brands/${brandId}/loyalty-settings`);
     return response.data;
   },
 
   updateLoyaltySettings: async (
-    tenantId: number,
+    brandId: number,
     data: {
       loyalty_enabled?: boolean;
       display_name?: string;
@@ -764,7 +772,7 @@ export const adminService = {
       expiry_unit?: 'day' | 'month' | 'year';
     },
   ) => {
-    const response = await apiClient.put(`/admin/tenants/${tenantId}/loyalty-settings`, data);
+    const response = await apiClient.put(`/admin/brands/${brandId}/loyalty-settings`, data);
     return response.data;
   },
 
@@ -779,7 +787,7 @@ export const adminService = {
     return response.data;
   },
 
-  createCustomer: async (data: { name: string; phone: string }) => {
+  createCustomer: async (data: { name: string; phone: string; link?: boolean }) => {
     const response = await apiClient.post('/admin/customers', data);
     return response.data;
   },

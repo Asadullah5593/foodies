@@ -41,6 +41,22 @@ export class Brand {
     @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
     deliveryFlatFee: number;
 
+    /** Whether this brand runs a loyalty program (per-brand; replaces tenant-level loyaltyEnabled). */
+    @Column({ default: false })
+    loyaltyEnabled: boolean;
+
+    /** Per-brand loyalty config: displayName, spendPerPoint, minOrderToEarn, cashValuePerPoint, minOrderToRedeem, expiryPeriod, expiryUnit */
+    @Column('simple-json', { nullable: true })
+    loyaltySettings: {
+        displayName?: string;
+        spendPerPoint?: number;
+        minOrderToEarn?: number;
+        cashValuePerPoint?: number;
+        minOrderToRedeem?: number;
+        expiryPeriod?: number;
+        expiryUnit?: 'day' | 'month' | 'year';
+    } | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

@@ -5,7 +5,13 @@ import {
     Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, LessThanOrEqual, MoreThanOrEqual, IsNull, Or } from 'typeorm';
+import {
+    Repository,
+    LessThanOrEqual,
+    MoreThanOrEqual,
+    IsNull,
+    Or,
+} from 'typeorm';
 import { Promotion } from '../entities/promotion.entity';
 import { CustomerPromotion } from '../entities/customer-promotion.entity';
 import { Discount } from '../entities/discount.entity';
@@ -64,24 +70,33 @@ export class PromotionsService {
             );
         }
         if (promotionType === 'discount') {
-            if (!dto.discount_type || !['flat', 'percentage'].includes(dto.discount_type)) {
+            if (
+                !dto.discount_type ||
+                !['flat', 'percentage'].includes(dto.discount_type)
+            ) {
                 throw new BadRequestException(
                     'discount_type must be "flat" or "percentage" for discount promotions',
                 );
             }
             if (dto.discount_value == null || Number(dto.discount_value) < 0) {
-                throw new BadRequestException('discount_value is required for discount promotions');
+                throw new BadRequestException(
+                    'discount_value is required for discount promotions',
+                );
             }
         }
         if (promotionType === 'free_item') {
             if (!dto.free_menu_item_id) {
-                throw new BadRequestException('free_menu_item_id is required for free_item promotions');
+                throw new BadRequestException(
+                    'free_menu_item_id is required for free_item promotions',
+                );
             }
         }
 
         const eligibilityType = dto.eligibility_type ?? 'new_customer';
         if (!['new_customer', 'manual'].includes(eligibilityType)) {
-            throw new BadRequestException('eligibility_type must be "new_customer" or "manual"');
+            throw new BadRequestException(
+                'eligibility_type must be "new_customer" or "manual"',
+            );
         }
 
         const p = await this.promoRepo.save(
@@ -91,9 +106,16 @@ export class PromotionsService {
                 description: dto.description?.trim() || null,
                 imageUrl: dto.image_url?.trim() || null,
                 promotionType,
-                discountType: promotionType === 'discount' ? dto.discount_type! : null,
-                discountValue: promotionType === 'discount' ? Number(dto.discount_value) : null,
-                freeMenuItemId: promotionType === 'free_item' ? dto.free_menu_item_id! : null,
+                discountType:
+                    promotionType === 'discount' ? dto.discount_type! : null,
+                discountValue:
+                    promotionType === 'discount'
+                        ? Number(dto.discount_value)
+                        : null,
+                freeMenuItemId:
+                    promotionType === 'free_item'
+                        ? dto.free_menu_item_id!
+                        : null,
                 eligibilityType,
                 isActive: dto.is_active ?? true,
                 expiresInDays: dto.expires_in_days ?? null,
@@ -125,10 +147,13 @@ export class PromotionsService {
             if (!n) throw new BadRequestException('Name cannot be empty');
             p.name = n;
         }
-        if (dto.description !== undefined) p.description = dto.description?.trim() || null;
-        if (dto.image_url !== undefined) p.imageUrl = dto.image_url?.trim() || null;
+        if (dto.description !== undefined)
+            p.description = dto.description?.trim() || null;
+        if (dto.image_url !== undefined)
+            p.imageUrl = dto.image_url?.trim() || null;
         if (dto.is_active !== undefined) p.isActive = dto.is_active;
-        if (dto.expires_in_days !== undefined) p.expiresInDays = dto.expires_in_days ?? null;
+        if (dto.expires_in_days !== undefined)
+            p.expiresInDays = dto.expires_in_days ?? null;
         if (dto.valid_from !== undefined)
             p.validFrom = dto.valid_from ? new Date(dto.valid_from) : null;
         if (dto.valid_until !== undefined)
@@ -180,7 +205,10 @@ export class PromotionsService {
             throw new BadRequestException('Promotion already claimed');
         if (cp.status === 'used')
             throw new BadRequestException('Promotion has already been used');
-        if (cp.status === 'expired' || (cp.expiresAt && cp.expiresAt < new Date())) {
+        if (
+            cp.status === 'expired' ||
+            (cp.expiresAt && cp.expiresAt < new Date())
+        ) {
             cp.status = 'expired';
             await this.cpRepo.save(cp);
             throw new BadRequestException('Promotion has expired');
@@ -206,7 +234,11 @@ export class PromotionsService {
             discountValue = Number(promo.discountValue);
         }
 
-        const code = await this.generateCouponCode(promo.name, discountType, discountValue);
+        const code = await this.generateCouponCode(
+            promo.name,
+            discountType,
+            discountValue,
+        );
         const discount = await this.discountRepo.save(
             this.discountRepo.create({
                 tenantId: promo.tenantId,
@@ -240,10 +272,17 @@ export class PromotionsService {
      * Called (fire-and-forget) after a new customer is created.
      * Assigns all active new_customer promotions for the tenant.
      */
-    async assignNewCustomerPromotions(tenantId: number, customerId: number): Promise<void> {
+    async assignNewCustomerPromotions(
+        tenantId: number,
+        customerId: number,
+    ): Promise<void> {
         const now = new Date();
         const promotions = await this.promoRepo.find({
-            where: { tenantId, eligibilityType: 'new_customer', isActive: true },
+            where: {
+                tenantId,
+                eligibilityType: 'new_customer',
+                isActive: true,
+            },
         });
 
         const eligible = promotions.filter(
@@ -256,7 +295,10 @@ export class PromotionsService {
             try {
                 const expiresAt =
                     promo.expiresInDays != null
-                        ? new Date(now.getTime() + promo.expiresInDays * 24 * 60 * 60 * 1000)
+                        ? new Date(
+                              now.getTime() +
+                                  promo.expiresInDays * 24 * 60 * 60 * 1000,
+                          )
                         : null;
                 await this.cpRepo.save(
                     this.cpRepo.create({
@@ -278,8 +320,14 @@ export class PromotionsService {
     }
 
     /** Admin: manually assign a promotion to a specific customer */
-    async manualAssign(promotionId: number, customerId: number, tenantId: number) {
-        const promo = await this.promoRepo.findOne({ where: { id: promotionId, tenantId } });
+    async manualAssign(
+        promotionId: number,
+        customerId: number,
+        tenantId: number,
+    ) {
+        const promo = await this.promoRepo.findOne({
+            where: { id: promotionId, tenantId },
+        });
         if (!promo) throw new NotFoundException('Promotion not found');
         if (promo.eligibilityType !== 'manual') {
             throw new BadRequestException(
@@ -290,7 +338,9 @@ export class PromotionsService {
         const now = new Date();
         const expiresAt =
             promo.expiresInDays != null
-                ? new Date(now.getTime() + promo.expiresInDays * 24 * 60 * 60 * 1000)
+                ? new Date(
+                      now.getTime() + promo.expiresInDays * 24 * 60 * 60 * 1000,
+                  )
                 : null;
 
         try {
@@ -306,7 +356,9 @@ export class PromotionsService {
         } catch (err: unknown) {
             const e = err as { code?: string };
             if (e?.code === '23505') {
-                throw new BadRequestException('Customer is already assigned this promotion');
+                throw new BadRequestException(
+                    'Customer is already assigned this promotion',
+                );
             }
             throw err;
         }
@@ -314,7 +366,9 @@ export class PromotionsService {
 
     /** Admin: list assignments for a promotion */
     async getAssignments(promotionId: number, tenantId: number) {
-        const promo = await this.promoRepo.findOne({ where: { id: promotionId, tenantId } });
+        const promo = await this.promoRepo.findOne({
+            where: { id: promotionId, tenantId },
+        });
         if (!promo) throw new NotFoundException('Promotion not found');
 
         const list = await this.cpRepo.find({
@@ -324,7 +378,11 @@ export class PromotionsService {
         return list.map((cp) => this.toCpResponse(cp));
     }
 
-    private async generateCouponCode(name: string, type: string, value: number): Promise<string> {
+    private async generateCouponCode(
+        name: string,
+        type: string,
+        value: number,
+    ): Promise<string> {
         const slug = name
             .toUpperCase()
             .replace(/[^A-Z0-9]/g, '')
@@ -351,7 +409,8 @@ export class PromotionsService {
             image_url: p.imageUrl,
             promotion_type: p.promotionType,
             discount_type: p.discountType,
-            discount_value: p.discountValue != null ? Number(p.discountValue) : null,
+            discount_value:
+                p.discountValue != null ? Number(p.discountValue) : null,
             free_menu_item_id: p.freeMenuItemId,
             eligibility_type: p.eligibilityType,
             is_active: p.isActive,
@@ -374,7 +433,9 @@ export class PromotionsService {
             expires_at: cp.expiresAt?.toISOString() ?? null,
             claimed_at: cp.claimedAt?.toISOString() ?? null,
             used_at: cp.usedAt?.toISOString() ?? null,
-            promotion: cp.promotion ? this.toPromoResponse(cp.promotion) : undefined,
+            promotion: cp.promotion
+                ? this.toPromoResponse(cp.promotion)
+                : undefined,
         };
     }
 }

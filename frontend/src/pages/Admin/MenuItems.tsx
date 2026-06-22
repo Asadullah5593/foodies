@@ -306,6 +306,19 @@ const MenuItems: React.FC = () => {
     },
   });
 
+  // Inline active/inactive toggle from the row (partial update).
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) =>
+      adminService.updateMenuItem(id, { is_active }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menuItems'] });
+      toast.success('Menu item status updated');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to update status');
+    },
+  });
+
   const uploadFileToMenuItems = async (file: File): Promise<string> => {
     if (file.size > MENU_ITEM_UPLOAD_MAX_BYTES) {
       throw Object.assign(new Error('File too large'), {
@@ -1405,6 +1418,14 @@ const MenuItems: React.FC = () => {
                     actions={
                       <>
                         <Button size="small" variant="edit" onClick={() => setEditingItem(item)}>Edit</Button>
+                        <Button
+                          size="small"
+                          variant={item.is_active ? 'outline' : 'primary'}
+                          isLoading={toggleActiveMutation.isPending}
+                          onClick={() => toggleActiveMutation.mutate({ id: item.id, is_active: !item.is_active })}
+                        >
+                          {item.is_active ? 'Set inactive' : 'Set active'}
+                        </Button>
                         <Button size="small" variant="secondary" onClick={() => setManageAddonsItem(item)}>Manage addons</Button>
                         <Button
                           size="small"
