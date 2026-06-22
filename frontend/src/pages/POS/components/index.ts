@@ -1,5 +1,6 @@
 export { default as POSLayout } from './POSLayout';
 export { default as POSFilters } from './POSFilters';
+export { default as OrderTypeSelector } from './OrderTypeSelector';
 export { default as MenuGrid, MENU_PAGE_SIZE } from './MenuGrid';
 export { default as CustomerPanel } from './CustomerPanel';
 export { default as CartPanel } from './CartPanel';

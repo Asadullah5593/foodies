@@ -20,6 +20,8 @@ export type Brand = {
   id: number;
   name: string;
   logo_url?: string | null;
+  /** Per-branch online availability (present on brand-by-branch listings). false = closed for online orders. */
+  is_open?: boolean;
 };
 
 export type Modifier = {
@@ -122,15 +124,6 @@ export type PlaceOrderResponse = {
     status: string;
     total_amount: number;
   }>;
-};
-
-export type LoyaltyBalance = {
-  balance: number;
-  displayName: string;
-  spendPerPoint: number;
-  cashValuePerPoint: number;
-  minOrderToEarn: number;
-  minOrderToRedeem: number;
 };
 
 export type OrderStatus = {

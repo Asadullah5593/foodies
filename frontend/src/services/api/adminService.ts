@@ -4,6 +4,9 @@ import {
   MenuAddon,
   BranchMenuItem,
   Discount,
+  Banner,
+  Promotion,
+  CustomerPromotion,
   Shift,
   ShiftOrdersResponse,
   User,
@@ -14,6 +17,11 @@ import {
   RiderPayrollRun,
   RiderOpsMetricsSnapshot,
   RiderBreakSession,
+  RiderWithBrands,
+  RiderBrandLink,
+  RiderShareRequest,
+  RiderShareRequestStatus,
+  PoolRiderSummary,
 } from '../../types';
 
 export interface ModifierGroupResponse {
@@ -254,7 +262,7 @@ export const adminService = {
   },
 
   // Branch Users (omit branchId to get all branch-user assignments; pass branchId for one branch)
-  getBranchUsers: async (branchId?: number | null): Promise<Array<User & { branch_id?: number; branch_name?: string; branch_code?: string }>> => {
+  getBranchUsers: async (branchId?: number | null): Promise<Array<User & { branch_id?: number; branch_name?: string; branch_code?: string; brand_id?: number | null; brand_name?: string | null }>> => {
     const url = branchId != null ? `/admin/branches/${branchId}/users` : '/admin/branches/all/users';
     const response = await apiClient.get(url);
     return response.data;
@@ -267,7 +275,7 @@ export const adminService = {
 
   assignBranchUsersWithRoles: async (
     branchId: number,
-    assignments: { user_id: number; role_id: number }[],
+    assignments: { user_id: number; role_id: number; brand_id?: number | null }[],
   ): Promise<User[]> => {
     const response = await apiClient.post(`/admin/branches/${branchId}/users`, { assignments });
     return response.data.users;
@@ -275,6 +283,16 @@ export const adminService = {
   
   removeBranchUser: async (branchId: number, userId: number): Promise<void> => {
     await apiClient.delete(`/admin/branches/${branchId}/users/${userId}`);
+  },
+
+  bulkAssignUserToBranches: async (payload: {
+    user_id: number;
+    branch_ids: number[];
+    role_id: number;
+    brand_id?: number | null;
+  }): Promise<{ message: string; assigned_count: number }> => {
+    const response = await apiClient.post('/admin/branches/bulk-assign', payload);
+    return response.data;
   },
 
   // Discounts
@@ -297,10 +315,61 @@ export const adminService = {
     await apiClient.delete(`/admin/discounts/${id}`);
   },
 
-  // Shifts
-  getShifts: async (branchId?: number, status?: string): Promise<Shift[]> => {
+  // CMS – Banners
+  getBanners: async (): Promise<Banner[]> => {
+    const response = await apiClient.get('/admin/banners');
+    return response.data;
+  },
+
+  createBanner: async (data: Partial<Banner>): Promise<Banner> => {
+    const response = await apiClient.post('/admin/banners', data);
+    return response.data;
+  },
+
+  updateBanner: async (id: number, data: Partial<Banner>): Promise<Banner> => {
+    const response = await apiClient.put(`/admin/banners/${id}`, data);
+    return response.data;
+  },
+
+  deleteBanner: async (id: number): Promise<void> => {
+    await apiClient.delete(`/admin/banners/${id}`);
+  },
+
+  // Promotions
+  getPromotions: async (): Promise<Promotion[]> => {
+    const response = await apiClient.get('/admin/promotions');
+    return response.data;
+  },
+
+  createPromotion: async (data: Partial<Promotion>): Promise<Promotion> => {
+    const response = await apiClient.post('/admin/promotions', data);
+    return response.data;
+  },
+
+  updatePromotion: async (id: number, data: Partial<Promotion>): Promise<Promotion> => {
+    const response = await apiClient.put(`/admin/promotions/${id}`, data);
+    return response.data;
+  },
+
+  deletePromotion: async (id: number): Promise<void> => {
+    await apiClient.delete(`/admin/promotions/${id}`);
+  },
+
+  getPromotionAssignments: async (promotionId: number): Promise<CustomerPromotion[]> => {
+    const response = await apiClient.get(`/admin/promotions/${promotionId}/assignments`);
+    return response.data;
+  },
+
+  assignPromotion: async (promotionId: number, customerId: number): Promise<CustomerPromotion> => {
+    const response = await apiClient.post(`/admin/promotions/${promotionId}/assign`, { customer_id: customerId });
+    return response.data;
+  },
+
+  // Shifts (opened per brand per branch)
+  getShifts: async (branchId?: number, status?: string, brandId?: number): Promise<Shift[]> => {
     const params = new URLSearchParams();
     if (branchId) params.append('branch_id', branchId.toString());
+    if (brandId) params.append('brand_id', brandId.toString());
     if (status) params.append('status', status);
     const query = params.toString();
     const response = await apiClient.get(`/admin/shifts${query ? '?' + query : ''}`);
@@ -367,8 +436,11 @@ export const adminService = {
     return response.data;
   },
 
-  // Riders (for delivery assignment) — includes all-time customer star averages (tenant orders only)
-  getRiders: async (): Promise<
+  // Riders (for delivery assignment) — includes all-time customer star averages (tenant orders only).
+  // brandId filters to riders linked to that brand (pass the order's brand for the dispatch dropdown).
+  getRiders: async (
+    brandId?: number,
+  ): Promise<
     Array<{
       id: number;
       name: string;
@@ -378,7 +450,8 @@ export const adminService = {
       rating_count: number;
     }>
   > => {
-    const response = await apiClient.get('/admin/orders/riders');
+    const query = brandId != null ? `?brand_id=${brandId}` : '';
+    const response = await apiClient.get(`/admin/orders/riders${query}`);
     return response.data ?? [];
   },
 
@@ -427,6 +500,120 @@ export const adminService = {
     metadata?: Record<string, unknown>;
   }): Promise<RiderProfile> => {
     const response = await apiClient.post('/admin/rider-hrm/profiles', data);
+    return response.data;
+  },
+
+  // ——— Rider brand-ownership & sharing ———
+
+  // Owner/GM: all tenant riders with their brand links + owner badges.
+  getPoolRidersForOwner: async (): Promise<RiderWithBrands[]> => {
+    const response = await apiClient.get('/admin/rider-sharing/riders');
+    return response.data ?? [];
+  },
+
+  getRiderBrands: async (riderUserId: number): Promise<RiderBrandLink[]> => {
+    const response = await apiClient.get(
+      `/admin/rider-sharing/riders/${riderUserId}/brands`,
+    );
+    return response.data ?? [];
+  },
+
+  assignRiderBrand: async (
+    riderUserId: number,
+    brandId: number,
+  ): Promise<RiderBrandLink[]> => {
+    const response = await apiClient.post(
+      `/admin/rider-sharing/riders/${riderUserId}/brands`,
+      { brand_id: brandId },
+    );
+    return response.data ?? [];
+  },
+
+  removeRiderBrand: async (
+    riderUserId: number,
+    brandId: number,
+  ): Promise<RiderBrandLink[]> => {
+    const response = await apiClient.delete(
+      `/admin/rider-sharing/riders/${riderUserId}/brands/${brandId}`,
+    );
+    return response.data ?? [];
+  },
+
+  setRiderBrands: async (
+    riderUserId: number,
+    brandIds: number[],
+  ): Promise<RiderBrandLink[]> => {
+    const response = await apiClient.put(
+      `/admin/rider-sharing/riders/${riderUserId}/brands`,
+      { brand_ids: brandIds },
+    );
+    return response.data ?? [];
+  },
+
+  // Owner/GM: review incoming share requests.
+  getShareRequestsForOwner: async (
+    status?: RiderShareRequestStatus,
+  ): Promise<RiderShareRequest[]> => {
+    const query = status ? `?status=${status}` : '';
+    const response = await apiClient.get(
+      `/admin/rider-sharing/requests${query}`,
+    );
+    return response.data ?? [];
+  },
+
+  approveShareRequest: async (id: number): Promise<{ id: number; status: string }> => {
+    const response = await apiClient.post(
+      `/admin/rider-sharing/requests/${id}/approve`,
+    );
+    return response.data;
+  },
+
+  declineShareRequest: async (
+    id: number,
+    reason?: string,
+  ): Promise<{ id: number; status: string }> => {
+    const response = await apiClient.post(
+      `/admin/rider-sharing/requests/${id}/decline`,
+      { reason },
+    );
+    return response.data;
+  },
+
+  // Brand admin: browse the Foodies pool + submit/cancel requests.
+  getAvailablePoolRiders: async (
+    brandId: number,
+  ): Promise<PoolRiderSummary[]> => {
+    const response = await apiClient.get(
+      `/admin/rider-hrm/pool-riders?brand_id=${brandId}`,
+    );
+    return response.data ?? [];
+  },
+
+  createRiderShareRequest: async (data: {
+    brand_id: number;
+    rider_user_id: number;
+    note?: string;
+  }): Promise<{ id: number; status: string }> => {
+    const response = await apiClient.post('/admin/rider-hrm/share-requests', data);
+    return response.data;
+  },
+
+  getMyShareRequests: async (
+    status?: RiderShareRequestStatus,
+  ): Promise<RiderShareRequest[]> => {
+    const query = status ? `?status=${status}` : '';
+    const response = await apiClient.get(
+      `/admin/rider-hrm/share-requests${query}`,
+    );
+    return response.data ?? [];
+  },
+
+  cancelRiderShareRequest: async (
+    id: number,
+  ): Promise<{ id: number; status: string }> => {
+    const response = await apiClient.post(
+      `/admin/rider-hrm/share-requests/${id}/cancel`,
+    );
     return response.data;
   },
 
@@ -558,14 +745,22 @@ export const adminService = {
     return response.data;
   },
 
-  // Loyalty settings (per tenant)
-  getLoyaltySettings: async (tenantId: number) => {
-    const response = await apiClient.get(`/admin/tenants/${tenantId}/loyalty-settings`);
+  // Brands (for the per-brand loyalty selector)
+  getBrands: async (): Promise<
+    Array<{ id: number; name: string; loyalty_enabled?: boolean }>
+  > => {
+    const response = await apiClient.get('/admin/brands');
+    return response.data ?? [];
+  },
+
+  // Loyalty settings (per brand)
+  getLoyaltySettings: async (brandId: number) => {
+    const response = await apiClient.get(`/admin/brands/${brandId}/loyalty-settings`);
     return response.data;
   },
 
   updateLoyaltySettings: async (
-    tenantId: number,
+    brandId: number,
     data: {
       loyalty_enabled?: boolean;
       display_name?: string;
@@ -577,7 +772,7 @@ export const adminService = {
       expiry_unit?: 'day' | 'month' | 'year';
     },
   ) => {
-    const response = await apiClient.put(`/admin/tenants/${tenantId}/loyalty-settings`, data);
+    const response = await apiClient.put(`/admin/brands/${brandId}/loyalty-settings`, data);
     return response.data;
   },
 
@@ -592,7 +787,7 @@ export const adminService = {
     return response.data;
   },
 
-  createCustomer: async (data: { name: string; phone: string }) => {
+  createCustomer: async (data: { name: string; phone: string; link?: boolean }) => {
     const response = await apiClient.post('/admin/customers', data);
     return response.data;
   },

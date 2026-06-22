@@ -28,8 +28,10 @@ export class ShiftsController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Query('branch_id') branchId: string,
+        @Query('brand_id') brandId: string,
         @Query('status') status: string,
     ) {
         return this.service.findAll(
@@ -37,6 +39,8 @@ export class ShiftsController {
             status,
             user.tenantId,
             user.allowedBranchIds,
+            user.allowedBrandIds,
+            brandId ? +brandId : undefined,
         );
     }
 
@@ -47,10 +51,16 @@ export class ShiftsController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Param('id') id: string,
     ) {
-        return this.service.findOne(+id, user.tenantId, user.allowedBranchIds);
+        return this.service.findOne(
+            +id,
+            user.tenantId,
+            user.allowedBranchIds,
+            user.allowedBrandIds,
+        );
     }
 
     @Get(':id/orders')
@@ -60,6 +70,7 @@ export class ShiftsController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Param('id') id: string,
     ) {
@@ -67,6 +78,7 @@ export class ShiftsController {
             +id,
             user.tenantId,
             user.allowedBranchIds,
+            user.allowedBrandIds,
         );
     }
 
@@ -77,10 +89,12 @@ export class ShiftsController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Body()
         dto: {
             branch_id: number;
+            brand_id: number;
             // The shift owner is always the authenticated user; any user_id in
             // the body is ignored.
             user_id?: number;
@@ -93,11 +107,13 @@ export class ShiftsController {
         return this.service.create(
             {
                 branch_id: dto.branch_id,
+                brand_id: dto.brand_id,
                 user_id: user.id,
                 opening_cash: dto.opening_cash,
                 notes: dto.notes,
             },
             user.allowedBranchIds,
+            user.allowedBrandIds,
         );
     }
 
@@ -109,6 +125,7 @@ export class ShiftsController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Body() dto: { actual_cash: number; notes?: string },
     ) {
@@ -120,6 +137,7 @@ export class ShiftsController {
             user.tenantId,
             user.allowedBranchIds,
             user.id,
+            user.allowedBrandIds,
         );
     }
 }

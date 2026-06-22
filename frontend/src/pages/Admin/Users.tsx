@@ -4,7 +4,7 @@ import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
 import { useAuth } from '../../contexts/AuthContext';
-import { User, Tenant } from '../../types';
+import { User, Tenant, Brand } from '../../types';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
@@ -34,6 +34,11 @@ function roleSlugToLabel(slug: string): string {
 const Users: React.FC = () => {
   const { user } = useAuth();
   const isSuperAdmin = user?.is_super_admin ?? false;
+  // Brand-locked admins (allowed_brand_ids is an array) create users for their
+  // own brand automatically. Owner / GM (unrestricted, not super admin) are
+  // asked which brand the new user belongs to.
+  const isBrandLocked = Array.isArray(user?.allowed_brand_ids);
+  const needsBrandChoice = !isSuperAdmin && !isBrandLocked;
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -43,6 +48,7 @@ const Users: React.FC = () => {
     password: '',
     phone: '',
     tenant_id: '',
+    brand_id: '',
   });
   const [editData, setEditData] = useState({
     name: '',
@@ -70,6 +76,17 @@ const Users: React.FC = () => {
       return response.data;
     },
     enabled: isSuperAdmin,
+  });
+
+  // Brands the current admin may assign a new user to (server already scopes
+  // to the tenant; brand-locked admins don't pick, so only fetch when asked).
+  const { data: brands } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => {
+      const response = await apiClient.get<Brand[]>('/admin/brands');
+      return response.data ?? [];
+    },
+    enabled: needsBrandChoice,
   });
 
   const { data: users, isLoading } = useQuery({
@@ -116,13 +133,14 @@ const Users: React.FC = () => {
         phone: data.phone || undefined,
       };
       if (isSuperAdmin && data.tenant_id) payload.tenant_id = Number(data.tenant_id);
+      if (needsBrandChoice && data.brand_id) payload.brand_id = Number(data.brand_id);
       const response = await apiClient.post('/admin/users', payload);
       return response.data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setShowCreate(false);
-      setCreateData({ name: '', email: '', password: '', phone: '', tenant_id: '' });
+      setCreateData({ name: '', email: '', password: '', phone: '', tenant_id: '', brand_id: '' });
       toast.success('User created successfully!');
     },
     onError: (error: any) => {
@@ -200,7 +218,10 @@ const Users: React.FC = () => {
             onChange={setFilterRole}
             options={[
               { value: '', label: 'All roles' },
-              ...(roles ?? []).map((r) => ({ value: r.slug, label: r.name })),
+              // Owner / super admin are not selectable in the Users module.
+              ...(roles ?? [])
+                .filter((r) => !['owner', 'super_admin'].includes(r.slug.toLowerCase()))
+                .map((r) => ({ value: r.slug, label: r.name })),
             ]}
             placeholder="All roles"
             minWidth="min-w-[180px]"
@@ -281,6 +302,24 @@ const Users: React.FC = () => {
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
               </select>
+            </div>
+          )}
+          {needsBrandChoice && brands && brands.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
+              <select
+                value={createData.brand_id}
+                onChange={(e) => setCreateData({ ...createData, brand_id: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All brands (no specific brand)</option>
+                {brands.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                Pick the brand this user belongs to so they can be assigned as a branch user for that brand. Leave as “All brands” for owner/manager accounts.
+              </p>
             </div>
           )}
           <div>
@@ -426,27 +465,31 @@ const Users: React.FC = () => {
                   statusVariant={u.status === 'active' ? 'active' : 'inactive'}
                   animationIndex={i}
                   actions={
-                    <>
-                      <Button size="small" variant="edit" onClick={() => openEdit(u)}>Edit</Button>
-                      <Button
-                        size="small"
-                        variant="danger"
-                        onClick={() => {
-                          (async () => {
-                            const ok = await confirmDialog({
-                              title: `Delete user "${u.name}"?`,
-                              text: 'This action cannot be undone.',
-                              confirmText: 'Delete',
-                            });
-                            if (!ok) return;
-                            deleteMutation.mutate(u.id);
-                          })();
-                        }}
-                        isLoading={deleteMutation.isPending}
-                      >
-                        Delete
-                      </Button>
-                    </>
+                    u.id === user?.id && !user?.is_owner ? (
+                      <span className="text-xs text-gray-400 dark:text-slate-500">Your account</span>
+                    ) : (
+                      <>
+                        <Button size="small" variant="edit" onClick={() => openEdit(u)}>Edit</Button>
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={() => {
+                            (async () => {
+                              const ok = await confirmDialog({
+                                title: `Delete user "${u.name}"?`,
+                                text: 'This action cannot be undone.',
+                                confirmText: 'Delete',
+                              });
+                              if (!ok) return;
+                              deleteMutation.mutate(u.id);
+                            })();
+                          }}
+                          isLoading={deleteMutation.isPending}
+                        >
+                          Delete
+                        </Button>
+                      </>
+                    )
                   }
                 />
               ))}

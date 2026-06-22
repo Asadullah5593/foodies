@@ -23,13 +23,25 @@ export class DiscountsController {
     constructor(private service: DiscountsService) {}
 
     @Get()
-    index(@CurrentUser() user: { id: number; tenantId: number | null }) {
-        return this.service.findAll(user.tenantId);
+    index(
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
+    ) {
+        return this.service.findAll(user.tenantId, user.allowedBrandIds);
     }
 
     @Post()
     store(
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
         @Body()
         dto: {
             name: string;
@@ -52,13 +64,18 @@ export class DiscountsController {
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.create(dto, user.tenantId);
+        return this.service.create(dto, user.tenantId, user.allowedBrandIds);
     }
 
     @Put(':id')
     update(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
         @Body()
         dto: {
             name?: string;
@@ -81,16 +98,26 @@ export class DiscountsController {
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.update(+id, user.tenantId, dto);
+        return this.service.update(
+            +id,
+            user.tenantId,
+            dto,
+            user.allowedBrandIds,
+        );
     }
 
     @Delete(':id')
     destroy(
         @Param('id') id: string,
-        @CurrentUser() user: { id: number; tenantId: number | null },
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.remove(+id, user.tenantId);
+        return this.service.remove(+id, user.tenantId, user.allowedBrandIds);
     }
 }

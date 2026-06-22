@@ -32,6 +32,9 @@ export const Permissions = {
     CUSTOMERS_MANAGE: 'customers:manage',
     ROLES_MANAGE: 'roles:manage',
     DELIVERIES_VIEW: 'deliveries:view',
+    // Rider brand-ownership & sharing
+    RIDER_SHARE_REQUEST: 'rider-share:request',
+    RIDER_SHARING_MANAGE: 'rider-sharing:manage',
     SHIFTS_MANAGE: 'shifts:manage',
     LOYALTY_MANAGE: 'loyalty:manage',
     // Deals (menu items with deal_components)
@@ -57,6 +60,10 @@ export const Permissions = {
 
     RECIPES_MANAGE: 'recipes:manage',
     COSTING_VIEW: 'costing:view',
+
+    // CMS – Banners & Promotions
+    CMS_MANAGE: 'cms:manage',
+    PROMOTIONS_MANAGE: 'promotions:manage',
 } as const;
 
 export type PermissionName = (typeof Permissions)[keyof typeof Permissions];

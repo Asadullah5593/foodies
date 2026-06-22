@@ -21,12 +21,14 @@ export class ShiftsService {
         private paymentRepo: Repository<Payment>,
     ) {}
 
-    /** List shifts. When tenantId is set, only shifts for branches belonging to that tenant are returned. When allowedBranchIds is set, only those branches. */
+    /** List shifts. When tenantId is set, only shifts for branches belonging to that tenant are returned. When allowedBranchIds is set, only those branches. When allowedBrandIds is set (brand-locked user), only that brand's shifts. */
     async findAll(
         branchId?: number,
         status?: string,
         tenantId?: number | null,
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
+        brandId?: number,
     ) {
         if (
             allowedBranchIds != null &&
@@ -39,11 +41,21 @@ export class ShiftsService {
                 'You do not have access to this branch',
             );
         }
+        if (
+            allowedBrandIds != null &&
+            brandId != null &&
+            !allowedBrandIds.includes(brandId)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this brand',
+            );
+        }
         const qb = this.repo
             .createQueryBuilder('s')
             .leftJoinAndSelect('s.user', 'u')
             .leftJoinAndSelect('s.branch', 'b')
             .leftJoinAndSelect('s.closer', 'c')
+            .leftJoinAndSelect('s.brand', 'shiftBrand')
             .orderBy('s.createdAt', 'DESC');
         if (tenantId != null) {
             qb.innerJoin('b.branchBrands', 'bb').innerJoin(
@@ -62,7 +74,13 @@ export class ShiftsService {
                 allowedBranchIds,
             });
         }
+        if (allowedBrandIds != null) {
+            qb.andWhere('s.brandId IN (:...allowedBrandIds)', {
+                allowedBrandIds,
+            });
+        }
         if (branchId) qb.andWhere('s.branchId = :branchId', { branchId });
+        if (brandId) qb.andWhere('s.brandId = :brandId', { brandId });
         if (status) qb.andWhere('s.status = :status', { status });
         const list = await qb.getMany();
         const collected = await Promise.all(
@@ -74,17 +92,19 @@ export class ShiftsService {
         }));
     }
 
-    /** Get one shift by id. When tenantId is set, returns 403 if the shift's branch does not belong to that tenant. When allowedBranchIds is set, 403 if branch not in list. */
+    /** Get one shift by id. When tenantId is set, returns 403 if the shift's branch does not belong to that tenant. When allowedBranchIds is set, 403 if branch not in list. When allowedBrandIds is set, 403 if the shift's brand is not in it. */
     async findOne(
         id: number,
         tenantId?: number | null,
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         const qb = this.repo
             .createQueryBuilder('s')
             .leftJoinAndSelect('s.user', 'u')
             .leftJoinAndSelect('s.branch', 'b')
             .leftJoinAndSelect('s.closer', 'c')
+            .leftJoinAndSelect('s.brand', 'shiftBrand')
             .where('s.id = :id', { id });
         if (tenantId != null) {
             qb.innerJoin('b.branchBrands', 'bb').innerJoin(
@@ -106,6 +126,14 @@ export class ShiftsService {
                 'You do not have access to this branch',
             );
         }
+        if (
+            allowedBrandIds != null &&
+            (shift.brandId == null || !allowedBrandIds.includes(shift.brandId))
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this brand',
+            );
+        }
         const collected = await this.getCollectedAmounts(shift);
         return { ...this.toResponse(shift), ...collected };
     }
@@ -113,11 +141,13 @@ export class ShiftsService {
     async create(
         dto: {
             branch_id: number;
+            brand_id: number;
             user_id: number;
             opening_cash: number;
             notes?: string;
         },
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         if (
             allowedBranchIds != null &&
@@ -129,12 +159,29 @@ export class ShiftsService {
                 'You do not have access to this branch',
             );
         }
+        // Shifts are opened per brand by that brand's staff. Unrestricted
+        // users (owner / GM, allowedBrandIds == null) can view and close
+        // shifts but never open them.
+        if (allowedBrandIds == null) {
+            throw new ForbiddenException(
+                'Shifts are opened by brand staff. Your account is not locked to a brand.',
+            );
+        }
+        if (!dto.brand_id || !allowedBrandIds.includes(dto.brand_id)) {
+            throw new ForbiddenException(
+                'You can only open a shift for your own brand',
+            );
+        }
         const existingOpen = await this.repo.findOne({
-            where: { branchId: dto.branch_id, status: 'open' },
+            where: {
+                branchId: dto.branch_id,
+                brandId: dto.brand_id,
+                status: 'open',
+            },
         });
         if (existingOpen) {
             throw new ConflictException(
-                'A shift is already open for this branch. Close it before opening a new one.',
+                'A shift is already open for this brand at this branch. Close it before opening a new one.',
             );
         }
         const today = new Date().toISOString().slice(0, 10);
@@ -147,6 +194,7 @@ export class ShiftsService {
         const shift = await this.repo.save(
             this.repo.create({
                 branchId: dto.branch_id,
+                brandId: dto.brand_id,
                 userId: dto.user_id,
                 shiftNumber,
                 openingCash: dto.opening_cash,
@@ -157,12 +205,12 @@ export class ShiftsService {
         );
         const loaded = await this.repo.findOne({
             where: { id: shift.id },
-            relations: ['user', 'branch'],
+            relations: ['user', 'branch', 'brand'],
         });
         return this.toResponse(loaded ?? shift);
     }
 
-    /** Get the current open shift for a branch, if any. */
+    /** Get the current open shift for a branch, if any (legacy: any brand). */
     async findOpenByBranch(
         branchId: number,
     ): Promise<{ id: number; shift_number: string; opened_at: string } | null> {
@@ -177,6 +225,38 @@ export class ShiftsService {
             opened_at:
                 shift.openedAt?.toISOString() ?? new Date().toISOString(),
         };
+    }
+
+    /** Open shift for a specific brand at a branch, if any. */
+    async findOpenByBranchAndBrand(
+        branchId: number,
+        brandId: number,
+    ): Promise<Shift | null> {
+        return this.repo.findOne({
+            where: { branchId, brandId, status: 'open' },
+            order: { openedAt: 'DESC' },
+        });
+    }
+
+    /** All open shifts at a branch keyed by brand (for the POS till). */
+    async findOpenShiftsByBranch(branchId: number): Promise<
+        Array<{
+            id: number;
+            brand_id: number | null;
+            shift_number: string;
+            opened_at: string;
+        }>
+    > {
+        const shifts = await this.repo.find({
+            where: { branchId, status: 'open' },
+            order: { openedAt: 'DESC' },
+        });
+        return shifts.map((s) => ({
+            id: s.id,
+            brand_id: s.brandId,
+            shift_number: s.shiftNumber,
+            opened_at: s.openedAt?.toISOString() ?? new Date().toISOString(),
+        }));
     }
 
     /** Branch IDs that currently have an open shift (for POS branch list). */
@@ -204,6 +284,9 @@ export class ShiftsService {
             .andWhere('o.completedAt >= :openedAt', {
                 openedAt: shift.openedAt,
             });
+        if (shift.brandId != null) {
+            qb.andWhere('o.brandId = :brandId', { brandId: shift.brandId });
+        }
         if (shift.closedAt) {
             qb.andWhere('o.completedAt <= :closedAt', {
                 closedAt: shift.closedAt,
@@ -224,13 +307,17 @@ export class ShiftsService {
         return { cash_collected, card_collected };
     }
 
-    /** Add completed order amount to the open shift's expected cash (called when an order is marked completed). */
+    /** Add completed order amount to the open shift's expected cash (called when an order is marked completed). Targets the order's brand shift when set. */
     async addCompletedOrderAmount(
         branchId: number,
         amount: number,
+        brandId?: number | null,
     ): Promise<void> {
         const shift = await this.repo.findOne({
-            where: { branchId, status: 'open' },
+            where:
+                brandId != null
+                    ? { branchId, brandId, status: 'open' }
+                    : { branchId, status: 'open' },
             order: { openedAt: 'DESC' },
         });
         if (!shift) return;
@@ -248,9 +335,10 @@ export class ShiftsService {
         tenantId?: number | null,
         allowedBranchIds?: number[] | null,
         closedByUserId?: number | null,
+        allowedBrandIds?: number[] | null,
     ) {
         if (tenantId != null) {
-            await this.findOne(id, tenantId, allowedBranchIds);
+            await this.findOne(id, tenantId, allowedBranchIds, allowedBrandIds);
         }
         const shift = await this.repo.findOne({
             where: { id },
@@ -269,7 +357,7 @@ export class ShiftsService {
         await this.repo.save(shift);
         const loaded = await this.repo.findOne({
             where: { id },
-            relations: ['user', 'branch', 'closer'],
+            relations: ['user', 'branch', 'closer', 'brand'],
         });
         return this.toResponse(loaded ?? shift);
     }
@@ -282,12 +370,18 @@ export class ShiftsService {
         id: number,
         tenantId?: number | null,
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
-        // findOne enforces tenant/branch access (throws 403/404) and already
-        // returns the shift's window + cash/card collected — reuse both rather
-        // than re-querying the shift and re-running the payment aggregate.
-        const access = await this.findOne(id, tenantId, allowedBranchIds);
-        const openedAt = new Date(access.opened_at as string);
+        // findOne enforces tenant/branch/brand access (throws 403/404) and
+        // already returns the shift's window + cash/card collected — reuse
+        // both rather than re-querying the shift and re-running the aggregate.
+        const access = await this.findOne(
+            id,
+            tenantId,
+            allowedBranchIds,
+            allowedBrandIds,
+        );
+        const openedAt = new Date(access.opened_at);
 
         const qb = this.orderRepo
             .createQueryBuilder('o')
@@ -296,6 +390,11 @@ export class ShiftsService {
             .andWhere("o.status = 'completed'")
             .andWhere('o.completedAt >= :openedAt', { openedAt })
             .orderBy('o.completedAt', 'DESC');
+        if (access.brand_id != null) {
+            qb.andWhere('o.brandId = :shiftBrandId', {
+                shiftBrandId: access.brand_id,
+            });
+        }
         if (access.closed_at) {
             qb.andWhere('o.completedAt <= :closedAt', {
                 closedAt: new Date(access.closed_at),
@@ -305,9 +404,7 @@ export class ShiftsService {
         const serialized = orders.map((o) => {
             const methods = Array.from(
                 new Set(
-                    (o.payments ?? []).map(
-                        (p: Payment) => p.paymentMethod,
-                    ),
+                    (o.payments ?? []).map((p: Payment) => p.paymentMethod),
                 ),
             );
             return {
@@ -339,6 +436,8 @@ export class ShiftsService {
         return {
             id: s.id,
             branch_id: s.branchId,
+            brand_id: s.brandId ?? null,
+            brand: s.brand ? { id: s.brand.id, name: s.brand.name } : null,
             user_id: s.userId,
             shift_number: s.shiftNumber,
             opening_cash: Number(s.openingCash),

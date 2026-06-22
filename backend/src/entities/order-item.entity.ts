@@ -4,6 +4,7 @@ import {
     Column,
     ManyToOne,
     OneToMany,
+    JoinColumn,
     CreateDateColumn,
     UpdateDateColumn,
 } from 'typeorm';
@@ -68,6 +69,15 @@ export class OrderItem {
 
     @ManyToOne(() => MenuItem, (i) => i.orderItems, { onDelete: 'CASCADE' })
     menuItem: MenuItem;
+
+    /**
+     * Read-only relation to the parent deal's menu item (joined on deal_id),
+     * used to show the deal's name on receipts / kitchen tickets / order view.
+     * The writable column is `dealId`; this only adds the join for reads.
+     */
+    @ManyToOne(() => MenuItem, { onDelete: 'SET NULL', nullable: true })
+    @JoinColumn({ name: 'deal_id' })
+    dealMenuItem: MenuItem | null;
 
     @ManyToOne(() => MenuVariant, (v) => v.orderItems, { onDelete: 'SET NULL' })
     variant: MenuVariant;

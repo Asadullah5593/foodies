@@ -2,6 +2,17 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  MdOutlineDashboard,
+  MdOutlineReceiptLong,
+  MdOutlineDeliveryDining,
+  MdOutlineShoppingCart,
+  MdOutlineSoupKitchen,
+  MdOutlineInventory2,
+  MdOutlineStorefront,
+  MdOutlineRestaurantMenu,
+  MdClose,
+} from 'react-icons/md';
 import apiClient from '../../utils/apiClient';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
@@ -64,14 +75,14 @@ function todayIsoDate(): string {
  * Use /kitchen/back for staff (KDS with status updates).
  */
 const NAV_LINKS = [
-  { path: '/admin/dashboard', label: 'Dashboard', icon: '📊' },
-  { path: '/admin/orders', label: 'Orders', icon: '📋' },
-  { path: '/admin/deliveries', label: 'Deliveries', icon: '🛵' },
-  { path: '/pos/orders', label: 'POS', icon: '🛒' },
-  { path: '/kitchen/back', label: 'Back Kitchen', icon: '🍳' },
-  { path: '/foh/packing', label: 'FOH Packing', icon: '📦' },
-  { path: '/admin/brands', label: 'Brands', icon: '🏪' },
-  { path: '/admin/menu-items', label: 'Menu Items', icon: '🍽️' },
+  { path: '/admin/dashboard', label: 'Dashboard', icon: MdOutlineDashboard },
+  { path: '/admin/orders', label: 'Orders', icon: MdOutlineReceiptLong },
+  { path: '/admin/deliveries', label: 'Deliveries', icon: MdOutlineDeliveryDining },
+  { path: '/pos/orders', label: 'POS', icon: MdOutlineShoppingCart },
+  { path: '/kitchen/back', label: 'Back Kitchen', icon: MdOutlineSoupKitchen },
+  { path: '/foh/packing', label: 'FOH Packing', icon: MdOutlineInventory2 },
+  { path: '/admin/brands', label: 'Brands', icon: MdOutlineStorefront },
+  { path: '/admin/menu-items', label: 'Menu Items', icon: MdOutlineRestaurantMenu },
 ];
 
 const KitchenDisplay: React.FC = () => {
@@ -141,7 +152,7 @@ const KitchenDisplay: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-slate-900 dark:bg-slate-950 text-slate-100 flex flex-col">
+    <div className="min-h-screen w-full bg-white text-gray-900 flex flex-col">
       {/* Sidebar overlay for navigation */}
       <AnimatePresence>
         {sidebarOpen && (
@@ -150,7 +161,7 @@ const KitchenDisplay: React.FC = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 bg-black/50"
+              className="fixed inset-0 z-40 bg-black/40"
               onClick={() => setSidebarOpen(false)}
               aria-hidden
             />
@@ -159,28 +170,28 @@ const KitchenDisplay: React.FC = () => {
               animate={{ x: 0 }}
               exit={{ x: -280 }}
               transition={{ type: 'tween', duration: 0.2 }}
-              className="fixed left-0 top-0 bottom-0 z-50 w-72 bg-slate-800 dark:bg-slate-900 border-r border-slate-700 shadow-xl flex flex-col"
+              className="fixed left-0 top-0 bottom-0 z-50 w-72 bg-white border-r border-gray-200 shadow-xl flex flex-col"
             >
-              <div className="p-4 border-b border-slate-700 flex items-center justify-between">
-                <span className="font-semibold text-slate-100">Navigate</span>
+              <div className="p-4 border-b border-gray-200 flex items-center justify-between">
+                <span className="font-semibold text-gray-900">Navigate</span>
                 <button
                   type="button"
                   onClick={() => setSidebarOpen(false)}
-                  className="p-2 rounded-lg hover:bg-slate-700 text-slate-300"
+                  className="p-2 rounded-lg hover:bg-gray-100 text-gray-500"
                   aria-label="Close menu"
                 >
-                  ✕
+                  <MdClose className="h-5 w-5" />
                 </button>
               </div>
               <nav className="p-2 flex-1 overflow-auto">
-                {NAV_LINKS.map(({ path, label, icon }) => (
+                {NAV_LINKS.map(({ path, label, icon: Icon }) => (
                   <Link
                     key={path}
                     to={path}
                     onClick={() => setSidebarOpen(false)}
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-200 hover:bg-slate-700 hover:text-white transition-colors"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-100 hover:text-gray-900 transition-colors"
                   >
-                    <span className="text-lg">{icon}</span>
+                    <Icon className="h-5 w-5" />
                     <span>{label}</span>
                   </Link>
                 ))}
@@ -191,12 +202,12 @@ const KitchenDisplay: React.FC = () => {
       </AnimatePresence>
 
       {/* Compact customer-facing header: no branch filter */}
-      <header className="flex-shrink-0 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
+      <header className="flex-shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between bg-white">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="flex-shrink-0 p-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 transition-colors"
+            className="flex-shrink-0 p-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 transition-colors"
             title="Open menu to navigate"
             aria-label="Open menu"
           >
@@ -205,29 +216,29 @@ const KitchenDisplay: React.FC = () => {
             </svg>
           </button>
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-slate-100">Customer Display</h1>
-            <p className="text-slate-400 dark:text-slate-500 text-sm mt-0.5">
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Customer Display</h1>
+            <p className="text-gray-500 text-sm mt-0.5">
               Order number and status only.
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
-          <div className="flex items-center gap-2 bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2">
-            <label className="text-xs text-slate-300 font-medium">From</label>
+          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+            <label className="text-xs text-gray-600 font-medium">From</label>
             <input
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="bg-slate-900/40 border border-slate-700 text-slate-100 rounded-md px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500"
+              className="bg-white border border-gray-300 text-gray-900 rounded-md px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
             />
           </div>
-          <div className="flex items-center gap-2 bg-slate-800/60 border border-slate-700 rounded-lg px-3 py-2">
-            <label className="text-xs text-slate-300 font-medium">To</label>
+          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+            <label className="text-xs text-gray-600 font-medium">To</label>
             <input
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="bg-slate-900/40 border border-slate-700 text-slate-100 rounded-md px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500"
+              className="bg-white border border-gray-300 text-gray-900 rounded-md px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
             />
           </div>
           <button
@@ -236,18 +247,18 @@ const KitchenDisplay: React.FC = () => {
             className={[
               'px-3 py-2 rounded-lg text-sm font-medium transition-colors border',
               showCompleted
-                ? 'bg-emerald-600/20 border-emerald-500 text-emerald-200 hover:bg-emerald-600/25'
-                : 'bg-slate-800/60 border-slate-700 text-slate-200 hover:bg-slate-700',
+                ? 'bg-emerald-50 border-emerald-400 text-emerald-700 hover:bg-emerald-100'
+                : 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100',
             ].join(' ')}
             title="Toggle completed orders"
           >
-            {showCompleted ? 'Showing completed' : 'Hide completed'}
+            {showCompleted ? 'Hide Completed' : 'Show Completed'}
           </button>
           {!isFullscreen && (
             <button
               type="button"
               onClick={requestFullscreen}
-              className="flex-shrink-0 px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-slate-200 text-sm font-medium transition-colors"
+              className="flex-shrink-0 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium transition-colors"
               title="Enter fullscreen"
             >
               Full screen
@@ -256,18 +267,18 @@ const KitchenDisplay: React.FC = () => {
         </div>
       </header>
 
-      <main className="flex-1 overflow-auto px-4 sm:px-6 pb-6">
+      <main className="flex-1 overflow-auto px-4 sm:px-6 pb-6 pt-5 bg-gray-50">
         <div className="max-w-7xl mx-auto">
         {!branchId ? (
-          <Card className="p-8 text-center bg-slate-800 dark:bg-slate-700 border-slate-700 dark:border-slate-600">
-            <p className="text-slate-400 dark:text-slate-300">Loading…</p>
+          <Card className="p-8 text-center bg-white border-gray-200">
+            <p className="text-gray-500">Loading…</p>
           </Card>
         ) : isLoading ? (
           <Loader fullScreen text="Loading orders..." />
         ) : displayGroups.length === 0 ? (
-          <Card className="p-8 sm:p-12 text-center bg-slate-800 dark:bg-slate-700 border-slate-700 dark:border-slate-600">
-            <p className="text-slate-400 dark:text-slate-300 text-lg">No orders in queue right now.</p>
-            <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">Your order will appear here once placed.</p>
+          <Card className="p-8 sm:p-12 text-center bg-white border-gray-200">
+            <p className="text-gray-500 text-lg">No orders in queue right now.</p>
+            <p className="text-gray-400 text-sm mt-2">Your order will appear here once placed.</p>
           </Card>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
@@ -278,18 +289,18 @@ const KitchenDisplay: React.FC = () => {
               const statusLabel = statusSet.size === 1 ? first?.status : 'Mixed';
 
               return (
-                <Card key={groupId ?? `single-${first?.id}`} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-lg overflow-hidden">
-                  <div className="px-4 py-3 bg-slate-50 dark:bg-slate-700/50 border-b border-slate-200 dark:border-slate-600">
+                <Card key={groupId ?? `single-${first?.id}`} className="bg-white border border-gray-200 shadow-sm overflow-hidden">
+                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
                     <div className="flex items-center gap-3">
                       <div className="flex-1">
                         {isGroup ? (
-                          <span className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                          <span className="text-lg font-bold text-gray-900">
                             Order #{first?.order_number}
                           </span>
                         ) : (
-                          <span className="text-lg font-bold text-slate-900 dark:text-slate-100">#{first?.order_number}</span>
+                          <span className="text-lg font-bold text-gray-900">#{first?.order_number}</span>
                         )}
-                        <span className="ml-2 px-2.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700">
+                        <span className="ml-2 px-2.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-200">
                           {statusLabel}
                         </span>
                       </div>

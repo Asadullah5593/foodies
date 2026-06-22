@@ -98,9 +98,9 @@ export class MenuService {
             where: { id: branchId },
             relations: ['branchBrands'],
         });
-        // Consumer-facing: a disabled-menu or inactive branch exposes no
-        // brands/categories (mirrors getBranchMenu returning an empty menu).
-        if (!branch || !branch.isActive || !branch.menuEnabled) return [];
+        // An inactive branch exposes no brands/categories (mirrors getBranchMenu
+        // returning an empty menu).
+        if (!branch || !branch.isActive) return [];
         return (branch.branchBrands ?? []).map((bb) => bb.brandId);
     }
 
@@ -112,6 +112,15 @@ export class MenuService {
      */
     async getConsumerCategoriesForBranch(branchId: number) {
         const brandIds = await this.getBrandIdsForBranch(branchId);
+        return this.getConsumerCategoriesForBrandIds(brandIds);
+    }
+
+    /**
+     * Consumer API: list unique category names across a given set of active brands. Same
+     * shape/dedupe as {@link getConsumerCategoriesForBranch}, but driven by brand ids directly
+     * so it can aggregate across multiple branches (e.g. brands available near a location).
+     */
+    async getConsumerCategoriesForBrandIds(brandIds: number[]) {
         if (brandIds.length === 0) return [];
         const rows = await this.categoryRepo
             .createQueryBuilder('c')
@@ -152,6 +161,18 @@ export class MenuService {
         categoryKey: string,
     ): Promise<number[]> {
         const brandIds = await this.getBrandIdsForBranch(branchId);
+        return this.getConsumerBrandIdsForCategoryKey(brandIds, categoryKey);
+    }
+
+    /**
+     * Consumer API: from a given set of brand ids, return those that are active and define the
+     * category. Brand-ids variant of {@link getConsumerBrandIdsForCategoryKeyAtBranch} so it can
+     * span multiple branches (e.g. brands available near a location).
+     */
+    async getConsumerBrandIdsForCategoryKey(
+        brandIds: number[],
+        categoryKey: string,
+    ): Promise<number[]> {
         if (brandIds.length === 0) return [];
         const key = categoryKey.toLowerCase();
         const rawBrandIds = await this.categoryRepo
@@ -214,6 +235,7 @@ export class MenuService {
             .leftJoinAndSelect('i.variants', 'v')
             .leftJoinAndSelect('i.addons', 'a')
             .leftJoinAndSelect('i.modifierGroups', 'mg')
+            .leftJoinAndSelect('mg.modifiers', 'mgm')
             .orderBy('i.sortOrder', 'ASC')
             .addOrderBy('i.id', 'ASC');
 
@@ -281,6 +303,7 @@ export class MenuService {
             modifier_groups: (i.modifierGroups ?? []).map((mg) => ({
                 id: mg.id,
                 name: mg.name,
+                modifier_count: mg.modifiers?.length ?? 0,
             })),
         }));
     }
@@ -842,10 +865,35 @@ export class MenuService {
         type BranchWithBrands = Branch & { branchBrands?: unknown[] };
         if (!branch || !(branch as BranchWithBrands).branchBrands?.length)
             return [];
-        // Consumer-facing: no menu for a disabled-menu or inactive branch.
-        if (!branch.menuEnabled || !branch.isActive) return [];
+        // No menu for an inactive branch.
+        if (!branch.isActive) return [];
+
+        // Only items whose brand is still linked to this branch AND active may be
+        // sold. Guards against orphaned branch_menu_items left behind when a brand
+        // is unlinked, and mirrors the branch-level switch: an inactive brand is
+        // fully off everywhere — hidden from customers and not sellable at POS.
+        const linkedBrandIds = new Set(
+            (
+                (
+                    branch as BranchWithBrands & {
+                        branchBrands?: Array<{
+                            brandId?: number;
+                            brand?: { isActive?: boolean };
+                        }>;
+                    }
+                ).branchBrands ?? []
+            )
+                .filter((bb) => bb.brand?.isActive !== false)
+                .map((bb) => bb.brandId)
+                .filter((id): id is number => id != null),
+        );
 
         let linked = (branch.branchMenuItems ?? [])
+            .filter(
+                (bmi) =>
+                    bmi.menuItem?.brandId != null &&
+                    linkedBrandIds.has(bmi.menuItem.brandId),
+            )
             .filter((bmi) => bmi.isAvailable !== false)
             .filter(
                 (bmi) =>
@@ -901,9 +949,7 @@ export class MenuService {
                 name: item?.name,
                 description: item?.description,
                 image_url: item?.imageUrl ?? null,
-                gallery_image_urls: item
-                    ? galleryUrlsForApi(item)
-                    : [],
+                gallery_image_urls: item ? galleryUrlsForApi(item) : [],
                 price,
                 base_price: Number(item?.basePrice ?? 0),
                 category: item?.category?.name,
@@ -1099,7 +1145,11 @@ export class MenuService {
     }
 
     /** Single tenant-brand menu item (includes gallery for consumer PDP). */
-    async getTenantMenuItem(tenantId: number, brandId: number, menuItemId: number) {
+    async getTenantMenuItem(
+        tenantId: number,
+        brandId: number,
+        menuItemId: number,
+    ) {
         await this.assertBrandBelongsToTenant(brandId, tenantId);
 
         const item = await this.itemRepo.findOne({
@@ -1775,5 +1825,70 @@ export class MenuService {
         });
         if (!mg) throw new NotFoundException('Modifier group not found');
         await this.assertBrandBelongsToTenant(mg.brandId, tenantId);
+    }
+
+    /**
+     * Brand that owns the given menu entity (variants and modifiers resolve
+     * through their parent item / group). Null when the entity is missing.
+     */
+    async getEntityBrandId(
+        kind:
+            | 'category'
+            | 'item'
+            | 'addon'
+            | 'variant'
+            | 'modifier-group'
+            | 'modifier',
+        id: number,
+    ): Promise<number | null> {
+        switch (kind) {
+            case 'category': {
+                const row = await this.categoryRepo.findOne({
+                    where: { id },
+                    select: ['brandId'],
+                });
+                return row?.brandId ?? null;
+            }
+            case 'item': {
+                const row = await this.itemRepo.findOne({
+                    where: { id },
+                    select: ['brandId'],
+                });
+                return row?.brandId ?? null;
+            }
+            case 'addon': {
+                const row = await this.addonRepo.findOne({
+                    where: { id },
+                    select: ['brandId'],
+                });
+                return row?.brandId ?? null;
+            }
+            case 'variant': {
+                const variant = await this.variantRepo.findOne({
+                    where: { id },
+                    select: ['menuItemId'],
+                });
+                if (!variant) return null;
+                return this.getEntityBrandId('item', variant.menuItemId);
+            }
+            case 'modifier-group': {
+                const row = await this.modifierGroupRepo.findOne({
+                    where: { id },
+                    select: ['brandId'],
+                });
+                return row?.brandId ?? null;
+            }
+            case 'modifier': {
+                const mod = await this.modifierRepo.findOne({
+                    where: { id },
+                    select: ['modifierGroupId'],
+                });
+                if (!mod) return null;
+                return this.getEntityBrandId(
+                    'modifier-group',
+                    mod.modifierGroupId,
+                );
+            }
+        }
     }
 }

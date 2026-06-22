@@ -43,7 +43,18 @@ export class KitchenService {
             /** When true, include completed orders in the list. */
             include_completed?: boolean;
         },
+        /** Brand lock of the requesting user (null = unrestricted). Enforced server-side. */
+        allowedBrandIds: number[] | null = null,
     ) {
+        if (
+            allowedBrandIds != null &&
+            filters.brand_id != null &&
+            !allowedBrandIds.includes(filters.brand_id)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this brand',
+            );
+        }
         const includeCompleted =
             filters.include_completed === true ||
             filters.status === 'completed';
@@ -53,13 +64,18 @@ export class KitchenService {
 
         const qb = this.orderRepo
             .createQueryBuilder('o')
+            .leftJoinAndSelect('o.rider', 'rider')
             .leftJoinAndSelect('o.orderItems', 'oi')
             .leftJoinAndSelect('oi.menuItem', 'mi')
             .leftJoinAndSelect('mi.brand', 'miBrand')
             .leftJoinAndSelect('mi.category', 'cat')
             .leftJoinAndSelect('oi.addons', 'oa')
             .leftJoinAndSelect('oa.addon', 'a')
+            .leftJoinAndSelect('oi.modifiers', 'om')
+            .leftJoinAndSelect('om.modifier', 'omod')
+            .leftJoinAndSelect('omod.modifierGroup', 'omg')
             .leftJoinAndSelect('oi.variant', 'v')
+            .leftJoinAndSelect('oi.dealMenuItem', 'odeal')
             .where('o.branchId = :branchId', { branchId })
             .andWhere('o.status IN (:...statuses)', {
                 statuses,
@@ -89,12 +105,33 @@ export class KitchenService {
             qb.andWhere('o.brandId = :brandId', {
                 brandId: filters.brand_id,
             });
+        } else if (allowedBrandIds != null) {
+            // Brand-locked staff only ever see their own brand's tickets,
+            // even when the client omits the brand_id filter.
+            qb.andWhere('o.brandId IN (:...allowedBrandIds)', {
+                allowedBrandIds,
+            });
         }
         const orders = await qb.getMany();
         return orders.map((o) => this.toKitchenOrder(o));
     }
 
-    async getOrder(id: number, branchId: number) {
+    /** Brand-locked staff cannot see or act on another brand's order. */
+    private assertBrandAccess(
+        order: { brandId?: number | null },
+        allowedBrandIds: number[] | null,
+    ) {
+        if (allowedBrandIds == null) return;
+        if (order.brandId == null || !allowedBrandIds.includes(order.brandId)) {
+            throw new NotFoundException('Order not found');
+        }
+    }
+
+    async getOrder(
+        id: number,
+        branchId: number,
+        allowedBrandIds: number[] | null = null,
+    ) {
         const order = await this.orderRepo.findOne({
             where: { id, branchId },
             relations: [
@@ -104,13 +141,23 @@ export class KitchenService {
                 'orderItems.variant',
                 'orderItems.addons',
                 'orderItems.addons.addon',
+                'orderItems.modifiers',
+                'orderItems.modifiers.modifier',
+                'orderItems.modifiers.modifier.modifierGroup',
+                'orderItems.dealMenuItem',
             ],
         });
         if (!order) throw new NotFoundException('Order not found');
+        this.assertBrandAccess(order, allowedBrandIds);
         return this.toKitchenOrder(order);
     }
 
-    async updateStatus(id: number, branchId: number, status: string) {
+    async updateStatus(
+        id: number,
+        branchId: number,
+        status: string,
+        allowedBrandIds: number[] | null = null,
+    ) {
         if (!KITCHEN_STATUSES.includes(status)) {
             throw new ForbiddenException(
                 `Invalid kitchen status: ${status}. Use: accepted, preparing, ready, completed`,
@@ -118,6 +165,7 @@ export class KitchenService {
         }
         const order = await this.orderRepo.findOne({ where: { id, branchId } });
         if (!order) throw new NotFoundException('Order not found');
+        this.assertBrandAccess(order, allowedBrandIds);
         const previousStatus = order.status;
         order.status = status;
         if (status === 'completed') {
@@ -126,6 +174,7 @@ export class KitchenService {
             await this.shiftsService.addCompletedOrderAmount(
                 branchId,
                 Number(order.totalAmount),
+                order.brandId ?? null,
             );
         } else {
             await this.orderRepo.save(order);
@@ -143,7 +192,11 @@ export class KitchenService {
         return this.getOrder(id, branchId);
     }
 
-    async getKotPayload(id: number, branchId: number) {
+    async getKotPayload(
+        id: number,
+        branchId: number,
+        allowedBrandIds: number[] | null = null,
+    ) {
         const order = await this.orderRepo.findOne({
             where: { id, branchId },
             relations: [
@@ -153,12 +206,20 @@ export class KitchenService {
                 'orderItems.variant',
                 'orderItems.addons',
                 'orderItems.addons.addon',
+                'orderItems.modifiers',
+                'orderItems.modifiers.modifier',
+                'orderItems.modifiers.modifier.modifierGroup',
+                'orderItems.dealMenuItem',
             ],
         });
         if (!order) throw new NotFoundException('Order not found');
+        this.assertBrandAccess(order, allowedBrandIds);
         type OI = (typeof order.orderItems)[0] & {
             menuItem?: { name: string; brand?: { name: string } };
         };
+        const sortedItems = [...(order.orderItems ?? [])].sort(
+            (a, b) => a.id - b.id,
+        );
         return {
             order_number: order.orderNumber,
             source: order.source,
@@ -168,10 +229,13 @@ export class KitchenService {
             delivery_address: order.deliveryAddress,
             placed_at: order.placedAt?.toISOString() ?? null,
             items:
-                order.orderItems?.map((oi) => {
+                sortedItems.map((oi) => {
                     const mi = (oi as OI).menuItem;
                     return {
                         name: oi.nameSnapshot ?? oi.menuItem?.name,
+                        deal_id: oi.dealId ?? null,
+                        deal_slot_index: oi.dealSlotIndex ?? null,
+                        deal_name: oi.dealMenuItem?.name ?? null,
                         quantity: oi.quantity,
                         notes: oi.notes,
                         variant_name: oi.variant?.name ?? null,
@@ -183,25 +247,56 @@ export class KitchenService {
                                     quantity: a.quantity ?? 1,
                                 }))
                                 .filter((a) => a.name) ?? [],
+                        modifiers:
+                            oi.modifiers
+                                ?.map((m) => ({
+                                    name:
+                                        m.nameSnapshot ??
+                                        m.modifier?.name ??
+                                        '',
+                                    quantity: m.quantity ?? 1,
+                                    group:
+                                        m.modifier?.modifierGroup?.name ?? null,
+                                }))
+                                .filter((m) => m.name) ?? [],
                     };
                 }) ?? [],
         };
     }
 
     private toKitchenOrder(order: Order) {
+        // Stable cart order (matches the customer invoice) — the join-based
+        // query can otherwise return items in an arbitrary order.
+        const sortedItems = [...(order.orderItems ?? [])].sort(
+            (a, b) => a.id - b.id,
+        );
+        // Orders are single-brand, so show the brand once at the order level.
+        const brandName =
+            sortedItems
+                .map(
+                    (oi) =>
+                        (oi as { menuItem?: { brand?: { name?: string } } })
+                            .menuItem?.brand?.name,
+                )
+                .find(Boolean) ?? null;
         return {
             id: order.id,
             order_number: order.orderNumber,
             order_group_id: order.orderGroupId ?? null,
             brand_id: order.brandId ?? null,
+            brand_name: brandName,
             source: order.source,
             order_type: order.orderType,
             table_number: order.tableNumber,
             customer_name: order.customerName,
             status: order.status,
             placed_at: order.placedAt?.toISOString() ?? null,
+            rider_id: order.riderId ?? null,
+            rider: order.rider
+                ? { id: order.rider.id, name: order.rider.name }
+                : null,
             items:
-                order.orderItems?.map((oi) => {
+                sortedItems.map((oi) => {
                     type OI = typeof oi & {
                         menuItem?: { name: string; brand?: { name: string } };
                         variant?: { name: string };
@@ -209,11 +304,22 @@ export class KitchenService {
                             addon?: { name: string };
                             quantity?: number;
                         }>;
+                        modifiers?: Array<{
+                            nameSnapshot?: string | null;
+                            modifier?: {
+                                name: string;
+                                modifierGroup?: { name?: string };
+                            };
+                            quantity?: number;
+                        }>;
                     };
                     const o = oi as OI;
                     return {
                         id: oi.id,
                         name: oi.nameSnapshot ?? o.menuItem?.name,
+                        deal_id: oi.dealId ?? null,
+                        deal_slot_index: oi.dealSlotIndex ?? null,
+                        deal_name: oi.dealMenuItem?.name ?? null,
                         quantity: oi.quantity,
                         notes: oi.notes,
                         variant_name: o.variant?.name ?? null,
@@ -225,6 +331,18 @@ export class KitchenService {
                                     quantity: a.quantity ?? 1,
                                 }))
                                 .filter((a) => a.name) ?? [],
+                        modifiers:
+                            o.modifiers
+                                ?.map((m) => ({
+                                    name:
+                                        m.nameSnapshot ??
+                                        m.modifier?.name ??
+                                        '',
+                                    quantity: m.quantity ?? 1,
+                                    group:
+                                        m.modifier?.modifierGroup?.name ?? null,
+                                }))
+                                .filter((m) => m.name) ?? [],
                     };
                 }) ?? [],
         };

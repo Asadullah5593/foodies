@@ -2,12 +2,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
+import { adminService } from '../../services/api/adminService';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
+import Modal from '../../components/Modal';
 import SearchableSelect from '../../components/SearchableSelect';
 import { formatOrderType } from '../../utils/format';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
+import { groupOrderItems } from '../../utils/orderItemGrouping';
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -21,18 +24,26 @@ type PackingOrderItem = {
   notes?: string;
   variant_name?: string | null;
   brand_name?: string | null;
+  deal_id?: number | null;
+  deal_slot_index?: number | null;
+  deal_name?: string | null;
   addons?: Array<{ name: string; quantity: number }>;
+  modifiers?: Array<{ name: string; quantity: number; group?: string | null }>;
 };
 
 type PackingOrder = {
   id: number;
   order_number: string;
   order_group_id?: string | null;
+  brand_id?: number | null;
+  brand_name?: string | null;
   order_type: string;
   status: string;
   table_number?: string;
   customer_name?: string;
   placed_at?: string;
+  rider_id?: number | null;
+  rider?: { id: number; name: string } | null;
   items: PackingOrderItem[];
 };
 
@@ -44,6 +55,9 @@ const FOHPacking: React.FC = () => {
   const [dateTo, setDateTo] = useState<string>(todayIsoDate());
   const [showCompleted, setShowCompleted] = useState(false);
   const [updatingOrderId, setUpdatingOrderId] = useState<number | null>(null);
+  const [riderModalOrderId, setRiderModalOrderId] = useState<number | null>(null);
+  const [riderModalBrandId, setRiderModalBrandId] = useState<number | null>(null);
+  const [selectedRiderId, setSelectedRiderId] = useState<number | null>(null);
 
   const { data: branches } = useQuery({
     queryKey: ['branches'],
@@ -99,13 +113,34 @@ const FOHPacking: React.FC = () => {
     },
   });
 
+  const { data: riders, isLoading: ridersLoading } = useQuery({
+    queryKey: ['foh-riders', riderModalBrandId],
+    queryFn: () => adminService.getRiders(riderModalBrandId ?? undefined),
+    enabled: riderModalOrderId != null,
+  });
+
+  const assignRiderMutation = useMutation({
+    mutationFn: ({ orderId, riderId }: { orderId: number; riderId: number }) =>
+      adminService.assignRider(orderId, riderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['foh-packing-orders'] });
+      setRiderModalOrderId(null);
+      setRiderModalBrandId(null);
+      setSelectedRiderId(null);
+      toast.success('Rider assigned');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to assign rider');
+    },
+  });
+
   const ordered = useMemo(() => {
     return (orders as PackingOrder[] | undefined) ?? [];
   }, [orders]);
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 p-6">
-      <div className="max-w-7xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 text-gray-900 dark:text-gray-100">
+      <div className="w-full">
         <div className="flex justify-between items-center mb-6 flex-wrap gap-4">
           <div>
             <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">FOH Packing</h1>
@@ -160,7 +195,7 @@ const FOHPacking: React.FC = () => {
                 { value: 'ready', label: 'Ready' },
                 { value: 'completed', label: 'Completed' },
               ]}
-              placeholder="Ready"
+              placeholder="All statuses"
             />
             <button
               type="button"
@@ -173,7 +208,7 @@ const FOHPacking: React.FC = () => {
               ].join(' ')}
               title="Toggle completed orders"
             >
-              {showCompleted ? 'Showing completed' : 'Hide completed'}
+              {showCompleted ? 'Hide Completed' : 'Show Completed'}
             </button>
           </div>
         </div>
@@ -200,25 +235,42 @@ const FOHPacking: React.FC = () => {
                     key={order.id}
                     className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden"
                   >
-                    <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600 flex justify-between items-center">
+                    <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600 flex justify-between items-start">
+                      {/* Left: order number + brand */}
                       <div>
                         <span className="text-lg font-bold text-gray-900 dark:text-gray-100">Order #{order.order_number}</span>
-                        <span className="ml-2 px-2.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700">
+                        {order.brand_name && (
+                          <span className="block text-xs font-medium text-indigo-600 dark:text-indigo-400 mt-0.5">{order.brand_name}</span>
+                        )}
+                      </div>
+                      {/* Right: order type (+ table if dine-in) on top, status below */}
+                      <div className="flex flex-col items-end gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`px-3 py-1 rounded-md text-sm font-bold uppercase tracking-wide border ${
+                            order.order_type === 'dine_in' ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 border-green-200 dark:border-green-700' :
+                            order.order_type === 'delivery' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 border-blue-200 dark:border-blue-700' :
+                            order.order_type === 'takeaway' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700' :
+                            'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-600'
+                          }`}>
+                            {formatOrderType(order.order_type)}
+                          </span>
+                          {order.order_type === 'dine_in' && order.table_number && (
+                            <span className="px-3 py-1 rounded-md bg-green-600 text-white text-sm font-bold">
+                              Table {order.table_number}
+                            </span>
+                          )}
+                        </div>
+                        <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700">
                           {order.status}
                         </span>
                       </div>
                     </div>
 
                     <div className="px-4 py-2.5 border-b border-gray-100 dark:border-gray-600">
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm">
-                        <span className="font-semibold text-gray-900 dark:text-gray-100">
-                          {formatOrderType(order.order_type)}
-                        </span>
-                        {order.table_number && (
-                          <span className="text-gray-600 dark:text-gray-300">Table {order.table_number}</span>
-                        )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* table number moved to card header for dine-in */}
                         {order.placed_at && (
-                          <span className="text-gray-500 dark:text-gray-400">
+                          <span className="text-gray-500 dark:text-gray-400 text-sm">
                             {new Date(order.placed_at).toLocaleTimeString()}
                           </span>
                         )}
@@ -229,34 +281,59 @@ const FOHPacking: React.FC = () => {
                     </div>
 
                     <div className="px-4 py-3 space-y-3">
-                      {order.items?.map((item) => (
-                        <div key={item.id} className="border-l-2 border-gray-200 dark:border-gray-600 pl-3">
-                          {item.brand_name && (
-                            <p className="text-xs font-medium text-indigo-600 dark:text-indigo-400 mb-0.5">
-                              {item.brand_name}
+                      {(() => {
+                        const renderItem = (item: PackingOrderItem) => (
+                          <div key={item.id} className="border-l-2 border-gray-200 dark:border-gray-600 pl-3">
+                            <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
+                              {item.quantity}× {item.name ?? item.name_snapshot ?? 'Item'}
+                              {item.variant_name && (
+                                <span className="font-normal text-gray-600 dark:text-gray-400"> — {item.variant_name}</span>
+                              )}
                             </p>
-                          )}
-                          <p className="text-base font-semibold text-gray-900 dark:text-gray-100">
-                            {item.quantity}× {item.name ?? item.name_snapshot ?? 'Item'}
-                            {item.variant_name && (
-                              <span className="font-normal text-gray-600 dark:text-gray-400"> — {item.variant_name}</span>
+                            {item.modifiers?.length ? (
+                              <ul className="mt-1 space-y-0.5">
+                                {item.modifiers.map((m, idx) => (
+                                  <li key={idx} className="flex gap-1.5 text-sm text-gray-700 dark:text-gray-300">
+                                    <span className="text-gray-400 dark:text-gray-500" aria-hidden>•</span>
+                                    <span>
+                                      {m.group ? <span className="text-gray-500 dark:text-gray-400">{m.group}: </span> : null}
+                                      {m.name}
+                                      {m.quantity > 1 ? ` ×${m.quantity}` : ''}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : null}
+                            {item.addons?.length ? (
+                              <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">
+                                Add-ons: {item.addons.map((a) => `${a.name} ×${a.quantity ?? 1}`).join(', ')}
+                              </p>
+                            ) : null}
+                            {item.notes && (
+                              <p className="text-sm mt-0.5 text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/40 px-2 py-1 rounded border border-amber-200 dark:border-amber-700">
+                                Note: {item.notes}
+                              </p>
                             )}
-                          </p>
-                          {item.addons?.length ? (
-                            <p className="text-sm text-gray-700 dark:text-gray-300 mt-0.5">
-                              Add-ons: {item.addons.map((a) => `${a.name} ×${a.quantity ?? 1}`).join(', ')}
-                            </p>
-                          ) : null}
-                          {item.notes && (
-                            <p className="text-sm mt-0.5 text-amber-700 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/40 px-2 py-1 rounded border border-amber-200 dark:border-amber-700">
-                              Note: {item.notes}
-                            </p>
-                          )}
-                        </div>
-                      ))}
+                          </div>
+                        );
+                        return groupOrderItems(order.items).map((group, gi) => {
+                          if (group.dealId == null) return group.lines.map(renderItem);
+                          return (
+                            <div
+                              key={`deal-${gi}`}
+                              className="rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-900/10 p-2.5"
+                            >
+                              <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-indigo-700 dark:text-indigo-300">
+                                Deal · {group.dealName ?? 'Deal'}
+                              </p>
+                              <div className="space-y-2">{group.lines.map(renderItem)}</div>
+                            </div>
+                          );
+                        });
+                      })()}
                     </div>
 
-                    <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-200 dark:border-gray-600 flex gap-2 flex-wrap">
+                    <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-200 dark:border-gray-600 flex gap-2 flex-wrap items-center">
                       {order.status === 'ready' && (
                         <Button
                           size="small"
@@ -265,13 +342,33 @@ const FOHPacking: React.FC = () => {
                           isLoading={updatingOrderId === order.id}
                           disabled={updatingOrderId === order.id}
                         >
-                          Handed over (Complete)
+                          Change status to Completed
                         </Button>
                       )}
                       {order.status !== 'ready' && (
                         <span className="text-xs text-gray-600 dark:text-gray-300">
                           Mark complete when status is <span className="font-semibold">ready</span>.
                         </span>
+                      )}
+                      {order.order_type === 'delivery' && (
+                        order.rider ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-700">
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                            Rider: {order.rider.name}
+                          </span>
+                        ) : (
+                          <Button
+                            size="small"
+                            variant="outline"
+                            onClick={() => {
+                              setRiderModalOrderId(order.id);
+                              setRiderModalBrandId(order.brand_id ?? null);
+                              setSelectedRiderId(null);
+                            }}
+                          >
+                            Assign Rider
+                          </Button>
+                        )
                       )}
                     </div>
                   </Card>
@@ -281,6 +378,65 @@ const FOHPacking: React.FC = () => {
           </>
         )}
       </div>
+
+      <Modal
+        isOpen={riderModalOrderId != null}
+        onClose={() => { setRiderModalOrderId(null); setRiderModalBrandId(null); setSelectedRiderId(null); }}
+        title="Assign Rider"
+      >
+        <div className="space-y-4">
+          {ridersLoading ? (
+            <p className="text-sm text-gray-500">Loading riders...</p>
+          ) : !riders?.length ? (
+            <p className="text-sm text-gray-500">No riders available for this brand.</p>
+          ) : (
+            <div className="space-y-2 max-h-72 overflow-y-auto">
+              {riders.map((rider) => (
+                <label
+                  key={rider.id}
+                  className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    selectedRiderId === rider.id
+                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                      : 'border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="foh-rider"
+                    value={rider.id}
+                    checked={selectedRiderId === rider.id}
+                    onChange={() => setSelectedRiderId(rider.id)}
+                    className="h-4 w-4 text-blue-600 border-gray-300"
+                  />
+                  <div>
+                    <p className="font-medium text-gray-800 dark:text-slate-100">{rider.name}</p>
+                    {rider.phone && <p className="text-xs text-gray-500 dark:text-slate-400">{rider.phone}</p>}
+                    {rider.rating_average != null && (
+                      <p className="text-xs text-gray-500 dark:text-slate-400">Rating: {rider.rating_average.toFixed(1)} ({rider.rating_count} reviews)</p>
+                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={() => { setRiderModalOrderId(null); setRiderModalBrandId(null); setSelectedRiderId(null); }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (riderModalOrderId && selectedRiderId) {
+                  assignRiderMutation.mutate({ orderId: riderModalOrderId, riderId: selectedRiderId });
+                }
+              }}
+              disabled={!selectedRiderId}
+              isLoading={assignRiderMutation.isPending}
+            >
+              Assign Rider
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

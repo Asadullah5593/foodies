@@ -19,8 +19,9 @@ export type MainInvoiceLine = {
   variant_name?: string | null;
   deal_id?: number | null;
   deal_slot_index?: number | null;
+  deal_name?: string | null;
   addons?: Array<{ name?: string | null; quantity: number; unit_price: number; subtotal?: number }>;
-  modifiers?: Array<{ name?: string | null; unit_price: number }>;
+  modifiers?: Array<{ name?: string | null; unit_price: number; group?: string | null }>;
 };
 
 export type MainInvoiceOrder = {
@@ -155,7 +156,8 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
               return `<tr class="sub"><td style="padding-left:14px;">${escapeHtml(name)}${variant ? ` (${escapeHtml(variant)})` : ''} × ${line.quantity}</td><td class="text-right">${Number(line.unit_price) === 0 ? '—' : formatCurrency(Number(line.subtotal))}</td></tr>`;
             })
             .join('');
-          return `<tr><td><strong>Deal</strong></td><td class="text-right">${formatCurrency(dealTotal)}</td></tr>${subRows}`;
+          const dealName = group.lines.find((l) => l.deal_name)?.deal_name ?? 'Deal';
+          return `<tr><td><strong>${escapeHtml(dealName)}</strong></td><td class="text-right">${formatCurrency(dealTotal)}</td></tr>${subRows}`;
         }
         return group.lines.map((line) => {
           const name = line.name_snapshot ?? 'Item';
@@ -171,7 +173,8 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
             .join('');
           const mods = (line.modifiers ?? [])
             .map((m) => {
-              const label = m.name ? `Modifier: ${m.name}` : 'Modifier';
+              const prefix = m.group ?? 'Modifier';
+              const label = m.name ? `${prefix}: ${m.name}` : prefix;
               return `<tr class="sub"><td style="padding-left:14px;">${escapeHtml(label)}</td><td class="text-right">${formatCurrency(Number(m.unit_price))}</td></tr>`;
             })
             .join('');
@@ -201,7 +204,6 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
       `;
     }).join('');
     const html = `
-      ${invoiceData.orders.length > 1 && invoiceData.order_group_id ? `<p class="meta">Order group: ${escapeHtml(invoiceData.order_group_id)}</p>` : ''}
       ${ordersHtml}
       <div class="section border-t total-row" style="margin-top: 24px; padding-top: 16px;">
         <p class="font-bold">${invoiceData.orders.length > 1 ? 'Gross total' : 'Total'}: ${formatCurrency(Number(invoiceData.gross_total ?? 0))}</p>
@@ -227,11 +229,6 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
         <p className="text-red-600 py-4">Failed to load invoice. Please try again.</p>
       ) : invoiceData ? (
         <div className="space-y-6">
-          {invoiceData.order_group_id && (
-            <div className="text-xs text-gray-500 font-mono border-b border-gray-100 pb-2">
-              {invoiceData.orders.length > 1 ? 'Order group: ' : ''}{invoiceData.order_group_id}
-            </div>
-          )}
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
             {(invoiceData.orders ?? []).map((o: MainInvoiceOrder) => (
               <div
@@ -258,7 +255,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                             <>
                               <tr className="border-b border-gray-100 bg-gray-50/50">
                                 <td className="py-1.5 text-gray-700 font-medium">
-                                  Deal
+                                  {group.lines.find((l) => l.deal_name)?.deal_name ?? 'Deal'}
                                 </td>
                                 <td className="py-1.5 text-right font-medium text-gray-800">
                                   {formatCurrency(dealTotal)}
@@ -312,7 +309,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                                   {(line.modifiers ?? []).map((m, mi: number) => (
                                     <tr key={`m-${gi}-${i}-${mi}`} className="border-b border-gray-100">
                                       <td className="py-1 text-gray-500 pl-4">
-                                        Modifier: {m.name ?? '—'}
+                                        {m.group ?? 'Modifier'}: {m.name ?? '—'}
                                       </td>
                                       <td className="py-1 text-right text-gray-600">
                                         {formatCurrency(Number(m.unit_price))}

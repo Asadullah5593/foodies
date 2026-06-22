@@ -182,6 +182,19 @@ const Deals: React.FC = () => {
     },
   });
 
+  const toggleActiveMutation = useMutation({
+    mutationFn: ({ id, is_active }: { id: number; is_active: boolean }) =>
+      adminService.updateMenuItem(id, { is_active }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['deals'] });
+      queryClient.invalidateQueries({ queryKey: ['menuItems'] });
+      toast.success('Deal status updated');
+    },
+    onError: (e: { response?: { data?: { message?: string } } }) => {
+      toast.error(e.response?.data?.message || 'Failed to update status');
+    },
+  });
+
   const resetForm = () => {
     setFormStep('select');
     setEditingDealId(null);
@@ -415,6 +428,14 @@ const Deals: React.FC = () => {
                     <>
                       <Button size="small" variant="view" onClick={() => openView(d)}>View</Button>
                       <Button size="small" variant="edit" onClick={() => openEdit(d)}>Edit</Button>
+                      <Button
+                        size="small"
+                        variant={d.is_active ? 'outline' : 'primary'}
+                        isLoading={toggleActiveMutation.isPending}
+                        onClick={() => toggleActiveMutation.mutate({ id: d.id, is_active: !d.is_active })}
+                      >
+                        {d.is_active ? 'Set inactive' : 'Set active'}
+                      </Button>
                       <Button size="small" variant="danger" onClick={() => setDeletingId(d.id)}>Delete</Button>
                     </>
                   }

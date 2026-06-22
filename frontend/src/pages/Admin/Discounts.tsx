@@ -571,6 +571,14 @@ const Discounts: React.FC = () => {
                       <Button size="small" variant="edit" onClick={() => handleEdit(discount)}>Edit</Button>
                       <Button
                         size="small"
+                        variant={discount.is_active ? 'outline' : 'primary'}
+                        isLoading={updateMutation.isPending}
+                        onClick={() => updateMutation.mutate({ id: discount.id, data: { is_active: !discount.is_active } })}
+                      >
+                        {discount.is_active ? 'Set inactive' : 'Set active'}
+                      </Button>
+                      <Button
+                        size="small"
                         variant="danger"
                         onClick={() => {
                           (async () => {

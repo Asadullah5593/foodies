@@ -17,6 +17,8 @@ const ALL_BRANCHES_ACCESS = 'all-branches:access';
  *   (permissions come from roles assigned in tenant_users and branch_users; roles are configured
  *   in the Roles module by super admin / tenant admin).
  * Also sets request.user.allowedBranchIds for tenant users: null = all branches (GM), number[] = only those branches (Branch Manager).
+ * Also sets request.user.allowedBrandIds: null = all brands; number[] = the user's
+ * branch_users rows all carry a brand_id, locking the user to those brands (brand till).
  */
 @Injectable()
 export class RoleAccessGuard implements CanActivate {
@@ -30,6 +32,7 @@ export class RoleAccessGuard implements CanActivate {
                 isSuperAdmin?: boolean;
                 isRider?: boolean;
                 allowedBranchIds?: number[] | null;
+                allowedBrandIds?: number[] | null;
             };
             path?: string;
             url?: string;
@@ -48,6 +51,10 @@ export class RoleAccessGuard implements CanActivate {
 
         // Resolve allowed branches for tenant users (Branch Manager vs General Manager)
         user.allowedBranchIds = await this.getAllowedBranchIds(
+            user.id,
+            user.tenantId,
+        );
+        user.allowedBrandIds = await this.getAllowedBrandIds(
             user.id,
             user.tenantId,
         );
@@ -143,5 +150,34 @@ export class RoleAccessGuard implements CanActivate {
             [tenantId, userId],
         )) as unknown as Array<{ branch_id: number }>;
         return rows.map((r) => r.branch_id);
+    }
+
+    /**
+     * null = unrestricted (all brands); number[] = user is brand-locked.
+     * A user is brand-locked only when they have branch_users rows and EVERY
+     * row carries a brand_id (a row without brand_id grants the whole branch).
+     * Users with all-branches:access (GM/owner) are never brand-locked.
+     */
+    private async getAllowedBrandIds(
+        userId: number,
+        tenantId: number,
+    ): Promise<number[] | null> {
+        const permissionNames = await this.getUserPermissionNames(
+            userId,
+            tenantId,
+        );
+        if (permissionNames.has(ALL_BRANCHES_ACCESS)) return null;
+
+        const rows = (await this.dataSource.query(
+            `SELECT DISTINCT bu.brand_id
+             FROM branch_users bu
+             INNER JOIN branch_brands bb ON bb.branch_id = bu.branch_id
+             INNER JOIN brands br ON br.id = bb.brand_id AND br.tenant_id = $1
+             WHERE bu.user_id = $2`,
+            [tenantId, userId],
+        )) as unknown as Array<{ brand_id: number | null }>;
+        if (rows.length === 0) return null;
+        if (rows.some((r) => r.brand_id == null)) return null;
+        return [...new Set(rows.map((r) => Number(r.brand_id)))];
     }
 }

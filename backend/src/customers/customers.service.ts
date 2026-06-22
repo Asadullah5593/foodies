@@ -4,6 +4,8 @@ import {
     ConflictException,
     BadRequestException,
     UnauthorizedException,
+    Optional,
+    Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, Repository } from 'typeorm';
@@ -13,31 +15,223 @@ import {
     validatePakistaniPhone,
     normalizePakistaniPhone,
 } from '../utils/phone';
+import { PromotionsService } from '../promotions/promotions.service';
+
+/**
+ * Union `add` into `current` brand-id list (deduped). Returns the new array, or
+ * `undefined` when nothing changed (so callers can skip a save). `add` empty/null
+ * (e.g. owner/GM) is a no-op.
+ */
+function mergeBrandIds(
+    current: number[] | null | undefined,
+    add: number[] | null | undefined,
+): number[] | undefined {
+    if (add == null || add.length === 0) return undefined;
+    const set = new Set<number>((current ?? []).map(Number));
+    let changed = false;
+    for (const id of add) {
+        const n = Number(id);
+        if (!set.has(n)) {
+            set.add(n);
+            changed = true;
+        }
+    }
+    return changed ? [...set] : undefined;
+}
 
 @Injectable()
 export class CustomersService {
+    private readonly logger = new Logger(CustomersService.name);
+
     constructor(
         @InjectRepository(Customer) private repo: Repository<Customer>,
         private dataSource: DataSource,
+        @Optional() private promotionsService: PromotionsService,
     ) {}
 
     /**
      * Admin listing must be tenant-scoped.
      * - tenant users: only their tenant's customers
      * - super admin (tenantId null): all customers
+     * - brand-locked users: only customers who have ordered from their brand
      */
-    async findAll(tenantId: number | null) {
-        return this.repo.find({
+    async findAll(tenantId: number | null, allowedBrandIds?: number[] | null) {
+        if (allowedBrandIds != null) {
+            // Brand-locked: customers who ordered from their brand(s) OR are
+            // explicitly associated via brand_ids (manual add / link).
+            const qb = this.repo
+                .createQueryBuilder('c')
+                .where(
+                    `(EXISTS (SELECT 1 FROM orders o
+                              WHERE o.customer_id = c.id AND o.brand_id IN (:...allowedBrandIds))
+                      OR EXISTS (SELECT 1
+                                 FROM jsonb_array_elements_text(COALESCE(c.brand_ids, '[]'::jsonb)) e
+                                 WHERE (e)::int IN (:...allowedBrandIds)))`,
+                    { allowedBrandIds },
+                )
+                .orderBy('c.id', 'ASC');
+            if (tenantId != null)
+                qb.andWhere('c.tenantId = :tenantId', { tenantId });
+            const customers = await qb.getMany();
+            return this.attachLoyaltyWallets(customers, allowedBrandIds);
+        }
+
+        // Owner / unrestricted: return all customers with brand badges
+        const customers = await this.repo.find({
             where: tenantId != null ? { tenantId } : {},
             order: { id: 'ASC' },
         });
+        if (!customers.length) return customers;
+
+        const brandRows = await this.dataSource.query<
+            { customer_id: number; id: number; name: string }[]
+        >(
+            `SELECT DISTINCT o.customer_id, b.id, b.name
+             FROM orders o
+             JOIN brands b ON b.id = o.brand_id
+             WHERE o.customer_id = ANY($1)`,
+            [customers.map((c) => c.id)],
+        );
+
+        const brandMap = new Map<number, { id: number; name: string }[]>();
+        for (const row of brandRows) {
+            if (!brandMap.has(row.customer_id))
+                brandMap.set(row.customer_id, []);
+            brandMap.get(row.customer_id)!.push({ id: row.id, name: row.name });
+        }
+
+        // Resolve names for explicitly-associated brands (brand_ids) so a
+        // manually-added customer with no orders yet still shows a brand badge.
+        const assocBrandIds = new Set<number>();
+        for (const c of customers)
+            for (const bid of c.brandIds ?? []) assocBrandIds.add(Number(bid));
+        const brandNameMap = new Map<number, string>();
+        if (assocBrandIds.size) {
+            const nameRows = await this.dataSource.query<
+                { id: number; name: string }[]
+            >(`SELECT id, name FROM brands WHERE id = ANY($1)`, [
+                [...assocBrandIds],
+            ]);
+            for (const r of nameRows) brandNameMap.set(Number(r.id), r.name);
+        }
+
+        const withBrands = customers.map((c) => {
+            const fromOrders = brandMap.get(c.id) ?? [];
+            const seen = new Set(fromOrders.map((b) => b.id));
+            const fromAssoc = (c.brandIds ?? [])
+                .map(Number)
+                .filter((id) => !seen.has(id) && brandNameMap.has(id))
+                .map((id) => ({ id, name: brandNameMap.get(id)! }));
+            return { ...c, brands: [...fromOrders, ...fromAssoc] };
+        });
+        return this.attachLoyaltyWallets(withBrands, null);
     }
 
-    async findOne(id: number, tenantId: number | null) {
+    /**
+     * Attach per-wallet loyalty balances (+ a total) to admin customer rows.
+     * Brand-locked admins only see POS wallets for their brands; the shared APP
+     * wallet is cross-brand so it is hidden from them.
+     */
+    private async attachLoyaltyWallets<T extends { id: number }>(
+        customers: T[],
+        allowedBrandIds: number[] | null,
+    ): Promise<
+        Array<
+            T & {
+                loyaltyPointsBalance: number;
+                loyaltyWallets: Array<{
+                    wallet_type: 'pos' | 'app';
+                    brand_id: number | null;
+                    brand_name: string | null;
+                    balance: number;
+                }>;
+            }
+        >
+    > {
+        if (!customers.length) return customers as never;
+        const rows = await this.dataSource.query<
+            {
+                customer_id: number;
+                wallet_type: 'pos' | 'app';
+                brand_id: number | null;
+                brand_name: string | null;
+                balance: number;
+            }[]
+        >(
+            `SELECT w.customer_id, w.wallet_type, w.brand_id, w.balance, b.name AS brand_name
+             FROM loyalty_wallets w
+             LEFT JOIN brands b ON b.id = w.brand_id
+             WHERE w.customer_id = ANY($1) AND w.balance > 0`,
+            [customers.map((c) => c.id)],
+        );
+        const walletMap = new Map<
+            number,
+            Array<{
+                wallet_type: 'pos' | 'app';
+                brand_id: number | null;
+                brand_name: string | null;
+                balance: number;
+            }>
+        >();
+        for (const r of rows) {
+            // Hide the shared APP wallet and other-brand POS wallets from brand-locked admins.
+            if (
+                allowedBrandIds != null &&
+                (r.wallet_type !== 'pos' ||
+                    r.brand_id == null ||
+                    !allowedBrandIds.includes(r.brand_id))
+            ) {
+                continue;
+            }
+            const list = walletMap.get(r.customer_id) ?? [];
+            list.push({
+                wallet_type: r.wallet_type,
+                brand_id: r.brand_id,
+                brand_name: r.brand_name,
+                balance: Number(r.balance),
+            });
+            walletMap.set(r.customer_id, list);
+        }
+        return customers.map((c) => {
+            const wallets = walletMap.get(c.id) ?? [];
+            return {
+                ...c,
+                loyaltyWallets: wallets,
+                loyaltyPointsBalance: wallets.reduce(
+                    (sum, w) => sum + w.balance,
+                    0,
+                ),
+            };
+        });
+    }
+
+    async findOne(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ) {
         const customer = await this.repo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
         });
         if (!customer) throw new NotFoundException('Customer not found');
+        if (allowedBrandIds != null) {
+            // Visible if they ordered from the admin's brand OR are explicitly
+            // associated via brand_ids (matches findAll's union).
+            const rows = await this.dataSource.query<unknown[]>(
+                `SELECT 1
+                 WHERE EXISTS (SELECT 1 FROM orders o
+                               WHERE o.customer_id = $1 AND o.brand_id = ANY($2::int[]))
+                    OR EXISTS (SELECT 1
+                               FROM jsonb_array_elements_text(
+                                    COALESCE((SELECT brand_ids FROM customers WHERE id = $1), '[]'::jsonb)) e
+                               WHERE (e)::int = ANY($2::int[]))
+                 LIMIT 1`,
+                [customer.id, allowedBrandIds],
+            );
+            if (rows.length === 0) {
+                throw new NotFoundException('Customer not found');
+            }
+        }
         return customer;
     }
 
@@ -87,6 +281,8 @@ export class CustomersService {
             email?: string | null;
             password?: string | null;
         },
+        allowedBrandIds?: number[] | null,
+        link?: boolean,
     ) {
         const name = dto.name?.trim();
         if (!name) {
@@ -96,10 +292,27 @@ export class CustomersService {
         const existing = await this.repo.findOne({
             where: { tenantId, phone },
         });
-        if (existing)
-            throw new ConflictException(
-                'Customer with this phone already exists',
-            );
+        if (existing) {
+            // Create-or-link: a brand-locked admin adding a phone that already
+            // belongs to a sibling brand can link (associate) it to their own
+            // brand instead of being blocked. Owner/GM (allowedBrandIds == null)
+            // can already see/select everyone, so they just get the conflict.
+            if (allowedBrandIds != null && link) {
+                const merged = mergeBrandIds(
+                    existing.brandIds,
+                    allowedBrandIds,
+                );
+                if (merged !== undefined) {
+                    existing.brandIds = merged;
+                    await this.repo.save(existing);
+                }
+                return Object.assign(existing, { linked: true });
+            }
+            throw new ConflictException({
+                message: 'Customer with this phone already exists',
+                existing: { id: existing.id, name: existing.name },
+            });
+        }
         const email =
             typeof dto.email === 'string'
                 ? dto.email.trim().toLowerCase() || null
@@ -125,6 +338,8 @@ export class CustomersService {
                 email: email ?? null,
                 password: passwordHash,
                 loyaltyPointsBalance: 0,
+                // Brand-locked admin → associate their brand(s); owner/GM → null.
+                brandIds: allowedBrandIds ?? null,
             }),
         );
     }
@@ -221,7 +436,11 @@ export class CustomersService {
             email?: string | null;
             profile_image_url?: string | null;
         },
+        allowedBrandIds?: number[] | null,
     ) {
+        if (allowedBrandIds != null) {
+            await this.findOne(id, tenantId, allowedBrandIds);
+        }
         const customer = await this.repo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
         });
@@ -269,7 +488,14 @@ export class CustomersService {
         return { message: 'Password updated' };
     }
 
-    async remove(id: number, tenantId: number | null): Promise<void> {
+    async remove(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ): Promise<void> {
+        if (allowedBrandIds != null) {
+            await this.findOne(id, tenantId, allowedBrandIds);
+        }
         const customer = await this.repo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
         });
@@ -292,8 +518,7 @@ export class CustomersService {
                 'This account has no password set. Contact support to delete your account.',
             );
         }
-        const trimmed =
-            typeof password === 'string' ? password : '';
+        const trimmed = typeof password === 'string' ? password : '';
         if (!trimmed) {
             throw new BadRequestException('password is required');
         }
@@ -356,8 +581,7 @@ export class CustomersService {
             }
             if (
                 absorbEmail &&
-                (!tenantCustomer.email ||
-                    tenantCustomer.email.trim() === '')
+                (!tenantCustomer.email || tenantCustomer.email.trim() === '')
             ) {
                 const emailTaken = await qr.manager
                     .createQueryBuilder(Customer, 'c')
@@ -388,14 +612,17 @@ export class CustomersService {
             if (tenantCustomer.latitude == null && consumer.latitude != null) {
                 tenantCustomer.latitude = consumer.latitude;
             }
-            if (tenantCustomer.longitude == null && consumer.longitude != null) {
+            if (
+                tenantCustomer.longitude == null &&
+                consumer.longitude != null
+            ) {
                 tenantCustomer.longitude = consumer.longitude;
             }
             tenantCustomer.loyaltyPointsBalance =
                 (tenantCustomer.loyaltyPointsBalance || 0) +
                 (consumer.loyaltyPointsBalance || 0);
-            tenantCustomer.phone = normalizePakistaniPhone(consumer.phone)
-                ?? tenantCustomer.phone;
+            tenantCustomer.phone =
+                normalizePakistaniPhone(consumer.phone) ?? tenantCustomer.phone;
 
             await qr.manager.save(tenantCustomer);
 
@@ -468,7 +695,7 @@ export class CustomersService {
             return this.linkConsumerToTenant(consumer.id, tenantId);
         }
 
-        return this.repo.save(
+        const newCustomer = await this.repo.save(
             this.repo.create({
                 tenantId,
                 phone: normalized,
@@ -476,6 +703,18 @@ export class CustomersService {
                 loyaltyPointsBalance: 0,
             }),
         );
+        // Fire-and-forget: assign any active new_customer promotions
+        if (this.promotionsService) {
+            this.promotionsService
+                .assignNewCustomerPromotions(tenantId, newCustomer.id)
+                .catch((err) =>
+                    this.logger.warn(
+                        `Promotion auto-assign failed for customer ${newCustomer.id}`,
+                        err,
+                    ),
+                );
+        }
+        return newCustomer;
     }
 
     /**

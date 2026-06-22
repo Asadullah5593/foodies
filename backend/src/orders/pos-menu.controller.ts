@@ -93,7 +93,12 @@ export class PosMenuController {
     })
     async index(
         @CurrentUser()
-        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        user: {
+            id: number;
+            tenantId: number | null;
+            isSuperAdmin?: boolean;
+            allowedBrandIds?: number[] | null;
+        },
         @Query('branch_id') branchIdParam: string,
         @Query('order_type') orderTypeParam: string,
     ) {
@@ -151,7 +156,7 @@ export class PosMenuController {
                 message: 'Select a branch.',
             };
         }
-        const [branch, menu, openShift] = await Promise.all([
+        const [branch, menu, openShifts] = await Promise.all([
             this.branchRepo.findOne({
                 where: { id: branchId },
                 relations: ['branchBrands', 'branchBrands.brand'],
@@ -162,7 +167,7 @@ export class PosMenuController {
                         ? orderTypeParam.trim()
                         : undefined,
             }),
-            this.shiftsService.findOpenByBranch(branchId),
+            this.shiftsService.findOpenShiftsByBranch(branchId),
         ]);
         // Always return order-type flags so POS dropdown can be dynamic (strict true = show option)
         const supports_dine_in = branch?.supportsDineIn === true;
@@ -175,18 +180,46 @@ export class PosMenuController {
             branchBrands?: Array<{ brandId: number; brand?: { name: string } }>;
         };
         const branchBrands = (branch as BranchWithBrands)?.branchBrands ?? [];
-        const brands = branchBrands.map((bb) => ({
+        let brands = branchBrands.map((bb) => ({
             id: bb.brandId,
             name: bb.brand?.name ?? '',
         }));
+        // Brand-locked till: only the user's own brand(s) are sold here.
+        const lockedBrandIds = user.allowedBrandIds ?? null;
+        let scopedMenu = menu;
+        if (lockedBrandIds != null) {
+            const lockedSet = new Set(lockedBrandIds);
+            scopedMenu = menu.filter(
+                (item) => item.brand_id != null && lockedSet.has(item.brand_id),
+            );
+            brands = brands.filter((b) => lockedSet.has(b.id));
+        }
+        // Shifts are per brand: a brand-locked till sees its own brand's
+        // shift; unrestricted users get the full per-brand list. open_shift
+        // is kept for backward compatibility (the locked brand's shift, or
+        // the first open one).
+        const visibleShifts =
+            lockedBrandIds != null
+                ? openShifts.filter(
+                      (s) =>
+                          s.brand_id != null &&
+                          lockedBrandIds.includes(s.brand_id),
+                  )
+                : openShifts;
         return {
             branch_id: branchId,
-            menu,
-            open_shift: openShift,
+            branch_active: branch?.isActive === true,
+            menu: scopedMenu,
+            open_shift: visibleShifts[0] ?? null,
+            open_shifts: visibleShifts,
+            open_shift_brand_ids: visibleShifts
+                .map((s) => s.brand_id)
+                .filter((id): id is number => id != null),
             supports_dine_in,
             supports_takeaway,
             supports_delivery,
             brands,
+            locked_brand_ids: lockedBrandIds,
         };
     }
 

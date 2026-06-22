@@ -184,14 +184,29 @@ const CartPanel: React.FC<CartPanelProps> = ({
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
-                      <label className="text-sm text-foodies-textSecondary">Qty:</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={item.quantity}
-                        onChange={(e) => onUpdateQuantity(index, parseInt(e.target.value) || 1)}
-                        className="w-16 px-2 py-1 border border-foodies-border rounded text-center"
-                      />
+                      <span className="text-sm text-foodies-textSecondary">Qty</span>
+                      <div className="flex items-center rounded-lg border border-foodies-border dark:border-slate-600 overflow-hidden">
+                        <button
+                          type="button"
+                          aria-label="Decrease quantity"
+                          disabled={item.quantity <= 1}
+                          onClick={() => onUpdateQuantity(index, Math.max(1, item.quantity - 1))}
+                          className="px-3 py-1.5 text-lg leading-none text-foodies-textPrimary dark:text-slate-100 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          −
+                        </button>
+                        <span className="min-w-[2.5rem] text-center text-sm font-semibold tabular-nums select-none text-foodies-textPrimary dark:text-slate-100">
+                          {item.quantity}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label="Increase quantity"
+                          onClick={() => onUpdateQuantity(index, item.quantity + 1)}
+                          className="px-3 py-1.5 text-lg leading-none text-foodies-textPrimary dark:text-slate-100 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700"
+                        >
+                          +
+                        </button>
+                      </div>
                     </div>
                     <div className="text-right">
                       {lineDiscount > 0 ? (

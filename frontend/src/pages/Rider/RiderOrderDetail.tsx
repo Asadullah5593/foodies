@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { MdOutlineLocationOn } from 'react-icons/md';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -170,7 +171,10 @@ const RiderOrderDetail: React.FC = () => {
             </h2>
             <div className="bg-white dark:bg-slate-700/50 border border-gray-100 dark:border-slate-600 rounded-lg p-3 space-y-1">
               {o.delivery_address && (
-                <p className="text-gray-800 dark:text-slate-100">📍 {o.delivery_address}</p>
+                <p className="text-gray-800 dark:text-slate-100">
+                  <MdOutlineLocationOn className="inline h-4 w-4 mr-1 align-text-bottom" />
+                  {o.delivery_address}
+                </p>
               )}
               {o.customer_name && (
                 <p className="text-gray-700 dark:text-slate-300">

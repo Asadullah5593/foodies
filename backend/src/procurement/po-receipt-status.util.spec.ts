@@ -38,7 +38,9 @@ describe('po-receipt-status.util', () => {
             [1, 5],
             [2, 0],
         ]);
-        expect(nextPurchaseOrderReceiptStatus(ordered, received)).toBe('partially_received');
+        expect(nextPurchaseOrderReceiptStatus(ordered, received)).toBe(
+            'partially_received',
+        );
         expect(hasAnyPostedGrnReceiptAgainstPo(ordered, received)).toBe(true);
     });
 
@@ -51,14 +53,16 @@ describe('po-receipt-status.util', () => {
             [1, 10],
             [2, 5],
         ]);
-        expect(nextPurchaseOrderReceiptStatus(ordered, received)).toBe('closed');
+        expect(nextPurchaseOrderReceiptStatus(ordered, received)).toBe(
+            'closed',
+        );
     });
 
     it('nextPurchaseOrderReceiptStatus returns created when nothing received', () => {
-        const ordered = new Map<number, number>([
-            [1, 10],
-        ]);
+        const ordered = new Map<number, number>([[1, 10]]);
         const received = new Map<number, number>([]);
-        expect(nextPurchaseOrderReceiptStatus(ordered, received)).toBe('created');
+        expect(nextPurchaseOrderReceiptStatus(ordered, received)).toBe(
+            'created',
+        );
     });
 });

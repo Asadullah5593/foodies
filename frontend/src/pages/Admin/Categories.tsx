@@ -352,6 +352,14 @@ const Categories: React.FC = () => {
                       <Button size="small" variant="edit" onClick={() => openEdit(cat)}>Edit</Button>
                       <Button
                         size="small"
+                        variant={cat.is_active ? 'outline' : 'primary'}
+                        isLoading={updateMutation.isPending}
+                        onClick={() => updateMutation.mutate({ id: cat.id, data: { is_active: !cat.is_active } })}
+                      >
+                        {cat.is_active ? 'Set inactive' : 'Set active'}
+                      </Button>
+                      <Button
+                        size="small"
                         variant="danger"
                         onClick={() => {
                           (async () => {

@@ -6,6 +6,8 @@ export interface User {
   phone?: string;
   status: string;
   is_super_admin?: boolean;
+  /** Owner (or super admin) — the only roles allowed to manage their own account. */
+  is_owner?: boolean;
   is_rider?: boolean;
   /** Role slug (e.g. owner, cashier, rider) */
   role?: string | null;
@@ -13,6 +15,10 @@ export interface User {
   role_id?: number | null;
   /** Permission names for RBAC (e.g. orders:view, kitchen:view) */
   permissions?: string[];
+  /** Brand lock: null = all brands; number[] = user only sees/sells these brands */
+  allowed_brand_ids?: number[] | null;
+  /** Convenience: the single locked brand id when allowed_brand_ids has exactly one */
+  brand_id?: number | null;
 }
 
 export interface Tenant {
@@ -35,6 +41,12 @@ export interface Brand {
   logo_url?: string;
   description?: string;
   status: string;
+  /** Aggregate online open/close across this brand's branches (admin list). */
+  online_status?: 'open' | 'closed' | 'partial' | 'none';
+  /** Number of branches this brand is at (admin list). */
+  online_branch_count?: number;
+  /** Flat delivery fee charged on each delivery order of this brand. */
+  delivery_flat_fee?: number;
   /** Present when super admin lists brands (to show which tenant) */
   tenant_name?: string;
   /** All-time consumer brand ratings (admin / POS) */
@@ -61,8 +73,6 @@ export interface Branch {
   latitude?: number | null;
   longitude?: number | null;
   is_active?: boolean;
-  /** When false, POS/KDS/consumer menu for this branch returns empty */
-  menu_enabled?: boolean;
   status: string;
   /** Present when super admin lists branches */
   tenant_id?: number;
@@ -87,6 +97,71 @@ export interface RiderProfile {
   is_active: boolean;
   metadata?: Record<string, unknown>;
   updated_at?: string | null;
+  /** null = Foodies pool rider (no owning brand). */
+  owner_brand_id?: number | null;
+  owner_brand_name?: string | null;
+  /** Brands this rider serves (owned + shared); empty = not dispatchable. */
+  brand_ids?: number[];
+  brands?: RiderBrandLink[];
+}
+
+/** Source of truth for rider↔brand availability: 'owned' (creator) or 'shared'. */
+export interface RiderBrandLink {
+  rider_user_id?: number;
+  id?: number;
+  brand_id?: number;
+  name?: string;
+  brand_name?: string;
+  source: 'owned' | 'shared';
+}
+
+/** A rider with their brand links, for the owner/GM pool screen. */
+export interface RiderWithBrands {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  owner_brand_id: number | null;
+  owner_brand_name: string | null;
+  brand_ids: number[];
+  brands: Array<{ id: number; name: string; source: 'owned' | 'shared' }>;
+  is_dispatchable: boolean;
+  rating_count: number;
+  rating_average: number | null;
+}
+
+export type RiderShareRequestStatus =
+  | 'pending'
+  | 'approved'
+  | 'declined'
+  | 'cancelled';
+
+export interface RiderShareRequest {
+  id: number;
+  tenant_id: number;
+  requesting_brand_id: number;
+  brand_name?: string | null;
+  rider_user_id: number;
+  rider_name?: string | null;
+  status: RiderShareRequestStatus;
+  note?: string | null;
+  requested_by_user_id?: number | null;
+  requested_by_name?: string | null;
+  decided_by_user_id?: number | null;
+  decided_at?: string | null;
+  decline_reason?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+/** A Foodies-pool rider a brand may request, annotated for the brand. */
+export interface PoolRiderSummary {
+  id: number;
+  name: string;
+  phone: string | null;
+  rating_average: number | null;
+  rating_count: number;
+  request_status: RiderShareRequestStatus | null;
 }
 
 export interface RiderOnDuty {
@@ -281,9 +356,59 @@ export interface Discount {
   valid_until?: string;
 }
 
+export interface Banner {
+  id: number;
+  tenant_id: number;
+  title: string;
+  subtitle: string | null;
+  image_url: string;
+  link_url: string | null;
+  is_active: boolean;
+  sort_order: number;
+  valid_from: string | null;
+  valid_until: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Promotion {
+  id: number;
+  tenant_id: number;
+  name: string;
+  description: string | null;
+  image_url: string | null;
+  promotion_type: 'discount' | 'free_item';
+  discount_type: 'flat' | 'percentage' | null;
+  discount_value: number | null;
+  free_menu_item_id: number | null;
+  eligibility_type: 'new_customer' | 'manual';
+  is_active: boolean;
+  expires_in_days: number | null;
+  valid_from: string | null;
+  valid_until: string | null;
+  created_at: string;
+}
+
+export interface CustomerPromotion {
+  id: number;
+  customer_id: number;
+  promotion_id: number;
+  coupon_code: string | null;
+  discount_id: number | null;
+  status: 'pending' | 'claimed' | 'used' | 'expired';
+  assigned_at: string;
+  expires_at: string | null;
+  claimed_at: string | null;
+  used_at: string | null;
+  promotion?: Promotion;
+}
+
 export interface Shift {
   id: number;
   branch_id: number;
+  /** Brand the shift was opened for (shifts are per brand per branch). */
+  brand_id?: number | null;
+  brand?: { id: number; name: string } | null;
   user_id: number;
   shift_number: string;
   opening_cash: number;

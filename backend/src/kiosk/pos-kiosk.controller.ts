@@ -44,13 +44,20 @@ export class PosKioskController {
                 throw new NotFoundException('Branch has no tenant');
             return tenantId;
         }
-        throw new ForbiddenException('Tenant context required for kiosk orders');
+        throw new ForbiddenException(
+            'Tenant context required for kiosk orders',
+        );
     }
 
     @Get(':code')
     async lookup(
         @CurrentUser()
-        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        user: {
+            id: number;
+            tenantId: number | null;
+            isSuperAdmin?: boolean;
+            allowedBrandIds?: number[] | null;
+        },
         @Param('code') code: string,
         @Query('branch_id') branchIdRaw: string,
     ) {
@@ -58,13 +65,23 @@ export class PosKioskController {
         if (!Number.isFinite(branchId) || branchId <= 0)
             throw new BadRequestException('branch_id query param is required');
         const tenantId = await this.resolveTenantId(user, branchId);
-        return this.kioskService.lookup(code, branchId, tenantId);
+        return this.kioskService.lookup(
+            code,
+            branchId,
+            tenantId,
+            user.allowedBrandIds ?? null,
+        );
     }
 
     @Post(':code/finalize')
     async finalize(
         @CurrentUser()
-        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        user: {
+            id: number;
+            tenantId: number | null;
+            isSuperAdmin?: boolean;
+            allowedBrandIds?: number[] | null;
+        },
         @Param('code') code: string,
         @Body()
         dto: {
@@ -84,6 +101,7 @@ export class PosKioskController {
             dto.order,
             dto.payments ?? [],
             user.id,
+            user.allowedBrandIds ?? null,
         );
     }
 }

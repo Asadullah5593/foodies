@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { MdOutlineShoppingCart, MdClose } from 'react-icons/md';
 
 export type POSLayoutProps = {
   /** Center: search + menu grid */
@@ -61,7 +62,7 @@ const POSLayout: React.FC<POSLayoutProps> = ({
           aria-label="Open cart"
         >
           <span className="relative">
-            🛒
+            <MdOutlineShoppingCart className="h-6 w-6" />
             {cartItemCount > 0 && (
               <span className="absolute -top-2 -right-2 flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-foodies-primary px-1 text-xs font-bold text-white">
                 {cartItemCount > 99 ? '99+' : cartItemCount}
@@ -98,7 +99,7 @@ const POSLayout: React.FC<POSLayoutProps> = ({
                     className="p-2 rounded-lg text-foodies-textSecondary dark:text-slate-400 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700 hover:text-foodies-textPrimary dark:hover:text-slate-100"
                     aria-label="Close"
                   >
-                    ✕
+                    <MdClose />
                   </button>
                 </div>
                 <div className="flex-1 min-h-0 overflow-y-auto">

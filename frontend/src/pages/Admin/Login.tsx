@@ -5,6 +5,23 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { getDefaultLandingPath } from '../../lib/pathPermissions';
 import { motion } from 'framer-motion';
+import {
+  MdOutlineReceiptLong,
+  MdOutlineRestaurantMenu,
+  MdOutlineDashboard,
+  MdOutlineGroup,
+  MdOutlineRestaurant,
+  MdOutlineLocalCafe,
+  MdOutlineRamenDining,
+  MdOutlineLocalPizza,
+  MdOutlineBakeryDining,
+  MdOutlineCake,
+  MdOutlineLunchDining,
+  MdOutlineEgg,
+  MdOutlineIcecream,
+  MdOutlineFastfood,
+} from 'react-icons/md';
+import type { IconType } from 'react-icons';
 import Button from '../../components/Button';
 
 const containerVariants = {
@@ -20,11 +37,24 @@ const itemVariants = {
   visible: { opacity: 1, y: 0 },
 };
 
-const features = [
-  { icon: '📋', text: 'Orders & POS', delay: 0.1 },
-  { icon: '🍽️', text: 'Menu & catalog', delay: 0.2 },
-  { icon: '📊', text: 'Reports & analytics', delay: 0.3 },
-  { icon: '👥', text: 'Team & branches', delay: 0.4 },
+const features: { Icon: IconType; text: string; delay: number }[] = [
+  { Icon: MdOutlineReceiptLong, text: 'Orders & POS', delay: 0.1 },
+  { Icon: MdOutlineRestaurantMenu, text: 'Menu & catalog', delay: 0.2 },
+  { Icon: MdOutlineDashboard, text: 'Reports & analytics', delay: 0.3 },
+  { Icon: MdOutlineGroup, text: 'Team & branches', delay: 0.4 },
+];
+
+const floatingIcons: IconType[] = [
+  MdOutlineRestaurant,
+  MdOutlineLocalCafe,
+  MdOutlineRamenDining,
+  MdOutlineLocalPizza,
+  MdOutlineBakeryDining,
+  MdOutlineCake,
+  MdOutlineLunchDining,
+  MdOutlineEgg,
+  MdOutlineIcecream,
+  MdOutlineFastfood,
 ];
 
 const Login: React.FC = () => {
@@ -91,7 +121,7 @@ const Login: React.FC = () => {
         />
 
         {/* Floating food icons — more and larger */}
-        {['🍽️', '☕', '🥗', '🍕', '🥐', '🍰', '🥙', '🍜', '🥑', '🍩'].map((emoji, i) => (
+        {floatingIcons.map((Icon, i) => (
           <motion.span
             key={i}
             className="absolute text-3xl sm:text-4xl lg:text-5xl opacity-20"
@@ -111,7 +141,7 @@ const Login: React.FC = () => {
               ease: 'easeInOut',
             }}
           >
-            {emoji}
+            <Icon />
           </motion.span>
         ))}
 
@@ -161,7 +191,7 @@ const Login: React.FC = () => {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.4 + f.delay, duration: 0.4 }}
               >
-                <span className="text-2xl">{f.icon}</span>
+                <f.Icon className="h-6 w-6" />
                 <span className="font-medium">{f.text}</span>
               </motion.li>
             ))}

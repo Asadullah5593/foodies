@@ -57,12 +57,13 @@ export class Branch {
     @Column({ type: 'decimal', precision: 8, scale: 2, default: 10 })
     deliveryRadiusKm: number;
 
+    /**
+     * Whole-branch master switch. When false the branch is hidden from customers
+     * and takes NO orders on any channel (online AND POS). For pausing a single
+     * brand's online orders use branch_brands.is_open instead.
+     */
     @Column({ default: true })
     isActive: boolean;
-
-    /** When false, POS/KDS/consumer menu for this branch returns empty (menu disabled at branch). */
-    @Column({ default: true })
-    menuEnabled: boolean;
 
     @Column({ default: 'active' })
     status: string;

@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+    Injectable,
+    NotFoundException,
+    ForbiddenException,
+    BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, In } from 'typeorm';
 import { Branch } from '../entities/branch.entity';
@@ -17,6 +22,65 @@ export class BranchUsersService {
         private dataSource: DataSource,
     ) {}
 
+    /**
+     * Brand-locked admins may only assign roles that do not grant
+     * tenant-wide access (e.g. cannot promote someone to owner / GM).
+     */
+    private async assertRolesAssignableByBrandAdmin(
+        roleIds: number[],
+    ): Promise<void> {
+        if (roleIds.length === 0) return;
+        const rows = await this.dataSource.query(
+            `SELECT DISTINCT rp.role_id
+             FROM role_permissions rp
+             INNER JOIN permissions p ON p.id = rp.permission_id
+             WHERE rp.role_id = ANY($1::int[])
+               AND p.name IN ('all-branches:access', 'roles:manage', 'branches:manage', 'business-settings:access')`,
+            [roleIds],
+        );
+        if (rows.length > 0) {
+            throw new ForbiddenException(
+                'You cannot assign roles with tenant-wide access',
+            );
+        }
+    }
+
+    /**
+     * When a rider-role assignment carries a brand_id, that brand "owns" the
+     * rider: ensure an 'owned' rider_brands link exists (the single source of
+     * truth for rider↔brand availability). Brand-locked assignments always
+     * carry a brand_id; owner/GM assignments with null brand_id create no link
+     * (the rider stays a Foodies-pool rider). Idempotent.
+     */
+    private async syncOwnedRiderLinks(
+        assignments: Array<{
+            userId: number;
+            roleId: number;
+            brandId: number | null;
+        }>,
+        actingUserId?: number | null,
+    ): Promise<void> {
+        const branded = assignments.filter((a) => a.brandId != null);
+        if (branded.length === 0) return;
+        const roleIds = [...new Set(branded.map((a) => a.roleId))];
+        const roleResult: unknown = await this.dataSource.query(
+            `SELECT id FROM roles WHERE slug = 'rider' AND id = ANY($1::int[])`,
+            [roleIds],
+        );
+        const riderRoleRows = roleResult as Array<{ id: number }>;
+        const riderRoleIds = new Set(riderRoleRows.map((r) => Number(r.id)));
+        for (const a of branded) {
+            if (!riderRoleIds.has(Number(a.roleId))) continue;
+            await this.dataSource.query(
+                `INSERT INTO rider_brands (rider_user_id, brand_id, tenant_id, source, created_by, created_at)
+                 SELECT $1, $2, br.tenant_id, 'owned', $3, now()
+                 FROM brands br WHERE br.id = $2
+                 ON CONFLICT (rider_user_id, brand_id) DO NOTHING`,
+                [a.userId, a.brandId, actingUserId ?? null],
+            );
+        }
+    }
+
     private async getDefaultCashierRoleId(): Promise<number> {
         const cashier = await this.roleRepo.findOne({
             where: { slug: 'cashier' },
@@ -30,6 +94,7 @@ export class BranchUsersService {
     async findAllForAdmin(
         tenantId: number | null,
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ): Promise<
         Array<{
             branch_id: number;
@@ -43,6 +108,8 @@ export class BranchUsersService {
             role_id: number;
             role_name?: string;
             role_slug?: string;
+            brand_id: number | null;
+            brand_name?: string | null;
         }>
     > {
         let branchIds: number[] | null = null;
@@ -68,10 +135,17 @@ export class BranchUsersService {
             .innerJoinAndSelect('bu.branch', 'b')
             .innerJoinAndSelect('bu.user', 'u')
             .leftJoinAndSelect('bu.role', 'r')
+            .leftJoinAndSelect('bu.brand', 'brand')
             .orderBy('b.name', 'ASC')
             .addOrderBy('u.name', 'ASC');
         if (branchIds != null && branchIds.length > 0) {
             qb.andWhere('bu.branchId IN (:...branchIds)', { branchIds });
+        }
+        // Brand-locked admins manage only their own brand's staff.
+        if (allowedBrandIds != null) {
+            qb.andWhere('bu.brandId IN (:...allowedBrandIds)', {
+                allowedBrandIds,
+            });
         }
         const list = await qb.getMany();
         const filteredList =
@@ -90,11 +164,16 @@ export class BranchUsersService {
             role_id: number;
             role_name?: string;
             role_slug?: string;
+            brand_id: number | null;
+            brand_name?: string | null;
         }> = [];
         for (const bu of filteredList) {
             const branch = (bu as BranchUser & { branch: Branch }).branch;
             const user = (bu as BranchUser & { user: User }).user;
             const role = (bu as BranchUser & { role?: Role | null }).role;
+            const brand = (
+                bu as BranchUser & { brand?: { name: string } | null }
+            ).brand;
             result.push({
                 branch_id: branch.id,
                 branch_name: branch.name,
@@ -107,18 +186,30 @@ export class BranchUsersService {
                 role_id: bu.roleId,
                 role_name: role?.name,
                 role_slug: role?.slug,
+                brand_id: bu.brandId ?? null,
+                brand_name: brand?.name ?? null,
             });
         }
         return result;
     }
 
-    async getUsers(branchId: number) {
+    async getUsers(branchId: number, allowedBrandIds?: number[] | null) {
         const branch = await this.branchRepo.findOne({
             where: { id: branchId },
-            relations: ['branchUsers', 'branchUsers.user', 'branchUsers.role'],
+            relations: [
+                'branchUsers',
+                'branchUsers.user',
+                'branchUsers.role',
+                'branchUsers.brand',
+            ],
         });
         if (!branch) throw new NotFoundException('Branch not found');
-        return (branch.branchUsers || []).map((bu) => ({
+        const assignments = (branch.branchUsers || []).filter(
+            (bu) =>
+                allowedBrandIds == null ||
+                (bu.brandId != null && allowedBrandIds.includes(bu.brandId)),
+        );
+        return assignments.map((bu) => ({
             id: bu.user.id,
             name: bu.user.name,
             email: bu.user.email,
@@ -131,16 +222,42 @@ export class BranchUsersService {
             role_slug: (
                 bu as BranchUser & { role?: { name: string; slug: string } }
             ).role?.slug,
+            brand_id: bu.brandId ?? null,
+            brand_name:
+                (bu as BranchUser & { brand?: { name: string } | null }).brand
+                    ?.name ?? null,
         }));
     }
 
-    async assignUsers(branchId: number, userIds: number[], roleId?: number) {
+    async assignUsers(
+        branchId: number,
+        userIds: number[],
+        roleId?: number,
+        allowedBrandIds?: number[] | null,
+    ) {
         const branch = await this.branchRepo.findOne({
             where: { id: branchId },
         });
         if (!branch) throw new NotFoundException('Branch not found');
         const resolvedRoleId = roleId ?? (await this.getDefaultCashierRoleId());
-        await this.branchUserRepo.delete({ branchId });
+        // Brand-locked admins replace only their own brand's assignments
+        // (and every row they create is locked to their brand).
+        let lockedBrandId: number | null = null;
+        if (allowedBrandIds != null) {
+            if (allowedBrandIds.length !== 1) {
+                throw new ForbiddenException(
+                    'Use per-user assignments with an explicit brand',
+                );
+            }
+            lockedBrandId = allowedBrandIds[0];
+            await this.assertRolesAssignableByBrandAdmin([resolvedRoleId]);
+            await this.branchUserRepo.delete({
+                branchId,
+                brandId: lockedBrandId,
+            });
+        } else {
+            await this.branchUserRepo.delete({ branchId });
+        }
         const users = await this.userRepo.find({ where: { id: In(userIds) } });
         for (const u of users) {
             await this.branchUserRepo.save(
@@ -148,9 +265,17 @@ export class BranchUsersService {
                     branchId,
                     userId: u.id,
                     roleId: resolvedRoleId,
+                    brandId: lockedBrandId,
                 }),
             );
         }
+        await this.syncOwnedRiderLinks(
+            users.map((u) => ({
+                userId: u.id,
+                roleId: resolvedRoleId,
+                brandId: lockedBrandId,
+            })),
+        );
         return {
             message: 'Users assigned successfully',
             users: users.map((u) => ({
@@ -163,21 +288,64 @@ export class BranchUsersService {
 
     async assignUsersWithRoles(
         branchId: number,
-        assignments: { user_id: number; role_id: number }[],
+        assignments: {
+            user_id: number;
+            role_id: number;
+            /** Lock this user to a single brand at the branch (null/omitted = all brands). */
+            brand_id?: number | null;
+        }[],
+        allowedBrandIds?: number[] | null,
     ) {
         const branch = await this.branchRepo.findOne({
             where: { id: branchId },
         });
         if (!branch) throw new NotFoundException('Branch not found');
-        for (const { user_id, role_id } of assignments) {
+        // Brand-locked admins assign only within their own brand. The brand
+        // selector is hidden for them, so an omitted brand defaults to their
+        // brand; only an explicit *different* brand is rejected.
+        let lockedBrandId: number | null = null;
+        if (allowedBrandIds != null) {
+            if (allowedBrandIds.length !== 1) {
+                throw new ForbiddenException(
+                    'Your account must be locked to a single brand to assign users',
+                );
+            }
+            lockedBrandId = allowedBrandIds[0];
+            for (const a of assignments) {
+                if (
+                    a.brand_id != null &&
+                    Number(a.brand_id) !== lockedBrandId
+                ) {
+                    throw new ForbiddenException(
+                        'You can only assign users to your own brand',
+                    );
+                }
+            }
+            await this.assertRolesAssignableByBrandAdmin([
+                ...new Set(assignments.map((a) => a.role_id)),
+            ]);
+        }
+        const resolveBrandId = (
+            brandId: number | null | undefined,
+        ): number | null =>
+            lockedBrandId != null ? lockedBrandId : (brandId ?? null);
+        for (const { user_id, role_id, brand_id } of assignments) {
             await this.branchUserRepo.save(
                 this.branchUserRepo.create({
                     branchId,
                     userId: user_id,
                     roleId: role_id,
+                    brandId: resolveBrandId(brand_id),
                 }),
             );
         }
+        await this.syncOwnedRiderLinks(
+            assignments.map((a) => ({
+                userId: a.user_id,
+                roleId: a.role_id,
+                brandId: resolveBrandId(a.brand_id),
+            })),
+        );
         const users = await this.userRepo.find({
             where: { id: In(assignments.map((a) => a.user_id)) },
         });
@@ -191,8 +359,53 @@ export class BranchUsersService {
         };
     }
 
-    async removeUser(branchId: number, userId: number) {
-        await this.branchUserRepo.delete({ branchId, userId });
+    async removeUser(
+        branchId: number,
+        userId: number,
+        allowedBrandIds?: number[] | null,
+    ) {
+        if (allowedBrandIds != null) {
+            // Brand-locked admins can only detach their own brand's rows.
+            await this.branchUserRepo.delete({
+                branchId,
+                userId,
+                brandId: In(allowedBrandIds),
+            });
+        } else {
+            await this.branchUserRepo.delete({ branchId, userId });
+        }
         return { message: 'User removed from branch successfully' };
+    }
+
+    async bulkAssignUserToBranches(
+        dto: {
+            user_id: number;
+            branch_ids: number[];
+            role_id: number;
+            brand_id?: number | null;
+        },
+        allowedBrandIds?: number[] | null,
+    ): Promise<{ message: string; assigned_count: number }> {
+        if (!dto.branch_ids?.length) {
+            throw new BadRequestException(
+                'At least one branch must be selected',
+            );
+        }
+        const assignment = {
+            user_id: dto.user_id,
+            role_id: dto.role_id,
+            brand_id: dto.brand_id ?? null,
+        };
+        for (const branchId of dto.branch_ids) {
+            await this.assignUsersWithRoles(
+                branchId,
+                [assignment],
+                allowedBrandIds,
+            );
+        }
+        return {
+            message: `User assigned to ${dto.branch_ids.length} branch(es)`,
+            assigned_count: dto.branch_ids.length,
+        };
     }
 }

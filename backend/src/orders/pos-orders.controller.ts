@@ -45,7 +45,12 @@ export class PosOrdersController {
     @Post('quote')
     async quote(
         @CurrentUser()
-        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        user: {
+            id: number;
+            tenantId: number | null;
+            isSuperAdmin?: boolean;
+            allowedBrandIds?: number[] | null;
+        },
         @Body()
         dto: {
             branch_id: number;
@@ -63,13 +68,23 @@ export class PosOrdersController {
         },
     ) {
         const tenantId = await this.resolveTenantId(user, dto.branch_id);
-        return this.ordersService.quote(dto, tenantId, 'pos');
+        return this.ordersService.quote(
+            dto,
+            tenantId,
+            'pos',
+            user.allowedBrandIds ?? null,
+        );
     }
 
     @Post()
     async store(
         @CurrentUser()
-        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        user: {
+            id: number;
+            tenantId: number | null;
+            isSuperAdmin?: boolean;
+            allowedBrandIds?: number[] | null;
+        },
         @Body()
         dto: {
             branch_id: number;
@@ -94,7 +109,14 @@ export class PosOrdersController {
         },
     ) {
         const tenantId = await this.resolveTenantId(user, dto.branch_id);
-        return this.ordersService.createOrder(dto, tenantId, user.id, 'pos');
+        return this.ordersService.createOrder(
+            dto,
+            tenantId,
+            user.id,
+            'pos',
+            null,
+            user.allowedBrandIds ?? null,
+        );
     }
 
     @Get('group/:orderGroupId')

@@ -44,7 +44,11 @@ export class AdminOrderRatingsController {
                     properties: {
                         stars: { type: 'integer', minimum: 1, maximum: 5 },
                         comment: { type: 'string', nullable: true },
-                        rated_at: { type: 'string', format: 'date-time', nullable: true },
+                        rated_at: {
+                            type: 'string',
+                            format: 'date-time',
+                            nullable: true,
+                        },
                     },
                 },
                 brand_ratings: {
@@ -56,8 +60,15 @@ export class AdminOrderRatingsController {
                             brand_name: { type: 'string', nullable: true },
                             order_stars: { type: 'integer' },
                             order_comment: { type: 'string', nullable: true },
-                            order_rated_at: { type: 'string', format: 'date-time', nullable: true },
-                            public_rating_average: { type: 'number', nullable: true },
+                            order_rated_at: {
+                                type: 'string',
+                                format: 'date-time',
+                                nullable: true,
+                            },
+                            public_rating_average: {
+                                type: 'number',
+                                nullable: true,
+                            },
                             public_rating_count: { type: 'integer' },
                         },
                     },

@@ -30,6 +30,7 @@ export class BranchUsersController {
         user: {
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Param('branchId') branchId: string,
     ) {
@@ -37,6 +38,7 @@ export class BranchUsersController {
             return this.service.findAllForAdmin(
                 user.tenantId,
                 user.allowedBranchIds,
+                user.allowedBrandIds,
             );
         const bid = +branchId;
         if (
@@ -49,7 +51,7 @@ export class BranchUsersController {
                 'You do not have access to this branch',
             );
         }
-        return this.service.getUsers(bid);
+        return this.service.getUsers(bid, user.allowedBrandIds);
     }
 
     @Post(':branchId/users')
@@ -60,13 +62,18 @@ export class BranchUsersController {
         user: {
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Param('branchId') branchId: string,
         @Body()
         body: {
             user_ids?: number[];
             role_id?: number;
-            assignments?: { user_id: number; role_id: number }[];
+            assignments?: {
+                user_id: number;
+                role_id: number;
+                brand_id?: number | null;
+            }[];
         },
     ) {
         const bid = +branchId;
@@ -81,9 +88,50 @@ export class BranchUsersController {
             );
         }
         if (body.assignments?.length) {
-            return this.service.assignUsersWithRoles(bid, body.assignments);
+            return this.service.assignUsersWithRoles(
+                bid,
+                body.assignments,
+                user.allowedBrandIds,
+            );
         }
-        return this.service.assignUsers(bid, body.user_ids ?? [], body.role_id);
+        return this.service.assignUsers(
+            bid,
+            body.user_ids ?? [],
+            body.role_id,
+            user.allowedBrandIds,
+        );
+    }
+
+    @Post('bulk-assign')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.BRANCH_USERS_ASSIGN)
+    bulkAssign(
+        @CurrentUser()
+        user: {
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
+        },
+        @Body()
+        body: {
+            user_id: number;
+            branch_ids: number[];
+            role_id: number;
+            brand_id?: number | null;
+        },
+    ) {
+        if (
+            user.allowedBranchIds != null &&
+            body.branch_ids.some((id) => !user.allowedBranchIds!.includes(id))
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to one or more selected branches',
+            );
+        }
+        return this.service.bulkAssignUserToBranches(
+            body,
+            user.allowedBrandIds,
+        );
     }
 
     @Delete(':branchId/users/:userId')
@@ -94,6 +142,7 @@ export class BranchUsersController {
         user: {
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Param('branchId') branchId: string,
         @Param('userId') userId: string,
@@ -109,6 +158,6 @@ export class BranchUsersController {
                 'You do not have access to this branch',
             );
         }
-        return this.service.removeUser(bid, +userId);
+        return this.service.removeUser(bid, +userId, user.allowedBrandIds);
     }
 }

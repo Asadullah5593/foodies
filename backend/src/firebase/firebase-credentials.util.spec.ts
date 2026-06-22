@@ -10,9 +10,8 @@ describe('normalizeFirebasePrivateKey', () => {
     });
 
     it('strips wrapping double quotes', () => {
-        const raw = '"-----BEGIN PRIVATE KEY-----\\nX\\n-----END PRIVATE KEY-----"';
-        expect(normalizeFirebasePrivateKey(raw)).toContain(
-            'BEGIN PRIVATE KEY',
-        );
+        const raw =
+            '"-----BEGIN PRIVATE KEY-----\\nX\\n-----END PRIVATE KEY-----"';
+        expect(normalizeFirebasePrivateKey(raw)).toContain('BEGIN PRIVATE KEY');
     });
 });

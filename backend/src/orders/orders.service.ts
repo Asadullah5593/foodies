@@ -3,6 +3,7 @@ import {
     NotFoundException,
     BadRequestException,
     ForbiddenException,
+    ConflictException,
     Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,12 +14,17 @@ import { OrderItem } from '../entities/order-item.entity';
 import { OrderItemAddon } from '../entities/order-item-addon.entity';
 import { OrderItemModifier } from '../entities/order-item-modifier.entity';
 import { Branch } from '../entities/branch.entity';
+import { Brand } from '../entities/brand.entity';
 import { Tenant } from '../entities/tenant.entity';
 import { Discount } from '../entities/discount.entity';
 import { User } from '../entities/user.entity';
 import { MenuService } from '../menu/menu.service';
-import { LoyaltyService } from '../loyalty/loyalty.service';
+import {
+    LoyaltyService,
+    mapSourceToWalletType,
+} from '../loyalty/loyalty.service';
 import { ShiftsService } from '../shifts/shifts.service';
+import { BranchesService } from '../branches/branches.service';
 import { CustomersService } from '../customers/customers.service';
 import { InventoryConsumptionService } from '../inventory/inventory-consumption.service';
 import { normalizePakistaniPhone } from '../utils/phone';
@@ -27,6 +33,7 @@ import { RiderDispatchState } from '../entities/rider-dispatch-state.entity';
 import { RiderAssignmentLedger } from '../entities/rider-assignment-ledger.entity';
 import { RiderOpsMetricsService } from '../rider-hrm/rider-ops-metrics.service';
 import { freshnessState, selectNextRoundRobin } from './dispatch.utils';
+import { resolveRiderBrandScope } from './rider-brand-scope.util';
 import { PushNotificationService } from '../push-notifications/push-notification.service';
 
 @Injectable()
@@ -50,6 +57,7 @@ export class OrdersService {
         private menuService: MenuService,
         private loyaltyService: LoyaltyService,
         private shiftsService: ShiftsService,
+        private branchesService: BranchesService,
         private customersService: CustomersService,
         private inventoryConsumptionService: InventoryConsumptionService,
         private riderOpsMetrics: RiderOpsMetricsService,
@@ -145,7 +153,10 @@ export class OrdersService {
                 ? await this.userRepo.findBy({ id: In(riderIds) })
                 : [];
         const riderNames = new Map(
-            riders.map((rider) => [rider.id, rider.name?.trim() || `Rider #${rider.id}`]),
+            riders.map((rider) => [
+                rider.id,
+                rider.name?.trim() || `Rider #${rider.id}`,
+            ]),
         );
 
         const detail = skipped
@@ -165,22 +176,59 @@ export class OrdersService {
                           .filter((reason): reason is string => !!reason)
                     : [];
                 const riderLabel = Number.isFinite(riderId)
-                    ? riderNames.get(riderId) ?? `Rider #${riderId}`
+                    ? (riderNames.get(riderId) ?? `Rider #${riderId}`)
                     : 'A rider';
                 return `${riderLabel}: ${reasonList.join(', ') || 'not eligible'}`;
             })
             .join('; ');
         const remaining =
-            skipped.length > 4
-                ? `; +${skipped.length - 4} more rider(s)`
-                : '';
+            skipped.length > 4 ? `; +${skipped.length - 4} more rider(s)` : '';
         return `${fallback}. ${detail}${remaining}`;
+    }
+
+    /** A brand-locked admin may only act on orders of their own brand. */
+    private assertOrderBrandAllowed(
+        order: Order,
+        allowedBrandIds: number[] | null | undefined,
+    ): void {
+        if (allowedBrandIds == null) return;
+        if (order.brandId == null || !allowedBrandIds.includes(order.brandId)) {
+            throw new ForbiddenException(
+                "You do not have access to this order's brand",
+            );
+        }
+    }
+
+    /** The rider must be linked (owned/shared) to the order's brand. */
+    private async assertRiderLinkedToBrand(
+        tenantId: number,
+        brandId: number | null,
+        riderId: number,
+    ): Promise<void> {
+        if (brandId == null) {
+            throw new BadRequestException(
+                'Order has no brand; cannot validate rider brand access',
+            );
+        }
+        const result: unknown = await this.dataSource.query(
+            `SELECT 1 AS ok FROM rider_brands
+             WHERE rider_user_id = $1 AND brand_id = $2 AND tenant_id = $3
+             LIMIT 1`,
+            [riderId, brandId, tenantId],
+        );
+        const rows = result as Array<{ ok: number }>;
+        if (rows.length === 0) {
+            throw new BadRequestException(
+                "This rider is not available for the order's brand",
+            );
+        }
     }
 
     private async resolveEligibleRidersForAutoDispatch(
         manager: DataSource['manager'],
         tenantId: number,
         branchId: number,
+        brandId: number,
     ): Promise<{
         eligibleRiderIds: number[];
         skipped: Array<Record<string, unknown>>;
@@ -225,8 +273,7 @@ export class OrdersService {
              FROM users u
              INNER JOIN branch_users bu ON bu.user_id = u.id AND bu.branch_id = $2
              INNER JOIN roles r ON r.id = bu.role_id AND r.slug = 'rider'
-             INNER JOIN branch_brands bb ON bb.branch_id = bu.branch_id
-             INNER JOIN brands br ON br.id = bb.brand_id AND br.tenant_id = $1
+             INNER JOIN rider_brands rbr ON rbr.rider_user_id = u.id AND rbr.brand_id = $3 AND rbr.tenant_id = $1
              LEFT JOIN rider_profiles rp ON rp.user_id = u.id AND rp.tenant_id = $1
              LEFT JOIN rider_presences prs ON prs.rider_user_id = u.id
              LEFT JOIN (
@@ -253,7 +300,7 @@ export class OrdersService {
                    AND o.delivery_status = 'delivered'
                  GROUP BY o.rider_id
              ) tr ON tr.rider_user_id = u.id`,
-            [tenantId, branchId],
+            [tenantId, branchId, brandId],
         );
 
         const skipped: Array<Record<string, unknown>> = [];
@@ -265,7 +312,9 @@ export class OrdersService {
         const radiusKm = Number(branch.deliveryRadiusKm ?? 10);
         for (const row of rows) {
             const riderId = Number(row.rider_user_id);
-            const maxActiveOrders = Number(row.max_active_orders ?? 1);
+            // Business rule: a rider carries exactly one order at a time,
+            // regardless of any per-profile max_active_orders config.
+            const maxActiveOrders = 1;
             const activeOrders = Number(row.active_orders ?? 0);
             const minRating =
                 row.min_rating != null ? Number(row.min_rating) : null;
@@ -346,12 +395,34 @@ export class OrdersService {
             });
             if (!order) return;
             if (order.orderType !== 'delivery' || order.riderId != null) return;
+            // Brand-scoped dispatch requires a brand on the order.
+            if (order.brandId == null) {
+                this.riderOpsMetrics.inc('auto_assignment_no_eligible_riders');
+                await manager.save(
+                    manager.create(RiderAssignmentLedger, {
+                        tenantId: order.tenantId,
+                        branchId: order.branchId,
+                        orderId: order.id,
+                        eventType: 'failed',
+                        assignmentRequestId,
+                        selectedRiderUserId: null,
+                        eligibleRiderUserIds: [],
+                        skippedRiders: [],
+                        reasonCode: 'no_brand',
+                        reasonDetail:
+                            'Order has no brand; brand-scoped dispatch cannot select a rider',
+                    }),
+                );
+                return;
+            }
+            const brandId = order.brandId;
 
             const { eligibleRiderIds, skipped } =
                 await this.resolveEligibleRidersForAutoDispatch(
                     manager,
                     order.tenantId,
                     order.branchId,
+                    brandId,
                 );
 
             if (eligibleRiderIds.length === 0) {
@@ -377,16 +448,21 @@ export class OrdersService {
             let state = await manager
                 .createQueryBuilder(RiderDispatchState, 's')
                 .setLock('pessimistic_write')
-                .where('s.tenant_id = :tenantId AND s.branch_id = :branchId', {
-                    tenantId: order.tenantId,
-                    branchId: order.branchId,
-                })
+                .where(
+                    's.tenant_id = :tenantId AND s.branch_id = :branchId AND s.brand_id = :brandId',
+                    {
+                        tenantId: order.tenantId,
+                        branchId: order.branchId,
+                        brandId,
+                    },
+                )
                 .getOne();
             if (!state) {
                 state = await manager.save(
                     manager.create(RiderDispatchState, {
                         tenantId: order.tenantId,
                         branchId: order.branchId,
+                        brandId,
                         lastAssignedRiderUserId: null,
                         lastAssignedAt: null,
                     }),
@@ -468,7 +544,8 @@ export class OrdersService {
     ): Promise<void> {
         if (order.orderType !== 'delivery') return;
         if (order.status !== 'preparing') return;
-        if (previousStatus !== 'placed' && previousStatus !== 'accepted') return;
+        if (previousStatus !== 'placed' && previousStatus !== 'accepted')
+            return;
         if (order.riderId != null) return;
         try {
             await this.autoAssignRiderForOrder(order.id);
@@ -485,6 +562,7 @@ export class OrdersService {
         orderId: number,
         tenantId: number,
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         const order = await this.orderRepo.findOne({
             where: { id: orderId, tenantId },
@@ -496,15 +574,20 @@ export class OrdersService {
             allowedBranchIds.length > 0 &&
             !allowedBranchIds.includes(order.branchId)
         ) {
-            throw new ForbiddenException('You do not have access to this branch');
+            throw new ForbiddenException(
+                'You do not have access to this branch',
+            );
         }
+        this.assertOrderBrandAllowed(order, allowedBrandIds);
         if (order.orderType !== 'delivery') {
             throw new BadRequestException(
                 'Automatic rider assignment is only available for delivery orders',
             );
         }
         if (order.riderId != null) {
-            throw new BadRequestException('Order already has an assigned rider');
+            throw new BadRequestException(
+                'Order already has an assigned rider',
+            );
         }
         await this.autoAssignRiderForOrder(orderId, {
             assignmentRequestId: `admin-retry-${orderId}-${randomUUID()}`,
@@ -580,6 +663,8 @@ export class OrdersService {
         createdBy: number | null,
         source: 'pos' | 'consumer_app' | 'consumer_web' | 'kiosk' = 'pos',
         loggedInCustomerId: number | null = null,
+        /** Brand lock of the creating user (null = unrestricted). Items outside these brands are rejected. */
+        allowedBrandIds: number[] | null = null,
     ) {
         const tenant = await this.tenantRepo.findOne({
             where: { id: tenantId },
@@ -626,23 +711,34 @@ export class OrdersService {
         let explicitCustomerId: number | null = null;
 
         if (source === 'pos') {
-            if (!dto.customer_name?.trim()) {
-                throw new BadRequestException(
-                    'Customer name is required for POS orders',
-                );
+            // Customer requirements depend on order type: dine-in is fully
+            // optional; takeaway & delivery require a name + phone (delivery
+            // also needs a delivery address).
+            const customerRequired =
+                dto.order_type === 'takeaway' || dto.order_type === 'delivery';
+            if (customerRequired) {
+                if (!dto.customer_name?.trim()) {
+                    throw new BadRequestException(
+                        'Customer name is required for takeaway and delivery orders',
+                    );
+                }
+                if (!dto.customer_phone?.trim()) {
+                    throw new BadRequestException(
+                        'Customer phone is required for takeaway and delivery orders (use Pakistani format: 03XXXXXXXXX)',
+                    );
+                }
             }
-            if (!dto.customer_phone?.trim()) {
-                throw new BadRequestException(
-                    'Customer phone is required for POS orders (use Pakistani format: 03XXXXXXXXX)',
+            // Validate/normalize the phone whenever one is provided (required
+            // above, or optionally entered for a dine-in order).
+            if (dto.customer_phone?.trim()) {
+                customerPhoneNormalized = normalizePakistaniPhone(
+                    dto.customer_phone.trim(),
                 );
-            }
-            customerPhoneNormalized = normalizePakistaniPhone(
-                dto.customer_phone.trim(),
-            );
-            if (!customerPhoneNormalized) {
-                throw new BadRequestException(
-                    'Invalid Pakistani phone number. Use format: 03XXXXXXXXX (e.g. 03001234567)',
-                );
+                if (!customerPhoneNormalized) {
+                    throw new BadRequestException(
+                        'Invalid Pakistani phone number. Use format: 03XXXXXXXXX (e.g. 03001234567)',
+                    );
+                }
             }
             if (dto.order_type === 'delivery') {
                 if (!dto.delivery_address?.trim()) {
@@ -651,15 +747,9 @@ export class OrdersService {
                     );
                 }
             }
-            for (const bid of uniqueBranchIds) {
-                const openShift =
-                    await this.shiftsService.findOpenByBranch(bid);
-                if (!openShift) {
-                    throw new ForbiddenException(
-                        `No shift is open for branch ID ${bid}. Open a shift in Admin → Shifts before placing POS orders.`,
-                    );
-                }
-            }
+            // Brand-shift availability is checked after items are resolved
+            // (shifts are per brand per branch, and the cart's brand is only
+            // known once items have been loaded).
         } else {
             if (dto.customer_phone?.trim()) {
                 customerPhoneNormalized = normalizePakistaniPhone(
@@ -740,6 +830,14 @@ export class OrdersService {
                 !branchInfo.brandIds.has(menuItemBrandId)
             )
                 continue;
+            if (
+                allowedBrandIds != null &&
+                !allowedBrandIds.includes(menuItemBrandId)
+            ) {
+                throw new ForbiddenException(
+                    `"${menuItem.name}" belongs to another brand. This till can only sell items of its own brand.`,
+                );
+            }
 
             let unitPrice: number;
             if (line.deal_unit_price !== undefined) {
@@ -817,8 +915,63 @@ export class OrdersService {
 
         if (lineDetails.length === 0)
             throw new BadRequestException('No valid items in order');
+
+        // Multi-brand separation: every order is single-brand. POS, kiosk and
+        // consumer-app reject mixed carts outright; consumer_web mixed carts
+        // are auto-split into one order per brand (sharing an orderGroupId),
+        // so each persisted order is still single-brand.
+        if (
+            (source === 'kiosk' ||
+                source === 'consumer_app' ||
+                source === 'pos') &&
+            itemBrandIds.size > 1
+        ) {
+            throw new BadRequestException(
+                'Items from different brands cannot be combined in one order. Please place a separate order per brand.',
+            );
+        }
         const orderBrandId =
             itemBrandIds.size === 1 ? [...itemBrandIds][0] : null;
+
+        // POS orders require the brand's shift to be open at each branch
+        // (shifts are per brand per branch).
+        if (source === 'pos') {
+            const branchBrandPairs = new Set(
+                lineDetails.map((l) => `${l.branchId}-${l.brandId}`),
+            );
+            for (const pair of branchBrandPairs) {
+                const [bid, brid] = pair.split('-').map(Number);
+                const openShift =
+                    await this.shiftsService.findOpenByBranchAndBrand(
+                        bid,
+                        brid,
+                    );
+                if (!openShift) {
+                    throw new ForbiddenException(
+                        `No shift is open for this brand at branch ID ${bid}. Open the brand's shift before placing POS orders.`,
+                    );
+                }
+            }
+        }
+
+        // Online channels (app/web) respect the per-(branch,brand) open/close
+        // switch. POS is exempt (gated by shifts above); kiosk is gated at submit.
+        if (source === 'consumer_app' || source === 'consumer_web') {
+            const pairs = new Set(
+                lineDetails.map((l) => `${l.branchId}-${l.brandId}`),
+            );
+            for (const pair of pairs) {
+                const [bid, brid] = pair.split('-').map(Number);
+                if (!(await this.branchesService.isBrandOpenAt(bid, brid))) {
+                    const brand = await this.branchRepo.manager
+                        .getRepository(Brand)
+                        .findOne({ where: { id: brid } });
+                    throw new ConflictException(
+                        `${brand?.name ?? 'This brand'} is currently closed at this branch.`,
+                    );
+                }
+            }
+        }
 
         // Resolve discounts at full-cart level and allocate to each line (use primary branch for discount context)
         const auto = await this.resolveAutoDiscount(
@@ -871,10 +1024,24 @@ export class OrdersService {
 
         const taxRate = Number(tenant.defaultTaxRate) || 0;
         const serviceChargeRate = 0;
-        const deliveryFeeTotal =
-            dto.order_type === 'delivery'
-                ? Number(primaryBranch.deliveryFlatFee) || 0
-                : 0;
+        // Delivery fee is per brand: each order in the group charges its own
+        // brand's flat fee (a customer ordering from two brands pays twice).
+        const brandDeliveryFees = new Map<number, number>();
+        for (const { branch: b } of branchMap.values()) {
+            const raw = b as {
+                branchBrands?: Array<{
+                    brand?: { id: number; deliveryFlatFee?: number };
+                }>;
+            };
+            for (const bb of raw.branchBrands ?? []) {
+                if (bb.brand) {
+                    brandDeliveryFees.set(
+                        Number(bb.brand.id),
+                        Number(bb.brand.deliveryFlatFee) || 0,
+                    );
+                }
+            }
+        }
         const orderGroupId = randomUUID();
 
         // Group line indices by (branchId, brandId) so each branch receives its orders
@@ -915,6 +1082,7 @@ export class OrdersService {
         let loyaltyDiscountAmount = 0;
         let loyaltyPointsToRedeem = 0;
         const firstKey = sortedGroups[0];
+        const firstBrandId = Number(firstKey.split('-')[1]);
         const firstIndices = groupToIndices.get(firstKey)!;
         const firstOrderSubtotal = firstIndices.reduce(
             (s, i) => s + lineDetails[i].itemSubtotal,
@@ -928,9 +1096,7 @@ export class OrdersService {
             Math.round((firstOrderSubtotal - firstOrderLineDiscount) * 100) /
             100;
         if (
-            (source === 'pos' ||
-                source === 'consumer_web' ||
-                source === 'consumer_app') &&
+            (source === 'pos' || source === 'consumer_app') &&
             dto.customer_phone?.trim() &&
             (dto.loyalty_points_to_redeem ?? 0) > 0
         ) {
@@ -938,6 +1104,8 @@ export class OrdersService {
                 tenantId,
                 customerPhoneNormalized ?? dto.customer_phone.trim(),
                 firstOrderAfterDiscount,
+                source,
+                firstBrandId,
             );
             if (preview) {
                 loyaltyPointsToRedeem = Math.min(
@@ -962,24 +1130,23 @@ export class OrdersService {
             }
         }
 
-        // Pre-generate order numbers per branch (each branch gets sequential numbers)
-        const ordersPerBranch = new Map<number, number>();
+        // Pre-generate both identifiers per (branch, brand) group. Each group is
+        // a distinct branch+brand pair = one order, so daily counters don't collide
+        // within a single multi-brand placement.
+        const identifiersByKey = new Map<
+            string,
+            { orderId: string; orderNumber: string }
+        >();
         for (const key of sortedGroups) {
-            const [branchIdStr] = key.split('-');
-            const branchId = Number(branchIdStr);
-            ordersPerBranch.set(
-                branchId,
-                (ordersPerBranch.get(branchId) ?? 0) + 1,
+            const [branchIdStr, brandIdStr] = key.split('-');
+            identifiersByKey.set(
+                key,
+                await this.generateOrderIdentifiers(
+                    Number(branchIdStr),
+                    Number(brandIdStr),
+                ),
             );
         }
-        const orderNumbersByBranch = new Map<number, string[]>();
-        for (const [branchId, count] of ordersPerBranch) {
-            orderNumbersByBranch.set(
-                branchId,
-                await this.generateOrderNumbers(branchId, count),
-            );
-        }
-        const branchOrderIndex = new Map<number, number>();
 
         const deliveryLatitude =
             dto.latitude != null && Number.isFinite(Number(dto.latitude))
@@ -1002,7 +1169,6 @@ export class OrdersService {
                 : null;
 
         const createdOrderIds: number[] = [];
-        let deliveryFeeAssigned = false;
         let firstOrderIdForLoyalty: number | null = null;
 
         for (const key of sortedGroups) {
@@ -1010,10 +1176,8 @@ export class OrdersService {
             const branchId = Number(branchIdStr);
             const brandId = Number(brandIdStr);
             const indices = groupToIndices.get(key)!;
-            const orderNumIdx = branchOrderIndex.get(branchId) ?? 0;
-            const orderNumber =
-                orderNumbersByBranch.get(branchId)![orderNumIdx];
-            branchOrderIndex.set(branchId, orderNumIdx + 1);
+            const { orderId: newOrderId, orderNumber } =
+                identifiersByKey.get(key)!;
             const brandSubtotal = indices.reduce(
                 (s, i) => s + lineDetails[i].itemSubtotal,
                 0,
@@ -1034,10 +1198,9 @@ export class OrdersService {
             const brandServiceCharge =
                 Math.round(afterDiscount * serviceChargeRate * 100) / 100;
             const brandDeliveryFee =
-                !deliveryFeeAssigned && deliveryFeeTotal > 0
-                    ? deliveryFeeTotal
+                dto.order_type === 'delivery'
+                    ? (brandDeliveryFees.get(brandId) ?? 0)
                     : 0;
-            if (brandDeliveryFee > 0) deliveryFeeAssigned = true;
             const totalAmount =
                 Math.round(
                     (afterDiscount +
@@ -1052,6 +1215,7 @@ export class OrdersService {
                     brandId,
                     orderGroupId,
                     branchId,
+                    orderId: newOrderId,
                     orderNumber,
                     orderType: dto.order_type,
                     tableNumber: dto.table_number ?? null,
@@ -1215,6 +1379,8 @@ export class OrdersService {
                 firstOrderIdForLoyalty,
                 loyaltyPointsToRedeem,
                 firstOrderAfterDiscount,
+                source,
+                firstBrandId,
             );
         }
 
@@ -1253,11 +1419,14 @@ export class OrdersService {
         const orders = await Promise.all(
             createdOrderIds.map((id) => this.findOne(id)),
         );
+        const responseWalletType = mapSourceToWalletType(source);
         const loyalty =
-            customerPhoneNormalized != null
-                ? await this.loyaltyService.getBalanceByPhone(
+            customerPhoneNormalized != null && responseWalletType != null
+                ? await this.loyaltyService.getWalletBalance(
                       tenantId,
                       customerPhoneNormalized,
+                      responseWalletType,
+                      firstBrandId,
                   )
                 : null;
         const loyaltyPointsBalance = loyalty?.balance ?? 0;
@@ -1567,6 +1736,8 @@ export class OrdersService {
                 'orderItems.addons.addon',
                 'orderItems.modifiers',
                 'orderItems.modifiers.modifier',
+                'orderItems.modifiers.modifier.modifierGroup',
+                'orderItems.dealMenuItem',
             ],
             order: { id: 'ASC' },
         });
@@ -1587,9 +1758,141 @@ export class OrdersService {
                 delivery_fee: Number(o.deliveryFee),
                 total_amount: Number(o.totalAmount),
                 items:
-                    o.orderItems?.map((oi) => ({
-                        id: oi.id,
-                        name_snapshot:
+                    [...(o.orderItems ?? [])]
+                        .sort((a, b) => a.id - b.id)
+                        .map((oi) => ({
+                            id: oi.id,
+                            name_snapshot:
+                                oi.nameSnapshot ??
+                                (oi.menuItem as { name?: string } | null)?.name,
+                            quantity: oi.quantity,
+                            unit_price: Number(oi.unitPrice),
+                            subtotal: Number(oi.subtotal),
+                            deal_id: oi.dealId ?? null,
+                            deal_slot_index: oi.dealSlotIndex ?? null,
+                            deal_name: oi.dealMenuItem?.name ?? null,
+                            variant_name:
+                                (oi.variant as { name?: string } | null)
+                                    ?.name ?? null,
+                            addons:
+                                oi.addons?.map((a) => ({
+                                    name: (
+                                        a.addon as { name?: string } | undefined
+                                    )?.name,
+                                    quantity: a.quantity,
+                                    unit_price: Number(a.unitPrice),
+                                    subtotal: Number(a.subtotal),
+                                })) ?? [],
+                            modifiers:
+                                (
+                                    oi as {
+                                        modifiers?: Array<{
+                                            nameSnapshot: string | null;
+                                            priceSnapshot: number | null;
+                                            modifier?: {
+                                                name?: string;
+                                                price?: number;
+                                            };
+                                        }>;
+                                    }
+                                ).modifiers?.map((m) => ({
+                                    group:
+                                        (
+                                            m.modifier as
+                                                | {
+                                                      modifierGroup?: {
+                                                          name?: string;
+                                                      };
+                                                  }
+                                                | undefined
+                                        )?.modifierGroup?.name ?? null,
+                                    name:
+                                        m.nameSnapshot ??
+                                        (
+                                            m.modifier as
+                                                | { name?: string }
+                                                | undefined
+                                        )?.name ??
+                                        null,
+                                    unit_price:
+                                        m.priceSnapshot != null
+                                            ? Number(m.priceSnapshot)
+                                            : Number(
+                                                  (
+                                                      m.modifier as
+                                                          | { price?: number }
+                                                          | undefined
+                                                  )?.price ?? 0,
+                                              ),
+                                })) ?? [],
+                            category:
+                                (
+                                    oi.menuItem as {
+                                        category?: { name: string };
+                                    } | null
+                                )?.category?.name ?? null,
+                        })) ?? [],
+                loyalty_points_earned: o.loyaltyPointsEarned ?? 0,
+                loyalty_points_redeemed: o.loyaltyPointsRedeemed ?? 0,
+            })),
+        };
+    }
+
+    /** Per-brand invoice: brand, category, item breakdown for one order. */
+    async getOrderInvoice(orderId: number) {
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId },
+            relations: [
+                'brand',
+                'branch',
+                'orderItems',
+                'orderItems.menuItem',
+                'orderItems.menuItem.category',
+                'orderItems.variant',
+                'orderItems.addons',
+                'orderItems.addons.addon',
+                'orderItems.modifiers',
+                'orderItems.modifiers.modifier',
+                'orderItems.modifiers.modifier.modifierGroup',
+                'orderItems.dealMenuItem',
+            ],
+        });
+        if (!order) throw new NotFoundException('Order not found');
+        const orderWalletType = mapSourceToWalletType(order.source);
+        const loyalty =
+            order.customerPhone && orderWalletType != null
+                ? await this.loyaltyService.getWalletBalance(
+                      order.tenantId,
+                      order.customerPhone,
+                      orderWalletType,
+                      order.brandId,
+                  )
+                : null;
+        const loyaltyBalance = loyalty?.balance ?? 0;
+        return {
+            order_id: order.id,
+            order_number: order.orderNumber,
+            order_group_id: order.orderGroupId ?? null,
+            brand: order.brand
+                ? { id: order.brand.id, name: order.brand.name }
+                : null,
+            branch: order.branch
+                ? { id: order.branch.id, name: order.branch.name }
+                : null,
+            order_type: order.orderType,
+            table_number: order.tableNumber,
+            placed_at: order.placedAt?.toISOString() ?? null,
+            items:
+                [...(order.orderItems ?? [])]
+                    .sort((a, b) => a.id - b.id)
+                    .map((oi) => ({
+                        category:
+                            (
+                                oi.menuItem as {
+                                    category?: { name: string };
+                                } | null
+                            )?.category?.name ?? null,
+                        name:
                             oi.nameSnapshot ??
                             (oi.menuItem as { name?: string } | null)?.name,
                         quantity: oi.quantity,
@@ -1597,6 +1900,7 @@ export class OrdersService {
                         subtotal: Number(oi.subtotal),
                         deal_id: oi.dealId ?? null,
                         deal_slot_index: oi.dealSlotIndex ?? null,
+                        deal_name: oi.dealMenuItem?.name ?? null,
                         variant_name:
                             (oi.variant as { name?: string } | null)?.name ??
                             null,
@@ -1621,6 +1925,16 @@ export class OrdersService {
                                     }>;
                                 }
                             ).modifiers?.map((m) => ({
+                                group:
+                                    (
+                                        m.modifier as
+                                            | {
+                                                  modifierGroup?: {
+                                                      name?: string;
+                                                  };
+                                              }
+                                            | undefined
+                                    )?.modifierGroup?.name ?? null,
                                 name:
                                     m.nameSnapshot ??
                                     (
@@ -1640,110 +1954,7 @@ export class OrdersService {
                                               )?.price ?? 0,
                                           ),
                             })) ?? [],
-                        category:
-                            (
-                                oi.menuItem as {
-                                    category?: { name: string };
-                                } | null
-                            )?.category?.name ?? null,
                     })) ?? [],
-                loyalty_points_earned: o.loyaltyPointsEarned ?? 0,
-                loyalty_points_redeemed: o.loyaltyPointsRedeemed ?? 0,
-            })),
-        };
-    }
-
-    /** Per-brand invoice: brand, category, item breakdown for one order. */
-    async getOrderInvoice(orderId: number) {
-        const order = await this.orderRepo.findOne({
-            where: { id: orderId },
-            relations: [
-                'brand',
-                'branch',
-                'orderItems',
-                'orderItems.menuItem',
-                'orderItems.menuItem.category',
-                'orderItems.variant',
-                'orderItems.addons',
-                'orderItems.addons.addon',
-                'orderItems.modifiers',
-                'orderItems.modifiers.modifier',
-            ],
-        });
-        if (!order) throw new NotFoundException('Order not found');
-        const loyalty = order.customerPhone
-            ? await this.loyaltyService.getBalanceByPhone(
-                  order.tenantId,
-                  order.customerPhone,
-              )
-            : null;
-        const loyaltyBalance = loyalty?.balance ?? 0;
-        return {
-            order_id: order.id,
-            order_number: order.orderNumber,
-            order_group_id: order.orderGroupId ?? null,
-            brand: order.brand
-                ? { id: order.brand.id, name: order.brand.name }
-                : null,
-            branch: order.branch
-                ? { id: order.branch.id, name: order.branch.name }
-                : null,
-            order_type: order.orderType,
-            table_number: order.tableNumber,
-            placed_at: order.placedAt?.toISOString() ?? null,
-            items:
-                order.orderItems?.map((oi) => ({
-                    category:
-                        (oi.menuItem as { category?: { name: string } } | null)
-                            ?.category?.name ?? null,
-                    name:
-                        oi.nameSnapshot ??
-                        (oi.menuItem as { name?: string } | null)?.name,
-                    quantity: oi.quantity,
-                    unit_price: Number(oi.unitPrice),
-                    subtotal: Number(oi.subtotal),
-                    deal_id: oi.dealId ?? null,
-                    deal_slot_index: oi.dealSlotIndex ?? null,
-                    variant_name:
-                        (oi.variant as { name?: string } | null)?.name ?? null,
-                    addons:
-                        oi.addons?.map((a) => ({
-                            name: (a.addon as { name?: string } | undefined)
-                                ?.name,
-                            quantity: a.quantity,
-                            unit_price: Number(a.unitPrice),
-                            subtotal: Number(a.subtotal),
-                        })) ?? [],
-                    modifiers:
-                        (
-                            oi as {
-                                modifiers?: Array<{
-                                    nameSnapshot: string | null;
-                                    priceSnapshot: number | null;
-                                    modifier?: {
-                                        name?: string;
-                                        price?: number;
-                                    };
-                                }>;
-                            }
-                        ).modifiers?.map((m) => ({
-                            name:
-                                m.nameSnapshot ??
-                                (m.modifier as { name?: string } | undefined)
-                                    ?.name ??
-                                null,
-                            unit_price:
-                                m.priceSnapshot != null
-                                    ? Number(m.priceSnapshot)
-                                    : Number(
-                                          (
-                                              m.modifier as
-                                                  | { price?: number }
-                                                  | undefined
-                                          )?.price ?? 0,
-                                      ),
-                        })) ?? [],
-                })) ?? [],
             subtotal: Number(order.subtotal),
             discount_amount: Number(order.discountAmount),
             tax_amount: Number(order.taxAmount),
@@ -1761,14 +1972,20 @@ export class OrdersService {
         const group = await this.getOrderGroup(orderGroupId);
         const firstOrder = await this.orderRepo.findOne({
             where: { orderGroupId },
-            select: ['id', 'tenantId', 'customerPhone'],
+            select: ['id', 'tenantId', 'customerPhone', 'source', 'brandId'],
         });
-        const groupLoyalty = firstOrder?.customerPhone
-            ? await this.loyaltyService.getBalanceByPhone(
-                  firstOrder.tenantId,
-                  firstOrder.customerPhone,
-              )
+        const groupWalletType = firstOrder
+            ? mapSourceToWalletType(firstOrder.source)
             : null;
+        const groupLoyalty =
+            firstOrder?.customerPhone && groupWalletType != null
+                ? await this.loyaltyService.getWalletBalance(
+                      firstOrder.tenantId,
+                      firstOrder.customerPhone,
+                      groupWalletType,
+                      firstOrder.brandId,
+                  )
+                : null;
         const groupLoyaltyBalance = groupLoyalty?.balance ?? 0;
         const grossTotal = group.orders.reduce(
             (sum, o) => sum + Number(o.total_amount),
@@ -1805,6 +2022,7 @@ export class OrdersService {
         tenantId: number | null,
         status: string,
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         const order = await this.orderRepo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
@@ -1818,6 +2036,14 @@ export class OrdersService {
         ) {
             throw new ForbiddenException(
                 'You do not have access to this branch',
+            );
+        }
+        if (
+            allowedBrandIds != null &&
+            (order.brandId == null || !allowedBrandIds.includes(order.brandId))
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this brand',
             );
         }
 
@@ -1836,6 +2062,7 @@ export class OrdersService {
             await this.shiftsService.addCompletedOrderAmount(
                 order.branchId,
                 Number(order.totalAmount),
+                order.brandId ?? null,
             );
         } else if (status === 'cancelled') {
             order.cancelledAt = new Date();
@@ -1866,6 +2093,7 @@ export class OrdersService {
         id: number,
         tenantId: number | null,
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         const order = await this.orderRepo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
@@ -1881,6 +2109,8 @@ export class OrdersService {
                 'orderItems.addons.addon',
                 'orderItems.modifiers',
                 'orderItems.modifiers.modifier',
+                'orderItems.modifiers.modifier.modifierGroup',
+                'orderItems.dealMenuItem',
                 'payments',
             ],
         });
@@ -1893,6 +2123,15 @@ export class OrdersService {
         ) {
             throw new ForbiddenException(
                 'You do not have access to this branch',
+            );
+        }
+        if (
+            order &&
+            allowedBrandIds != null &&
+            (order.brandId == null || !allowedBrandIds.includes(order.brandId))
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this brand',
             );
         }
         if (!order) throw new NotFoundException('Order not found');
@@ -1939,59 +2178,77 @@ export class OrdersService {
                 : null,
             brand_id: order.brandId ?? null,
             items:
-                order.orderItems?.map((oi) => ({
-                    id: oi.id,
-                    brand_id: oi.brandId ?? null,
-                    name_snapshot: oi.nameSnapshot ?? oi.menuItem?.name,
-                    price_snapshot:
-                        oi.priceSnapshot != null
-                            ? Number(oi.priceSnapshot)
-                            : Number(oi.unitPrice),
-                    quantity: oi.quantity,
-                    unit_price: Number(oi.unitPrice),
-                    subtotal: Number(oi.subtotal),
-                    notes: oi.notes,
-                    variant_id: oi.variantId ?? null,
-                    variant_name:
-                        (oi as { variant?: { name: string } }).variant?.name ??
-                        null,
-                    addons:
-                        oi.addons?.map((a) => ({
-                            name: a.addon?.name,
-                            unit_price: Number(a.unitPrice),
-                            quantity: a.quantity,
-                            subtotal: Number(a.subtotal),
-                        })) ?? [],
-                    modifiers:
-                        (
-                            oi as {
-                                modifiers?: Array<{
-                                    nameSnapshot: string | null;
-                                    priceSnapshot: number | null;
-                                    modifier?: {
-                                        name?: string;
-                                        price?: number;
-                                    };
-                                }>;
-                            }
-                        ).modifiers?.map((m) => ({
-                            name:
-                                m.nameSnapshot ??
-                                (m.modifier as { name?: string } | undefined)
-                                    ?.name ??
-                                null,
-                            unit_price:
-                                m.priceSnapshot != null
-                                    ? Number(m.priceSnapshot)
-                                    : Number(
-                                          (
-                                              m.modifier as
-                                                  | { price?: number }
-                                                  | undefined
-                                          )?.price ?? 0,
-                                      ),
-                        })) ?? [],
-                })) ?? [],
+                [...(order.orderItems ?? [])]
+                    .sort((a, b) => a.id - b.id)
+                    .map((oi) => ({
+                        id: oi.id,
+                        brand_id: oi.brandId ?? null,
+                        name_snapshot: oi.nameSnapshot ?? oi.menuItem?.name,
+                        price_snapshot:
+                            oi.priceSnapshot != null
+                                ? Number(oi.priceSnapshot)
+                                : Number(oi.unitPrice),
+                        quantity: oi.quantity,
+                        unit_price: Number(oi.unitPrice),
+                        subtotal: Number(oi.subtotal),
+                        notes: oi.notes,
+                        deal_id: oi.dealId ?? null,
+                        deal_slot_index: oi.dealSlotIndex ?? null,
+                        deal_name: oi.dealMenuItem?.name ?? null,
+                        variant_id: oi.variantId ?? null,
+                        variant_name:
+                            (oi as { variant?: { name: string } }).variant
+                                ?.name ?? null,
+                        addons:
+                            oi.addons?.map((a) => ({
+                                name: a.addon?.name,
+                                unit_price: Number(a.unitPrice),
+                                quantity: a.quantity,
+                                subtotal: Number(a.subtotal),
+                            })) ?? [],
+                        modifiers:
+                            (
+                                oi as {
+                                    modifiers?: Array<{
+                                        nameSnapshot: string | null;
+                                        priceSnapshot: number | null;
+                                        modifier?: {
+                                            name?: string;
+                                            price?: number;
+                                        };
+                                    }>;
+                                }
+                            ).modifiers?.map((m) => ({
+                                group:
+                                    (
+                                        m.modifier as
+                                            | {
+                                                  modifierGroup?: {
+                                                      name?: string;
+                                                  };
+                                              }
+                                            | undefined
+                                    )?.modifierGroup?.name ?? null,
+                                name:
+                                    m.nameSnapshot ??
+                                    (
+                                        m.modifier as
+                                            | { name?: string }
+                                            | undefined
+                                    )?.name ??
+                                    null,
+                                unit_price:
+                                    m.priceSnapshot != null
+                                        ? Number(m.priceSnapshot)
+                                        : Number(
+                                              (
+                                                  m.modifier as
+                                                      | { price?: number }
+                                                      | undefined
+                                              )?.price ?? 0,
+                                          ),
+                            })) ?? [],
+                    })) ?? [],
             payments:
                 order.payments?.map((p) => ({
                     id: p.id,
@@ -2007,6 +2264,7 @@ export class OrdersService {
         tenantId: number | null,
         filters: {
             branch_id?: number;
+            brand_id?: number;
             status?: string;
             order_type?: string;
             date_from?: string;
@@ -2014,6 +2272,7 @@ export class OrdersService {
             has_rider?: boolean;
         },
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         if (
             allowedBranchIds != null &&
@@ -2024,6 +2283,15 @@ export class OrdersService {
         ) {
             throw new ForbiddenException(
                 'You do not have access to this branch',
+            );
+        }
+        if (
+            allowedBrandIds != null &&
+            filters.brand_id != null &&
+            !allowedBrandIds.includes(filters.brand_id)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this brand',
             );
         }
 
@@ -2049,9 +2317,19 @@ export class OrdersService {
                 allowedBranchIds,
             });
         }
+        // Brand-locked users only ever see their own brand's orders.
+        if (allowedBrandIds != null) {
+            qb.andWhere('o.brandId IN (:...allowedBrandIds)', {
+                allowedBrandIds,
+            });
+        }
         if (filters.branch_id)
             qb.andWhere('o.branchId = :branchId', {
                 branchId: filters.branch_id,
+            });
+        if (filters.brand_id)
+            qb.andWhere('o.brandId = :filterBrandId', {
+                filterBrandId: filters.brand_id,
             });
         if (filters.status)
             qb.andWhere('o.status = :status', { status: filters.status });
@@ -2077,7 +2355,24 @@ export class OrdersService {
     }
 
     /** List users with Rider role for the tenant (from branch_users for tenant's branches). */
-    async listRiders(tenantId: number) {
+    /**
+     * Active riders linked to the tenant's brand(s) via rider_brands (the single
+     * source of truth for availability). A brand-locked caller is clamped to
+     * their own brands; an explicit brandId narrows further (and is rejected if
+     * outside the caller's scope). Riders with no brand link never appear.
+     */
+    async listRiders(
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+        brandId?: number | null,
+    ) {
+        const brandScope = resolveRiderBrandScope(brandId, allowedBrandIds);
+        const params: unknown[] = [tenantId];
+        let brandFilterSql = '';
+        if (brandScope != null) {
+            params.push(brandScope);
+            brandFilterSql = ` AND rb.brand_id = ANY($2::int[])`;
+        }
         const rows: Array<{
             id: number;
             name: string;
@@ -2086,14 +2381,10 @@ export class OrdersService {
         }> = await this.dataSource.query(
             `SELECT DISTINCT u.id, u.name, u.email, u.phone
              FROM users u
-             INNER JOIN branch_users bu ON bu.user_id = u.id
-             INNER JOIN roles r ON r.id = bu.role_id AND r.slug = 'rider'
-             INNER JOIN branches b ON b.id = bu.branch_id
-             INNER JOIN branch_brands bb ON bb.branch_id = b.id
-             INNER JOIN brands br ON br.id = bb.brand_id AND br.tenant_id = $1
+             INNER JOIN rider_brands rb ON rb.rider_user_id = u.id AND rb.tenant_id = $1${brandFilterSql}
              WHERE u.status = 'active'
              ORDER BY u.name`,
-            [tenantId],
+            params,
         );
         if (rows.length === 0) return [];
 
@@ -2146,6 +2437,7 @@ export class OrdersService {
         tenantId: number,
         riderId: number,
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         const order = await this.orderRepo.findOne({
             where: { id: orderId, tenantId },
@@ -2166,9 +2458,23 @@ export class OrdersService {
                 'Riders can only be assigned to delivery orders',
             );
         }
+        this.assertOrderBrandAllowed(order, allowedBrandIds);
         const riders = await this.listRiders(tenantId);
         if (!riders.some((r) => r.id === riderId)) {
             throw new BadRequestException('Invalid rider for this tenant');
+        }
+        await this.assertRiderLinkedToBrand(tenantId, order.brandId, riderId);
+        // A rider carries exactly one order at a time.
+        const activeCount = await this.orderRepo.count({
+            where: [
+                { tenantId, riderId, deliveryStatus: 'accepted' },
+                { tenantId, riderId, deliveryStatus: 'picked_up' },
+            ],
+        });
+        if (activeCount > 0) {
+            throw new BadRequestException(
+                'This rider already has an active order. A rider can deliver only one order at a time.',
+            );
         }
         const previousDeliveryStatus = order.deliveryStatus;
         order.riderId = riderId;
@@ -2200,6 +2506,7 @@ export class OrdersService {
         tenantId: number,
         riderId: number,
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         const order = await this.orderRepo.findOne({
             where: { id: orderId, tenantId },
@@ -2225,9 +2532,25 @@ export class OrdersService {
                 'Rider can only be changed before they have picked up the order',
             );
         }
+        this.assertOrderBrandAllowed(order, allowedBrandIds);
         const riders = await this.listRiders(tenantId);
         if (!riders.some((r) => r.id === riderId)) {
             throw new BadRequestException('Invalid rider for this tenant');
+        }
+        await this.assertRiderLinkedToBrand(tenantId, order.brandId, riderId);
+        // A rider carries exactly one order at a time (excluding this order,
+        // which is being reassigned away from its current rider).
+        const activeElsewhere = await this.orderRepo
+            .createQueryBuilder('o')
+            .where('o.tenantId = :tenantId', { tenantId })
+            .andWhere('o.riderId = :riderId', { riderId })
+            .andWhere("o.deliveryStatus IN ('accepted', 'picked_up')")
+            .andWhere('o.id != :orderId', { orderId })
+            .getCount();
+        if (activeElsewhere > 0) {
+            throw new BadRequestException(
+                'This rider already has an active order. A rider can deliver only one order at a time.',
+            );
         }
         order.riderId = riderId;
         await this.orderRepo.save(order);
@@ -2250,6 +2573,7 @@ export class OrdersService {
         tenantId: number,
         riderId: number,
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         const riders = await this.listRiders(tenantId);
         if (!riders.some((r) => r.id === riderId)) {
@@ -2279,6 +2603,33 @@ export class OrdersService {
         if (nonDelivery.length > 0) {
             throw new BadRequestException(
                 'Riders can only be assigned when every order in the group is a delivery order',
+            );
+        }
+        // A rider carries exactly one order at a time — a multi-order group
+        // (one order per brand) needs a separate rider per order.
+        if (orders.length > 1) {
+            throw new BadRequestException(
+                'A rider can deliver only one order at a time. Assign a separate rider to each order in this group.',
+            );
+        }
+        const groupActiveCount = await this.orderRepo
+            .createQueryBuilder('o')
+            .where('o.tenantId = :tenantId', { tenantId })
+            .andWhere('o.riderId = :riderId', { riderId })
+            .andWhere("o.deliveryStatus IN ('accepted', 'picked_up')")
+            .andWhere('o.orderGroupId != :orderGroupId', { orderGroupId })
+            .getCount();
+        if (groupActiveCount > 0) {
+            throw new BadRequestException(
+                'This rider already has an active order. A rider can deliver only one order at a time.',
+            );
+        }
+        for (const order of orders) {
+            this.assertOrderBrandAllowed(order, allowedBrandIds);
+            await this.assertRiderLinkedToBrand(
+                tenantId,
+                order.brandId,
+                riderId,
             );
         }
         for (const order of orders) {
@@ -2321,6 +2672,7 @@ export class OrdersService {
         tenantId: number,
         riderId: number,
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         const orders = await this.orderRepo.find({
             where: { orderGroupId, tenantId },
@@ -2342,7 +2694,9 @@ export class OrdersService {
                 );
             }
         }
-        const nonDeliveryGroup = orders.filter((o) => o.orderType !== 'delivery');
+        const nonDeliveryGroup = orders.filter(
+            (o) => o.orderType !== 'delivery',
+        );
         if (nonDeliveryGroup.length > 0) {
             throw new BadRequestException(
                 'Riders can only be assigned when every order in the group is a delivery order',
@@ -2359,6 +2713,28 @@ export class OrdersService {
         const riders = await this.listRiders(tenantId);
         if (!riders.some((r) => r.id === riderId)) {
             throw new BadRequestException('Invalid rider for this tenant');
+        }
+        for (const order of orders) {
+            this.assertOrderBrandAllowed(order, allowedBrandIds);
+            await this.assertRiderLinkedToBrand(
+                tenantId,
+                order.brandId,
+                riderId,
+            );
+        }
+        // A rider carries exactly one order at a time — reject if the target
+        // rider already has an active order outside this group.
+        const activeElsewhere = await this.orderRepo
+            .createQueryBuilder('o')
+            .where('o.tenantId = :tenantId', { tenantId })
+            .andWhere('o.riderId = :riderId', { riderId })
+            .andWhere("o.deliveryStatus IN ('accepted', 'picked_up')")
+            .andWhere('o.orderGroupId != :orderGroupId', { orderGroupId })
+            .getCount();
+        if (activeElsewhere > 0) {
+            throw new BadRequestException(
+                'This rider already has an active order. A rider can deliver only one order at a time.',
+            );
         }
         for (const order of orders) {
             order.riderId = riderId;
@@ -2562,6 +2938,7 @@ export class OrdersService {
             await this.shiftsService.addCompletedOrderAmount(
                 order.branchId,
                 Number(order.totalAmount),
+                order.brandId ?? null,
             );
         } else {
             await this.orderRepo.save(order);
@@ -2607,6 +2984,8 @@ export class OrdersService {
         },
         tenantId: number,
         source: 'pos' | 'consumer_app' | 'consumer_web' | 'kiosk' = 'pos',
+        /** Brand lock of the requesting user (null = unrestricted). */
+        allowedBrandIds: number[] | null = null,
     ) {
         const branch = await this.branchRepo.findOne({
             where: { id: dto.branch_id },
@@ -2656,6 +3035,29 @@ export class OrdersService {
                 expandedQuoteItems,
                 dto.order_type,
             );
+
+        // Multi-brand separation (mirrors createOrder): brand-locked users may
+        // only quote their own brand; kiosk/consumer-app carts are single-brand.
+        const quotedBrandIds = new Set(lineDetails.map((l) => l.brandId));
+        if (allowedBrandIds != null) {
+            for (const brandId of quotedBrandIds) {
+                if (!allowedBrandIds.includes(brandId)) {
+                    throw new ForbiddenException(
+                        'This till can only sell items of its own brand.',
+                    );
+                }
+            }
+        }
+        if (
+            (source === 'kiosk' ||
+                source === 'consumer_app' ||
+                source === 'pos') &&
+            quotedBrandIds.size > 1
+        ) {
+            throw new BadRequestException(
+                'Items from different brands cannot be combined in one order. Please place a separate order per brand.',
+            );
+        }
 
         const auto = await this.resolveAutoDiscount(
             tenantId,
@@ -2710,9 +3112,7 @@ export class OrdersService {
         let loyaltyDiscount = 0;
         let loyaltyPointsRedeemed = 0;
         if (
-            (source === 'pos' ||
-                source === 'consumer_web' ||
-                source === 'consumer_app') &&
+            (source === 'pos' || source === 'consumer_app') &&
             dto.customer_phone?.trim() &&
             (dto.loyalty_points_to_redeem ?? 0) > 0
         ) {
@@ -2724,6 +3124,8 @@ export class OrdersService {
                     tenantId,
                     normalized,
                     afterDiscount,
+                    source,
+                    orderBrandId,
                 );
                 if (preview) {
                     loyaltyPointsRedeemed = Math.min(
@@ -2745,9 +3147,30 @@ export class OrdersService {
         const taxAmount = Math.round(afterDiscount * taxRate * 100) / 100;
         const serviceCharge =
             Math.round(afterDiscount * serviceChargeRate * 100) / 100;
+        // Delivery fee is configured per brand; a mixed web cart (split into
+        // one order per brand) pays each brand's fee.
+        const quoteBrandFees = new Map<number, number>(
+            (
+                (
+                    branch as {
+                        branchBrands?: Array<{
+                            brand?: { id: number; deliveryFlatFee?: number };
+                        }>;
+                    }
+                ).branchBrands ?? []
+            )
+                .filter((bb) => bb.brand)
+                .map((bb) => [
+                    Number(bb.brand!.id),
+                    Number(bb.brand!.deliveryFlatFee) || 0,
+                ]),
+        );
         const deliveryFee =
             dto.order_type === 'delivery'
-                ? Number(branch.deliveryFlatFee) || 0
+                ? [...quotedBrandIds].reduce(
+                      (sum, id) => sum + (quoteBrandFees.get(id) ?? 0),
+                      0,
+                  )
                 : 0;
         const totalAmount =
             Math.round(
@@ -3665,33 +4088,30 @@ export class OrdersService {
         return allocated;
     }
 
-    private async generateOrderNumber(branchId: number): Promise<string> {
-        const [num] = await this.generateOrderNumbers(branchId, 1);
-        return num;
-    }
-
-    /** Generate multiple order numbers in one go (e.g. for multi-brand split) so they are unique and sequential. */
-    private async generateOrderNumbers(
+    /**
+     * Generate both identifiers for one order from a single daily counter.
+     *
+     * `orderId`  — permanent tracking reference: `BR-{brandId}-{branchId}-{YYYYMMDD}-{seq}`
+     *              e.g. `BR-23-10-20260617-001`. Globally unique, shared with customer.
+     * `orderNumber` — short daily call-out number: `001`, `002` …
+     *              Resets each day per branch+brand. Staff use this to call out orders.
+     */
+    private async generateOrderIdentifiers(
         branchId: number,
-        howMany: number,
-    ): Promise<string[]> {
-        const branch = await this.branchRepo.findOne({
-            where: { id: branchId },
-        });
-        const code = branch?.code ?? 'BR';
+        brandId: number,
+    ): Promise<{ orderId: string; orderNumber: string }> {
         const todayStr = new Date().toISOString().slice(0, 10);
-        const todayNoDash = todayStr.replace(/-/g, '');
         const count = await this.orderRepo
             .createQueryBuilder('o')
             .where('o.branchId = :branchId', { branchId })
+            .andWhere('o.brandId = :brandId', { brandId })
             .andWhere('date(o.placed_at) = :today', { today: todayStr })
             .getCount();
-        const result: string[] = [];
-        for (let i = 0; i < howMany; i++) {
-            result.push(
-                `${code}-${todayNoDash}-${String(count + i + 1).padStart(4, '0')}`,
-            );
-        }
-        return result;
+        const seq = String(count + 1).padStart(3, '0');
+        const dateCompact = todayStr.replace(/-/g, '');
+        return {
+            orderId: `BR-${brandId}-${branchId}-${dateCompact}-${seq}`,
+            orderNumber: seq,
+        };
     }
 }

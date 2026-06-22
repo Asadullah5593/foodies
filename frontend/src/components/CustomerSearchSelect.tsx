@@ -10,7 +10,7 @@ export type CustomerOption = { id: number; name: string | null; phone: string };
 interface CustomerSearchSelectProps {
   value: { name: string; phone: string };
   onChange: (customer: { name: string; phone: string }) => void;
-  onAddClick: () => void;
+  onAddClick: (query?: string) => void;
   placeholder?: string;
   className?: string;
   disabled?: boolean;
@@ -150,7 +150,7 @@ const CustomerSearchSelect: React.FC<CustomerSearchSelectProps> = ({
         />
         <button
           type="button"
-          onClick={onAddClick}
+          onClick={() => onAddClick(open ? search : '')}
           disabled={disabled}
           title="Add new customer"
           className="flex-shrink-0 w-10 h-[42px] flex items-center justify-center border border-gray-300 rounded-lg bg-white hover:bg-gray-50 hover:border-blue-400 text-gray-600 hover:text-blue-600 font-bold text-lg disabled:opacity-50"

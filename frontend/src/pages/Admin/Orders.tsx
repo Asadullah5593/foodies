@@ -103,8 +103,10 @@ const Orders: React.FC = () => {
   const [riderModalOrderId, setRiderModalOrderId] = useState<number | null>(null);
   const [riderModalGroupId, setRiderModalGroupId] = useState<string | null>(null);
   const [riderModalIsChange, setRiderModalIsChange] = useState(false);
+  const [riderModalBrandId, setRiderModalBrandId] = useState<number | null>(null);
   const [selectedRiderId, setSelectedRiderId] = useState<number | null>(null);
   const branchId = searchParams.get('branch_id') || '';
+  const brandId = searchParams.get('brand_id') || '';
   const status = searchParams.get('status') || '';
   const orderType = searchParams.get('order_type') || '';
   const defaultToday = localDateYYYYMMDD();
@@ -113,6 +115,7 @@ const Orders: React.FC = () => {
 
   const params = {
     ...(branchId && { branch_id: +branchId }),
+    ...(brandId && { brand_id: +brandId }),
     ...(status && { status }),
     ...(orderType && { order_type: orderType }),
     ...(dateFrom && { date_from: dateFrom }),
@@ -124,6 +127,7 @@ const Orders: React.FC = () => {
     queryFn: async () => {
       const search = new URLSearchParams();
       if (params.branch_id) search.append('branch_id', String(params.branch_id));
+      if (params.brand_id) search.append('brand_id', String(params.brand_id));
       if (params.status) search.append('status', params.status);
       if (params.order_type) search.append('order_type', params.order_type);
       if (params.date_from) search.append('date_from', params.date_from);
@@ -139,6 +143,15 @@ const Orders: React.FC = () => {
     queryKey: ['branches'],
     queryFn: async () => {
       const response = await apiClient.get<Branch[]>('/admin/branches');
+      return response.data;
+    },
+  });
+
+  // Brand filter (owner sees all; brand-locked users get only their brand back)
+  const { data: brands } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => {
+      const response = await apiClient.get<{ id: number; name: string }[]>('/admin/brands');
       return response.data;
     },
   });
@@ -162,9 +175,10 @@ const Orders: React.FC = () => {
     },
   });
 
+  // Only riders linked to the order's brand are shown (backend enforces too).
   const { data: riders, isLoading: ridersLoading } = useQuery({
-    queryKey: ['admin-riders'],
-    queryFn: () => adminService.getRiders(),
+    queryKey: ['admin-riders', riderModalBrandId],
+    queryFn: () => adminService.getRiders(riderModalBrandId ?? undefined),
     enabled: riderModalOrderId != null || riderModalGroupId != null,
   });
 
@@ -198,6 +212,7 @@ const Orders: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
       setRiderModalOrderId(null);
       setRiderModalGroupId(null);
+      setRiderModalBrandId(null);
       setSelectedRiderId(null);
       toast.success(variables.isGroup ? 'Rider assigned to group' : 'Rider assignment updated');
     },
@@ -283,6 +298,17 @@ const Orders: React.FC = () => {
             options={[
               { value: '', label: 'All' },
               ...(branches ?? []).map((b) => ({ value: String(b.id), label: b.name })),
+            ]}
+            placeholder="All"
+            minWidth="min-w-[140px]"
+          />
+          <SearchableSelect
+            label="Brand"
+            value={brandId}
+            onChange={(v) => setFilter('brand_id', v)}
+            options={[
+              { value: '', label: 'All' },
+              ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name })),
             ]}
             placeholder="All"
             minWidth="min-w-[140px]"
@@ -424,9 +450,9 @@ const Orders: React.FC = () => {
                     {isGroup && gid && allDelivery && (
                       <>
                         {groupRider ? groupCanChangeRider && (
-                          <Button size="small" variant="edit" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(true); setSelectedRiderId(groupOrders[0].rider_id ?? null); }}>Change rider</Button>
+                          <Button size="small" variant="edit" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(true); setRiderModalBrandId(groupOrders[0].brand_id ?? null); setSelectedRiderId(groupOrders[0].rider_id ?? null); }}>Change rider</Button>
                         ) : (
-                          <Button size="small" variant="primary" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(false); setSelectedRiderId(null); }}>Assign rider to group</Button>
+                          <Button size="small" variant="primary" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(false); setRiderModalBrandId(groupOrders[0].brand_id ?? null); setSelectedRiderId(null); }}>Assign rider to group</Button>
                         )}
                         <Button size="small" variant="view" onClick={() => { setCustomerInvoiceGroupId(gid); setCustomerInvoiceOrderId(null); }}>Customer invoice</Button>
                       </>
@@ -451,7 +477,7 @@ const Orders: React.FC = () => {
                             <span className="text-xs text-gray-500 dark:text-slate-400">Rider: {order.rider.name}</span>
                           )}
                           {showPerOrderRiderButton && isDeliveryOrder(order) && (order.delivery_status === 'accepted' || order.delivery_status == null) && (
-                            <Button size="small" variant={order.rider_id ? 'edit' : 'primary'} onClick={() => { setRiderModalOrderId(order.id); setRiderModalGroupId(null); setRiderModalIsChange(!!order.rider_id); setSelectedRiderId(order.rider_id ?? null); }}>{order.rider_id ? 'Change rider' : 'Assign rider'}</Button>
+                            <Button size="small" variant={order.rider_id ? 'edit' : 'primary'} onClick={() => { setRiderModalOrderId(order.id); setRiderModalGroupId(null); setRiderModalIsChange(!!order.rider_id); setRiderModalBrandId(order.brand_id ?? null); setSelectedRiderId(order.rider_id ?? null); }}>{order.rider_id ? 'Change rider' : 'Assign rider'}</Button>
                           )}
                           {!order.rider_id && isDeliveryOrder(order) && (
                             <Button
@@ -556,7 +582,9 @@ const Orders: React.FC = () => {
             )}
             {riders != null && riders.length === 0 && !ridersLoading && (
               <p className="text-amber-600 dark:text-amber-400 text-sm mb-4">
-                No riders found. Add users with the Rider role in Branch Users.
+                No riders are linked to this order's brand. Link a rider in Rider
+                HRM → Rider pool &amp; sharing (or the brand can request one from
+                Request riders).
               </p>
             )}
             <div className="flex gap-2 justify-end">
@@ -565,6 +593,7 @@ const Orders: React.FC = () => {
                 onClick={() => {
                   setRiderModalOrderId(null);
                   setRiderModalGroupId(null);
+                  setRiderModalBrandId(null);
                   setSelectedRiderId(null);
                 }}
               >

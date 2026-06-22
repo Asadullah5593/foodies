@@ -54,7 +54,8 @@ export class AdminRiderRatingsController {
         schema: { type: 'integer', default: 0, minimum: 0 },
     })
     @ApiOkResponse({
-        description: 'Paginated rider star ratings; each item may include an optional customer `comment`.',
+        description:
+            'Paginated rider star ratings; each item may include an optional customer `comment`.',
         schema: {
             type: 'object',
             required: ['items', 'total', 'limit', 'offset'],
@@ -63,7 +64,14 @@ export class AdminRiderRatingsController {
                     type: 'array',
                     items: {
                         type: 'object',
-                        required: ['id', 'order_id', 'order_number', 'stars', 'order_item_ids', 'created_at'],
+                        required: [
+                            'id',
+                            'order_id',
+                            'order_number',
+                            'stars',
+                            'order_item_ids',
+                            'created_at',
+                        ],
                         properties: {
                             id: { type: 'integer' },
                             order_id: { type: 'integer' },
@@ -72,7 +80,8 @@ export class AdminRiderRatingsController {
                             comment: {
                                 type: 'string',
                                 nullable: true,
-                                description: 'Optional customer comment for this rider rating.',
+                                description:
+                                    'Optional customer comment for this rider rating.',
                             },
                             order_item_ids: {
                                 type: 'array',

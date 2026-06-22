@@ -11,7 +11,7 @@ export type CustomerPanelProps = {
   customerPhone: string;
   onCustomerChange: (v: { name: string; phone: string }) => void;
   phoneError: string;
-  onAddCustomerClick: () => void;
+  onAddCustomerClick: (query?: string) => void;
   loyaltyBalance: { balance: number; displayName: string } | null | undefined;
   deliveryAddress: string;
   onDeliveryAddressChange: (v: string) => void;
@@ -50,13 +50,19 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
   quote,
 }) => {
   const effectiveOrderType = orderType;
+  // Dine-in: customer is fully optional. Takeaway & delivery: customer required.
+  const customerRequired =
+    effectiveOrderType === 'takeaway' || effectiveOrderType === 'delivery';
   return (
     <>
       {effectiveOrderType === 'dine_in' && (
         <div>
-          <label className="block text-sm font-medium text-foodies-textPrimary mb-1.5">Table number</label>
+          <label className="block text-sm font-medium text-foodies-textPrimary mb-1.5">
+            Table number <span className="text-red-500">*</span>
+          </label>
           <input
             type="text"
+            required
             value={tableNumber}
             onChange={(e) => onTableNumberChange(e.target.value)}
             placeholder="e.g. 5"
@@ -66,7 +72,14 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
       )}
 
       <div>
-        <label className="block text-sm font-medium text-foodies-textPrimary mb-1.5">Customer *</label>
+        <label className="block text-sm font-medium text-foodies-textPrimary mb-1.5">
+          Customer{' '}
+          {customerRequired ? (
+            <span className="text-red-500">*</span>
+          ) : (
+            <span className="font-normal text-foodies-textSecondary">(optional)</span>
+          )}
+        </label>
         <CustomerSearchSelect
           value={{ name: customerName, phone: customerPhone }}
           onChange={({ name, phone }) => onCustomerChange({ name, phone })}

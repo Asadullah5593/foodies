@@ -4,6 +4,23 @@ export interface DashboardSummary {
   date_from: string;
   date_to: string;
   branch_id: number | null;
+  brand_id: number | null;
+  /** Per-brand sales breakdown (orders are single-brand). */
+  sales_by_brand: Array<{
+    brand_id: number;
+    brand_name: string;
+    orders: number;
+    completed_orders: number;
+    revenue: number;
+  }>;
+  /** Per-branch sales breakdown (used by brand-specific dashboards). */
+  sales_by_branch: Array<{
+    branch_id: number;
+    branch_name: string;
+    orders: number;
+    completed_orders: number;
+    revenue: number;
+  }>;
   kpis: {
     total_revenue: number;
     completed_orders: number;

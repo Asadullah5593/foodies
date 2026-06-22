@@ -28,6 +28,7 @@ export class KitchenController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Query('branch_id') branchIdParam: string,
         @Query('station_id') stationIdParam: string,
@@ -50,20 +51,24 @@ export class KitchenController {
                 'You do not have access to this branch',
             );
         }
-        return this.kitchenService.listOrders(branchId, {
-            station_id: stationIdParam ? +stationIdParam : undefined,
-            status: status || undefined,
-            category_id: categoryIdParam ? +categoryIdParam : undefined,
-            brand_id: brandIdParam ? +brandIdParam : undefined,
-            date_from: dateFrom || undefined,
-            date_to: dateTo || undefined,
-            include_completed:
-                includeCompleted === '1' ||
-                includeCompleted === 'true' ||
-                includeCompleted === 'yes'
-                    ? true
-                    : undefined,
-        });
+        return this.kitchenService.listOrders(
+            branchId,
+            {
+                station_id: stationIdParam ? +stationIdParam : undefined,
+                status: status || undefined,
+                category_id: categoryIdParam ? +categoryIdParam : undefined,
+                brand_id: brandIdParam ? +brandIdParam : undefined,
+                date_from: dateFrom || undefined,
+                date_to: dateTo || undefined,
+                include_completed:
+                    includeCompleted === '1' ||
+                    includeCompleted === 'true' ||
+                    includeCompleted === 'yes'
+                        ? true
+                        : undefined,
+            },
+            user.allowedBrandIds ?? null,
+        );
     }
 
     @Get('orders/:id')
@@ -74,6 +79,7 @@ export class KitchenController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Query('branch_id') branchIdParam: string,
     ) {
@@ -89,7 +95,11 @@ export class KitchenController {
                 'You do not have access to this branch',
             );
         }
-        return this.kitchenService.getOrder(+id, branchId);
+        return this.kitchenService.getOrder(
+            +id,
+            branchId,
+            user.allowedBrandIds ?? null,
+        );
     }
 
     @Patch('orders/:id/status')
@@ -100,6 +110,7 @@ export class KitchenController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Body() body: { status: string; branch_id: number },
     ) {
@@ -115,7 +126,12 @@ export class KitchenController {
                 'You do not have access to this branch',
             );
         }
-        return this.kitchenService.updateStatus(+id, branchId, body.status);
+        return this.kitchenService.updateStatus(
+            +id,
+            branchId,
+            body.status,
+            user.allowedBrandIds ?? null,
+        );
     }
 
     @Get('orders/:id/kot')
@@ -126,6 +142,7 @@ export class KitchenController {
             id: number;
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
         @Query('branch_id') branchIdParam: string,
     ) {
@@ -141,6 +158,10 @@ export class KitchenController {
                 'You do not have access to this branch',
             );
         }
-        return this.kitchenService.getKotPayload(+id, branchId);
+        return this.kitchenService.getKotPayload(
+            +id,
+            branchId,
+            user.allowedBrandIds ?? null,
+        );
     }
 }

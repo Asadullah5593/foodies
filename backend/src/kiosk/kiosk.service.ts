@@ -3,16 +3,20 @@ import {
     NotFoundException,
     BadRequestException,
     ForbiddenException,
+    ConflictException,
     Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { DataSource, Repository, QueryFailedError } from 'typeorm';
+import { DataSource, Repository, QueryFailedError, In } from 'typeorm';
 import {
     KioskOrder,
     KioskOrderPayload,
+    KioskOrderItemPayload,
 } from '../entities/kiosk-order.entity';
 import { Branch } from '../entities/branch.entity';
+import { BranchBrand } from '../entities/branch-brand.entity';
+import { MenuVariant } from '../entities/menu-variant.entity';
 import { OrdersService } from '../orders/orders.service';
 import { PaymentsService } from '../payments/payments.service';
 import { ShiftsService } from '../shifts/shifts.service';
@@ -35,6 +39,8 @@ export class KioskService {
         private readonly kioskRepo: Repository<KioskOrder>,
         @InjectRepository(Branch)
         private readonly branchRepo: Repository<Branch>,
+        @InjectRepository(MenuVariant)
+        private readonly variantRepo: Repository<MenuVariant>,
         private readonly ordersService: OrdersService,
         private readonly paymentsService: PaymentsService,
         private readonly shiftsService: ShiftsService,
@@ -56,6 +62,56 @@ export class KioskService {
 
     private todayDate(): string {
         return new Date().toISOString().slice(0, 10);
+    }
+
+    /**
+     * Reject items whose menu item has variants but no (valid) variant was
+     * chosen. The DB has no "variant required" flag — selection is enforced by
+     * the UI — so we guard the API here: a kiosk that has variants must send a
+     * variant_id for those lines, matching the cashier/web behaviour.
+     */
+    private async assertVariantSelections(
+        items: KioskOrderItemPayload[],
+    ): Promise<void> {
+        const lines: { menuItemId: number; variantId?: number }[] = [];
+        for (const it of items ?? []) {
+            if (it.deal_menu_item_id != null) {
+                for (const c of it.components ?? [])
+                    lines.push({
+                        menuItemId: c.menu_item_id,
+                        variantId: c.variant_id,
+                    });
+            } else if (it.menu_item_id != null) {
+                lines.push({
+                    menuItemId: it.menu_item_id,
+                    variantId: it.variant_id,
+                });
+            }
+        }
+        const ids = [...new Set(lines.map((l) => l.menuItemId))];
+        if (ids.length === 0) return;
+
+        const variants = await this.variantRepo.find({
+            where: { menuItemId: In(ids) },
+        });
+        const byItem = new Map<number, Set<number>>();
+        for (const v of variants) {
+            if (!byItem.has(v.menuItemId)) byItem.set(v.menuItemId, new Set());
+            byItem.get(v.menuItemId)!.add(v.id);
+        }
+        for (const l of lines) {
+            const set = byItem.get(l.menuItemId);
+            if (set && set.size > 0) {
+                if (l.variantId == null)
+                    throw new BadRequestException(
+                        `menu_item ${l.menuItemId} requires a variant selection (variant_id)`,
+                    );
+                if (!set.has(l.variantId))
+                    throw new BadRequestException(
+                        `variant_id ${l.variantId} is not valid for menu_item ${l.menuItemId}`,
+                    );
+            }
+        }
     }
 
     private quoteInput(payload: KioskOrderPayload) {
@@ -89,6 +145,9 @@ export class KioskService {
 
         const tenantId = await this.getTenantIdFromBranch(payload.branch_id);
 
+        // Items with variants must specify which one (the API has no UI to enforce it).
+        await this.assertVariantSelections(payload.items);
+
         // Loyalty redemption is not honored for kiosk source — drop it defensively.
         const sanitized: KioskOrderPayload = {
             branch_id: payload.branch_id,
@@ -101,13 +160,33 @@ export class KioskService {
             discount_code: payload.discount_code,
         };
 
-        // Validate items + compute the price (throws if no valid items).
+        // Validate items + compute the price (throws if no valid items, or if
+        // the cart mixes brands — kiosk carts are single-brand).
         const quote = await this.ordersService.quote(
             this.quoteInput(sanitized),
             tenantId,
             'kiosk',
         );
         const total = Number(quote.total_amount);
+        const cartBrandIds = new Set(
+            (quote.line_breakdown ?? [])
+                .map((l) => l.brand_id)
+                .filter((id): id is number => id != null),
+        );
+        const brandId = cartBrandIds.size === 1 ? [...cartBrandIds][0] : null;
+
+        // Kiosk is an online self-order channel: honor the per-(branch,brand)
+        // open/close switch (POS finalize by a cashier is unaffected).
+        if (brandId != null) {
+            const bb = await this.dataSource
+                .getRepository(BranchBrand)
+                .findOne({ where: { branchId: payload.branch_id, brandId } });
+            if (bb && bb.isOpen === false) {
+                throw new ConflictException(
+                    'This brand is currently closed at this branch.',
+                );
+            }
+        }
 
         // Idempotent re-submit: same key on the same branch returns the existing row.
         if (idempotencyKey) {
@@ -130,6 +209,7 @@ export class KioskService {
             const row = this.kioskRepo.create({
                 tenantId,
                 branchId: payload.branch_id,
+                brandId,
                 kioskCode,
                 codeDate,
                 status: 'pending',
@@ -170,7 +250,10 @@ export class KioskService {
     }
 
     /** Next zero-padded daily-per-branch sequence among pending rows. */
-    private async nextCode(branchId: number, codeDate: string): Promise<string> {
+    private async nextCode(
+        branchId: number,
+        codeDate: string,
+    ): Promise<string> {
         const res: Array<{ max: number | string | null }> =
             await this.kioskRepo.query(
                 `SELECT COALESCE(MAX(kiosk_code::int), 0) AS max
@@ -184,8 +267,11 @@ export class KioskService {
 
     private uniqueConstraintOf(e: unknown): string | null {
         if (e instanceof QueryFailedError) {
-            const driver = (e as unknown as { driverError?: { code?: string; constraint?: string } })
-                .driverError;
+            const driver = (
+                e as unknown as {
+                    driverError?: { code?: string; constraint?: string };
+                }
+            ).driverError;
             if (driver?.code === '23505') return driver.constraint ?? 'unknown';
         }
         return null;
@@ -195,7 +281,13 @@ export class KioskService {
      * Cashier looks up a pending kiosk cart by its code. Returns the stored cart
      * plus a freshly recomputed total so price changes are visible.
      */
-    async lookup(code: string, branchId: number, tenantId: number) {
+    async lookup(
+        code: string,
+        branchId: number,
+        tenantId: number,
+        /** Brand lock of the cashier (null = unrestricted). */
+        allowedBrandIds: number[] | null = null,
+    ) {
         const row = await this.kioskRepo.findOne({
             where: { branchId, kioskCode: code, status: 'pending' },
         });
@@ -203,6 +295,7 @@ export class KioskService {
             throw new NotFoundException(
                 'Kiosk order not found, already paid, or expired',
             );
+        this.assertCashierBrandAccess(row, allowedBrandIds);
 
         const submittedCount = row.payload.items?.length ?? 0;
         let currentTotal = 0;
@@ -230,6 +323,7 @@ export class KioskService {
         return {
             kiosk_code: row.kioskCode,
             branch_id: row.branchId,
+            brand_id: row.brandId ?? null,
             order_type: row.orderType,
             customer_name: row.customerName,
             customer_phone: row.customerPhone,
@@ -249,6 +343,19 @@ export class KioskService {
      * with source='kiosk', records payments, and marks the kiosk row finalized.
      * Idempotent: re-finalizing a finalized code returns its existing group.
      */
+    /** A brand-locked cashier may only handle kiosk carts of their own brand. */
+    private assertCashierBrandAccess(
+        row: { brandId: number | null },
+        allowedBrandIds: number[] | null,
+    ) {
+        if (allowedBrandIds == null) return;
+        if (row.brandId == null || !allowedBrandIds.includes(row.brandId)) {
+            throw new NotFoundException(
+                'Kiosk order not found, already paid, or expired',
+            );
+        }
+    }
+
     async finalize(
         code: string,
         branchId: number,
@@ -256,6 +363,8 @@ export class KioskService {
         editedDto: KioskOrderPayload | undefined,
         payments: KioskPaymentInput[],
         userId: number,
+        /** Brand lock of the cashier (null = unrestricted). */
+        allowedBrandIds: number[] | null = null,
     ) {
         const result = await this.dataSource.transaction(async (manager) => {
             const repo = manager.getRepository(KioskOrder);
@@ -271,13 +380,18 @@ export class KioskService {
 
             if (!row || row.tenantId !== tenantId)
                 throw new NotFoundException('Kiosk order not found');
+            this.assertCashierBrandAccess(row, allowedBrandIds);
 
             // Idempotent retry — already finalized.
             if (row.status === 'finalized' && row.finalizedOrderGroupId) {
                 const group = await this.ordersService.getOrderGroup(
                     row.finalizedOrderGroupId,
                 );
-                return { group, kioskCode: row.kioskCode, alreadyFinalized: true };
+                return {
+                    group,
+                    kioskCode: row.kioskCode,
+                    alreadyFinalized: true,
+                };
             }
             if (row.status !== 'pending')
                 throw new BadRequestException(
@@ -285,9 +399,8 @@ export class KioskService {
                 );
 
             // Cash-drawer reconciliation: require an open shift for this branch.
-            const openShift = await this.shiftsService.findOpenByBranch(
-                branchId,
-            );
+            const openShift =
+                await this.shiftsService.findOpenByBranch(branchId);
             if (!openShift)
                 throw new ForbiddenException(
                     `No shift is open for branch ID ${branchId}. Open a shift in Admin → Shifts before finalizing kiosk orders.`,
@@ -297,6 +410,9 @@ export class KioskService {
                 ...(editedDto ?? row.payload),
                 branch_id: (editedDto ?? row.payload).branch_id ?? branchId,
             };
+
+            // Same variant guard at finalize, in case the cart was edited.
+            await this.assertVariantSelections(dto.items);
 
             // Validate the cashier's collected amount BEFORE creating the order
             // (a post-create rejection could not roll back the committed order).
@@ -325,6 +441,8 @@ export class KioskService {
                 tenantId,
                 userId,
                 'kiosk',
+                null,
+                allowedBrandIds,
             );
 
             // Link + mark finalized immediately (before payments) so a retry is
@@ -386,9 +504,12 @@ export class KioskService {
                 .createQueryBuilder()
                 .update(KioskOrder)
                 .set({ status: 'expired' })
-                .where('status = :s AND expires_at IS NOT NULL AND expires_at < now()', {
-                    s: 'pending',
-                })
+                .where(
+                    'status = :s AND expires_at IS NOT NULL AND expires_at < now()',
+                    {
+                        s: 'pending',
+                    },
+                )
                 .execute();
             if (res.affected)
                 this.logger.log(`Expired ${res.affected} stale kiosk order(s)`);

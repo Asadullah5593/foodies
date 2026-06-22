@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { MdAdd, MdRemove } from 'react-icons/md';
 import Modal from '../../../components/Modal';
 import Button from '../../../components/Button';
 import { formatCurrency } from '../../../utils/currency';
@@ -202,13 +203,28 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                       {isSelected && (
                         <div className="mt-2 ml-6 flex items-center gap-2">
                           <label className="text-sm">Quantity:</label>
-                          <input
-                            type="number"
-                            min="1"
-                            value={selectedAddon?.quantity || 1}
-                            onChange={(e) => onUpdateAddonQuantity(addon.id, parseInt(e.target.value) || 1)}
-                            className="w-20 px-2 py-1 border border-gray-300 rounded text-center"
-                          />
+                          <div className="inline-flex items-center overflow-hidden rounded-lg border border-gray-300">
+                            <button
+                              type="button"
+                              onClick={() => onUpdateAddonQuantity(addon.id, Math.max(1, (selectedAddon?.quantity || 1) - 1))}
+                              disabled={(selectedAddon?.quantity || 1) <= 1}
+                              aria-label="Decrease quantity"
+                              className="px-2.5 py-1 text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              <MdRemove className="h-4 w-4" />
+                            </button>
+                            <span className="min-w-[2.5rem] px-2 py-1 text-center text-sm font-semibold tabular-nums">
+                              {selectedAddon?.quantity || 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => onUpdateAddonQuantity(addon.id, (selectedAddon?.quantity || 1) + 1)}
+                              aria-label="Increase quantity"
+                              className="px-2.5 py-1 text-gray-700 hover:bg-gray-100"
+                            >
+                              <MdAdd className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>

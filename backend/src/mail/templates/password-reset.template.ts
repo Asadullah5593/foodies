@@ -32,8 +32,14 @@ export interface RenderedEmail {
 export function passwordResetEmail(
     opts: PasswordResetTemplateOptions,
 ): RenderedEmail {
-    const { code, expiresMinutes, logoUrl, appStoreUrl, playStoreUrl, websiteUrl } =
-        opts;
+    const {
+        code,
+        expiresMinutes,
+        logoUrl,
+        appStoreUrl,
+        playStoreUrl,
+        websiteUrl,
+    } = opts;
     const year = new Date().getFullYear();
 
     const text = [

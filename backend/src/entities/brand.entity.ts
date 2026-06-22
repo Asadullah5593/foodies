@@ -37,6 +37,26 @@ export class Brand {
     @Column({ default: true })
     isActive: boolean;
 
+    /** Flat delivery fee charged on each delivery order of this brand. */
+    @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
+    deliveryFlatFee: number;
+
+    /** Whether this brand runs a loyalty program (per-brand; replaces tenant-level loyaltyEnabled). */
+    @Column({ default: false })
+    loyaltyEnabled: boolean;
+
+    /** Per-brand loyalty config: displayName, spendPerPoint, minOrderToEarn, cashValuePerPoint, minOrderToRedeem, expiryPeriod, expiryUnit */
+    @Column('simple-json', { nullable: true })
+    loyaltySettings: {
+        displayName?: string;
+        spendPerPoint?: number;
+        minOrderToEarn?: number;
+        cashValuePerPoint?: number;
+        minOrderToRedeem?: number;
+        expiryPeriod?: number;
+        expiryUnit?: 'day' | 'month' | 'year';
+    } | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

@@ -50,6 +50,8 @@ import { DeleteAccountDto } from './dto/delete-account.dto';
 import { MediaStorageService } from '../media/media-storage.service';
 import { MAX_UPLOAD_FILE_BYTES } from '../upload/upload.constants';
 import { RatingsService } from '../ratings/ratings.service';
+import { BannersService } from '../banners/banners.service';
+import { PromotionsService } from '../promotions/promotions.service';
 
 type BranchWithBrands = Branch & {
     branchBrands: Array<{ brand: { tenantId: number } }>;
@@ -75,6 +77,8 @@ export class ConsumerController {
         private mediaStorage: MediaStorageService,
         private ratingsService: RatingsService,
         @InjectRepository(Branch) private branchRepo: Repository<Branch>,
+        private bannersService: BannersService,
+        private promotionsService: PromotionsService,
     ) {}
 
     /** Resolve tenant id from branch (for customer-scoped APIs). */
@@ -118,6 +122,50 @@ export class ConsumerController {
             );
         }
         return customer;
+    }
+
+    /**
+     * Parse required latitude/longitude (+ optional radius_km hard cap) for location-based
+     * consumer endpoints. Throws 400 when lat/lng are missing or not finite numbers. When
+     * radius_km is omitted the cap defaults to 100000 km (each branch's own deliveryRadiusKm
+     * governs visibility). Mirrors the parsing used by the /branches "near me" route.
+     */
+    private parseLatLng(
+        latitudeParam: string,
+        longitudeParam: string,
+        radiusKmParam?: string,
+    ): { lat: number; lng: number; maxRadiusKm: number } {
+        const lat =
+            latitudeParam != null && latitudeParam !== ''
+                ? +latitudeParam
+                : NaN;
+        const lng =
+            longitudeParam != null && longitudeParam !== ''
+                ? +longitudeParam
+                : NaN;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+            throw new BadRequestException(
+                'latitude and longitude are required',
+            );
+        }
+        const maxRadiusKm =
+            radiusKmParam != null && radiusKmParam !== ''
+                ? +radiusKmParam || 100000
+                : 100000;
+        return { lat, lng, maxRadiusKm };
+    }
+
+    /** Distinct brand ids across a set of nearby branches (from findNearbyWithBrands). */
+    private collectNearbyBrandIds(
+        nearby: Array<{
+            branch: { branchBrands?: Array<{ brandId: number }> };
+        }>,
+    ): number[] {
+        const ids = new Set<number>();
+        for (const { branch } of nearby) {
+            for (const bb of branch.branchBrands ?? []) ids.add(bb.brandId);
+        }
+        return [...ids];
     }
 
     /** Tenant-scoped consumer web: infer tenant id from env (TENANT_ID). */
@@ -164,6 +212,49 @@ export class ConsumerController {
             return this.brandsService.findAllPublicByBranchId(branchId, search);
         }
         return this.brandsService.findAllPublic(search);
+    }
+
+    @Get('nearby/brands')
+    @ApiOperation({
+        summary:
+            'List brands available near a location (consumer app). One row per (brand, branch).',
+    })
+    @ApiQuery({ name: 'latitude', required: true, example: '31.5204' })
+    @ApiQuery({ name: 'longitude', required: true, example: '74.3587' })
+    @ApiQuery({
+        name: 'radius_km',
+        required: false,
+        example: '10',
+        description:
+            'Optional hard cap. When omitted each branch’s own delivery radius governs visibility.',
+    })
+    @ApiQuery({
+        name: 'search',
+        required: false,
+        example: 'peri',
+        description: 'Filter brands by name (case-insensitive)',
+    })
+    async listNearbyBrands(
+        @Query('latitude') latitudeParam: string,
+        @Query('longitude') longitudeParam: string,
+        @Query('radius_km') radiusKmParam: string,
+        @Query('search') searchParam: string,
+    ) {
+        const { lat, lng, maxRadiusKm } = this.parseLatLng(
+            latitudeParam,
+            longitudeParam,
+            radiusKmParam,
+        );
+        const search =
+            searchParam != null && searchParam.trim() !== ''
+                ? searchParam.trim()
+                : undefined;
+        const nearby = await this.branchesService.findNearbyWithBrands(
+            lat,
+            lng,
+            maxRadiusKm,
+        );
+        return this.brandsService.findPublicNearbyRows(nearby, search);
     }
 
     @Get('tenant/brands')
@@ -831,7 +922,7 @@ export class ConsumerController {
     @Get('categories/global')
     @ApiOperation({
         summary:
-            "List unique categories across the brands present at a branch (consumer app)",
+            'List unique categories across the brands present at a branch (consumer app)',
     })
     @ApiQuery({ name: 'branch_id', required: true, example: '1' })
     async getGlobalCategories(@Query('branch_id') branchIdParam: string) {
@@ -869,6 +960,84 @@ export class ConsumerController {
                 categoryKey,
             );
         return this.brandsService.findAllPublicByIds(brandIds);
+    }
+
+    /**
+     * Consumer: unique categories across the brands available near a location. Same shape as
+     * /categories/global, but the brand set comes from branches in range of lat/lng instead of
+     * a single branch_id.
+     */
+    @Get('nearby/categories')
+    @ApiOperation({
+        summary:
+            'List unique categories across brands available near a location (consumer app)',
+    })
+    @ApiQuery({ name: 'latitude', required: true, example: '31.5204' })
+    @ApiQuery({ name: 'longitude', required: true, example: '74.3587' })
+    @ApiQuery({ name: 'radius_km', required: false, example: '10' })
+    async getNearbyCategories(
+        @Query('latitude') latitudeParam: string,
+        @Query('longitude') longitudeParam: string,
+        @Query('radius_km') radiusKmParam: string,
+    ) {
+        const { lat, lng, maxRadiusKm } = this.parseLatLng(
+            latitudeParam,
+            longitudeParam,
+            radiusKmParam,
+        );
+        const nearby = await this.branchesService.findNearbyWithBrands(
+            lat,
+            lng,
+            maxRadiusKm,
+        );
+        const brandIds = this.collectNearbyBrandIds(nearby);
+        return this.menuService.getConsumerCategoriesForBrandIds(brandIds);
+    }
+
+    /**
+     * Consumer: for a given category key, brands offering it that are available near a location.
+     * One row per (brand, branch), mirroring /nearby/brands.
+     */
+    @Get('nearby/categories/:categoryKey/brands')
+    @ApiOperation({
+        summary:
+            'List brands offering a category available near a location (consumer app). One row per (brand, branch).',
+    })
+    @ApiParam({
+        name: 'categoryKey',
+        example: 'milkshakes',
+        description: 'Category key from /nearby/categories (lowercased name)',
+    })
+    @ApiQuery({ name: 'latitude', required: true, example: '31.5204' })
+    @ApiQuery({ name: 'longitude', required: true, example: '74.3587' })
+    @ApiQuery({ name: 'radius_km', required: false, example: '10' })
+    async getNearbyBrandsForCategory(
+        @Param('categoryKey') categoryKey: string,
+        @Query('latitude') latitudeParam: string,
+        @Query('longitude') longitudeParam: string,
+        @Query('radius_km') radiusKmParam: string,
+    ) {
+        const { lat, lng, maxRadiusKm } = this.parseLatLng(
+            latitudeParam,
+            longitudeParam,
+            radiusKmParam,
+        );
+        const nearby = await this.branchesService.findNearbyWithBrands(
+            lat,
+            lng,
+            maxRadiusKm,
+        );
+        const brandIds = this.collectNearbyBrandIds(nearby);
+        const withCat =
+            await this.menuService.getConsumerBrandIdsForCategoryKey(
+                brandIds,
+                categoryKey,
+            );
+        return this.brandsService.findPublicNearbyRows(
+            nearby,
+            undefined,
+            new Set(withCat),
+        );
     }
 
     @Get('menu/items/:id')
@@ -1100,14 +1269,15 @@ export class ConsumerController {
             }
         }
 
-        const loyalty =
-            resolvedTenantId != null
-                ? await this.loyaltyService.getBalanceByPhone(
+        // Only the shared APP wallet is relevant to consumer order history;
+        // consumer_web earns no loyalty so its balance is always 0.
+        const loyaltyPointsBalance =
+            resolvedTenantId != null && options.sources?.[0] === 'consumer_app'
+                ? await this.loyaltyService.getAppWalletBalance(
                       resolvedTenantId,
                       phone.trim(),
                   )
-                : null;
-        const loyaltyPointsBalance = loyalty?.balance ?? 0;
+                : 0;
 
         return orders.map((o) => ({
             ...o,
@@ -1169,7 +1339,8 @@ export class ConsumerController {
         },
     })
     @ApiOkResponse({
-        description: 'Upserted rider rating row (same shape as GET .../ratings `rider_rating`).',
+        description:
+            'Upserted rider rating row (same shape as GET .../ratings `rider_rating`).',
         schema: {
             type: 'object',
             required: [
@@ -1189,15 +1360,24 @@ export class ConsumerController {
                 comment: {
                     type: 'string',
                     nullable: true,
-                    description: 'Customer comment if provided; otherwise null.',
+                    description:
+                        'Customer comment if provided; otherwise null.',
                 },
                 order_item_ids: {
                     type: 'array',
                     items: { type: 'integer' },
                     example: [101, 102],
                 },
-                created_at: { type: 'string', format: 'date-time', nullable: true },
-                updated_at: { type: 'string', format: 'date-time', nullable: true },
+                created_at: {
+                    type: 'string',
+                    format: 'date-time',
+                    nullable: true,
+                },
+                updated_at: {
+                    type: 'string',
+                    format: 'date-time',
+                    nullable: true,
+                },
             },
         },
     })
@@ -1307,15 +1487,24 @@ export class ConsumerController {
                 comment: {
                     type: 'string',
                     nullable: true,
-                    description: 'Customer comment if provided; otherwise null.',
+                    description:
+                        'Customer comment if provided; otherwise null.',
                 },
                 order_item_ids: {
                     type: 'array',
                     items: { type: 'integer' },
                     example: [101],
                 },
-                created_at: { type: 'string', format: 'date-time', nullable: true },
-                updated_at: { type: 'string', format: 'date-time', nullable: true },
+                created_at: {
+                    type: 'string',
+                    format: 'date-time',
+                    nullable: true,
+                },
+                updated_at: {
+                    type: 'string',
+                    format: 'date-time',
+                    nullable: true,
+                },
             },
         },
     })
@@ -1361,7 +1550,8 @@ export class ConsumerController {
                 rider_rating: {
                     type: 'object',
                     nullable: true,
-                    description: 'Your rider rating for this order, or null if not submitted.',
+                    description:
+                        'Your rider rating for this order, or null if not submitted.',
                     properties: {
                         id: { type: 'integer' },
                         order_id: { type: 'integer' },
@@ -1371,14 +1561,23 @@ export class ConsumerController {
                         comment: {
                             type: 'string',
                             nullable: true,
-                            description: 'Optional text submitted with the rider rating.',
+                            description:
+                                'Optional text submitted with the rider rating.',
                         },
                         order_item_ids: {
                             type: 'array',
                             items: { type: 'integer' },
                         },
-                        created_at: { type: 'string', format: 'date-time', nullable: true },
-                        updated_at: { type: 'string', format: 'date-time', nullable: true },
+                        created_at: {
+                            type: 'string',
+                            format: 'date-time',
+                            nullable: true,
+                        },
+                        updated_at: {
+                            type: 'string',
+                            format: 'date-time',
+                            nullable: true,
+                        },
                     },
                 },
                 brand_ratings: {
@@ -1394,14 +1593,23 @@ export class ConsumerController {
                             comment: {
                                 type: 'string',
                                 nullable: true,
-                                description: 'Optional text submitted with this brand rating.',
+                                description:
+                                    'Optional text submitted with this brand rating.',
                             },
                             order_item_ids: {
                                 type: 'array',
                                 items: { type: 'integer' },
                             },
-                            created_at: { type: 'string', format: 'date-time', nullable: true },
-                            updated_at: { type: 'string', format: 'date-time', nullable: true },
+                            created_at: {
+                                type: 'string',
+                                format: 'date-time',
+                                nullable: true,
+                            },
+                            updated_at: {
+                                type: 'string',
+                                format: 'date-time',
+                                nullable: true,
+                            },
                         },
                     },
                 },
@@ -1516,14 +1724,28 @@ export class ConsumerController {
         };
     }
 
-    /** Get loyalty balance by phone (branch_id identifies tenant via branch’s brand). */
+    /**
+     * Get a loyalty wallet balance by phone. `wallet_type` selects the shared
+     * APP wallet (default) or a brand-scoped POS wallet; `brand_id` (optional)
+     * names the brand for POS wallets and for display/conversion settings,
+     * defaulting to the branch's first brand. `branch_id` identifies the tenant.
+     */
     @Get('loyalty/balance')
     @ApiOperation({ summary: 'Get loyalty balance' })
     @ApiQuery({ name: 'branch_id', required: true, example: '1' })
     @ApiQuery({ name: 'phone', required: true, example: '03001234567' })
+    @ApiQuery({
+        name: 'wallet_type',
+        required: false,
+        enum: ['app', 'pos'],
+        example: 'app',
+    })
+    @ApiQuery({ name: 'brand_id', required: false, example: '1' })
     async getLoyaltyBalance(
         @Query('branch_id') branchIdParam: string,
         @Query('phone') phone: string,
+        @Query('wallet_type') walletTypeParam?: string,
+        @Query('brand_id') brandIdParam?: string,
     ) {
         const branchId = branchIdParam ? +branchIdParam : undefined;
         if (!branchId || !phone?.trim())
@@ -1536,9 +1758,16 @@ export class ConsumerController {
             throw new NotFoundException('Branch not found');
         const tenantId = branch.branchBrands[0]?.brand?.tenantId ?? null;
         if (tenantId == null) throw new NotFoundException('Branch not found');
-        const result = await this.loyaltyService.getBalanceByPhone(
+        const walletType: 'pos' | 'app' =
+            walletTypeParam === 'pos' ? 'pos' : 'app';
+        const brandId = brandIdParam
+            ? +brandIdParam
+            : (branch.branchBrands[0]?.brand?.id ?? null);
+        const result = await this.loyaltyService.getWalletBalance(
             tenantId,
             phone.trim(),
+            walletType,
+            brandId,
         );
         return (
             result ?? {
@@ -1719,5 +1948,50 @@ export class ConsumerController {
             throw new NotFoundException('phone and branch_id are required');
         const customer = await this.resolveCartCustomerOrThrow(phone);
         return this.cartService.clearCart(customer.id, +branchIdParam);
+    }
+
+    // ─── CMS Banners ─────────────────────────────────────────────────────────
+
+    @Get('banners')
+    @ApiOperation({ summary: 'List active banners for a tenant (mobile app)' })
+    @ApiQuery({ name: 'tenant_id', required: true, type: Number })
+    async getActiveBanners(@Query('tenant_id') tenantIdParam: string) {
+        const tenantId = Number(tenantIdParam);
+        if (!Number.isFinite(tenantId) || tenantId <= 0)
+            throw new BadRequestException('tenant_id is required');
+        return this.bannersService.findActiveForTenant(tenantId);
+    }
+
+    // ─── Customer Promotions ─────────────────────────────────────────────────
+
+    @Get('promotions')
+    @UseGuards(CustomerJwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({
+        summary: 'List promotions assigned to the authenticated customer',
+    })
+    @ApiQuery({ name: 'status', required: false, example: 'pending' })
+    async getMyPromotions(
+        @Req() req: { user: Customer },
+        @Query('status') status?: string,
+    ) {
+        return this.promotionsService.getCustomerPromotions(
+            req.user.id,
+            status,
+        );
+    }
+
+    @Post('promotions/:id/claim')
+    @UseGuards(CustomerJwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({
+        summary: 'Claim a pending promotion and receive a coupon code',
+    })
+    @ApiParam({ name: 'id', description: 'CustomerPromotion id' })
+    async claimPromotion(
+        @Req() req: { user: Customer },
+        @Param('id') id: string,
+    ) {
+        return this.promotionsService.claimPromotion(+id, req.user.id);
     }
 }

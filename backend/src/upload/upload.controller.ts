@@ -34,7 +34,14 @@ export class UploadController {
                 file: { type: 'string', format: 'binary' },
                 folder: {
                     type: 'string',
-                    enum: ['brands', 'menu-items', 'customer-profiles', 'misc'],
+                    enum: [
+                        'brands',
+                        'menu-items',
+                        'customer-profiles',
+                        'misc',
+                        'banners',
+                        'promotions',
+                    ],
                 },
             },
         },
@@ -62,10 +69,12 @@ export class UploadController {
             'menu-items',
             'customer-profiles',
             'misc',
+            'banners',
+            'promotions',
         ]);
         if (!allowedFolders.has(folder)) {
             throw new BadRequestException(
-                'Invalid folder. Allowed: brands, menu-items, customer-profiles, misc',
+                'Invalid folder. Allowed: brands, menu-items, customer-profiles, misc, banners, promotions',
             );
         }
         const result = await this.mediaStorage.uploadImage(file, folder);

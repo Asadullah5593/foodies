@@ -9,6 +9,7 @@ import {
     Unique,
 } from 'typeorm';
 import { Branch } from './branch.entity';
+import { Brand } from './brand.entity';
 import { User } from './user.entity';
 
 @Entity('shifts')
@@ -19,6 +20,10 @@ export class Shift {
 
     @Column()
     branchId: number;
+
+    /** Brand the shift is opened for (null only on legacy pre-brand rows). */
+    @Column({ type: 'int', nullable: true })
+    brandId: number | null;
 
     @Column()
     userId: number;
@@ -59,6 +64,10 @@ export class Shift {
 
     @ManyToOne(() => Branch, (b) => b.shifts, { onDelete: 'CASCADE' })
     branch: Branch;
+
+    @ManyToOne(() => Brand, { onDelete: 'SET NULL', nullable: true })
+    @JoinColumn({ name: 'brand_id' })
+    brand: Brand | null;
 
     @ManyToOne(() => User, (u) => u.shifts, { onDelete: 'CASCADE' })
     user: User;

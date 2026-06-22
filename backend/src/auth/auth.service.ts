@@ -87,6 +87,26 @@ export class AuthService {
         return Array.isArray(rows) && rows.length > 0;
     }
 
+    /** Owner / super admin — the only roles allowed to manage their own account. */
+    private async checkIsOwner(
+        userId: number,
+        tenantId: number | null,
+    ): Promise<boolean> {
+        if (tenantId == null) return true; // super admin
+        const rows = (await this.dataSource.query(
+            `SELECT 1 FROM tenant_users tu
+             INNER JOIN roles r ON r.id = tu.role_id
+             WHERE tu.user_id = $1 AND tu.tenant_id = $2 AND LOWER(r.slug) IN ('owner', 'super_admin')
+             UNION
+             SELECT 1 FROM branch_users bu
+             INNER JOIN roles r ON r.id = bu.role_id
+             WHERE bu.user_id = $1 AND LOWER(r.slug) IN ('owner', 'super_admin')
+             LIMIT 1`,
+            [userId, tenantId],
+        )) as unknown as unknown[];
+        return Array.isArray(rows) && rows.length > 0;
+    }
+
     /** Get all permission names for user (from tenant_users role + branch_users roles). Super admin gets all. */
     private async getPermissionsForUser(
         userId: number,
@@ -117,6 +137,25 @@ export class AuthService {
         return [...new Set(permRows.map((r) => r.name))];
     }
 
+    /**
+     * Brand lock for the user: null = all brands; number[] = locked to these
+     * brands (every branch_users row carries a brand_id). Mirrors
+     * RoleAccessGuard.getAllowedBrandIds so the frontend can adapt its UI.
+     */
+    private async getAllowedBrandIdsForUser(
+        userId: number,
+        permissions: string[],
+    ): Promise<number[] | null> {
+        if (permissions.includes('all-branches:access')) return null;
+        const rows = (await this.dataSource.query(
+            `SELECT brand_id FROM branch_users WHERE user_id = $1`,
+            [userId],
+        )) as unknown as { brand_id: number | null }[];
+        if (rows.length === 0) return null;
+        if (rows.some((r) => r.brand_id == null)) return null;
+        return [...new Set(rows.map((r) => Number(r.brand_id)))];
+    }
+
     async login(email: string, password: string) {
         const user = await this.validateUser(email, password);
         if (!user) {
@@ -128,6 +167,11 @@ export class AuthService {
             user.id,
             user.tenantId,
         );
+        const allowedBrandIds = await this.getAllowedBrandIdsForUser(
+            user.id,
+            permissions,
+        );
+        const isOwner = await this.checkIsOwner(user.id, user.tenantId);
         return {
             user: {
                 id: user.id,
@@ -137,8 +181,12 @@ export class AuthService {
                 status: user.status,
                 tenant_id: user.tenantId,
                 is_super_admin: user.tenantId == null,
+                is_owner: isOwner,
                 is_rider: user.isRider === true,
                 permissions,
+                allowed_brand_ids: allowedBrandIds,
+                brand_id:
+                    allowedBrandIds?.length === 1 ? allowedBrandIds[0] : null,
             },
             token,
         };
@@ -157,6 +205,11 @@ export class AuthService {
         const tenantId = tenantUsers?.[0]?.tenantId ?? null;
         const isRider = await this.checkIsRider(user.id);
         const permissions = await this.getPermissionsForUser(user.id, tenantId);
+        const allowedBrandIds = await this.getAllowedBrandIdsForUser(
+            user.id,
+            permissions,
+        );
+        const isOwner = await this.checkIsOwner(user.id, tenantId);
         return {
             id: user.id,
             name: user.name,
@@ -165,8 +218,11 @@ export class AuthService {
             status: user.status,
             tenant_id: tenantId,
             is_super_admin: tenantId == null,
+            is_owner: isOwner,
             is_rider: isRider,
             permissions,
+            allowed_brand_ids: allowedBrandIds,
+            brand_id: allowedBrandIds?.length === 1 ? allowedBrandIds[0] : null,
         };
     }
 }

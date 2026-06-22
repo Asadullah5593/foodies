@@ -13,6 +13,7 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { formatCurrency } from '../../utils/currency';
 import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
@@ -26,16 +27,19 @@ function fullImageUrl(url: string | undefined): string | undefined {
   return `${API_BASE}${url}`;
 }
 
-const initialFormData = { name: '', logo_url: '', description: '', status: 'active' as 'active' | 'inactive' };
+const initialFormData = { name: '', logo_url: '', description: '', status: 'active' as 'active' | 'inactive', delivery_flat_fee: '' };
 
 const Brands: React.FC = () => {
   const { user } = useAuth();
   const isSuperAdmin = user?.is_super_admin ?? false;
+  /** Brand admins see only their own brand and may edit it (rules like the
+   *  delivery fee) but cannot create or delete brands. */
+  const isBrandLocked = user?.allowed_brand_ids != null;
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingBrand, setEditingBrand] = useState<Brand | null>(null);
-  const [formData, setFormData] = useState<{ name: string; logo_url: string; description: string; status: 'active' | 'inactive' }>(initialFormData);
+  const [formData, setFormData] = useState<{ name: string; logo_url: string; description: string; status: 'active' | 'inactive'; delivery_flat_fee: string }>(initialFormData);
   const [uploading, setUploading] = useState(false);
   const [filterTenantId, setFilterTenantId] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
@@ -105,6 +109,8 @@ const Brands: React.FC = () => {
       logo_url: brand.logo_url ?? '',
       description: brand.description ?? '',
       status: brand.status === 'inactive' ? 'inactive' : 'active',
+      delivery_flat_fee:
+        brand.delivery_flat_fee != null ? String(brand.delivery_flat_fee) : '',
     });
     setShowForm(true);
   };
@@ -147,6 +153,7 @@ const Brands: React.FC = () => {
         logo_url: data.logo_url || undefined,
         description: data.description || undefined,
         status: data.status,
+        delivery_flat_fee: data.delivery_flat_fee !== '' ? parseFloat(data.delivery_flat_fee) : undefined,
       });
       return response.data;
     },
@@ -167,6 +174,7 @@ const Brands: React.FC = () => {
         logo_url: data.logo_url || undefined,
         description: data.description || undefined,
         status: data.status,
+        delivery_flat_fee: data.delivery_flat_fee !== '' ? parseFloat(data.delivery_flat_fee) : undefined,
       });
       return response.data;
     },
@@ -197,6 +205,70 @@ const Brands: React.FC = () => {
     },
   });
 
+  // Open/close a brand's online ordering across ALL its branches.
+  const availabilityMutation = useMutation({
+    mutationFn: async ({ id, is_open }: { id: number; is_open: boolean }) => {
+      const res = await apiClient.patch(`/admin/brands/${id}/availability`, { is_open });
+      return res.data as { updated: number };
+    },
+    onSuccess: (data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['brands'] });
+      queryClient.invalidateQueries({ queryKey: ['brand-branch-availability'] });
+      toast.success(`${vars.is_open ? 'Opened' : 'Closed'} online at ${data.updated} branch(es)`);
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to update availability');
+    },
+  });
+
+  // Toggle active/inactive directly from the row.
+  const activeMutation = useMutation({
+    mutationFn: async ({ id, active }: { id: number; active: boolean }) => {
+      const res = await apiClient.put(`/admin/brands/${id}`, { status: active ? 'active' : 'inactive' });
+      return res.data as Brand;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brands'] });
+      toast.success('Brand status updated');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to update status');
+    },
+  });
+
+  // Multi-branch online picker.
+  const [onlinePickerBrand, setOnlinePickerBrand] = useState<Brand | null>(null);
+  const { data: pickerBranches } = useQuery({
+    queryKey: ['brand-branch-availability', onlinePickerBrand?.id],
+    queryFn: async () => {
+      const res = await apiClient.get<{ branch_id: number; branch_name: string | null; is_open: boolean }[]>(
+        `/admin/brands/${onlinePickerBrand!.id}/branch-availability`,
+      );
+      return res.data;
+    },
+    enabled: onlinePickerBrand != null,
+  });
+  const branchAvailMutation = useMutation({
+    mutationFn: ({ branchId, brandId, is_open }: { branchId: number; brandId: number; is_open: boolean }) =>
+      apiClient.patch(`/admin/branches/${branchId}/brands/${brandId}/availability`, { is_open }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brand-branch-availability', onlinePickerBrand?.id] });
+      queryClient.invalidateQueries({ queryKey: ['brands'] });
+    },
+    onError: (error: any) => toast.error(error.response?.data?.message || 'Failed to update'),
+  });
+
+  // Single online toggle on the row: direct toggle for a one-branch brand,
+  // otherwise open the per-branch picker so the user chooses which branch.
+  const handleOnlineToggle = (brand: Brand) => {
+    const count = brand.online_branch_count ?? 0;
+    if (count <= 1) {
+      availabilityMutation.mutate({ id: brand.id, is_open: brand.online_status !== 'open' });
+    } else {
+      setOnlinePickerBrand(brand);
+    }
+  };
+
   const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
   if (isLoading || isSubmitting) {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading brands...'} />;
@@ -206,7 +278,9 @@ const Brands: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Brands</h1>
-        <Button onClick={openCreate} variant="primary">Add Brand</Button>
+        {!isBrandLocked && (
+          <Button onClick={openCreate} variant="primary">Add Brand</Button>
+        )}
       </div>
 
       <Card className="mb-6 dark:bg-slate-800 dark:border-slate-700">
@@ -349,6 +423,21 @@ const Brands: React.FC = () => {
             />
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Delivery Fee (flat)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={formData.delivery_flat_fee}
+              onChange={(e) => setFormData({ ...formData, delivery_flat_fee: e.target.value })}
+              placeholder="0.00"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Charged on every delivery order of this brand. A customer ordering from two brands pays each brand's fee.
+            </p>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
             <select
               value={formData.status}
@@ -412,6 +501,28 @@ const Brands: React.FC = () => {
                             <span>no ratings yet</span>
                           )}
                         </span>
+                        <span className="block text-xs text-gray-500 dark:text-slate-500">
+                          Delivery fee:{' '}
+                          <strong className="text-gray-700 dark:text-slate-300">
+                            {formatCurrency(brand.delivery_flat_fee ?? 0)}
+                          </strong>
+                          <span> · per delivery order</span>
+                        </span>
+                        <span className="block text-xs text-gray-500 dark:text-slate-500">
+                          Online orders:{' '}
+                          <strong className={
+                            brand.online_status === 'open' ? 'text-green-600 dark:text-green-400'
+                            : brand.online_status === 'closed' ? 'text-red-600 dark:text-red-400'
+                            : brand.online_status === 'partial' ? 'text-amber-600 dark:text-amber-400'
+                            : 'text-gray-500 dark:text-slate-400'
+                          }>
+                            {brand.online_status === 'open' ? 'Open'
+                              : brand.online_status === 'closed' ? 'Closed'
+                              : brand.online_status === 'partial' ? 'Partial (some branches closed)'
+                              : 'No branches'}
+                          </strong>
+                          {(brand.online_branch_count ?? 0) > 0 && <span> · {brand.online_branch_count} branch{brand.online_branch_count === 1 ? '' : 'es'}</span>}
+                        </span>
                       </div>
                     }
                     statusLabel={brand.status}
@@ -424,22 +535,47 @@ const Brands: React.FC = () => {
                         </Button>
                         <Button
                           size="small"
-                          variant="danger"
-                          onClick={() => {
-                            (async () => {
-                              const ok = await confirmDialog({
-                                title: `Delete brand "${brand.name}"?`,
-                                text: 'This action cannot be undone.',
-                                confirmText: 'Delete',
-                              });
-                              if (!ok) return;
-                              deleteMutation.mutate(brand.id);
-                            })();
-                          }}
-                          isLoading={deleteMutation.isPending}
+                          variant={brand.status === 'active' ? 'outline' : 'primary'}
+                          title="Toggle whether this branch/brand is active (an inactive brand is hidden from customers everywhere)"
+                          onClick={() => activeMutation.mutate({ id: brand.id, active: brand.status !== 'active' })}
+                          isLoading={activeMutation.isPending}
                         >
-                          Delete
+                          {brand.status === 'active' ? 'Set inactive' : 'Set active'}
                         </Button>
+                        <Button
+                          size="small"
+                          variant="outline"
+                          title="Open/close this brand's online ordering (app/web/kiosk). POS is unaffected."
+                          disabled={(brand.online_branch_count ?? 0) === 0}
+                          onClick={() => handleOnlineToggle(brand)}
+                          isLoading={availabilityMutation.isPending}
+                        >
+                          {(brand.online_branch_count ?? 0) > 1
+                            ? 'Manage online'
+                            : brand.online_status === 'open'
+                              ? 'Close online'
+                              : 'Open online'}
+                        </Button>
+                        {!isBrandLocked && (
+                          <Button
+                            size="small"
+                            variant="danger"
+                            onClick={() => {
+                              (async () => {
+                                const ok = await confirmDialog({
+                                  title: `Delete brand "${brand.name}"?`,
+                                  text: 'This action cannot be undone.',
+                                  confirmText: 'Delete',
+                                });
+                                if (!ok) return;
+                                deleteMutation.mutate(brand.id);
+                              })();
+                            }}
+                            isLoading={deleteMutation.isPending}
+                          >
+                            Delete
+                          </Button>
+                        )}
                       </>
                     }
                   />
@@ -456,6 +592,47 @@ const Brands: React.FC = () => {
           </>
         )}
       </div>
+
+      <Modal
+        isOpen={onlinePickerBrand != null}
+        onClose={() => setOnlinePickerBrand(null)}
+        title={onlinePickerBrand ? `Online availability — ${onlinePickerBrand.name}` : 'Online availability'}
+      >
+        {onlinePickerBrand && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 dark:text-slate-400">
+              Choose which branch to open/close for online orders (app/web/kiosk). POS is unaffected.
+            </p>
+            <div className="flex gap-2">
+              <Button size="small" variant="outline" onClick={() => availabilityMutation.mutate({ id: onlinePickerBrand.id, is_open: true })} isLoading={availabilityMutation.isPending}>Open all</Button>
+              <Button size="small" variant="outline" onClick={() => availabilityMutation.mutate({ id: onlinePickerBrand.id, is_open: false })} isLoading={availabilityMutation.isPending}>Close all</Button>
+            </div>
+            <div className="divide-y divide-gray-100 dark:divide-slate-700">
+              {(pickerBranches ?? []).map((br) => (
+                <div key={br.branch_id} className="flex items-center justify-between gap-3 py-2">
+                  <span className="text-sm font-medium text-gray-700 dark:text-slate-200">{br.branch_name ?? `Branch ${br.branch_id}`}</span>
+                  <div className="flex items-center gap-2">
+                    <span className={br.is_open ? 'text-xs font-semibold text-green-600 dark:text-green-400' : 'text-xs font-semibold text-amber-600 dark:text-amber-400'}>
+                      {br.is_open ? 'Open' : 'Closed'}
+                    </span>
+                    <Button
+                      size="small"
+                      variant={br.is_open ? 'danger' : 'primary'}
+                      onClick={() => branchAvailMutation.mutate({ branchId: br.branch_id, brandId: onlinePickerBrand.id, is_open: !br.is_open })}
+                      isLoading={branchAvailMutation.isPending}
+                    >
+                      {br.is_open ? 'Close' : 'Open'}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {(pickerBranches?.length ?? 0) === 0 && (
+                <p className="text-sm text-gray-500 dark:text-slate-400 py-2">No branches.</p>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 };

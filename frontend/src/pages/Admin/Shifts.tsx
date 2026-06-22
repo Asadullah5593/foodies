@@ -1,9 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
-import { Shift, Branch } from '../../types';
+import { Shift, Branch, Brand } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
@@ -26,6 +26,7 @@ const Shifts: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [formData, setFormData] = useState({
     branch_id: '',
+    brand_id: '',
     opening_cash: '',
     notes: '',
   });
@@ -44,6 +45,38 @@ const Shifts: React.FC = () => {
     },
   });
 
+  // Brands (server already filters to the user's own brand when brand-locked)
+  const { data: brands } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => {
+      const response = await apiClient.get<Brand[]>('/admin/brands');
+      return response.data;
+    },
+  });
+
+  // Shifts are opened by brand staff only; owner / GM (no brand lock) can
+  // view and close shifts but never open them.
+  const canOpenShift = user?.allowed_brand_ids != null;
+
+  // When there is only one branch/brand to choose from, pre-select it and show
+  // it read-only — no point making the user pick the only option.
+  const singleBranch = (branches?.length ?? 0) === 1 ? branches![0] : null;
+  const singleBrand = (brands?.length ?? 0) === 1 ? brands![0] : null;
+
+  useEffect(() => {
+    if (!showOpenForm) return;
+    if (singleBranch) {
+      setFormData((p) =>
+        p.branch_id ? p : { ...p, branch_id: String(singleBranch.id) },
+      );
+    }
+    if (singleBrand) {
+      setFormData((p) =>
+        p.brand_id ? p : { ...p, brand_id: String(singleBrand.id) },
+      );
+    }
+  }, [showOpenForm, singleBranch, singleBrand]);
+
   // Fetch shifts
   const { data: shifts, isLoading } = useQuery({
     queryKey: ['shifts', selectedBranch, statusFilter],
@@ -57,13 +90,14 @@ const Shifts: React.FC = () => {
   }, [shiftList, page]);
   React.useEffect(() => setPage(1), [selectedBranch, statusFilter]);
 
-  // Detect a shift already open for the branch chosen in the Open form — only one
-  // open shift is allowed per branch, so we point the user to the existing one.
+  // Detect a shift already open for the branch + brand chosen in the Open
+  // form — one open shift per brand per branch.
   const openFormBranchId = formData.branch_id ? parseInt(formData.branch_id, 10) : null;
+  const openFormBrandId = formData.brand_id ? parseInt(formData.brand_id, 10) : null;
   const { data: openShiftsForBranch } = useQuery({
-    queryKey: ['shifts', 'open-for-branch', openFormBranchId],
-    queryFn: () => adminService.getShifts(openFormBranchId!, 'open'),
-    enabled: showOpenForm && openFormBranchId != null,
+    queryKey: ['shifts', 'open-for-branch', openFormBranchId, openFormBrandId],
+    queryFn: () => adminService.getShifts(openFormBranchId!, 'open', openFormBrandId ?? undefined),
+    enabled: showOpenForm && openFormBranchId != null && openFormBrandId != null,
   });
   const existingOpenShift = (openShiftsForBranch ?? [])[0] ?? null;
 
@@ -86,7 +120,7 @@ const Shifts: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shifts'] });
       setShowOpenForm(false);
-      setFormData({ branch_id: '', opening_cash: '', notes: '' });
+      setFormData({ branch_id: '', brand_id: '', opening_cash: '', notes: '' });
       toast.success('Shift opened successfully!');
     },
     onError: (error: any) => {
@@ -115,12 +149,17 @@ const Shifts: React.FC = () => {
       toast.error('Select a branch');
       return;
     }
+    if (!formData.brand_id) {
+      toast.error('Select a brand');
+      return;
+    }
     if (existingOpenShift) {
-      toast.error('A shift is already open for this branch. Use the open shift instead.');
+      toast.error('A shift is already open for this brand at this branch. Use the open shift instead.');
       return;
     }
     createMutation.mutate({
       branch_id: parseInt(formData.branch_id),
+      brand_id: parseInt(formData.brand_id),
       opening_cash: parseFloat(formData.opening_cash),
       notes: formData.notes || undefined,
     });
@@ -152,7 +191,13 @@ const Shifts: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Shifts</h1>
-        <Button onClick={() => setShowOpenForm(true)}>Open New Shift</Button>
+        {canOpenShift ? (
+          <Button onClick={() => setShowOpenForm(true)}>Open New Shift</Button>
+        ) : (
+          <p className="text-sm text-gray-500 dark:text-slate-400">
+            Shifts are opened by brand staff; you can view and close them.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
@@ -184,20 +229,53 @@ const Shifts: React.FC = () => {
 
       <Modal isOpen={showOpenForm} onClose={() => setShowOpenForm(false)} title="Open New Shift" size="medium">
         <form onSubmit={handleOpenShift} className="space-y-4">
-          <SearchableSelect
-            label="Branch *"
-            value={formData.branch_id}
-            onChange={(v) => setFormData({ ...formData, branch_id: v })}
-            options={[
-              { value: '', label: 'Select Branch' },
-              ...(branches ?? []).map((branch) => ({
-                value: String(branch.id),
-                label: `${branch.name} (${branch.code})`,
-              })),
-            ]}
-            placeholder="Select Branch"
-            searchPlaceholder="Search branches..."
-          />
+          {singleBranch ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Branch *</label>
+              <div className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-800">
+                {singleBranch.name} ({singleBranch.code})
+              </div>
+            </div>
+          ) : (
+            <SearchableSelect
+              label="Branch *"
+              value={formData.branch_id}
+              onChange={(v) => setFormData({ ...formData, branch_id: v })}
+              options={[
+                { value: '', label: 'Select Branch' },
+                ...(branches ?? []).map((branch) => ({
+                  value: String(branch.id),
+                  label: `${branch.name} (${branch.code})`,
+                })),
+              ]}
+              placeholder="Select Branch"
+              searchPlaceholder="Search branches..."
+            />
+          )}
+
+          {singleBrand ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
+              <div className="w-full px-4 py-2 border border-gray-200 rounded-lg bg-gray-50 text-gray-800">
+                {singleBrand.name}
+              </div>
+            </div>
+          ) : (
+            <SearchableSelect
+              label="Brand *"
+              value={formData.brand_id}
+              onChange={(v) => setFormData({ ...formData, brand_id: v })}
+              options={[
+                { value: '', label: 'Select Brand' },
+                ...(brands ?? []).map((brand) => ({
+                  value: String(brand.id),
+                  label: brand.name,
+                })),
+              ]}
+              placeholder="Select Brand"
+              searchPlaceholder="Search brands..."
+            />
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Opened by</label>
@@ -210,8 +288,8 @@ const Shifts: React.FC = () => {
           {existingOpenShift ? (
             <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 space-y-2">
               <p>
-                A shift (<strong>{existingOpenShift.shift_number}</strong>) is already open for this branch.
-                Only one shift can be open per branch — use the existing one.
+                A shift (<strong>{existingOpenShift.shift_number}</strong>) is already open for this brand at this branch.
+                Only one shift can be open per brand per branch — use the existing one.
               </p>
               <Button
                 type="button"
@@ -261,7 +339,7 @@ const Shifts: React.FC = () => {
             <Button
               type="submit"
               isLoading={createMutation.isPending}
-              disabled={!!existingOpenShift || !formData.branch_id}
+              disabled={!!existingOpenShift || !formData.branch_id || !formData.brand_id}
             >
               Open Shift
             </Button>
@@ -388,6 +466,7 @@ const Shifts: React.FC = () => {
                   subtitle={
                     <>
                       <p>Branch: {shift.branch?.name || 'N/A'}</p>
+                      <p>Brand: {shift.brand?.name || 'N/A'}</p>
                       <p>User: {shift.user?.name || 'N/A'}</p>
                       <p>Opening: {formatCurrency(shift.opening_cash)} · Opened: {new Date(shift.opened_at).toLocaleString()}</p>
                     </>
@@ -421,6 +500,7 @@ const Shifts: React.FC = () => {
               <p><strong>Shift #:</strong> {shiftDetail.shift_number}</p>
               <p><strong>Status:</strong> {shiftDetail.status}</p>
               <p><strong>Branch:</strong> {shiftDetail.branch?.name ?? 'N/A'}</p>
+              <p><strong>Brand:</strong> {shiftDetail.brand?.name ?? 'N/A'}</p>
               <p><strong>Opened by:</strong> {shiftDetail.user?.name ?? 'N/A'}</p>
               <p><strong>Closed by:</strong> {shiftDetail.closer?.name ?? 'N/A'}</p>
               <p><strong>Opening cash:</strong> {formatCurrency(Number(shiftDetail.opening_cash))}</p>

@@ -9,6 +9,7 @@ import {
 import { Branch } from './branch.entity';
 import { User } from './user.entity';
 import { Role } from './role.entity';
+import { Brand } from './brand.entity';
 
 @Entity('branch_users')
 export class BranchUser {
@@ -20,6 +21,10 @@ export class BranchUser {
 
     @Column()
     roleId: number;
+
+    /** When set, the user is locked to this brand at the branch (null = all brands). */
+    @Column({ type: 'int', nullable: true })
+    brandId: number | null;
 
     @CreateDateColumn()
     createdAt: Date;
@@ -35,4 +40,7 @@ export class BranchUser {
 
     @ManyToOne(() => Role, { onDelete: 'RESTRICT' })
     role: Role;
+
+    @ManyToOne(() => Brand, { onDelete: 'SET NULL', nullable: true })
+    brand: Brand | null;
 }

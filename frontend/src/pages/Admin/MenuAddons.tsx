@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -23,6 +24,7 @@ const MenuAddons: React.FC = () => {
   const { user } = useAuth();
   const isSuperAdmin = user?.is_super_admin ?? false;
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
   const [showForm, setShowForm] = useState(false);
   const [editingAddon, setEditingAddon] = useState<MenuAddon | null>(null);
   const [formData, setFormData] = useState({
@@ -31,11 +33,12 @@ const MenuAddons: React.FC = () => {
     price: '',
     is_active: true,
   });
+  // Deep-link from the Menu Items page: ?brand_id= pre-filters the list.
   const [filters, setFilters] = useState<{
     brand_id: string;
     status: string;
     search: string;
-  }>({ brand_id: '', status: '', search: '' });
+  }>({ brand_id: searchParams.get('brand_id') ?? '', status: '', search: '' });
   const debouncedAddonSearch = useDebouncedValue(filters.search, 300);
   const [page, setPage] = useState(1);
 
@@ -356,6 +359,14 @@ const MenuAddons: React.FC = () => {
                     actions={
                       <>
                         <Button size="small" variant="edit" onClick={() => handleEdit(addon)}>Edit</Button>
+                        <Button
+                          size="small"
+                          variant={isActive ? 'outline' : 'primary'}
+                          isLoading={updateMutation.isPending}
+                          onClick={() => updateMutation.mutate({ id: addon.id, data: { is_active: !isActive } })}
+                        >
+                          {isActive ? 'Set inactive' : 'Set active'}
+                        </Button>
                         <Button
                           size="small"
                           variant="danger"

@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
+import { MdClose, MdOutlineWarningAmber, MdOutlineSchedule, MdOutlineRestaurantMenu, MdOutlineStorefront } from 'react-icons/md';
+import { Link } from 'react-router-dom';
 import apiClient from '../../utils/apiClient';
 import { menuService, orderService, adminService, CreateOrderRequest } from '../../services/api';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
@@ -11,12 +13,14 @@ import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
+import SearchableSelect from '../../components/SearchableSelect';
 import Modal from '../../components/Modal';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   POSLayout,
   POSFilters,
+  OrderTypeSelector,
   MenuGrid,
   MENU_PAGE_SIZE,
   CustomerPanel,
@@ -56,6 +60,7 @@ const OrderTaking: React.FC = () => {
   const [addCustomerName, setAddCustomerName] = useState('');
   const [addCustomerPhone, setAddCustomerPhone] = useState('');
   const [addCustomerPhoneError, setAddCustomerPhoneError] = useState('');
+  const [linkConfirm, setLinkConfirm] = useState<{ name: string; phone: string; existingName: string | null } | null>(null);
   const [orderNotes, setOrderNotes] = useState('');
   const [selectedBrandId, setSelectedBrandId] = useState<number | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
@@ -178,6 +183,12 @@ const OrderTaking: React.FC = () => {
   }, [menuFilteredBySearch, currentMenuPage]);
 
   const openShift = branchMenu?.open_shift ?? null;
+  /** Brands with an open shift at this branch (shifts are per brand). */
+  const openShiftBrandIds = branchMenu?.open_shift_brand_ids ?? [];
+  /** Orders are single-brand: the cart's brand is fixed by its first line. */
+  const cartBrandId = selectedItems.length
+    ? (selectedItems[0].menuItem.brand_id ?? null)
+    : null;
 
   const getBrandName = (brandId: number | null | undefined): string | null =>
     brandId != null ? (brands.find((b) => b.id === brandId)?.name ?? null) : null;
@@ -240,15 +251,17 @@ const OrderTaking: React.FC = () => {
   });
 
   const normalizedPhone = customerPhone.trim() ? normalizePakistaniPhone(customerPhone.trim()) : null;
+  // POS redeems against the brand-scoped POS wallet, so the balance depends on
+  // the cart's brand. Refetch when the cart brand changes.
   const { data: loyaltyBalance } = useQuery({
-    queryKey: ['loyalty-balance', branchId, normalizedPhone],
+    queryKey: ['loyalty-balance', branchId, normalizedPhone, cartBrandId],
     queryFn: async () => {
       const res = await apiClient.get<{ balance: number; displayName: string }>('/public/consumer/loyalty/balance', {
-        params: { branch_id: branchId, phone: normalizedPhone },
+        params: { branch_id: branchId, phone: normalizedPhone, wallet_type: 'pos', brand_id: cartBrandId },
       });
       return res.data;
     },
-    enabled: branchId != null && normalizedPhone != null,
+    enabled: branchId != null && normalizedPhone != null && cartBrandId != null,
   });
 
   React.useEffect(() => {
@@ -259,8 +272,8 @@ const OrderTaking: React.FC = () => {
   }, [loyaltyBalance?.balance]);
 
   const addCustomerMutation = useMutation({
-    mutationFn: (data: { name: string; phone: string }) => adminService.createCustomer(data),
-    onSuccess: (newCustomer: { id: number; name: string | null; phone: string }) => {
+    mutationFn: (data: { name: string; phone: string; link?: boolean }) => adminService.createCustomer(data),
+    onSuccess: (newCustomer: { id: number; name: string | null; phone: string; linked?: boolean }) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       setCustomerName((newCustomer.name ?? '').trim());
       setCustomerPhone((newCustomer.phone ?? '').trim());
@@ -269,9 +282,17 @@ const OrderTaking: React.FC = () => {
       setAddCustomerName('');
       setAddCustomerPhone('');
       setAddCustomerPhoneError('');
-      toast.success('Customer added');
+      setLinkConfirm(null);
+      toast.success(newCustomer.linked ? 'Linked existing customer' : 'Customer added');
     },
-    onError: (err: any) => {
+    onError: (err: any, variables) => {
+      const existing = err.response?.status === 409 ? err.response?.data?.existing : null;
+      if (existing) {
+        // Phone belongs to a sibling brand's customer — confirm before linking.
+        setShowAddCustomerModal(false);
+        setLinkConfirm({ name: variables.name, phone: variables.phone, existingName: existing.name ?? null });
+        return;
+      }
       toast.error(err.response?.data?.message || 'Failed to add customer');
     },
   });
@@ -405,6 +426,24 @@ const OrderTaking: React.FC = () => {
     }
     if (orderType == null || !orderTypeOptions.some((o) => o.value === orderType)) {
       toast.error('Select an order type before adding items');
+      return;
+    }
+    // Single-brand orders: a cart can only hold one brand's items.
+    const itemBrandId = item.brand_id ?? null;
+    if (cartBrandId != null && itemBrandId != null && itemBrandId !== cartBrandId) {
+      toast.error(
+        `This order already has ${getBrandName(cartBrandId) ?? 'another brand'}'s items. Place a separate order per brand.`,
+      );
+      return;
+    }
+    // Each brand sells only while its own shift is open at this branch.
+    if (
+      itemBrandId != null &&
+      !openShiftBrandIds.includes(itemBrandId)
+    ) {
+      toast.error(
+        `No shift is open for ${getBrandName(itemBrandId) ?? 'this brand'} at this branch. Open the brand's shift first.`,
+      );
       return;
     }
     if (branchId != null) {
@@ -687,20 +726,30 @@ const OrderTaking: React.FC = () => {
       toast.error('Please add items to the order');
       return;
     }
-    if (!customerName.trim()) {
-      toast.error('Customer name is required');
-      return;
+    // Customer requirements depend on order type: dine-in is fully optional;
+    // takeaway & delivery require a name + phone (delivery also needs an address).
+    const customerRequired =
+      effectiveOrderType === 'takeaway' || effectiveOrderType === 'delivery';
+    if (customerRequired) {
+      if (!customerName.trim()) {
+        toast.error('Customer name is required for takeaway and delivery orders');
+        return;
+      }
+      if (!customerPhone.trim()) {
+        toast.error('Customer phone is required (Pakistani format: 03XXXXXXXXX)');
+        return;
+      }
     }
-    if (!customerPhone.trim()) {
-      toast.error('Customer phone is required (Pakistani format: 03XXXXXXXXX)');
-      return;
-    }
-    try {
-      validatePakistaniPhone(customerPhone.trim());
-    } catch {
-      setPhoneError('Use format 03XXXXXXXXX (e.g. 03001234567)');
-      toast.error('Invalid Pakistani phone number');
-      return;
+    // Validate the phone format whenever one was entered (required above, or
+    // optionally typed for a dine-in order).
+    if (customerPhone.trim()) {
+      try {
+        validatePakistaniPhone(customerPhone.trim());
+      } catch {
+        setPhoneError('Use format 03XXXXXXXXX (e.g. 03001234567)');
+        toast.error('Invalid Pakistani phone number');
+        return;
+      }
     }
     setPhoneError('');
     if (effectiveOrderType === 'delivery' && !deliveryAddress.trim()) {
@@ -871,8 +920,8 @@ const OrderTaking: React.FC = () => {
       });
       setShowKioskModal(false);
       setKioskCodeInput('');
-      if (data.items_dropped) toast('Some items are no longer available and were skipped.', { icon: '⚠️' });
-      if (data.price_changed) toast('Prices changed since the customer ordered — review the new total.', { icon: '⚠️' });
+      if (data.items_dropped) toast('Some items are no longer available and were skipped.', { icon: <MdOutlineWarningAmber /> });
+      if (data.price_changed) toast('Prices changed since the customer ordered — review the new total.', { icon: <MdOutlineWarningAmber /> });
       toast.success(`Loaded kiosk order #${data.kiosk_code}`);
     } catch (e: any) {
       toast.error(e.response?.data?.message || 'Kiosk order not found');
@@ -1126,32 +1175,94 @@ const OrderTaking: React.FC = () => {
 
   if (effectiveBranchId != null && branchId != null && !openShift) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-4rem)] bg-foodies-surfaceMuted dark:bg-slate-900 p-6">
-        <Card className="w-full max-w-md">
-          <div className="mb-4">
-            <POSFilters {...filtersProps} />
+      <div className="flex min-h-[calc(100vh-4rem)] flex-col items-center bg-foodies-surfaceMuted dark:bg-slate-900 px-6 pt-16 pb-12 text-center">
+        <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-foodies-primary/10 text-foodies-primary ring-1 ring-foodies-primary/20">
+          <MdOutlineSchedule className="h-10 w-10" />
+        </div>
+        <h2 className="mt-6 text-2xl font-bold text-foodies-textPrimary dark:text-slate-100">
+          No shift open for this branch
+        </h2>
+        <p className="mt-2 max-w-sm text-sm leading-relaxed text-foodies-textSecondary dark:text-slate-400">
+          Open a shift before taking orders. Only one shift can be open per branch at a time.
+        </p>
+
+        <Link to="/admin/shifts" className="mt-8 w-full max-w-xs">
+          <Button variant="gradient" className="w-full rounded-xl py-3 font-semibold">
+            Open a shift
+          </Button>
+        </Link>
+
+        {(posBranches?.length ?? 0) > 1 && (
+          <div className="mt-8 w-full max-w-xs">
+            <div className="mb-3 flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-foodies-textSecondary dark:text-slate-500">
+              <span className="h-px flex-1 bg-foodies-border dark:bg-slate-700" />
+              or switch branch
+              <span className="h-px flex-1 bg-foodies-border dark:bg-slate-700" />
+            </div>
+            <SearchableSelect
+              value={effectiveBranchId != null ? String(effectiveBranchId) : ''}
+              onChange={(v) => filtersProps.onBranchChange(v === '' ? null : Number(v))}
+              options={(posBranches ?? []).map((b) => ({
+                value: String(b.id),
+                label: `${b.name} (${b.code})`,
+              }))}
+              placeholder="Select branch"
+              className="w-full"
+            />
           </div>
-          <div className="text-center py-6">
-            <h2 className="text-2xl font-bold text-foodies-textPrimary dark:text-slate-100 mb-2">No shift open for this branch</h2>
-            <p className="text-foodies-textSecondary dark:text-slate-400">Open a shift in Admin → Shifts before using POS. Only one shift can be open per branch at a time. You can switch branch above.</p>
-          </div>
-        </Card>
+        )}
       </div>
     );
   }
 
   if (rawMenu.length === 0) {
+    const branchInactive = branchMenu?.branch_active === false;
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-4rem)] bg-foodies-surfaceMuted dark:bg-slate-900 p-6">
-        <Card className="w-full max-w-md">
-          <div className="mb-4">
-            <POSFilters {...filtersProps} />
+      <div className="flex min-h-[calc(100vh-4rem)] flex-col items-center bg-foodies-surfaceMuted dark:bg-slate-900 px-6 pt-16 pb-12 text-center">
+        <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-foodies-primary/10 text-foodies-primary ring-1 ring-foodies-primary/20">
+          {branchInactive ? (
+            <MdOutlineStorefront className="h-10 w-10" />
+          ) : (
+            <MdOutlineRestaurantMenu className="h-10 w-10" />
+          )}
+        </div>
+        <h2 className="mt-6 text-2xl font-bold text-foodies-textPrimary dark:text-slate-100">
+          {branchInactive ? 'This branch is inactive' : 'No menu items for this branch'}
+        </h2>
+        <p className="mt-2 max-w-sm text-sm leading-relaxed text-foodies-textSecondary dark:text-slate-400">
+          {branchInactive
+            ? 'This branch is currently marked inactive, so it takes no orders. Reactivate it before taking orders, or switch to another branch.'
+            : 'No menu items are linked to this branch yet. Link items from its brands before taking orders, or switch to another branch.'}
+        </p>
+
+        <Link
+          to={branchInactive ? '/admin/branches' : `/admin/branches/${effectiveBranchId}`}
+          className="mt-8 w-full max-w-xs"
+        >
+          <Button variant="gradient" className="w-full rounded-xl py-3 font-semibold">
+            {branchInactive ? 'Manage branches' : 'Link menu items'}
+          </Button>
+        </Link>
+
+        {(posBranches?.length ?? 0) > 1 && (
+          <div className="mt-8 w-full max-w-xs">
+            <div className="mb-3 flex items-center gap-3 text-xs font-medium uppercase tracking-wide text-foodies-textSecondary dark:text-slate-500">
+              <span className="h-px flex-1 bg-foodies-border dark:bg-slate-700" />
+              or switch branch
+              <span className="h-px flex-1 bg-foodies-border dark:bg-slate-700" />
+            </div>
+            <SearchableSelect
+              value={effectiveBranchId != null ? String(effectiveBranchId) : ''}
+              onChange={(v) => filtersProps.onBranchChange(v === '' ? null : Number(v))}
+              options={(posBranches ?? []).map((b) => ({
+                value: String(b.id),
+                label: `${b.name} (${b.code})`,
+              }))}
+              placeholder="Select branch"
+              className="w-full"
+            />
           </div>
-          <div className="text-center py-8">
-            <h2 className="text-2xl font-bold text-foodies-textPrimary dark:text-slate-100 mb-2">No menu items for this branch</h2>
-            <p className="text-foodies-textSecondary dark:text-slate-400">Add menu items and enable the menu for this branch in the admin panel. You can switch branch above.</p>
-          </div>
-        </Card>
+        )}
       </div>
     );
   }
@@ -1199,18 +1310,18 @@ const OrderTaking: React.FC = () => {
                 onClick={clearKioskOrder}
                 className="text-xs font-medium text-foodies-textSecondary hover:text-foodies-textPrimary"
               >
-                Clear ✕
+                Clear <MdClose className="inline h-4 w-4" />
               </button>
             </div>
           )}
           {activeKioskCode && kioskInfo?.price_changed && (
             <p className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-400">
-              ⚠️ Prices changed since the customer ordered — collect the updated total ({formatCurrency(kioskInfo.current_total)}).
+              <MdOutlineWarningAmber className="inline h-4 w-4 mr-1 align-text-bottom" /> Prices changed since the customer ordered — collect the updated total ({formatCurrency(kioskInfo.current_total)}).
             </p>
           )}
           {activeKioskCode && kioskInfo?.items_dropped && (
             <p className="mt-1 text-xs font-medium text-amber-600 dark:text-amber-400">
-              ⚠️ Some items were no longer available and were skipped.
+              <MdOutlineWarningAmber className="inline h-4 w-4 mr-1 align-text-bottom" /> Some items were no longer available and were skipped.
             </p>
           )}
         </div>
@@ -1254,11 +1365,20 @@ const OrderTaking: React.FC = () => {
       <POSLayout
         centerSection={
           <>
-            {/* Top bar (desktop + mobile): branch/order type/brand/category + search */}
+            {/* Order type — full-width screen-mode tab strip (its own row, the
+                primary control), with the menu filters demoted to a quieter
+                row below. */}
+            <OrderTypeSelector
+              options={orderTypeOptions}
+              value={effectiveOrderType}
+              onChange={setOrderType}
+            />
             <div className="flex-shrink-0 px-4 py-3 bg-foodies-surface border-b border-foodies-border dark:bg-slate-800 dark:border-slate-700">
               <div className="lg:hidden">
                 <POSFilters
                   {...filtersProps}
+                  showOrderType={false}
+                  showHint={false}
                   variant="bar"
                   searchInputRef={searchInputRefMobile}
                 />
@@ -1266,16 +1386,13 @@ const OrderTaking: React.FC = () => {
               <div className="hidden lg:block">
                 <POSFilters
                   {...filtersProps}
+                  showOrderType={false}
+                  showHint={false}
                   variant="bar"
                   searchInputRef={searchInputRefDesktop}
                 />
               </div>
             </div>
-            {effectiveOrderType == null && (
-              <div className="flex-shrink-0 px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/80 dark:border-amber-800/50 text-sm text-amber-900 dark:text-amber-100">
-                Select an order type above before adding items to the cart.
-              </div>
-            )}
             <div className="flex-1 overflow-y-auto p-4 sm:p-5">
               {/* <RiderTrackingTestPanel /> */}
               <MenuGrid
@@ -1345,7 +1462,21 @@ const OrderTaking: React.FC = () => {
                 setPhoneError('');
               }}
               phoneError={phoneError}
-              onAddCustomerClick={() => setShowAddCustomerModal(true)}
+              onAddCustomerClick={(query) => {
+                // Prefill the new-customer form with whatever was typed in the
+                // search box — a phone-like value (mostly digits) goes to phone,
+                // anything else to name.
+                const q = (query ?? '').trim();
+                if (q && /^[\d\s()+-]{4,}$/.test(q)) {
+                  setAddCustomerPhone(q);
+                  setAddCustomerName('');
+                } else {
+                  setAddCustomerName(q);
+                  setAddCustomerPhone('');
+                }
+                setAddCustomerPhoneError('');
+                setShowAddCustomerModal(true);
+              }}
               loyaltyBalance={loyaltyBalance}
               deliveryAddress={deliveryAddress}
               onDeliveryAddressChange={setDeliveryAddress}
@@ -1525,6 +1656,34 @@ const OrderTaking: React.FC = () => {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Link existing customer confirmation (phone belongs to a sibling brand) */}
+      <Modal
+        isOpen={linkConfirm != null}
+        onClose={() => setLinkConfirm(null)}
+        title="Customer already exists"
+      >
+        {linkConfirm && (
+          <div className="space-y-4">
+            <p className="text-gray-700">
+              <span className="font-mono">{linkConfirm.phone}</span> already belongs to{' '}
+              <strong>{linkConfirm.existingName ?? 'an existing customer'}</strong> under another brand.
+              Link this customer to your brand so you can use them here?
+            </p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setLinkConfirm(null)}>Cancel</Button>
+              <Button
+                isLoading={addCustomerMutation.isPending}
+                onClick={() =>
+                  addCustomerMutation.mutate({ name: linkConfirm.name, phone: linkConfirm.phone, link: true })
+                }
+              >
+                Link customer
+              </Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       <ItemConfigModal
