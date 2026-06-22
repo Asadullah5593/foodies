@@ -300,13 +300,8 @@ const Banners: React.FC = () => {
                 <AccentedListRow
                   key={banner.id}
                   accent={banner.is_active ? 'active' : 'inactive'}
-                  initial={
-                    <img
-                      src={banner.image_url}
-                      alt={banner.title}
-                      className="h-10 w-16 object-cover rounded"
-                    />
-                  }
+                  imageUrl={banner.image_url}
+                  initial={banner.title.charAt(0)}
                   title={banner.title}
                   subtitle={
                     <>
