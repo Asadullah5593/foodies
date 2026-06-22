@@ -65,6 +65,17 @@ function groupOrdersForCustomer(orders: KitchenOrder[]): { groupId: string | nul
   return result;
 }
 
+/** Statuses that keep an order in the "Preparing" column. */
+const PREP_STATUSES = ['placed', 'accepted', 'preparing'];
+
+/** Which customer-display column a grouped order belongs to, derived from its orders' statuses. */
+function groupPhase(orders: KitchenOrder[]): 'preparing' | 'ready' | 'completed' {
+  const active = orders.filter((o) => o.status !== 'cancelled');
+  if (active.some((o) => PREP_STATUSES.includes(o.status))) return 'preparing';
+  if (active.some((o) => o.status === 'ready')) return 'ready';
+  return 'completed';
+}
+
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -122,6 +133,50 @@ const KitchenDisplay: React.FC = () => {
     () => groupOrdersForCustomer(orders as KitchenOrder[]),
     [orders]
   );
+
+  // Split the display into two columns by phase.
+  const preparingGroups = displayGroups.filter((g) => groupPhase(g.orders) === 'preparing');
+  const readyGroups = displayGroups.filter((g) => groupPhase(g.orders) === 'ready');
+  const completedGroups = displayGroups.filter((g) => groupPhase(g.orders) === 'completed');
+
+  const renderCard = (
+    group: { groupId: string | null; orders: KitchenOrder[] },
+    phase: 'preparing' | 'ready' | 'completed'
+  ) => {
+    const { groupId, orders: groupOrders } = group;
+    const first = groupOrders[0];
+    const isGroup = !!groupId && groupOrders.length > 1;
+    const key = groupId ?? `single-${first?.id}`;
+    // Status badge intentionally hidden on the customer display. Kept commented so it can be
+    // restored later — uncomment both this `badge` const and the <span> in the card below.
+    // const statusSet = new Set(groupOrders.map((o) => o.status));
+    // const badge =
+    //   phase === 'ready'
+    //     ? { label: 'Ready', cls: 'bg-emerald-100 text-emerald-800 border-emerald-200' }
+    //     : phase === 'completed'
+    //       ? { label: 'Completed', cls: 'bg-gray-100 text-gray-500 border-gray-200' }
+    //       : {
+    //           label: statusSet.size === 1 ? first?.status ?? '' : 'Mixed',
+    //           cls: 'bg-amber-100 text-amber-800 border-amber-200',
+    //         };
+    return (
+      <Card key={key} className={phase === 'completed' ? 'opacity-60' : ''}>
+        <div className="flex items-start justify-between gap-2">
+          <span className="text-lg font-bold text-gray-900 break-all">
+            {isGroup ? `Order #${first?.order_number}` : `#${first?.order_number}`}
+          </span>
+          {/* Status badge hidden on customer display (Preparing "accepted" / Ready "ready").
+              Uncomment together with the `badge` const above to show it again.
+          <span className={`flex-shrink-0 px-2.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide border ${badge.cls}`}>
+            {badge.label}
+          </span>
+          */}
+        </div>
+        {/* "Mark completed" is intentionally NOT on the customer display — the order is
+            marked complete from the FOH Packing screen. */}
+      </Card>
+    );
+  };
 
   // Sync branch from URL and default to first branch when no URL param
   useEffect(() => {
@@ -218,7 +273,7 @@ const KitchenDisplay: React.FC = () => {
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Customer Display</h1>
             <p className="text-gray-500 text-sm mt-0.5">
-              Order number and status only.
+              Preparing &amp; ready orders. Mark an order completed once the customer collects it.
             </p>
           </div>
         </div>
@@ -275,40 +330,44 @@ const KitchenDisplay: React.FC = () => {
           </Card>
         ) : isLoading ? (
           <Loader fullScreen text="Loading orders..." />
-        ) : displayGroups.length === 0 ? (
-          <Card className="p-8 sm:p-12 text-center bg-white border-gray-200">
-            <p className="text-gray-500 text-lg">No orders in queue right now.</p>
-            <p className="text-gray-400 text-sm mt-2">Your order will appear here once placed.</p>
-          </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-            {displayGroups.map(({ groupId, orders: groupOrders }) => {
-              const isGroup = groupId && groupOrders.length > 1;
-              const first = groupOrders[0];
-              const statusSet = new Set(groupOrders.map((o) => o.status));
-              const statusLabel = statusSet.size === 1 ? first?.status : 'Mixed';
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+            {/* Preparing: placed / accepted / preparing */}
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="h-3 w-3 rounded-full bg-amber-500" aria-hidden />
+                <h2 className="text-xl font-bold text-gray-900">Preparing</h2>
+                <span className="text-sm font-semibold text-gray-400">{preparingGroups.length}</span>
+              </div>
+              {preparingGroups.length === 0 ? (
+                <p className="text-gray-400 text-sm py-10 text-center border border-dashed border-gray-200 rounded-xl">
+                  No orders preparing.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {preparingGroups.map((g) => renderCard(g, 'preparing'))}
+                </div>
+              )}
+            </section>
 
-              return (
-                <Card key={groupId ?? `single-${first?.id}`} className="bg-white border border-gray-200 shadow-sm overflow-hidden">
-                  <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-                    <div className="flex items-center gap-3">
-                      <div className="flex-1">
-                        {isGroup ? (
-                          <span className="text-lg font-bold text-gray-900">
-                            Order #{first?.order_number}
-                          </span>
-                        ) : (
-                          <span className="text-lg font-bold text-gray-900">#{first?.order_number}</span>
-                        )}
-                        <span className="ml-2 px-2.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-200">
-                          {statusLabel}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
+            {/* Ready: ready (+ completed when "Show Completed" is on) */}
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="h-3 w-3 rounded-full bg-emerald-500" aria-hidden />
+                <h2 className="text-xl font-bold text-gray-900">Ready</h2>
+                <span className="text-sm font-semibold text-gray-400">{readyGroups.length}</span>
+              </div>
+              {readyGroups.length === 0 && !(showCompleted && completedGroups.length > 0) ? (
+                <p className="text-gray-400 text-sm py-10 text-center border border-dashed border-gray-200 rounded-xl">
+                  No orders ready.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {readyGroups.map((g) => renderCard(g, 'ready'))}
+                  {showCompleted && completedGroups.map((g) => renderCard(g, 'completed'))}
+                </div>
+              )}
+            </section>
           </div>
         )}
         </div>
