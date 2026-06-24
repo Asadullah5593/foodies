@@ -1,8 +1,10 @@
 import {
     Body,
     Controller,
+    Delete,
     Get,
     Param,
+    Patch,
     Post,
     Query,
     UseGuards,
@@ -25,12 +27,15 @@ export class RecipesAdminController {
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
         @Query('menu_item_id') menuItemId?: string,
+        @Query('addon_id') addonId?: string,
+        @Query('modifier_id') modifierId?: string,
     ) {
         const tenantId = await this.recipesService.resolveTenantId(user);
-        return this.recipesService.listRecipes(
-            tenantId,
-            menuItemId ? +menuItemId : undefined,
-        );
+        return this.recipesService.listRecipes(tenantId, {
+            menuItemId: menuItemId ? +menuItemId : undefined,
+            addonId: addonId ? +addonId : undefined,
+            modifierId: modifierId ? +modifierId : undefined,
+        });
     }
 
     @Post()
@@ -39,8 +44,10 @@ export class RecipesAdminController {
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
         @Body()
         dto: {
-            menu_item_id: number;
+            menu_item_id?: number | null;
             variant_id?: number | null;
+            addon_id?: number | null;
+            modifier_id?: number | null;
             notes?: string;
         },
     ) {
@@ -64,6 +71,40 @@ export class RecipesAdminController {
     ) {
         const tenantId = await this.recipesService.resolveTenantId(user);
         return this.recipesService.addRecipeLine(tenantId, +id, dto);
+    }
+
+    @Patch(':id/lines/:lineId')
+    async updateLine(
+        @CurrentUser()
+        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        @Param('id') id: string,
+        @Param('lineId') lineId: string,
+        @Body()
+        dto: {
+            qty?: number;
+            uom_id?: number;
+            wastage_factor?: number | null;
+            notes?: string | null;
+        },
+    ) {
+        const tenantId = await this.recipesService.resolveTenantId(user);
+        return this.recipesService.updateRecipeLine(
+            tenantId,
+            +id,
+            +lineId,
+            dto,
+        );
+    }
+
+    @Delete(':id/lines/:lineId')
+    async deleteLine(
+        @CurrentUser()
+        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        @Param('id') id: string,
+        @Param('lineId') lineId: string,
+    ) {
+        const tenantId = await this.recipesService.resolveTenantId(user);
+        return this.recipesService.deleteRecipeLine(tenantId, +id, +lineId);
     }
 
     @Post(':id/activate')
