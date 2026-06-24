@@ -1,7 +1,6 @@
 import React from 'react';
-import Inventory from './Inventory';
+import StockLedger from './StockLedger';
 
-const InventoryLedger: React.FC = () => <Inventory initialTab="ledger" showTabs={false} />;
+const InventoryLedger: React.FC = () => <StockLedger />;
 
 export default InventoryLedger;
-

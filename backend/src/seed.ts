@@ -182,6 +182,12 @@ async function seed() {
             description: 'View deliveries',
         },
         {
+            name: 'deliveries:manage',
+            resource: 'deliveries',
+            action: 'manage',
+            description: 'Manage tier-based delivery settings',
+        },
+        {
             name: 'shifts:manage',
             resource: 'shifts',
             action: 'manage',
@@ -216,6 +222,12 @@ async function seed() {
             resource: 'deals',
             action: 'delete',
             description: 'Delete deals',
+        },
+        {
+            name: 'notifications:manage',
+            resource: 'notifications',
+            action: 'manage',
+            description: 'Configure which roles receive which notifications',
         },
     ];
     const existingNames = new Set(

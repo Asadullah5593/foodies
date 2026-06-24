@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { Tenant } from './tenant.entity';
 import { Branch } from './branch.entity';
+import { Brand } from './brand.entity';
 import { InventoryBatch } from './inventory-batch.entity';
 import { InventoryLocation } from './inventory-location.entity';
 
@@ -21,6 +22,10 @@ export class InventoryBatchOnHand {
 
     @Column()
     branchId: number;
+
+    // null = the branch's shared pool; a brand id = that brand's bucket of this batch.
+    @Column({ type: 'int', nullable: true })
+    brandId: number | null;
 
     @Column()
     inventoryBatchId: number;
@@ -41,6 +46,10 @@ export class InventoryBatchOnHand {
     @ManyToOne(() => Branch, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'branch_id' })
     branch: Branch;
+
+    @ManyToOne(() => Brand, { onDelete: 'SET NULL', nullable: true })
+    @JoinColumn({ name: 'brand_id' })
+    brand: Brand | null;
 
     @ManyToOne(() => InventoryBatch, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'inventory_batch_id' })

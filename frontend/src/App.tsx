@@ -34,6 +34,7 @@ import {
   MdOutlineTv,
   MdOutlineSoupKitchen,
   MdOutlineImage,
+  MdOutlineNotificationsActive,
 } from 'react-icons/md';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
@@ -70,12 +71,14 @@ import RiderOpsMetrics from './pages/Admin/RiderHRM/RiderOpsMetrics';
 import RiderPoolSharing from './pages/Admin/RiderHRM/RiderPoolSharing';
 import RequestRiders from './pages/Admin/RiderHRM/RequestRiders';
 import LoyaltySettings from './pages/Admin/LoyaltySettings';
+import DeliveryTiers from './pages/Admin/DeliveryTiers';
 import BusinessSettings from './pages/Admin/BusinessSettings';
 import Customers from './pages/Admin/Customers';
 import InventoryOnHand from './pages/Admin/Inventory/InventoryOnHand';
 import InventoryLedger from './pages/Admin/Inventory/InventoryLedger';
 import InventoryAlerts from './pages/Admin/Inventory/InventoryAlerts';
 import InventoryTransfers from './pages/Admin/Inventory/InventoryTransfers';
+import BrandStock from './pages/Admin/Inventory/BrandStock';
 import InventoryAdjustments from './pages/Admin/Inventory/InventoryAdjustments';
 import InventoryWastage from './pages/Admin/Inventory/InventoryWastage';
 import InventoryStocktake from './pages/Admin/Inventory/InventoryStocktake';
@@ -96,6 +99,9 @@ import RiderLayout from './pages/Rider/RiderLayout';
 import RiderDashboard from './pages/Rider/RiderDashboard';
 import RiderOrderDetail from './pages/Rider/RiderOrderDetail';
 import ButtonDemo from './pages/Admin/ButtonDemo';
+import NotificationSettings from './pages/Admin/Notifications/NotificationSettings';
+import NotificationsProvider from './components/notifications/NotificationsProvider';
+import NotificationBell from './components/notifications/NotificationBell';
 
 const PageLoader: React.FC = () => (
   <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
@@ -306,6 +312,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { path: '/admin/branch-menu-items', label: 'Branch Pricing', icon: MdOutlinePayments },
     { path: '/admin/discounts', label: 'Discounts', icon: MdOutlineLocalOffer },
     { path: '/admin/loyalty-settings', label: 'Loyalty Settings', icon: MdOutlineStarBorder },
+    { path: '/admin/delivery-tiers', label: 'Delivery Tiers', icon: MdOutlineDeliveryDining },
     {
       type: 'group',
       id: 'cms',
@@ -317,6 +324,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       ],
     },
     { path: '/admin/roles', label: 'Roles', icon: MdOutlineLock },
+    { path: '/admin/notification-settings', label: 'Notifications', icon: MdOutlineNotificationsActive },
     {
       type: 'group',
       id: 'rider-hrm',
@@ -345,12 +353,13 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       label: 'Inventory',
       icon: MdOutlineInventory2,
       children: [
+        { path: '/admin/inventory/brand-stock', label: 'My brand stock' },
         { path: '/admin/inventory/uoms', label: 'Units of measure' },
         { path: '/admin/inventory/vendors', label: 'Vendors' },
         { path: '/admin/inventory/items', label: 'Inventory items' },
         { path: '/admin/inventory/on-hand', label: 'On-hand inventory' },
         { path: '/admin/inventory/ledger', label: 'Stock movement ledger' },
-        { path: '/admin/inventory/transfers', label: 'Branch transfers' },
+        { path: '/admin/inventory/transfers', label: 'Stock transfers' },
         { path: '/admin/inventory/adjustments', label: 'Stock adjustment' },
         { path: '/admin/inventory/wastage', label: 'Record wastage' },
         // { path: '/admin/inventory/alerts', label: 'Alerts (low stock & expiry)' },
@@ -733,6 +742,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </span>
             </div>
             <div className="flex items-center gap-2">
+              <NotificationBell />
               <button
                 type="button"
                 onClick={toggleTheme}
@@ -921,6 +931,14 @@ const AppRoutes: React.FC = () => {
         }
       />
       <Route
+        path="/admin/delivery-tiers"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><DeliveryTiers /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/admin/banners"
         element={
           <ProtectedRoute>
@@ -949,6 +967,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><Roles /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/notification-settings"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><NotificationSettings /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />
@@ -1016,6 +1042,7 @@ const AppRoutes: React.FC = () => {
           </ProtectedRoute>
         }
       />
+      <Route path="/admin/inventory/brand-stock" element={<ProtectedRoute><AdminOnlyRoute><Layout><BrandStock /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/inventory/on-hand" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryOnHand /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/inventory/ledger" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryLedger /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/inventory/alerts" element={<ProtectedRoute><AdminOnlyRoute><Layout><InventoryAlerts /></Layout></AdminOnlyRoute></ProtectedRoute>} />
@@ -1109,9 +1136,11 @@ const App: React.FC = () => {
     >
       <ThemeProvider>
         <AuthProvider>
-          <NavigationLoader>
-            <AppRoutes />
-          </NavigationLoader>
+          <NotificationsProvider>
+            <NavigationLoader>
+              <AppRoutes />
+            </NavigationLoader>
+          </NotificationsProvider>
         </AuthProvider>
       </ThemeProvider>
     </BrowserRouter>

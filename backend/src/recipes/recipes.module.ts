@@ -9,6 +9,8 @@ import { RecipeCostSnapshot } from '../entities/recipe-cost-snapshot.entity';
 import { InventoryItemCost } from '../entities/inventory-item-cost.entity';
 import { MenuItem } from '../entities/menu-item.entity';
 import { MenuVariant } from '../entities/menu-variant.entity';
+import { MenuAddon } from '../entities/menu-addon.entity';
+import { Modifier } from '../entities/modifier.entity';
 import { InventoryItem } from '../entities/inventory-item.entity';
 import { Uom } from '../entities/uom.entity';
 import { RecipesService } from './recipes.service';
@@ -26,6 +28,8 @@ import { RecipesAdminController } from './recipes.admin.controller';
             InventoryItemCost,
             MenuItem,
             MenuVariant,
+            MenuAddon,
+            Modifier,
             InventoryItem,
             Uom,
         ]),

@@ -140,6 +140,8 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
 
   // Client-side list filters for sub-modules that fetch a full list.
   const [onHandSearch, setOnHandSearch] = useState('');
+  // '' = all brands (combined per item); 'pool' = branch pool; else a brand id.
+  const [onHandBrandFilter, setOnHandBrandFilter] = useState('');
   const [itemSearch, setItemSearch] = useState('');
   const [vendorSearch, setVendorSearch] = useState('');
   const [uomSearch, setUomSearch] = useState('');
@@ -157,6 +159,14 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
   });
 
   const { branchId, options: branchOptions, selected: selectedBranch, setSelected: setSelectedBranch } = useSelectedBranchId(branches);
+
+  const { data: brands } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => {
+      const res = await apiClient.get('/admin/brands');
+      return res.data ?? [];
+    },
+  });
 
   const uomsQ = useQuery({
     queryKey: ['inventory-uoms'],
@@ -592,23 +602,52 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
     return m;
   }, [branches]);
 
+  const brandById = useMemo(() => {
+    const m = new Map<number, any>();
+    for (const b of brands ?? []) m.set(Number(b.id), b);
+    return m;
+  }, [brands]);
+
+  // Brand bucket options for transfers; '' = the branch's shared pool (brand_id null).
+  const transferBrandOptions = useMemo(
+    () => [
+      { value: '', label: 'Branch pool (shared)' },
+      ...(brands ?? []).map((b: any) => ({ value: String(b.id), label: b.name })),
+    ],
+    [brands],
+  );
+
   const groupedOnHandRows = useMemo(() => {
-    const grouped = new Map<number, { inventoryItemId: number; qty: number }>();
+    // Group by (item, brand bucket); brandId null = the branch's shared pool. Sum
+    // across locations within a bucket and carry the negative-stock flag.
+    const grouped = new Map<
+      string,
+      { inventoryItemId: number; brandId: number | null; qty: number; negativeFlaggedAt: string | null }
+    >();
     for (const row of onHandQ.data ?? []) {
       const inventoryItemId = Number((row as any).inventoryItemId ?? (row as any).inventory_item_id);
       if (!Number.isInteger(inventoryItemId) || inventoryItemId <= 0) continue;
+      const rawBrand = (row as any).brandId ?? (row as any).brand_id ?? null;
+      const brandId = rawBrand == null ? null : Number(rawBrand);
       const qty = Number((row as any).qty ?? 0);
-      const existing = grouped.get(inventoryItemId);
+      const flaggedAt = (row as any).negativeFlaggedAt ?? (row as any).negative_flagged_at ?? null;
+      const key = `${inventoryItemId}:${brandId ?? 'pool'}`;
+      const existing = grouped.get(key);
       if (existing) {
         existing.qty += Number.isFinite(qty) ? qty : 0;
+        if (flaggedAt) existing.negativeFlaggedAt = flaggedAt;
       } else {
-        grouped.set(inventoryItemId, {
+        grouped.set(key, {
           inventoryItemId,
+          brandId,
           qty: Number.isFinite(qty) ? qty : 0,
+          negativeFlaggedAt: flaggedAt,
         });
       }
     }
-    return Array.from(grouped.values()).sort((a, b) => a.inventoryItemId - b.inventoryItemId);
+    return Array.from(grouped.values()).sort(
+      (a, b) => a.inventoryItemId - b.inventoryItemId || (a.brandId ?? 0) - (b.brandId ?? 0),
+    );
   }, [onHandQ.data]);
 
   const selectedOnHandItem = useMemo(
@@ -768,15 +807,40 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
 
   const displayedOnHandRows = useMemo(() => {
     const q = onHandSearch.trim().toLowerCase();
-    if (!q) return groupedOnHandRows;
-    return groupedOnHandRows.filter((r: any) => {
+    const searched = groupedOnHandRows.filter((r: any) => {
+      if (!q) return true;
       const it = itemById.get(Number(r.inventoryItemId));
       return (
         String(it?.name ?? '').toLowerCase().includes(q) ||
         String(it?.code ?? '').toLowerCase().includes(q)
       );
     });
-  }, [groupedOnHandRows, onHandSearch, itemById]);
+
+    if (onHandBrandFilter === '') {
+      // All brands → collapse to ONE row per item (no repeats); flag if any bucket is negative.
+      const byItem = new Map<number, any>();
+      for (const r of searched) {
+        const ex = byItem.get(r.inventoryItemId);
+        const neg = Number(r.qty) < 0 || !!r.negativeFlaggedAt;
+        if (ex) {
+          ex.qty += Number(r.qty);
+          ex.anyNegative = ex.anyNegative || neg;
+        } else {
+          byItem.set(r.inventoryItemId, {
+            inventoryItemId: r.inventoryItemId,
+            brandId: 'ALL',
+            qty: Number(r.qty),
+            anyNegative: neg,
+          });
+        }
+      }
+      return Array.from(byItem.values()).sort((a, b) => a.inventoryItemId - b.inventoryItemId);
+    }
+
+    // A specific bucket → one row per item for that bucket only.
+    const wantBrand = onHandBrandFilter === 'pool' ? null : Number(onHandBrandFilter);
+    return searched.filter((r: any) => (r.brandId ?? null) === wantBrand);
+  }, [groupedOnHandRows, onHandSearch, itemById, onHandBrandFilter]);
 
   const displayedItems = useMemo(() => {
     const list = (itemsQ.data ?? []) as any[];
@@ -1772,7 +1836,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
           <ul className="list-disc pl-5 space-y-1 text-slate-600 dark:text-slate-300">
             <li><span className="font-medium">On-hand inventory</span> shows what you currently have in the selected branch.</li>
             <li><span className="font-medium">Stock movement ledger</span> is the “audit trail” of every increase/decrease (goods received, consumption, wastage, stock count variance, and branch transfers as transfer OUT / transfer IN).</li>
-            <li><span className="font-medium">Branch transfers</span> let you request, approve, dispatch, and receive stock between branches; dispatch and receipt rows appear in the stock movement ledger for the source and destination branches respectively.</li>
+            <li><span className="font-medium">Stock transfers</span> move stock between branch and brand buckets — allocate received stock to a brand (Branch pool → brand), move between brands, or transfer between branches — via request → approve → dispatch → receive.</li>
             {/* <li><span className="font-medium">Alerts</span> highlights items that are low in stock or batches that are near expiry.</li> */}
             {/* <li><span className="font-medium">Storage locations</span> are optional sub-areas inside a branch (e.g., “Dry store”, “Chiller”, “Freezer”). They help you see and count stock by physical place.</li> */}
           </ul>
@@ -1790,7 +1854,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             { k: 'items', label: 'Inventory items' },
             { k: 'onhand', label: 'On-hand inventory' },
             { k: 'ledger', label: 'Stock movement ledger' },
-            { k: 'transfers', label: 'Branch transfers' },
+            { k: 'transfers', label: 'Stock transfers' },
             { k: 'adjustments', label: 'Stock adjustment' },
             { k: 'wastage', label: 'Record wastage' },
             // { k: 'alerts', label: 'Alerts (low stock & expiry)' },
@@ -1820,6 +1884,18 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 <div className="text-xs font-medium text-slate-600 mb-1">Search item</div>
                 <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Item name or code…" value={onHandSearch} onChange={(e) => setOnHandSearch(e.target.value)} />
               </label>
+              <label className="min-w-[200px]">
+                <div className="text-xs font-medium text-slate-600 mb-1">Brand bucket</div>
+                <select
+                  className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
+                  value={onHandBrandFilter}
+                  onChange={(e) => setOnHandBrandFilter(e.target.value)}
+                >
+                  <option value="">All brands (combined)</option>
+                  <option value="pool">Branch pool (shared)</option>
+                  {(brands ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              </label>
             </div>
           )}
           {!branchId ? (
@@ -1833,6 +1909,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                   <tr>
                     <th className="py-2 pr-4 w-12">#</th>
                     <th className="py-2 pr-4">Item</th>
+                    <th className="py-2 pr-4">Brand bucket</th>
                     <th className="py-2 pr-4">Buy price</th>
                     <th className="py-2 pr-4">Quantity (base unit)</th>
                     <th className="py-2 pr-4">Actions</th>
@@ -1840,7 +1917,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 </thead>
                 <tbody className="text-slate-700 dark:text-slate-200">
                   {displayedOnHandRows.map((r: any, index: number) => (
-                    <tr key={r.inventoryItemId} className="border-t border-slate-100 dark:border-slate-700">
+                    <tr key={`${r.inventoryItemId}:${r.brandId ?? 'pool'}`} className="border-t border-slate-100 dark:border-slate-700">
                       <td className="py-2 pr-4">{index + 1}</td>
                       <td className="py-2 pr-4">
                         <div className="font-medium">
@@ -1851,15 +1928,34 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                         </div>
                       </td>
                       <td className="py-2 pr-4">
+                        {r.brandId === 'ALL' ? (
+                          <span className="text-slate-500 dark:text-slate-400">All buckets (combined)</span>
+                        ) : r.brandId == null ? (
+                          <span className="text-slate-500 dark:text-slate-400">Branch pool</span>
+                        ) : (
+                          brandById.get(Number(r.brandId))?.name ?? `Brand #${r.brandId}`
+                        )}
+                      </td>
+                      <td className="py-2 pr-4">
                         {itemById.get(Number(r.inventoryItemId))?.defaultBuyPrice != null
                           ? formatNumeric(Number(itemById.get(Number(r.inventoryItemId))?.defaultBuyPrice), 2, 6)
                           : '—'}
                       </td>
                       <td className="py-2 pr-4">
-                        {formatNumeric(Number(r.qty), 0, 6)}
-                        {itemById.get(Number(r.inventoryItemId))?.baseUomId
-                          ? ` ${uomById.get(Number(itemById.get(Number(r.inventoryItemId))?.baseUomId))?.code ?? ''}`
-                          : ''}
+                        <span className={Number(r.qty) < 0 || r.anyNegative ? 'text-red-600 font-semibold' : ''}>
+                          {formatNumeric(Number(r.qty), 0, 6)}
+                          {itemById.get(Number(r.inventoryItemId))?.baseUomId
+                            ? ` ${uomById.get(Number(itemById.get(Number(r.inventoryItemId))?.baseUomId))?.code ?? ''}`
+                            : ''}
+                        </span>
+                        {(Number(r.qty) < 0 || r.negativeFlaggedAt || r.anyNegative) && (
+                          <span
+                            className="ml-2 inline-flex items-center rounded-full bg-red-100 text-red-700 px-2 py-0.5 text-xs font-medium"
+                            title="A sale drove this brand bucket negative — replenish/allocate stock"
+                          >
+                            Negative
+                          </span>
+                        )}
                       </td>
                       <td className="py-2 pr-4">
                         <Button variant="secondary" onClick={() => setSelectedOnHandItemId(Number(r.inventoryItemId))}>
@@ -2107,11 +2203,17 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
 
       {tab === 'transfers' && (
         <Card>
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Branch transfers</h2>
+          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Stock transfers &amp; brand allocation</h2>
           {!branchId ? (
             <div className="text-slate-500 dark:text-slate-400">Select a branch.</div>
           ) : (
             <div className="space-y-4">
+              <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm text-blue-800 dark:text-blue-200">
+                Use this to <span className="font-medium">allocate received stock to a brand</span> (Branch pool → a brand),
+                move stock between brands, or transfer between branches. Pick the <span className="font-medium">source</span>{' '}
+                and <span className="font-medium">destination</span> brand buckets in the request — leave a side as
+                <span className="font-medium"> &ldquo;Branch pool (shared)&rdquo;</span> for the branch&apos;s unallocated stock.
+              </div>
               <div className="flex flex-wrap items-end gap-3 text-sm">
                 <label className="min-w-[150px]">
                   <div className="text-xs font-medium text-slate-600 mb-1">Status</div>
@@ -2126,9 +2228,10 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 )}
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400">
-                Workflow: create a <span className="font-medium">transfer request</span>, approve it to create a{' '}
-                <span className="font-medium">transfer order</span>, then dispatch from the source branch and receive at
-                the destination. Stock and ledger change only on dispatch (source) and receive (destination).
+                4 steps: <span className="font-medium">1)</span> create a request (what to move, from/to brand bucket) →{' '}
+                <span className="font-medium">2)</span> approve it → <span className="font-medium">3)</span> dispatch (leaves
+                the source) → <span className="font-medium">4)</span> receive (arrives at the destination). Stock changes
+                only on dispatch and receive. Same-branch brand moves keep the original batch &amp; expiry.
               </div>
               <div className="text-xs text-slate-500 dark:text-slate-400">
                 Lists below include only rows where the selected branch is the source or destination (other branches in
@@ -3380,6 +3483,30 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
               />
             </label>
             <label className="text-sm">
+              <div className="text-xs font-medium text-slate-600 mb-1">Source brand bucket</div>
+              <SearchableSelect
+                value={String(form.tr_source_brand_id ?? '')}
+                onChange={(v) => setForm({ ...form, tr_source_brand_id: v })}
+                options={transferBrandOptions}
+                placeholder="Branch pool (shared)…"
+                searchPlaceholder="Search brands…"
+                minWidth="w-full"
+                className="w-full"
+              />
+            </label>
+            <label className="text-sm">
+              <div className="text-xs font-medium text-slate-600 mb-1">Destination brand bucket</div>
+              <SearchableSelect
+                value={String(form.tr_destination_brand_id ?? '')}
+                onChange={(v) => setForm({ ...form, tr_destination_brand_id: v })}
+                options={transferBrandOptions}
+                placeholder="Branch pool (shared)…"
+                searchPlaceholder="Search brands…"
+                minWidth="w-full"
+                className="w-full"
+              />
+            </label>
+            <label className="text-sm">
               <div className="text-xs font-medium text-slate-600 mb-1">Item</div>
               <SearchableSelect
                 value={String(form.tr_item_id ?? '')}
@@ -3462,9 +3589,20 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                   toast.error('Please fill all required fields');
                   return;
                 }
+                const sourceBrandId = form.tr_source_brand_id ? Number(form.tr_source_brand_id) : null;
+                const destinationBrandId = form.tr_destination_brand_id ? Number(form.tr_destination_brand_id) : null;
+                if (
+                  Number(branchId) === Number(form.tr_destination_branch_id) &&
+                  sourceBrandId === destinationBrandId
+                ) {
+                  toast.error('Source and destination (branch, brand) must be different');
+                  return;
+                }
                 createTransferRequestM.mutate({
                   source_branch_id: Number(branchId),
                   destination_branch_id: Number(form.tr_destination_branch_id),
+                  source_brand_id: sourceBrandId,
+                  destination_brand_id: destinationBrandId,
                   lines: [
                     {
                       inventory_item_id: Number(form.tr_item_id),

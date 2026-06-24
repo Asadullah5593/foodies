@@ -41,6 +41,37 @@ export class InventoryTransfersAdminController {
     @Get('requests')
     async listRequests(
         @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            isSuperAdmin?: boolean;
+            allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
+            permissions?: string[];
+        },
+        @Query('branch_id') branchId?: string,
+        @Query('scope') scope?: string,
+    ) {
+        const tenantId = await this.resolveTenantIdForList(
+            user,
+            branchId ? Number(branchId) : undefined,
+        );
+        return this.transferService.listRequests(
+            user,
+            tenantId,
+            scope === 'mine' || scope === 'incoming' ? scope : undefined,
+        );
+    }
+
+    /**
+     * Read-only reference lists (tenant-level item master + UOMs) needed to build
+     * a transfer request. Exposed under the transfers prefix so brand admins — who
+     * cannot reach /admin/inventory/items|uoms (those also host writes) — can still
+     * populate the request form.
+     */
+    @Get('reference/items')
+    async referenceItems(
+        @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
         @Query('branch_id') branchId?: string,
     ) {
@@ -48,7 +79,20 @@ export class InventoryTransfersAdminController {
             user,
             branchId ? Number(branchId) : undefined,
         );
-        return this.transferService.listRequests(tenantId);
+        return this.inventoryService.listItems(tenantId);
+    }
+
+    @Get('reference/uoms')
+    async referenceUoms(
+        @CurrentUser()
+        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        @Query('branch_id') branchId?: string,
+    ) {
+        const tenantId = await this.resolveTenantIdForList(
+            user,
+            branchId ? Number(branchId) : undefined,
+        );
+        return this.inventoryService.listUoms(tenantId);
     }
 
     @Post('requests')
@@ -59,6 +103,8 @@ export class InventoryTransfersAdminController {
         dto: {
             source_branch_id: number;
             destination_branch_id: number;
+            source_brand_id?: number | null;
+            destination_brand_id?: number | null;
             notes?: string;
             lines: Array<{
                 inventory_item_id: number;
@@ -94,14 +140,26 @@ export class InventoryTransfersAdminController {
     @Get('orders')
     async listOrders(
         @CurrentUser()
-        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        user: {
+            id: number;
+            tenantId: number | null;
+            isSuperAdmin?: boolean;
+            allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
+            permissions?: string[];
+        },
         @Query('branch_id') branchId?: string,
+        @Query('scope') scope?: string,
     ) {
         const tenantId = await this.resolveTenantIdForList(
             user,
             branchId ? Number(branchId) : undefined,
         );
-        return this.transferService.listOrders(tenantId);
+        return this.transferService.listOrders(
+            user,
+            tenantId,
+            scope === 'mine' || scope === 'incoming' ? scope : undefined,
+        );
     }
 
     @Post('orders/:id/dispatch')

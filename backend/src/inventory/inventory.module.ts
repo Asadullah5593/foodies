@@ -33,6 +33,8 @@ import { InventoryAdjustment } from '../entities/inventory-adjustment.entity';
 import { InventoryAdjustmentLine } from '../entities/inventory-adjustment-line.entity';
 import { InventoryService } from './inventory.service';
 import { InventoryConsumptionService } from './inventory-consumption.service';
+import { InventoryAlertsJob } from './inventory-alerts.job';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { UomsAdminController } from './uoms.admin.controller';
 import { VendorsAdminController } from './vendors.admin.controller';
 import { InventoryItemsAdminController } from './inventory-items.admin.controller';
@@ -48,6 +50,7 @@ import { InventoryAdjustmentService } from './inventory-adjustment.service';
     imports: [
         AuthModule,
         BranchesModule,
+        NotificationsModule,
         TypeOrmModule.forFeature([
             Tenant,
             Branch,
@@ -95,6 +98,7 @@ import { InventoryAdjustmentService } from './inventory-adjustment.service';
         InventoryConsumptionService,
         InventoryTransferService,
         InventoryAdjustmentService,
+        InventoryAlertsJob,
     ],
     exports: [InventoryService, InventoryConsumptionService],
 })

@@ -1068,6 +1068,42 @@ export class ConsumerController {
         );
     }
 
+    @Post('orders/quote')
+    @UseGuards(OptionalCustomerJwtAuthGuard)
+    @ApiOperation({
+        summary:
+            'Quote an order before placing it. For delivery, returns delivery_options[] (Saver/Standard/Priority with fee + ETA). Returns 422 if the drop-off is outside the branch delivery radius.',
+    })
+    async quoteOrder(
+        @Req()
+        req: {
+            user?: Customer | null;
+            headers?: Record<string, string | string[] | undefined>;
+        },
+        @Body()
+        dto: {
+            branch_id: number;
+            order_type: string;
+            items: {
+                menu_item_id: number;
+                quantity: number;
+                variant_id?: number;
+                addons?: { addon_id: number; quantity?: number }[];
+                modifiers?: { modifier_id: number; quantity?: number }[];
+            }[];
+            discount_code?: string;
+            customer_phone?: string;
+            loyalty_points_to_redeem?: number;
+            latitude?: number;
+            longitude?: number;
+            delivery_tier?: string;
+        },
+    ) {
+        const tenantId = await this.getTenantIdFromBranch(dto.branch_id);
+        const source = this.resolveOrderSourceFromRequest(req);
+        return this.ordersService.quote(dto, tenantId, source);
+    }
+
     @Post('orders')
     @UseGuards(OptionalCustomerJwtAuthGuard)
     @ApiBearerAuth()
@@ -1206,6 +1242,8 @@ export class ConsumerController {
             longitude?: number;
             branch_latitude?: number;
             branch_longitude?: number;
+            /** Chosen delivery tier ('saver'|'standard'|'priority') for tier-enabled brands. */
+            delivery_tier?: string;
         },
     ) {
         const tenantId = await this.getTenantIdFromBranch(dto.branch_id);

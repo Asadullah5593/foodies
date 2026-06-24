@@ -29,6 +29,7 @@ import { RiderOrderLocationService } from './rider-order-location.service';
 import { RiderLocationGateway } from './rider-location.gateway';
 import { RiderLocationEventsService } from './rider-location-events.service';
 import { RiderLocationRetentionService } from './rider-location-retention.service';
+import { DeliveryDispatchJob } from './delivery-dispatch.job';
 import { MenuModule } from '../menu/menu.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
@@ -38,6 +39,7 @@ import { CustomersModule } from '../customers/customers.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { RiderHrmModule } from '../rider-hrm/rider-hrm.module';
 import { PushNotificationsModule } from '../push-notifications/push-notifications.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
     imports: [
@@ -71,6 +73,7 @@ import { PushNotificationsModule } from '../push-notifications/push-notification
         CustomersModule,
         InventoryModule,
         RiderHrmModule,
+        NotificationsModule,
     ],
     controllers: [
         PosMenuController,
@@ -85,6 +88,7 @@ import { PushNotificationsModule } from '../push-notifications/push-notification
         RiderLocationGateway,
         RiderLocationEventsService,
         RiderLocationRetentionService,
+        DeliveryDispatchJob,
     ],
     exports: [OrdersService, RiderOrderLocationService],
 })

@@ -32,6 +32,7 @@ export const Permissions = {
     CUSTOMERS_MANAGE: 'customers:manage',
     ROLES_MANAGE: 'roles:manage',
     DELIVERIES_VIEW: 'deliveries:view',
+    DELIVERIES_MANAGE: 'deliveries:manage',
     // Rider brand-ownership & sharing
     RIDER_SHARE_REQUEST: 'rider-share:request',
     RIDER_SHARING_MANAGE: 'rider-sharing:manage',
@@ -52,6 +53,12 @@ export const Permissions = {
     INVENTORY_TRANSFER: 'inventory:transfer',
     INVENTORY_OVERRIDE_NEGATIVE: 'inventory:override_negative',
     INVENTORY_OVERRIDE_FEFO: 'inventory:override_fefo',
+    // Brand-scoped inventory for brand admins (see own brand stock across
+    // their branches; request transfers in; approve/dispatch pulls FROM a
+    // bucket they control — enforced per-bucket in InventoryTransferService).
+    INVENTORY_VIEW_BRAND: 'inventory:view:brand',
+    INVENTORY_TRANSFER_REQUEST: 'inventory:transfer:request',
+    INVENTORY_TRANSFER_APPROVE: 'inventory:transfer:approve',
 
     PROCUREMENT_PR_CREATE: 'procurement:pr:create',
     PROCUREMENT_PR_APPROVE: 'procurement:pr:approve',
@@ -64,6 +71,9 @@ export const Permissions = {
     // CMS – Banners & Promotions
     CMS_MANAGE: 'cms:manage',
     PROMOTIONS_MANAGE: 'promotions:manage',
+
+    // Notifications (configure which roles receive which alerts)
+    NOTIFICATIONS_MANAGE: 'notifications:manage',
 } as const;
 
 export type PermissionName = (typeof Permissions)[keyof typeof Permissions];

@@ -23,8 +23,6 @@ const emptyForm = {
   eligibility_type: 'new_customer' as 'new_customer' | 'manual',
   is_active: true,
   expires_in_days: '',
-  valid_from: '',
-  valid_until: '',
 };
 
 const Promotions: React.FC = () => {
@@ -37,7 +35,8 @@ const Promotions: React.FC = () => {
 
   // Assignments panel
   const [assignmentsPromotion, setAssignmentsPromotion] = useState<Promotion | null>(null);
-  const [assignCustomerId, setAssignCustomerId] = useState('');
+  const [assignCustomerIds, setAssignCustomerIds] = useState<number[]>([]);
+  const [assignSearch, setAssignSearch] = useState('');
 
   const { data: promotions, isLoading } = useQuery({
     queryKey: ['promotions'],
@@ -108,13 +107,32 @@ const Promotions: React.FC = () => {
       adminService.assignPromotion(promotionId, customerId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['promotionAssignments', assignmentsPromotion?.id] });
-      setAssignCustomerId('');
-      toast.success('Promotion assigned successfully!');
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to assign promotion');
     },
   });
+
+  const { data: customersData } = useQuery({
+    queryKey: ['customers-for-assign'],
+    queryFn: adminService.getCustomers,
+    enabled: !!assignmentsPromotion,
+  });
+  const assignedIds = useMemo(
+    () => new Set((assignments ?? []).map((a: any) => Number(a.customer_id))),
+    [assignments],
+  );
+  const customerOptions = useMemo(() => {
+    const list: any[] = Array.isArray(customersData) ? customersData : ((customersData as any)?.items ?? []);
+    return list
+      .filter((c) => !assignedIds.has(Number(c.id)))
+      .map((c) => ({ id: Number(c.id), name: c.name || c.full_name || `Customer #${c.id}`, code: c.phone || c.phone_number || undefined }));
+  }, [customersData, assignedIds]);
+  const visibleCustomers = useMemo(() => {
+    const q = assignSearch.trim().toLowerCase();
+    if (!q) return customerOptions;
+    return customerOptions.filter((c) => c.name.toLowerCase().includes(q) || (c.code ?? '').toLowerCase().includes(q));
+  }, [customerOptions, assignSearch]);
 
   const handleEdit = (p: Promotion) => {
     setEditingPromotion(p);
@@ -129,8 +147,6 @@ const Promotions: React.FC = () => {
       eligibility_type: p.eligibility_type,
       is_active: p.is_active,
       expires_in_days: p.expires_in_days?.toString() ?? '',
-      valid_from: p.valid_from ? p.valid_from.split('T')[0] : '',
-      valid_until: p.valid_until ? p.valid_until.split('T')[0] : '',
     });
     setShowForm(true);
   };
@@ -152,8 +168,6 @@ const Promotions: React.FC = () => {
       eligibility_type: formData.eligibility_type,
       is_active: formData.is_active,
       expires_in_days: formData.expires_in_days ? parseInt(formData.expires_in_days) : null,
-      valid_from: formData.valid_from || null,
-      valid_until: formData.valid_until || null,
     };
     if (editingPromotion) {
       updateMutation.mutate({ id: editingPromotion.id, data });
@@ -188,9 +202,15 @@ const Promotions: React.FC = () => {
       used: 'bg-green-100 text-green-800',
       expired: 'bg-gray-100 text-gray-600',
     };
+    const label: Record<string, string> = {
+      pending: 'Assigned',
+      claimed: 'Claimed',
+      used: 'Used',
+      expired: 'Expired',
+    };
     return (
       <span className={`px-2 py-0.5 rounded text-xs font-medium ${map[status] ?? 'bg-gray-100'}`}>
-        {status}
+        {label[status] ?? status}
       </span>
     );
   };
@@ -269,15 +289,6 @@ const Promotions: React.FC = () => {
                 >
                   {formData.image_url ? 'Change Image' : 'Upload Image'}
                 </Button>
-                {!formData.image_url && (
-                  <input
-                    type="text"
-                    value={formData.image_url}
-                    onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
-                    placeholder="Or paste URL"
-                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg"
-                  />
-                )}
               </div>
             </div>
           </div>
@@ -419,27 +430,6 @@ const Promotions: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Valid From</label>
-              <input
-                type="date"
-                value={formData.valid_from}
-                onChange={(e) => setFormData({ ...formData, valid_from: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Valid Until</label>
-              <input
-                type="date"
-                value={formData.valid_until}
-                onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-
           <div className="flex gap-2 justify-end">
             <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditingPromotion(null); }}>
               Cancel
@@ -454,28 +444,65 @@ const Promotions: React.FC = () => {
       {/* Assignments modal */}
       <Modal
         isOpen={!!assignmentsPromotion}
-        onClose={() => { setAssignmentsPromotion(null); setAssignCustomerId(''); }}
+        onClose={() => { setAssignmentsPromotion(null); setAssignCustomerIds([]); setAssignSearch(''); }}
         title={`Assignments — ${assignmentsPromotion?.name ?? ''}`}
         size="large"
       >
         {assignmentsPromotion?.eligibility_type === 'manual' && (
-          <div className="flex gap-2 mb-4">
-            <input
-              type="number"
-              value={assignCustomerId}
-              onChange={(e) => setAssignCustomerId(e.target.value)}
-              placeholder="Customer ID"
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-            <Button
-              isLoading={assignMutation.isPending}
-              onClick={() => {
-                if (!assignCustomerId.trim() || !assignmentsPromotion) return;
-                assignMutation.mutate({ promotionId: assignmentsPromotion.id, customerId: +assignCustomerId });
-              }}
-            >
-              Assign
-            </Button>
+          <div className="mb-5">
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                value={assignSearch}
+                onChange={(e) => setAssignSearch(e.target.value)}
+                placeholder="Search customers by name or phone…"
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+              <Button
+                isLoading={assignMutation.isPending}
+                disabled={assignCustomerIds.length === 0}
+                onClick={async () => {
+                  if (!assignmentsPromotion || assignCustomerIds.length === 0) return;
+                  const ids = [...assignCustomerIds];
+                  try {
+                    for (const customerId of ids) {
+                      await assignMutation.mutateAsync({ promotionId: assignmentsPromotion.id, customerId });
+                    }
+                    setAssignCustomerIds([]);
+                    toast.success(ids.length > 1 ? `Assigned to ${ids.length} customers` : 'Promotion assigned');
+                  } catch {
+                    /* per-assignment error already toasted */
+                  }
+                }}
+              >
+                Assign{assignCustomerIds.length ? ` (${assignCustomerIds.length})` : ''}
+              </Button>
+            </div>
+            <div className="border border-gray-200 rounded-lg max-h-56 overflow-y-auto divide-y divide-gray-100">
+              {visibleCustomers.length === 0 ? (
+                <p className="text-center text-sm text-gray-400 py-5">{customerOptions.length === 0 ? 'All customers are already assigned.' : 'No customers found.'}</p>
+              ) : (
+                visibleCustomers.map((c) => {
+                  const checked = assignCustomerIds.includes(c.id);
+                  return (
+                    <label key={c.id} className="flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-50">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => setAssignCustomerIds((prev) => (checked ? prev.filter((x) => x !== c.id) : [...prev, c.id]))}
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                      />
+                      <span className="text-sm text-gray-700">{c.name}{c.code ? <span className="ml-2 text-gray-400">{c.code}</span> : null}</span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+            {assignCustomerIds.length > 0 && (
+              <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
+                <span>{assignCustomerIds.length} selected</span>
+                <button type="button" onClick={() => setAssignCustomerIds([])} className="text-blue-600 hover:underline">Clear selection</button>
+              </div>
+            )}
           </div>
         )}
 
@@ -544,9 +571,11 @@ const Promotions: React.FC = () => {
                   animationIndex={i}
                   actions={
                     <>
-                      <Button size="small" variant="outline" onClick={() => setAssignmentsPromotion(promo)}>
-                        Assignments
-                      </Button>
+                      {promo.eligibility_type === 'manual' && (
+                        <Button size="small" variant="outline" onClick={() => setAssignmentsPromotion(promo)}>
+                          Assignments
+                        </Button>
+                      )}
                       <Button size="small" variant="edit" onClick={() => handleEdit(promo)}>Edit</Button>
                       <Button
                         size="small"

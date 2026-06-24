@@ -1,7 +1,6 @@
 import React from 'react';
-import Inventory from './Inventory';
+import WastagePage from './WastagePage';
 
-const InventoryWastage: React.FC = () => <Inventory initialTab="wastage" showTabs={false} />;
+const InventoryWastage: React.FC = () => <WastagePage />;
 
 export default InventoryWastage;
-

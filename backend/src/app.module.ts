@@ -34,6 +34,7 @@ import { FirebaseModule } from './firebase/firebase.module';
 import { KioskModule } from './kiosk/kiosk.module';
 import { BannersModule } from './banners/banners.module';
 import { PromotionsModule } from './promotions/promotions.module';
+import { NotificationsModule } from './notifications/notifications.module';
 @Module({
     imports: [
         ConfigModule.forRoot({
@@ -88,6 +89,7 @@ import { PromotionsModule } from './promotions/promotions.module';
         KioskModule,
         BannersModule,
         PromotionsModule,
+        NotificationsModule,
     ],
     controllers: [AppController],
     providers: [AppService],

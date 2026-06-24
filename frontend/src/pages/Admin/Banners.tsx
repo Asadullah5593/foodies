@@ -16,11 +16,7 @@ const emptyForm = {
   title: '',
   subtitle: '',
   image_url: '',
-  link_url: '',
   is_active: true,
-  sort_order: 0,
-  valid_from: '',
-  valid_until: '',
 };
 
 const Banners: React.FC = () => {
@@ -87,11 +83,7 @@ const Banners: React.FC = () => {
       title: banner.title,
       subtitle: banner.subtitle ?? '',
       image_url: banner.image_url,
-      link_url: banner.link_url ?? '',
       is_active: banner.is_active,
-      sort_order: banner.sort_order,
-      valid_from: banner.valid_from ? banner.valid_from.split('T')[0] : '',
-      valid_until: banner.valid_until ? banner.valid_until.split('T')[0] : '',
     });
     setShowForm(true);
   };
@@ -102,11 +94,7 @@ const Banners: React.FC = () => {
       title: formData.title,
       subtitle: formData.subtitle || null,
       image_url: formData.image_url,
-      link_url: formData.link_url || null,
       is_active: formData.is_active,
-      sort_order: Number(formData.sort_order),
-      valid_from: formData.valid_from || null,
-      valid_until: formData.valid_until || null,
     };
     if (editingBanner) {
       updateMutation.mutate({ id: editingBanner.id, data });
@@ -207,72 +195,19 @@ const Banners: React.FC = () => {
                 >
                   {formData.image_url ? 'Change Image' : 'Upload Image'}
                 </Button>
-                {!formData.image_url && (
-                  <input
-                    type="text"
-                    value={formData.image_url}
-                    onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
-                    placeholder="Or paste image URL directly"
-                    className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  />
-                )}
               </div>
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Deep Link URL</label>
+          <div className="flex items-center">
             <input
-              type="text"
-              value={formData.link_url}
-              onChange={(e) => setFormData({ ...formData, link_url: e.target.value })}
-              placeholder="e.g. foodies://menu/category/5 (optional)"
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              type="checkbox"
+              id="banner_active"
+              checked={formData.is_active}
+              onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+              className="h-4 w-4 text-blue-600 border-gray-300 rounded"
             />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Sort Order</label>
-              <input
-                type="number"
-                value={formData.sort_order}
-                onChange={(e) => setFormData({ ...formData, sort_order: Number(e.target.value) })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-0.5">Lower numbers appear first</p>
-            </div>
-            <div className="flex items-center pt-6">
-              <input
-                type="checkbox"
-                id="banner_active"
-                checked={formData.is_active}
-                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-              />
-              <label htmlFor="banner_active" className="ml-2 text-sm text-gray-700">Active</label>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Valid From</label>
-              <input
-                type="date"
-                value={formData.valid_from}
-                onChange={(e) => setFormData({ ...formData, valid_from: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Valid Until</label>
-              <input
-                type="date"
-                value={formData.valid_until}
-                onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
+            <label htmlFor="banner_active" className="ml-2 text-sm text-gray-700">Active</label>
           </div>
 
           <div className="flex gap-2 justify-end">
@@ -306,11 +241,6 @@ const Banners: React.FC = () => {
                   subtitle={
                     <>
                       {banner.subtitle && <p className="text-gray-500">{banner.subtitle}</p>}
-                      <p className="text-xs text-gray-400">
-                        Sort: {banner.sort_order}
-                        {banner.valid_from && ` · From: ${banner.valid_from.split('T')[0]}`}
-                        {banner.valid_until && ` · Until: ${banner.valid_until.split('T')[0]}`}
-                      </p>
                     </>
                   }
                   statusLabel={banner.is_active ? 'Active' : 'Inactive'}

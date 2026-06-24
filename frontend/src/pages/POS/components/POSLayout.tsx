@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MdOutlineShoppingCart, MdClose } from 'react-icons/md';
+import POSNotificationStack from './POSNotificationStack';
 
 export type POSLayoutProps = {
   /** Center: search + menu grid */
@@ -33,6 +34,8 @@ const POSLayout: React.FC<POSLayoutProps> = ({
   // App has a sticky navbar (h-16). Keep POS within remaining viewport to avoid double scrollbars.
   return (
     <div className="flex h-[calc(100vh-4rem)] bg-foodies-surfaceMuted dark:bg-slate-900">
+      {/* Order notifications (app/web/kiosk) appear here for the till. */}
+      <POSNotificationStack />
       {/* Desktop: 3-pane (lg and up) */}
       <div className="hidden lg:flex flex-1 min-w-0 w-full h-full">
         {/* Center — menu */}

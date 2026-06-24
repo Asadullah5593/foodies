@@ -1390,6 +1390,9 @@ export class ProcurementService {
                         inventoryItemId: m.inventoryItemId,
                         inventoryBatchId: m.inventoryBatchId,
                         locationId: m.locationId,
+                        // Receipts land in the branch's shared pool; brands are
+                        // allocated later via transfers.
+                        brandId: null,
                         qtyDelta: m.qtyDelta,
                         eventType: 'receive',
                         eventRefType: 'grn',
