@@ -1,8 +1,8 @@
 import React from 'react';
-import Inventory from './Inventory';
+import StockTransfers from './StockTransfers';
 
 const InventoryTransfers: React.FC = () => {
-  return <Inventory initialTab="transfers" showTabs={false} />;
+  return <StockTransfers />;
 };
 
 export default InventoryTransfers;

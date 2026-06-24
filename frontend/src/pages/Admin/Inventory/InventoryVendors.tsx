@@ -1,7 +1,6 @@
 import React from 'react';
-import Inventory from './Inventory';
+import VendorsPage from './VendorsPage';
 
-const InventoryVendors: React.FC = () => <Inventory initialTab="vendors" showTabs={false} />;
+const InventoryVendors: React.FC = () => <VendorsPage />;
 
 export default InventoryVendors;
-

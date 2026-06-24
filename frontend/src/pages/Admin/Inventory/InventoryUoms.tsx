@@ -1,7 +1,6 @@
 import React from 'react';
-import Inventory from './Inventory';
+import UomsPage from './UomsPage';
 
-const InventoryUoms: React.FC = () => <Inventory initialTab="uoms" showTabs={false} />;
+const InventoryUoms: React.FC = () => <UomsPage />;
 
 export default InventoryUoms;
-

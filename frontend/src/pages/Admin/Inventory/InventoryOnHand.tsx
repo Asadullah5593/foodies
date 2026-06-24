@@ -1,7 +1,6 @@
 import React from 'react';
-import Inventory from './Inventory';
+import OnHandInventory from './OnHandInventory';
 
-const InventoryOnHand: React.FC = () => <Inventory initialTab="onhand" showTabs={false} />;
+const InventoryOnHand: React.FC = () => <OnHandInventory />;
 
 export default InventoryOnHand;
-
