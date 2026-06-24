@@ -62,6 +62,12 @@ const BRAND_ADMIN_PERMISSIONS = [
     'shifts:manage',
     'deliveries:view',
     'rider-share:request',
+    // Brand-scoped inventory: see own brand stock across branches, request
+    // transfers in, and approve/dispatch pulls FROM their own brand bucket
+    // (per-bucket authority enforced server-side in the transfer service).
+    'inventory:view:brand',
+    'inventory:transfer:request',
+    'inventory:transfer:approve',
 ];
 
 /** Known brand → account email mapping; falls back to a compacted name. */

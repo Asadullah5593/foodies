@@ -33,6 +33,7 @@ export class RoleAccessGuard implements CanActivate {
                 isRider?: boolean;
                 allowedBranchIds?: number[] | null;
                 allowedBrandIds?: number[] | null;
+                permissions?: string[];
             };
             path?: string;
             url?: string;
@@ -58,6 +59,13 @@ export class RoleAccessGuard implements CanActivate {
             user.id,
             user.tenantId,
         );
+        // Expose the resolved permission set so downstream services can enforce
+        // action-specific permissions (the path guard is coarse, any-of-prefix).
+        const permissionNames = await this.getUserPermissionNames(
+            user.id,
+            user.tenantId,
+        );
+        user.permissions = [...permissionNames];
 
         // Tenant users cannot access tenants module (super admin only)
         if (path.startsWith('/admin/tenants')) {
@@ -88,10 +96,6 @@ export class RoleAccessGuard implements CanActivate {
             throw new ForbiddenException('This route requires a permission');
         }
 
-        const permissionNames = await this.getUserPermissionNames(
-            user.id,
-            user.tenantId,
-        );
         const hasAny = match.permissionNames.some((p) =>
             permissionNames.has(p),
         );
