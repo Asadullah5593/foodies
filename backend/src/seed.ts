@@ -223,6 +223,12 @@ async function seed() {
             action: 'delete',
             description: 'Delete deals',
         },
+        {
+            name: 'notifications:manage',
+            resource: 'notifications',
+            action: 'manage',
+            description: 'Configure which roles receive which notifications',
+        },
     ];
     const existingNames = new Set(
         (await permissionRepo.find({ select: ['name'] })).map((p) => p.name),

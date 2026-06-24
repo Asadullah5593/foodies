@@ -39,6 +39,7 @@ import { CustomersModule } from '../customers/customers.module';
 import { InventoryModule } from '../inventory/inventory.module';
 import { RiderHrmModule } from '../rider-hrm/rider-hrm.module';
 import { PushNotificationsModule } from '../push-notifications/push-notifications.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
     imports: [
@@ -72,6 +73,7 @@ import { PushNotificationsModule } from '../push-notifications/push-notification
         CustomersModule,
         InventoryModule,
         RiderHrmModule,
+        NotificationsModule,
     ],
     controllers: [
         PosMenuController,

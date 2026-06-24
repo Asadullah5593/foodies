@@ -101,6 +101,10 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         permissionNames: [Permissions.CUSTOMERS_MANAGE],
     },
     { prefix: '/admin/roles', permissionNames: [Permissions.ROLES_MANAGE] },
+    {
+        prefix: '/admin/notification-settings',
+        permissionNames: [Permissions.NOTIFICATIONS_MANAGE],
+    },
     { prefix: '/admin/orders', permissionNames: [Permissions.ORDERS_VIEW] },
     {
         prefix: '/admin/riders',
@@ -146,6 +150,27 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
             Permissions.INVENTORY_ADJUST,
             Permissions.INVENTORY_WASTE,
             Permissions.INVENTORY_STOCKTAKE,
+            Permissions.INVENTORY_TRANSFER,
+        ],
+    },
+    {
+        // Brand-admin facing: read own brand stock across branches. Longer,
+        // more specific prefix wins over /admin/inventory above. Brand-lock
+        // (brandId ∈ allowedBrandIds) is enforced in the controller.
+        prefix: '/admin/inventory/brands',
+        permissionNames: [
+            Permissions.INVENTORY_VIEW_BRAND,
+            Permissions.INVENTORY_VIEW,
+        ],
+    },
+    {
+        // Brand-admin facing: request transfers in (destination side) and
+        // approve/dispatch pulls FROM a bucket they control (source side).
+        // Per-bucket authority is enforced in InventoryTransferService.
+        prefix: '/admin/inventory/transfers',
+        permissionNames: [
+            Permissions.INVENTORY_TRANSFER_REQUEST,
+            Permissions.INVENTORY_TRANSFER_APPROVE,
             Permissions.INVENTORY_TRANSFER,
         ],
     },

@@ -48,6 +48,7 @@ import {
 } from './delivery-tier.utils';
 import { resolveRiderBrandScope } from './rider-brand-scope.util';
 import { PushNotificationService } from '../push-notifications/push-notification.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class OrdersService {
@@ -76,7 +77,48 @@ export class OrdersService {
         private riderOpsMetrics: RiderOpsMetricsService,
         private dataSource: DataSource,
         private pushNotificationService: PushNotificationService,
+        private notificationsService: NotificationsService,
     ) {}
+
+    /**
+     * Notify the till/cashier (per role-targeting config) that an online order —
+     * app, web or kiosk — has landed and needs accepting. POS orders are placed by
+     * the till itself and produce no notification. Fire-and-forget.
+     */
+    private async dispatchOnlineOrderNotifications(orderIds: number[]) {
+        if (orderIds.length === 0) return;
+        const orders = await this.orderRepo.find({
+            where: { id: In(orderIds) },
+        });
+        for (const order of orders) {
+            if (order.source === 'pos') continue;
+            void this.notificationsService
+                .dispatch({
+                    tenantId: order.tenantId,
+                    branchId: order.branchId,
+                    brandId: order.brandId ?? null,
+                    type: 'order.placed.online',
+                    title: `New ${order.source === 'kiosk' ? 'kiosk' : 'online'} order #${order.orderNumber}`,
+                    body:
+                        `${order.orderType}` +
+                        (order.customerName ? ` · ${order.customerName}` : '') +
+                        ` · ${Number(order.totalAmount).toFixed(2)}`,
+                    data: {
+                        orderId: order.id,
+                        orderNumber: order.orderNumber,
+                        orderType: order.orderType,
+                        source: order.source,
+                        totalAmount: Number(order.totalAmount),
+                        customerName: order.customerName,
+                    },
+                })
+                .catch((e) =>
+                    this.logger.error(
+                        `Failed to dispatch order notification for order ${order.id}: ${String(e)}`,
+                    ),
+                );
+        }
+    }
 
     private haversineKm(
         lat1: number,
@@ -1755,6 +1797,8 @@ export class OrdersService {
         const orders = await Promise.all(
             createdOrderIds.map((id) => this.findOne(id)),
         );
+        // Notify the till/cashier of incoming online (app/web/kiosk) orders.
+        void this.dispatchOnlineOrderNotifications(createdOrderIds);
         const responseWalletType = mapSourceToWalletType(source);
         const loyalty =
             customerPhoneNormalized != null && responseWalletType != null
@@ -2441,6 +2485,14 @@ export class OrdersService {
             this.pushNotificationService.notifyConsumerOrder(
                 order,
                 'cancelled',
+            );
+        }
+        // Parity with the kitchen accept flow: notify the customer when an order
+        // is accepted (e.g. a till accepting an online order from a notification).
+        if (status === 'accepted' && previousStatus !== 'accepted') {
+            this.pushNotificationService.notifyConsumerOrder(
+                order,
+                'kitchen_accepted',
             );
         }
         return this.findForAdmin(id, tenantId);
