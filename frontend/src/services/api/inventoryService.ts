@@ -156,8 +156,44 @@ export const inventoryService = {
   },
 
   // On hand / ledger
-  getOnHand: async (branchId: number) => {
-    const res = await apiClient.get(`/admin/inventory/branches/${branchId}/on-hand`);
+  getOnHand: async (
+    branchId: number,
+    params?: { brand_id?: number | 'pool'; flagged?: boolean },
+  ) => {
+    const res = await apiClient.get(`/admin/inventory/branches/${branchId}/on-hand`, {
+      params: {
+        brand_id: params?.brand_id,
+        flagged: params?.flagged ? 1 : undefined,
+      },
+    });
+    return res.data ?? [];
+  },
+  // Cross-branch on-hand for one brand bucket ("my brand stock").
+  getBrandOnHand: async (
+    brandId: number,
+  ): Promise<{
+    brandId: number;
+    branches: Array<{ branch_id: number; branch_name: string }>;
+    items: Array<{
+      inventory_item_id: number;
+      item_code: string;
+      item_name: string;
+      base_uom_id: number | null;
+      total_qty: number;
+      by_branch: Record<number, number>;
+    }>;
+  }> => {
+    const res = await apiClient.get(`/admin/inventory/brands/${brandId}/on-hand`);
+    return res.data ?? { brandId, branches: [], items: [] };
+  },
+  // Read-only reference lists reachable by brand admins (under the transfers
+  // prefix) for building a transfer request — items/uoms host writes elsewhere.
+  listTransferReferenceItems: async (): Promise<InventoryItemDto[]> => {
+    const res = await apiClient.get('/admin/inventory/transfers/reference/items');
+    return res.data ?? [];
+  },
+  listTransferReferenceUoms: async (): Promise<UomDto[]> => {
+    const res = await apiClient.get('/admin/inventory/transfers/reference/uoms');
     return res.data ?? [];
   },
   getLedger: async (
@@ -257,6 +293,8 @@ export const inventoryService = {
   createTransferRequest: async (data: {
     source_branch_id: number;
     destination_branch_id: number;
+    source_brand_id?: number | null;
+    destination_brand_id?: number | null;
     notes?: string;
     lines: Array<{
       inventory_item_id: number;
