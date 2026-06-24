@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Tenant } from './tenant.entity';
 import { Branch } from './branch.entity';
+import { Brand } from './brand.entity';
 import { User } from './user.entity';
 import { InventoryTransferRequest } from './inventory-transfer-request.entity';
 import { InventoryTransferReceipt } from './inventory-transfer-receipt.entity';
@@ -28,8 +29,14 @@ export class InventoryTransferOrder {
     @Column()
     sourceBranchId: number;
 
+    @Column({ type: 'int', nullable: true })
+    sourceBrandId: number | null;
+
     @Column()
     destinationBranchId: number;
+
+    @Column({ type: 'int', nullable: true })
+    destinationBrandId: number | null;
 
     @Column({ type: 'varchar', default: 'approved' })
     status: string;
@@ -61,9 +68,17 @@ export class InventoryTransferOrder {
     @JoinColumn({ name: 'source_branch_id' })
     sourceBranch: Branch;
 
+    @ManyToOne(() => Brand, { onDelete: 'SET NULL', nullable: true })
+    @JoinColumn({ name: 'source_brand_id' })
+    sourceBrand: Brand | null;
+
     @ManyToOne(() => Branch, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'destination_branch_id' })
     destinationBranch: Branch;
+
+    @ManyToOne(() => Brand, { onDelete: 'SET NULL', nullable: true })
+    @JoinColumn({ name: 'destination_brand_id' })
+    destinationBrand: Brand | null;
 
     @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
     @JoinColumn({ name: 'dispatched_by' })

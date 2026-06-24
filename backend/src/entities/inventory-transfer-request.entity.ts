@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Tenant } from './tenant.entity';
 import { Branch } from './branch.entity';
+import { Brand } from './brand.entity';
 import { User } from './user.entity';
 import { InventoryTransferRequestLine } from './inventory-transfer-request-line.entity';
 
@@ -24,8 +25,16 @@ export class InventoryTransferRequest {
     @Column()
     sourceBranchId: number;
 
+    // null = the source branch's shared pool; a brand id = move out of that brand's bucket.
+    @Column({ type: 'int', nullable: true })
+    sourceBrandId: number | null;
+
     @Column()
     destinationBranchId: number;
+
+    // null = the destination branch's shared pool; a brand id = move into that brand's bucket.
+    @Column({ type: 'int', nullable: true })
+    destinationBrandId: number | null;
 
     @Column({ type: 'varchar', default: 'submitted' })
     status: string;
@@ -56,9 +65,17 @@ export class InventoryTransferRequest {
     @JoinColumn({ name: 'source_branch_id' })
     sourceBranch: Branch;
 
+    @ManyToOne(() => Brand, { onDelete: 'SET NULL', nullable: true })
+    @JoinColumn({ name: 'source_brand_id' })
+    sourceBrand: Brand | null;
+
     @ManyToOne(() => Branch, { onDelete: 'CASCADE' })
     @JoinColumn({ name: 'destination_branch_id' })
     destinationBranch: Branch;
+
+    @ManyToOne(() => Brand, { onDelete: 'SET NULL', nullable: true })
+    @JoinColumn({ name: 'destination_brand_id' })
+    destinationBrand: Brand | null;
 
     @ManyToOne(() => User, { onDelete: 'SET NULL', nullable: true })
     @JoinColumn({ name: 'approved_by' })

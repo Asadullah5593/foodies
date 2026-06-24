@@ -516,7 +516,7 @@ async function main() {
                 `
                 INSERT INTO inventory_on_hand (tenant_id, branch_id, inventory_item_id, location_id, qty)
                 VALUES ($1,$2,$3,$4,$5)
-                ON CONFLICT (branch_id, inventory_item_id, location_id)
+                ON CONFLICT (branch_id, inventory_item_id, COALESCE(location_id, 0), COALESCE(brand_id, 0))
                 DO UPDATE SET qty = inventory_on_hand.qty + EXCLUDED.qty, updated_at = now()
                 `,
                 [
@@ -531,7 +531,7 @@ async function main() {
                 `
                 INSERT INTO inventory_batch_on_hand (tenant_id, branch_id, inventory_batch_id, location_id, qty)
                 VALUES ($1,$2,$3,$4,$5)
-                ON CONFLICT (branch_id, inventory_batch_id, location_id)
+                ON CONFLICT (branch_id, inventory_batch_id, COALESCE(location_id, 0), COALESCE(brand_id, 0))
                 DO UPDATE SET qty = inventory_batch_on_hand.qty + EXCLUDED.qty, updated_at = now()
                 `,
                 [tenant.id, branch.id, batch.id, line.locationId, qtyDelta],
