@@ -78,6 +78,24 @@ export class InventoryService {
         throw new ForbiddenException('Tenant context required');
     }
 
+    /** Resolve tenant for a brand-scoped read (tenant user → own tenant; super admin → brand's tenant). */
+    async resolveTenantIdForBrand(
+        user: TenantContextUser,
+        brandId: number,
+    ): Promise<number> {
+        if (user.tenantId != null) return user.tenantId;
+        if (user.isSuperAdmin === true) {
+            const rows: Array<{ tenant_id: number }> =
+                await this.dataSource.query(
+                    `SELECT tenant_id FROM brands WHERE id = $1`,
+                    [brandId],
+                );
+            if (!rows.length) throw new NotFoundException('Brand not found');
+            return Number(rows[0].tenant_id);
+        }
+        throw new ForbiddenException('Tenant context required');
+    }
+
     // ---------------- UOMs ----------------
     listUoms(tenantId: number) {
         return this.uomsRepo.find({
@@ -567,11 +585,43 @@ export class InventoryService {
     }
 
     // ---------------- Read models ----------------
-    listOnHand(tenantId: number, branchId: number) {
-        return this.onHandRepo.find({
-            where: { tenantId, branchId },
-            order: { inventoryItemId: 'ASC' },
-        });
+    listOnHand(
+        tenantId: number,
+        branchId: number,
+        opts?: {
+            // undefined = all brands + pool; null = pool only; number = that brand.
+            brandId?: number | null;
+            flaggedOnly?: boolean;
+            // When set, a brand-locked user only sees these brand buckets.
+            allowedBrandIds?: number[] | null;
+        },
+    ) {
+        const qb = this.onHandRepo
+            .createQueryBuilder('oh')
+            .where('oh.tenantId = :tenantId', { tenantId })
+            .andWhere('oh.branchId = :branchId', { branchId });
+
+        if (opts && opts.brandId !== undefined) {
+            if (opts.brandId === null) {
+                qb.andWhere('oh.brandId IS NULL');
+            } else {
+                qb.andWhere('oh.brandId = :brandId', { brandId: opts.brandId });
+            }
+        }
+        if (opts?.allowedBrandIds && opts.allowedBrandIds.length > 0) {
+            qb.andWhere('oh.brandId IN (:...allowedBrandIds)', {
+                allowedBrandIds: opts.allowedBrandIds,
+            });
+        }
+        if (opts?.flaggedOnly) {
+            qb.andWhere('oh.qty < 0').andWhere(
+                'oh.negativeFlaggedAt IS NOT NULL',
+            );
+        }
+        return qb
+            .orderBy('oh.inventoryItemId', 'ASC')
+            .addOrderBy('oh.brandId', 'ASC')
+            .getMany();
     }
 
     async listLedger(
@@ -689,6 +739,104 @@ export class InventoryService {
             params,
         );
         return { brandId: args.brandId, from: args.from, to: args.to, rows };
+    }
+
+    /**
+     * Cross-branch on-hand for a single brand bucket — the "see my brand's stock
+     * across my branches" view for brand admins. Branches are the brand's
+     * branch_brands links, intersected with the caller's allowedBranchIds (null =
+     * all). Returns the brand bucket only (pool is intentionally excluded, matching
+     * brand-lock). Result is pivoted to one row per item with a per-branch qty map.
+     */
+    async getBrandOnHand(args: {
+        tenantId: number;
+        brandId: number;
+        allowedBranchIds?: number[] | null;
+    }) {
+        const links = await this.branchBrandsRepo.find({
+            where: { brandId: args.brandId },
+        });
+        let branchIds = [...new Set(links.map((l) => l.branchId))];
+        if (Array.isArray(args.allowedBranchIds)) {
+            const allowed = new Set(args.allowedBranchIds);
+            branchIds = branchIds.filter((id) => allowed.has(id));
+        }
+        if (branchIds.length === 0) {
+            return { brandId: args.brandId, branches: [], items: [] };
+        }
+
+        const branchRows: Array<{ id: number; name: string }> =
+            await this.dataSource.query(
+                `SELECT id, name FROM branches WHERE id = ANY($1) ORDER BY name ASC`,
+                [branchIds],
+            );
+
+        const rows: Array<{
+            inventory_item_id: number | string;
+            item_code: string;
+            item_name: string;
+            base_uom_id: number | string | null;
+            branch_id: number | string;
+            qty: number | string;
+        }> = await this.dataSource.query(
+            `
+            SELECT oh.inventory_item_id,
+                   i.code AS item_code,
+                   i.name AS item_name,
+                   i.base_uom_id,
+                   oh.branch_id,
+                   SUM(oh.qty)::numeric AS qty
+            FROM inventory_on_hand oh
+            INNER JOIN inventory_items i ON i.id = oh.inventory_item_id
+            WHERE oh.tenant_id = $1
+              AND oh.branch_id = ANY($2)
+              AND oh.brand_id = $3
+            GROUP BY oh.inventory_item_id, i.code, i.name, i.base_uom_id, oh.branch_id
+            HAVING SUM(oh.qty) <> 0
+            ORDER BY i.name ASC
+            `,
+            [args.tenantId, branchIds, args.brandId],
+        );
+
+        const itemsMap = new Map<
+            number,
+            {
+                inventory_item_id: number;
+                item_code: string;
+                item_name: string;
+                base_uom_id: number | null;
+                total_qty: number;
+                by_branch: Record<number, number>;
+            }
+        >();
+        for (const r of rows) {
+            const itemId = Number(r.inventory_item_id);
+            const qty = Number(r.qty);
+            let entry = itemsMap.get(itemId);
+            if (!entry) {
+                entry = {
+                    inventory_item_id: itemId,
+                    item_code: r.item_code,
+                    item_name: r.item_name,
+                    base_uom_id:
+                        r.base_uom_id == null ? null : Number(r.base_uom_id),
+                    total_qty: 0,
+                    by_branch: {},
+                };
+                itemsMap.set(itemId, entry);
+            }
+            entry.by_branch[Number(r.branch_id)] = qty;
+            entry.total_qty += qty;
+        }
+
+        return {
+            brandId: args.brandId,
+            branches: branchRows.map((b) => ({
+                branch_id: b.id,
+                branch_name: b.name,
+            })),
+            items: [...itemsMap.values()],
+        };
     }
 
     // ---------------- Posting helpers (ledger-first) ----------------
@@ -832,6 +980,7 @@ export class InventoryService {
             inventoryItemId: number;
             inventoryBatchId?: number | null;
             locationId?: number | null;
+            brandId?: number | null;
             qtyDelta: number;
             eventType: string;
             eventRefType?: string | null;
@@ -856,6 +1005,7 @@ export class InventoryService {
                     .values({
                         tenantId,
                         branchId,
+                        brandId: m.brandId ?? null,
                         inventoryItemId: m.inventoryItemId,
                         inventoryBatchId: m.inventoryBatchId ?? null,
                         locationId: m.locationId ?? null,
@@ -877,12 +1027,12 @@ export class InventoryService {
                 if (!res.raw?.[0]) continue;
                 inserted.push(res.raw[0]);
 
-                // Update item on-hand (branch + item + location)
+                // Update item on-hand (branch + brand + item + location)
                 await manager.query(
                     `
-                    INSERT INTO inventory_on_hand (tenant_id, branch_id, inventory_item_id, location_id, qty)
-                    VALUES ($1, $2, $3, $4, $5)
-                    ON CONFLICT (branch_id, inventory_item_id, location_id)
+                    INSERT INTO inventory_on_hand (tenant_id, branch_id, inventory_item_id, location_id, brand_id, qty)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (branch_id, inventory_item_id, COALESCE(location_id, 0), COALESCE(brand_id, 0))
                     DO UPDATE SET qty = inventory_on_hand.qty + EXCLUDED.qty, updated_at = now()
                     `,
                     [
@@ -890,6 +1040,7 @@ export class InventoryService {
                         branchId,
                         m.inventoryItemId,
                         m.locationId ?? null,
+                        m.brandId ?? null,
                         m.qtyDelta,
                     ],
                 );
@@ -898,9 +1049,9 @@ export class InventoryService {
                 if (m.inventoryBatchId != null) {
                     await manager.query(
                         `
-                        INSERT INTO inventory_batch_on_hand (tenant_id, branch_id, inventory_batch_id, location_id, qty)
-                        VALUES ($1, $2, $3, $4, $5)
-                        ON CONFLICT (branch_id, inventory_batch_id, location_id)
+                        INSERT INTO inventory_batch_on_hand (tenant_id, branch_id, inventory_batch_id, location_id, brand_id, qty)
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                        ON CONFLICT (branch_id, inventory_batch_id, COALESCE(location_id, 0), COALESCE(brand_id, 0))
                         DO UPDATE SET qty = inventory_batch_on_hand.qty + EXCLUDED.qty, updated_at = now()
                         `,
                         [
@@ -908,6 +1059,7 @@ export class InventoryService {
                             branchId,
                             m.inventoryBatchId,
                             m.locationId ?? null,
+                            m.brandId ?? null,
                             m.qtyDelta,
                         ],
                     );

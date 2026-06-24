@@ -1,6 +1,7 @@
 import {
     Body,
     Controller,
+    ForbiddenException,
     Get,
     Param,
     Post,
@@ -12,25 +13,86 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { InventoryService } from './inventory.service';
+import { InventoryAlertsJob } from './inventory-alerts.job';
 
 @ApiTags('Admin – Inventory')
 @ApiBearerAuth()
 @Controller('admin/inventory')
 @UseGuards(JwtAuthGuard, RoleAccessGuard)
 export class InventoryAdminController {
-    constructor(private inventoryService: InventoryService) {}
+    constructor(
+        private inventoryService: InventoryService,
+        private inventoryAlertsJob: InventoryAlertsJob,
+    ) {}
+
+    /** Trigger the low-stock + near-expiry notification sweeps immediately. */
+    @Post('alerts/run')
+    runAlertSweeps() {
+        return this.inventoryAlertsJob.runNow();
+    }
+
+    /** Cross-branch on-hand for one brand bucket — brand admin "my brand stock". */
+    @Get('brands/:brandId/on-hand')
+    async brandOnHand(
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            isSuperAdmin?: boolean;
+            allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
+        },
+        @Param('brandId') brandId: string,
+    ) {
+        const brandIdNum = +brandId;
+        // Brand-lock: a brand-locked caller may only read their own brand(s).
+        if (
+            Array.isArray(user.allowedBrandIds) &&
+            user.allowedBrandIds.length > 0 &&
+            !user.allowedBrandIds.includes(brandIdNum)
+        ) {
+            throw new ForbiddenException(
+                'You are not allowed to view this brand',
+            );
+        }
+        const tenantId = await this.inventoryService.resolveTenantIdForBrand(
+            user,
+            brandIdNum,
+        );
+        return this.inventoryService.getBrandOnHand({
+            tenantId,
+            brandId: brandIdNum,
+            allowedBranchIds: user.allowedBranchIds ?? null,
+        });
+    }
 
     @Get('branches/:branchId/on-hand')
     async onHand(
         @CurrentUser()
-        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        user: {
+            id: number;
+            tenantId: number | null;
+            isSuperAdmin?: boolean;
+            allowedBrandIds?: number[] | null;
+        },
         @Param('branchId') branchId: string,
+        @Query('brand_id') brandId?: string,
+        @Query('flagged') flagged?: string,
     ) {
         const tenantId = await this.inventoryService.resolveTenantId(
             user,
             +branchId,
         );
-        return this.inventoryService.listOnHand(tenantId, +branchId);
+        return this.inventoryService.listOnHand(tenantId, +branchId, {
+            brandId:
+                brandId === undefined || brandId === ''
+                    ? undefined
+                    : brandId === 'null' || brandId === 'pool'
+                      ? null
+                      : +brandId,
+            flaggedOnly: flagged === '1' || flagged === 'true',
+            allowedBrandIds: user.allowedBrandIds ?? null,
+        });
     }
 
     @Get('branches/:branchId/ledger')
@@ -66,12 +128,27 @@ export class InventoryAdminController {
     @Get('brands/:brandId/ledger-summary')
     async brandLedgerSummary(
         @CurrentUser()
-        user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
+        user: {
+            id: number;
+            tenantId: number | null;
+            isSuperAdmin?: boolean;
+            allowedBrandIds?: number[] | null;
+        },
         @Param('brandId') brandId: string,
         @Query('from') from?: string,
         @Query('to') to?: string,
         @Query('branch_id') branchIdForSuperAdmin?: string,
     ) {
+        // Brand-lock: a brand-locked caller may only read their own brand(s).
+        if (
+            Array.isArray(user.allowedBrandIds) &&
+            user.allowedBrandIds.length > 0 &&
+            !user.allowedBrandIds.includes(+brandId)
+        ) {
+            throw new ForbiddenException(
+                'You are not allowed to view this brand',
+            );
+        }
         const tenantId =
             user.tenantId != null
                 ? user.tenantId
