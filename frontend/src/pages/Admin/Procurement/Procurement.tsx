@@ -2,12 +2,18 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
-import Card from '../../../components/Card';
 import Loader from '../../../components/Loader';
 import Button from '../../../components/Button';
 import Modal from '../../../components/Modal';
 import SearchableSelect from '../../../components/SearchableSelect';
-import ClearFiltersButton from '../../../components/ClearFiltersButton';
+import {
+  LuPlus,
+  LuSearch,
+  LuCheck,
+  LuClipboardList,
+  LuFileText,
+  LuPackageCheck,
+} from 'react-icons/lu';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { procurementService } from '../../../services/api/procurementService';
@@ -51,9 +57,209 @@ const readApiError = (error: any, fallback: string) => {
   return error?.message ?? fallback;
 };
 
+const PAGE_SIZE = 10;
+const card = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl';
+const field =
+  'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400';
+
+type StatusMeta = { label: string; color: string; bg: string; dot: string; accent: string };
+const FALLBACK_STATUS = (raw?: string): StatusMeta => ({
+  label: prettyStatus(raw),
+  color: '#475569',
+  bg: '#F1F5F9',
+  dot: '#94A3B8',
+  accent: 'transparent',
+});
+
+const PR_STATUS: Record<string, StatusMeta> = {
+  draft: { label: 'Draft', color: '#B45309', bg: '#FCF1DC', dot: '#D97706', accent: '#D97706' },
+  submitted: { label: 'Submitted', color: '#1D4ED8', bg: '#E6EEFE', dot: '#2563EB', accent: '#2563EB' },
+  approved: { label: 'Approved', color: '#0F8A4F', bg: '#E6F6EE', dot: '#16A34A', accent: 'transparent' },
+  rejected: { label: 'Rejected', color: '#B91C1C', bg: '#FCE9E9', dot: '#DC2626', accent: '#DC2626' },
+  cancelled: { label: 'Cancelled', color: '#64748B', bg: '#F1F5F9', dot: '#94A3B8', accent: 'transparent' },
+};
+const PO_STATUS: Record<string, StatusMeta> = {
+  created: { label: 'Created', color: '#B45309', bg: '#FCF1DC', dot: '#D97706', accent: '#D97706' },
+  sent: { label: 'Sent', color: '#1D4ED8', bg: '#E6EEFE', dot: '#2563EB', accent: '#2563EB' },
+  partially_received: { label: 'Partially received', color: '#C2410C', bg: '#FDEBDD', dot: '#EA580C', accent: '#EA580C' },
+  closed: { label: 'Closed', color: '#0F8A4F', bg: '#E6F6EE', dot: '#16A34A', accent: 'transparent' },
+  cancelled: { label: 'Cancelled', color: '#64748B', bg: '#F1F5F9', dot: '#94A3B8', accent: 'transparent' },
+};
+const GRN_STATUS: Record<string, StatusMeta> = {
+  draft: { label: 'Draft', color: '#B45309', bg: '#FCF1DC', dot: '#D97706', accent: '#D97706' },
+  posted: { label: 'Posted', color: '#0F8A4F', bg: '#E6F6EE', dot: '#16A34A', accent: 'transparent' },
+  reversed: { label: 'Reversed', color: '#B91C1C', bg: '#FCE9E9', dot: '#DC2626', accent: '#DC2626' },
+};
+const metaFor = (map: Record<string, StatusMeta>, status?: string): StatusMeta =>
+  map[String(status ?? '').toLowerCase()] ?? FALLBACK_STATUS(status);
+
+const StatusPill: React.FC<{ meta: StatusMeta }> = ({ meta }) => (
+  <span
+    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-semibold"
+    style={{ color: meta.color, background: meta.bg }}
+  >
+    <span className="w-1.5 h-1.5 rounded-full flex-none" style={{ background: meta.dot }} />
+    {meta.label}
+  </span>
+);
+
+const FilterTabs: React.FC<{
+  tabs: { key: string; label: string; count: number }[];
+  value: string;
+  onChange: (k: string) => void;
+}> = ({ tabs, value, onChange }) => (
+  <div className="flex gap-1.5 flex-wrap">
+    {tabs.map((t) => {
+      const on = value === t.key;
+      return (
+        <button
+          key={t.key}
+          onClick={() => onChange(t.key)}
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold border ${
+            on
+              ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100'
+              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
+          }`}
+        >
+          {t.label}
+          <span
+            className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${
+              on
+                ? 'bg-white/20 text-white dark:bg-slate-900/15 dark:text-slate-900'
+                : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300'
+            }`}
+          >
+            {t.count}
+          </span>
+        </button>
+      );
+    })}
+  </div>
+);
+
+const FLOW_STEPS = [
+  { n: 1 as const, label: 'Requisition', Icon: LuClipboardList },
+  { n: 2 as const, label: 'Purchase order', Icon: LuFileText },
+  { n: 3 as const, label: 'Goods receipt', Icon: LuPackageCheck },
+];
+const StepFlow: React.FC<{ current: 1 | 2 | 3 }> = ({ current }) => (
+  <div className={`${card} flex items-center px-5 py-4 overflow-x-auto`}>
+    {FLOW_STEPS.map((s, i) => {
+      const done = s.n < current;
+      const active = s.n === current;
+      const iconColor = done ? '#16A34A' : active ? '#DC2A2A' : '#B6BCC6';
+      const iconBg = done ? '#E6F6EE' : active ? '#FCEEEE' : '#F1F5F9';
+      return (
+        <React.Fragment key={s.n}>
+          <div className="flex items-center gap-3 flex-none">
+            <div
+              className="w-9 h-9 rounded-lg flex items-center justify-center flex-none"
+              style={{ color: iconColor, background: iconBg }}
+            >
+              {done ? <LuCheck className="w-[18px] h-[18px]" /> : <s.Icon className="w-[18px] h-[18px]" />}
+            </div>
+            <div>
+              <div
+                className="text-[11px] font-semibold uppercase tracking-wide"
+                style={{ color: done ? '#16A34A' : active ? '#DC2A2A' : '#B6BCC6' }}
+              >
+                Step {s.n}
+                {done ? ' · done' : ''}
+              </div>
+              <div
+                className={`text-sm font-semibold ${
+                  active || done ? 'text-slate-900 dark:text-slate-100' : 'text-slate-400'
+                }`}
+              >
+                {s.label}
+              </div>
+            </div>
+          </div>
+          {i < FLOW_STEPS.length - 1 && (
+            <div
+              className="flex-1 h-0.5 min-w-[24px] mx-4"
+              style={{ background: s.n < current ? '#16A34A' : '#E5E7EB' }}
+            />
+          )}
+        </React.Fragment>
+      );
+    })}
+  </div>
+);
+
+const PageHeader: React.FC<{ crumb: string; title: string; desc: string; action?: React.ReactNode }> = ({
+  crumb,
+  title,
+  desc,
+  action,
+}) => (
+  <div className="flex flex-wrap items-start justify-between gap-4">
+    <div>
+      <div className="flex items-center gap-2 text-[12.5px] text-slate-400 font-medium mb-1.5">
+        <span>Procurement</span>
+        <span className="text-slate-300">/</span>
+        <span className="text-slate-600 dark:text-slate-300 font-semibold">{crumb}</span>
+      </div>
+      <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{title}</h1>
+      <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5 max-w-2xl leading-relaxed">{desc}</p>
+    </div>
+    {action}
+  </div>
+);
+
+const KpiCard: React.FC<{ label: string; value: React.ReactNode; hint?: string; dot?: string; valueColor?: string; accent?: string }> = ({
+  label,
+  value,
+  hint,
+  dot,
+  valueColor,
+  accent,
+}) => (
+  <div className={`${card} p-4`} style={accent ? { borderColor: accent } : undefined}>
+    <div className="flex items-center gap-1.5 text-[13px] font-semibold text-slate-500 dark:text-slate-400">
+      {dot && <span className="w-2 h-2 rounded-full flex-none" style={{ background: dot }} />}
+      {label}
+    </div>
+    <div className="text-2xl font-bold mt-2 text-slate-900 dark:text-slate-100" style={valueColor ? { color: valueColor } : undefined}>
+      {value}
+    </div>
+    {hint && <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{hint}</div>}
+  </div>
+);
+
+const Pagination: React.FC<{ shown: number; total: number; page: number; totalPages: number; onPage: (p: number) => void }> = ({
+  shown,
+  total,
+  page,
+  totalPages,
+  onPage,
+}) => (
+  <div className="flex items-center justify-between px-4 py-3.5 text-[13px] text-slate-500 flex-wrap gap-3">
+    <span>
+      Showing <strong className="text-slate-700 dark:text-slate-200">{shown}</strong> of {total}
+    </span>
+    <div className="flex gap-1.5">
+      <button
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+        className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700"
+      >
+        Prev
+      </button>
+      <span className="px-3.5 py-1.5 rounded-lg bg-red-600 text-white font-semibold">{page}</span>
+      <button
+        disabled={page >= totalPages}
+        onClick={() => onPage(page + 1)}
+        className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700"
+      >
+        Next
+      </button>
+    </div>
+  </div>
+);
+
 const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean }> = ({
   initialTab = 'prs',
-  showTabs = true,
 }) => {
   const { user } = useAuth();
   const queryClient = useQueryClient();
@@ -91,6 +297,9 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
   const [prSearchText, setPrSearchText] = useState('');
   const [confirmPostGrnId, setConfirmPostGrnId] = useState<number | null>(null);
   const [confirmReverseGrnId, setConfirmReverseGrnId] = useState<number | null>(null);
+  const [prPage, setPrPage] = useState(1);
+  const [poPage, setPoPage] = useState(1);
+  const [grnPage, setGrnPage] = useState(1);
 
   const [selectedPR, setSelectedPR] = useState<any | null>(null);
   const [selectedPRForStatus, setSelectedPRForStatus] = useState<any | null>(null);
@@ -210,10 +419,9 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
   });
   const grnIdFromUrl = searchParams.get('grn_id');
   const grnsQ = useQuery({
-    queryKey: ['procurement-grns', grnFilterStatus, grnFilterFrom, grnFilterTo],
+    queryKey: ['procurement-grns', grnFilterFrom, grnFilterTo],
     queryFn: () =>
       procurementService.listGRNsFiltered({
-        status: grnFilterStatus || undefined,
         from: grnFilterFrom || undefined,
         to: grnFilterTo || undefined,
       }),
@@ -452,16 +660,6 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
     return m;
   }, [uomsQ.data]);
 
-  const grnStatusFilterOptions = useMemo(
-    () => [
-      { value: '', label: 'All' },
-      { value: 'draft', label: 'Draft' },
-      { value: 'posted', label: 'Posted' },
-      { value: 'reversed', label: 'Reversed' },
-    ],
-    [],
-  );
-
   const grnBranchFilterOptions = useMemo(
     () => [
       { value: '', label: 'All branches' },
@@ -604,6 +802,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
 
   const displayedGrns = useMemo(() => {
     let rows = [...(grnsQ.data ?? [])];
+    if (grnFilterStatus) rows = rows.filter((g: any) => String(g.status) === grnFilterStatus);
     const bid = Number(grnFilterBranch);
     if (Number.isInteger(bid) && bid > 0) {
       rows = rows.filter((g: any) => Number(g.branchId) === bid);
@@ -620,33 +819,17 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
       });
     }
     return rows;
-  }, [grnsQ.data, grnFilterBranch, grnSearchText, poById]);
+  }, [grnsQ.data, grnFilterStatus, grnFilterBranch, grnSearchText, poById]);
 
   const branchFilterOptions = grnBranchFilterOptions;
 
-  const poStatusFilterOptions = useMemo(() => {
-    const set = new Set<string>(
-      (posQ.data ?? []).map((p: any) => String(p.status ?? '')).filter(Boolean),
-    );
-    return [
-      { value: '', label: 'All statuses' },
-      ...Array.from(set).map((s) => ({ value: s, label: prettyStatus(s) })),
-    ];
-  }, [posQ.data]);
-
-  const prStatusFilterOptions = useMemo(() => {
-    const set = new Set<string>(
-      (prsQ.data ?? []).map((p: any) => String(p.status ?? '')).filter(Boolean),
-    );
-    return [
-      { value: '', label: 'All statuses' },
-      ...Array.from(set).map((s) => ({ value: s, label: prettyStatus(s) })),
-    ];
-  }, [prsQ.data]);
-
   const displayedPos = useMemo(() => {
     let rows = [...(posQ.data ?? [])];
-    if (poFilterStatus) rows = rows.filter((p: any) => String(p.status) === poFilterStatus);
+    if (poFilterStatus === 'open') {
+      rows = rows.filter((p: any) => ['created', 'sent', 'partially_received'].includes(String(p.status)));
+    } else if (poFilterStatus) {
+      rows = rows.filter((p: any) => String(p.status) === poFilterStatus);
+    }
     const bid = Number(poFilterBranch);
     if (Number.isInteger(bid) && bid > 0) {
       rows = rows.filter((p: any) => Number(p.buyerBranchId) === bid);
@@ -1106,368 +1289,330 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
   };
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-800 dark:text-slate-100">Procurement</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          Request stock, track approved purchase orders, and receive deliveries into inventory.
-        </p>
-      </div>
-
-      <Card>
-        <div className="space-y-2 text-sm text-slate-700 dark:text-slate-200">
-          <div className="font-semibold text-slate-800 dark:text-slate-100">How branch managers should use this</div>
-          <ol className="list-decimal pl-5 space-y-1 text-slate-600 dark:text-slate-300">
-            <li>Create and submit a purchase requisition from your branch.</li>
-            <li>Once approved, watch the purchase order status in Purchase orders.</li>
-            <li>Open <strong>Receive delivery</strong>, pick the PO, enter what arrived, then save and post.</li>
-          </ol>
-        </div>
-      </Card>
-
-      {showTabs && (
-        <div className="flex flex-wrap gap-2">
-          {[
-            { k: 'prs', label: 'Purchase requisitions' },
-            { k: 'grns', label: 'Goods receipt notes' },
-            ...(canAccessPOModule
-              ? [{ k: 'pos', label: 'Purchase orders' } as const]
-              : []),
-          ].map((t) => (
-            <button
-              key={t.k}
-              onClick={() => setTab(t.k as ProcurementTabKey)}
-              className={`px-3 py-2 rounded-lg text-sm font-medium border ${
-                tab === (t.k as ProcurementTabKey)
-                  ? 'bg-red-600 text-white border-red-600'
-                  : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {tab === 'prs' && (
-        <Card>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Purchase requisitions</h2>
-            <Button onClick={openCreatePRModal}>Create requisition</Button>
-          </div>
-
-          <div className="flex flex-wrap items-end gap-3 mb-4 text-sm">
-            <label className="min-w-[140px]">
-              <div className="text-xs font-medium text-slate-600 mb-1">Status</div>
-              <SearchableSelect value={prFilterStatus} onChange={setPrFilterStatus} options={prStatusFilterOptions} placeholder="All statuses" searchPlaceholder="Search status…" minWidth="w-full" className="w-full" />
-            </label>
-            <label className="min-w-[160px]">
-              <div className="text-xs font-medium text-slate-600 mb-1">Requesting branch</div>
-              <SearchableSelect value={prFilterBranch} onChange={setPrFilterBranch} options={branchFilterOptions} placeholder="All branches" searchPlaceholder="Search branches…" minWidth="w-full" className="w-full" />
-            </label>
-            <label className="min-w-[200px] flex-1">
-              <div className="text-xs font-medium text-slate-600 mb-1">Search PR / vendor / branch</div>
-              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Type to filter…" value={prSearchText} onChange={(e) => setPrSearchText(e.target.value)} />
-            </label>
-            <ClearFiltersButton onClick={() => { setPrFilterStatus(''); setPrFilterBranch(''); setPrSearchText(''); }} />
-          </div>
-
-          {prsQ.isLoading ? (
-            <Loader />
-          ) : (
-            <div className="overflow-auto">
-              <table className="min-w-full text-sm">
-                <thead className="text-left text-slate-600 dark:text-slate-300">
-                  <tr>
-                    <th className="py-2 pr-4">#</th>
-                    <th className="py-2 pr-4">PR Number</th>
-                    <th className="py-2 pr-4">Requesting branch</th>
-                    <th className="py-2 pr-4">Requested from</th>
-                    <th className="py-2 pr-4">Created by</th>
-                    <th className="py-2 pr-4">Items</th>
-                    <th className="py-2 pr-4">Qty total</th>
-                    <th className="py-2 pr-4">Request date</th>
-                    <th className="py-2 pr-4">Approve date</th>
-                    <th className="py-2 pr-4">Notes</th>
-                    <th className="py-2 pr-4">Status</th>
-                    <th className="py-2 pr-4">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="text-slate-700 dark:text-slate-200">
-                  {displayedPrs.length === 0 ? (
-                    <tr>
-                      <td colSpan={12} className="py-6 text-center text-slate-500">
-                        No purchase requisitions match your filters.
-                      </td>
-                    </tr>
-                  ) : displayedPrs.map((pr: any, idx: number) => (
-                    <tr key={pr.id} className="border-t border-slate-100 dark:border-slate-700">
-                      <td className="py-2 pr-4">{idx + 1}</td>
-                      <td className="py-2 pr-4 font-medium">{pr.prNumber ?? `PR-${pr.id}`}</td>
-                      <td className="py-2 pr-4">{branchById.get(Number(pr.requestingBranchId))?.name ?? '—'}</td>
-                      <td className="py-2 pr-4">{vendorById.get(Number(pr.requestedFromVendorId))?.name ?? '—'}</td>
-                      <td className="py-2 pr-4">{pr.creator?.name ?? (pr.createdBy != null ? `User #${pr.createdBy}` : '—')}</td>
-                      <td className="py-2 pr-4">{(pr.lines ?? []).length}</td>
-                      <td className="py-2 pr-4">
-                        {(pr.lines ?? []).reduce((sum: number, l: any) => {
-                          const qty = Number(l.requestedQty ?? l.requested_qty ?? 0);
-                          return sum + (Number.isFinite(qty) ? qty : 0);
-                        }, 0)}
-                      </td>
-                      <td className="py-2 pr-4">{prettyDate(pr.createdAt)}</td>
-                      <td className="py-2 pr-4">{prettyDate(pr.approvedAt)}</td>
-                      <td className="py-2 pr-4 max-w-[200px] truncate" title={pr.notes ?? ''}>
-                        {pr.notes?.trim() ? pr.notes : '—'}
-                      </td>
-                      <td className="py-2 pr-4">
-                        <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${statusClass(pr.status)}`}>
-                          <button
-                            type="button"
-                            className="cursor-pointer"
-                            onClick={() => setSelectedPRForStatus(pr)}
-                          >
-                            {prettyStatus(pr.status)}
-                          </button>
-                        </span>
-                      </td>
-                      <td className="py-2 pr-4">
-                        <div className="flex flex-wrap gap-1">
-                        <Button size="small" variant="secondary" onClick={() => setSelectedPR(pr)}>View</Button>
-                        {canEditPRRow(pr) && (
-                          <Button
-                            size="small"
-                            variant="secondary"
-                            onClick={() => openEditPRModal(pr)}
-                          >
-                            Edit
-                          </Button>
-                        )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+    <div className="space-y-5">
+      {tab === 'prs' && (() => {
+        const all = (prsQ.data ?? []) as any[];
+        const kTotal = all.length;
+        const kApproved = all.filter((p) => String(p.status) === 'approved').length;
+        const kDrafts = all.filter((p) => String(p.status) === 'draft').length;
+        const kQty = all.reduce(
+          (s, p) => s + (p.lines ?? []).reduce((a: number, l: any) => a + (Number(l.requestedQty ?? l.requested_qty ?? 0) || 0), 0),
+          0,
+        );
+        const statusTabs = [
+          { key: '', label: 'All', count: kTotal },
+          { key: 'approved', label: 'Approved', count: kApproved },
+          { key: 'draft', label: 'Drafts', count: kDrafts },
+        ];
+        const totalRows = displayedPrs.length;
+        const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+        const safePage = Math.min(prPage, totalPages);
+        const pageRows = displayedPrs.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+        const gridCols = '44px minmax(160px,1.2fr) 150px 140px 64px 80px 150px minmax(120px,1fr) 130px 130px';
+        return (
+          <>
+            <PageHeader
+              crumb="Purchase requisitions"
+              title="Purchase Requisitions"
+              desc="Request stock from a vendor. Once approved, a requisition becomes a purchase order."
+              action={
+                <button
+                  onClick={openCreatePRModal}
+                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm"
+                >
+                  <LuPlus className="w-4 h-4" /> Create requisition
+                </button>
+              }
+            />
+            <StepFlow current={1} />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <KpiCard label="Total requisitions" value={kTotal} hint="All branches" />
+              <KpiCard label="Approved" value={kApproved} hint="Ready for PO" dot="#16A34A" />
+              <KpiCard label="Drafts" value={kDrafts} hint="Not yet submitted" dot="#D97706" valueColor="#B45309" accent="#F2E2C4" />
+              <KpiCard label="Qty requested" value={Number(kQty.toFixed(2))} hint="Units across all PRs" />
             </div>
-          )}
-        </Card>
-      )}
 
-      {tab === 'pos' && canAccessPOModule && (
-        <Card>
-          <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Purchase orders</h2>
-          <div className="flex flex-wrap items-end gap-3 mb-4 text-sm">
-            <label className="min-w-[140px]">
-              <div className="text-xs font-medium text-slate-600 mb-1">Status</div>
-              <SearchableSelect value={poFilterStatus} onChange={setPoFilterStatus} options={poStatusFilterOptions} placeholder="All statuses" searchPlaceholder="Search status…" minWidth="w-full" className="w-full" />
-            </label>
-            <label className="min-w-[160px]">
-              <div className="text-xs font-medium text-slate-600 mb-1">Buyer branch</div>
-              <SearchableSelect value={poFilterBranch} onChange={setPoFilterBranch} options={branchFilterOptions} placeholder="All branches" searchPlaceholder="Search branches…" minWidth="w-full" className="w-full" />
-            </label>
-            <label className="min-w-[200px] flex-1">
-              <div className="text-xs font-medium text-slate-600 mb-1">Search PO / PR / vendor</div>
-              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Type to filter…" value={poSearchText} onChange={(e) => setPoSearchText(e.target.value)} />
-            </label>
-            <ClearFiltersButton onClick={() => { setPoFilterStatus(''); setPoFilterBranch(''); setPoSearchText(''); }} />
-          </div>
-          {posQ.isLoading ? (
-            <Loader />
-          ) : (
-            <div className="overflow-auto">
-              <table className="min-w-full text-sm">
-                <thead className="text-left text-slate-600 dark:text-slate-300">
-                  <tr>
-                    <th className="py-2 pr-4">PO Number</th>
-                    <th className="py-2 pr-4">PR Reference</th>
-                    <th className="py-2 pr-4">Buyer branch</th>
-                    <th className="py-2 pr-4">Vendor</th>
-                    <th className="py-2 pr-4">Status</th>
-                    <th className="py-2 pr-4">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="text-slate-700 dark:text-slate-200">
-                  {displayedPos.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="py-6 text-center text-slate-500">
-                        No purchase orders match your filters.
-                      </td>
-                    </tr>
-                  ) : displayedPos.map((po: any) => (
-                    <tr key={po.id} className="border-t border-slate-100 dark:border-slate-700">
-                      <td className="py-2 pr-4 font-medium">{po.poNumber}</td>
-                      <td className="py-2 pr-4">{po.purchaseRequisition?.prNumber ?? '—'}</td>
-                      <td className="py-2 pr-4">{branchById.get(Number(po.buyerBranchId))?.name ?? '—'}</td>
-                      <td className="py-2 pr-4">{vendorById.get(Number(po.vendorId))?.name ?? '—'}</td>
-                      <td className="py-2 pr-4">
-                        <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${statusClass(po.status)}`}>
-                          {po.status}
-                        </span>
-                      </td>
-                      <td className="py-2 pr-4 flex gap-2">
-                        <Button variant="secondary" onClick={() => setSelectedPO(po)}>View</Button>
-                        <Button
-                          variant="secondary"
-                          disabled={po.status !== 'created'}
-                          onClick={() => openEditPOModal(po)}
-                        >
-                          Edit
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
-      )}
-
-      {tab === 'grns' && (
-        <div className="space-y-4">
-          <Card>
-            <div className="text-sm text-slate-700 dark:text-slate-200 space-y-2 mb-4">
-              <div className="font-semibold text-slate-800 dark:text-slate-100">Receiving in 3 steps</div>
-              <ol className="list-decimal pl-5 text-slate-600 dark:text-slate-300 space-y-1">
-                <li><strong>Start</strong> — pick an open PO; we open a draft with every line from that order.</li>
-                <li><strong>Record</strong> — type received qty per line; add lot/expiry when the product requires it.</li>
-                <li><strong>Finish</strong> — save draft anytime, then <strong>Post</strong> to add stock (use Reverse only if you made a mistake).</li>
-              </ol>
-            </div>
-            <Button
-              onClick={() => {
-                setGrnForm({ grn_id: '', grn_number: '', purchase_order_id: '', notes: '', lines: [] });
-                setIsCreateGRNOpen(true);
-              }}
-            >
-              Receive delivery (new draft)
-            </Button>
-          </Card>
-
-          <Card>
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-3">Goods receipt notes</h2>
-            <div className="flex flex-wrap gap-3 mb-4 text-sm">
-              <label className="min-w-[140px]">
-                <div className="text-xs font-medium text-slate-600 mb-1">Status</div>
-                <SearchableSelect
-                  value={grnFilterStatus}
-                  onChange={setGrnFilterStatus}
-                  options={grnStatusFilterOptions}
-                  placeholder="All"
-                  searchPlaceholder="Search status…"
-                  minWidth="w-full"
-                  className="w-full"
-                />
-              </label>
-              <label className="min-w-[140px]">
-                <div className="text-xs font-medium text-slate-600 mb-1">From</div>
-                <input
-                  type="date"
-                  className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                  value={grnFilterFrom}
-                  onChange={(e) => setGrnFilterFrom(e.target.value)}
-                />
-              </label>
-              <label className="min-w-[140px]">
-                <div className="text-xs font-medium text-slate-600 mb-1">To</div>
-                <input
-                  type="date"
-                  className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                  value={grnFilterTo}
-                  onChange={(e) => setGrnFilterTo(e.target.value)}
-                />
-              </label>
-              <label className="min-w-[160px]">
-                <div className="text-xs font-medium text-slate-600 mb-1">Branch</div>
-                <SearchableSelect
-                  value={grnFilterBranch}
-                  onChange={setGrnFilterBranch}
-                  options={grnBranchFilterOptions}
-                  placeholder="All branches"
-                  searchPlaceholder="Search branches…"
-                  minWidth="w-full"
-                  className="w-full"
-                />
-              </label>
-              <label className="min-w-[200px] flex-1">
-                <div className="text-xs font-medium text-slate-600 mb-1">Search GRN / PO / PR</div>
-                <input
-                  className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
-                  placeholder="Type to filter…"
-                  value={grnSearchText}
-                  onChange={(e) => setGrnSearchText(e.target.value)}
-                />
-              </label>
-            </div>
-            {grnsQ.isLoading ? (
-              <Loader />
-            ) : (
-              <div className="overflow-auto">
-                <table className="min-w-full text-sm">
-                  <thead className="text-left text-slate-600 dark:text-slate-300">
-                    <tr>
-                      <th className="py-2 pr-4">GRN Number</th>
-                      <th className="py-2 pr-4">PR Reference</th>
-                      <th className="py-2 pr-4">PO Number</th>
-                      <th className="py-2 pr-4">Receiving branch</th>
-                      <th className="py-2 pr-4">Lines</th>
-                      <th className="py-2 pr-4">Status</th>
-                      <th className="py-2 pr-4">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="text-slate-700 dark:text-slate-200">
-                    {displayedGrns.length === 0 ? (
-                      <tr>
-                        <td colSpan={7} className="py-6 text-center text-slate-500">
-                          No goods receipt notes match your filters.
-                        </td>
-                      </tr>
-                    ) : (
-                      displayedGrns.map((g: any) => (
-                        <tr key={g.id} className="border-t border-slate-100 dark:border-slate-700">
-                          <td className="py-2 pr-4 font-medium">{g.grnNumber ?? `GRN-${g.id}`}</td>
-                          <td className="py-2 pr-4">{g.purchaseOrder?.purchaseRequisition?.prNumber ?? '—'}</td>
-                          <td className="py-2 pr-4">{g.purchaseOrder?.poNumber ?? poById.get(Number(g.purchaseOrderId))?.poNumber ?? '—'}</td>
-                          <td className="py-2 pr-4">{branchById.get(Number(g.branchId))?.name ?? '—'}</td>
-                          <td className="py-2 pr-4">{(g.lines ?? []).length}</td>
-                          <td className="py-2 pr-4">
-                            <span className={`inline-flex px-2 py-1 rounded text-xs font-medium ${statusClass(g.status)}`}>
-                              {g.status}
-                            </span>
-                          </td>
-                          <td className="py-2 pr-4 flex flex-wrap gap-2">
-                            <Button variant="secondary" onClick={() => setSelectedGRN(g)}>View</Button>
-                            <Button
-                              variant="secondary"
-                              disabled={g.status !== 'draft'}
-                              onClick={() => openEditGRNModal(g)}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              disabled={g.status !== 'draft'}
-                              onClick={() => setConfirmPostGrnId(Number(g.id))}
-                            >
-                              Post
-                            </Button>
-                            <Button
-                              variant="secondary"
-                              disabled={g.status !== 'posted'}
-                              onClick={() => setConfirmReverseGrnId(Number(g.id))}
-                            >
-                              Reverse
-                            </Button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+            <div className={`${card} overflow-hidden`}>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 border-b border-slate-100 dark:border-slate-700">
+                <FilterTabs tabs={statusTabs} value={prFilterStatus} onChange={(k) => { setPrFilterStatus(k); setPrPage(1); }} />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <SearchableSelect value={prFilterBranch} onChange={(v) => { setPrFilterBranch(v); setPrPage(1); }} options={branchFilterOptions} placeholder="All branches" searchPlaceholder="Search branches…" minWidth="w-44" className="w-44" />
+                  <div className="relative w-56">
+                    <LuSearch className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input aria-label="Search purchase requisitions" value={prSearchText} onChange={(e) => { setPrSearchText(e.target.value); setPrPage(1); }} placeholder="Search PR, vendor or branch…" className={`${field} pl-9`} />
+                  </div>
+                  {(prFilterStatus || prFilterBranch || prSearchText) && (
+                    <button onClick={() => { setPrFilterStatus(''); setPrFilterBranch(''); setPrSearchText(''); setPrPage(1); }} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Clear filters</button>
+                  )}
+                </div>
               </div>
-            )}
-          </Card>
-        </div>
-      )}
+
+              {prsQ.isLoading ? (
+                <div className="p-10"><Loader /></div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1100px]" style={{ gridTemplateColumns: gridCols }}>
+                    <div>#</div><div>PR number</div><div>Vendor</div><div>Created by</div><div className="text-right">Items</div><div className="text-right">Qty</div><div>Dates</div><div>Notes</div><div>Status</div><div className="text-right">Actions</div>
+                  </div>
+                  {pageRows.length === 0 ? (
+                    <div className="px-4 py-12 text-center text-slate-400">No purchase requisitions match your filters.</div>
+                  ) : pageRows.map((pr: any, idx: number) => {
+                    const meta = metaFor(PR_STATUS, pr.status);
+                    const qty = (pr.lines ?? []).reduce((sum: number, l: any) => { const q = Number(l.requestedQty ?? l.requested_qty ?? 0); return sum + (Number.isFinite(q) ? q : 0); }, 0);
+                    const by = pr.creator?.name ?? (pr.createdBy != null ? `User #${pr.createdBy}` : '—');
+                    return (
+                      <div key={pr.id} className="grid items-center px-4 py-3 border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50/60 dark:hover:bg-slate-700/30 min-w-[1100px]" style={{ gridTemplateColumns: gridCols, borderLeft: `3px solid ${meta.accent}` }}>
+                        <div className="text-[13px] text-slate-400 font-semibold">{(safePage - 1) * PAGE_SIZE + idx + 1}</div>
+                        <div className="min-w-0 pr-2">
+                          <button onClick={() => setSelectedPR(pr)} className="text-[13px] font-bold font-mono text-red-600 hover:underline truncate block text-left">{pr.prNumber ?? `PR-${pr.id}`}</button>
+                          <div className="text-[11.5px] text-slate-400 truncate">{branchById.get(Number(pr.requestingBranchId))?.name ?? '—'}</div>
+                        </div>
+                        <div className="text-[13.5px] text-slate-700 dark:text-slate-200 truncate pr-2">{vendorById.get(Number(pr.requestedFromVendorId))?.name ?? '—'}</div>
+                        <div className="flex items-center gap-2 min-w-0 pr-2">
+                          <span className="w-6 h-6 rounded-full bg-slate-800 dark:bg-slate-600 text-white flex items-center justify-center text-[11px] font-bold flex-none uppercase">{by[0] ?? '?'}</span>
+                          <span className="text-[12.5px] text-slate-500 dark:text-slate-400 truncate">{by}</span>
+                        </div>
+                        <div className="text-right text-[13.5px] font-semibold text-slate-900 dark:text-slate-100">{(pr.lines ?? []).length}</div>
+                        <div className="text-right text-[13.5px] font-bold text-slate-900 dark:text-slate-100">{Number(qty.toFixed(2))}</div>
+                        <div className="text-[12px] text-slate-500 leading-snug">
+                          <div>Req {prettyDate(pr.createdAt)}</div>
+                          <div style={{ color: pr.approvedAt ? '#0F8A4F' : '#B45309' }}>{pr.approvedAt ? `Approved ${prettyDate(pr.approvedAt)}` : 'Awaiting approval'}</div>
+                        </div>
+                        <div className={`text-[12.5px] truncate pr-2 ${pr.notes?.trim() ? 'text-slate-600 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500 italic'}`} title={pr.notes ?? ''}>{pr.notes?.trim() ? pr.notes : 'No notes'}</div>
+                        <div><button type="button" onClick={() => setSelectedPRForStatus(pr)} title="Update status"><StatusPill meta={meta} /></button></div>
+                        <div className="flex gap-1.5 justify-end">
+                          <button onClick={() => setSelectedPR(pr)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">View</button>
+                          {canEditPRRow(pr) && (
+                            <button onClick={() => openEditPRModal(pr)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Edit</button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <Pagination shown={pageRows.length} total={totalRows} page={safePage} totalPages={totalPages} onPage={setPrPage} />
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
+
+      {tab === 'pos' && canAccessPOModule && (() => {
+        const all = (posQ.data ?? []) as any[];
+        const kTotal = all.length;
+        const isOpenStatus = (s: string) => ['created', 'sent', 'partially_received'].includes(s);
+        const kOpen = all.filter((p) => isOpenStatus(String(p.status))).length;
+        const kPartial = all.filter((p) => String(p.status) === 'partially_received').length;
+        const kClosed = all.filter((p) => String(p.status) === 'closed').length;
+        const statusTabs = [
+          { key: '', label: 'All', count: kTotal },
+          { key: 'open', label: 'Open', count: kOpen },
+          { key: 'partially_received', label: 'Partial', count: kPartial },
+          { key: 'closed', label: 'Closed', count: kClosed },
+        ];
+        const totalRows = displayedPos.length;
+        const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+        const safePage = Math.min(poPage, totalPages);
+        const pageRows = displayedPos.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+        const gridCols = 'minmax(190px,1.3fr) 160px 150px minmax(170px,1.2fr) 170px 130px';
+        return (
+          <>
+            <PageHeader
+              crumb="Purchase orders"
+              title="Purchase Orders"
+              desc="Approved requisitions become purchase orders. Track each PO until its goods are received and it closes."
+            />
+            <StepFlow current={2} />
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <KpiCard label="Total POs" value={kTotal} hint="All branches" />
+              <KpiCard label="Awaiting delivery" value={kOpen} hint="Created / partial" dot="#D97706" valueColor="#B45309" accent="#F2E2C4" />
+              <KpiCard label="Partially received" value={kPartial} hint="Some lines pending" dot="#EA580C" />
+              <KpiCard label="Closed" value={kClosed} hint="Fully received" dot="#16A34A" />
+            </div>
+
+            <div className={`${card} overflow-hidden`}>
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 border-b border-slate-100 dark:border-slate-700">
+                <FilterTabs tabs={statusTabs} value={poFilterStatus} onChange={(k) => { setPoFilterStatus(k); setPoPage(1); }} />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <SearchableSelect value={poFilterBranch} onChange={(v) => { setPoFilterBranch(v); setPoPage(1); }} options={branchFilterOptions} placeholder="All branches" searchPlaceholder="Search branches…" minWidth="w-44" className="w-44" />
+                  <div className="relative w-56">
+                    <LuSearch className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input aria-label="Search purchase orders" value={poSearchText} onChange={(e) => { setPoSearchText(e.target.value); setPoPage(1); }} placeholder="Search PO, PR or vendor…" className={`${field} pl-9`} />
+                  </div>
+                  {(poFilterStatus || poFilterBranch || poSearchText) && (
+                    <button onClick={() => { setPoFilterStatus(''); setPoFilterBranch(''); setPoSearchText(''); setPoPage(1); }} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Clear filters</button>
+                  )}
+                </div>
+              </div>
+
+              {posQ.isLoading ? (
+                <div className="p-10"><Loader /></div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1000px]" style={{ gridTemplateColumns: gridCols }}>
+                    <div>PO number</div><div>PR reference</div><div>Buyer branch</div><div>Vendor</div><div>Status</div><div className="text-right">Action</div>
+                  </div>
+                  {pageRows.length === 0 ? (
+                    <div className="px-4 py-12 text-center text-slate-400">No purchase orders match your filters.</div>
+                  ) : pageRows.map((po: any) => {
+                    const meta = metaFor(PO_STATUS, po.status);
+                    const editable = String(po.status) === 'created';
+                    return (
+                      <div key={po.id} className="grid items-center px-4 py-3.5 border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50/60 dark:hover:bg-slate-700/30 min-w-[1000px]" style={{ gridTemplateColumns: gridCols, borderLeft: `3px solid ${meta.accent}` }}>
+                        <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                          <span className="w-8 h-8 rounded-lg flex items-center justify-center flex-none" style={{ color: meta.color, background: meta.bg }}><LuFileText className="w-4 h-4" /></span>
+                          <button onClick={() => setSelectedPO(po)} className="text-[13px] font-bold font-mono text-slate-900 dark:text-slate-100 hover:underline truncate text-left">{po.poNumber}</button>
+                        </div>
+                        <div className="text-[12.5px] font-semibold font-mono text-red-600 truncate pr-2">{po.purchaseRequisition?.prNumber ?? '—'}</div>
+                        <div className="text-[13.5px] text-slate-700 dark:text-slate-200 truncate pr-2">{branchById.get(Number(po.buyerBranchId))?.name ?? '—'}</div>
+                        <div className="text-[13.5px] text-slate-700 dark:text-slate-200 truncate pr-2">{vendorById.get(Number(po.vendorId))?.name ?? '—'}</div>
+                        <div><StatusPill meta={meta} /></div>
+                        <div className="flex gap-1.5 justify-end">
+                          <button onClick={() => setSelectedPO(po)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">View</button>
+                          <button onClick={() => editable && openEditPOModal(po)} disabled={!editable} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">Edit</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <Pagination shown={pageRows.length} total={totalRows} page={safePage} totalPages={totalPages} onPage={setPoPage} />
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
+
+      {tab === 'grns' && (() => {
+        const all = (grnsQ.data ?? []) as any[];
+        const kTotal = all.length;
+        const kDraft = all.filter((g) => String(g.status) === 'draft').length;
+        const kPosted = all.filter((g) => String(g.status) === 'posted').length;
+        const statusTabs = [
+          { key: '', label: 'All', count: kTotal },
+          { key: 'draft', label: 'Drafts', count: kDraft },
+          { key: 'posted', label: 'Posted', count: kPosted },
+        ];
+        const totalRows = displayedGrns.length;
+        const totalPages = Math.max(1, Math.ceil(totalRows / PAGE_SIZE));
+        const safePage = Math.min(grnPage, totalPages);
+        const pageRows = displayedGrns.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+        const gridCols = 'minmax(160px,1.1fr) 150px 160px 150px 70px 120px 230px';
+        const steps: [string, string, string][] = [
+          ['1', 'Start', 'pick an open PO; we open a draft with every line from that order.'],
+          ['2', 'Record', 'type received qty per line; add lot & expiry when the product requires it.'],
+          ['3', 'Finish', 'save the draft anytime, then Post to add stock. Use Reverse only if you made a mistake.'],
+        ];
+        return (
+          <>
+            <PageHeader
+              crumb="Goods receipt notes"
+              title="Goods Receipt Notes"
+              desc="Record what physically arrives against a PO. Posting a GRN adds the received stock to inventory."
+              action={
+                <button
+                  onClick={() => {
+                    setGrnForm({ grn_id: '', grn_number: '', purchase_order_id: '', notes: '', lines: [] });
+                    setIsCreateGRNOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm"
+                >
+                  <LuPlus className="w-4 h-4" /> Receive delivery
+                </button>
+              }
+            />
+            <StepFlow current={3} />
+            <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_1fr] gap-4">
+              <div className={`${card} p-5`}>
+                <div className="text-sm font-bold text-slate-900 dark:text-slate-100 mb-3.5">Receiving in 3 steps</div>
+                <div className="space-y-3">
+                  {steps.map(([n, t, d]) => (
+                    <div key={n} className="flex items-start gap-3">
+                      <span className="w-[22px] h-[22px] rounded-full bg-red-50 text-red-600 text-[12px] font-bold flex items-center justify-center flex-none">{n}</span>
+                      <div className="text-[13px] text-slate-600 dark:text-slate-300 leading-snug">
+                        <strong className="text-slate-900 dark:text-slate-100">{t}</strong> — {d}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="grid grid-rows-2 gap-4">
+                <div className={`${card} p-4 flex items-center justify-between`} style={{ borderColor: '#F2E2C4' }}>
+                  <div>
+                    <div className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: '#B45309' }}><span className="w-2 h-2 rounded-full" style={{ background: '#D97706' }} />Draft GRNs</div>
+                    <div className="text-xs mt-1" style={{ color: '#C99A55' }}>Not yet posted to stock</div>
+                  </div>
+                  <div className="text-3xl font-bold" style={{ color: '#B45309' }}>{kDraft}</div>
+                </div>
+                <div className={`${card} p-4 flex items-center justify-between`}>
+                  <div>
+                    <div className="flex items-center gap-1.5 text-[13px] font-semibold" style={{ color: '#16A34A' }}><span className="w-2 h-2 rounded-full" style={{ background: '#16A34A' }} />Posted GRNs</div>
+                    <div className="text-xs text-slate-400 mt-1">Stock added to inventory</div>
+                  </div>
+                  <div className="text-3xl font-bold text-slate-900 dark:text-slate-100">{kPosted}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className={`${card} overflow-hidden`}>
+              <div className="flex flex-wrap items-center gap-3 px-4 py-3.5 border-b border-slate-100 dark:border-slate-700">
+                <FilterTabs tabs={statusTabs} value={grnFilterStatus} onChange={(k) => { setGrnFilterStatus(k); setGrnPage(1); }} />
+                <div className="flex items-center gap-2 flex-wrap ml-auto">
+                  <input type="date" value={grnFilterFrom} onChange={(e) => { setGrnFilterFrom(e.target.value); setGrnPage(1); }} className={`${field} w-36`} title="From date" />
+                  <input type="date" value={grnFilterTo} onChange={(e) => { setGrnFilterTo(e.target.value); setGrnPage(1); }} className={`${field} w-36`} title="To date" />
+                  <SearchableSelect value={grnFilterBranch} onChange={(v) => { setGrnFilterBranch(v); setGrnPage(1); }} options={grnBranchFilterOptions} placeholder="All branches" searchPlaceholder="Search branches…" minWidth="w-40" className="w-40" />
+                  <div className="relative w-52">
+                    <LuSearch className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input aria-label="Search goods receipt notes" value={grnSearchText} onChange={(e) => { setGrnSearchText(e.target.value); setGrnPage(1); }} placeholder="Search GRN, PO or PR…" className={`${field} pl-9`} />
+                  </div>
+                  {(grnFilterStatus || grnFilterBranch || grnSearchText || grnFilterFrom || grnFilterTo) && (
+                    <button onClick={() => { setGrnFilterStatus(''); setGrnFilterBranch(''); setGrnSearchText(''); setGrnFilterFrom(''); setGrnFilterTo(''); setGrnPage(1); }} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Clear filters</button>
+                  )}
+                </div>
+              </div>
+
+              {grnsQ.isLoading ? (
+                <div className="p-10"><Loader /></div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1000px]" style={{ gridTemplateColumns: gridCols }}>
+                    <div>GRN number</div><div>PR reference</div><div>PO number</div><div>Branch</div><div className="text-right">Lines</div><div>Status</div><div className="text-right">Actions</div>
+                  </div>
+                  {pageRows.length === 0 ? (
+                    <div className="px-4 py-12 text-center text-slate-400">No goods receipt notes match your filters.</div>
+                  ) : pageRows.map((g: any) => {
+                    const meta = metaFor(GRN_STATUS, g.status);
+                    const isDraft = String(g.status) === 'draft';
+                    const isPosted = String(g.status) === 'posted';
+                    return (
+                      <div key={g.id} className="grid items-center px-4 py-3.5 border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50/60 dark:hover:bg-slate-700/30 min-w-[1000px]" style={{ gridTemplateColumns: gridCols, borderLeft: `3px solid ${meta.accent}` }}>
+                        <button onClick={() => setSelectedGRN(g)} className="text-[13px] font-bold font-mono text-slate-900 dark:text-slate-100 hover:underline truncate text-left pr-2">{g.grnNumber ?? `GRN-${g.id}`}</button>
+                        <div className="text-[12.5px] font-semibold font-mono text-red-600 truncate pr-2">{g.purchaseOrder?.purchaseRequisition?.prNumber ?? '—'}</div>
+                        <div className="text-[12.5px] font-mono text-slate-600 dark:text-slate-300 truncate pr-2">{g.purchaseOrder?.poNumber ?? poById.get(Number(g.purchaseOrderId))?.poNumber ?? '—'}</div>
+                        <div className="text-[13.5px] text-slate-700 dark:text-slate-200 truncate pr-2">{branchById.get(Number(g.branchId))?.name ?? '—'}</div>
+                        <div className="text-right text-[13.5px] font-semibold text-slate-900 dark:text-slate-100">{(g.lines ?? []).length}</div>
+                        <div><StatusPill meta={meta} /></div>
+                        <div className="flex gap-1.5 justify-end flex-wrap">
+                          <button onClick={() => setSelectedGRN(g)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">View</button>
+                          {isDraft && (
+                            <>
+                              <button onClick={() => openEditGRNModal(g)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Edit</button>
+                              <button onClick={() => setConfirmPostGrnId(Number(g.id))} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[12px] font-bold">Post</button>
+                            </>
+                          )}
+                          {isPosted && (
+                            <button onClick={() => setConfirmReverseGrnId(Number(g.id))} className="px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-[12px] font-bold">Reverse</button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <Pagination shown={pageRows.length} total={totalRows} page={safePage} totalPages={totalPages} onPage={setGrnPage} />
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
 
       <Modal
         isOpen={isCreatePROpen}
