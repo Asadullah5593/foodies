@@ -32,6 +32,7 @@ export const Permissions = {
     CUSTOMERS_MANAGE: 'customers:manage',
     ROLES_MANAGE: 'roles:manage',
     DELIVERIES_VIEW: 'deliveries:view',
+    DELIVERIES_MANAGE: 'deliveries:manage',
     // Rider brand-ownership & sharing
     RIDER_SHARE_REQUEST: 'rider-share:request',
     RIDER_SHARING_MANAGE: 'rider-sharing:manage',

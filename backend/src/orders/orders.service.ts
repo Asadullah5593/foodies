@@ -4,10 +4,11 @@ import {
     BadRequestException,
     ForbiddenException,
     ConflictException,
+    UnprocessableEntityException,
     Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, In, IsNull, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { Order } from '../entities/order.entity';
 import { OrderItem } from '../entities/order-item.entity';
@@ -32,7 +33,19 @@ import { assertMenuItemAvailableForOrderType } from '../utils/menu-order-type';
 import { RiderDispatchState } from '../entities/rider-dispatch-state.entity';
 import { RiderAssignmentLedger } from '../entities/rider-assignment-ledger.entity';
 import { RiderOpsMetricsService } from '../rider-hrm/rider-ops-metrics.service';
-import { freshnessState, selectNextRoundRobin } from './dispatch.utils';
+import {
+    freshnessState,
+    selectRiderForBatchableOrder,
+    riderPassesTierCap,
+    type DeliveryTier,
+} from './dispatch.utils';
+import {
+    buildDeliveryOptions,
+    defaultTierKey,
+    isDeliveryTierKey,
+    resolveChosenTierFee,
+    type DeliveryOption,
+} from './delivery-tier.utils';
 import { resolveRiderBrandScope } from './rider-brand-scope.util';
 import { PushNotificationService } from '../push-notifications/push-notification.service';
 
@@ -82,6 +95,88 @@ export class OrdersService {
                 Math.sin(dLng / 2);
         const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
         return R * c;
+    }
+
+    /** Distance (km) from a branch's stored coords to a drop-off; null if any coord is missing. */
+    private dropoffDistanceKm(
+        branch: Branch,
+        lat: number | null,
+        lng: number | null,
+    ): number | null {
+        if (
+            lat == null ||
+            lng == null ||
+            branch.latitude == null ||
+            branch.longitude == null
+        ) {
+            return null;
+        }
+        return this.haversineKm(
+            Number(branch.latitude),
+            Number(branch.longitude),
+            lat,
+            lng,
+        );
+    }
+
+    /**
+     * Resolve the delivery fee + tier snapshot for one (branch, brand) at a drop-off,
+     * enforcing the radius gate and tier availability. Non-delivery → 0. Brand without
+     * tier-based delivery → legacy flat fee. Tier brand with no drop-off coords (e.g. POS)
+     * → flat-fee fallback. Throws 422 outside radius / unavailable tier, 400 for a missing
+     * or invalid tier on a tier-enabled brand.
+     */
+    private resolveDeliveryForBrand(
+        branch: Branch,
+        brand: Brand,
+        orderType: string,
+        dropLat: number | null,
+        dropLng: number | null,
+        chosenTier: string | undefined,
+    ): {
+        fee: number;
+        tier: string | null;
+        etaMin: number | null;
+        etaMax: number | null;
+    } {
+        if (orderType !== 'delivery') {
+            return { fee: 0, tier: null, etaMin: null, etaMax: null };
+        }
+        const flatFee = Number(brand?.deliveryFlatFee) || 0;
+        if (!brand?.deliveryTiersEnabled || !brand.deliveryTiers) {
+            return { fee: flatFee, tier: null, etaMin: null, etaMax: null };
+        }
+        const distanceKm = this.dropoffDistanceKm(branch, dropLat, dropLng);
+        if (distanceKm == null) {
+            // No coordinates to price/gate a tier (e.g. POS delivery) → flat-fee fallback.
+            return { fee: flatFee, tier: null, etaMin: null, etaMax: null };
+        }
+        if (distanceKm > Number(branch.deliveryRadiusKm)) {
+            throw new UnprocessableEntityException(
+                'Delivery address is outside this branch’s delivery range.',
+            );
+        }
+        if (!chosenTier || !isDeliveryTierKey(chosenTier)) {
+            throw new BadRequestException(
+                'A valid delivery_tier is required for this brand.',
+            );
+        }
+        const resolved = resolveChosenTierFee(
+            brand.deliveryTiers,
+            chosenTier,
+            distanceKm,
+        );
+        if (!resolved) {
+            throw new UnprocessableEntityException(
+                'Selected delivery option is not available for this address.',
+            );
+        }
+        return {
+            fee: resolved.fee,
+            tier: chosenTier,
+            etaMin: resolved.etaMin,
+            etaMax: resolved.etaMax,
+        };
     }
 
     private async createAssignmentLedgerEntry(input: {
@@ -229,14 +324,16 @@ export class OrdersService {
         tenantId: number,
         branchId: number,
         brandId: number,
+        effectiveTier: DeliveryTier,
+        maxBatchSize: number,
     ): Promise<{
-        eligibleRiderIds: number[];
+        eligible: Array<{ riderId: number; activeOrders: number }>;
         skipped: Array<Record<string, unknown>>;
     }> {
         const branch = await manager.findOne(Branch, {
             where: { id: branchId },
         });
-        if (!branch) return { eligibleRiderIds: [], skipped: [] };
+        if (!branch) return { eligible: [], skipped: [] };
 
         const rows: Array<{
             rider_user_id: number;
@@ -245,6 +342,7 @@ export class OrdersService {
             min_rating: string | null;
             min_timely_rate: string | null;
             active_orders: string;
+            has_priority_active: boolean | null;
             rating_avg: string | null;
             timely_rate: string | null;
             is_checked_in: boolean | null;
@@ -261,6 +359,7 @@ export class OrdersService {
                     rp.min_rating::text,
                     rp.min_timely_rate::text,
                     COALESCE(ao.active_orders, 0)::text AS active_orders,
+                    COALESCE(ao.has_priority_active, false) AS has_priority_active,
                     rr.rating_avg::text,
                     tr.timely_rate::text,
                     prs.is_checked_in,
@@ -277,10 +376,13 @@ export class OrdersService {
              LEFT JOIN rider_profiles rp ON rp.user_id = u.id AND rp.tenant_id = $1
              LEFT JOIN rider_presences prs ON prs.rider_user_id = u.id
              LEFT JOIN (
-                 SELECT o.rider_id AS rider_user_id, COUNT(*) AS active_orders
+                 SELECT o.rider_id AS rider_user_id,
+                        COUNT(*) AS active_orders,
+                        bool_or(o.delivery_tier = 'priority') AS has_priority_active
                  FROM orders o
                  WHERE o.tenant_id = $1
                    AND o.delivery_status IN ('accepted', 'picked_up')
+                   AND o.status <> 'cancelled'
                  GROUP BY o.rider_id
              ) ao ON ao.rider_user_id = u.id
              LEFT JOIN (
@@ -304,7 +406,7 @@ export class OrdersService {
         );
 
         const skipped: Array<Record<string, unknown>> = [];
-        const eligibleRiderIds: number[] = [];
+        const eligible: Array<{ riderId: number; activeOrders: number }> = [];
         const branchLat =
             branch.latitude != null ? Number(branch.latitude) : null;
         const branchLng =
@@ -312,10 +414,8 @@ export class OrdersService {
         const radiusKm = Number(branch.deliveryRadiusKm ?? 10);
         for (const row of rows) {
             const riderId = Number(row.rider_user_id);
-            // Business rule: a rider carries exactly one order at a time,
-            // regardless of any per-profile max_active_orders config.
-            const maxActiveOrders = 1;
             const activeOrders = Number(row.active_orders ?? 0);
+            const hasPriorityActive = row.has_priority_active === true;
             const minRating =
                 row.min_rating != null ? Number(row.min_rating) : null;
             const minTimelyRate =
@@ -337,8 +437,19 @@ export class OrdersService {
                 reasons.push('heartbeat_stale');
             if (!freshnessState(row.last_location_at, 120))
                 reasons.push('location_stale');
-            if (activeOrders >= maxActiveOrders)
-                reasons.push('active_order_cap');
+            if (
+                !riderPassesTierCap(
+                    { activeOrders, hasPriorityActive },
+                    effectiveTier,
+                    maxBatchSize,
+                )
+            ) {
+                reasons.push(
+                    hasPriorityActive && effectiveTier !== 'priority'
+                        ? 'priority_locked'
+                        : 'active_order_cap',
+                );
+            }
             if (minRating != null && ratingAvg != null && ratingAvg < minRating)
                 reasons.push('below_min_rating');
             if (
@@ -365,17 +476,20 @@ export class OrdersService {
                 skipped.push({ rider_user_id: riderId, reasons });
                 continue;
             }
-            eligibleRiderIds.push(riderId);
+            eligible.push({ riderId, activeOrders });
         }
         return {
-            eligibleRiderIds: eligibleRiderIds.sort((a, b) => a - b),
+            eligible: eligible.sort((a, b) => a.riderId - b.riderId),
             skipped,
         };
     }
 
     private async autoAssignRiderForOrder(
         orderId: number,
-        options?: { assignmentRequestId?: string | null },
+        options?: {
+            assignmentRequestId?: string | null;
+            reasonHint?: string | null;
+        },
     ): Promise<void> {
         const started = Date.now();
         const assignmentRequestId =
@@ -416,16 +530,33 @@ export class OrdersService {
                 return;
             }
             const brandId = order.brandId;
+            const brand = await manager.findOne(Brand, {
+                where: { id: brandId },
+            });
+            const effectiveTier: DeliveryTier =
+                order.deliveryTier === 'priority' ||
+                order.deliveryTier === 'saver'
+                    ? order.deliveryTier
+                    : 'standard';
+            const maxBatchSize =
+                brand?.deliveryTiersEnabled === true
+                    ? Math.max(
+                          1,
+                          Number(brand.deliveryTiers?.maxBatchSize ?? 1),
+                      )
+                    : 1;
 
-            const { eligibleRiderIds, skipped } =
+            const { eligible, skipped } =
                 await this.resolveEligibleRidersForAutoDispatch(
                     manager,
                     order.tenantId,
                     order.branchId,
                     brandId,
+                    effectiveTier,
+                    maxBatchSize,
                 );
 
-            if (eligibleRiderIds.length === 0) {
+            if (eligible.length === 0) {
                 this.riderOpsMetrics.inc('auto_assignment_no_eligible_riders');
                 await manager.save(
                     manager.create(RiderAssignmentLedger, {
@@ -475,11 +606,58 @@ export class OrdersService {
             }
             if (!state) return;
 
-            const selectedRiderId = selectNextRoundRobin(
-                eligibleRiderIds,
+            const selectedRiderId = selectRiderForBatchableOrder(
+                eligible,
                 state.lastAssignedRiderUserId,
+                effectiveTier,
             );
             if (selectedRiderId == null) return;
+
+            // Concurrency guard: a parallel dispatch from another brand stream sharing this
+            // rider could have filled them since eligibility was resolved. Re-validate the
+            // selected rider's live load inside the txn before committing.
+            const liveCounts: Array<{
+                active_orders: string;
+                has_priority_active: boolean | null;
+            }> = await manager.query(
+                `SELECT COUNT(*) AS active_orders,
+                        COALESCE(bool_or(o.delivery_tier = 'priority'), false) AS has_priority_active
+                 FROM orders o
+                 WHERE o.tenant_id = $1 AND o.rider_id = $2
+                   AND o.delivery_status IN ('accepted', 'picked_up')
+                   AND o.status <> 'cancelled'`,
+                [order.tenantId, selectedRiderId],
+            );
+            const liveActive = Number(liveCounts[0]?.active_orders ?? 0);
+            const livePriority = liveCounts[0]?.has_priority_active === true;
+            if (
+                !riderPassesTierCap(
+                    {
+                        activeOrders: liveActive,
+                        hasPriorityActive: livePriority,
+                    },
+                    effectiveTier,
+                    maxBatchSize,
+                )
+            ) {
+                this.riderOpsMetrics.inc('auto_assignment_no_eligible_riders');
+                await manager.save(
+                    manager.create(RiderAssignmentLedger, {
+                        tenantId: order.tenantId,
+                        branchId: order.branchId,
+                        orderId: order.id,
+                        eventType: 'failed',
+                        assignmentRequestId,
+                        selectedRiderUserId: null,
+                        eligibleRiderUserIds: eligible.map((e) => e.riderId),
+                        skippedRiders: skipped,
+                        reasonCode: 'rider_filled_concurrently',
+                        reasonDetail:
+                            'Selected rider reached capacity before commit; will retry',
+                    }),
+                );
+                return;
+            }
 
             order.riderId = selectedRiderId;
             order.deliveryStatus = 'accepted';
@@ -499,10 +677,15 @@ export class OrdersService {
                     eventType: 'auto',
                     assignmentRequestId,
                     selectedRiderUserId: selectedRiderId,
-                    eligibleRiderUserIds: eligibleRiderIds,
+                    eligibleRiderUserIds: eligible.map((e) => e.riderId),
                     skippedRiders: skipped,
-                    reasonCode: 'auto_round_robin',
-                    reasonDetail: 'Assigned through strict round-robin',
+                    reasonCode: options?.reasonHint ?? 'auto_round_robin',
+                    reasonDetail:
+                        effectiveTier === 'priority'
+                            ? 'Priority order dispatched to an idle rider'
+                            : maxBatchSize > 1
+                              ? 'Assigned with opportunistic batching'
+                              : 'Assigned through strict round-robin',
                 }),
             );
             this.riderOpsMetrics.inc('auto_assignment_success');
@@ -547,6 +730,9 @@ export class OrdersService {
         if (previousStatus !== 'placed' && previousStatus !== 'accepted')
             return;
         if (order.riderId != null) return;
+        // Saver orders are held and dispatched by the delivery-dispatch cron after their
+        // hold window, not on the preparing transition.
+        if (order.deliveryTier === 'saver') return;
         try {
             await this.autoAssignRiderForOrder(order.id);
         } catch (e) {
@@ -556,6 +742,130 @@ export class OrdersService {
                 e instanceof Error ? e.stack : undefined,
             );
         }
+    }
+
+    /**
+     * Cron entry (delivery-dispatch.job): (re)dispatch tiered delivery orders that are now ripe.
+     * - priority: dispatch as soon as placed (retry until a dedicated rider is reserved).
+     * - standard: retry once the kitchen has started (status 'preparing').
+     * - saver: dispatch only after both 'preparing' and the brand's saver hold window.
+     * Each attempt uses a unique assignmentRequestId so the ledger dedup never blocks retries;
+     * double-assignment is still prevented by the in-txn order.riderId guard.
+     */
+    async sweepDeliveryDispatch(): Promise<{
+        attempted: number;
+        assigned: number;
+    }> {
+        const candidates = await this.orderRepo.find({
+            where: {
+                orderType: 'delivery',
+                riderId: IsNull(),
+                deliveryStatus: IsNull(),
+                status: In(['placed', 'preparing']),
+                deliveryTier: In(['saver', 'standard', 'priority']),
+            },
+            order: { placedAt: 'ASC' },
+            take: 500,
+        });
+        const brandHoldCache = new Map<number, number>();
+        const nowMs = Date.now();
+        let attempted = 0;
+        let assigned = 0;
+        for (const order of candidates) {
+            const tier = order.deliveryTier;
+            if (tier == null) continue;
+            if (tier === 'standard' && order.status !== 'preparing') continue;
+            if (tier === 'saver') {
+                if (order.status !== 'preparing') continue;
+                let holdMinutes = order.brandId
+                    ? brandHoldCache.get(order.brandId)
+                    : 8;
+                if (holdMinutes === undefined && order.brandId) {
+                    const brand = await this.dataSource.manager.findOne(Brand, {
+                        where: { id: order.brandId },
+                    });
+                    holdMinutes = Math.max(
+                        0,
+                        Number(brand?.deliveryTiers?.saverHoldMinutes ?? 8),
+                    );
+                    brandHoldCache.set(order.brandId, holdMinutes);
+                }
+                const placedMs = order.placedAt
+                    ? new Date(order.placedAt).getTime()
+                    : nowMs;
+                if (nowMs - placedMs < (holdMinutes ?? 8) * 60_000) continue;
+            }
+            attempted += 1;
+            const reasonHint =
+                tier === 'priority'
+                    ? 'auto_priority_immediate'
+                    : tier === 'saver'
+                      ? 'auto_saver_sweep'
+                      : 'auto_standard_retry';
+            try {
+                await this.autoAssignRiderForOrder(order.id, {
+                    assignmentRequestId: `sweep-${order.id}-${randomUUID()}`,
+                    reasonHint,
+                });
+                const refreshed = await this.orderRepo.findOne({
+                    where: { id: order.id },
+                });
+                if (refreshed?.riderId != null) assigned += 1;
+            } catch (e) {
+                this.riderOpsMetrics.inc('auto_assignment_error');
+                this.logger.error(
+                    `Delivery sweep dispatch failed for order ${order.id}`,
+                    e instanceof Error ? e.stack : undefined,
+                );
+            }
+        }
+        return { attempted, assigned };
+    }
+
+    /** A rider's live active-order load (count + whether any is a priority order). */
+    private async getRiderActiveState(
+        tenantId: number,
+        riderId: number,
+        excludeOrderId?: number,
+    ): Promise<{ activeOrders: number; hasPriorityActive: boolean }> {
+        const rows: Array<{
+            active_orders: string;
+            has_priority_active: boolean | null;
+        }> = await this.orderRepo.query(
+            `SELECT COUNT(*) AS active_orders,
+                    COALESCE(bool_or(o.delivery_tier = 'priority'), false) AS has_priority_active
+             FROM orders o
+             WHERE o.tenant_id = $1 AND o.rider_id = $2
+               AND o.delivery_status IN ('accepted', 'picked_up')
+               AND o.status <> 'cancelled'
+               AND ($3::int IS NULL OR o.id <> $3)`,
+            [tenantId, riderId, excludeOrderId ?? null],
+        );
+        return {
+            activeOrders: Number(rows[0]?.active_orders ?? 0),
+            hasPriorityActive: rows[0]?.has_priority_active === true,
+        };
+    }
+
+    /** Tier-aware capacity for the order's brand (priority needs idle; standard/saver up to cap). */
+    private async resolveOrderTierCap(
+        order: Order,
+    ): Promise<{ effectiveTier: DeliveryTier; maxBatchSize: number }> {
+        const effectiveTier: DeliveryTier =
+            order.deliveryTier === 'priority' || order.deliveryTier === 'saver'
+                ? order.deliveryTier
+                : 'standard';
+        const brand =
+            order.brandId != null
+                ? await this.dataSource.manager.findOne(Brand, {
+                      where: { id: order.brandId },
+                  })
+                : null;
+        const maxBatchSize =
+            brand?.deliveryTiersEnabled === true
+                ? Math.max(1, Number(brand.deliveryTiers?.maxBatchSize ?? 1))
+                : 1;
+        return { effectiveTier, maxBatchSize };
     }
 
     async retryAutoAssignForAdmin(
@@ -658,6 +968,8 @@ export class OrdersService {
             /** Optional branch coordinates snapshot (from client). */
             branch_latitude?: number;
             branch_longitude?: number;
+            /** Chosen delivery service tier ('saver'|'standard'|'priority') for tier-enabled brands. */
+            delivery_tier?: string;
         },
         tenantId: number,
         createdBy: number | null,
@@ -1024,22 +1336,13 @@ export class OrdersService {
 
         const taxRate = Number(tenant.defaultTaxRate) || 0;
         const serviceChargeRate = 0;
-        // Delivery fee is per brand: each order in the group charges its own
-        // brand's flat fee (a customer ordering from two brands pays twice).
-        const brandDeliveryFees = new Map<number, number>();
+        // Delivery fee is per brand: each order in the group charges its own brand's fee
+        // (tier×distance when the brand opts into tier-based delivery, else its flat fee).
+        const brandById = new Map<number, Brand>();
         for (const { branch: b } of branchMap.values()) {
-            const raw = b as {
-                branchBrands?: Array<{
-                    brand?: { id: number; deliveryFlatFee?: number };
-                }>;
-            };
+            const raw = b as { branchBrands?: Array<{ brand?: Brand }> };
             for (const bb of raw.branchBrands ?? []) {
-                if (bb.brand) {
-                    brandDeliveryFees.set(
-                        Number(bb.brand.id),
-                        Number(bb.brand.deliveryFlatFee) || 0,
-                    );
-                }
+                if (bb.brand) brandById.set(Number(bb.brand.id), bb.brand);
             }
         }
         const orderGroupId = randomUUID();
@@ -1169,6 +1472,7 @@ export class OrdersService {
                 : null;
 
         const createdOrderIds: number[] = [];
+        const priorityOrderIds: number[] = [];
         let firstOrderIdForLoyalty: number | null = null;
 
         for (const key of sortedGroups) {
@@ -1197,10 +1501,19 @@ export class OrdersService {
             const brandTax = Math.round(afterDiscount * taxRate * 100) / 100;
             const brandServiceCharge =
                 Math.round(afterDiscount * serviceChargeRate * 100) / 100;
-            const brandDeliveryFee =
-                dto.order_type === 'delivery'
-                    ? (brandDeliveryFees.get(brandId) ?? 0)
-                    : 0;
+            const groupBranch = branchMap.get(branchId)!.branch;
+            const groupBrand = brandById.get(brandId);
+            const deliveryResolved = groupBrand
+                ? this.resolveDeliveryForBrand(
+                      groupBranch,
+                      groupBrand,
+                      dto.order_type,
+                      deliveryLatitude,
+                      deliveryLongitude,
+                      dto.delivery_tier,
+                  )
+                : { fee: 0, tier: null, etaMin: null, etaMax: null };
+            const brandDeliveryFee = deliveryResolved.fee;
             const totalAmount =
                 Math.round(
                     (afterDiscount +
@@ -1238,6 +1551,9 @@ export class OrdersService {
                     taxAmount: brandTax,
                     serviceCharge: brandServiceCharge,
                     deliveryFee: brandDeliveryFee,
+                    deliveryTier: deliveryResolved.tier,
+                    deliveryEtaMinMinutes: deliveryResolved.etaMin,
+                    deliveryEtaMaxMinutes: deliveryResolved.etaMax,
                     totalAmount,
                     // Persist the user-entered discount code if provided, even if it ends up ineligible.
                     // This matches consumer expectations (they want to see what they tried to apply).
@@ -1257,6 +1573,9 @@ export class OrdersService {
                 }),
             );
             createdOrderIds.push(order.id);
+            if (deliveryResolved.tier === 'priority') {
+                priorityOrderIds.push(order.id);
+            }
             if (isFirstOrder && loyaltyPointsToRedeem > 0) {
                 firstOrderIdForLoyalty = order.id;
             }
@@ -1416,6 +1735,23 @@ export class OrdersService {
             }
         }
 
+        // Priority delivery dispatches immediately at placement (reserves a dedicated rider),
+        // rather than waiting for the kitchen 'preparing' transition. Non-fatal on failure —
+        // the dispatch sweep retries unassigned priority orders.
+        for (const id of priorityOrderIds) {
+            try {
+                await this.autoAssignRiderForOrder(id, {
+                    reasonHint: 'auto_priority_immediate',
+                });
+            } catch (e) {
+                this.riderOpsMetrics.inc('auto_assignment_error');
+                this.logger.error(
+                    `Priority auto-dispatch failed for order ${id} at placement`,
+                    e instanceof Error ? e.stack : undefined,
+                );
+            }
+        }
+
         const orders = await Promise.all(
             createdOrderIds.map((id) => this.findOne(id)),
         );
@@ -1467,6 +1803,9 @@ export class OrdersService {
             tax_amount: Number(order.taxAmount),
             service_charge: Number(order.serviceCharge),
             delivery_fee: Number(order.deliveryFee),
+            delivery_tier: order.deliveryTier ?? null,
+            delivery_eta_min_minutes: order.deliveryEtaMinMinutes ?? null,
+            delivery_eta_max_minutes: order.deliveryEtaMaxMinutes ?? null,
             total_amount: Number(order.totalAmount),
             discount_code: order.discountCode,
             delivery_address: order.deliveryAddress ?? null,
@@ -1654,6 +1993,9 @@ export class OrdersService {
             tax_amount: Number(order.taxAmount),
             service_charge: Number(order.serviceCharge),
             delivery_fee: Number(order.deliveryFee),
+            delivery_tier: order.deliveryTier ?? null,
+            delivery_eta_min_minutes: order.deliveryEtaMinMinutes ?? null,
+            delivery_eta_max_minutes: order.deliveryEtaMaxMinutes ?? null,
             total_amount: Number(order.totalAmount),
             discount_code: order.discountCode,
             delivery_address: order.deliveryAddress ?? null,
@@ -1756,6 +2098,9 @@ export class OrdersService {
                 tax_amount: Number(o.taxAmount),
                 service_charge: Number(o.serviceCharge),
                 delivery_fee: Number(o.deliveryFee),
+                delivery_tier: o.deliveryTier ?? null,
+                delivery_eta_min_minutes: o.deliveryEtaMinMinutes ?? null,
+                delivery_eta_max_minutes: o.deliveryEtaMaxMinutes ?? null,
                 total_amount: Number(o.totalAmount),
                 items:
                     [...(o.orderItems ?? [])]
@@ -1960,6 +2305,9 @@ export class OrdersService {
             tax_amount: Number(order.taxAmount),
             service_charge: Number(order.serviceCharge),
             delivery_fee: Number(order.deliveryFee),
+            delivery_tier: order.deliveryTier ?? null,
+            delivery_eta_min_minutes: order.deliveryEtaMinMinutes ?? null,
+            delivery_eta_max_minutes: order.deliveryEtaMaxMinutes ?? null,
             total_amount: Number(order.totalAmount),
             loyalty_points_earned: order.loyaltyPointsEarned ?? 0,
             loyalty_points_redeemed: order.loyaltyPointsRedeemed ?? 0,
@@ -2003,6 +2351,15 @@ export class OrdersService {
                 tax_amount: o.tax_amount,
                 service_charge: o.service_charge,
                 delivery_fee: o.delivery_fee,
+                delivery_tier:
+                    (o as { delivery_tier?: string | null }).delivery_tier ??
+                    null,
+                delivery_eta_min_minutes:
+                    (o as { delivery_eta_min_minutes?: number | null })
+                        .delivery_eta_min_minutes ?? null,
+                delivery_eta_max_minutes:
+                    (o as { delivery_eta_max_minutes?: number | null })
+                        .delivery_eta_max_minutes ?? null,
                 total_amount: o.total_amount,
                 loyalty_points_earned:
                     (o as { loyalty_points_earned?: number })
@@ -2160,6 +2517,9 @@ export class OrdersService {
             tax_amount: Number(order.taxAmount),
             service_charge: Number(order.serviceCharge),
             delivery_fee: Number(order.deliveryFee),
+            delivery_tier: order.deliveryTier ?? null,
+            delivery_eta_min_minutes: order.deliveryEtaMinMinutes ?? null,
+            delivery_eta_max_minutes: order.deliveryEtaMaxMinutes ?? null,
             total_amount: Number(order.totalAmount),
             placed_at: order.placedAt?.toISOString() ?? null,
             completed_at: order.completedAt?.toISOString() ?? null,
@@ -2464,16 +2824,22 @@ export class OrdersService {
             throw new BadRequestException('Invalid rider for this tenant');
         }
         await this.assertRiderLinkedToBrand(tenantId, order.brandId, riderId);
-        // A rider carries exactly one order at a time.
-        const activeCount = await this.orderRepo.count({
-            where: [
-                { tenantId, riderId, deliveryStatus: 'accepted' },
-                { tenantId, riderId, deliveryStatus: 'picked_up' },
-            ],
-        });
-        if (activeCount > 0) {
+        // Tier-aware capacity: priority needs an idle rider; standard/saver may batch up to the
+        // brand's maxBatchSize and never onto a priority-locked rider.
+        const { effectiveTier, maxBatchSize } =
+            await this.resolveOrderTierCap(order);
+        const riderState = await this.getRiderActiveState(
+            tenantId,
+            riderId,
+            order.id,
+        );
+        if (!riderPassesTierCap(riderState, effectiveTier, maxBatchSize)) {
             throw new BadRequestException(
-                'This rider already has an active order. A rider can deliver only one order at a time.',
+                effectiveTier === 'priority'
+                    ? 'A priority order needs an idle rider; this rider already has an active order.'
+                    : riderState.hasPriorityActive
+                      ? 'This rider is locked to a priority delivery and cannot take another order.'
+                      : `This rider is at capacity (max ${maxBatchSize} active ${maxBatchSize === 1 ? 'order' : 'orders'}).`,
             );
         }
         const previousDeliveryStatus = order.deliveryStatus;
@@ -2981,6 +3347,11 @@ export class OrdersService {
             discount_code?: string;
             customer_phone?: string;
             loyalty_points_to_redeem?: number;
+            /** Drop-off coords — required to price/return delivery tiers. */
+            latitude?: number;
+            longitude?: number;
+            /** Optional chosen tier; when omitted the scalar delivery_fee uses the default tier. */
+            delivery_tier?: string;
         },
         tenantId: number,
         source: 'pos' | 'consumer_app' | 'consumer_web' | 'kiosk' = 'pos',
@@ -3147,31 +3518,70 @@ export class OrdersService {
         const taxAmount = Math.round(afterDiscount * taxRate * 100) / 100;
         const serviceCharge =
             Math.round(afterDiscount * serviceChargeRate * 100) / 100;
-        // Delivery fee is configured per brand; a mixed web cart (split into
-        // one order per brand) pays each brand's fee.
-        const quoteBrandFees = new Map<number, number>(
+        // Delivery fee per brand: tier×distance when the brand opts in (also returns
+        // delivery_options for the checkout), else the brand's flat fee. A mixed web cart
+        // (split into one order per brand) pays each brand's fee.
+        const quoteBrands = new Map<number, Brand>(
             (
-                (
-                    branch as {
-                        branchBrands?: Array<{
-                            brand?: { id: number; deliveryFlatFee?: number };
-                        }>;
-                    }
-                ).branchBrands ?? []
+                (branch as { branchBrands?: Array<{ brand?: Brand }> })
+                    .branchBrands ?? []
             )
                 .filter((bb) => bb.brand)
-                .map((bb) => [
-                    Number(bb.brand!.id),
-                    Number(bb.brand!.deliveryFlatFee) || 0,
-                ]),
+                .map((bb) => [Number(bb.brand!.id), bb.brand!]),
         );
-        const deliveryFee =
-            dto.order_type === 'delivery'
-                ? [...quotedBrandIds].reduce(
-                      (sum, id) => sum + (quoteBrandFees.get(id) ?? 0),
-                      0,
-                  )
-                : 0;
+        const qDropLat =
+            dto.latitude != null && Number.isFinite(Number(dto.latitude))
+                ? Number(dto.latitude)
+                : null;
+        const qDropLng =
+            dto.longitude != null && Number.isFinite(Number(dto.longitude))
+                ? Number(dto.longitude)
+                : null;
+        const qDistanceKm = this.dropoffDistanceKm(branch, qDropLat, qDropLng);
+        let deliveryFee = 0;
+        let deliveryOptions: DeliveryOption[] | undefined;
+        if (dto.order_type === 'delivery') {
+            for (const id of quotedBrandIds) {
+                const brand = quoteBrands.get(id);
+                if (!brand) continue;
+                if (
+                    brand.deliveryTiersEnabled &&
+                    brand.deliveryTiers &&
+                    qDistanceKm != null
+                ) {
+                    if (qDistanceKm > Number(branch.deliveryRadiusKm)) {
+                        throw new UnprocessableEntityException(
+                            'Delivery address is outside this branch’s delivery range.',
+                        );
+                    }
+                    const options = buildDeliveryOptions(
+                        brand.deliveryTiers,
+                        qDistanceKm,
+                    );
+                    // Single-brand cart: expose the tier options for the checkout screen.
+                    if (quotedBrandIds.size === 1) deliveryOptions = options;
+                    const chosen = isDeliveryTierKey(dto.delivery_tier)
+                        ? dto.delivery_tier
+                        : null;
+                    let scalar = chosen
+                        ? (resolveChosenTierFee(
+                              brand.deliveryTiers,
+                              chosen,
+                              qDistanceKm,
+                          )?.fee ?? null)
+                        : null;
+                    if (scalar == null) {
+                        const def = defaultTierKey(options);
+                        scalar = def
+                            ? (options.find((o) => o.tier === def)?.fee ?? 0)
+                            : 0;
+                    }
+                    deliveryFee += scalar;
+                } else {
+                    deliveryFee += Number(brand.deliveryFlatFee) || 0;
+                }
+            }
+        }
         const totalAmount =
             Math.round(
                 (afterDiscount + taxAmount + serviceCharge + deliveryFee) * 100,
@@ -3199,6 +3609,7 @@ export class OrdersService {
             tax_amount: taxAmount,
             service_charge: serviceCharge,
             delivery_fee: deliveryFee,
+            ...(deliveryOptions ? { delivery_options: deliveryOptions } : {}),
             total_amount: totalAmount,
             line_breakdown,
         };
@@ -4101,16 +4512,21 @@ export class OrdersService {
         brandId: number,
     ): Promise<{ orderId: string; orderNumber: string }> {
         const todayStr = new Date().toISOString().slice(0, 10);
+        const dateCompact = todayStr.replace(/-/g, '');
+        // Count within the exact order_id namespace (prefix match) rather than by
+        // date(placed_at): the order_id embeds the UTC date, but date(placed_at) is
+        // evaluated in the server's local timezone, so the two disagree in the
+        // local-vs-UTC midnight window and would regenerate a colliding sequence.
+        const prefix = `BR-${brandId}-${branchId}-${dateCompact}-`;
         const count = await this.orderRepo
             .createQueryBuilder('o')
             .where('o.branchId = :branchId', { branchId })
             .andWhere('o.brandId = :brandId', { brandId })
-            .andWhere('date(o.placed_at) = :today', { today: todayStr })
+            .andWhere('o.orderId LIKE :prefix', { prefix: `${prefix}%` })
             .getCount();
         const seq = String(count + 1).padStart(3, '0');
-        const dateCompact = todayStr.replace(/-/g, '');
         return {
-            orderId: `BR-${brandId}-${branchId}-${dateCompact}-${seq}`,
+            orderId: `${prefix}${seq}`,
             orderNumber: seq,
         };
     }

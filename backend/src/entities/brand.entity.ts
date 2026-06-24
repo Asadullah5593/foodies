@@ -14,6 +14,29 @@ import { MenuCategory } from './menu-category.entity';
 import { MenuItem } from './menu-item.entity';
 import { MenuAddon } from './menu-addon.entity';
 
+export type DeliveryTierKey = 'saver' | 'standard' | 'priority';
+
+/** Config for one service tier of a brand's tier-based delivery. */
+export interface DeliveryTierConfig {
+    enabled: boolean;
+    name: string;
+    /** Distance-band fees, ascending by maxKm. First band whose maxKm >= distance wins. */
+    bands: { maxKm: number; fee: number }[];
+    etaMinMinutes: number;
+    etaMaxMinutes: number;
+}
+
+/** Per-brand tier-based delivery configuration (stored as simple-json on the brand). */
+export interface BrandDeliveryTiers {
+    saver: DeliveryTierConfig;
+    standard: DeliveryTierConfig;
+    priority: DeliveryTierConfig;
+    /** Minutes a saver order is held before dispatch (Phase 2 dispatch engine). */
+    saverHoldMinutes?: number;
+    /** Max orders a rider may be batched with (Phase 3; 1 = no batching). */
+    maxBatchSize?: number;
+}
+
 @Entity('brands')
 export class Brand {
     @PrimaryGeneratedColumn()
@@ -56,6 +79,14 @@ export class Brand {
         expiryPeriod?: number;
         expiryUnit?: 'day' | 'month' | 'year';
     } | null;
+
+    /** Whether this brand offers tier-based delivery (opt-in). When false, deliveryFlatFee is used. */
+    @Column({ default: false })
+    deliveryTiersEnabled: boolean;
+
+    /** Per-brand Saver/Standard/Priority delivery config (fees per distance band + static ETAs). */
+    @Column('simple-json', { nullable: true })
+    deliveryTiers: BrandDeliveryTiers | null;
 
     @CreateDateColumn()
     createdAt: Date;

@@ -1,11 +1,23 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+    BadRequestException,
+    Injectable,
+    NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { Brand } from '../entities/brand.entity';
+import {
+    Brand,
+    BrandDeliveryTiers,
+    DeliveryTierConfig,
+} from '../entities/brand.entity';
 import { Branch } from '../entities/branch.entity';
 import { BranchBrand } from '../entities/branch-brand.entity';
 import { BrandOrderRating } from '../entities/brand-order-rating.entity';
 import { MediaStorageService } from '../media/media-storage.service';
+import {
+    DELIVERY_TIER_DEFAULTS,
+    validateDeliveryTiers,
+} from '../orders/delivery-tier.utils';
 
 @Injectable()
 export class BrandsService {
@@ -584,6 +596,109 @@ export class BrandsService {
         return this.toLoyaltyResponse(brand);
     }
 
+    /** Merge stored tiers over incoming over defaults (per field), producing a complete config. */
+    private mergeDeliveryTiers(
+        current: BrandDeliveryTiers | null,
+        incoming: {
+            saver?: Partial<DeliveryTierConfig>;
+            standard?: Partial<DeliveryTierConfig>;
+            priority?: Partial<DeliveryTierConfig>;
+            saverHoldMinutes?: number;
+            maxBatchSize?: number;
+        } | null,
+    ): BrandDeliveryTiers {
+        const def = DELIVERY_TIER_DEFAULTS;
+        const cur = current ?? ({} as Partial<BrandDeliveryTiers>);
+        const inc = incoming ?? {};
+        const mergeTier = (key: 'saver' | 'standard' | 'priority') => {
+            const c: Partial<DeliveryTierConfig> = cur[key] ?? {};
+            const i: Partial<DeliveryTierConfig> = inc[key] ?? {};
+            const d = def[key];
+            return {
+                enabled: i.enabled ?? c.enabled ?? d.enabled,
+                name: i.name ?? c.name ?? d.name,
+                bands: i.bands ?? c.bands ?? d.bands,
+                etaMinMinutes:
+                    i.etaMinMinutes ?? c.etaMinMinutes ?? d.etaMinMinutes,
+                etaMaxMinutes:
+                    i.etaMaxMinutes ?? c.etaMaxMinutes ?? d.etaMaxMinutes,
+            };
+        };
+        return {
+            saver: mergeTier('saver'),
+            standard: mergeTier('standard'),
+            priority: mergeTier('priority'),
+            saverHoldMinutes:
+                inc.saverHoldMinutes ??
+                cur.saverHoldMinutes ??
+                def.saverHoldMinutes,
+            maxBatchSize:
+                inc.maxBatchSize ?? cur.maxBatchSize ?? def.maxBatchSize,
+        };
+    }
+
+    private toDeliveryTiersResponse(brand: Brand) {
+        return {
+            delivery_tiers_enabled: brand.deliveryTiersEnabled,
+            delivery_flat_fee: Number(brand.deliveryFlatFee ?? 0),
+            tiers: this.mergeDeliveryTiers(brand.deliveryTiers, null),
+        };
+    }
+
+    /** Get tier-based delivery config for a brand (admin). Brand-locked users only their own. */
+    async getDeliveryTiers(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ) {
+        const brand = await this.findBrandForLoyalty(
+            id,
+            tenantId,
+            allowedBrandIds,
+        );
+        return this.toDeliveryTiersResponse(brand);
+    }
+
+    /** Update tier-based delivery config for a brand (admin). Brand-locked users only their own. */
+    async updateDeliveryTiers(
+        id: number,
+        tenantId: number | null,
+        allowedBrandIds: number[] | null | undefined,
+        dto: {
+            delivery_tiers_enabled?: boolean;
+            tiers?: {
+                saver?: Partial<DeliveryTierConfig>;
+                standard?: Partial<DeliveryTierConfig>;
+                priority?: Partial<DeliveryTierConfig>;
+                saverHoldMinutes?: number;
+                maxBatchSize?: number;
+            };
+        },
+    ) {
+        const brand = await this.findBrandForLoyalty(
+            id,
+            tenantId,
+            allowedBrandIds,
+        );
+        if (dto.delivery_tiers_enabled !== undefined) {
+            brand.deliveryTiersEnabled = dto.delivery_tiers_enabled;
+        }
+        const merged = this.mergeDeliveryTiers(
+            brand.deliveryTiers,
+            dto.tiers ?? null,
+        );
+        const errors = validateDeliveryTiers(
+            merged,
+            brand.deliveryTiersEnabled,
+        );
+        if (errors.length) {
+            throw new BadRequestException(errors.join('; '));
+        }
+        brand.deliveryTiers = merged;
+        await this.repo.save(brand);
+        return this.toDeliveryTiersResponse(brand);
+    }
+
     /** List the branches this brand is at (scoped to the user) with each branch's online open state. */
     async getBranchAvailability(
         brandId: number,
@@ -670,6 +785,7 @@ export class BrandsService {
             is_active: b.isActive,
             status: b.isActive ? 'active' : 'inactive',
             delivery_flat_fee: Number(b.deliveryFlatFee ?? 0),
+            delivery_tiers_enabled: b.deliveryTiersEnabled === true,
             tenant_id: b.tenantId,
             created_at: b.createdAt?.toISOString() ?? null,
             updated_at: b.updatedAt?.toISOString() ?? null,

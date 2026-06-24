@@ -93,6 +93,10 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         permissionNames: [Permissions.LOYALTY_MANAGE],
     },
     {
+        prefix: '/admin/delivery-tiers',
+        permissionNames: [Permissions.DELIVERIES_MANAGE],
+    },
+    {
         prefix: '/admin/customers',
         permissionNames: [Permissions.CUSTOMERS_MANAGE],
     },

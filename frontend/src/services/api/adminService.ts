@@ -776,6 +776,23 @@ export const adminService = {
     return response.data;
   },
 
+  // Tier-based delivery config (per brand)
+  getDeliveryTiers: async (brandId: number) => {
+    const response = await apiClient.get(`/admin/brands/${brandId}/delivery-tiers`);
+    return response.data;
+  },
+
+  updateDeliveryTiers: async (
+    brandId: number,
+    data: {
+      delivery_tiers_enabled?: boolean;
+      tiers?: Record<string, unknown>;
+    },
+  ) => {
+    const response = await apiClient.put(`/admin/brands/${brandId}/delivery-tiers`, data);
+    return response.data;
+  },
+
   // Customers
   getCustomers: async () => {
     const response = await apiClient.get('/admin/customers');

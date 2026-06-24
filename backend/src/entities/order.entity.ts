@@ -107,6 +107,17 @@ export class Order {
     @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
     deliveryFee: number;
 
+    /** Selected delivery service tier for delivery orders: 'saver' | 'standard' | 'priority'. Null otherwise. */
+    @Column({ type: 'varchar', length: 16, nullable: true })
+    deliveryTier: string | null;
+
+    /** Static ETA snapshot (minutes) for the chosen tier, captured at order time. */
+    @Column({ type: 'int', nullable: true })
+    deliveryEtaMinMinutes: number | null;
+
+    @Column({ type: 'int', nullable: true })
+    deliveryEtaMaxMinutes: number | null;
+
     @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
     totalAmount: number;
 

@@ -18,6 +18,7 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { RequirePermission } from '../roles/require-permission.decorator';
 import { RequirePermissionGuard } from '../roles/require-permission.guard';
 import { Permissions } from '../roles/permissions.dto';
+import { DeliveryTierConfig } from '../entities/brand.entity';
 
 @ApiTags('Admin – Brands')
 @ApiBearerAuth()
@@ -167,6 +168,59 @@ export class BrandsController {
             throw new ForbiddenException('You can only manage your own brand');
         }
         return this.service.updateLoyaltySettings(
+            +id,
+            user.tenantId,
+            user.allowedBrandIds,
+            dto,
+        );
+    }
+
+    @Get(':id/delivery-tiers')
+    getDeliveryTiers(
+        @Param('id') id: string,
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
+    ) {
+        return this.service.getDeliveryTiers(
+            +id,
+            user.tenantId,
+            user.allowedBrandIds,
+        );
+    }
+
+    @Put(':id/delivery-tiers')
+    updateDeliveryTiers(
+        @Param('id') id: string,
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
+        @Body()
+        dto: {
+            delivery_tiers_enabled?: boolean;
+            tiers?: {
+                saver?: Partial<DeliveryTierConfig>;
+                standard?: Partial<DeliveryTierConfig>;
+                priority?: Partial<DeliveryTierConfig>;
+                saverHoldMinutes?: number;
+                maxBatchSize?: number;
+            };
+        },
+    ) {
+        // Brand admins manage their OWN brand only; owner/GM are tenant-scoped in the service.
+        if (
+            user.allowedBrandIds != null &&
+            !user.allowedBrandIds.includes(+id)
+        ) {
+            throw new ForbiddenException('You can only manage your own brand');
+        }
+        return this.service.updateDeliveryTiers(
             +id,
             user.tenantId,
             user.allowedBrandIds,

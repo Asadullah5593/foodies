@@ -182,6 +182,12 @@ async function seed() {
             description: 'View deliveries',
         },
         {
+            name: 'deliveries:manage',
+            resource: 'deliveries',
+            action: 'manage',
+            description: 'Manage tier-based delivery settings',
+        },
+        {
             name: 'shifts:manage',
             resource: 'shifts',
             action: 'manage',

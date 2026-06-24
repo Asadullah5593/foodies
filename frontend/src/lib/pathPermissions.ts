@@ -22,6 +22,7 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/branch-users': ['branch-users:assign'],
   '/admin/discounts': ['discounts:manage'],
   '/admin/loyalty-settings': ['loyalty:manage'],
+  '/admin/delivery-tiers': ['deliveries:manage'],
   '/admin/banners': ['cms:manage'],
   '/admin/promotions': ['promotions:manage'],
   '/admin/customers': ['customers:manage'],

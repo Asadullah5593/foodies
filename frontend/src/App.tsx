@@ -70,6 +70,7 @@ import RiderOpsMetrics from './pages/Admin/RiderHRM/RiderOpsMetrics';
 import RiderPoolSharing from './pages/Admin/RiderHRM/RiderPoolSharing';
 import RequestRiders from './pages/Admin/RiderHRM/RequestRiders';
 import LoyaltySettings from './pages/Admin/LoyaltySettings';
+import DeliveryTiers from './pages/Admin/DeliveryTiers';
 import BusinessSettings from './pages/Admin/BusinessSettings';
 import Customers from './pages/Admin/Customers';
 import InventoryOnHand from './pages/Admin/Inventory/InventoryOnHand';
@@ -306,6 +307,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { path: '/admin/branch-menu-items', label: 'Branch Pricing', icon: MdOutlinePayments },
     { path: '/admin/discounts', label: 'Discounts', icon: MdOutlineLocalOffer },
     { path: '/admin/loyalty-settings', label: 'Loyalty Settings', icon: MdOutlineStarBorder },
+    { path: '/admin/delivery-tiers', label: 'Delivery Tiers', icon: MdOutlineDeliveryDining },
     {
       type: 'group',
       id: 'cms',
@@ -917,6 +919,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><LoyaltySettings /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/delivery-tiers"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><DeliveryTiers /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />
