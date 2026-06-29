@@ -117,9 +117,13 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
               Brand: {brands?.find((b) => b.id === group.brand_id)?.name ?? `#${group.brand_id}`} · Min: {group.min_select}, Max: {group.max_select}
             </p>
             {(group.linked_menu_items ?? []).length > 0 && (
-              <p className="text-xs text-blue-600 mb-2">
-                Linked to: {(group.linked_menu_items ?? []).map((mi) => mi.name).join(', ')}
-              </p>
+              <div className="flex flex-wrap gap-1 mb-2">
+                {(group.linked_menu_items ?? []).map((mi) => (
+                  <span key={mi.id} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200">
+                    {mi.name}
+                  </span>
+                ))}
+              </div>
             )}
             {sortedMods.length > 0 ? (
               <DndContext
@@ -195,7 +199,7 @@ const Modifiers: React.FC = () => {
   const [editGroupFormData, setEditGroupFormData] = useState({ name: '', min_select: '0', max_select: '1', included_quantity: '0', included_by_size: null as Record<string, number> | null });
   const [editModifierFormData, setEditModifierFormData] = useState({ name: '', price: '', price_by_size: null as Record<string, number> | null });
   // Deep-link from the Menu Items page: ?brand_id= pre-filters the list.
-  const [filters, setFilters] = useState<{ brand_id: string; search: string }>({ brand_id: searchParams.get('brand_id') ?? '', search: '' });
+  const [filters, setFilters] = useState<{ brand_id: string; search: string; menu_item_id: string }>({ brand_id: searchParams.get('brand_id') ?? '', search: '', menu_item_id: '' });
   const debouncedModifierSearch = useDebouncedValue(filters.search, 300);
   const [linkingInProgress, setLinkingInProgress] = useState(false);
   const [page, setPage] = useState(1);
@@ -224,16 +228,26 @@ const Modifiers: React.FC = () => {
     enabled: true,
   });
 
+  const { data: menuItemsForFilter } = useQuery({
+    queryKey: ['menuItemsForModifierFilter', effectiveBrandId],
+    queryFn: () => effectiveBrandId != null ? adminService.getMenuItems({ brand_id: effectiveBrandId }) : Promise.resolve([]),
+    enabled: effectiveBrandId != null,
+  });
+
   const filteredGroups = useMemo(() => {
-    const groups = (modifierGroups ?? []) as ModifierGroupResponse[];
-    if (!debouncedModifierSearch.trim()) return groups;
-    const q = debouncedModifierSearch.trim().toLowerCase();
-    return groups.filter(
-      (g) =>
-        g.name.toLowerCase().includes(q) ||
-        (g.modifiers ?? []).some((m) => m.name.toLowerCase().includes(q)),
-    );
-  }, [modifierGroups, debouncedModifierSearch]);
+    let groups = (modifierGroups ?? []) as ModifierGroupResponse[];
+    if (debouncedModifierSearch.trim()) {
+      const q = debouncedModifierSearch.trim().toLowerCase();
+      groups = groups.filter(
+        (g) => g.name.toLowerCase().includes(q) || (g.modifiers ?? []).some((m) => m.name.toLowerCase().includes(q)),
+      );
+    }
+    if (filters.menu_item_id) {
+      const itemId = +filters.menu_item_id;
+      groups = groups.filter((g) => (g.linked_menu_items ?? []).some((mi) => mi.id === itemId));
+    }
+    return groups;
+  }, [modifierGroups, debouncedModifierSearch, filters.menu_item_id]);
 
   const modifierSearchTypeahead = useTypeaheadSuggestions({
     query: debouncedModifierSearch,
@@ -249,7 +263,8 @@ const Modifiers: React.FC = () => {
     const start = (page - 1) * DEFAULT_PAGE_SIZE;
     return filteredGroups.slice(start, start + DEFAULT_PAGE_SIZE);
   }, [filteredGroups, page]);
-  useEffect(() => setPage(1), [filters.brand_id, debouncedModifierSearch]);
+  useEffect(() => { setPage(1); setFilters((f) => ({ ...f, menu_item_id: '' })); }, [filters.brand_id]);
+  useEffect(() => setPage(1), [debouncedModifierSearch, filters.menu_item_id]);
 
   const { data: menuItemsForLink } = useQuery({
     queryKey: ['menuItemsForModifierLink', linkMenuItemsGroup?.brand_id],
@@ -469,7 +484,23 @@ const Modifiers: React.FC = () => {
               />
             </div>
           </div>
-          <ClearFiltersButton onClick={() => setFilters({ brand_id: '', search: '' })} />
+          {effectiveBrandId != null && (
+            <SearchableSelect
+              label="Menu Item"
+              value={filters.menu_item_id}
+              onChange={(v) => setFilters((f) => ({ ...f, menu_item_id: v }))}
+              options={[
+                { value: '', label: 'All items' },
+                ...(menuItemsForFilter ?? []).map((mi: { id: number; name: string }) => ({
+                  value: String(mi.id),
+                  label: mi.name,
+                })),
+              ]}
+              placeholder="All items"
+              minWidth="min-w-[180px]"
+            />
+          )}
+          <ClearFiltersButton onClick={() => setFilters({ brand_id: '', search: '', menu_item_id: '' })} />
         </div>
       </Card>
 
