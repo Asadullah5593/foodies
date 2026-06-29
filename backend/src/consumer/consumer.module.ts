@@ -13,6 +13,7 @@ import { AuthModule } from '../auth/auth.module';
 import { OtpModule } from '../otp/otp.module';
 import { CartModule } from '../cart/cart.module';
 import { MailModule } from '../mail/mail.module';
+import { SmsModule } from '../sms/sms.module';
 import { MediaModule } from '../media/media.module';
 import { ConsumerController } from './consumer.controller';
 import { ConsumerRiderLocationController } from './consumer-rider-location.controller';
@@ -43,6 +44,7 @@ import { PromotionsModule } from '../promotions/promotions.module';
         OtpModule,
         CartModule,
         MailModule,
+        SmsModule,
         MediaModule,
         RatingsModule,
         BannersModule,

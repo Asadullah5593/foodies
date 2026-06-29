@@ -30,7 +30,7 @@ const Discounts: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     code: '',
-    type: 'flat' as 'flat' | 'percentage',
+    type: 'flat' as 'flat' | 'percentage' | 'buy_x_get_y',
     value: '',
     min_order_amount: '',
     max_discount_amount: '',
@@ -42,6 +42,13 @@ const Discounts: React.FC = () => {
     is_active: true,
     valid_from: '',
     valid_until: '',
+    valid_time_start: '',
+    valid_time_end: '',
+    valid_days_of_week: [] as number[],
+    buy_quantity: '1',
+    get_quantity: '1',
+    get_discount_percent: '50',
+    bogo_match_same_group: true,
   });
 
   const { data: discounts, isLoading } = useQuery({
@@ -142,6 +149,13 @@ const Discounts: React.FC = () => {
       is_active: true,
       valid_from: '',
       valid_until: '',
+      valid_time_start: '',
+      valid_time_end: '',
+      valid_days_of_week: [],
+      buy_quantity: '1',
+      get_quantity: '1',
+      get_discount_percent: '50',
+      bogo_match_same_group: true,
     });
   };
 
@@ -165,6 +179,13 @@ const Discounts: React.FC = () => {
       is_active: discount.is_active,
       valid_from: discount.valid_from ? discount.valid_from.split('T')[0] : '',
       valid_until: discount.valid_until ? discount.valid_until.split('T')[0] : '',
+      valid_time_start: discount.valid_time_start ?? '',
+      valid_time_end: discount.valid_time_end ?? '',
+      valid_days_of_week: discount.valid_days_of_week ?? [],
+      buy_quantity: (discount.buy_quantity ?? 1).toString(),
+      get_quantity: (discount.get_quantity ?? 1).toString(),
+      get_discount_percent: (discount.get_discount_percent ?? 50).toString(),
+      bogo_match_same_group: discount.bogo_match_same_group ?? true,
     });
     setShowForm(true);
   };
@@ -215,6 +236,19 @@ const Discounts: React.FC = () => {
       is_active: formData.is_active,
       valid_from: formData.valid_from || undefined,
       valid_until: formData.valid_until || undefined,
+      valid_time_start: formData.valid_time_start || null,
+      valid_time_end: formData.valid_time_end || null,
+      valid_days_of_week: formData.valid_days_of_week.length
+        ? formData.valid_days_of_week
+        : null,
+      ...(formData.type === 'buy_x_get_y'
+        ? {
+            buy_quantity: parseInt(formData.buy_quantity, 10) || 1,
+            get_quantity: parseInt(formData.get_quantity, 10) || 1,
+            get_discount_percent: parseFloat(formData.get_discount_percent) || 0,
+            bogo_match_same_group: formData.bogo_match_same_group,
+          }
+        : {}),
     };
 
     if (editingDiscount) {
@@ -318,29 +352,66 @@ const Discounts: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
               <select
                 value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value as 'flat' | 'percentage' })}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value as 'flat' | 'percentage' | 'buy_x_get_y' })}
                 required
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="flat">Flat Amount</option>
                 <option value="percentage">Percentage</option>
+                <option value="buy_x_get_y">Buy X Get Y (BOGO)</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Value *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {formData.type === 'buy_x_get_y' ? 'Value (unused for BOGO)' : 'Value *'}
+              </label>
               <input
                 type="number"
                 step="0.01"
                 min="0"
                 value={formData.value}
                 onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-                required
+                required={formData.type !== 'buy_x_get_y'}
+                disabled={formData.type === 'buy_x_get_y'}
                 placeholder={formData.type === 'percentage' ? '0-100' : '0.00'}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
               />
             </div>
           </div>
+
+          {formData.type === 'buy_x_get_y' && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
+              <p className="text-xs text-amber-800">
+                Buy X get Y: for every <b>Buy qty</b> eligible items, the cheapest <b>Get qty</b> are discounted. Use “Applies to” below to scope to pizza categories/products.
+              </p>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Buy qty</label>
+                  <input type="number" min="1" value={formData.buy_quantity}
+                    onChange={(e) => setFormData({ ...formData, buy_quantity: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Get qty</label>
+                  <input type="number" min="1" value={formData.get_quantity}
+                    onChange={(e) => setFormData({ ...formData, get_quantity: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Get % off</label>
+                  <input type="number" min="0" max="100" value={formData.get_discount_percent}
+                    onChange={(e) => setFormData({ ...formData, get_discount_percent: e.target.value })}
+                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg" />
+                </div>
+              </div>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={formData.bogo_match_same_group}
+                  onChange={(e) => setFormData({ ...formData, bogo_match_same_group: e.target.checked })} />
+                Pair only within the same category &amp; size (e.g. 2nd Large pizza of same category half price)
+              </label>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -508,6 +579,53 @@ const Discounts: React.FC = () => {
                 onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
+            </div>
+          </div>
+
+          {/* Recurring time-of-day + day-of-week window (branch timezone) — e.g. lunch deals Mon–Fri 12:00–16:00. */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Valid Time From</label>
+              <input
+                type="time"
+                value={formData.valid_time_start}
+                onChange={(e) => setFormData({ ...formData, valid_time_start: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Valid Time Until</label>
+              <input
+                type="time"
+                value={formData.valid_time_end}
+                onChange={(e) => setFormData({ ...formData, valid_time_end: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Valid Days (leave empty = every day)</label>
+            <div className="flex flex-wrap gap-2">
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => {
+                const on = formData.valid_days_of_week.includes(i);
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() =>
+                      setFormData({
+                        ...formData,
+                        valid_days_of_week: on
+                          ? formData.valid_days_of_week.filter((x) => x !== i)
+                          : [...formData.valid_days_of_week, i].sort((a, b) => a - b),
+                      })
+                    }
+                    className={`px-3 py-1.5 rounded-lg border text-sm ${on ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 hover:bg-gray-50'}`}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

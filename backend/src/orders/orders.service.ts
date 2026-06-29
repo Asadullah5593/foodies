@@ -30,6 +30,15 @@ import { CustomersService } from '../customers/customers.service';
 import { InventoryConsumptionService } from '../inventory/inventory-consumption.service';
 import { normalizePakistaniPhone } from '../utils/phone';
 import { assertMenuItemAvailableForOrderType } from '../utils/menu-order-type';
+import {
+    priceModifiersForLine,
+    type PricingModifierGroup,
+} from '../menu/modifier-pricing';
+import {
+    getBranchClock,
+    isWithinSchedule,
+    type BranchClock,
+} from '../utils/branch-schedule';
 import { RiderDispatchState } from '../entities/rider-dispatch-state.entity';
 import { RiderAssignmentLedger } from '../entities/rider-assignment-ledger.entity';
 import { RiderOpsMetricsService } from '../rider-hrm/rider-ops-metrics.service';
@@ -1147,6 +1156,8 @@ export class OrdersService {
             brandId: number;
             branchId: number;
             itemSubtotal: number;
+            quantity?: number;
+            sizeKey?: string | null;
         }[] = [];
         const itemBrandIds = new Set<number>();
         let subtotal = 0;
@@ -1162,6 +1173,8 @@ export class OrdersService {
             itemName: string;
             brandId: number;
             branchId: number;
+            modifierPricing: ReturnType<typeof priceModifiersForLine>;
+            lineSizeKey: string | null;
         }[] = [];
 
         for (const line of expandedItems) {
@@ -1174,6 +1187,12 @@ export class OrdersService {
             );
             if (!menuItem) continue;
             assertMenuItemAvailableForOrderType(menuItem, dto.order_type);
+            this.assertMenuItemAvailableNow(
+                menuItem,
+                getBranchClock(
+                    (branchInfo.branch as { timezone?: string }).timezone,
+                ),
+            );
             const menuItemBrandId = Number(
                 (menuItem as { brandId?: number; brand?: { id: number } })
                     .brandId ??
@@ -1202,11 +1221,15 @@ export class OrdersService {
                     line.menu_item_id,
                 );
             }
+            let lineSizeKey: string | null = null;
             if (line.variant_id) {
                 const variant = menuItem.variants?.find(
                     (v) => v.id === line.variant_id,
                 );
-                if (variant) unitPrice += Number(variant.priceModifier);
+                if (variant) {
+                    unitPrice += Number(variant.priceModifier);
+                    lineSizeKey = variant.sizeKey ?? null;
+                }
             }
             const quantity = line.quantity ?? 1;
             let itemSubtotal = unitPrice * quantity;
@@ -1221,31 +1244,16 @@ export class OrdersService {
                             Number(addon.price) * (addonLine.quantity ?? 1);
                 }
             }
-            const menuItemWithModifiers = menuItem as {
-                modifierGroups?: Array<{
-                    modifiers?: Array<{
-                        id: number;
-                        name: string;
-                        price: number;
-                    }>;
-                }>;
-            };
-            if (
-                line.modifiers?.length &&
-                menuItemWithModifiers.modifierGroups
-            ) {
-                const allModifiers = (
-                    menuItemWithModifiers.modifierGroups ?? []
-                ).flatMap((mg) => mg.modifiers ?? []);
-                for (const modLine of line.modifiers) {
-                    const mod = allModifiers.find(
-                        (m) => m.id === modLine.modifier_id,
-                    );
-                    if (mod)
-                        itemSubtotal +=
-                            Number(mod.price) * (modLine.quantity ?? 1);
-                }
-            }
+            // Size-aware modifier pricing (per-size surcharge + "first N free"); see modifier-pricing.ts.
+            // Modifier cost is added once per line (matches prior behaviour, not scaled by line qty).
+            const modifierPricing = priceModifiersForLine({
+                modifierGroups: (
+                    menuItem as { modifierGroups?: PricingModifierGroup[] }
+                ).modifierGroups,
+                selections: line.modifiers,
+                sizeKey: lineSizeKey,
+            });
+            itemSubtotal += modifierPricing.total;
 
             lineDetails.push({
                 menuItemId: menuItem.id,
@@ -1253,6 +1261,8 @@ export class OrdersService {
                 brandId: menuItemBrandId,
                 branchId: lineBranchId,
                 itemSubtotal,
+                quantity: line.quantity ?? 1,
+                sizeKey: lineSizeKey,
             });
             itemBrandIds.add(menuItemBrandId);
             subtotal += itemSubtotal;
@@ -1264,6 +1274,8 @@ export class OrdersService {
                 itemName,
                 brandId: menuItemBrandId,
                 branchId: lineBranchId,
+                modifierPricing,
+                lineSizeKey,
             });
         }
 
@@ -1630,6 +1642,8 @@ export class OrdersService {
                 itemSubtotal,
                 itemName,
                 brandId: bid,
+                modifierPricing,
+                lineSizeKey,
             } of brandInputs) {
                 const orderItem = await this.orderItemRepo.save(
                     this.orderItemRepo.create({
@@ -1667,38 +1681,20 @@ export class OrdersService {
                         }
                     }
                 }
-                const menuItemModGroups = (
-                    menuItem as {
-                        modifierGroups?: Array<{
-                            modifiers?: Array<{
-                                id: number;
-                                name: string;
-                                price: number;
-                            }>;
-                        }>;
-                    }
-                ).modifierGroups;
-                const allMods = (menuItemModGroups ?? []).flatMap(
-                    (mg) => mg.modifiers ?? [],
-                );
-                if (line.modifiers?.length && allMods.length > 0) {
-                    for (const modLine of line.modifiers) {
-                        const mod = allMods.find(
-                            (m) => m.id === modLine.modifier_id,
-                        );
-                        if (mod) {
-                            const qty = modLine.quantity ?? 1;
-                            await this.orderItemModifierRepo.save(
-                                this.orderItemModifierRepo.create({
-                                    orderItemId: orderItem.id,
-                                    modifierId: mod.id,
-                                    nameSnapshot: mod.name,
-                                    priceSnapshot: Number(mod.price),
-                                    quantity: qty,
-                                }),
-                            );
-                        }
-                    }
+                // Persist one row per modifier from the size-aware pricing result
+                // (priceSnapshot = per-unit size price; freeQuantity = units included free).
+                for (const pm of modifierPricing.lines) {
+                    await this.orderItemModifierRepo.save(
+                        this.orderItemModifierRepo.create({
+                            orderItemId: orderItem.id,
+                            modifierId: pm.modifierId,
+                            nameSnapshot: pm.name,
+                            priceSnapshot: pm.unitPrice,
+                            quantity: pm.quantity,
+                            freeQuantity: pm.freeQuantity,
+                            variantSizeSnapshot: lineSizeKey,
+                        }),
+                    );
                 }
             }
         }
@@ -1916,6 +1912,7 @@ export class OrdersService {
                                     nameSnapshot: string;
                                     priceSnapshot: number;
                                     quantity?: number | null;
+                                    freeQuantity?: number | null;
                                 }>;
                             }
                         ).modifiers?.map((m) => ({
@@ -1924,6 +1921,9 @@ export class OrdersService {
                             quantity:
                                 (m as { quantity?: number | null }).quantity ??
                                 1,
+                            free_quantity:
+                                (m as { freeQuantity?: number | null })
+                                    .freeQuantity ?? 0,
                         })) ?? [],
                 })) ?? [],
         };
@@ -3721,6 +3721,7 @@ export class OrdersService {
             deal_slot_index?: number;
             deal_unit_price?: number;
         }> = [];
+        const branchClockCache = new Map<number, BranchClock>();
         for (const line of items) {
             const raw = line as {
                 deal_menu_item_id?: number;
@@ -3737,11 +3738,18 @@ export class OrdersService {
                 branch_id?: number;
             };
             if (raw.deal_menu_item_id != null && raw.components?.length) {
+                const branchId = raw.branch_id ?? defaultBranchId;
                 const dealRoot = await this.menuService.findMenuItem(
                     raw.deal_menu_item_id,
                 );
                 if (dealRoot) {
                     assertMenuItemAvailableForOrderType(dealRoot, orderType);
+                    // Time-restricted deals (e.g. lunch Mon–Fri 12–16h) enforce the
+                    // window on the deal root, in the branch timezone.
+                    this.assertMenuItemAvailableNow(
+                        dealRoot,
+                        await this.getBranchClockCached(branchId, branchClockCache),
+                    );
                 }
                 for (const comp of raw.components) {
                     const compItem = await this.menuService.findMenuItem(
@@ -3754,14 +3762,22 @@ export class OrdersService {
                         );
                     }
                 }
-                const branchId = raw.branch_id ?? defaultBranchId;
                 const dealPrice = await this.menuService.getEffectiveUnitPrice(
                     branchId,
                     raw.deal_menu_item_id,
                 );
+                // Phase 3: per-slot upsell surcharges (e.g. "upgrade to Firey Special +Rs100").
+                const surchargeBySlot =
+                    await this.menuService.getDealSlotSurcharges(
+                        raw.deal_menu_item_id,
+                    );
                 const qty = raw.quantity ?? 1;
                 for (let q = 0; q < qty; q++) {
                     raw.components.forEach((comp, idx) => {
+                        const slotSurcharge =
+                            surchargeBySlot.get(comp.slot_index)?.[
+                                String(comp.menu_item_id)
+                            ] ?? 0;
                         expanded.push({
                             menu_item_id: comp.menu_item_id,
                             quantity: comp.quantity ?? 1,
@@ -3772,7 +3788,9 @@ export class OrdersService {
                             branch_id: raw.branch_id ?? defaultBranchId,
                             deal_id: raw.deal_menu_item_id,
                             deal_slot_index: comp.slot_index,
-                            deal_unit_price: idx === 0 ? dealPrice : 0,
+                            deal_unit_price:
+                                (idx === 0 ? dealPrice : 0) +
+                                Number(slotSurcharge || 0),
                         });
                     });
                 }
@@ -3819,6 +3837,8 @@ export class OrdersService {
             categoryId: number;
             brandId: number;
             itemSubtotal: number;
+            quantity?: number;
+            sizeKey?: string | null;
         }[];
         orderBrandId: number | null;
     }> {
@@ -3838,11 +3858,16 @@ export class OrdersService {
                 .map((bb) => Number(bb.brandId ?? bb.brand?.id))
                 .filter((id: number) => Number.isFinite(id)),
         );
+        const branchClock = getBranchClock(
+            (branch as { timezone?: string } | null)?.timezone,
+        );
         const lineDetails: {
             menuItemId: number;
             categoryId: number;
             brandId: number;
             itemSubtotal: number;
+            quantity?: number;
+            sizeKey?: string | null;
         }[] = [];
         const itemBrandIds = new Set<number>();
         let subtotal = 0;
@@ -3852,6 +3877,7 @@ export class OrdersService {
             );
             if (!menuItem) continue;
             assertMenuItemAvailableForOrderType(menuItem, orderType);
+            this.assertMenuItemAvailableNow(menuItem, branchClock);
             const brandId = Number(
                 (menuItem as { brandId?: number; brand?: { id: number } })
                     .brandId ??
@@ -3876,18 +3902,25 @@ export class OrdersService {
             const isDealPriceLine =
                 (line as { deal_unit_price?: number }).deal_unit_price !==
                 undefined;
+            // Resolve the variant size for both deal and non-deal lines so deal
+            // component toppings (e.g. a 12" pizza inside a deal) price per size.
+            let lineSizeKey: string | null = null;
+            if (line.variant_id && menuItem.variants?.length) {
+                const variant = menuItem.variants.find(
+                    (v) => v.id === line.variant_id,
+                );
+                if (variant) {
+                    if (!isDealPriceLine)
+                        unitPrice += Number(variant.priceModifier);
+                    lineSizeKey = variant.sizeKey ?? null;
+                }
+            }
             let itemSubtotalForDetail: number;
             if (isDealPriceLine) {
                 // Deal line: base is the fixed deal price (one deal unit); still add addons and modifiers for this component.
                 itemSubtotalForDetail = (line as { deal_unit_price: number })
                     .deal_unit_price;
             } else {
-                if (line.variant_id && menuItem.variants?.length) {
-                    const variant = menuItem.variants.find(
-                        (v) => v.id === line.variant_id,
-                    );
-                    if (variant) unitPrice += Number(variant.priceModifier);
-                }
                 const quantity = line.quantity ?? 1;
                 itemSubtotalForDetail = unitPrice * quantity;
             }
@@ -3902,31 +3935,21 @@ export class OrdersService {
                             Number(addon.price) * (addonLine.quantity ?? 1);
                 }
             }
-            const allModsQuote = (
-                (
-                    menuItem as {
-                        modifierGroups?: Array<{
-                            modifiers?: Array<{ id: number; price: number }>;
-                        }>;
-                    }
-                ).modifierGroups ?? []
-            ).flatMap((mg) => mg.modifiers ?? []);
-            if (line.modifiers?.length && allModsQuote.length > 0) {
-                for (const modLine of line.modifiers) {
-                    const mod = allModsQuote.find(
-                        (m) => m.id === modLine.modifier_id,
-                    );
-                    if (mod)
-                        itemSubtotalForDetail +=
-                            Number(mod.price) * (modLine.quantity ?? 1);
-                }
-            }
+            itemSubtotalForDetail += priceModifiersForLine({
+                modifierGroups: (
+                    menuItem as { modifierGroups?: PricingModifierGroup[] }
+                ).modifierGroups,
+                selections: line.modifiers,
+                sizeKey: lineSizeKey,
+            }).total;
             subtotal += itemSubtotalForDetail;
             lineDetails.push({
                 menuItemId: menuItem.id,
                 categoryId: menuItem.categoryId,
                 brandId,
                 itemSubtotal: itemSubtotalForDetail,
+                quantity: line.quantity ?? 1,
+                sizeKey: lineSizeKey,
             });
         }
         const orderBrandId =
@@ -3963,11 +3986,15 @@ export class OrdersService {
             );
             if (!menuItem) continue;
             let unitPrice = Number(menuItem.basePrice);
+            let lineSizeKey: string | null = null;
             if (line.variant_id && menuItem.variants?.length) {
                 const variant = menuItem.variants.find(
                     (v) => v.id === line.variant_id,
                 );
-                if (variant) unitPrice += Number(variant.priceModifier);
+                if (variant) {
+                    unitPrice += Number(variant.priceModifier);
+                    lineSizeKey = variant.sizeKey ?? null;
+                }
             }
             const quantity = line.quantity ?? 1;
             let itemSubtotal = unitPrice * quantity;
@@ -3981,25 +4008,13 @@ export class OrdersService {
                             Number(addon.price) * (addonLine.quantity ?? 1);
                 }
             }
-            const allModsSub = (
-                (
-                    menuItem as {
-                        modifierGroups?: Array<{
-                            modifiers?: Array<{ id: number; price: number }>;
-                        }>;
-                    }
-                ).modifierGroups ?? []
-            ).flatMap((mg) => mg.modifiers ?? []);
-            if (line.modifiers?.length && allModsSub.length > 0) {
-                for (const modLine of line.modifiers) {
-                    const mod = allModsSub.find(
-                        (m) => m.id === modLine.modifier_id,
-                    );
-                    if (mod)
-                        itemSubtotal +=
-                            Number(mod.price) * (modLine.quantity ?? 1);
-                }
-            }
+            itemSubtotal += priceModifiersForLine({
+                modifierGroups: (
+                    menuItem as { modifierGroups?: PricingModifierGroup[] }
+                ).modifierGroups,
+                selections: line.modifiers,
+                sizeKey: lineSizeKey,
+            }).total;
             subtotal += itemSubtotal;
             lineDetails.push({
                 menuItemId: menuItem.id,
@@ -4037,6 +4052,116 @@ export class OrdersService {
         return line.brandId ?? lineDetails[index]?.brandId;
     }
 
+    /** Branch wall-clock (timezone-aware), cached per branch id for the request. */
+    private async getBranchClockCached(
+        branchId: number,
+        cache?: Map<number, BranchClock>,
+    ): Promise<BranchClock> {
+        const cached = cache?.get(branchId);
+        if (cached) return cached;
+        const branch = await this.branchRepo.findOne({
+            where: { id: branchId },
+            select: ['timezone'],
+        });
+        const clock = getBranchClock(branch?.timezone);
+        cache?.set(branchId, clock);
+        return clock;
+    }
+
+    /** Throw if a menu item's recurring availability window excludes the branch's current time. */
+    private assertMenuItemAvailableNow(
+        item: {
+            name: string;
+            availableTimeStart?: string | null;
+            availableTimeEnd?: string | null;
+            availableDaysOfWeek?: number[] | null;
+        },
+        clock: BranchClock,
+    ): void {
+        const ok = isWithinSchedule(
+            {
+                timeStart: item.availableTimeStart,
+                timeEnd: item.availableTimeEnd,
+                daysOfWeek: item.availableDaysOfWeek,
+            },
+            clock,
+        );
+        if (!ok)
+            throw new BadRequestException(
+                `"${item.name}" is not available at this time.`,
+            );
+    }
+
+    /**
+     * Buy-X-get-Y (BOGO) discount amount for the eligible (in-scope) lines.
+     * Expands lines into per-unit prices; for each cohort of (buy+get) units the
+     * cheapest `get` units are discounted by `getDiscountPercent`. When
+     * bogoMatchSameGroup is set, units are paired only within the same category+size
+     * (e.g. "buy a Large pizza, 2nd Large of the same category half price").
+     */
+    private computeBogoDiscount(
+        discount: Discount,
+        eligible: Array<{
+            itemSubtotal: number;
+            quantity?: number;
+            categoryId: number;
+            sizeKey?: string | null;
+        }>,
+    ): number {
+        const buyQ = Math.max(1, Number(discount.buyQuantity) || 1);
+        const getQ = Math.max(1, Number(discount.getQuantity) || 1);
+        const pct = Math.min(
+            100,
+            Math.max(0, Number(discount.getDiscountPercent) || 0),
+        );
+        if (pct <= 0) return 0;
+        const cohort = buyQ + getQ;
+
+        const unitPricesFor = (
+            lines: typeof eligible,
+        ): number[] => {
+            const units: number[] = [];
+            for (const l of lines) {
+                const q = Math.max(1, Math.floor(Number(l.quantity) || 1));
+                const unit = q > 0 ? l.itemSubtotal / q : l.itemSubtotal;
+                for (let i = 0; i < q; i++) units.push(unit);
+            }
+            return units;
+        };
+
+        const discountForUnits = (prices: number[]): number => {
+            // Sort descending so the cheapest units in each cohort get discounted.
+            const sorted = [...prices].sort((a, b) => b - a);
+            let total = 0;
+            for (
+                let start = 0;
+                start + cohort <= sorted.length;
+                start += cohort
+            ) {
+                for (let k = 0; k < getQ; k++) {
+                    total += (sorted[start + cohort - 1 - k] * pct) / 100;
+                }
+            }
+            return total;
+        };
+
+        let total = 0;
+        if (discount.bogoMatchSameGroup) {
+            const groups = new Map<string, typeof eligible>();
+            for (const l of eligible) {
+                const key = `${l.categoryId}|${l.sizeKey ?? ''}`;
+                const arr = groups.get(key) ?? [];
+                arr.push(l);
+                groups.set(key, arr);
+            }
+            for (const arr of groups.values())
+                total += discountForUnits(unitPricesFor(arr));
+        } else {
+            total = discountForUnits(unitPricesFor(eligible));
+        }
+        return Math.round(total * 100) / 100;
+    }
+
     /**
      * Check if discount is valid for current time and day in branch timezone.
      * validDaysOfWeek: 0=Sun, 1=Mon, …, 6=Sat.
@@ -4056,55 +4181,14 @@ export class OrdersService {
             where: { id: branchId },
             select: ['timezone'],
         });
-        const tz = branch?.timezone ?? 'UTC';
-
-        const now = new Date();
-        const formatter = new Intl.DateTimeFormat('en-GB', {
-            timeZone: tz,
-            hour: 'numeric',
-            minute: 'numeric',
-            hour12: false,
-            weekday: 'short',
-        });
-        const parts = formatter.formatToParts(now);
-        let hour = 0,
-            minute = 0,
-            dayOfWeek = 0;
-        for (const p of parts) {
-            if (p.type === 'hour') hour = parseInt(p.value, 10);
-            if (p.type === 'minute') minute = parseInt(p.value, 10);
-            if (p.type === 'weekday')
-                dayOfWeek = [
-                    'Sun',
-                    'Mon',
-                    'Tue',
-                    'Wed',
-                    'Thu',
-                    'Fri',
-                    'Sat',
-                ].indexOf(p.value);
-        }
-        const currentMinutes = hour * 60 + minute;
-
-        if (hasDays) {
-            const days = discount.validDaysOfWeek as number[];
-            if (!days.includes(dayOfWeek)) return false;
-        }
-
-        if (hasTime) {
-            const parseTime = (t: string | null): number | null => {
-                if (!t) return null;
-                const s = String(t).trim();
-                const [h, m] = s.split(':').map((x) => parseInt(x, 10) || 0);
-                return h * 60 + m;
-            };
-            const startM = parseTime(discount.validTimeStart);
-            const endM = parseTime(discount.validTimeEnd);
-            if (startM != null && currentMinutes < startM) return false;
-            if (endM != null && currentMinutes > endM) return false;
-        }
-
-        return true;
+        return isWithinSchedule(
+            {
+                timeStart: discount.validTimeStart,
+                timeEnd: discount.validTimeEnd,
+                daysOfWeek: discount.validDaysOfWeek,
+            },
+            getBranchClock(branch?.timezone),
+        );
     }
 
     /** Resolve best auto-applied discount. Multi-brand: brand-scoped discounts apply to the eligible portion only. */
@@ -4119,6 +4203,8 @@ export class OrdersService {
             categoryId: number;
             itemSubtotal: number;
             brandId?: number;
+            quantity?: number;
+            sizeKey?: string | null;
         }[],
     ): Promise<{
         discountAmount: number;
@@ -4214,12 +4300,26 @@ export class OrdersService {
                 return true;
             };
             let discountableAmount = 0;
+            const eligibleLines: typeof lineDetails = [];
             lineDetails.forEach((l, i) => {
-                if (inScope(l, i)) discountableAmount += l.itemSubtotal;
+                if (inScope(l, i)) {
+                    discountableAmount += l.itemSubtotal;
+                    eligibleLines.push(l);
+                }
             });
             if (discountableAmount <= 0) continue;
             let discountAmount = 0;
-            if (discount.type === 'flat') {
+            if (discount.type === 'buy_x_get_y') {
+                discountAmount = this.computeBogoDiscount(
+                    discount,
+                    eligibleLines,
+                );
+                if (discount.maxDiscountAmount != null)
+                    discountAmount = Math.min(
+                        discountAmount,
+                        Number(discount.maxDiscountAmount),
+                    );
+            } else if (discount.type === 'flat') {
                 discountAmount = Math.min(
                     Number(discount.value),
                     discountableAmount,
@@ -4266,6 +4366,8 @@ export class OrdersService {
             categoryId: number;
             itemSubtotal: number;
             brandId?: number;
+            quantity?: number;
+            sizeKey?: string | null;
         }[],
         lineAfterAuto: number[] | null,
     ): Promise<{
@@ -4373,7 +4475,18 @@ export class OrdersService {
         discountableAmount = Math.min(discountableAmount, baseAmount);
         if (discountableAmount <= 0) return empty;
         let discountAmount = 0;
-        if (discount.type === 'flat') {
+        if (discount.type === 'buy_x_get_y') {
+            const eligibleLines = lineDetails.filter((l, i) => inScope(l, i));
+            discountAmount = Math.min(
+                this.computeBogoDiscount(discount, eligibleLines),
+                discountableAmount,
+            );
+            if (discount.maxDiscountAmount != null)
+                discountAmount = Math.min(
+                    discountAmount,
+                    Number(discount.maxDiscountAmount),
+                );
+        } else if (discount.type === 'flat') {
             discountAmount = Math.min(
                 Number(discount.value),
                 discountableAmount,
@@ -4410,6 +4523,8 @@ export class OrdersService {
             categoryId: number;
             itemSubtotal: number;
             brandId?: number;
+            quantity?: number;
+            sizeKey?: string | null;
         }[],
         baseAmounts: number[],
         totalBase: number,
@@ -4486,6 +4601,8 @@ export class OrdersService {
             categoryId: number;
             itemSubtotal: number;
             brandId?: number;
+            quantity?: number;
+            sizeKey?: string | null;
         }[],
         subtotal: number,
         discountAmount: number,

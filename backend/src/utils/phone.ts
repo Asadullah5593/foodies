@@ -34,3 +34,15 @@ export function validatePakistaniPhone(phone: string): string {
     }
     return normalized;
 }
+
+/**
+ * Convert any accepted Pakistani phone form to E.164 (`+923XXXXXXXXX`), the
+ * format SMS providers (e.g. Amazon SNS `PhoneNumber`) require. Returns null
+ * for invalid input. Delegates to normalizePakistaniPhone so digit parsing has
+ * a single source of truth.
+ */
+export function toE164Pakistani(phone: string): string | null {
+    const normalized = normalizePakistaniPhone(phone); // 03XXXXXXXXX
+    if (!normalized) return null;
+    return '+92' + normalized.slice(1); // drop leading 0, prefix +92
+}

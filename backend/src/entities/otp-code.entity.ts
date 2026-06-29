@@ -10,8 +10,13 @@ export class OtpCode {
     @PrimaryGeneratedColumn()
     id: number;
 
-    @Column({ type: 'varchar' })
-    email: string;
+    /** Email identifier (email OTP flows, e.g. password reset). */
+    @Column({ type: 'varchar', nullable: true })
+    email: string | null;
+
+    /** Phone identifier (SMS OTP flows: phone_verification, password_reset). */
+    @Column({ type: 'varchar', nullable: true })
+    phone: string | null;
 
     @Column({ type: 'varchar', length: 10 })
     code: string;

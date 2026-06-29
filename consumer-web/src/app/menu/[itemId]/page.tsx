@@ -29,6 +29,7 @@ import { useMenuImageLoaded } from "@/lib/use-menu-image-loaded";
 import { orderRedirectConfig } from "@/lib/config/order-redirect";
 import { useSessionStore } from "@/lib/store/session-store";
 import type { Modifier, ModifierGroup, Variant } from "@/lib/api/types";
+import { computeModifiersPrice, sizeKeyForVariant } from "@/lib/modifier-pricing";
 
 const COLORS = {
   brand: "#E4002B",
@@ -743,16 +744,13 @@ export default function MenuItemDetailPage() {
   const modifierPriceTotal = useMemo(() => {
     if (!currentItem) return 0;
     const groups = currentItem.modifier_groups ?? [];
-    let sum = 0;
-    const seen = new Set<number>();
-    for (const id of selectedModifierIds) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const found = findModifierInItem(groups, id);
-      if (found) sum += found.modifier.price;
-    }
-    return sum;
-  }, [currentItem, selectedModifierIds]);
+    const uniqueIds = Array.from(new Set(selectedModifierIds));
+    return computeModifiersPrice(
+      groups,
+      uniqueIds.map((id) => ({ modifier_id: id, quantity: 1 })),
+      sizeKeyForVariant(selectedVariant),
+    );
+  }, [currentItem, selectedModifierIds, selectedVariant]);
 
   const relatedProducts = useMemo(() => {
     if (!currentItem) return [];
@@ -766,17 +764,14 @@ export default function MenuItemDetailPage() {
   const startingFrom = useMemo(() => {
     if (!currentItem) return 0;
     const variantExtra = defaultVariant?.price_modifier ?? 0;
-    let modExtra = 0;
-    const seen = new Set<number>();
     const groups = currentItem.modifier_groups ?? [];
-    for (const id of defaultModifierIds) {
-      if (seen.has(id)) continue;
-      seen.add(id);
-      const found = findModifierInItem(groups, id);
-      if (found) modExtra += found.modifier.price;
-    }
+    const modExtra = computeModifiersPrice(
+      groups,
+      Array.from(new Set(defaultModifierIds)).map((id) => ({ modifier_id: id, quantity: 1 })),
+      sizeKeyForVariant(defaultVariant),
+    );
     return currentItem.price + variantExtra + modExtra;
-  }, [currentItem, defaultModifierIds, defaultVariant?.price_modifier]);
+  }, [currentItem, defaultModifierIds, defaultVariant]);
 
   const selectedPrice = useMemo(() => {
     if (!currentItem) return 0;

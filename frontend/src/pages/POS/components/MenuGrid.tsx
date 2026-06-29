@@ -6,6 +6,27 @@ import { formatCurrency } from '../../../utils/currency';
 
 export const MENU_PAGE_SIZE = 10;
 
+const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Human label for a menu item's recurring availability window, or null if always available. */
+function availabilityLabel(item: MenuItem): string | null {
+  const days = item.available_days_of_week ?? null;
+  const ts = item.available_time_start ?? null;
+  const te = item.available_time_end ?? null;
+  if ((!days || days.length === 0) && !ts && !te) return null;
+  let dayStr = '';
+  if (days && days.length) {
+    const key = [...days].sort((a, b) => a - b).join(',');
+    if (key === '1,2,3,4,5') dayStr = 'Mon–Fri';
+    else if (key === '0,6') dayStr = 'Sat–Sun';
+    else if (key === '0,1,2,3,4,5,6') dayStr = '';
+    else dayStr = [...days].sort((a, b) => a - b).map((d) => DAY_ABBR[d]).join(', ');
+  }
+  const t = (v: string) => v.slice(0, 5);
+  const timeStr = ts && te ? `${t(ts)}–${t(te)}` : ts ? `from ${t(ts)}` : te ? `until ${t(te)}` : '';
+  return [dayStr, timeStr].filter(Boolean).join(' ') || null;
+}
+
 export type MenuGridProps = {
   menu: MenuItem[];
   justAddedItemId: number | null;
@@ -36,22 +57,33 @@ const MenuGrid: React.FC<MenuGridProps> = ({
     <div>
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-3.5">
         <AnimatePresence mode="popLayout">
-          {menu.map((item, i) => (
+          {menu.map((item, i) => {
+            const windowLabel = availabilityLabel(item);
+            // Only block when the server explicitly says not-available-now (branch tz).
+            const unavailable = item.available_now === false;
+            return (
             <motion.div
               key={item.id}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={{ delay: (i % pageSize) * 0.02 }}
-              whileHover={{ y: -4, boxShadow: '0 12px 24px -8px rgba(0,0,0,0.12)' }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => onAddItem(item)}
-            className={`rounded-xl cursor-pointer transition-shadow bg-foodies-surface dark:bg-slate-800 overflow-hidden ${
-              justAddedItemId === item.id
-                ? 'ring-2 ring-foodies-primary ring-offset-2 dark:ring-offset-slate-900 shadow-lg'
-                : 'shadow-md hover:shadow-lg border border-foodies-border dark:border-slate-600'
+              whileHover={unavailable ? undefined : { y: -4, boxShadow: '0 12px 24px -8px rgba(0,0,0,0.12)' }}
+              whileTap={unavailable ? undefined : { scale: 0.98 }}
+              onClick={() => { if (!unavailable) onAddItem(item); }}
+            className={`relative rounded-xl transition-shadow bg-foodies-surface dark:bg-slate-800 overflow-hidden ${
+              unavailable
+                ? 'cursor-not-allowed opacity-60 grayscale border border-foodies-border dark:border-slate-600'
+                : justAddedItemId === item.id
+                ? 'cursor-pointer ring-2 ring-foodies-primary ring-offset-2 dark:ring-offset-slate-900 shadow-lg'
+                : 'cursor-pointer shadow-md hover:shadow-lg border border-foodies-border dark:border-slate-600'
             }`}
           >
+            {unavailable && windowLabel && (
+              <div className="absolute top-1.5 left-1.5 z-10 rounded-md bg-amber-500/95 px-2 py-0.5 text-[10px] font-bold text-white shadow">
+                {windowLabel}
+              </div>
+            )}
             <div className="aspect-[16/11] overflow-hidden bg-foodies-surfaceMuted dark:bg-slate-700/50 flex items-center justify-center">
               <img
                 src={item.image_url ? getImageFullUrl(item.image_url) : MENU_ITEM_PLACEHOLDER}
@@ -93,10 +125,16 @@ const MenuGrid: React.FC<MenuGridProps> = ({
                     Modifiers
                   </span>
                 )}
+                {!unavailable && windowLabel && (
+                  <span className="inline-block px-2 py-0.5 text-xs font-medium text-amber-700 bg-amber-100 rounded-md">
+                    🕒 {windowLabel}
+                  </span>
+                )}
               </div>
             </div>
           </motion.div>
-          ))}
+          );
+          })}
         </AnimatePresence>
       </div>
       {showPagination && (

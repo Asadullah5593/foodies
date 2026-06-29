@@ -60,6 +60,13 @@ export class DiscountsController {
             is_active?: boolean;
             valid_from?: string;
             valid_until?: string;
+            valid_time_start?: string | null;
+            valid_time_end?: string | null;
+            valid_days_of_week?: number[] | null;
+            buy_quantity?: number | null;
+            get_quantity?: number | null;
+            get_discount_percent?: number | null;
+            bogo_match_same_group?: boolean;
         },
     ) {
         if (!user.tenantId)
@@ -94,6 +101,13 @@ export class DiscountsController {
             is_active?: boolean;
             valid_from?: string;
             valid_until?: string;
+            valid_time_start?: string | null;
+            valid_time_end?: string | null;
+            valid_days_of_week?: number[] | null;
+            buy_quantity?: number | null;
+            get_quantity?: number | null;
+            get_discount_percent?: number | null;
+            bogo_match_same_group?: boolean;
         },
     ) {
         if (!user.tenantId)

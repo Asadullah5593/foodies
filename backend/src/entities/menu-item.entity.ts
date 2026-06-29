@@ -55,6 +55,14 @@ export class MenuItem {
     @Column({ type: 'decimal', precision: 10, scale: 2 })
     basePrice: number;
 
+    /** Allergen labels shown to customers (e.g. ["Gluten","Dairy"]). Null/empty = none declared. */
+    @Column({ type: 'jsonb', nullable: true })
+    allergens: string[] | null;
+
+    /** Energy in kilocalories for the standard serving. Null = not provided. */
+    @Column({ type: 'int', nullable: true })
+    calories: number | null;
+
     @Column({ default: true })
     isActive: boolean;
 
@@ -75,6 +83,27 @@ export class MenuItem {
         nullable: true,
     })
     availableForOrderTypes: string[] | null;
+
+    /**
+     * Recurring availability window (e.g. lunch deals 12:00–16:00). Time of day in the
+     * branch timezone; null = available all day. Both must be set to take effect.
+     */
+    @Column({ name: 'available_time_start', type: 'time', nullable: true })
+    availableTimeStart: string | null;
+
+    @Column({ name: 'available_time_end', type: 'time', nullable: true })
+    availableTimeEnd: string | null;
+
+    /**
+     * Recurring days the item is available: 0=Sun … 6=Sat (e.g. [1,2,3,4,5] = Mon–Fri).
+     * Null/empty = every day.
+     */
+    @Column({
+        name: 'available_days_of_week',
+        type: 'jsonb',
+        nullable: true,
+    })
+    availableDaysOfWeek: number[] | null;
 
     @CreateDateColumn()
     createdAt: Date;

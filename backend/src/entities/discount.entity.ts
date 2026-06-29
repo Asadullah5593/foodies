@@ -27,10 +27,36 @@ export class Discount {
     requiresCode: boolean;
 
     @Column({ type: 'varchar' })
-    type: string; // flat, percentage
+    type: string; // flat, percentage, buy_x_get_y
 
     @Column({ type: 'decimal', precision: 10, scale: 2 })
     value: number;
+
+    /**
+     * Buy-X-get-Y (BOGO) configuration — only used when type = 'buy_x_get_y'.
+     * For every `buyQuantity` eligible units purchased, the next `getQuantity`
+     * (cheapest) eligible units are discounted by `getDiscountPercent` (e.g. 50 = half price,
+     * 100 = free). Eligibility uses applicationScope/applicationScopeIds (category or products).
+     * When `bogoMatchSameGroup` is true, pairing is restricted to units of the same
+     * category + variant size (e.g. "buy a Large pizza, 2nd Large of same category half price").
+     */
+    @Column({ name: 'buy_quantity', type: 'int', nullable: true })
+    buyQuantity: number | null;
+
+    @Column({ name: 'get_quantity', type: 'int', nullable: true })
+    getQuantity: number | null;
+
+    @Column({
+        name: 'get_discount_percent',
+        type: 'decimal',
+        precision: 5,
+        scale: 2,
+        nullable: true,
+    })
+    getDiscountPercent: number | null;
+
+    @Column({ name: 'bogo_match_same_group', type: 'boolean', default: false })
+    bogoMatchSameGroup: boolean;
 
     @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
     minOrderAmount: number | null;

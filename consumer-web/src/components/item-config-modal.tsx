@@ -5,6 +5,11 @@ import { motion, AnimatePresence } from "framer-motion";
 import type { CartAddon, CartModifier, MenuItem } from "@/lib/api/types";
 import { Button, Card, Input } from "@/components/ui";
 import { toImageUrl } from "@/lib/api/client";
+import {
+  computeModifiersPrice,
+  resolveModifierUnitPrice,
+  sizeKeyForVariant,
+} from "@/lib/modifier-pricing";
 import Image from "next/image";
 
 export type ConfigValue = {
@@ -128,14 +133,6 @@ export function ItemConfigModal({
     return m;
   }, [itemResolved.addons]);
 
-  const modifierPriceById = useMemo(() => {
-    const m = new Map<number, number>();
-    (itemResolved.modifier_groups ?? []).forEach((g) =>
-      (g.modifiers ?? []).forEach((mod) => m.set(mod.id, mod.price)),
-    );
-    return m;
-  }, [itemResolved.modifier_groups]);
-
   const selectedVariant = useMemo(
     () => (itemResolved.variants ?? []).find((v) => v.id === variantId) ?? null,
     [itemResolved.variants, variantId],
@@ -169,13 +166,18 @@ export function ItemConfigModal({
   const getStepNum = (key: "variant" | "heat" | "signature" | "addons" | "notes") =>
     stepKeys.findIndex((s) => s === key) + 1;
 
+  const sizeKey = sizeKeyForVariant(selectedVariant);
+  // Hide options restricted to other sizes (e.g. Thin Crust on 7"). No size ⇒ show all.
+  const isModAvailableForSize = (mod: { available_for_sizes?: string[] | null }) =>
+    !mod.available_for_sizes?.length || !sizeKey || mod.available_for_sizes.includes(sizeKey);
+
   const perItemTotal = useMemo(() => {
     const variantExtra = selectedVariant?.price_modifier ?? 0;
-    const modifiersExtra = modifiers.reduce((sum, m) => {
-      const unit = modifierPriceById.get(m.modifier_id) ?? 0;
-      const qty = Math.max(1, Math.floor(m.quantity ?? 1));
-      return sum + unit * qty;
-    }, 0);
+    const modifiersExtra = computeModifiersPrice(
+      itemResolved.modifier_groups,
+      modifiers,
+      sizeKey,
+    );
     const addonsExtra = addons.reduce((sum, a) => {
       const unit = addonPriceById.get(a.addon_id) ?? 0;
       const qty = Math.max(1, Math.floor(a.quantity ?? 1));
@@ -186,9 +188,10 @@ export function ItemConfigModal({
     addonPriceById,
     addons,
     itemResolved.price,
-    modifierPriceById,
+    itemResolved.modifier_groups,
     modifiers,
     selectedVariant,
+    sizeKey,
   ]);
 
   const setAddonQuantity = (addonId: number, nextQty: number) => {
@@ -212,6 +215,10 @@ export function ItemConfigModal({
       (group.modifiers ?? []).some((m) => m.id === selected.modifier_id),
     );
 
+    // max_select bounds TOTAL units in the group (so the same option chosen twice fills
+    // a "choose 2" group), not the count of distinct options.
+    const unitsInGroup = groupSelected.reduce((s, m) => s + (m.quantity ?? 1), 0);
+
     if (checked) {
       if (modMap.has(modId)) return;
       if (group.max_select === 1) {
@@ -223,9 +230,9 @@ export function ItemConfigModal({
         ]);
         return;
       }
-      if ((group.max_select ?? 99) <= groupSelected.length) {
+      if ((group.max_select ?? 99) <= unitsInGroup) {
         setValidationError(
-          `You can select at most ${group.max_select} option(s) for "${group.name}".`,
+          `You can select at most ${group.max_select} for "${group.name}".`,
         );
         return;
       }
@@ -233,6 +240,28 @@ export function ItemConfigModal({
       return;
     }
     setModifiers((prev) => prev.filter((m) => m.modifier_id !== modId));
+  };
+
+  // Adjust how many of the same modifier are selected ("double X"). 0 removes it.
+  // Clamped so the group's total units never exceed max_select.
+  const setModifierQuantity = (modId: number, nextQty: number) => {
+    setValidationError(null);
+    let qty = Math.max(0, Math.floor(nextQty));
+    const group = (itemResolved.modifier_groups ?? []).find((g) =>
+      (g.modifiers ?? []).some((m) => m.id === modId),
+    );
+    if (group && qty > 0) {
+      const max = group.max_select ?? 99;
+      const otherUnits = modifiers
+        .filter((m) => m.modifier_id !== modId && (group.modifiers ?? []).some((mod) => mod.id === m.modifier_id))
+        .reduce((s, m) => s + (m.quantity ?? 1), 0);
+      qty = Math.min(qty, Math.max(0, max - otherUnits));
+    }
+    setModifiers((prev) =>
+      prev
+        .map((m) => (m.modifier_id === modId ? { ...m, quantity: qty } : m))
+        .filter((m) => (m.quantity ?? 1) > 0),
+    );
   };
 
   if (!item) return null;
@@ -465,9 +494,9 @@ export function ItemConfigModal({
                                 </div>
 
                                 <div className={`mt-3 grid gap-2 ${group.max_select === 1 ? "grid-cols-3" : "grid-cols-2"}`}>
-                                  {(group.modifiers ?? []).map((mod) => {
+                                  {(group.modifiers ?? []).filter(isModAvailableForSize).map((mod) => {
                                     const active = modMap.has(mod.id);
-                                    const maxOne = group.max_select === 1;
+                                    const unitPrice = resolveModifierUnitPrice(mod, sizeKey);
                                     return (
                                       <button
                                         key={mod.id}
@@ -482,15 +511,11 @@ export function ItemConfigModal({
                                         <span className="text-xs font-semibold text-white/90">
                                           {mod.name}
                                         </span>
-                                        <span
-                                          className={`ml-2 text-[11px] font-extrabold ${
-                                            mod.price >= 0 ? "text-emerald-300" : "text-amber-300"
-                                          }`}
-                                        >
-                                          +Rs. {mod.price.toFixed(2)}
-                                        </span>
-                                        {/* maxOne hint is handled by validator in changeModifier */}
-                                        {maxOne ? null : null}
+                                        {unitPrice > 0 ? (
+                                          <span className="ml-2 text-[11px] font-extrabold text-emerald-300">
+                                            +Rs. {unitPrice.toFixed(2)}
+                                          </span>
+                                        ) : null}
                                       </button>
                                     );
                                   })}
@@ -519,6 +544,23 @@ export function ItemConfigModal({
                               (group.modifiers ?? []).some((m) => m.id === selected.modifier_id),
                             );
                             const required = (group.min_select ?? 0) > 0;
+                            // "First N free" allowance, allocated to the cheapest selected units first.
+                            const includedFree =
+                              sizeKey && group.included_by_size && group.included_by_size[sizeKey] != null
+                                ? Number(group.included_by_size[sizeKey])
+                                : group.included_quantity ?? 0;
+                            const priceOfMod = (id: number) => {
+                              const m = (group.modifiers ?? []).find((mm) => mm.id === id);
+                              return m ? resolveModifierUnitPrice(m, sizeKey) : 0;
+                            };
+                            const freeUnitsByMod = new Map<number, number>();
+                            let freeRemaining = includedFree;
+                            for (const sel of [...selectedInGroup].sort((a, b) => priceOfMod(a.modifier_id) - priceOfMod(b.modifier_id))) {
+                              const q = Math.max(1, Math.floor(sel.quantity ?? 1));
+                              const f = Math.max(0, Math.min(freeRemaining, q));
+                              freeUnitsByMod.set(sel.modifier_id, f);
+                              freeRemaining -= f;
+                            }
                             return (
                               <div key={group.id}>
                                 <div className="flex items-center justify-between gap-3">
@@ -534,34 +576,85 @@ export function ItemConfigModal({
                                     Selected: {selectedInGroup.length}
                                   </p>
                                 </div>
+                                {includedFree > 0 ? (
+                                  <p className="mt-1 text-[11px] font-semibold text-emerald-300">
+                                    First {includedFree} free — extras charged at the price shown.
+                                  </p>
+                                ) : null}
 
                                 <div
                                   className={`mt-3 grid gap-2 ${
                                     (group.max_select ?? 99) > 1 ? "grid-cols-2" : "grid-cols-3"
                                   }`}
                                 >
-                                  {(group.modifiers ?? []).map((mod) => {
-                                    const active = modMap.has(mod.id);
+                                  {(group.modifiers ?? []).filter(isModAvailableForSize).map((mod) => {
+                                    const current = modMap.get(mod.id);
+                                    const active = !!current;
+                                    const unitPrice = resolveModifierUnitPrice(mod, sizeKey);
+                                    const modQty = Math.max(1, Math.floor(current?.quantity ?? 1));
+                                    // Quantity stepper only where repeating is meaningful (priced,
+                                    // free-allowance, or a "choose N" group) — not free toggles
+                                    // like "Remove a filling" / "Add a Sauce".
+                                    const canRepeat =
+                                      active &&
+                                      (unitPrice > 0 || includedFree > 0 || (group.min_select ?? 0) > 0 || !!group.allow_quantity);
                                     return (
-                                      <button
+                                      <div
                                         key={mod.id}
-                                        type="button"
-                                        onClick={() => changeModifier(mod.id, !active)}
-                                        className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left transition ${
+                                        className={`flex flex-col gap-1 rounded-lg border px-3 py-2 transition ${
                                           active
                                             ? "border-red-500/70 bg-red-500/10"
                                             : "border-[var(--border-soft)] bg-black/20 hover:bg-black/30"
                                         }`}
                                       >
-                                        <span className="text-xs font-semibold text-white/90">{mod.name}</span>
-                                        <span
-                                          className={`ml-2 text-[11px] font-extrabold ${
-                                            mod.price >= 0 ? "text-emerald-300" : "text-amber-300"
-                                          }`}
+                                        <button
+                                          type="button"
+                                          onClick={() => changeModifier(mod.id, !active)}
+                                          className="flex items-center justify-between text-left"
                                         >
-                                          +Rs. {mod.price.toFixed(2)}
-                                        </span>
-                                      </button>
+                                          <span className="text-xs font-semibold text-white/90">{mod.name}</span>
+                                          {(() => {
+                                            if (unitPrice <= 0) return null;
+                                            const freeUnits = freeUnitsByMod.get(mod.id) ?? 0;
+                                            if (active) {
+                                              const charged = modQty - freeUnits;
+                                              return charged <= 0 ? (
+                                                <span className="ml-2 text-[11px] font-extrabold text-emerald-300">Included</span>
+                                              ) : (
+                                                <span className="ml-2 text-[11px] font-extrabold text-emerald-300">+Rs. {(unitPrice * charged).toFixed(2)}</span>
+                                              );
+                                            }
+                                            return freeRemaining > 0 ? (
+                                              <span className="ml-2 text-[11px] font-extrabold text-emerald-300">Free</span>
+                                            ) : (
+                                              <span className="ml-2 text-[11px] font-extrabold text-emerald-300">+Rs. {unitPrice.toFixed(2)}</span>
+                                            );
+                                          })()}
+                                        </button>
+                                        {canRepeat ? (
+                                          <div className="flex items-center justify-end gap-2">
+                                            <button
+                                              type="button"
+                                              aria-label="Decrease quantity"
+                                              onClick={() => setModifierQuantity(mod.id, modQty - 1)}
+                                              className="h-6 w-6 rounded-full border border-[var(--border-soft)] text-sm font-bold text-white/80 hover:bg-black/30"
+                                            >
+                                              −
+                                            </button>
+                                            <span className="min-w-[1.25rem] text-center text-xs font-bold tabular-nums text-white/90">
+                                              {modQty}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              aria-label="Increase quantity"
+                                              onClick={() => setModifierQuantity(mod.id, modQty + 1)}
+                                              className="h-6 w-6 rounded-full border border-[var(--border-soft)] text-sm font-bold text-white/80 hover:bg-black/30"
+                                            >
+                                              +
+                                            </button>
+                                          </div>
+                                        ) : null}
+                                      </div>
                                     );
                                   })}
                                 </div>

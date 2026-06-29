@@ -6,6 +6,17 @@ import { formatCurrency } from '../../../utils/currency';
 import { MenuItem } from '../../../types';
 import { ItemConfig } from './types';
 import CollapsibleSection, { type SectionStatus } from './CollapsibleSection';
+import { resolveModifierUnitPrice, sizeKeyForSelection } from '../../../utils/modifierPricing';
+
+/** "1: Rs99, 2: Rs169, 3: Rs249" from a tier table (charged count → total). */
+function formatTiers(tiers: Record<string, number>): string {
+  return Object.keys(tiers)
+    .map(Number)
+    .filter((k) => Number.isFinite(k))
+    .sort((a, b) => a - b)
+    .map((k) => `${k}: ${formatCurrency(tiers[String(k)])}`)
+    .join(', ');
+}
 
 export type ItemConfigModalProps = {
   isOpen: boolean;
@@ -17,6 +28,8 @@ export type ItemConfigModalProps = {
   onToggleAddon: (addonId: number) => void;
   onToggleModifier: (modifierId: number) => void;
   onUpdateAddonQuantity: (addonId: number, quantity: number) => void;
+  /** Optional: lets the same modifier be selected multiple times ("double meat"). */
+  onUpdateModifierQuantity?: (modifierId: number, quantity: number) => void;
 };
 
 const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
@@ -29,7 +42,15 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
   onToggleAddon,
   onToggleModifier,
   onUpdateAddonQuantity,
+  onUpdateModifierQuantity,
 }) => {
+  const sizeKey = item ? sizeKeyForSelection(item, config.variantId) : null;
+  // An option restricted to certain sizes (e.g. Thin Crust on 10/12/14 only) is hidden
+  // when a different size is chosen. No size selected yet ⇒ show all.
+  const isModAvailableForSize = (
+    mod: { available_for_sizes?: string[] | null },
+    sk: string | null,
+  ) => !mod.available_for_sizes?.length || !sk || mod.available_for_sizes.includes(sk);
   const variantStatus: SectionStatus | undefined = useMemo(() => {
     if (!item?.variants?.length) return undefined;
     return config.variantId != null ? 'complete' : 'required-missing';
@@ -89,7 +110,14 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                       type="radio"
                       name="variant"
                       checked={config.variantId === variant.id}
-                      onChange={() => onConfigChange({ ...config, variantId: variant.id })}
+                      onChange={() => {
+                        const newSize = variant.size_key ?? null;
+                        const modifiers = (config.modifiers ?? []).filter((m) => {
+                          const md = item.modifier_groups?.flatMap((g) => g.modifiers).find((x) => x.id === m.modifierId);
+                          return !md || isModAvailableForSize(md, newSize);
+                        });
+                        onConfigChange({ ...config, variantId: variant.id, modifiers });
+                      }}
                       className="mr-3"
                     />
                     <div className="flex-1">
@@ -117,11 +145,34 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                   const selectedInGroup = (config.modifiers ?? []).filter(m =>
                     group.modifiers.some(mod => mod.id === m.modifierId)
                   );
-                  const count = selectedInGroup.length;
+                  // Options not available for the chosen size (e.g. Thin Crust on 7") are hidden.
+                  const visibleModifiers = group.modifiers.filter((mod) => isModAvailableForSize(mod, sizeKey));
+                  // max_select / min_select bound TOTAL UNITS in the group (so "1 dip
+                  // selected twice" fills a "choose 2" group), not the count of distinct options.
+                  const unitsInGroup = selectedInGroup.reduce((s, m) => s + (m.quantity || 1), 0);
                   const minSelect = group.min_select ?? 0;
-                  const minOk = count >= minSelect;
-                  const maxOk = (group.max_select ?? 99) >= count;
+                  const maxUnits = group.max_select ?? 99;
+                  const minOk = unitsInGroup >= minSelect;
+                  const atMax = unitsInGroup >= maxUnits;
                   const isSingleSelect = (group.max_select ?? 0) === 1;
+                  // "First N free" allowance for this group (per size, else flat).
+                  const includedFree =
+                    sizeKey && group.included_by_size && group.included_by_size[sizeKey] != null
+                      ? Number(group.included_by_size[sizeKey])
+                      : group.included_quantity ?? 0;
+                  // Allocate the free allowance to the cheapest selected units first.
+                  const priceOfMod = (id: number) => {
+                    const m = group.modifiers.find((mm) => mm.id === id);
+                    return m ? resolveModifierUnitPrice(m, sizeKey) : 0;
+                  };
+                  const freeUnitsByMod = new Map<number, number>();
+                  let freeRemaining = includedFree;
+                  for (const sel of [...selectedInGroup].sort((a, b) => priceOfMod(a.modifierId) - priceOfMod(b.modifierId))) {
+                    const q = sel.quantity || 1;
+                    const f = Math.max(0, Math.min(freeRemaining, q));
+                    freeUnitsByMod.set(sel.modifierId, f);
+                    freeRemaining -= f;
+                  }
                   const groupStatus: SectionStatus =
                     minOk ? 'complete' : minSelect > 0 ? 'required-missing' : 'optional-empty';
                   const groupTitle = `${group.name} (choose ${group.min_select ?? 0}${group.max_select != null ? `–${group.max_select}` : '+'})`;
@@ -137,27 +188,90 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                       {!minOk && (
                         <p className="text-amber-600 text-xs mb-2">Select at least {minSelect}</p>
                       )}
+                      {group.price_tiers && Object.keys(group.price_tiers).length > 0 ? (
+                        <p className="text-emerald-700 text-xs mb-2">
+                          {includedFree > 0 ? `First ${includedFree} free. ` : ''}Extra: {formatTiers(group.price_tiers)}
+                        </p>
+                      ) : includedFree > 0 ? (
+                        <p className="text-emerald-700 text-xs mb-2">
+                          First {includedFree} free — extras charged at the price shown.
+                        </p>
+                      ) : null}
                       <div className="space-y-1.5">
-                        {group.modifiers.map((mod) => {
-                          const isSelected = (config.modifiers ?? []).some(m => m.modifierId === mod.id);
+                        {visibleModifiers.map((mod) => {
+                          const selected = (config.modifiers ?? []).find(m => m.modifierId === mod.id);
+                          const isSelected = !!selected;
+                          const unitPrice = resolveModifierUnitPrice(mod, sizeKey);
+                          // Quantity stepper only where repeating an option is meaningful:
+                          // it's priced, the group has a free allowance, or it's a "choose N"
+                          // group (min>0). NOT for free optional toggles like "Remove a filling".
+                          const canRepeat =
+                            isSelected &&
+                            !isSingleSelect &&
+                            !!onUpdateModifierQuantity &&
+                            (unitPrice > 0 || includedFree > 0 || minSelect > 0 || !!group.allow_quantity);
                           return (
-                            <label
+                            <div
                               key={mod.id}
-                              className={`flex items-center p-2 rounded cursor-pointer ${
+                              className={`flex items-center p-2 rounded ${
                                 isSelected ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
                               }`}
                             >
-                              <input
-                                type={isSingleSelect ? 'radio' : 'checkbox'}
-                                name={isSingleSelect ? `modifier-group-${group.id}` : undefined}
-                                checked={isSelected}
-                                disabled={!isSelected && !maxOk && !isSingleSelect}
-                                onChange={() => onToggleModifier(mod.id)}
-                                className="mr-2"
-                              />
-                              <span className="font-medium">{mod.name}</span>
-                              <span className="ml-2 text-green-600 text-sm">+ {formatCurrency(mod.price)}</span>
-                            </label>
+                              <label className="flex items-center flex-1 cursor-pointer">
+                                <input
+                                  type={isSingleSelect ? 'radio' : 'checkbox'}
+                                  name={isSingleSelect ? `modifier-group-${group.id}` : undefined}
+                                  checked={isSelected}
+                                  disabled={!isSelected && atMax && !isSingleSelect}
+                                  onChange={() => onToggleModifier(mod.id)}
+                                  className="mr-2"
+                                />
+                                <span className="font-medium">{mod.name}</span>
+                                {(() => {
+                                  if (unitPrice <= 0) return null;
+                                  const qty = selected?.quantity || 1;
+                                  const freeUnits = freeUnitsByMod.get(mod.id) ?? 0;
+                                  if (isSelected) {
+                                    const charged = qty - freeUnits;
+                                    return charged <= 0 ? (
+                                      <span className="ml-2 text-emerald-600 text-sm">Included</span>
+                                    ) : (
+                                      <span className="ml-2 text-green-600 text-sm">+ {formatCurrency(unitPrice * charged)}</span>
+                                    );
+                                  }
+                                  // Not selected: free if the group still has free allowance left.
+                                  return freeRemaining > 0 ? (
+                                    <span className="ml-2 text-emerald-600 text-sm">Free</span>
+                                  ) : (
+                                    <span className="ml-2 text-green-600 text-sm">+ {formatCurrency(unitPrice)}</span>
+                                  );
+                                })()}
+                              </label>
+                              {canRepeat && (
+                                <div className="inline-flex items-center overflow-hidden rounded-lg border border-gray-300">
+                                  <button
+                                    type="button"
+                                    onClick={() => onUpdateModifierQuantity!(mod.id, (selected?.quantity || 1) - 1)}
+                                    aria-label="Decrease quantity"
+                                    className="px-2 py-0.5 text-gray-700 hover:bg-gray-100"
+                                  >
+                                    <MdRemove className="h-4 w-4" />
+                                  </button>
+                                  <span className="min-w-[2rem] px-1 text-center text-sm font-semibold tabular-nums">
+                                    {selected?.quantity || 1}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => onUpdateModifierQuantity!(mod.id, (selected?.quantity || 1) + 1)}
+                                    disabled={atMax}
+                                    aria-label="Increase quantity"
+                                    className="px-2 py-0.5 text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                                  >
+                                    <MdAdd className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           );
                         })}
                       </div>

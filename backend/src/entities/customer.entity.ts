@@ -25,6 +25,10 @@ export class Customer {
     @Column({ type: 'varchar', nullable: true })
     password: string | null;
 
+    /** True once an SMS OTP has proven ownership of `phone` (set at signup). */
+    @Column({ type: 'boolean', default: false })
+    phoneVerified: boolean;
+
     @Column({ type: 'varchar', nullable: true })
     name: string | null;
 

@@ -17,6 +17,13 @@ export interface CategoryFilters {
     order?: 'asc' | 'desc';
 }
 
+/** Trim a free-text field; empty/whitespace (or null) becomes null. */
+function normalizeText(input: string | null | undefined): string | null {
+    if (input == null) return null;
+    const s = String(input).trim();
+    return s ? s : null;
+}
+
 @Injectable()
 export class CategoriesService {
     constructor(
@@ -76,6 +83,8 @@ export class CategoriesService {
                 'c.id',
                 'c.brandId',
                 'c.name',
+                'c.description',
+                'c.imageUrl',
                 'c.sortOrder',
                 'c.isActive',
                 'c.createdAt',
@@ -148,6 +157,8 @@ export class CategoriesService {
             name: string;
             is_active?: boolean;
             sort_order?: number;
+            description?: string | null;
+            image_url?: string | null;
         },
         tenantId: number | null,
         allowedBrandIds?: number[] | null,
@@ -168,6 +179,8 @@ export class CategoriesService {
             this.repo.create({
                 brandId: dto.brand_id,
                 name,
+                description: normalizeText(dto.description),
+                imageUrl: normalizeText(dto.image_url),
                 sortOrder: dto.sort_order ?? 0,
                 isActive: dto.is_active ?? true,
             }),
@@ -177,7 +190,13 @@ export class CategoriesService {
 
     async update(
         id: number,
-        dto: { name?: string; is_active?: boolean; sort_order?: number },
+        dto: {
+            name?: string;
+            is_active?: boolean;
+            sort_order?: number;
+            description?: string | null;
+            image_url?: string | null;
+        },
         tenantId: number | null,
         allowedBrandIds?: number[] | null,
     ) {
@@ -195,6 +214,10 @@ export class CategoriesService {
         }
         if (dto.is_active !== undefined) cat.isActive = dto.is_active;
         if (dto.sort_order !== undefined) cat.sortOrder = dto.sort_order;
+        if (dto.description !== undefined)
+            cat.description = normalizeText(dto.description);
+        if (dto.image_url !== undefined)
+            cat.imageUrl = normalizeText(dto.image_url);
         await this.repo.save(cat);
         return this.toResponse(cat);
     }
@@ -220,6 +243,8 @@ export class CategoriesService {
             id: c.id,
             brand_id: c.brandId,
             name: c.name,
+            description: c.description ?? null,
+            image_url: c.imageUrl ?? null,
             sort_order: c.sortOrder,
             is_active: c.isActive,
             created_at: c.createdAt?.toISOString() ?? null,

@@ -10,16 +10,18 @@ import {
   useNotificationsStore,
   type ClientNotification,
   type NotificationAction,
-} from '../../../stores/notificationsStore';
-import { notificationsService } from '../../../services/api/notificationsService';
+} from '../../stores/notificationsStore';
+import { notificationsService } from '../../services/api/notificationsService';
 
 /**
- * Persistent, stacked, actionable order notifications for the POS/till screen.
- * Cards stay until accepted/rejected; new ones stack on top. Accept/Reject reuse
- * the admin order-status endpoint and then resolve the notification (clearing it
- * for every till). A mute toggle silences the repeating chime.
+ * Persistent, stacked, actionable order notifications. Mounted globally (in
+ * NotificationsProvider) so a targeted user sees incoming orders on ANY screen,
+ * not just the POS. Cards stay until accepted/rejected; new ones stack on top.
+ * Accept/Reject reuse the admin order-status endpoint and then resolve the
+ * notification (clearing it for every recipient). A mute toggle silences the
+ * repeating chime.
  */
-const POSNotificationStack: React.FC = () => {
+const OrderNotificationStack: React.FC = () => {
   const items = useNotificationsStore((s) => s.items);
   const removeLocal = useNotificationsStore((s) => s.remove);
   const muted = useNotificationsStore((s) => s.muted);
@@ -133,4 +135,4 @@ const POSNotificationStack: React.FC = () => {
   );
 };
 
-export default POSNotificationStack;
+export default OrderNotificationStack;

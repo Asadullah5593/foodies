@@ -302,6 +302,21 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
           );
           if (customizeSlotIndex != null) setSlotState(customizeSlotIndex, { config: { ...configToCustomize, addons: newAddons } });
         }}
+        onUpdateModifierQuantity={(modifierId, quantity) => {
+          let next = Math.max(0, Math.floor(quantity));
+          const group = itemToCustomize?.modifier_groups?.find((g) => g.modifiers.some((m) => m.id === modifierId));
+          if (group && next > 0) {
+            const max = group.max_select ?? 99;
+            const otherUnits = (configToCustomize.modifiers ?? [])
+              .filter((m) => m.modifierId !== modifierId && group.modifiers.some((mod) => mod.id === m.modifierId))
+              .reduce((s, m) => s + (m.quantity || 1), 0);
+            next = Math.min(next, Math.max(0, max - otherUnits));
+          }
+          const newMods = (configToCustomize.modifiers ?? [])
+            .map((m) => (m.modifierId === modifierId ? { ...m, quantity: next } : m))
+            .filter((m) => m.quantity > 0);
+          if (customizeSlotIndex != null) setSlotState(customizeSlotIndex, { config: { ...configToCustomize, modifiers: newMods } });
+        }}
       />
     </>
   );

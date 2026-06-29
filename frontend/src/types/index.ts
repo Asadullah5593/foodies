@@ -285,6 +285,17 @@ export interface MenuItem {
   gallery_image_urls?: string[];
   /** When set, limits which order channels can include this item (delivery, pickup, dine_in). Omit/null = all. */
   available_for_order_types?: string[] | null;
+  /** Allergen labels shown to customers. */
+  allergens?: string[] | null;
+  /** Energy in kcal for the standard serving. */
+  calories?: number | null;
+  /** Recurring availability window (branch timezone), HH:mm; null = all day. */
+  available_time_start?: string | null;
+  available_time_end?: string | null;
+  /** Recurring days available: 0=Sun … 6=Sat; null/empty = every day. */
+  available_days_of_week?: number[] | null;
+  /** Server-computed (branch timezone): is this orderable right now? Only present on the branch menu. */
+  available_now?: boolean;
 }
 
 export interface MenuVariant {
@@ -294,6 +305,8 @@ export interface MenuVariant {
   price_modifier: number;
   is_default: boolean;
   sort_order: number;
+  /** Normalized size ('7','10','12','14') enabling per-size modifier pricing; null = no size. */
+  size_key?: string | null;
 }
 
 export interface MenuAddon {
@@ -311,6 +324,10 @@ export interface MenuModifier {
   id: number;
   name: string;
   price: number;
+  /** Per-size surcharge keyed by variant size_key (e.g. {"7":99,"12":249}); null = use flat price. */
+  price_by_size?: Record<string, number> | null;
+  /** Restrict this option to certain sizes (e.g. ["10","12","14"]); null/empty = every size. */
+  available_for_sizes?: string[] | null;
 }
 
 export interface MenuModifierGroup {
@@ -318,6 +335,14 @@ export interface MenuModifierGroup {
   name: string;
   min_select: number;
   max_select: number;
+  /** Units included free before any are charged ("first N free"). */
+  included_quantity?: number;
+  /** Per-size override of included_quantity keyed by variant size_key. */
+  included_by_size?: Record<string, number> | null;
+  /** Allow the same free/optional option to be added multiple times (qty stepper). */
+  allow_quantity?: boolean;
+  /** Quantity-tiered bundle price for charged units (charged count → total), e.g. {"1":99,"2":169,"3":249}. */
+  price_tiers?: Record<string, number> | null;
   modifiers: MenuModifier[];
 }
 
@@ -337,7 +362,7 @@ export interface Discount {
   code: string | null;
   /** When true: coupon/promo only (user must enter code). When false: auto-applied when scope/eligibility match. */
   requires_code?: boolean;
-  type: 'flat' | 'percentage';
+  type: 'flat' | 'percentage' | 'buy_x_get_y';
   value: number;
   min_order_amount?: number;
   max_discount_amount?: number;
@@ -354,6 +379,17 @@ export interface Discount {
   is_active: boolean;
   valid_from?: string;
   valid_until?: string;
+  /** Recurring time-of-day window (branch timezone), HH:mm. */
+  valid_time_start?: string | null;
+  valid_time_end?: string | null;
+  /** Recurring days: 0=Sun … 6=Sat. */
+  valid_days_of_week?: number[] | null;
+  /** Buy-X-get-Y (BOGO) — only when type='buy_x_get_y'. */
+  buy_quantity?: number | null;
+  get_quantity?: number | null;
+  get_discount_percent?: number | null;
+  /** Pair only within same category + variant size (e.g. 2nd Large pizza half price). */
+  bogo_match_same_group?: boolean;
 }
 
 export interface Banner {

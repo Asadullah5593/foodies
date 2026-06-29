@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Button from '../../../components/Button';
 import { formatCurrency } from '../../../utils/currency';
 import { CartLine } from './types';
+import { computeModifiersPrice, resolveModifierUnitPrice, sizeKeyForSelection } from '../../../utils/modifierPricing';
 
 export type QuoteLineBreakdown = {
   subtotal?: number;
@@ -55,10 +56,11 @@ const CartPanel: React.FC<CartPanelProps> = ({
                         const addonItem = c.menuItem.addons?.find(ad => ad.id === a.addonId);
                         return aSum + (addonItem?.price || 0) * a.quantity;
                       }, 0);
-                      const modifiersPrice = (c.modifiers ?? []).reduce((mSum, m) => {
-                        const mod = c.menuItem.modifier_groups?.flatMap(g => g.modifiers).find(mo => mo.id === m.modifierId);
-                        return mSum + (mod?.price || 0) * m.quantity;
-                      }, 0);
+                      const modifiersPrice = computeModifiersPrice(
+                        c.menuItem.modifier_groups,
+                        c.modifiers,
+                        sizeKeyForSelection(c.menuItem, c.variantId),
+                      );
                       return s + addonsPrice + modifiersPrice;
                     }, 0);
                     return (item.dealPrice! + componentExtras) * item.quantity;
@@ -72,10 +74,11 @@ const CartPanel: React.FC<CartPanelProps> = ({
                       const addonItem = item.menuItem.addons?.find(a => a.id === addon.addonId);
                       return sum + (addonItem?.price || 0) * addon.quantity;
                     }, 0);
-                    const modifiersPrice = (item.modifiers ?? []).reduce((sum, mod) => {
-                      const modObj = item.menuItem.modifier_groups?.flatMap(g => g.modifiers).find(m => m.id === mod.modifierId);
-                      return sum + (modObj?.price || 0) * mod.quantity;
-                    }, 0);
+                    const modifiersPrice = computeModifiersPrice(
+                      item.menuItem.modifier_groups,
+                      item.modifiers,
+                      sizeKeyForSelection(item.menuItem, item.variantId),
+                    );
                     return (itemPrice + variantPrice + addonsPrice + modifiersPrice) * item.quantity;
                   })();
               const lineBreakdownItem = lineBreakdown?.[index];
@@ -118,7 +121,7 @@ const CartPanel: React.FC<CartPanelProps> = ({
                                   <ul className="mt-0.5 ml-2 space-y-0.5">
                                     {(c.modifiers ?? []).map((m) => {
                                       const mod = c.menuItem.modifier_groups?.flatMap(g => g.modifiers).find(mo => mo.id === m.modifierId);
-                                      const p = mod ? Number(mod.price ?? 0) * m.quantity : 0;
+                                      const p = mod ? resolveModifierUnitPrice(mod, sizeKeyForSelection(c.menuItem, c.variantId)) * m.quantity : 0;
                                       return mod ? <li key={m.modifierId}>+ {mod.name}{m.quantity > 1 ? ` ×${m.quantity}` : ''} {formatCurrency(p)}</li> : null;
                                     })}
                                   </ul>
@@ -153,7 +156,7 @@ const CartPanel: React.FC<CartPanelProps> = ({
                         <ul className="text-xs text-foodies-textSecondary mt-0.5 space-y-0.5">
                           {(item.modifiers ?? []).map(m => {
                             const mod = item.menuItem.modifier_groups?.flatMap(g => g.modifiers).find(mo => mo.id === m.modifierId);
-                            const p = mod ? Number(mod.price ?? 0) * m.quantity : 0;
+                            const p = mod ? resolveModifierUnitPrice(mod, sizeKeyForSelection(item.menuItem, item.variantId)) * m.quantity : 0;
                             return mod ? <li key={m.modifierId}>Modifier: {mod.name}{m.quantity > 1 ? ` ×${m.quantity}` : ''} {formatCurrency(p)}</li> : null;
                           })}
                         </ul>

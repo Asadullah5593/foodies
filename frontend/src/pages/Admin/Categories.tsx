@@ -22,6 +22,8 @@ export interface CategoryItem {
   name: string;
   sort_order: number;
   is_active: boolean;
+  description?: string | null;
+  image_url?: string | null;
   created_at?: string;
   updated_at?: string;
   brand?: { id: number; name: string; slug: string };
@@ -41,6 +43,8 @@ const Categories: React.FC = () => {
     name: '',
     is_active: true,
     sort_order: '0',
+    description: '',
+    image_url: '',
   });
 
   const queryParams = React.useMemo(() => {
@@ -94,7 +98,7 @@ const Categories: React.FC = () => {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { name?: string; is_active?: boolean; sort_order?: number } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { name?: string; is_active?: boolean; sort_order?: number; description?: string | null; image_url?: string | null } }) =>
       adminService.updateCategory(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['categories'] });
@@ -120,7 +124,7 @@ const Categories: React.FC = () => {
   });
 
   const resetForm = () => {
-    setFormData({ brand_id: '', name: '', is_active: true, sort_order: '0' });
+    setFormData({ brand_id: '', name: '', is_active: true, sort_order: '0', description: '', image_url: '' });
   };
 
   const clearFilters = () => {
@@ -131,7 +135,7 @@ const Categories: React.FC = () => {
 
   const openCreate = () => {
     setEditingCategory(null);
-    setFormData({ brand_id: '', name: '', is_active: true, sort_order: '0' });
+    setFormData({ brand_id: '', name: '', is_active: true, sort_order: '0', description: '', image_url: '' });
     setShowForm(true);
   };
 
@@ -142,6 +146,8 @@ const Categories: React.FC = () => {
       name: cat.name,
       is_active: cat.is_active,
       sort_order: String(cat.sort_order ?? 0),
+      description: cat.description ?? '',
+      image_url: cat.image_url ?? '',
     });
     setShowForm(true);
   };
@@ -159,6 +165,8 @@ const Categories: React.FC = () => {
           name: formData.name.trim(),
           is_active: formData.is_active,
           sort_order: formData.sort_order ? parseInt(formData.sort_order, 10) : undefined,
+          description: formData.description.trim() || null,
+          image_url: formData.image_url.trim() || null,
         },
       });
     } else {
@@ -171,6 +179,8 @@ const Categories: React.FC = () => {
         name: formData.name.trim(),
         is_active: formData.is_active,
         sort_order: formData.sort_order ? parseInt(formData.sort_order, 10) : undefined,
+        description: formData.description.trim() || null,
+        image_url: formData.image_url.trim() || null,
       });
     }
   };
@@ -307,6 +317,25 @@ const Categories: React.FC = () => {
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               required
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              rows={2}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Image URL</label>
+            <input
+              type="text"
+              value={formData.image_url}
+              onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+              placeholder="https://…"
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>

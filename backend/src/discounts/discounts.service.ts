@@ -10,6 +10,31 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Discount } from '../entities/discount.entity';
 
+/** Accept 'HH:mm' / 'HH:mm:ss' (Postgres time); empty/invalid → null. */
+function normalizeDiscountTime(input: string | null | undefined): string | null {
+    if (input == null) return null;
+    const s = String(input).trim();
+    return /^\d{1,2}:\d{2}(:\d{2})?$/.test(s) ? s : null;
+}
+
+/** Days of week 0-6 (0=Sun); dedupe + sort; empty/invalid → null. */
+function normalizeDiscountDays(input: unknown): number[] | null {
+    if (!Array.isArray(input)) return null;
+    const set = new Set<number>();
+    for (const x of input) {
+        const n = Math.floor(Number(x));
+        if (Number.isFinite(n) && n >= 0 && n <= 6) set.add(n);
+    }
+    return set.size ? [...set].sort((a, b) => a - b) : null;
+}
+
+/** Non-negative integer or null. */
+function normalizeIntOrNull(input: unknown): number | null {
+    if (input == null || input === '') return null;
+    const n = Math.floor(Number(input));
+    return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 @Injectable()
 export class DiscountsService {
     private readonly logger = new Logger(DiscountsService.name);
@@ -105,6 +130,13 @@ export class DiscountsService {
             is_active?: boolean;
             valid_from?: string;
             valid_until?: string;
+            valid_time_start?: string | null;
+            valid_time_end?: string | null;
+            valid_days_of_week?: number[] | null;
+            buy_quantity?: number | null;
+            get_quantity?: number | null;
+            get_discount_percent?: number | null;
+            bogo_match_same_group?: boolean;
         },
         tenantId: number,
         allowedBrandIds?: number[] | null,
@@ -183,6 +215,18 @@ export class DiscountsService {
                     validUntil: dto.valid_until
                         ? new Date(dto.valid_until)
                         : null,
+                    validTimeStart: normalizeDiscountTime(dto.valid_time_start),
+                    validTimeEnd: normalizeDiscountTime(dto.valid_time_end),
+                    validDaysOfWeek: normalizeDiscountDays(
+                        dto.valid_days_of_week,
+                    ),
+                    buyQuantity: normalizeIntOrNull(dto.buy_quantity),
+                    getQuantity: normalizeIntOrNull(dto.get_quantity),
+                    getDiscountPercent:
+                        dto.get_discount_percent != null
+                            ? Number(dto.get_discount_percent)
+                            : null,
+                    bogoMatchSameGroup: dto.bogo_match_same_group ?? false,
                 }),
             );
             return this.toResponse(discount);
@@ -232,6 +276,13 @@ export class DiscountsService {
             is_active?: boolean;
             valid_from?: string;
             valid_until?: string;
+            valid_time_start?: string | null;
+            valid_time_end?: string | null;
+            valid_days_of_week?: number[] | null;
+            buy_quantity?: number | null;
+            get_quantity?: number | null;
+            get_discount_percent?: number | null;
+            bogo_match_same_group?: boolean;
         },
         allowedBrandIds?: number[] | null,
     ) {
@@ -322,6 +373,25 @@ export class DiscountsService {
                 d.validUntil = dto.valid_until
                     ? new Date(dto.valid_until)
                     : null;
+            if (dto.valid_time_start !== undefined)
+                d.validTimeStart = normalizeDiscountTime(dto.valid_time_start);
+            if (dto.valid_time_end !== undefined)
+                d.validTimeEnd = normalizeDiscountTime(dto.valid_time_end);
+            if (dto.valid_days_of_week !== undefined)
+                d.validDaysOfWeek = normalizeDiscountDays(
+                    dto.valid_days_of_week,
+                );
+            if (dto.buy_quantity !== undefined)
+                d.buyQuantity = normalizeIntOrNull(dto.buy_quantity);
+            if (dto.get_quantity !== undefined)
+                d.getQuantity = normalizeIntOrNull(dto.get_quantity);
+            if (dto.get_discount_percent !== undefined)
+                d.getDiscountPercent =
+                    dto.get_discount_percent != null
+                        ? Number(dto.get_discount_percent)
+                        : null;
+            if (dto.bogo_match_same_group !== undefined)
+                d.bogoMatchSameGroup = dto.bogo_match_same_group;
             await this.repo.save(d);
             return this.toResponse(d);
         } catch (err: unknown) {
@@ -416,6 +486,16 @@ export class DiscountsService {
             is_active: d.isActive,
             valid_from: d.validFrom?.toISOString() ?? null,
             valid_until: d.validUntil?.toISOString() ?? null,
+            valid_time_start: d.validTimeStart ?? null,
+            valid_time_end: d.validTimeEnd ?? null,
+            valid_days_of_week: d.validDaysOfWeek ?? [],
+            buy_quantity: d.buyQuantity ?? null,
+            get_quantity: d.getQuantity ?? null,
+            get_discount_percent:
+                d.getDiscountPercent != null
+                    ? Number(d.getDiscountPercent)
+                    : null,
+            bogo_match_same_group: d.bogoMatchSameGroup ?? false,
         };
     }
 }

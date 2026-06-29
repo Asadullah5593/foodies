@@ -23,7 +23,7 @@ const MenuVariants: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const [showForm, setShowForm] = useState(false);
-  const [editingVariant, setEditingVariant] = useState<Pick<MenuVariant, 'id' | 'menu_item_id' | 'name' | 'price_modifier' | 'is_default' | 'sort_order'> | null>(null);
+  const [editingVariant, setEditingVariant] = useState<Pick<MenuVariant, 'id' | 'menu_item_id' | 'name' | 'price_modifier' | 'is_default' | 'sort_order' | 'size_key'> | null>(null);
   // Deep-link from the Menu Items page: ?brand_id= & ?item_id= pre-filter.
   const [selectedMenuItem, setSelectedMenuItem] = useState<number | null>(() => {
     const v = searchParams.get('item_id');
@@ -41,6 +41,7 @@ const MenuVariants: React.FC = () => {
     price_modifier: '',
     is_default: false,
     sort_order: '0',
+    size_key: '',
   });
 
   const { data: brands } = useQuery({
@@ -106,6 +107,7 @@ const MenuVariants: React.FC = () => {
         price_modifier: '',
         is_default: false,
         sort_order: '0',
+        size_key: '',
       });
       toast.success('Variant created successfully!');
     },
@@ -126,7 +128,7 @@ const MenuVariants: React.FC = () => {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { name?: string; price_modifier?: number; is_default?: boolean; menu_item_id?: number; sort_order?: number } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { name?: string; price_modifier?: number; is_default?: boolean; menu_item_id?: number; sort_order?: number; size_key?: string | null } }) =>
       adminService.updateVariant(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['variants'] });
@@ -138,7 +140,7 @@ const MenuVariants: React.FC = () => {
     },
   });
 
-  const [editVariantForm, setEditVariantForm] = useState({ menu_item_id: '', name: '', price_modifier: '', is_default: false, sort_order: '0' });
+  const [editVariantForm, setEditVariantForm] = useState({ menu_item_id: '', name: '', price_modifier: '', is_default: false, sort_order: '0', size_key: '' });
   React.useEffect(() => {
     if (editingVariant) {
       setEditVariantForm({
@@ -147,6 +149,7 @@ const MenuVariants: React.FC = () => {
         price_modifier: String(editingVariant.price_modifier ?? 0),
         is_default: editingVariant.is_default ?? false,
         sort_order: String(editingVariant.sort_order ?? 0),
+        size_key: editingVariant.size_key ?? '',
       });
     }
   }, [editingVariant]);
@@ -163,6 +166,7 @@ const MenuVariants: React.FC = () => {
       price_modifier: parseFloat(formData.price_modifier),
       is_default: formData.is_default,
       sort_order: parseInt(formData.sort_order),
+      size_key: formData.size_key.trim() || null,
     });
   };
 
@@ -326,6 +330,18 @@ const MenuVariants: React.FC = () => {
             />
           </div>
 
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Size Key</label>
+            <input
+              type="text"
+              value={formData.size_key}
+              onChange={(e) => setFormData({ ...formData, size_key: e.target.value })}
+              placeholder='e.g. 7, 10, 12, 14 (pizza sizes)'
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">Normalized size shared across items. Enables per-size topping pricing &amp; "first N free". Leave blank for non-pizza items.</p>
+          </div>
+
           <div className="flex gap-2 justify-end">
             <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
               Cancel
@@ -355,6 +371,7 @@ const MenuVariants: React.FC = () => {
                   price_modifier: parseFloat(editVariantForm.price_modifier),
                   is_default: editVariantForm.is_default,
                   sort_order: parseInt(editVariantForm.sort_order, 10),
+                  size_key: editVariantForm.size_key.trim() || null,
                 },
               });
             }}
@@ -416,6 +433,17 @@ const MenuVariants: React.FC = () => {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Size Key</label>
+              <input
+                type="text"
+                value={editVariantForm.size_key}
+                onChange={(e) => setEditVariantForm((f) => ({ ...f, size_key: e.target.value }))}
+                placeholder='e.g. 7, 10, 12, 14 (pizza sizes)'
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Enables per-size topping pricing. Leave blank for non-pizza items.</p>
+            </div>
             <div className="flex gap-2 justify-end">
               <Button type="button" variant="outline" onClick={() => setEditingVariant(null)}>Cancel</Button>
               <Button type="submit" isLoading={updateMutation.isPending}>Update</Button>
@@ -452,7 +480,7 @@ const MenuVariants: React.FC = () => {
                     animationIndex={i}
                     actions={
                       <>
-                        <Button size="small" variant="edit" onClick={() => setEditingVariant({ id: variant.id, menu_item_id: menuItemId, name: variant.name, price_modifier: priceMod, is_default: variant.is_default ?? variant.isDefault ?? false, sort_order: sortOrder })}>Edit</Button>
+                        <Button size="small" variant="edit" onClick={() => setEditingVariant({ id: variant.id, menu_item_id: menuItemId, name: variant.name, price_modifier: priceMod, is_default: variant.is_default ?? variant.isDefault ?? false, sort_order: sortOrder, size_key: variant.size_key ?? variant.sizeKey ?? null })}>Edit</Button>
                         <Button
                           size="small"
                           variant="danger"

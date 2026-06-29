@@ -29,6 +29,22 @@ export class OrderItemModifier {
     @Column({ default: 1 })
     quantity: number;
 
+    /**
+     * Of the `quantity` units selected, how many were included free by the modifier
+     * group's allowance (`ModifierGroup.includedQuantity`/`includedBySize`).
+     * Charged units = quantity - freeQuantity, each at `priceSnapshot`.
+     */
+    @Column({ name: 'free_quantity', default: 0 })
+    freeQuantity: number;
+
+    /**
+     * The parent line's variant sizeKey at order time (e.g. '12'), captured so the
+     * size-dependent `priceSnapshot` can be reconstructed for receipts/refunds even if
+     * the modifier's price map later changes. Null when the item had no size.
+     */
+    @Column({ name: 'variant_size_snapshot', type: 'varchar', length: 32, nullable: true })
+    variantSizeSnapshot: string | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

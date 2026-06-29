@@ -21,6 +21,12 @@ import {
     isMenuItemAvailableForOrderType,
     parseMenuOrderChannelsInput,
 } from '../utils/menu-order-type';
+import {
+    normalizePriceBySize,
+    normalizeIncludedBySize,
+    normalizePriceTiers,
+} from './modifier-pricing';
+import { getBranchClock, isWithinSchedule } from '../utils/branch-schedule';
 
 const MENU_ITEM_GALLERY_MAX = 12;
 
@@ -44,6 +50,84 @@ function normalizeGalleryImageUrls(input: unknown): string[] | null {
 function galleryUrlsForApi(item: MenuItem): string[] {
     const n = normalizeGalleryImageUrls(item.galleryImageUrls);
     return n ?? [];
+}
+
+/** Trim a variant size key; empty/whitespace becomes null (no size semantics). */
+function normalizeSizeKey(input: string | null | undefined): string | null {
+    if (input == null) return null;
+    const s = String(input).trim();
+    return s ? s.slice(0, 32) : null;
+}
+
+/** Dedupe + trim size keys (e.g. ["7","10"]); empty array becomes null. */
+function normalizeSizeList(input: unknown): string[] | null {
+    if (!Array.isArray(input)) return null;
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const x of input) {
+        const s = String(x ?? '').trim();
+        if (!s || seen.has(s)) continue;
+        seen.add(s);
+        out.push(s.slice(0, 32));
+    }
+    return out.length ? out : null;
+}
+
+/** Dedupe + trim allergen labels; empty array becomes null. */
+function normalizeAllergens(input: unknown): string[] | null {
+    if (!Array.isArray(input)) return null;
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const x of input) {
+        if (typeof x !== 'string') continue;
+        const s = x.trim();
+        if (!s || seen.has(s.toLowerCase())) continue;
+        seen.add(s.toLowerCase());
+        out.push(s);
+    }
+    return out.length ? out : null;
+}
+
+/** Validate a non-negative integer calorie value; anything invalid becomes null. */
+function normalizeCalories(input: unknown): number | null {
+    if (input == null || input === '') return null;
+    const n = Math.floor(Number(input));
+    return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/** Accept 'HH:mm' or 'HH:mm:ss' (Postgres time); empty/invalid becomes null. */
+function normalizeTimeOfDay(input: string | null | undefined): string | null {
+    if (input == null) return null;
+    const s = String(input).trim();
+    return /^\d{1,2}:\d{2}(:\d{2})?$/.test(s) ? s : null;
+}
+
+/** Days of week as ints 0-6 (0=Sun); dedupe + sort; empty/invalid becomes null. */
+function normalizeDaysOfWeek(input: unknown): number[] | null {
+    if (!Array.isArray(input)) return null;
+    const set = new Set<number>();
+    for (const x of input) {
+        const n = Math.floor(Number(x));
+        if (Number.isFinite(n) && n >= 0 && n <= 6) set.add(n);
+    }
+    return set.size ? [...set].sort((a, b) => a - b) : null;
+}
+
+/** Metadata + scheduling fields shared by every menu-item API response. */
+function itemMetaForApi(i: {
+    allergens?: string[] | null;
+    calories?: number | null;
+    availableTimeStart?: string | null;
+    availableTimeEnd?: string | null;
+    availableDaysOfWeek?: number[] | null;
+}) {
+    return {
+        allergens: i.allergens ?? null,
+        calories: i.calories ?? null,
+        available_time_start: i.availableTimeStart ?? null,
+        available_time_end: i.availableTimeEnd ?? null,
+        available_days_of_week: i.availableDaysOfWeek ?? null,
+    };
 }
 
 @Injectable()
@@ -284,6 +368,7 @@ export class MenuService {
             available_for_order_types: effectiveMenuOrderChannels(
                 i.availableForOrderTypes,
             ),
+            ...itemMetaForApi(i),
             category: i.category
                 ? { id: i.category.id, name: i.category.name }
                 : null,
@@ -292,6 +377,7 @@ export class MenuService {
                 menu_item_id: v.menuItemId,
                 name: v.name,
                 price_modifier: Number(v.priceModifier),
+                size_key: v.sizeKey ?? null,
                 is_default: v.isDefault,
                 sort_order: v.sortOrder ?? 0,
             })),
@@ -320,6 +406,11 @@ export class MenuService {
         deal_only?: boolean;
         /** Omit or null = available on all channels (delivery, pickup, dine_in). */
         available_for_order_types?: string[] | null;
+        allergens?: string[] | null;
+        calories?: number | null;
+        available_time_start?: string | null;
+        available_time_end?: string | null;
+        available_days_of_week?: number[] | null;
     }) {
         const slug = dto.name
             .toLowerCase()
@@ -345,6 +436,13 @@ export class MenuService {
                               dto.available_for_order_types,
                           )
                         : null,
+                allergens: normalizeAllergens(dto.allergens),
+                calories: normalizeCalories(dto.calories),
+                availableTimeStart: normalizeTimeOfDay(dto.available_time_start),
+                availableTimeEnd: normalizeTimeOfDay(dto.available_time_end),
+                availableDaysOfWeek: normalizeDaysOfWeek(
+                    dto.available_days_of_week,
+                ),
             }),
         );
     }
@@ -362,6 +460,11 @@ export class MenuService {
             gallery_image_urls?: string[] | null;
             deal_only?: boolean;
             available_for_order_types?: string[] | null;
+            allergens?: string[] | null;
+            calories?: number | null;
+            available_time_start?: string | null;
+            available_time_end?: string | null;
+            available_days_of_week?: number[] | null;
         },
     ) {
         const item = await this.itemRepo.findOne({ where: { id } });
@@ -408,6 +511,20 @@ export class MenuService {
         }
         if (dto.base_price !== undefined) item.basePrice = dto.base_price;
         if (dto.is_active !== undefined) item.isActive = dto.is_active;
+        if (dto.allergens !== undefined)
+            item.allergens = normalizeAllergens(dto.allergens);
+        if (dto.calories !== undefined)
+            item.calories = normalizeCalories(dto.calories);
+        if (dto.available_time_start !== undefined)
+            item.availableTimeStart = normalizeTimeOfDay(
+                dto.available_time_start,
+            );
+        if (dto.available_time_end !== undefined)
+            item.availableTimeEnd = normalizeTimeOfDay(dto.available_time_end);
+        if (dto.available_days_of_week !== undefined)
+            item.availableDaysOfWeek = normalizeDaysOfWeek(
+                dto.available_days_of_week,
+            );
 
         await this.itemRepo.save(item);
         if (
@@ -487,11 +604,17 @@ export class MenuService {
             name: mg.name,
             min_select: mg.minSelect,
             max_select: mg.maxSelect,
+            included_quantity: mg.includedQuantity ?? 0,
+            included_by_size: mg.includedBySize ?? null,
+            allow_quantity: mg.allowQuantity ?? false,
+            price_tiers: mg.priceTiers ?? null,
             modifiers: (mg.modifiers ?? []).map((m) => ({
                 id: m.id,
                 modifier_group_id: m.modifierGroupId,
                 name: m.name,
                 price: Number(m.price),
+                price_by_size: m.priceBySize ?? null,
+                available_for_sizes: m.availableForSizes ?? null,
             })),
         }));
     }
@@ -501,6 +624,10 @@ export class MenuService {
         name: string;
         min_select?: number;
         max_select?: number;
+        included_quantity?: number;
+        included_by_size?: Record<string, number> | null;
+        allow_quantity?: boolean;
+        price_tiers?: Record<string, number> | null;
     }) {
         const mg = await this.modifierGroupRepo.save(
             this.modifierGroupRepo.create({
@@ -508,6 +635,10 @@ export class MenuService {
                 name: dto.name,
                 minSelect: dto.min_select ?? 0,
                 maxSelect: dto.max_select ?? 1,
+                includedQuantity: Math.max(0, dto.included_quantity ?? 0),
+                includedBySize: normalizeIncludedBySize(dto.included_by_size),
+                allowQuantity: dto.allow_quantity ?? false,
+                priceTiers: normalizePriceTiers(dto.price_tiers),
             }),
         );
         return {
@@ -516,19 +647,39 @@ export class MenuService {
             name: mg.name,
             min_select: mg.minSelect,
             max_select: mg.maxSelect,
+            included_quantity: mg.includedQuantity,
+            included_by_size: mg.includedBySize ?? null,
+            allow_quantity: mg.allowQuantity ?? false,
+            price_tiers: mg.priceTiers ?? null,
             modifiers: [],
         };
     }
 
     async updateModifierGroup(
         id: number,
-        dto: { name?: string; min_select?: number; max_select?: number },
+        dto: {
+            name?: string;
+            min_select?: number;
+            max_select?: number;
+            included_quantity?: number;
+            included_by_size?: Record<string, number> | null;
+            allow_quantity?: boolean;
+            price_tiers?: Record<string, number> | null;
+        },
     ) {
         const mg = await this.modifierGroupRepo.findOne({ where: { id } });
         if (!mg) throw new NotFoundException('Modifier group not found');
         if (dto.name !== undefined) mg.name = dto.name;
         if (dto.min_select !== undefined) mg.minSelect = dto.min_select;
         if (dto.max_select !== undefined) mg.maxSelect = dto.max_select;
+        if (dto.included_quantity !== undefined)
+            mg.includedQuantity = Math.max(0, dto.included_quantity);
+        if (dto.included_by_size !== undefined)
+            mg.includedBySize = normalizeIncludedBySize(dto.included_by_size);
+        if (dto.allow_quantity !== undefined)
+            mg.allowQuantity = dto.allow_quantity;
+        if (dto.price_tiers !== undefined)
+            mg.priceTiers = normalizePriceTiers(dto.price_tiers);
         await this.modifierGroupRepo.save(mg);
         return mg;
     }
@@ -571,6 +722,8 @@ export class MenuService {
             modifier_group_id: m.modifierGroupId,
             name: m.name,
             price: Number(m.price),
+            price_by_size: m.priceBySize ?? null,
+            available_for_sizes: m.availableForSizes ?? null,
             modifier_group_name: m.modifierGroup?.name,
         }));
     }
@@ -579,6 +732,8 @@ export class MenuService {
         modifier_group_id: number;
         name: string;
         price?: number;
+        price_by_size?: Record<string, number> | null;
+        available_for_sizes?: string[] | null;
     }) {
         const group = await this.modifierGroupRepo.findOne({
             where: { id: dto.modifier_group_id },
@@ -589,6 +744,8 @@ export class MenuService {
                 modifierGroupId: dto.modifier_group_id,
                 name: dto.name,
                 price: dto.price ?? 0,
+                priceBySize: normalizePriceBySize(dto.price_by_size),
+                availableForSizes: normalizeSizeList(dto.available_for_sizes),
             }),
         );
         return {
@@ -596,14 +753,28 @@ export class MenuService {
             modifier_group_id: m.modifierGroupId,
             name: m.name,
             price: Number(m.price),
+            price_by_size: m.priceBySize ?? null,
+            available_for_sizes: m.availableForSizes ?? null,
         };
     }
 
-    async updateModifier(id: number, dto: { name?: string; price?: number }) {
+    async updateModifier(
+        id: number,
+        dto: {
+            name?: string;
+            price?: number;
+            price_by_size?: Record<string, number> | null;
+            available_for_sizes?: string[] | null;
+        },
+    ) {
         const m = await this.modifierRepo.findOne({ where: { id } });
         if (!m) throw new NotFoundException('Modifier not found');
         if (dto.name !== undefined) m.name = dto.name;
         if (dto.price !== undefined) m.price = dto.price;
+        if (dto.price_by_size !== undefined)
+            m.priceBySize = normalizePriceBySize(dto.price_by_size);
+        if (dto.available_for_sizes !== undefined)
+            m.availableForSizes = normalizeSizeList(dto.available_for_sizes);
         await this.modifierRepo.save(m);
         return m;
     }
@@ -793,6 +964,7 @@ export class MenuService {
         price_modifier?: number;
         is_default?: boolean;
         sort_order?: number;
+        size_key?: string | null;
     }) {
         return this.variantRepo.save(
             this.variantRepo.create({
@@ -801,6 +973,7 @@ export class MenuService {
                 priceModifier: dto.price_modifier ?? 0,
                 isDefault: dto.is_default ?? false,
                 sortOrder: dto.sort_order ?? 0,
+                sizeKey: normalizeSizeKey(dto.size_key),
             }),
         );
     }
@@ -813,6 +986,7 @@ export class MenuService {
             is_default?: boolean;
             menu_item_id?: number;
             sort_order?: number;
+            size_key?: string | null;
         },
     ) {
         const v = await this.variantRepo.findOne({ where: { id } });
@@ -823,6 +997,7 @@ export class MenuService {
             v.priceModifier = dto.price_modifier;
         if (dto.is_default !== undefined) v.isDefault = dto.is_default;
         if (dto.sort_order !== undefined) v.sortOrder = dto.sort_order;
+        if (dto.size_key !== undefined) v.sizeKey = normalizeSizeKey(dto.size_key);
         await this.variantRepo.save(v);
         return v;
     }
@@ -867,6 +1042,12 @@ export class MenuService {
             return [];
         // No menu for an inactive branch.
         if (!branch.isActive) return [];
+
+        // Branch wall-clock for time/day-restricted items (e.g. lunch deals): availability
+        // is evaluated in the BRANCH timezone, not the requesting device's.
+        const branchClock = getBranchClock(
+            (branch as { timezone?: string }).timezone,
+        );
 
         // Only items whose brand is still linked to this branch AND active may be
         // sold. Guards against orphaned branch_menu_items left behind when a brand
@@ -961,6 +1142,16 @@ export class MenuService {
                 available_for_order_types: effectiveMenuOrderChannels(
                     item?.availableForOrderTypes ?? null,
                 ),
+                ...itemMetaForApi(item ?? {}),
+                // tz-correct "is this orderable right now" (lunch deals, etc.).
+                available_now: isWithinSchedule(
+                    {
+                        timeStart: item?.availableTimeStart,
+                        timeEnd: item?.availableTimeEnd,
+                        daysOfWeek: item?.availableDaysOfWeek,
+                    },
+                    branchClock,
+                ),
                 variants: [...(item?.variants ?? [])]
                     .sort(
                         (a, b) =>
@@ -971,6 +1162,7 @@ export class MenuService {
                         id: v.id,
                         name: v.name,
                         price_modifier: Number(v.priceModifier),
+                        size_key: v.sizeKey ?? null,
                         is_default: v.isDefault,
                         sort_order: v.sortOrder ?? 0,
                     })),
@@ -986,10 +1178,16 @@ export class MenuService {
                         name: mg.name,
                         min_select: mg.minSelect,
                         max_select: mg.maxSelect,
+                        included_quantity: mg.includedQuantity ?? 0,
+                        included_by_size: mg.includedBySize ?? null,
+                        allow_quantity: mg.allowQuantity ?? false,
+                        price_tiers: mg.priceTiers ?? null,
                         modifiers: (mg.modifiers ?? []).map((m) => ({
                             id: m.id,
                             name: m.name,
                             price: Number(m.price),
+                            price_by_size: m.priceBySize ?? null,
+                            available_for_sizes: m.availableForSizes ?? null,
                         })),
                     })) ?? [],
             };
@@ -1109,6 +1307,7 @@ export class MenuService {
                 available_for_order_types: effectiveMenuOrderChannels(
                     item.availableForOrderTypes ?? null,
                 ),
+                ...itemMetaForApi(item),
                 variants: [...(item.variants ?? [])]
                     .sort(
                         (a, b) =>
@@ -1119,6 +1318,7 @@ export class MenuService {
                         id: v.id,
                         name: v.name,
                         price_modifier: Number(v.priceModifier),
+                        size_key: v.sizeKey ?? null,
                         is_default: v.isDefault,
                         sort_order: v.sortOrder ?? 0,
                     })),
@@ -1134,10 +1334,16 @@ export class MenuService {
                         name: mg.name,
                         min_select: mg.minSelect,
                         max_select: mg.maxSelect,
+                        included_quantity: mg.includedQuantity ?? 0,
+                        included_by_size: mg.includedBySize ?? null,
+                        allow_quantity: mg.allowQuantity ?? false,
+                        price_tiers: mg.priceTiers ?? null,
                         modifiers: (mg.modifiers ?? []).map((m) => ({
                             id: m.id,
                             name: m.name,
                             price: Number(m.price),
+                            price_by_size: m.priceBySize ?? null,
+                            available_for_sizes: m.availableForSizes ?? null,
                         })),
                     })) ?? [],
             };
@@ -1181,6 +1387,7 @@ export class MenuService {
             available_for_order_types: effectiveMenuOrderChannels(
                 item.availableForOrderTypes ?? null,
             ),
+            ...itemMetaForApi(item),
             variants: [...(item.variants ?? [])]
                 .sort(
                     (a, b) =>
@@ -1190,6 +1397,7 @@ export class MenuService {
                     id: v.id,
                     name: v.name,
                     price_modifier: Number(v.priceModifier),
+                    size_key: v.sizeKey ?? null,
                     is_default: v.isDefault,
                     sort_order: v.sortOrder ?? 0,
                 })),
@@ -1205,10 +1413,16 @@ export class MenuService {
                     name: mg.name,
                     min_select: mg.minSelect,
                     max_select: mg.maxSelect,
+                    included_quantity: mg.includedQuantity ?? 0,
+                    included_by_size: mg.includedBySize ?? null,
+                    allow_quantity: mg.allowQuantity ?? false,
+                    price_tiers: mg.priceTiers ?? null,
                     modifiers: (mg.modifiers ?? []).map((m) => ({
                         id: m.id,
                         name: m.name,
                         price: Number(m.price),
+                        price_by_size: m.priceBySize ?? null,
+                        available_for_sizes: m.availableForSizes ?? null,
                     })),
                 })) ?? [],
         };
@@ -1304,8 +1518,29 @@ export class MenuService {
             available_for_order_types: effectiveMenuOrderChannels(
                 i.availableForOrderTypes,
             ),
+            ...itemMetaForApi(i),
             slot_count: countMap.get(i.id) ?? 0,
         }));
+    }
+
+    /**
+     * Per-slot upsell surcharges for a deal, keyed by slot_index → { sourceMenuItemId: extraPrice }.
+     * Used at order time to add "upgrade to X (+Rs N)" charges within a deal slot.
+     */
+    async getDealSlotSurcharges(
+        menuItemId: number,
+    ): Promise<Map<number, Record<string, number>>> {
+        const comps = await this.dealComponentRepo.find({
+            where: { menuItemId },
+            select: ['slotIndex', 'slotSurcharges'],
+        });
+        const out = new Map<number, Record<string, number>>();
+        for (const c of comps) {
+            if (c.slotSurcharges && Object.keys(c.slotSurcharges).length > 0) {
+                out.set(c.slotIndex, c.slotSurcharges);
+            }
+        }
+        return out;
     }
 
     /** Get deal components for admin (edit form). Returns null if not a deal. */
@@ -1341,6 +1576,7 @@ export class MenuService {
                 source_menu_item_ids: dc.sourceMenuItemIds ?? null,
                 quantity: dc.quantity,
                 allow_customization: dc.allowCustomization,
+                slot_surcharges: dc.slotSurcharges ?? null,
                 source_menu_item_name:
                     (dc.sourceMenuItem as { name?: string } | null)?.name ??
                     null,
@@ -1362,6 +1598,7 @@ export class MenuService {
             source_menu_item_ids?: number[] | null;
             quantity: number;
             allow_customization: boolean;
+            slot_surcharges?: Record<string, number> | null;
         }>,
     ) {
         const item = await this.itemRepo.findOne({ where: { id: menuItemId } });
@@ -1378,6 +1615,7 @@ export class MenuService {
                     sourceMenuItemIds: s.source_menu_item_ids ?? null,
                     quantity: s.quantity ?? 1,
                     allowCustomization: s.allow_customization ?? true,
+                    slotSurcharges: normalizePriceBySize(s.slot_surcharges),
                 }),
             );
         }
@@ -1476,6 +1714,9 @@ export class MenuService {
             available_for_order_types: effectiveMenuOrderChannels(
                 item.availableForOrderTypes,
             ),
+            ...itemMetaForApi(item),
+            // Slot choices aren't individually time-gated; the deal root's window gates the deal.
+            available_now: true,
             variants: [...(item.variants ?? [])]
                 .sort(
                     (a, b) =>
@@ -1485,6 +1726,7 @@ export class MenuService {
                     id: v.id,
                     name: v.name,
                     price_modifier: Number(v.priceModifier),
+                    size_key: v.sizeKey ?? null,
                     is_default: v.isDefault,
                     sort_order: v.sortOrder ?? 0,
                 })),
@@ -1500,10 +1742,16 @@ export class MenuService {
                     name: mg.name,
                     min_select: mg.minSelect,
                     max_select: mg.maxSelect,
+                    included_quantity: mg.includedQuantity ?? 0,
+                    included_by_size: mg.includedBySize ?? null,
+                    allow_quantity: mg.allowQuantity ?? false,
+                    price_tiers: mg.priceTiers ?? null,
                     modifiers: (mg.modifiers ?? []).map((m) => ({
                         id: m.id,
                         name: m.name,
                         price: Number(m.price),
+                        price_by_size: m.priceBySize ?? null,
+                        available_for_sizes: m.availableForSizes ?? null,
                     })),
                 })) ?? [],
         };
@@ -1527,6 +1775,7 @@ export class MenuService {
             type: string;
             quantity: number;
             allow_customization: boolean;
+            slot_surcharges?: Record<string, number> | null;
             source_menu_item_id?: number | null;
             choice_items?: Array<{
                 id: number;
@@ -1539,6 +1788,7 @@ export class MenuService {
                     id: number;
                     name: string;
                     price_modifier: number;
+                    size_key: string | null;
                 }>;
                 addons: Array<{ id: number; name: string; price: number }>;
                 modifier_groups: Array<{
@@ -1546,10 +1796,16 @@ export class MenuService {
                     name: string;
                     min_select: number;
                     max_select: number;
+                    included_quantity: number;
+                    included_by_size: Record<string, number> | null;
+                    allow_quantity: boolean;
+                    price_tiers: Record<string, number> | null;
                     modifiers: Array<{
                         id: number;
                         name: string;
                         price: number;
+                        price_by_size: Record<string, number> | null;
+                        available_for_sizes: string[] | null;
                     }>;
                 }>;
             }>;
@@ -1682,6 +1938,7 @@ export class MenuService {
                 type: dc.type,
                 quantity: dc.quantity,
                 allow_customization: dc.allowCustomization,
+                slot_surcharges: dc.slotSurcharges ?? null,
             };
             if (dc.type === 'fixed' && dc.sourceMenuItemId != null) {
                 const slotItem = menuById.get(dc.sourceMenuItemId);
@@ -1767,6 +2024,9 @@ export class MenuService {
             available_for_order_types: effectiveMenuOrderChannels(
                 item.availableForOrderTypes,
             ),
+            ...itemMetaForApi(item),
+            // Slot choices aren't individually time-gated; the deal root's window gates the deal.
+            available_now: true,
             variants: [...(item.variants ?? [])]
                 .sort(
                     (a, b) =>
@@ -1776,6 +2036,7 @@ export class MenuService {
                     id: v.id,
                     name: v.name,
                     price_modifier: Number(v.priceModifier),
+                    size_key: v.sizeKey ?? null,
                     is_default: v.isDefault,
                     sort_order: v.sortOrder ?? 0,
                 })),
@@ -1791,10 +2052,16 @@ export class MenuService {
                     name: mg.name,
                     min_select: mg.minSelect,
                     max_select: mg.maxSelect,
+                    included_quantity: mg.includedQuantity ?? 0,
+                    included_by_size: mg.includedBySize ?? null,
+                    allow_quantity: mg.allowQuantity ?? false,
+                    price_tiers: mg.priceTiers ?? null,
                     modifiers: (mg.modifiers ?? []).map((m) => ({
                         id: m.id,
                         name: m.name,
                         price: Number(m.price),
+                        price_by_size: m.priceBySize ?? null,
+                        available_for_sizes: m.availableForSizes ?? null,
                     })),
                 })) ?? [],
         };
