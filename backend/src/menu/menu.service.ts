@@ -584,7 +584,9 @@ export class MenuService {
         const qb = this.modifierGroupRepo
             .createQueryBuilder('mg')
             .leftJoinAndSelect('mg.modifiers', 'm')
-            .orderBy('mg.id', 'ASC')
+            .leftJoinAndSelect('mg.menuItems', 'mi')
+            .orderBy('mg.sortOrder', 'ASC')
+            .addOrderBy('mg.id', 'ASC')
             .addOrderBy('m.sortOrder', 'ASC')
             .addOrderBy('m.id', 'ASC');
         if (brandId != null) {
@@ -609,6 +611,11 @@ export class MenuService {
             included_by_size: mg.includedBySize ?? null,
             allow_quantity: mg.allowQuantity ?? false,
             price_tiers: mg.priceTiers ?? null,
+            sort_order: mg.sortOrder ?? 0,
+            linked_menu_items: (mg.menuItems ?? []).map((mi) => ({
+                id: mi.id,
+                name: mi.name,
+            })),
             modifiers: (mg.modifiers ?? [])
                 .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id)
                 .map((m) => ({
@@ -803,6 +810,19 @@ export class MenuService {
             );
         }
         return { message: 'Modifier order updated' };
+    }
+
+    async reorderModifierGroups(
+        brandId: number,
+        orderedIds: number[],
+    ): Promise<{ message: string }> {
+        for (let i = 0; i < orderedIds.length; i++) {
+            await this.modifierGroupRepo.update(
+                { id: orderedIds[i], brandId },
+                { sortOrder: i },
+            );
+        }
+        return { message: 'Modifier group order updated' };
     }
 
     async linkModifierGroups(menuItemId: number, modifierGroupIds: number[]) {

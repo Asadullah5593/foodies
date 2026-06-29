@@ -41,6 +41,10 @@ interface SortableModifierRowProps {
   isDeleting: boolean;
 }
 
+function useGroupDrag(id: number) {
+  return useSortable({ id });
+}
+
 const SortableModifierRow: React.FC<SortableModifierRowProps> = ({ modifier, group: _group, onEdit, onDelete, isDeleting }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: modifier.id });
   const style: React.CSSProperties = {
@@ -99,9 +103,10 @@ const Modifiers: React.FC = () => {
   const debouncedModifierSearch = useDebouncedValue(filters.search, 300);
   const [linkingInProgress, setLinkingInProgress] = useState(false);
   const [page, setPage] = useState(1);
-  // Local modifier order per group (groupId → ordered modifier ids). Populated from server data,
-  // updated optimistically on drag, then persisted. Resets when server data refreshes.
+  // Local modifier order per group (groupId → ordered modifier ids).
   const [localOrder, setLocalOrder] = useState<Map<number, number[]>>(new Map());
+  // Local group order (brandId → ordered group ids).
+  const [localGroupOrder, setLocalGroupOrder] = useState<Map<number, number[]>>(new Map());
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const { data: brands } = useQuery({
@@ -257,14 +262,31 @@ const Modifiers: React.FC = () => {
     onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to save order'),
   });
 
-  // Sync localOrder from server data whenever it arrives (not during drag)
+  const reorderGroupsMutation = useMutation({
+    mutationFn: ({ brandId, orderedIds }: { brandId: number; orderedIds: number[] }) =>
+      adminService.reorderModifierGroups(brandId, orderedIds),
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to save group order'),
+  });
+
+  // Sync local orders from server data
   useEffect(() => {
     if (!modifierGroups) return;
+    const groups = modifierGroups as ModifierGroupResponse[];
     setLocalOrder((prev) => {
       const next = new Map(prev);
-      for (const g of modifierGroups as ModifierGroupResponse[]) {
-        next.set(g.id, (g.modifiers ?? []).map((m) => m.id));
+      for (const g of groups) next.set(g.id, (g.modifiers ?? []).map((m) => m.id));
+      return next;
+    });
+    setLocalGroupOrder((prev) => {
+      const next = new Map(prev);
+      // Group by brand_id
+      const byBrand = new Map<number, number[]>();
+      for (const g of groups) {
+        const arr = byBrand.get(g.brand_id) ?? [];
+        arr.push(g.id);
+        byBrand.set(g.brand_id, arr);
       }
+      for (const [brandId, ids] of byBrand) next.set(brandId, ids);
       return next;
     });
   }, [modifierGroups]);
@@ -762,14 +784,49 @@ const Modifiers: React.FC = () => {
           </Card>
         ) : (
           <>
-          {paginatedGroups.map((group: ModifierGroupResponse) => (
-            <Card key={group.id} hover>
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={(event: DragEndEvent) => {
+              const { active, over } = event;
+              if (!over || active.id === over.id) return;
+              // Determine brand from the active group
+              const activeGroup = filteredGroups.find((g) => g.id === Number(active.id));
+              if (!activeGroup) return;
+              const brandId = activeGroup.brand_id;
+              const currentIds = localGroupOrder.get(brandId) ?? filteredGroups.filter((g) => g.brand_id === brandId).map((g) => g.id);
+              const oldIdx = currentIds.indexOf(Number(active.id));
+              const newIdx = currentIds.indexOf(Number(over.id));
+              const newIds = arrayMove(currentIds, oldIdx, newIdx);
+              setLocalGroupOrder((prev) => new Map(prev).set(brandId, newIds));
+              reorderGroupsMutation.mutate({ brandId, orderedIds: newIds });
+            }}
+          >
+          <SortableContext items={paginatedGroups.map((g) => g.id)} strategy={verticalListSortingStrategy}>
+          {paginatedGroups.map((group: ModifierGroupResponse) => {
+            // eslint-disable-next-line react-hooks/rules-of-hooks
+            const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useGroupDrag(group.id);
+            const style: React.CSSProperties = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, zIndex: isDragging ? 10 : undefined };
+            return (
+            <div ref={setNodeRef} style={style} key={group.id}>
+            <Card hover>
+              <div className="flex justify-between items-start gap-2">
+                <span
+                  {...attributes}
+                  {...listeners}
+                  className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none text-xl mt-1 flex-shrink-0"
+                  title="Drag to reorder group"
+                >⠿</span>
+                <div className="flex-1 min-w-0">
                   <h3 className="text-lg font-semibold text-gray-800 mb-1">{group.name}</h3>
-                  <p className="text-sm text-gray-600 mb-2">
+                  <p className="text-sm text-gray-600 mb-1">
                     Brand: {brands?.find((b) => b.id === group.brand_id)?.name ?? `#${group.brand_id}`} · Min: {group.min_select}, Max: {group.max_select}
                   </p>
+                  {(group.linked_menu_items ?? []).length > 0 && (
+                    <p className="text-xs text-blue-600 mb-2">
+                      Linked to: {(group.linked_menu_items ?? []).map((mi) => mi.name).join(', ')}
+                    </p>
+                  )}
                   {(group.modifiers ?? []).length > 0 ? (() => {
                     const orderedIds = localOrder.get(group.id) ?? (group.modifiers ?? []).map((m) => m.id);
                     const modById = new Map((group.modifiers ?? []).map((m) => [m.id, m]));
@@ -857,7 +914,11 @@ const Modifiers: React.FC = () => {
                 </div>
               </div>
             </Card>
-          ))}
+            </div>
+            );
+          })}
+          </SortableContext>
+          </DndContext>
           <PaginationBar
             totalCount={filteredGroups.length}
             page={page}
