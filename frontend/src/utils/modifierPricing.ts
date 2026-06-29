@@ -139,13 +139,12 @@ export function resolveTierCharge(tiers: Record<string, number>, n: number): num
   }
 
   if (n > maxKey) {
-    // Use ONE maxKey bundle, then fill remainder with ONLY smaller tiers
+    // Extrapolate beyond the table using the last marginal step per extra unit
     const maxCost = Number(tiers[String(maxKey)]);
-    const remainder = n - maxKey;
-    const smallerKeys = keys.slice(0, -1);
-    const smallerTiers: Record<string, number> = {};
-    for (const k of smallerKeys) smallerTiers[String(k)] = Number(tiers[String(k)]);
-    return round2(maxCost + fillWithTiers(smallerTiers, smallerKeys, remainder));
+    const secondKey = keys.length > 1 ? keys[keys.length - 2] : 0;
+    const secondCost = keys.length > 1 ? Number(tiers[String(secondKey)]) : 0;
+    const marginalStep = maxCost - secondCost;
+    return round2(maxCost + (n - maxKey) * marginalStep);
   }
 
   // n is between keys (no exact match): use largest key ≤ n, fill remainder with ≤ that key
