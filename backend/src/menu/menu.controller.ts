@@ -3,6 +3,7 @@ import {
     Get,
     Post,
     Put,
+    Patch,
     Delete,
     Body,
     Param,
@@ -617,6 +618,14 @@ export class MenuController {
     ) {
         await this.assertEntityBrand(user, 'modifier', +id);
         return this.service.deleteModifier(+id);
+    }
+
+    @Patch('modifier-groups/:groupId/reorder')
+    async reorderModifiers(
+        @Param('groupId') groupId: string,
+        @Body() body: { ordered_ids: number[] },
+    ) {
+        return this.service.reorderModifiers(+groupId, body.ordered_ids ?? []);
     }
 
     @Post('items/:id/link-modifier-groups')

@@ -53,6 +53,7 @@ export interface ModifierResponse {
   price: number;
   /** Per-size surcharge keyed by variant size_key (e.g. {"7":99,"12":249}); null = use flat price. */
   price_by_size?: Record<string, number> | null;
+  sort_order?: number;
   modifier_group_name?: string;
 }
 
@@ -243,6 +244,10 @@ export const adminService = {
   },
   deleteModifier: async (id: number): Promise<void> => {
     await apiClient.delete(`/admin/menu/modifiers/${id}`);
+  },
+
+  reorderModifiers: async (modifierGroupId: number, orderedIds: number[]): Promise<void> => {
+    await apiClient.patch(`/admin/menu/modifier-groups/${modifierGroupId}/reorder`, { ordered_ids: orderedIds });
   },
 
   // Link modifier groups to menu item

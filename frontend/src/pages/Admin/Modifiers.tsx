@@ -2,6 +2,21 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+  arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import apiClient from '../../utils/apiClient';
 import { adminService, ModifierGroupResponse, ModifierResponse } from '../../services/api/adminService';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
@@ -17,6 +32,40 @@ import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar
 import { confirmDialog } from '../../utils/sweetAlert';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import SizeMapEditor from '../../components/SizeMapEditor';
+
+interface SortableModifierRowProps {
+  modifier: ModifierResponse;
+  group: ModifierGroupResponse;
+  onEdit: () => void;
+  onDelete: () => void;
+  isDeleting: boolean;
+}
+
+const SortableModifierRow: React.FC<SortableModifierRowProps> = ({ modifier, group: _group, onEdit, onDelete, isDeleting }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: modifier.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+  return (
+    <li ref={setNodeRef} style={style} className="flex items-center gap-2 text-sm text-gray-700 bg-white rounded p-1">
+      <span
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 select-none px-1"
+        title="Drag to reorder"
+      >
+        ⠿
+      </span>
+      <span className="flex-1">{modifier.name}</span>
+      <span className="text-green-600 font-medium">{formatCurrency(Number(modifier.price))}</span>
+      <Button size="small" variant="edit" onClick={onEdit}>Edit</Button>
+      <Button size="small" variant="danger" onClick={onDelete} isLoading={isDeleting}>Delete</Button>
+    </li>
+  );
+};
 
 const SIZE_KEYS = ['7', '10', '12', '14'];
 
@@ -50,6 +99,10 @@ const Modifiers: React.FC = () => {
   const debouncedModifierSearch = useDebouncedValue(filters.search, 300);
   const [linkingInProgress, setLinkingInProgress] = useState(false);
   const [page, setPage] = useState(1);
+  // Local modifier order per group (groupId → ordered modifier ids). Populated from server data,
+  // updated optimistically on drag, then persisted. Resets when server data refreshes.
+  const [localOrder, setLocalOrder] = useState<Map<number, number[]>>(new Map());
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const { data: brands } = useQuery({
     queryKey: ['brands'],
@@ -197,6 +250,24 @@ const Modifiers: React.FC = () => {
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to delete modifier'),
   });
+
+  const reorderMutation = useMutation({
+    mutationFn: ({ groupId, orderedIds }: { groupId: number; orderedIds: number[] }) =>
+      adminService.reorderModifiers(groupId, orderedIds),
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to save order'),
+  });
+
+  // Sync localOrder from server data whenever it arrives (not during drag)
+  useEffect(() => {
+    if (!modifierGroups) return;
+    setLocalOrder((prev) => {
+      const next = new Map(prev);
+      for (const g of modifierGroups as ModifierGroupResponse[]) {
+        next.set(g.id, (g.modifiers ?? []).map((m) => m.id));
+      }
+      return next;
+    });
+  }, [modifierGroups]);
 
   const isSubmitting =
     createGroupMutation.isPending ||
@@ -699,41 +770,52 @@ const Modifiers: React.FC = () => {
                   <p className="text-sm text-gray-600 mb-2">
                     Brand: {brands?.find((b) => b.id === group.brand_id)?.name ?? `#${group.brand_id}`} · Min: {group.min_select}, Max: {group.max_select}
                   </p>
-                  {(group.modifiers ?? []).length > 0 ? (
-                    <ul className="space-y-1">
-                      {group.modifiers.map((m) => (
-                        <li key={m.id} className="flex items-center gap-2 text-sm text-gray-700">
-                          <span>{m.name}</span>
-                          <span className="text-green-600 font-medium">{formatCurrency(Number(m.price))}</span>
-                          <Button
-                            size="small"
-                            variant="edit"
-                            onClick={() => setEditingModifier({ modifier: m, group })}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            size="small"
-                            variant="danger"
-                            onClick={() => {
-                              (async () => {
-                                const ok = await confirmDialog({
-                                  title: `Delete modifier "${m.name}"?`,
-                                  text: 'This action cannot be undone.',
-                                  confirmText: 'Delete',
-                                });
-                                if (!ok) return;
-                                deleteModifierMutation.mutate(m.id);
-                              })();
-                            }}
-                            isLoading={deleteModifierMutation.isPending}
-                          >
-                            Delete
-                          </Button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
+                  {(group.modifiers ?? []).length > 0 ? (() => {
+                    const orderedIds = localOrder.get(group.id) ?? (group.modifiers ?? []).map((m) => m.id);
+                    const modById = new Map((group.modifiers ?? []).map((m) => [m.id, m]));
+                    const sorted = orderedIds.map((id) => modById.get(id)).filter(Boolean) as ModifierResponse[];
+                    return (
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={(event: DragEndEvent) => {
+                          const { active, over } = event;
+                          if (!over || active.id === over.id) return;
+                          const oldIds = localOrder.get(group.id) ?? group.modifiers.map((m) => m.id);
+                          const oldIdx = oldIds.indexOf(Number(active.id));
+                          const newIdx = oldIds.indexOf(Number(over.id));
+                          const newIds = arrayMove(oldIds, oldIdx, newIdx);
+                          setLocalOrder((prev) => new Map(prev).set(group.id, newIds));
+                          reorderMutation.mutate({ groupId: group.id, orderedIds: newIds });
+                        }}
+                      >
+                        <SortableContext items={sorted.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+                          <ul className="space-y-1">
+                            {sorted.map((m) => (
+                              <SortableModifierRow
+                                key={m.id}
+                                modifier={m}
+                                group={group}
+                                onEdit={() => setEditingModifier({ modifier: m, group })}
+                                onDelete={() => {
+                                  (async () => {
+                                    const ok = await confirmDialog({
+                                      title: `Delete modifier "${m.name}"?`,
+                                      text: 'This action cannot be undone.',
+                                      confirmText: 'Delete',
+                                    });
+                                    if (!ok) return;
+                                    deleteModifierMutation.mutate(m.id);
+                                  })();
+                                }}
+                                isDeleting={deleteModifierMutation.isPending}
+                              />
+                            ))}
+                          </ul>
+                        </SortableContext>
+                      </DndContext>
+                    );
+                  })() : (
                     <p className="text-sm text-gray-500">No modifiers in this group.</p>
                   )}
                 </div>

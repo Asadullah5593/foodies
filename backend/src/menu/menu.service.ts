@@ -585,6 +585,7 @@ export class MenuService {
             .createQueryBuilder('mg')
             .leftJoinAndSelect('mg.modifiers', 'm')
             .orderBy('mg.id', 'ASC')
+            .addOrderBy('m.sortOrder', 'ASC')
             .addOrderBy('m.id', 'ASC');
         if (brandId != null) {
             qb.where('mg.brandId = :brandId', { brandId });
@@ -608,13 +609,16 @@ export class MenuService {
             included_by_size: mg.includedBySize ?? null,
             allow_quantity: mg.allowQuantity ?? false,
             price_tiers: mg.priceTiers ?? null,
-            modifiers: (mg.modifiers ?? []).map((m) => ({
+            modifiers: (mg.modifiers ?? [])
+                .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id)
+                .map((m) => ({
                 id: m.id,
                 modifier_group_id: m.modifierGroupId,
                 name: m.name,
                 price: Number(m.price),
                 price_by_size: m.priceBySize ?? null,
                 available_for_sizes: m.availableForSizes ?? null,
+                sort_order: m.sortOrder ?? 0,
             })),
         }));
     }
@@ -700,7 +704,8 @@ export class MenuService {
         const qb = this.modifierRepo
             .createQueryBuilder('m')
             .leftJoinAndSelect('m.modifierGroup', 'mg')
-            .orderBy('m.id', 'ASC');
+            .orderBy('m.sortOrder', 'ASC')
+            .addOrderBy('m.id', 'ASC');
         if (modifierGroupId != null) {
             qb.where('m.modifierGroupId = :modifierGroupId', {
                 modifierGroupId,
@@ -724,6 +729,7 @@ export class MenuService {
             price: Number(m.price),
             price_by_size: m.priceBySize ?? null,
             available_for_sizes: m.availableForSizes ?? null,
+            sort_order: m.sortOrder ?? 0,
             modifier_group_name: m.modifierGroup?.name,
         }));
     }
@@ -784,6 +790,19 @@ export class MenuService {
         if (!m) throw new NotFoundException('Modifier not found');
         await this.modifierRepo.remove(m);
         return { message: 'Modifier deleted' };
+    }
+
+    async reorderModifiers(
+        modifierGroupId: number,
+        orderedIds: number[],
+    ): Promise<{ message: string }> {
+        for (let i = 0; i < orderedIds.length; i++) {
+            await this.modifierRepo.update(
+                { id: orderedIds[i], modifierGroupId },
+                { sortOrder: i },
+            );
+        }
+        return { message: 'Modifier order updated' };
     }
 
     async linkModifierGroups(menuItemId: number, modifierGroupIds: number[]) {

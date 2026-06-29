@@ -40,6 +40,9 @@ export class Modifier {
     @Column({ name: 'available_for_sizes', type: 'jsonb', nullable: true })
     availableForSizes: string[] | null;
 
+    @Column({ default: 0 })
+    sortOrder: number;
+
     @CreateDateColumn()
     createdAt: Date;
 

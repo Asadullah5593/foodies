@@ -176,8 +176,31 @@ const CartPanel: React.FC<CartPanelProps> = ({
                             const cost = resolveTierCharge(group.price_tiers!, charged);
                             lines.push(<li key={`tier-${group.id}`}>{names} {formatCurrency(cost)}</li>);
                           } else if (!hasTiers) {
-                            const p = resolveModifierUnitPrice(mod, sizeKey) * (sel.quantity ?? 1);
-                            lines.push(<li key={sel.modifierId}>{mod.name}{(sel.quantity ?? 1) > 1 ? ` ×${sel.quantity}` : ''} {formatCurrency(p)}</li>);
+                            // Slot-based free allocation: compute free units for this modifier
+                            const groupSels = (item.modifiers ?? []).filter(s => groupOf.get(s.modifierId)?.id === group?.id);
+                            const free = group ? resolveIncludedQuantity(group, sizeKey) : 0;
+                            // Build slot list for the group, sort by (slot, price), take first `free`
+                            type SlotUnit = { modifierId: number; price: number; slot: number };
+                            const slotUnits: SlotUnit[] = [];
+                            for (const s of groupSels) {
+                              const m2 = (group?.modifiers ?? []).find(x => x.id === s.modifierId);
+                              const up = m2 ? resolveModifierUnitPrice(m2, sizeKey) : 0;
+                              for (let i = 0; i < (s.quantity ?? 1); i++) slotUnits.push({ modifierId: s.modifierId, price: up, slot: i });
+                            }
+                            slotUnits.sort((a, b) => a.slot !== b.slot ? a.slot - b.slot : a.price - b.price);
+                            const freeByMod = new Map<number, number>();
+                            let freeLeft = free;
+                            for (const u of slotUnits) {
+                              if (freeLeft <= 0) break;
+                              freeByMod.set(u.modifierId, (freeByMod.get(u.modifierId) ?? 0) + 1);
+                              freeLeft--;
+                            }
+                            const qty = sel.quantity ?? 1;
+                            const freeUnits = freeByMod.get(sel.modifierId) ?? 0;
+                            const chargedUnits = Math.max(0, qty - freeUnits);
+                            const unitPrice = resolveModifierUnitPrice(mod, sizeKey);
+                            const p = unitPrice * chargedUnits;
+                            lines.push(<li key={sel.modifierId}>{mod.name}{qty > 1 ? ` ×${qty}` : ''} {freeUnits > 0 && chargedUnits === 0 ? <span className="text-emerald-600">Included</span> : freeUnits > 0 ? <>{formatCurrency(p)} <span className="text-emerald-600">({freeUnits} free)</span></> : formatCurrency(p)}</li>);
                           }
                         }
                         return <ul className="text-xs text-foodies-textSecondary mt-0.5 space-y-0.5">{lines}</ul>;
