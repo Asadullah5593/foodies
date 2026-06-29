@@ -519,6 +519,19 @@ export class MenuController {
         return this.service.reorderModifierGroups(body.brand_id, body.ordered_ids ?? []);
     }
 
+    @Patch('items/:itemId/reorder-modifier-groups')
+    async reorderItemModifierGroups(
+        @CurrentUser() user: MenuUser,
+        @Param('itemId') itemId: string,
+        @Body() body: { ordered_ids: number[] },
+    ) {
+        return this.service.reorderItemModifierGroups(
+            +itemId,
+            body.ordered_ids ?? [],
+            user.allowedBrandIds ?? null,
+        );
+    }
+
     @Put('modifier-groups/:id')
     async updateModifierGroup(
         @CurrentUser() user: MenuUser,

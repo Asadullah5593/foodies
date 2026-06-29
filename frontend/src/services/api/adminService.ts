@@ -257,6 +257,10 @@ export const adminService = {
     await apiClient.patch(`/admin/menu/modifier-groups/reorder`, { brand_id: brandId, ordered_ids: orderedIds });
   },
 
+  reorderItemModifierGroups: async (itemId: number, orderedIds: number[]): Promise<void> => {
+    await apiClient.patch(`/admin/menu/items/${itemId}/reorder-modifier-groups`, { ordered_ids: orderedIds });
+  },
+
   // Link modifier groups to menu item
   linkModifierGroups: async (menuItemId: number, modifierGroupIds: number[]): Promise<void> => {
     await apiClient.post(`/admin/menu/items/${menuItemId}/link-modifier-groups`, { modifier_group_ids: modifierGroupIds });

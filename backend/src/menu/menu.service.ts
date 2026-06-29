@@ -15,6 +15,7 @@ import { MenuItem } from '../entities/menu-item.entity';
 import { MenuVariant } from '../entities/menu-variant.entity';
 import { ModifierGroup } from '../entities/modifier-group.entity';
 import { Modifier } from '../entities/modifier.entity';
+import { MenuItemModifierGroupPosition } from '../entities/menu-item-modifier-group-position.entity';
 import { MediaStorageService } from '../media/media-storage.service';
 import {
     effectiveMenuOrderChannels,
@@ -148,6 +149,8 @@ export class MenuService {
         @InjectRepository(ModifierGroup)
         private modifierGroupRepo: Repository<ModifierGroup>,
         @InjectRepository(Modifier) private modifierRepo: Repository<Modifier>,
+        @InjectRepository(MenuItemModifierGroupPosition)
+        private positionRepo: Repository<MenuItemModifierGroupPosition>,
         private mediaStorage: MediaStorageService,
     ) {}
 
@@ -799,6 +802,66 @@ export class MenuService {
         return { message: 'Modifier deleted' };
     }
 
+    /** Load per-item group positions for a set of item IDs in one query. */
+    private async buildPositionsMap(
+        itemIds: number[],
+    ): Promise<Map<number, Map<number, number>>> {
+        if (!itemIds.length) return new Map();
+        const rows = await this.positionRepo.find({
+            where: { menuItemId: In(itemIds) },
+        });
+        const map = new Map<number, Map<number, number>>();
+        for (const row of rows) {
+            let g = map.get(row.menuItemId);
+            if (!g) { g = new Map(); map.set(row.menuItemId, g); }
+            g.set(row.modifierGroupId, row.sortOrder);
+        }
+        return map;
+    }
+
+    /** Sort modifier groups using per-item positions; falls back to global sort_order. */
+    private sortGroupsForItem(
+        itemId: number,
+        groups: ModifierGroup[],
+        posMap: Map<number, Map<number, number>>,
+    ): ModifierGroup[] {
+        const gp = posMap.get(itemId);
+        return [...groups].sort((a, b) => {
+            const aPos = gp?.get(a.id) ?? (a.sortOrder ?? 999);
+            const bPos = gp?.get(b.id) ?? (b.sortOrder ?? 999);
+            return aPos - bPos || (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id;
+        });
+    }
+
+    async reorderItemModifierGroups(
+        menuItemId: number,
+        orderedGroupIds: number[],
+        allowedBrandIds: number[] | null,
+    ): Promise<{ message: string }> {
+        if (allowedBrandIds !== null) {
+            const item = await this.itemRepo.findOne({
+                where: { id: menuItemId },
+                select: ['id', 'brandId'],
+            });
+            if (!item || !allowedBrandIds.includes(item.brandId!)) {
+                throw new ForbiddenException(
+                    'You do not have access to this menu item',
+                );
+            }
+        }
+        for (let i = 0; i < orderedGroupIds.length; i++) {
+            await this.positionRepo.upsert(
+                {
+                    menuItemId,
+                    modifierGroupId: orderedGroupIds[i],
+                    sortOrder: i,
+                },
+                ['menuItemId', 'modifierGroupId'],
+            );
+        }
+        return { message: 'Item modifier group order updated' };
+    }
+
     async reorderModifiers(
         modifierGroupId: number,
         orderedIds: number[],
@@ -1158,6 +1221,11 @@ export class MenuService {
             );
         }
 
+        const itemIds = linked
+            .map((bmi) => bmi.menuItem?.id)
+            .filter((id): id is number => id != null);
+        const posMap = await this.buildPositionsMap(itemIds);
+
         return linked.map((bmi) => {
             const item = bmi.menuItem;
             const price =
@@ -1211,24 +1279,27 @@ export class MenuService {
                         name: a.name,
                         price: Number(a.price),
                     })) ?? [],
-                modifier_groups:
-                    item?.modifierGroups?.map((mg) => ({
-                        id: mg.id,
-                        name: mg.name,
-                        min_select: mg.minSelect,
-                        max_select: mg.maxSelect,
-                        included_quantity: mg.includedQuantity ?? 0,
-                        included_by_size: mg.includedBySize ?? null,
-                        allow_quantity: mg.allowQuantity ?? false,
-                        price_tiers: mg.priceTiers ?? null,
-                        modifiers: (mg.modifiers ?? []).map((m) => ({
-                            id: m.id,
-                            name: m.name,
-                            price: Number(m.price),
-                            price_by_size: m.priceBySize ?? null,
-                            available_for_sizes: m.availableForSizes ?? null,
-                        })),
-                    })) ?? [],
+                modifier_groups: this.sortGroupsForItem(
+                    item?.id ?? 0,
+                    item?.modifierGroups ?? [],
+                    posMap,
+                ).map((mg) => ({
+                    id: mg.id,
+                    name: mg.name,
+                    min_select: mg.minSelect,
+                    max_select: mg.maxSelect,
+                    included_quantity: mg.includedQuantity ?? 0,
+                    included_by_size: mg.includedBySize ?? null,
+                    allow_quantity: mg.allowQuantity ?? false,
+                    price_tiers: mg.priceTiers ?? null,
+                    modifiers: (mg.modifiers ?? []).map((m) => ({
+                        id: m.id,
+                        name: m.name,
+                        price: Number(m.price),
+                        price_by_size: m.priceBySize ?? null,
+                        available_for_sizes: m.availableForSizes ?? null,
+                    })),
+                })),
             };
         });
     }
@@ -1331,6 +1402,8 @@ export class MenuService {
 
         const items = await qb.getMany();
 
+        const posMap = await this.buildPositionsMap(items.map((i) => i.id));
+
         return items.map((item) => {
             const base = Number(item.basePrice ?? 0);
             return {
@@ -1367,24 +1440,27 @@ export class MenuService {
                         name: a.name,
                         price: Number(a.price),
                     })) ?? [],
-                modifier_groups:
-                    item.modifierGroups?.map((mg) => ({
-                        id: mg.id,
-                        name: mg.name,
-                        min_select: mg.minSelect,
-                        max_select: mg.maxSelect,
-                        included_quantity: mg.includedQuantity ?? 0,
-                        included_by_size: mg.includedBySize ?? null,
-                        allow_quantity: mg.allowQuantity ?? false,
-                        price_tiers: mg.priceTiers ?? null,
-                        modifiers: (mg.modifiers ?? []).map((m) => ({
-                            id: m.id,
-                            name: m.name,
-                            price: Number(m.price),
-                            price_by_size: m.priceBySize ?? null,
-                            available_for_sizes: m.availableForSizes ?? null,
-                        })),
-                    })) ?? [],
+                modifier_groups: this.sortGroupsForItem(
+                    item.id,
+                    item.modifierGroups ?? [],
+                    posMap,
+                ).map((mg) => ({
+                    id: mg.id,
+                    name: mg.name,
+                    min_select: mg.minSelect,
+                    max_select: mg.maxSelect,
+                    included_quantity: mg.includedQuantity ?? 0,
+                    included_by_size: mg.includedBySize ?? null,
+                    allow_quantity: mg.allowQuantity ?? false,
+                    price_tiers: mg.priceTiers ?? null,
+                    modifiers: (mg.modifiers ?? []).map((m) => ({
+                        id: m.id,
+                        name: m.name,
+                        price: Number(m.price),
+                        price_by_size: m.priceBySize ?? null,
+                        available_for_sizes: m.availableForSizes ?? null,
+                    })),
+                })),
             };
         });
     }
@@ -1446,24 +1522,30 @@ export class MenuService {
                     name: a.name,
                     price: Number(a.price),
                 })) ?? [],
-            modifier_groups:
-                item.modifierGroups?.map((mg) => ({
-                    id: mg.id,
-                    name: mg.name,
-                    min_select: mg.minSelect,
-                    max_select: mg.maxSelect,
-                    included_quantity: mg.includedQuantity ?? 0,
-                    included_by_size: mg.includedBySize ?? null,
-                    allow_quantity: mg.allowQuantity ?? false,
-                    price_tiers: mg.priceTiers ?? null,
-                    modifiers: (mg.modifiers ?? []).map((m) => ({
-                        id: m.id,
-                        name: m.name,
-                        price: Number(m.price),
-                        price_by_size: m.priceBySize ?? null,
-                        available_for_sizes: m.availableForSizes ?? null,
+            modifier_groups: await this.buildPositionsMap([item.id]).then(
+                (pm) =>
+                    this.sortGroupsForItem(
+                        item.id,
+                        item.modifierGroups ?? [],
+                        pm,
+                    ).map((mg) => ({
+                        id: mg.id,
+                        name: mg.name,
+                        min_select: mg.minSelect,
+                        max_select: mg.maxSelect,
+                        included_quantity: mg.includedQuantity ?? 0,
+                        included_by_size: mg.includedBySize ?? null,
+                        allow_quantity: mg.allowQuantity ?? false,
+                        price_tiers: mg.priceTiers ?? null,
+                        modifiers: (mg.modifiers ?? []).map((m) => ({
+                            id: m.id,
+                            name: m.name,
+                            price: Number(m.price),
+                            price_by_size: m.priceBySize ?? null,
+                            available_for_sizes: m.availableForSizes ?? null,
+                        })),
                     })),
-                })) ?? [],
+            ),
         };
     }
 

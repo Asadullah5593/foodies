@@ -393,6 +393,12 @@ const Modifiers: React.FC = () => {
     onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to save group order'),
   });
 
+  const reorderItemGroupsMutation = useMutation({
+    mutationFn: ({ itemId, orderedIds }: { itemId: number; orderedIds: number[] }) =>
+      adminService.reorderItemModifierGroups(itemId, orderedIds),
+    onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to save item group order'),
+  });
+
   // Sync local orders from server data
   useEffect(() => {
     if (!modifierGroups) return;
@@ -931,7 +937,6 @@ const Modifiers: React.FC = () => {
             onDragEnd={(event: DragEndEvent) => {
               const { active, over } = event;
               if (!over || active.id === over.id) return;
-              // Determine brand from the active group
               const activeGroup = filteredGroups.find((g) => g.id === Number(active.id));
               if (!activeGroup) return;
               const brandId = activeGroup.brand_id;
@@ -940,7 +945,12 @@ const Modifiers: React.FC = () => {
               const newIdx = currentIds.indexOf(Number(over.id));
               const newIds = arrayMove(currentIds, oldIdx, newIdx);
               setLocalGroupOrder((prev) => new Map(prev).set(brandId, newIds));
-              reorderGroupsMutation.mutate({ brandId, orderedIds: newIds });
+              const selectedItemId = filters.menu_item_id ? +filters.menu_item_id : null;
+              if (selectedItemId) {
+                reorderItemGroupsMutation.mutate({ itemId: selectedItemId, orderedIds: newIds });
+              } else {
+                reorderGroupsMutation.mutate({ brandId, orderedIds: newIds });
+              }
             }}
           >
           <SortableContext items={paginatedGroups.map((g) => g.id)} strategy={verticalListSortingStrategy}>
