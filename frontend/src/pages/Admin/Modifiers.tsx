@@ -236,6 +236,20 @@ const Modifiers: React.FC = () => {
 
   const filteredGroups = useMemo(() => {
     let groups = (modifierGroups ?? []) as ModifierGroupResponse[];
+    // Apply optimistic local reorder before filtering so drag-and-drop is immediately visible
+    if (localGroupOrder.size > 0) {
+      groups = [...groups].sort((a, b) => {
+        if (a.brand_id !== b.brand_id) return 0;
+        const order = localGroupOrder.get(a.brand_id ?? -1);
+        if (!order) return 0;
+        const ai = order.indexOf(a.id);
+        const bi = order.indexOf(b.id);
+        if (ai === -1 && bi === -1) return 0;
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
+    }
     if (debouncedModifierSearch.trim()) {
       const q = debouncedModifierSearch.trim().toLowerCase();
       groups = groups.filter(
@@ -247,7 +261,7 @@ const Modifiers: React.FC = () => {
       groups = groups.filter((g) => (g.linked_menu_items ?? []).some((mi) => mi.id === itemId));
     }
     return groups;
-  }, [modifierGroups, debouncedModifierSearch, filters.menu_item_id]);
+  }, [modifierGroups, localGroupOrder, debouncedModifierSearch, filters.menu_item_id]);
 
   const modifierSearchTypeahead = useTypeaheadSuggestions({
     query: debouncedModifierSearch,
