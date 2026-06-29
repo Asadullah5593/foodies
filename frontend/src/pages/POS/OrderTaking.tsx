@@ -588,7 +588,8 @@ const OrderTaking: React.FC = () => {
         const selectedInGroup = (itemConfig.modifiers ?? []).filter(m =>
           group.modifiers.some(mod => mod.id === m.modifierId)
         );
-        if (selectedInGroup.length < group.min_select) {
+        const totalUnits = selectedInGroup.reduce((s, m) => s + (m.quantity || 1), 0);
+        if (totalUnits < group.min_select) {
           toast.error(`Please select at least ${group.min_select} for "${group.name}"`);
           return;
         }

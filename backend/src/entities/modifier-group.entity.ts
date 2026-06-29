@@ -67,6 +67,9 @@ export class ModifierGroup {
     @Column({ name: 'price_tiers', type: 'jsonb', nullable: true })
     priceTiers: Record<string, number> | null;
 
+    @Column({ name: 'sort_order', default: 0 })
+    sortOrder: number;
+
     @CreateDateColumn()
     createdAt: Date;
 

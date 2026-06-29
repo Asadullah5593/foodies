@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Button from '../../../components/Button';
 import { formatCurrency } from '../../../utils/currency';
 import { CartLine } from './types';
-import { computeModifiersPrice, resolveModifierUnitPrice, sizeKeyForSelection } from '../../../utils/modifierPricing';
+import { computeModifiersPrice, resolveModifierUnitPrice, resolveIncludedQuantity, resolveTierCharge, sizeKeyForSelection } from '../../../utils/modifierPricing';
 
 export type QuoteLineBreakdown = {
   subtotal?: number;
@@ -136,12 +136,13 @@ const CartPanel: React.FC<CartPanelProps> = ({
                       )}
                       {!isDeal && item.variantId && (() => {
                         const v = item.menuItem.variants?.find(vr => vr.id === item.variantId);
-                        const price = v ? Number(v.price_modifier ?? 0) : 0;
-                        return (
+                        const basePrice = item.menuItem.price || item.menuItem.base_price || 0;
+                        const totalVariantPrice = basePrice + Number(v?.price_modifier ?? 0);
+                        return v ? (
                           <p className="text-xs text-foodies-textSecondary">
-                            Variant: {v?.name} {price !== 0 && <span className="text-foodies-cta font-medium">({formatCurrency(price)})</span>}
+                            {v.name} <span className="text-foodies-cta font-medium">{formatCurrency(totalVariantPrice)}</span>
                           </p>
-                        );
+                        ) : null;
                       })()}
                       {!isDeal && item.addons.length > 0 && (
                         <ul className="text-xs text-foodies-textSecondary mt-0.5 space-y-0.5">
@@ -152,15 +153,64 @@ const CartPanel: React.FC<CartPanelProps> = ({
                           })}
                         </ul>
                       )}
-                      {!isDeal && (item.modifiers ?? []).length > 0 && (
-                        <ul className="text-xs text-foodies-textSecondary mt-0.5 space-y-0.5">
-                          {(item.modifiers ?? []).map(m => {
-                            const mod = item.menuItem.modifier_groups?.flatMap(g => g.modifiers).find(mo => mo.id === m.modifierId);
-                            const p = mod ? resolveModifierUnitPrice(mod, sizeKeyForSelection(item.menuItem, item.variantId)) * m.quantity : 0;
-                            return mod ? <li key={m.modifierId}>Modifier: {mod.name}{m.quantity > 1 ? ` ×${m.quantity}` : ''} {formatCurrency(p)}</li> : null;
-                          })}
-                        </ul>
-                      )}
+                      {!isDeal && (item.modifiers ?? []).length > 0 && (() => {
+                        const groups = item.menuItem.modifier_groups ?? [];
+                        const sizeKey = sizeKeyForSelection(item.menuItem, item.variantId);
+                        const groupOf = new Map(groups.flatMap(g => (g.modifiers ?? []).map(m => [m.id, g])));
+                        const lines: React.ReactNode[] = [];
+                        const renderedGroups = new Set<number>();
+                        for (const sel of item.modifiers ?? []) {
+                          const group = groupOf.get(sel.modifierId);
+                          const mod = group ? (group.modifiers ?? []).find(m => m.id === sel.modifierId) : undefined;
+                          if (!mod) continue;
+                          const hasTiers = group?.price_tiers && Object.keys(group.price_tiers).length > 0;
+                          if (hasTiers && group && !renderedGroups.has(group.id)) {
+                            renderedGroups.add(group.id);
+                            const groupSels = (item.modifiers ?? []).filter(s => groupOf.get(s.modifierId)?.id === group.id);
+                            const names = groupSels.map(s => {
+                              const m = (group.modifiers ?? []).find(x => x.id === s.modifierId);
+                              return m ? `${m.name}${s.quantity > 1 ? ` ×${s.quantity}` : ''}` : '';
+                            }).filter(Boolean).join(', ');
+                            const totalQty = groupSels.reduce((s, x) => s + (x.quantity ?? 1), 0);
+                            const free = resolveIncludedQuantity(group, sizeKey);
+                            const charged = Math.max(0, totalQty - free);
+                            const cost = resolveTierCharge(group.price_tiers!, charged);
+                            lines.push(<li key={`tier-${group.id}`}>{names} {formatCurrency(cost)}</li>);
+                          } else if (!hasTiers) {
+                            // Slot-based free allocation: compute free units for this modifier
+                            const groupSels = (item.modifiers ?? []).filter(s => groupOf.get(s.modifierId)?.id === group?.id);
+                            const free = group ? resolveIncludedQuantity(group, sizeKey) : 0;
+                            // Build slot list for the group, sort by (slot, price), take first `free`
+                            type SlotUnit = { modifierId: number; price: number; slot: number };
+                            const slotUnits: SlotUnit[] = [];
+                            for (const s of groupSels) {
+                              const m2 = (group?.modifiers ?? []).find(x => x.id === s.modifierId);
+                              const up = m2 ? resolveModifierUnitPrice(m2, sizeKey) : 0;
+                              for (let i = 0; i < (s.quantity ?? 1); i++) slotUnits.push({ modifierId: s.modifierId, price: up, slot: i });
+                            }
+                            slotUnits.sort((a, b) => a.slot !== b.slot ? a.slot - b.slot : a.price - b.price);
+                            const freeByMod = new Map<number, number>();
+                            let freeLeft = free;
+                            for (const u of slotUnits) {
+                              if (freeLeft <= 0) break;
+                              freeByMod.set(u.modifierId, (freeByMod.get(u.modifierId) ?? 0) + 1);
+                              freeLeft--;
+                            }
+                            const qty = sel.quantity ?? 1;
+                            const freeUnits = freeByMod.get(sel.modifierId) ?? 0;
+                            const chargedUnits = Math.max(0, qty - freeUnits);
+                            const unitPrice = resolveModifierUnitPrice(mod, sizeKey);
+                            const p = unitPrice * chargedUnits;
+                            // Zero-price modifiers (e.g. crust/base choices) never show a price tag.
+                            const priceNode = unitPrice <= 0 ? null
+                              : freeUnits > 0 && chargedUnits === 0 ? <span className="text-emerald-600">Included</span>
+                              : freeUnits > 0 ? <>{formatCurrency(p)} <span className="text-emerald-600">({freeUnits} free)</span></>
+                              : formatCurrency(p);
+                            lines.push(<li key={sel.modifierId}>{mod.name}{qty > 1 ? ` ×${qty}` : ''}{priceNode ? <> {priceNode}</> : null}</li>);
+                          }
+                        }
+                        return <ul className="text-xs text-foodies-textSecondary mt-0.5 space-y-0.5">{lines}</ul>;
+                      })()}
                       {!isDeal && item.notes && (
                         <p className="text-xs text-foodies-textSecondary italic">Note: {item.notes}</p>
                       )}

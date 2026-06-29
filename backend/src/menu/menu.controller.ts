@@ -3,6 +3,7 @@ import {
     Get,
     Post,
     Put,
+    Patch,
     Delete,
     Body,
     Param,
@@ -509,6 +510,15 @@ export class MenuController {
         return this.service.createModifierGroup(dto);
     }
 
+    @Patch('modifier-groups/reorder')
+    async reorderModifierGroups(
+        @CurrentUser() user: MenuUser,
+        @Body() body: { brand_id: number; ordered_ids: number[] },
+    ) {
+        this.resolveBrandScope(user, body.brand_id);
+        return this.service.reorderModifierGroups(body.brand_id, body.ordered_ids ?? []);
+    }
+
     @Put('modifier-groups/:id')
     async updateModifierGroup(
         @CurrentUser() user: MenuUser,
@@ -617,6 +627,14 @@ export class MenuController {
     ) {
         await this.assertEntityBrand(user, 'modifier', +id);
         return this.service.deleteModifier(+id);
+    }
+
+    @Patch('modifier-groups/:groupId/reorder')
+    async reorderModifiers(
+        @Param('groupId') groupId: string,
+        @Body() body: { ordered_ids: number[] },
+    ) {
+        return this.service.reorderModifiers(+groupId, body.ordered_ids ?? []);
     }
 
     @Post('items/:id/link-modifier-groups')
