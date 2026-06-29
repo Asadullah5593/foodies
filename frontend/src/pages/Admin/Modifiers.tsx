@@ -41,10 +41,6 @@ interface SortableModifierRowProps {
   isDeleting: boolean;
 }
 
-function useGroupDrag(id: number) {
-  return useSortable({ id });
-}
-
 const SortableModifierRow: React.FC<SortableModifierRowProps> = ({ modifier, group: _group, onEdit, onDelete, isDeleting }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: modifier.id });
   const style: React.CSSProperties = {
@@ -68,6 +64,106 @@ const SortableModifierRow: React.FC<SortableModifierRowProps> = ({ modifier, gro
       <Button size="small" variant="edit" onClick={onEdit}>Edit</Button>
       <Button size="small" variant="danger" onClick={onDelete} isLoading={isDeleting}>Delete</Button>
     </li>
+  );
+};
+
+interface SortableGroupCardProps {
+  group: ModifierGroupResponse;
+  brands: { id: number; name: string; tenant_name?: string }[] | undefined;
+  localOrder: Map<number, number[]>;
+  setLocalOrder: React.Dispatch<React.SetStateAction<Map<number, number[]>>>;
+  sensors: ReturnType<typeof useSensors>;
+  onReorderModifiers: (groupId: number, newIds: number[]) => void;
+  onEditModifier: (modifier: ModifierResponse) => void;
+  onDeleteModifier: (id: number) => void;
+  isDeletingModifier: boolean;
+  onAddModifier: (groupId: number) => void;
+  onEditGroup: () => void;
+  onDeleteGroup: () => void;
+  isDeletingGroup: boolean;
+  onLinkMenuItems: () => void;
+}
+
+const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
+  group, brands, localOrder, setLocalOrder, sensors,
+  onReorderModifiers, onEditModifier, onDeleteModifier, isDeletingModifier,
+  onAddModifier, onEditGroup, onDeleteGroup, isDeletingGroup, onLinkMenuItems,
+}) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: group.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  const orderedIds = localOrder.get(group.id) ?? (group.modifiers ?? []).map((m) => m.id);
+  const modById = new Map((group.modifiers ?? []).map((m) => [m.id, m]));
+  const sortedMods = orderedIds.map((id) => modById.get(id)).filter(Boolean) as ModifierResponse[];
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      <Card hover>
+        <div className="flex justify-between items-start gap-2">
+          <span
+            {...attributes}
+            {...listeners}
+            className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none text-xl mt-1 flex-shrink-0"
+            title="Drag to reorder group"
+          >⠿</span>
+          <div className="flex-1 min-w-0">
+            <h3 className="text-lg font-semibold text-gray-800 mb-1">{group.name}</h3>
+            <p className="text-sm text-gray-600 mb-1">
+              Brand: {brands?.find((b) => b.id === group.brand_id)?.name ?? `#${group.brand_id}`} · Min: {group.min_select}, Max: {group.max_select}
+            </p>
+            {(group.linked_menu_items ?? []).length > 0 && (
+              <p className="text-xs text-blue-600 mb-2">
+                Linked to: {(group.linked_menu_items ?? []).map((mi) => mi.name).join(', ')}
+              </p>
+            )}
+            {sortedMods.length > 0 ? (
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={(event: DragEndEvent) => {
+                  const { active, over } = event;
+                  if (!over || active.id === over.id) return;
+                  const oldIds = localOrder.get(group.id) ?? group.modifiers.map((m) => m.id);
+                  const oldIdx = oldIds.indexOf(Number(active.id));
+                  const newIdx = oldIds.indexOf(Number(over.id));
+                  const newIds = arrayMove(oldIds, oldIdx, newIdx);
+                  setLocalOrder((prev) => new Map(prev).set(group.id, newIds));
+                  onReorderModifiers(group.id, newIds);
+                }}
+              >
+                <SortableContext items={sortedMods.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+                  <ul className="space-y-1">
+                    {sortedMods.map((m) => (
+                      <SortableModifierRow
+                        key={m.id}
+                        modifier={m}
+                        group={group}
+                        onEdit={() => onEditModifier(m)}
+                        onDelete={() => onDeleteModifier(m.id)}
+                        isDeleting={isDeletingModifier}
+                      />
+                    ))}
+                  </ul>
+                </SortableContext>
+              </DndContext>
+            ) : (
+              <p className="text-sm text-gray-500">No modifiers in this group.</p>
+            )}
+          </div>
+          <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
+            <Button size="small" variant="edit" onClick={onLinkMenuItems}>Link to menu items</Button>
+            <Button size="small" variant="secondary" onClick={() => onAddModifier(group.id)}>Add modifier</Button>
+            <Button size="small" variant="edit" onClick={onEditGroup}>Edit group</Button>
+            <Button size="small" variant="danger" onClick={onDeleteGroup} isLoading={isDeletingGroup}>Delete group</Button>
+          </div>
+        </div>
+      </Card>
+    </div>
   );
 };
 
@@ -803,120 +899,40 @@ const Modifiers: React.FC = () => {
             }}
           >
           <SortableContext items={paginatedGroups.map((g) => g.id)} strategy={verticalListSortingStrategy}>
-          {paginatedGroups.map((group: ModifierGroupResponse) => {
-            // eslint-disable-next-line react-hooks/rules-of-hooks
-            const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useGroupDrag(group.id);
-            const style: React.CSSProperties = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1, zIndex: isDragging ? 10 : undefined };
-            return (
-            <div ref={setNodeRef} style={style} key={group.id}>
-            <Card hover>
-              <div className="flex justify-between items-start gap-2">
-                <span
-                  {...attributes}
-                  {...listeners}
-                  className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none text-xl mt-1 flex-shrink-0"
-                  title="Drag to reorder group"
-                >⠿</span>
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-lg font-semibold text-gray-800 mb-1">{group.name}</h3>
-                  <p className="text-sm text-gray-600 mb-1">
-                    Brand: {brands?.find((b) => b.id === group.brand_id)?.name ?? `#${group.brand_id}`} · Min: {group.min_select}, Max: {group.max_select}
-                  </p>
-                  {(group.linked_menu_items ?? []).length > 0 && (
-                    <p className="text-xs text-blue-600 mb-2">
-                      Linked to: {(group.linked_menu_items ?? []).map((mi) => mi.name).join(', ')}
-                    </p>
-                  )}
-                  {(group.modifiers ?? []).length > 0 ? (() => {
-                    const orderedIds = localOrder.get(group.id) ?? (group.modifiers ?? []).map((m) => m.id);
-                    const modById = new Map((group.modifiers ?? []).map((m) => [m.id, m]));
-                    const sorted = orderedIds.map((id) => modById.get(id)).filter(Boolean) as ModifierResponse[];
-                    return (
-                      <DndContext
-                        sensors={sensors}
-                        collisionDetection={closestCenter}
-                        onDragEnd={(event: DragEndEvent) => {
-                          const { active, over } = event;
-                          if (!over || active.id === over.id) return;
-                          const oldIds = localOrder.get(group.id) ?? group.modifiers.map((m) => m.id);
-                          const oldIdx = oldIds.indexOf(Number(active.id));
-                          const newIdx = oldIds.indexOf(Number(over.id));
-                          const newIds = arrayMove(oldIds, oldIdx, newIdx);
-                          setLocalOrder((prev) => new Map(prev).set(group.id, newIds));
-                          reorderMutation.mutate({ groupId: group.id, orderedIds: newIds });
-                        }}
-                      >
-                        <SortableContext items={sorted.map((m) => m.id)} strategy={verticalListSortingStrategy}>
-                          <ul className="space-y-1">
-                            {sorted.map((m) => (
-                              <SortableModifierRow
-                                key={m.id}
-                                modifier={m}
-                                group={group}
-                                onEdit={() => setEditingModifier({ modifier: m, group })}
-                                onDelete={() => {
-                                  (async () => {
-                                    const ok = await confirmDialog({
-                                      title: `Delete modifier "${m.name}"?`,
-                                      text: 'This action cannot be undone.',
-                                      confirmText: 'Delete',
-                                    });
-                                    if (!ok) return;
-                                    deleteModifierMutation.mutate(m.id);
-                                  })();
-                                }}
-                                isDeleting={deleteModifierMutation.isPending}
-                              />
-                            ))}
-                          </ul>
-                        </SortableContext>
-                      </DndContext>
-                    );
-                  })() : (
-                    <p className="text-sm text-gray-500">No modifiers in this group.</p>
-                  )}
-                </div>
-                <div className="flex gap-2 flex-shrink-0">
-                  <Button size="small" variant="edit" onClick={() => setLinkMenuItemsGroup(group)}>
-                    Link to menu items
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="secondary"
-                    onClick={() => {
-                      setModifierFormData((prev) => ({ ...prev, modifier_group_id: String(group.id) }));
-                      setShowModifierForm(true);
-                    }}
-                  >
-                    Add modifier
-                  </Button>
-                  <Button size="small" variant="edit" onClick={() => setEditingGroup(group)}>
-                    Edit group
-                  </Button>
-                  <Button
-                    size="small"
-                    variant="danger"
-                    onClick={() => {
-                      (async () => {
-                        const ok = await confirmDialog({
-                          title: `Delete group "${group.name}"?`,
-                          text: 'This will also delete all modifiers inside this group.',
-                          confirmText: 'Delete group',
-                        });
-                        if (!ok) return;
-                        deleteGroupMutation.mutate(group.id);
-                      })();
-                    }}
-                    isLoading={deleteGroupMutation.isPending}
-                  >
-                    Delete group
-                  </Button>
-                </div>
-              </div>
-            </Card>
-            </div>
-            );
-          })}
+          {paginatedGroups.map((group: ModifierGroupResponse) => (
+            <SortableGroupCard
+              key={group.id}
+              group={group}
+              brands={brands}
+              localOrder={localOrder}
+              setLocalOrder={setLocalOrder}
+              sensors={sensors}
+              onReorderModifiers={(groupId, newIds) => reorderMutation.mutate({ groupId, orderedIds: newIds })}
+              onEditModifier={(m) => setEditingModifier({ modifier: m, group })}
+              onDeleteModifier={(id) => {
+                (async () => {
+                  const ok = await confirmDialog({ title: `Delete modifier?`, text: 'This action cannot be undone.', confirmText: 'Delete' });
+                  if (!ok) return;
+                  deleteModifierMutation.mutate(id);
+                })();
+              }}
+              isDeletingModifier={deleteModifierMutation.isPending}
+              onAddModifier={(groupId) => {
+                setModifierFormData((prev) => ({ ...prev, modifier_group_id: String(groupId) }));
+                setShowModifierForm(true);
+              }}
+              onEditGroup={() => setEditingGroup(group)}
+              onDeleteGroup={() => {
+                (async () => {
+                  const ok = await confirmDialog({ title: `Delete group "${group.name}"?`, text: 'This will also delete all modifiers inside this group.', confirmText: 'Delete group' });
+                  if (!ok) return;
+                  deleteGroupMutation.mutate(group.id);
+                })();
+              }}
+              isDeletingGroup={deleteGroupMutation.isPending}
+              onLinkMenuItems={() => setLinkMenuItemsGroup(group)}
+            />
+          ))}
           </SortableContext>
           </DndContext>
           <PaginationBar
