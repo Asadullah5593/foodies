@@ -82,12 +82,14 @@ interface SortableGroupCardProps {
   onDeleteGroup: () => void;
   isDeletingGroup: boolean;
   onLinkMenuItems: () => void;
+  reorderDisabled?: boolean;
 }
 
 const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
   group, brands, localOrder, setLocalOrder, sensors,
   onReorderModifiers, onEditModifier, onDeleteModifier, isDeletingModifier,
   onAddModifier, onEditGroup, onDeleteGroup, isDeletingGroup, onLinkMenuItems,
+  reorderDisabled,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: group.id });
   const style: React.CSSProperties = {
@@ -107,9 +109,9 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
         <div className="flex justify-between items-start gap-2">
           <span
             {...attributes}
-            {...listeners}
-            className="cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none text-xl mt-1 flex-shrink-0"
-            title="Drag to reorder group"
+            {...(reorderDisabled ? {} : listeners)}
+            className={reorderDisabled ? 'text-gray-200 select-none text-xl mt-1 flex-shrink-0 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none text-xl mt-1 flex-shrink-0'}
+            title={reorderDisabled ? 'Select a menu item from the filter to reorder groups per item' : 'Drag to reorder group'}
           >⠿</span>
           <div className="flex-1 min-w-0">
             <h3 className="text-lg font-semibold text-gray-800 mb-1">{group.name}</h3>
@@ -931,6 +933,11 @@ const Modifiers: React.FC = () => {
           </Card>
         ) : (
           <>
+          {!filters.menu_item_id && (
+            <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Select a menu item above to drag-reorder groups for that item specifically.
+            </p>
+          )}
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -962,6 +969,7 @@ const Modifiers: React.FC = () => {
               localOrder={localOrder}
               setLocalOrder={setLocalOrder}
               sensors={sensors}
+              reorderDisabled={!filters.menu_item_id}
               onReorderModifiers={(groupId, newIds) => reorderMutation.mutate({ groupId, orderedIds: newIds })}
               onEditModifier={(m) => setEditingModifier({ modifier: m, group })}
               onDeleteModifier={(id) => {
