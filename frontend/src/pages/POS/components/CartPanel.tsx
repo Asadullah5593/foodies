@@ -136,12 +136,13 @@ const CartPanel: React.FC<CartPanelProps> = ({
                       )}
                       {!isDeal && item.variantId && (() => {
                         const v = item.menuItem.variants?.find(vr => vr.id === item.variantId);
-                        const price = v ? Number(v.price_modifier ?? 0) : 0;
-                        return (
+                        const basePrice = item.menuItem.price || item.menuItem.base_price || 0;
+                        const totalVariantPrice = basePrice + Number(v?.price_modifier ?? 0);
+                        return v ? (
                           <p className="text-xs text-foodies-textSecondary">
-                            Variant: {v?.name} {price !== 0 && <span className="text-foodies-cta font-medium">({formatCurrency(price)})</span>}
+                            {v.name} <span className="text-foodies-cta font-medium">{formatCurrency(totalVariantPrice)}</span>
                           </p>
-                        );
+                        ) : null;
                       })()}
                       {!isDeal && item.addons.length > 0 && (
                         <ul className="text-xs text-foodies-textSecondary mt-0.5 space-y-0.5">
@@ -200,7 +201,12 @@ const CartPanel: React.FC<CartPanelProps> = ({
                             const chargedUnits = Math.max(0, qty - freeUnits);
                             const unitPrice = resolveModifierUnitPrice(mod, sizeKey);
                             const p = unitPrice * chargedUnits;
-                            lines.push(<li key={sel.modifierId}>{mod.name}{qty > 1 ? ` ×${qty}` : ''} {freeUnits > 0 && chargedUnits === 0 ? <span className="text-emerald-600">Included</span> : freeUnits > 0 ? <>{formatCurrency(p)} <span className="text-emerald-600">({freeUnits} free)</span></> : formatCurrency(p)}</li>);
+                            // Zero-price modifiers (e.g. crust/base choices) never show a price tag.
+                            const priceNode = unitPrice <= 0 ? null
+                              : freeUnits > 0 && chargedUnits === 0 ? <span className="text-emerald-600">Included</span>
+                              : freeUnits > 0 ? <>{formatCurrency(p)} <span className="text-emerald-600">({freeUnits} free)</span></>
+                              : formatCurrency(p);
+                            lines.push(<li key={sel.modifierId}>{mod.name}{qty > 1 ? ` ×${qty}` : ''}{priceNode ? <> {priceNode}</> : null}</li>);
                           }
                         }
                         return <ul className="text-xs text-foodies-textSecondary mt-0.5 space-y-0.5">{lines}</ul>;
