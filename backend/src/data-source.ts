@@ -21,6 +21,7 @@ export default new DataSource({
     password: process.env.DB_PASSWORD || '',
     database: process.env.DB_DATABASE || 'foodies',
     namingStrategy: new SnakeNamingStrategy(),
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     synchronize: false,
     migrations: [join(rootDir, 'dist', 'migrations', '*.js')],
     entities: [join(rootDir, 'dist', '**', '*.entity.js')],
