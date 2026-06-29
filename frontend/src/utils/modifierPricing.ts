@@ -29,7 +29,7 @@ export function resolveModifierUnitPrice(
   return Number(mod.price) || 0;
 }
 
-function resolveIncludedQuantity(
+export function resolveIncludedQuantity(
   group: MenuModifierGroup,
   sizeKey: string | null | undefined,
 ): number {

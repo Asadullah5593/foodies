@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Button from '../../../components/Button';
 import { formatCurrency } from '../../../utils/currency';
 import { CartLine } from './types';
-import { computeModifiersPrice, resolveModifierUnitPrice, sizeKeyForSelection } from '../../../utils/modifierPricing';
+import { computeModifiersPrice, resolveModifierUnitPrice, resolveIncludedQuantity, resolveTierCharge, sizeKeyForSelection } from '../../../utils/modifierPricing';
 
 export type QuoteLineBreakdown = {
   subtotal?: number;
@@ -152,15 +152,36 @@ const CartPanel: React.FC<CartPanelProps> = ({
                           })}
                         </ul>
                       )}
-                      {!isDeal && (item.modifiers ?? []).length > 0 && (
-                        <ul className="text-xs text-foodies-textSecondary mt-0.5 space-y-0.5">
-                          {(item.modifiers ?? []).map(m => {
-                            const mod = item.menuItem.modifier_groups?.flatMap(g => g.modifiers).find(mo => mo.id === m.modifierId);
-                            const p = mod ? resolveModifierUnitPrice(mod, sizeKeyForSelection(item.menuItem, item.variantId)) * m.quantity : 0;
-                            return mod ? <li key={m.modifierId}>Modifier: {mod.name}{m.quantity > 1 ? ` ×${m.quantity}` : ''} {formatCurrency(p)}</li> : null;
-                          })}
-                        </ul>
-                      )}
+                      {!isDeal && (item.modifiers ?? []).length > 0 && (() => {
+                        const groups = item.menuItem.modifier_groups ?? [];
+                        const sizeKey = sizeKeyForSelection(item.menuItem, item.variantId);
+                        const groupOf = new Map(groups.flatMap(g => (g.modifiers ?? []).map(m => [m.id, g])));
+                        const lines: React.ReactNode[] = [];
+                        const renderedGroups = new Set<number>();
+                        for (const sel of item.modifiers ?? []) {
+                          const group = groupOf.get(sel.modifierId);
+                          const mod = group ? (group.modifiers ?? []).find(m => m.id === sel.modifierId) : undefined;
+                          if (!mod) continue;
+                          const hasTiers = group?.price_tiers && Object.keys(group.price_tiers).length > 0;
+                          if (hasTiers && group && !renderedGroups.has(group.id)) {
+                            renderedGroups.add(group.id);
+                            const groupSels = (item.modifiers ?? []).filter(s => groupOf.get(s.modifierId)?.id === group.id);
+                            const names = groupSels.map(s => {
+                              const m = (group.modifiers ?? []).find(x => x.id === s.modifierId);
+                              return m ? `${m.name}${s.quantity > 1 ? ` ×${s.quantity}` : ''}` : '';
+                            }).filter(Boolean).join(', ');
+                            const totalQty = groupSels.reduce((s, x) => s + (x.quantity ?? 1), 0);
+                            const free = resolveIncludedQuantity(group, sizeKey);
+                            const charged = Math.max(0, totalQty - free);
+                            const cost = resolveTierCharge(group.price_tiers!, charged);
+                            lines.push(<li key={`tier-${group.id}`}>{names} {formatCurrency(cost)}</li>);
+                          } else if (!hasTiers) {
+                            const p = resolveModifierUnitPrice(mod, sizeKey) * (sel.quantity ?? 1);
+                            lines.push(<li key={sel.modifierId}>{mod.name}{(sel.quantity ?? 1) > 1 ? ` ×${sel.quantity}` : ''} {formatCurrency(p)}</li>);
+                          }
+                        }
+                        return <ul className="text-xs text-foodies-textSecondary mt-0.5 space-y-0.5">{lines}</ul>;
+                      })()}
                       {!isDeal && item.notes && (
                         <p className="text-xs text-foodies-textSecondary italic">Note: {item.notes}</p>
                       )}
