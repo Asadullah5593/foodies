@@ -784,6 +784,7 @@ const dataSource = new DataSource({
     password: String(process.env.DB_PASSWORD ?? ''),
     database: process.env.DB_DATABASE ?? 'foodies',
     namingStrategy: new SnakeNamingStrategy(),
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
     synchronize: false,
     entities: [join(__dirname, '**', '*.entity{.ts,.js}')],
 });

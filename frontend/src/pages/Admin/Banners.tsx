@@ -95,6 +95,8 @@ const Banners: React.FC = () => {
       subtitle: formData.subtitle || null,
       image_url: formData.image_url,
       is_active: formData.is_active,
+      valid_from: null,
+      valid_until: null,
     };
     if (editingBanner) {
       updateMutation.mutate({ id: editingBanner.id, data });
