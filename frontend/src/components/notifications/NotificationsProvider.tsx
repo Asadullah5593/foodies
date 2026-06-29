@@ -7,6 +7,7 @@ import {
   useNotificationsStore,
   type ClientNotification,
 } from '../../stores/notificationsStore';
+import OrderNotificationStack from './OrderNotificationStack';
 
 /** Alert chime served from the public/ folder (root URL). */
 const ALERT_SOUND_URL = '/sounds/success.mp3';
@@ -135,7 +136,13 @@ const NotificationsProvider: React.FC<{ children: React.ReactNode }> = ({
     return () => clearInterval(interval);
   }, [hasOpenOrderSound, muted]);
 
-  return <>{children}</>;
+  return (
+    <>
+      {children}
+      {/* Order alerts float over every screen for any targeted user. */}
+      <OrderNotificationStack />
+    </>
+  );
 };
 
 export default NotificationsProvider;

@@ -16,6 +16,9 @@ import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { confirmDialog } from '../../utils/sweetAlert';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
+import SizeMapEditor from '../../components/SizeMapEditor';
+
+const SIZE_KEYS = ['7', '10', '12', '14'];
 
 const Modifiers: React.FC = () => {
   const queryClient = useQueryClient();
@@ -31,14 +34,17 @@ const Modifiers: React.FC = () => {
     name: '',
     min_select: '0',
     max_select: '1',
+    included_quantity: '0',
+    included_by_size: null as Record<string, number> | null,
   });
   const [modifierFormData, setModifierFormData] = useState({
     modifier_group_id: '',
     name: '',
     price: '',
+    price_by_size: null as Record<string, number> | null,
   });
-  const [editGroupFormData, setEditGroupFormData] = useState({ name: '', min_select: '0', max_select: '1' });
-  const [editModifierFormData, setEditModifierFormData] = useState({ name: '', price: '' });
+  const [editGroupFormData, setEditGroupFormData] = useState({ name: '', min_select: '0', max_select: '1', included_quantity: '0', included_by_size: null as Record<string, number> | null });
+  const [editModifierFormData, setEditModifierFormData] = useState({ name: '', price: '', price_by_size: null as Record<string, number> | null });
   // Deep-link from the Menu Items page: ?brand_id= pre-filters the list.
   const [filters, setFilters] = useState<{ brand_id: string; search: string }>({ brand_id: searchParams.get('brand_id') ?? '', search: '' });
   const debouncedModifierSearch = useDebouncedValue(filters.search, 300);
@@ -112,6 +118,8 @@ const Modifiers: React.FC = () => {
         name: editingGroup.name,
         min_select: String(editingGroup.min_select ?? 0),
         max_select: String(editingGroup.max_select ?? 1),
+        included_quantity: String(editingGroup.included_quantity ?? 0),
+        included_by_size: editingGroup.included_by_size ?? null,
       });
     }
   }, [editingGroup]);
@@ -121,24 +129,25 @@ const Modifiers: React.FC = () => {
       setEditModifierFormData({
         name: editingModifier.modifier.name,
         price: String(editingModifier.modifier.price ?? 0),
+        price_by_size: editingModifier.modifier.price_by_size ?? null,
       });
     }
   }, [editingModifier]);
 
   const createGroupMutation = useMutation({
-    mutationFn: (data: { brand_id: number; name: string; min_select?: number; max_select?: number }) =>
+    mutationFn: (data: { brand_id: number; name: string; min_select?: number; max_select?: number; included_quantity?: number; included_by_size?: Record<string, number> | null }) =>
       adminService.createModifierGroup(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['modifierGroups'] });
       setShowGroupForm(false);
-      setGroupFormData({ brand_id: '', name: '', min_select: '0', max_select: '1' });
+      setGroupFormData({ brand_id: '', name: '', min_select: '0', max_select: '1', included_quantity: '0', included_by_size: null });
       toast.success('Modifier group created.');
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to create group'),
   });
 
   const updateGroupMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { name?: string; min_select?: number; max_select?: number } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { name?: string; min_select?: number; max_select?: number; included_quantity?: number; included_by_size?: Record<string, number> | null } }) =>
       adminService.updateModifierGroup(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['modifierGroups'] });
@@ -158,19 +167,19 @@ const Modifiers: React.FC = () => {
   });
 
   const createModifierMutation = useMutation({
-    mutationFn: (data: { modifier_group_id: number; name: string; price?: number }) =>
+    mutationFn: (data: { modifier_group_id: number; name: string; price?: number; price_by_size?: Record<string, number> | null }) =>
       adminService.createModifier(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['modifierGroups'] });
       setShowModifierForm(false);
-      setModifierFormData({ modifier_group_id: '', name: '', price: '' });
+      setModifierFormData({ modifier_group_id: '', name: '', price: '', price_by_size: null });
       toast.success('Modifier created.');
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to create modifier'),
   });
 
   const updateModifierMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { name?: string; price?: number } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { name?: string; price?: number; price_by_size?: Record<string, number> | null } }) =>
       adminService.updateModifier(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['modifierGroups'] });
@@ -280,7 +289,7 @@ const Modifiers: React.FC = () => {
         isOpen={showGroupForm}
         onClose={() => {
           setShowGroupForm(false);
-          setGroupFormData({ brand_id: '', name: '', min_select: '0', max_select: '1' });
+          setGroupFormData({ brand_id: '', name: '', min_select: '0', max_select: '1', included_quantity: '0', included_by_size: null });
         }}
         title="Add Modifier Group"
         size="medium"
@@ -297,6 +306,8 @@ const Modifiers: React.FC = () => {
               name: groupFormData.name.trim(),
               min_select: parseInt(groupFormData.min_select, 10) || 0,
               max_select: parseInt(groupFormData.max_select, 10) || 1,
+              included_quantity: parseInt(groupFormData.included_quantity, 10) || 0,
+              included_by_size: groupFormData.included_by_size,
             });
           }}
           className="space-y-4"
@@ -348,6 +359,25 @@ const Modifiers: React.FC = () => {
               />
             </div>
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Included free (units)</label>
+            <input
+              type="number"
+              min="0"
+              value={groupFormData.included_quantity}
+              onChange={(e) => setGroupFormData({ ...groupFormData, included_quantity: e.target.value })}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
+            <p className="text-xs text-gray-500 mt-1">Units included before any are charged ("first N free"). Use per-size below to override by size.</p>
+          </div>
+          <SizeMapEditor
+            label="Included free per size (optional)"
+            valueLabel="free"
+            value={groupFormData.included_by_size}
+            onChange={(m) => setGroupFormData({ ...groupFormData, included_by_size: m })}
+            suggestedKeys={SIZE_KEYS}
+            hint='e.g. 2 free meats on 7"/10", 3 on 12"/14". Overrides "Included free" for matching sizes.'
+          />
           <div className="flex gap-2 justify-end">
             <Button type="button" variant="outline" onClick={() => setShowGroupForm(false)}>Cancel</Button>
             <Button type="submit" isLoading={createGroupMutation.isPending}>Create Group</Button>
@@ -372,6 +402,8 @@ const Modifiers: React.FC = () => {
                   name: editGroupFormData.name.trim(),
                   min_select: parseInt(editGroupFormData.min_select, 10),
                   max_select: parseInt(editGroupFormData.max_select, 10),
+                  included_quantity: parseInt(editGroupFormData.included_quantity, 10) || 0,
+                  included_by_size: editGroupFormData.included_by_size,
                 },
               });
             }}
@@ -409,6 +441,25 @@ const Modifiers: React.FC = () => {
                 />
               </div>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Included free (units)</label>
+              <input
+                type="number"
+                min="0"
+                value={editGroupFormData.included_quantity}
+                onChange={(e) => setEditGroupFormData({ ...editGroupFormData, included_quantity: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">Units included before any are charged ("first N free").</p>
+            </div>
+            <SizeMapEditor
+              label="Included free per size (optional)"
+              valueLabel="free"
+              value={editGroupFormData.included_by_size}
+              onChange={(m) => setEditGroupFormData({ ...editGroupFormData, included_by_size: m })}
+              suggestedKeys={SIZE_KEYS}
+              hint='Overrides "Included free" for matching sizes.'
+            />
             <div className="flex gap-2 justify-end">
               <Button type="button" variant="outline" onClick={() => setEditingGroup(null)}>Cancel</Button>
               <Button type="submit" isLoading={updateGroupMutation.isPending}>Update</Button>
@@ -422,7 +473,7 @@ const Modifiers: React.FC = () => {
         isOpen={showModifierForm}
         onClose={() => {
           setShowModifierForm(false);
-          setModifierFormData({ modifier_group_id: '', name: '', price: '' });
+          setModifierFormData({ modifier_group_id: '', name: '', price: '', price_by_size: null });
         }}
         title="Add Modifier"
         size="medium"
@@ -438,6 +489,7 @@ const Modifiers: React.FC = () => {
               modifier_group_id: +modifierFormData.modifier_group_id,
               name: modifierFormData.name.trim(),
               price: modifierFormData.price ? parseFloat(modifierFormData.price) : 0,
+              price_by_size: modifierFormData.price_by_size,
             });
           }}
           className="space-y-4"
@@ -468,7 +520,7 @@ const Modifiers: React.FC = () => {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Price</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Price (flat)</label>
             <input
               type="number"
               step="0.01"
@@ -477,7 +529,16 @@ const Modifiers: React.FC = () => {
               onChange={(e) => setModifierFormData({ ...modifierFormData, price: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
+            <p className="text-xs text-gray-500 mt-1">Used when no per-size price is set for the chosen size.</p>
           </div>
+          <SizeMapEditor
+            label="Price per size (optional)"
+            valueLabel="price"
+            value={modifierFormData.price_by_size}
+            onChange={(m) => setModifierFormData({ ...modifierFormData, price_by_size: m })}
+            suggestedKeys={SIZE_KEYS}
+            hint='e.g. Extra Cheese 7"=99, 10"=149, 12"=249, 14"=349. Overrides the flat price for matching sizes.'
+          />
           <div className="flex gap-2 justify-end">
             <Button type="button" variant="outline" onClick={() => setShowModifierForm(false)}>Cancel</Button>
             <Button type="submit" isLoading={createModifierMutation.isPending}>Create Modifier</Button>
@@ -501,6 +562,7 @@ const Modifiers: React.FC = () => {
                 data: {
                   name: editModifierFormData.name.trim(),
                   price: editModifierFormData.price ? parseFloat(editModifierFormData.price) : 0,
+                  price_by_size: editModifierFormData.price_by_size,
                 },
               });
             }}
@@ -517,7 +579,7 @@ const Modifiers: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Price</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Price (flat)</label>
               <input
                 type="number"
                 step="0.01"
@@ -526,7 +588,16 @@ const Modifiers: React.FC = () => {
                 onChange={(e) => setEditModifierFormData({ ...editModifierFormData, price: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
+              <p className="text-xs text-gray-500 mt-1">Used when no per-size price is set for the chosen size.</p>
             </div>
+            <SizeMapEditor
+              label="Price per size (optional)"
+              valueLabel="price"
+              value={editModifierFormData.price_by_size}
+              onChange={(m) => setEditModifierFormData({ ...editModifierFormData, price_by_size: m })}
+              suggestedKeys={SIZE_KEYS}
+              hint='Overrides the flat price for matching sizes.'
+            />
             <div className="flex gap-2 justify-end">
               <Button type="button" variant="outline" onClick={() => setEditingModifier(null)}>Cancel</Button>
               <Button type="submit" isLoading={updateModifierMutation.isPending}>Update</Button>

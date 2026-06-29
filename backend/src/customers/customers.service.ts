@@ -39,6 +39,12 @@ function mergeBrandIds(
     return changed ? [...set] : undefined;
 }
 
+/** Postgres unique-violation (e.g. the consumer phone partial unique index). */
+function isUniqueViolation(e: unknown): boolean {
+    const err = e as { code?: string; driverError?: { code?: string } };
+    return err?.code === '23505' || err?.driverError?.code === '23505';
+}
+
 @Injectable()
 export class CustomersService {
     private readonly logger = new Logger(CustomersService.name);
@@ -350,19 +356,20 @@ export class CustomersService {
         dto: {
             phone: string;
             name: string;
-            email: string;
+            email?: string | null;
             password: string;
+            phoneVerified?: boolean;
         },
     ) {
         const name = dto.name?.trim();
         if (!name) {
             throw new BadRequestException('Customer name is required');
         }
+        // Email is optional now that phone is the primary identifier.
         const email =
-            typeof dto.email === 'string' ? dto.email.trim().toLowerCase() : '';
-        if (!email) {
-            throw new BadRequestException('Email is required');
-        }
+            typeof dto.email === 'string'
+                ? dto.email.trim().toLowerCase() || null
+                : null;
         const password =
             typeof dto.password === 'string' ? dto.password.trim() : '';
         if (!password) {
@@ -378,24 +385,37 @@ export class CustomersService {
             throw new ConflictException(
                 'Customer with this phone already exists',
             );
-        const existingEmail = await this.repo.findOne({
-            where: { email },
-        });
-        if (existingEmail)
-            throw new ConflictException(
-                'Customer with this email already exists',
-            );
+        if (email) {
+            const existingEmail = await this.repo.findOne({
+                where: { email },
+            });
+            if (existingEmail)
+                throw new ConflictException(
+                    'Customer with this email already exists',
+                );
+        }
         const passwordHash = await bcrypt.hash(password, 10);
-        return this.repo.save(
-            this.repo.create({
-                tenantId: tenantId ?? null,
-                phone,
-                name,
-                email,
-                password: passwordHash,
-                loyaltyPointsBalance: 0,
-            }),
-        );
+        try {
+            return await this.repo.save(
+                this.repo.create({
+                    tenantId: tenantId ?? null,
+                    phone,
+                    name,
+                    email,
+                    password: passwordHash,
+                    phoneVerified: dto.phoneVerified ?? false,
+                    loyaltyPointsBalance: 0,
+                }),
+            );
+        } catch (e) {
+            // Race between the app-level check above and the DB unique index.
+            if (isUniqueViolation(e)) {
+                throw new ConflictException(
+                    'Customer with this phone already exists',
+                );
+            }
+            throw e;
+        }
     }
 
     /** Validate customer by email and password; return customer or throw. */
@@ -410,6 +430,29 @@ export class CustomersService {
         );
         if (!ok) {
             throw new UnauthorizedException('Invalid email or password');
+        }
+        return customer;
+    }
+
+    /**
+     * Validate a consumer (tenant_id IS NULL) by phone and password.
+     * Legacy rows created at POS have no password and correctly fail here —
+     * such users must set a password via the SMS password-reset flow first.
+     */
+    async validateCustomerByPhone(
+        phone: string,
+        password: string,
+    ): Promise<Customer> {
+        const customer = await this.findConsumerByPhone(phone);
+        if (!customer || !customer.password) {
+            throw new UnauthorizedException('Invalid phone or password');
+        }
+        const ok = await bcrypt.compare(
+            typeof password === 'string' ? password : '',
+            customer.password,
+        );
+        if (!ok) {
+            throw new UnauthorizedException('Invalid phone or password');
         }
         return customer;
     }

@@ -117,18 +117,21 @@ jobs:
 
             # Backend
             cd "$REPO/backend"
+            rm -rf node_modules
             npm ci --legacy-peer-deps
             npm run build
             pm2 restart foodies-backend --update-env
 
             # Frontend (admin/POS) -> served from /var/www/foodies
             cd "$REPO/frontend"
+            rm -rf node_modules
             npm ci
             npm run build
             sudo rsync -a --delete dist/ /var/www/foodies/
 
             # Consumer web
             cd "$REPO/consumer-web"
+            rm -rf node_modules .next
             npm ci
             npm run build
             pm2 restart website --update-env

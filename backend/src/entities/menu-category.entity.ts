@@ -21,6 +21,12 @@ export class MenuCategory {
     @Column()
     name: string;
 
+    @Column({ type: 'text', nullable: true })
+    description: string | null;
+
+    @Column({ name: 'image_url', type: 'varchar', nullable: true })
+    imageUrl: string | null;
+
     @Column({ default: 0 })
     sortOrder: number;
 

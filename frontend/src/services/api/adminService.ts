@@ -30,13 +30,29 @@ export interface ModifierGroupResponse {
   name: string;
   min_select: number;
   max_select: number;
-  modifiers: { id: number; modifier_group_id: number; name: string; price: number }[];
+  /** Units in this group included free before any are charged ("first N free"). */
+  included_quantity?: number;
+  /** Per-size override of included_quantity, keyed by variant size_key (e.g. {"7":2,"12":3}). */
+  included_by_size?: Record<string, number> | null;
+  /** Allow the same free/optional option to be added multiple times. */
+  allow_quantity?: boolean;
+  /** Quantity-tiered bundle price for charged units (charged count → total). */
+  price_tiers?: Record<string, number> | null;
+  modifiers: {
+    id: number;
+    modifier_group_id: number;
+    name: string;
+    price: number;
+    price_by_size?: Record<string, number> | null;
+  }[];
 }
 export interface ModifierResponse {
   id: number;
   modifier_group_id: number;
   name: string;
   price: number;
+  /** Per-size surcharge keyed by variant size_key (e.g. {"7":99,"12":249}); null = use flat price. */
+  price_by_size?: Record<string, number> | null;
   modifier_group_name?: string;
 }
 
@@ -57,11 +73,11 @@ export const adminService = {
     const response = await apiClient.get(`/admin/categories/${id}`);
     return response.data;
   },
-  createCategory: async (data: { brand_id: number; name: string; is_active?: boolean; sort_order?: number }) => {
+  createCategory: async (data: { brand_id: number; name: string; is_active?: boolean; sort_order?: number; description?: string | null; image_url?: string | null }) => {
     const response = await apiClient.post('/admin/categories', data);
     return response.data;
   },
-  updateCategory: async (id: number, data: { name?: string; is_active?: boolean; sort_order?: number }) => {
+  updateCategory: async (id: number, data: { name?: string; is_active?: boolean; sort_order?: number; description?: string | null; image_url?: string | null }) => {
     const response = await apiClient.put(`/admin/categories/${id}`, data);
     return response.data;
   },
@@ -125,7 +141,7 @@ export const adminService = {
     const response = await apiClient.get(`/admin/menu/deals/${menuItemId}`);
     return response.data;
   },
-  saveDeal: async (menuItemId: number, data: { slots: Array<{ slot_index: number; type: 'fixed' | 'choice_category' | 'choice_list'; source_menu_item_id?: number | null; source_category_id?: number | null; source_menu_item_ids?: number[] | null; quantity: number; allow_customization: boolean }> }) => {
+  saveDeal: async (menuItemId: number, data: { slots: Array<{ slot_index: number; type: 'fixed' | 'choice_category' | 'choice_list'; source_menu_item_id?: number | null; source_category_id?: number | null; source_menu_item_ids?: number[] | null; quantity: number; allow_customization: boolean; slot_surcharges?: Record<string, number> | null }> }) => {
     const response = await apiClient.put(`/admin/menu/deals/${menuItemId}`, data);
     return response.data;
   },
@@ -196,11 +212,11 @@ export const adminService = {
     const response = await apiClient.get(`/admin/menu/modifier-groups${query ? '?' + query : ''}`);
     return response.data;
   },
-  createModifierGroup: async (data: { brand_id: number; name: string; min_select?: number; max_select?: number }) => {
+  createModifierGroup: async (data: { brand_id: number; name: string; min_select?: number; max_select?: number; included_quantity?: number; included_by_size?: Record<string, number> | null; allow_quantity?: boolean }) => {
     const response = await apiClient.post('/admin/menu/modifier-groups', data);
     return response.data;
   },
-  updateModifierGroup: async (id: number, data: { name?: string; min_select?: number; max_select?: number }) => {
+  updateModifierGroup: async (id: number, data: { name?: string; min_select?: number; max_select?: number; included_quantity?: number; included_by_size?: Record<string, number> | null; allow_quantity?: boolean }) => {
     const response = await apiClient.put(`/admin/menu/modifier-groups/${id}`, data);
     return response.data;
   },
@@ -217,11 +233,11 @@ export const adminService = {
     const response = await apiClient.get(`/admin/menu/modifiers${query ? '?' + query : ''}`);
     return response.data;
   },
-  createModifier: async (data: { modifier_group_id: number; name: string; price?: number }) => {
+  createModifier: async (data: { modifier_group_id: number; name: string; price?: number; price_by_size?: Record<string, number> | null }) => {
     const response = await apiClient.post('/admin/menu/modifiers', data);
     return response.data;
   },
-  updateModifier: async (id: number, data: { name?: string; price?: number }) => {
+  updateModifier: async (id: number, data: { name?: string; price?: number; price_by_size?: Record<string, number> | null }) => {
     const response = await apiClient.put(`/admin/menu/modifiers/${id}`, data);
     return response.data;
   },

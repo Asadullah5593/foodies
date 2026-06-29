@@ -71,6 +71,8 @@ export class CategoriesController {
             name: string;
             is_active?: boolean;
             sort_order?: number;
+            description?: string | null;
+            image_url?: string | null;
         },
     ) {
         if (user.tenantId == null)
@@ -85,7 +87,13 @@ export class CategoriesController {
         @Param('id') id: string,
         @CurrentUser() user: CategoriesUser,
         @Body()
-        dto: { name?: string; is_active?: boolean; sort_order?: number },
+        dto: {
+            name?: string;
+            is_active?: boolean;
+            sort_order?: number;
+            description?: string | null;
+            image_url?: string | null;
+        },
     ) {
         return this.service.update(
             +id,

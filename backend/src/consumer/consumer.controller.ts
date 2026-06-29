@@ -41,6 +41,7 @@ import { OptionalCustomerJwtAuthGuard } from '../auth/optional-customer-jwt-auth
 import { OtpService } from '../otp/otp.service';
 import { CartService } from '../cart/cart.service';
 import { MailService } from '../mail/mail.service';
+import { SmsService } from '../sms/sms.service';
 import { Branch } from '../entities/branch.entity';
 import { Customer } from '../entities/customer.entity';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -56,6 +57,14 @@ import { PromotionsService } from '../promotions/promotions.service';
 type BranchWithBrands = Branch & {
     branchBrands: Array<{ brand: { tenantId: number } }>;
 };
+
+/** Phone OTP purposes the consumer SMS endpoints accept. */
+const PHONE_OTP_PURPOSES = ['phone_verification', 'password_reset'] as const;
+/**
+ * How long a successful `phone_verification` OTP lets a register call through
+ * (gives the user time to fill the signup form after entering the code).
+ */
+const PHONE_VERIFICATION_WINDOW_MS = 30 * 60 * 1000;
 
 @ApiTags('Consumer')
 @Controller('public/consumer')
@@ -74,6 +83,7 @@ export class ConsumerController {
         private otpService: OtpService,
         private cartService: CartService,
         private mailService: MailService,
+        private smsService: SmsService,
         private mediaStorage: MediaStorageService,
         private ratingsService: RatingsService,
         @InjectRepository(Branch) private branchRepo: Repository<Branch>,
@@ -326,9 +336,15 @@ export class ConsumerController {
         return this.branchesService.findAll(brandId ? +brandId : undefined);
     }
 
-    /** Customer register: name, email, phone, password, confirm_password (all required). No tenant linkage. */
+    /**
+     * Customer register: name, phone, password, confirm_password (email optional).
+     * Requires a prior SMS phone-verification OTP (see `auth/send-otp` +
+     * `auth/verify-phone-otp` with purpose `phone_verification`). No tenant linkage.
+     */
     @Post('register')
-    @ApiOperation({ summary: 'Register a new customer' })
+    @ApiOperation({
+        summary: 'Register a new customer (phone must be verified)',
+    })
     @ApiBody({
         type: RegisterDto,
         examples: {
@@ -336,8 +352,8 @@ export class ConsumerController {
                 summary: 'Register',
                 value: {
                     name: 'John Doe',
-                    email: 'john@example.com',
                     phone: '03001234567',
+                    email: 'john@example.com',
                     password: 'secret123',
                     confirm_password: 'secret123',
                 },
@@ -350,11 +366,22 @@ export class ConsumerController {
                 'password and confirm_password do not match',
             );
         }
+        const verified = await this.otpService.wasRecentlyVerified(
+            dto.phone,
+            'phone_verification',
+            PHONE_VERIFICATION_WINDOW_MS,
+        );
+        if (!verified) {
+            throw new BadRequestException(
+                'Phone number not verified. Request and confirm an OTP first.',
+            );
+        }
         const customer = await this.customersService.createForConsumer(null, {
             phone: dto.phone,
             name: dto.name,
             email: dto.email,
             password: dto.password,
+            phoneVerified: true,
         });
         return {
             id: customer.id,
@@ -434,29 +461,42 @@ export class ConsumerController {
         }
     }
 
-    /** Customer login (email + password). Returns JWT and customer. */
+    /**
+     * Customer login. Primary credential is phone + password; email + password
+     * is still accepted as a fallback for legacy email-only accounts. Returns
+     * JWT and customer.
+     */
     @Post('auth/login')
-    @ApiOperation({ summary: 'Customer login' })
+    @ApiOperation({ summary: 'Customer login (phone or email + password)' })
     @ApiBody({
         schema: {
             type: 'object',
-            required: ['email', 'password'],
+            required: ['password'],
             properties: {
-                email: { type: 'string' },
+                phone: { type: 'string', example: '03001234567' },
+                email: { type: 'string', example: 'john@example.com' },
                 password: { type: 'string' },
             },
-            example: { email: 'john@example.com', password: 'secret123' },
+            example: { phone: '03001234567', password: 'secret123' },
         },
     })
-    async customerLogin(@Body() dto: { email: string; password: string }) {
+    async customerLogin(
+        @Body() dto: { phone?: string; email?: string; password: string },
+    ) {
+        const phone = typeof dto?.phone === 'string' ? dto.phone.trim() : '';
         const email = typeof dto?.email === 'string' ? dto.email.trim() : '';
         const password = typeof dto?.password === 'string' ? dto.password : '';
-        if (!email || !password)
-            throw new NotFoundException('email and password are required');
-        const customer = await this.customersService.validateCustomer(
-            email,
-            password,
-        );
+        if (!password || (!phone && !email)) {
+            throw new BadRequestException(
+                'phone (or email) and password are required',
+            );
+        }
+        const customer = phone
+            ? await this.customersService.validateCustomerByPhone(
+                  phone,
+                  password,
+              )
+            : await this.customersService.validateCustomer(email, password);
         const token = this.jwtService.sign({
             sub: customer.id,
             type: 'customer',
@@ -600,6 +640,132 @@ export class ConsumerController {
             await this.customersService.setPassword(
                 customer.id,
                 dto.new_password,
+            );
+        }
+        return { message: 'OTP verified successfully' };
+    }
+
+    /**
+     * Send an SMS OTP to a phone number.
+     * - `phone_verification`: required before `register` (signup).
+     * - `password_reset`: only sent when a consumer account exists, but the
+     *   response is generic either way to avoid phone-number enumeration.
+     */
+    @Post('auth/send-otp')
+    @ApiOperation({ summary: 'Send an SMS OTP (phone verification or reset)' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            required: ['phone', 'purpose'],
+            properties: {
+                phone: { type: 'string', example: '03001234567' },
+                purpose: {
+                    type: 'string',
+                    enum: [...PHONE_OTP_PURPOSES],
+                },
+            },
+            example: { phone: '03001234567', purpose: 'phone_verification' },
+        },
+    })
+    async sendOtp(@Body() dto: { phone: string; purpose: string }) {
+        const purpose =
+            typeof dto?.purpose === 'string' ? dto.purpose.trim() : '';
+        if (!PHONE_OTP_PURPOSES.includes(purpose as never)) {
+            throw new BadRequestException(
+                "purpose must be 'phone_verification' or 'password_reset'",
+            );
+        }
+        // Normalizes + validates Pakistani format (throws 400 if invalid).
+        const phone = this.customersService.validateAndNormalizePhone(
+            dto?.phone ?? '',
+        );
+
+        if (purpose === 'password_reset') {
+            const customer =
+                await this.customersService.findConsumerByPhone(phone);
+            if (!customer) {
+                this.logger.log(
+                    `send-otp(password_reset): no consumer for ${phone}`,
+                );
+                return {
+                    message: 'If the number is registered, a code was sent',
+                };
+            }
+        }
+
+        const { code } = await this.otpService.createForPhone(phone, purpose);
+        await this.smsService.sendOtp(phone, code);
+        return {
+            message:
+                purpose === 'password_reset'
+                    ? 'If the number is registered, a code was sent'
+                    : 'A verification code was sent',
+        };
+    }
+
+    /**
+     * Verify an SMS OTP. For `password_reset`, `new_password` is required and is
+     * set on the matching consumer account once the code checks out.
+     */
+    @Post('auth/verify-phone-otp')
+    @ApiOperation({ summary: 'Verify an SMS OTP (optionally reset password)' })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            required: ['phone', 'code', 'purpose'],
+            properties: {
+                phone: { type: 'string', example: '03001234567' },
+                code: { type: 'string', example: '123456' },
+                purpose: { type: 'string', enum: [...PHONE_OTP_PURPOSES] },
+                new_password: {
+                    type: 'string',
+                    description: 'Required when purpose is password_reset',
+                },
+            },
+            example: {
+                phone: '03001234567',
+                code: '123456',
+                purpose: 'phone_verification',
+            },
+        },
+    })
+    async verifyPhoneOtp(
+        @Body()
+        dto: {
+            phone: string;
+            code: string;
+            purpose: string;
+            new_password?: string;
+        },
+    ) {
+        const purpose =
+            typeof dto?.purpose === 'string' ? dto.purpose.trim() : '';
+        if (!PHONE_OTP_PURPOSES.includes(purpose as never)) {
+            throw new BadRequestException(
+                "purpose must be 'phone_verification' or 'password_reset'",
+            );
+        }
+        const phone = typeof dto?.phone === 'string' ? dto.phone.trim() : '';
+        const code = typeof dto?.code === 'string' ? dto.code.trim() : '';
+        if (!phone || !code) {
+            throw new BadRequestException('phone and code are required');
+        }
+        // Validate before consuming the code so a missing password doesn't burn it.
+        if (purpose === 'password_reset' && !dto.new_password) {
+            throw new BadRequestException(
+                'new_password is required for password reset',
+            );
+        }
+
+        await this.otpService.verifyForPhone(phone, code, purpose);
+
+        if (purpose === 'password_reset') {
+            const customer =
+                await this.customersService.findConsumerByPhone(phone);
+            if (!customer) throw new NotFoundException('Customer not found');
+            await this.customersService.setPassword(
+                customer.id,
+                dto.new_password as string,
             );
         }
         return { message: 'OTP verified successfully' };
@@ -1991,12 +2157,9 @@ export class ConsumerController {
     // ─── CMS Banners ─────────────────────────────────────────────────────────
 
     @Get('banners')
-    @ApiOperation({ summary: 'List active banners for a tenant (mobile app)' })
-    @ApiQuery({ name: 'tenant_id', required: true, type: Number })
-    async getActiveBanners(@Query('tenant_id') tenantIdParam: string) {
-        const tenantId = Number(tenantIdParam);
-        if (!Number.isFinite(tenantId) || tenantId <= 0)
-            throw new BadRequestException('tenant_id is required');
+    @ApiOperation({ summary: 'List active banners (tenant resolved from server TENANT_ID)' })
+    async getActiveBanners() {
+        const tenantId = this.getTenantIdFromEnv();
         return this.bannersService.findActiveForTenant(tenantId);
     }
 

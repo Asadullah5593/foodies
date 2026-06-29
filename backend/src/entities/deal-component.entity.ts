@@ -45,6 +45,15 @@ export class DealComponent {
     @Column({ name: 'allow_customization', type: 'boolean', default: true })
     allowCustomization: boolean;
 
+    /**
+     * Per-choice price surcharge for this slot, keyed by source menu_item id
+     * (e.g. { "<firey-special-wrap-id>": 100 } = "upgrade to Firey Special +Rs100").
+     * Added to the deal price when the customer picks that item in this slot.
+     * Null = no upsells; every choice is included at the deal price.
+     */
+    @Column({ name: 'slot_surcharges', type: 'jsonb', nullable: true })
+    slotSurcharges: Record<string, number> | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

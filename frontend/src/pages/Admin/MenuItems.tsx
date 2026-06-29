@@ -38,6 +38,11 @@ interface MenuItem {
   gallery_image_urls?: string[];
   /** Effective channels from API (delivery, pickup, dine_in). */
   available_for_order_types?: string[];
+  allergens?: string[] | null;
+  calories?: number | null;
+  available_time_start?: string | null;
+  available_time_end?: string | null;
+  available_days_of_week?: number[] | null;
   category?: {
     id: number;
     name: string;
@@ -57,6 +62,18 @@ const MENU_ITEM_GALLERY_MAX = 12;
 /** Must match backend `MAX_UPLOAD_FILE_BYTES` in upload.constants.ts */
 const MENU_ITEM_UPLOAD_MAX_BYTES = 25 * 1024 * 1024;
 const MENU_ITEM_UPLOAD_MAX_MB = 25;
+
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Parse a comma-separated allergen string into a clean array (null when empty). */
+function parseAllergensInput(input: string | undefined): string[] | null {
+  if (!input) return null;
+  const out = input
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return out.length ? out : null;
+}
 
 function channelsFromApiList(channels: string[] | undefined | null): {
   delivery: boolean;
@@ -108,6 +125,11 @@ const MenuItems: React.FC = () => {
     channel_delivery: true,
     channel_pickup: true,
     channel_dine_in: true,
+    allergens: '',
+    calories: '',
+    available_time_start: '',
+    available_time_end: '',
+    available_days_of_week: [] as number[],
   });
   const [imageUploading, setImageUploading] = useState(false);
   const [galleryUploading, setGalleryUploading] = useState(false);
@@ -222,6 +244,11 @@ const MenuItems: React.FC = () => {
     channel_delivery: true,
     channel_pickup: true,
     channel_dine_in: true,
+    allergens: '',
+    calories: '',
+    available_time_start: '',
+    available_time_end: '',
+    available_days_of_week: [] as number[],
   });
   useEffect(() => {
     if (editingItem) {
@@ -239,6 +266,11 @@ const MenuItems: React.FC = () => {
         channel_delivery: ch.delivery,
         channel_pickup: ch.pickup,
         channel_dine_in: ch.dine_in,
+        allergens: (editingItem.allergens ?? []).join(', '),
+        calories: editingItem.calories != null ? String(editingItem.calories) : '',
+        available_time_start: editingItem.available_time_start ?? '',
+        available_time_end: editingItem.available_time_end ?? '',
+        available_days_of_week: editingItem.available_days_of_week ?? [],
       });
     }
   }, [editingItem]);
@@ -280,6 +312,11 @@ const MenuItems: React.FC = () => {
         gallery_image_urls?: string[];
         deal_only?: boolean;
         available_for_order_types?: string[] | null;
+        allergens?: string[] | null;
+        calories?: number | null;
+        available_time_start?: string | null;
+        available_time_end?: string | null;
+        available_days_of_week?: number[] | null;
       };
     }) => adminService.updateMenuItem(id, data),
     onSuccess: (_updated: unknown, variables) => {
@@ -441,6 +478,11 @@ const MenuItems: React.FC = () => {
       channel_delivery: boolean;
       channel_pickup: boolean;
       channel_dine_in: boolean;
+      allergens?: string;
+      calories?: string;
+      available_time_start?: string;
+      available_time_end?: string;
+      available_days_of_week?: number[];
     }) => {
       if (!data.brand_id || !data.category_id) throw new Error('Select a brand and category');
       const channels = buildOrderChannelsPayload(
@@ -460,6 +502,11 @@ const MenuItems: React.FC = () => {
         is_active: data.is_active,
         deal_only: data.deal_only ?? false,
         image_url: data.image_url || undefined,
+        allergens: parseAllergensInput(data.allergens),
+        calories: data.calories?.trim() ? parseInt(data.calories, 10) : null,
+        available_time_start: data.available_time_start || null,
+        available_time_end: data.available_time_end || null,
+        available_days_of_week: data.available_days_of_week?.length ? data.available_days_of_week : null,
       };
       if (data.gallery_image_urls?.length) {
         payload.gallery_image_urls = data.gallery_image_urls;
@@ -485,6 +532,11 @@ const MenuItems: React.FC = () => {
         channel_delivery: true,
         channel_pickup: true,
         channel_dine_in: true,
+        allergens: '',
+        calories: '',
+        available_time_start: '',
+        available_time_end: '',
+        available_days_of_week: [] as number[],
       });
       toast.success('Menu item created successfully!');
     },
@@ -839,6 +891,11 @@ const MenuItems: React.FC = () => {
                   image_url: editFormData.image_url || null,
                   gallery_image_urls: [...editFormData.gallery_image_urls],
                   available_for_order_types: av,
+                  allergens: parseAllergensInput(editFormData.allergens),
+                  calories: editFormData.calories.trim() ? parseInt(editFormData.calories, 10) : null,
+                  available_time_start: editFormData.available_time_start || null,
+                  available_time_end: editFormData.available_time_end || null,
+                  available_days_of_week: editFormData.available_days_of_week.length ? editFormData.available_days_of_week : null,
                 },
               });
             }}
@@ -1012,6 +1069,42 @@ const MenuItems: React.FC = () => {
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
                 </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Allergens (comma-separated)</label>
+                <input type="text" value={editFormData.allergens}
+                  onChange={(e) => setEditFormData((f) => ({ ...f, allergens: e.target.value }))}
+                  placeholder="e.g. Gluten, Dairy"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Calories (kcal)</label>
+                <input type="number" min="0" value={editFormData.calories}
+                  onChange={(e) => setEditFormData((f) => ({ ...f, calories: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+              </div>
+            </div>
+            <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+              <p className="text-xs text-gray-500">Available only at certain times (branch timezone) — leave blank for all day.</p>
+              <div className="grid grid-cols-2 gap-4">
+                <input type="time" value={editFormData.available_time_start}
+                  onChange={(e) => setEditFormData((f) => ({ ...f, available_time_start: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+                <input type="time" value={editFormData.available_time_end}
+                  onChange={(e) => setEditFormData((f) => ({ ...f, available_time_end: e.target.value }))}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {DAY_LABELS.map((d, i) => {
+                  const on = editFormData.available_days_of_week.includes(i);
+                  return (
+                    <button key={d} type="button"
+                      onClick={() => setEditFormData((f) => ({ ...f, available_days_of_week: on ? f.available_days_of_week.filter((x) => x !== i) : [...f.available_days_of_week, i].sort((a, b) => a - b) }))}
+                      className={`px-3 py-1 rounded-lg border text-sm ${on ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 hover:bg-gray-50'}`}>{d}</button>
+                  );
+                })}
               </div>
             </div>
             <div className="flex items-center gap-2">
@@ -1286,6 +1379,50 @@ const MenuItems: React.FC = () => {
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Allergens (comma-separated)</label>
+              <input
+                type="text"
+                value={formData.allergens}
+                onChange={(e) => setFormData({ ...formData, allergens: e.target.value })}
+                placeholder="e.g. Gluten, Dairy"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Calories (kcal)</label>
+              <input
+                type="number"
+                min="0"
+                value={formData.calories}
+                onChange={(e) => setFormData({ ...formData, calories: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+            <p className="text-xs text-gray-500">Available only at certain times (branch timezone) — leave blank for all day. Used for lunch-only items/deals.</p>
+            <div className="grid grid-cols-2 gap-4">
+              <input type="time" value={formData.available_time_start}
+                onChange={(e) => setFormData({ ...formData, available_time_start: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+              <input type="time" value={formData.available_time_end}
+                onChange={(e) => setFormData({ ...formData, available_time_end: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {DAY_LABELS.map((d, i) => {
+                const on = formData.available_days_of_week.includes(i);
+                return (
+                  <button key={d} type="button"
+                    onClick={() => setFormData({ ...formData, available_days_of_week: on ? formData.available_days_of_week.filter((x) => x !== i) : [...formData.available_days_of_week, i].sort((a, b) => a - b) })}
+                    className={`px-3 py-1 rounded-lg border text-sm ${on ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 hover:bg-gray-50'}`}>{d}</button>
+                );
+              })}
             </div>
           </div>
 

@@ -18,6 +18,7 @@
     "seed:wok-and-go": "ts-node -r tsconfig-paths/register src/seed-wok-and-go.ts",
     "seed:peri-peri-co": "ts-node -r tsconfig-paths/register src/seed-peri-peri-co.ts",
     "seed:fireaway": "ts-node -r tsconfig-paths/register src/seed-fireaway.ts",
+    "seed:fireaway-real": "ts-node -r tsconfig-paths/register src/seed-fireaway-real.ts",
     "seed:pizza-pasta": "ts-node -r tsconfig-paths/register src/seed-pizza-pasta.ts",
     "seed:inventory": "ts-node -r tsconfig-paths/register src/seed-inventory.ts",
     "seed:uoms": "ts-node -r tsconfig-paths/register src/seed-uoms.ts",
@@ -39,6 +40,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1015.0",
+    "@aws-sdk/client-sns": "^3.1015.0",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^4.0.0",
     "@nestjs/core": "^11.0.1",

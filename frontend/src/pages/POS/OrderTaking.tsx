@@ -33,6 +33,7 @@ import type { OrderTypeOption, CartLine, DealComponentLine } from './components'
 import type { KioskFinalizeRequest } from '../../services/api/orderService';
 import { defaultVariantIdForItem } from './components/types';
 import { isMenuItemAvailableForOrderType } from '../../utils/menu-order-type';
+import { computeModifiersPrice, sizeKeyForSelection } from '../../utils/modifierPricing';
 
 const OrderTaking: React.FC = () => {
   const [selectedItems, setSelectedItems] = useState<CartLine[]>([]);
@@ -671,8 +672,10 @@ const OrderTaking: React.FC = () => {
       return;
     }
 
-    // Multi-select groups: enforce max_select and show a friendly error.
-    if (groupForModifier && currentInGroup.length >= (groupForModifier.max_select || 99)) {
+    // Multi-select groups: max_select bounds TOTAL UNITS (sum of quantities), so a
+    // dip selected twice already fills a "choose 2" group.
+    const unitsInGroup = currentInGroup.reduce((s, m) => s + (m.quantity || 1), 0);
+    if (groupForModifier && unitsInGroup >= (groupForModifier.max_select || 99)) {
       toast.error(`Maximum ${groupForModifier.max_select} allowed for ${groupForModifier.name}`);
       return;
     }
@@ -704,6 +707,30 @@ const OrderTaking: React.FC = () => {
       addons: itemConfig.addons.map(a =>
         a.addonId === addonId ? { ...a, quantity } : a
       ),
+    });
+  };
+
+  // Adjust how many of the same modifier are selected ("double meat" = quantity 2).
+  // Quantity 0 removes the selection. The group's max_select caps TOTAL units across the
+  // group, so increasing is clamped once the group is full. Backend prices extra units
+  // per size after the group's free allowance is consumed.
+  const updateModifierQuantity = (modifierId: number, quantity: number) => {
+    let next = Math.max(0, Math.floor(quantity));
+    const group = selectedItemForConfig?.modifier_groups?.find((g) =>
+      g.modifiers.some((m) => m.id === modifierId),
+    );
+    if (group && next > 0) {
+      const max = group.max_select ?? 99;
+      const otherUnits = (itemConfig.modifiers ?? [])
+        .filter((m) => m.modifierId !== modifierId && group.modifiers.some((mod) => mod.id === m.modifierId))
+        .reduce((s, m) => s + (m.quantity || 1), 0);
+      next = Math.min(next, Math.max(0, max - otherUnits));
+    }
+    setItemConfig({
+      ...itemConfig,
+      modifiers: (itemConfig.modifiers ?? [])
+        .map((m) => (m.modifierId === modifierId ? { ...m, quantity: next } : m))
+        .filter((m) => m.quantity > 0),
     });
   };
 
@@ -1039,10 +1066,11 @@ const OrderTaking: React.FC = () => {
           const addonItem = c.menuItem.addons?.find(ad => ad.id === a.addonId);
           return aSum + (addonItem?.price || 0) * a.quantity;
         }, 0);
-        const modifiersPrice = (c.modifiers ?? []).reduce((mSum, m) => {
-          const mod = c.menuItem.modifier_groups?.flatMap(g => g.modifiers).find(mo => mo.id === m.modifierId);
-          return mSum + (mod?.price || 0) * m.quantity;
-        }, 0);
+        const modifiersPrice = computeModifiersPrice(
+          c.menuItem.modifier_groups,
+          c.modifiers,
+          sizeKeyForSelection(c.menuItem, c.variantId),
+        );
         return s + addonsPrice + modifiersPrice;
       }, 0);
       return sum + (item.dealPrice + componentExtras) * item.quantity;
@@ -1058,12 +1086,11 @@ const OrderTaking: React.FC = () => {
       const addonItem = item.menuItem.addons?.find(a => a.id === addon.addonId);
       return addonSum + (addonItem?.price || 0) * addon.quantity;
     }, 0);
-    const modifiersPrice = (item.modifiers ?? []).reduce((modSum, mod) => {
-      const modObj = item.menuItem.modifier_groups
-        ?.flatMap(g => g.modifiers)
-        .find(m => m.id === mod.modifierId);
-      return modSum + (modObj?.price || 0) * mod.quantity;
-    }, 0);
+    const modifiersPrice = computeModifiersPrice(
+      item.menuItem.modifier_groups,
+      item.modifiers,
+      sizeKeyForSelection(item.menuItem, item.variantId),
+    );
     return sum + (basePrice + variantPrice + addonsPrice + modifiersPrice) * item.quantity;
   }, 0);
 
@@ -1711,6 +1738,7 @@ const OrderTaking: React.FC = () => {
         onToggleAddon={toggleAddon}
         onToggleModifier={toggleModifier}
         onUpdateAddonQuantity={updateAddonQuantity}
+        onUpdateModifierQuantity={updateModifierQuantity}
       />
 
       <DealConfigModal

@@ -157,7 +157,8 @@ describe('NotificationsService', () => {
             title: 'x',
         });
         // Recipient resolution should use the branch+brand override's role [6].
-        const roleArg = dataSource.query.mock.calls[0][1][1];
+        // Query params are [tenantId, branchId, roleIds, brandId].
+        const roleArg = dataSource.query.mock.calls[0][1][2];
         expect(roleArg).toEqual([6]);
     });
 

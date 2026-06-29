@@ -21,6 +21,16 @@ export class MenuVariant {
     @Column()
     name: string;
 
+    /**
+     * Normalized size identifier shared across menu items (e.g. '7', '10', '12', '14'
+     * for pizza sizes). Lets size-dependent modifier pricing (`priceBySize`) and
+     * free-topping allowances (`ModifierGroup.includedBySize`) key off a stable size,
+     * since modifier groups are shared M2M across items that each have their own variant rows.
+     * Null = no size semantics (non-pizza items).
+     */
+    @Column({ name: 'size_key', type: 'varchar', length: 32, nullable: true })
+    sizeKey: string | null;
+
     @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
     priceModifier: number;
 

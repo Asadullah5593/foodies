@@ -215,6 +215,11 @@ export class MenuController {
             gallery_image_urls?: string[] | null;
             deal_only?: boolean;
             available_for_order_types?: string[] | null;
+            allergens?: string[] | null;
+            calories?: number | null;
+            available_time_start?: string | null;
+            available_time_end?: string | null;
+            available_days_of_week?: number[] | null;
         },
     ) {
         this.resolveBrandScope(user, dto.brand_id);
@@ -279,6 +284,11 @@ export class MenuController {
             gallery_image_urls?: string[] | null;
             deal_only?: boolean;
             available_for_order_types?: string[] | null;
+            allergens?: string[] | null;
+            calories?: number | null;
+            available_time_start?: string | null;
+            available_time_end?: string | null;
+            available_days_of_week?: number[] | null;
         },
     ) {
         await this.assertEntityBrand(user, 'item', +id);
@@ -422,6 +432,7 @@ export class MenuController {
             price_modifier?: number;
             is_default?: boolean;
             sort_order?: number;
+            size_key?: string | null;
         },
     ) {
         await this.assertEntityBrand(user, 'item', dto.menu_item_id);
@@ -439,6 +450,7 @@ export class MenuController {
             is_default?: boolean;
             menu_item_id?: number;
             sort_order?: number;
+            size_key?: string | null;
         },
     ) {
         await this.assertEntityBrand(user, 'variant', +id);
@@ -482,6 +494,10 @@ export class MenuController {
             name: string;
             min_select?: number;
             max_select?: number;
+            included_quantity?: number;
+            included_by_size?: Record<string, number> | null;
+            allow_quantity?: boolean;
+            price_tiers?: Record<string, number> | null;
         },
     ) {
         this.resolveBrandScope(user, dto.brand_id);
@@ -498,7 +514,15 @@ export class MenuController {
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,
         @Body()
-        dto: { name?: string; min_select?: number; max_select?: number },
+        dto: {
+            name?: string;
+            min_select?: number;
+            max_select?: number;
+            included_quantity?: number;
+            included_by_size?: Record<string, number> | null;
+            allow_quantity?: boolean;
+            price_tiers?: Record<string, number> | null;
+        },
     ) {
         await this.assertEntityBrand(user, 'modifier-group', +id);
         return this.service.updateModifierGroup(+id, dto);
@@ -549,7 +573,13 @@ export class MenuController {
     async createModifier(
         @CurrentUser() user: MenuUser,
         @Body()
-        dto: { modifier_group_id: number; name: string; price?: number },
+        dto: {
+            modifier_group_id: number;
+            name: string;
+            price?: number;
+            price_by_size?: Record<string, number> | null;
+            available_for_sizes?: string[] | null;
+        },
     ) {
         await this.assertEntityBrand(
             user,
@@ -568,7 +598,13 @@ export class MenuController {
     async updateModifier(
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,
-        @Body() dto: { name?: string; price?: number },
+        @Body()
+        dto: {
+            name?: string;
+            price?: number;
+            price_by_size?: Record<string, number> | null;
+            available_for_sizes?: string[] | null;
+        },
     ) {
         await this.assertEntityBrand(user, 'modifier', +id);
         return this.service.updateModifier(+id, dto);
@@ -655,6 +691,7 @@ export class MenuController {
                 source_menu_item_ids?: number[] | null;
                 quantity: number;
                 allow_customization: boolean;
+                slot_surcharges?: Record<string, number> | null;
             }>;
         },
     ) {

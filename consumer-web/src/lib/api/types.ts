@@ -28,6 +28,10 @@ export type Modifier = {
   id: number;
   name: string;
   price: number;
+  /** Per-size surcharge keyed by variant size_key (e.g. {"7":99,"12":249}); null = use flat price. */
+  price_by_size?: Record<string, number> | null;
+  /** Restrict this option to certain sizes (e.g. ["10","12","14"]); null/empty = every size. */
+  available_for_sizes?: string[] | null;
 };
 
 export type ModifierGroup = {
@@ -35,6 +39,14 @@ export type ModifierGroup = {
   name: string;
   min_select?: number;
   max_select?: number;
+  /** Units included free before any are charged ("first N free"). */
+  included_quantity?: number;
+  /** Per-size override of included_quantity keyed by variant size_key. */
+  included_by_size?: Record<string, number> | null;
+  /** Allow the same free/optional option to be added multiple times (qty stepper). */
+  allow_quantity?: boolean;
+  /** Quantity-tiered bundle price for charged units (charged count → total). */
+  price_tiers?: Record<string, number> | null;
   modifiers: Modifier[];
 };
 
@@ -44,6 +56,8 @@ export type Variant = {
   price_modifier: number;
   is_default?: boolean;
   isDefault?: boolean;
+  /** Normalized size ('7','10','12','14') enabling per-size modifier pricing; null = no size. */
+  size_key?: string | null;
 };
 
 export type Addon = {

@@ -106,6 +106,7 @@ export class NotificationsService {
         }
 
         const userIds = await this.resolveRecipients(
+            input.tenantId,
             branchId,
             setting.roleIds,
             brandId,
@@ -212,18 +213,38 @@ export class NotificationsService {
     // ---------------- Recipient / setting resolution ----------------
 
     private async resolveRecipients(
+        tenantId: number,
         branchId: number | null,
         roleIds: number[],
         brandId: number | null,
     ): Promise<number[]> {
-        if (branchId == null || roleIds.length === 0) return [];
+        if (roleIds.length === 0) return [];
+        // Branch staff (cashier, branch manager…) hold their role in branch_users
+        // at the order's branch. Tenant-level staff (owner / GM) hold their role in
+        // tenant_users with NO per-branch row, so include them too — but only when
+        // that role carries all-branches:access (genuinely tenant-wide reach), so a
+        // branch-scoped role never leaks across branches. Brand-lock (brand_id) is
+        // honoured on both sides.
         const rows = (await this.dataSource.query(
-            `SELECT DISTINCT bu.user_id
-             FROM branch_users bu
-             WHERE bu.branch_id = $1
-               AND bu.role_id = ANY($2::int[])
-               AND ($3::int IS NULL OR bu.brand_id IS NULL OR bu.brand_id = $3)`,
-            [branchId, roleIds, brandId],
+            `SELECT DISTINCT u.user_id FROM (
+                 SELECT bu.user_id AS user_id, bu.brand_id AS brand_id
+                 FROM branch_users bu
+                 WHERE $2::int IS NOT NULL
+                   AND bu.branch_id = $2
+                   AND bu.role_id = ANY($3::int[])
+                 UNION
+                 SELECT tu.user_id AS user_id, tu.brand_id AS brand_id
+                 FROM tenant_users tu
+                 WHERE tu.tenant_id = $1
+                   AND tu.role_id = ANY($3::int[])
+                   AND tu.role_id IN (
+                       SELECT rp.role_id FROM role_permissions rp
+                       INNER JOIN permissions p ON p.id = rp.permission_id
+                       WHERE p.name = 'all-branches:access'
+                   )
+             ) u
+             WHERE ($4::int IS NULL OR u.brand_id IS NULL OR u.brand_id = $4)`,
+            [tenantId, branchId, roleIds, brandId],
         )) as unknown as Array<{ user_id: number }>;
         return rows.map((r) => Number(r.user_id));
     }
