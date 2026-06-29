@@ -166,7 +166,7 @@ export function ItemConfigModal({
   const getStepNum = (key: "variant" | "heat" | "signature" | "addons" | "notes") =>
     stepKeys.findIndex((s) => s === key) + 1;
 
-  const sizeKey = sizeKeyForVariant(selectedVariant);
+  const sizeKey = useMemo(() => sizeKeyForVariant(selectedVariant), [selectedVariant]);
   // Hide options restricted to other sizes (e.g. Thin Crust on 7"). No size ⇒ show all.
   const isModAvailableForSize = (mod: { available_for_sizes?: string[] | null }) =>
     !mod.available_for_sizes?.length || !sizeKey || mod.available_for_sizes.includes(sizeKey);

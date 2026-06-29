@@ -462,17 +462,6 @@ function buildDefaultModifierIds(groups: ModifierGroup[]): number[] {
   return ids;
 }
 
-function findModifierInItem(
-  groups: ModifierGroup[] | undefined,
-  modifierId: number,
-): { group: ModifierGroup; modifier: Modifier } | null {
-  for (const g of groups ?? []) {
-    const m = (g.modifiers ?? []).find((x) => x.id === modifierId);
-    if (m) return { group: g, modifier: m };
-  }
-  return null;
-}
-
 function countSelectedInGroup(group: ModifierGroup, selectedIds: number[]): number {
   const ids = new Set((group.modifiers ?? []).map((m) => m.id));
   return selectedIds.filter((id) => ids.has(id)).length;
