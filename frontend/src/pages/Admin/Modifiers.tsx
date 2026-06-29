@@ -119,46 +119,13 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
               Brand: {brands?.find((b) => b.id === group.brand_id)?.name ?? `#${group.brand_id}`} · Min: {group.min_select}, Max: {group.max_select}
             </p>
             {(group.linked_menu_items ?? []).length > 0 && (
-              <div className="flex flex-wrap gap-1 mb-2">
+              <div className="flex flex-wrap gap-1">
                 {(group.linked_menu_items ?? []).map((mi) => (
                   <span key={mi.id} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200">
                     {mi.name}
                   </span>
                 ))}
               </div>
-            )}
-            {sortedMods.length > 0 ? (
-              <DndContext
-                sensors={sensors}
-                collisionDetection={closestCenter}
-                onDragEnd={(event: DragEndEvent) => {
-                  const { active, over } = event;
-                  if (!over || active.id === over.id) return;
-                  const oldIds = localOrder.get(group.id) ?? group.modifiers.map((m) => m.id);
-                  const oldIdx = oldIds.indexOf(Number(active.id));
-                  const newIdx = oldIds.indexOf(Number(over.id));
-                  const newIds = arrayMove(oldIds, oldIdx, newIdx);
-                  setLocalOrder((prev) => new Map(prev).set(group.id, newIds));
-                  onReorderModifiers(group.id, newIds);
-                }}
-              >
-                <SortableContext items={sortedMods.map((m) => m.id)} strategy={verticalListSortingStrategy}>
-                  <ul className="space-y-1">
-                    {sortedMods.map((m) => (
-                      <SortableModifierRow
-                        key={m.id}
-                        modifier={m}
-                        group={group}
-                        onEdit={() => onEditModifier(m)}
-                        onDelete={() => onDeleteModifier(m.id)}
-                        isDeleting={isDeletingModifier}
-                      />
-                    ))}
-                  </ul>
-                </SortableContext>
-              </DndContext>
-            ) : (
-              <p className="text-sm text-gray-500">No modifiers in this group.</p>
             )}
           </div>
           <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
@@ -168,6 +135,39 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
             <Button size="small" variant="danger" onClick={onDeleteGroup} isLoading={isDeletingGroup}>Delete group</Button>
           </div>
         </div>
+        {sortedMods.length > 0 ? (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={(event: DragEndEvent) => {
+              const { active, over } = event;
+              if (!over || active.id === over.id) return;
+              const oldIds = localOrder.get(group.id) ?? group.modifiers.map((m) => m.id);
+              const oldIdx = oldIds.indexOf(Number(active.id));
+              const newIdx = oldIds.indexOf(Number(over.id));
+              const newIds = arrayMove(oldIds, oldIdx, newIdx);
+              setLocalOrder((prev) => new Map(prev).set(group.id, newIds));
+              onReorderModifiers(group.id, newIds);
+            }}
+          >
+            <SortableContext items={sortedMods.map((m) => m.id)} strategy={verticalListSortingStrategy}>
+              <ul className="mt-3 space-y-1 border-t border-gray-100 dark:border-slate-600 pt-3">
+                {sortedMods.map((m) => (
+                  <SortableModifierRow
+                    key={m.id}
+                    modifier={m}
+                    group={group}
+                    onEdit={() => onEditModifier(m)}
+                    onDelete={() => onDeleteModifier(m.id)}
+                    isDeleting={isDeletingModifier}
+                  />
+                ))}
+              </ul>
+            </SortableContext>
+          </DndContext>
+        ) : (
+          <p className="mt-3 text-sm text-gray-500 border-t border-gray-100 dark:border-slate-600 pt-3">No modifiers in this group.</p>
+        )}
       </Card>
     </div>
   );
