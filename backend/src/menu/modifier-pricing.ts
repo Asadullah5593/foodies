@@ -92,8 +92,11 @@ export const normalizePriceTiers = (
 
 /**
  * Total charge for `n` charged units given a tier table (e.g. {1:99,2:169,3:249}).
- * Exact match wins; counts above the table extrapolate from the last marginal step;
- * gaps below fall back to the largest defined tier ≤ n plus its average per-unit.
+ *
+ * Tier values are BUNDLE prices. For n > maxKey: one maxKey bundle, then fill the
+ * remainder greedily with SMALLER tiers only — giving the "3+2+2" / "3+2+1" splits
+ * rather than reusing the largest tier. For n between defined keys: largest fitting
+ * tier + remainder with ≤ that tier.
  */
 export function resolveTierCharge(
     tiers: Record<string, number>,
@@ -107,23 +110,58 @@ export function resolveTierCharge(
         .sort((a, b) => a - b);
     if (!keys.length) return 0;
     const maxKey = keys[keys.length - 1];
+
+    if (n < keys[0]) {
+        // Below smallest tier: charge proportionally
+        return round2((Number(tiers[String(keys[0])]) / keys[0]) * n);
+    }
+
     if (n > maxKey) {
-        const lastVal = Number(tiers[String(maxKey)]);
-        const prevKey = keys.length > 1 ? keys[keys.length - 2] : 0;
-        const prevVal = prevKey > 0 ? Number(tiers[String(prevKey)]) : 0;
-        const marginal = (lastVal - prevVal) / (maxKey - prevKey || 1);
-        return round2(lastVal + (n - maxKey) * marginal);
+        // One maxKey bundle, then fill remainder with ONLY smaller tiers
+        const maxCost = Number(tiers[String(maxKey)]);
+        const remainder = n - maxKey;
+        const smallerKeys = keys.slice(0, -1);
+        const smallerTiers: Record<string, number> = {};
+        for (const k of smallerKeys)
+            smallerTiers[String(k)] = Number(tiers[String(k)]);
+        return round2(maxCost + fillWithTiers(smallerTiers, smallerKeys, remainder));
     }
-    let baseKey = 0;
-    let baseVal = 0;
+
+    // n between keys (no exact match): largest key ≤ n, fill remainder with ≤ that key
+    let bestKey = keys[0];
     for (const k of keys) {
-        if (k <= n) {
-            baseKey = k;
-            baseVal = Number(tiers[String(k)]);
-        }
+        if (k <= n) bestKey = k;
     }
-    const perUnit = baseKey > 0 ? baseVal / baseKey : 0;
-    return round2(baseVal + (n - baseKey) * perUnit);
+    const bestCost = Number(tiers[String(bestKey)]);
+    const remainder = n - bestKey;
+    const fittingKeys = keys.filter((k) => k <= bestKey);
+    const fittingTiers: Record<string, number> = {};
+    for (const k of fittingKeys)
+        fittingTiers[String(k)] = Number(tiers[String(k)]);
+    return round2(bestCost + fillWithTiers(fittingTiers, fittingKeys, remainder));
+}
+
+function fillWithTiers(
+    tiers: Record<string, number>,
+    keys: number[],
+    n: number,
+): number {
+    if (n <= 0 || !keys.length) return 0;
+    const sorted = [...keys].sort((a, b) => b - a); // descending
+    let remaining = n;
+    let cost = 0;
+    for (const k of sorted) {
+        if (remaining <= 0) break;
+        const count = Math.floor(remaining / k);
+        cost += count * Number(tiers[String(k)]);
+        remaining -= count * k;
+    }
+    if (remaining > 0) {
+        const smallestKey = sorted[sorted.length - 1];
+        cost +=
+            (remaining * Number(tiers[String(smallestKey)])) / smallestKey;
+    }
+    return round2(cost);
 }
 
 export const normalizeIncludedBySize = (
@@ -181,10 +219,10 @@ export function priceModifiersForLine(params: {
 
     // Per-modifier aggregate (merges duplicate selections of the same modifier id).
     const lineAgg = new Map<number, PricedModifierLine>();
-    // Per-group unit list so the free allowance is applied across the whole group.
+    // Per-group unit list tagged with slot (0 = first unit of that modifier, 1 = second, …).
     const groupUnits = new Map<
         PricingModifierGroup,
-        Array<{ modifierId: number; unitPrice: number }>
+        Array<{ modifierId: number; unitPrice: number; slot: number }>
     >();
 
     for (const sel of selections ?? []) {
@@ -215,19 +253,27 @@ export function priceModifiersForLine(params: {
             groupUnits.set(found.group, units);
         }
         for (let i = 0; i < qty; i++)
-            units.push({ modifierId: sel.modifier_id, unitPrice });
+            units.push({ modifierId: sel.modifier_id, unitPrice, slot: i });
     }
 
-    // Apply each group's free allowance to its cheapest units.
+    // Apply each group's free allowance using slot-based ordering:
+    // slot-0 units (first of each modifier, cheapest first within slot) are freed before
+    // any modifier's slot-1+ units. This charges the customer for the modifier they
+    // deliberately doubled, not for a pricier modifier in the original selection.
     for (const [group, units] of groupUnits) {
         const included = resolveIncludedQuantity(group, sizeKey);
         if (included <= 0) continue;
-        const orderByPrice = units
+        const orderBySlotPrice = units
             .map((_, i) => i)
-            .sort((a, b) => units[a].unitPrice - units[b].unitPrice);
+            .sort((a, b) => {
+                const slotDiff = units[a].slot - units[b].slot;
+                return slotDiff !== 0
+                    ? slotDiff
+                    : units[a].unitPrice - units[b].unitPrice;
+            });
         const freeCount = Math.min(included, units.length);
         for (let k = 0; k < freeCount; k++) {
-            const unit = units[orderByPrice[k]];
+            const unit = units[orderBySlotPrice[k]];
             const line = lineAgg.get(unit.modifierId);
             if (line) line.freeQuantity += 1;
         }

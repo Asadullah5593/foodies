@@ -160,18 +160,27 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                     sizeKey && group.included_by_size && group.included_by_size[sizeKey] != null
                       ? Number(group.included_by_size[sizeKey])
                       : group.included_quantity ?? 0;
-                  // Allocate the free allowance to the cheapest selected units first.
+                  // Slot-based free allocation: in each round, free one unit from each modifier
+                  // (cheapest modifier first within the round) before freeing any modifier's second unit.
+                  // This charges the customer for the modifier they deliberately doubled, not for a
+                  // pricier modifier that was part of the original selection.
                   const priceOfMod = (id: number) => {
                     const m = group.modifiers.find((mm) => mm.id === id);
                     return m ? resolveModifierUnitPrice(m, sizeKey) : 0;
                   };
                   const freeUnitsByMod = new Map<number, number>();
                   let freeRemaining = includedFree;
-                  for (const sel of [...selectedInGroup].sort((a, b) => priceOfMod(a.modifierId) - priceOfMod(b.modifierId))) {
-                    const q = sel.quantity || 1;
-                    const f = Math.max(0, Math.min(freeRemaining, q));
-                    freeUnitsByMod.set(sel.modifierId, f);
-                    freeRemaining -= f;
+                  const sortedByPrice = [...selectedInGroup].sort(
+                    (a, b) => priceOfMod(a.modifierId) - priceOfMod(b.modifierId),
+                  );
+                  const maxQty = selectedInGroup.reduce((m, s) => Math.max(m, s.quantity || 1), 0);
+                  outer: for (let slot = 0; slot < maxQty; slot++) {
+                    for (const sel of sortedByPrice) {
+                      if (freeRemaining <= 0) break outer;
+                      if ((sel.quantity || 1) <= slot) continue; // modifier has no unit in this slot
+                      freeUnitsByMod.set(sel.modifierId, (freeUnitsByMod.get(sel.modifierId) ?? 0) + 1);
+                      freeRemaining--;
+                    }
                   }
                   const groupStatus: SectionStatus =
                     minOk ? 'complete' : minSelect > 0 ? 'required-missing' : 'optional-empty';
