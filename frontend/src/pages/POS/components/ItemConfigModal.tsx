@@ -122,8 +122,8 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                     />
                     <div className="flex-1">
                       <span className="font-medium">{variant.name}</span>
-                      <span className={`ml-2 ${variant.price_modifier >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {variant.price_modifier >= 0 ? '+' : ''}{formatCurrency(Math.abs(variant.price_modifier))}
+                      <span className="ml-2 text-gray-700">
+                        {formatCurrency((item.price ?? 0) + variant.price_modifier)}
                       </span>
                     </div>
                   </label>
