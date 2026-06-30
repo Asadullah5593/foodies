@@ -210,8 +210,11 @@ describe('modifier-pricing', () => {
             expect(resolveTierCharge(tiers, 2)).toBe(169);
             expect(resolveTierCharge(tiers, 3)).toBe(249);
         });
-        it('extrapolates beyond the table by the last marginal step', () => {
-            expect(resolveTierCharge(tiers, 4)).toBe(329); // 249 + (249-169)
+        it('packs largest bundles first beyond the table (no linear extrapolation)', () => {
+            expect(resolveTierCharge(tiers, 4)).toBe(348); // 3 (249) + 1 (99)
+            expect(resolveTierCharge(tiers, 5)).toBe(418); // 3 (249) + 2 (169)
+            expect(resolveTierCharge(tiers, 6)).toBe(498); // 3 (249) + 3 (249)
+            expect(resolveTierCharge(tiers, 7)).toBe(597); // 3 + 3 + 1
         });
     });
 

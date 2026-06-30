@@ -93,10 +93,10 @@ export const normalizePriceTiers = (
 /**
  * Total charge for `n` charged units given a tier table (e.g. {1:99,2:169,3:249}).
  *
- * Tier values are BUNDLE prices. For n > maxKey: one maxKey bundle, then fill the
- * remainder greedily with SMALLER tiers only — giving the "3+2+2" / "3+2+1" splits
- * rather than reusing the largest tier. For n between defined keys: largest fitting
- * tier + remainder with ≤ that tier.
+ * Tier values are BUNDLE prices. An exact match returns that bundle's price. Otherwise the
+ * charge is built by GREEDILY packing the largest bundles first, reusing them as needed —
+ * NOT by linear extrapolation. So 4 = 3 (249) + 1 (99) = 348; 5 = 3 + 2 = 418; 7 = 3 + 3 + 1
+ * = 597. A leftover below the smallest tier is charged proportionally at that tier's rate.
  */
 export function resolveTierCharge(
     tiers: Record<string, number>,
@@ -109,34 +109,14 @@ export function resolveTierCharge(
         .filter((k) => Number.isFinite(k) && k > 0)
         .sort((a, b) => a - b);
     if (!keys.length) return 0;
-    const maxKey = keys[keys.length - 1];
 
     if (n < keys[0]) {
-        // Below smallest tier: charge proportionally
+        // Below smallest tier: charge proportionally at that tier's per-unit rate.
         return round2((Number(tiers[String(keys[0])]) / keys[0]) * n);
     }
 
-    if (n > maxKey) {
-        // Extrapolate beyond the table using the last marginal step per extra unit
-        const maxCost = Number(tiers[String(maxKey)]);
-        const secondKey = keys.length > 1 ? keys[keys.length - 2] : 0;
-        const secondCost = keys.length > 1 ? Number(tiers[String(secondKey)]) : 0;
-        const marginalStep = maxCost - secondCost;
-        return round2(maxCost + (n - maxKey) * marginalStep);
-    }
-
-    // n between keys (no exact match): largest key ≤ n, fill remainder with ≤ that key
-    let bestKey = keys[0];
-    for (const k of keys) {
-        if (k <= n) bestKey = k;
-    }
-    const bestCost = Number(tiers[String(bestKey)]);
-    const remainder = n - bestKey;
-    const fittingKeys = keys.filter((k) => k <= bestKey);
-    const fittingTiers: Record<string, number> = {};
-    for (const k of fittingKeys)
-        fittingTiers[String(k)] = Number(tiers[String(k)]);
-    return round2(bestCost + fillWithTiers(fittingTiers, fittingKeys, remainder));
+    // Greedy bundle packing (largest tier first, reused as needed).
+    return fillWithTiers(tiers, keys, n);
 }
 
 function fillWithTiers(
