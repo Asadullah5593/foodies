@@ -221,8 +221,15 @@ const Modifiers: React.FC = () => {
     },
   });
 
-  const effectiveBrandId = filters.brand_id ? +filters.brand_id : null;
+  // Auto-select the brand when only one is accessible.
+  const singleBrand = brands?.length === 1 ? brands[0] : null;
+  useEffect(() => {
+    if (singleBrand && !filters.brand_id) {
+      setFilters((f) => ({ ...f, brand_id: String(singleBrand.id) }));
+    }
+  }, [singleBrand]);
 
+  const effectiveBrandId = filters.brand_id ? +filters.brand_id : null;
   const effectiveMenuItemId = filters.menu_item_id ? +filters.menu_item_id : null;
 
   const { data: modifierGroups, isLoading } = useQuery({
@@ -233,7 +240,7 @@ const Modifiers: React.FC = () => {
           ? { brand_id: effectiveBrandId, ...(effectiveMenuItemId != null ? { menu_item_id: effectiveMenuItemId } : {}) }
           : undefined,
       ),
-    enabled: effectiveBrandId != null,
+    enabled: true,
   });
 
   const { data: menuItemsForFilter } = useQuery({
@@ -473,20 +480,38 @@ const Modifiers: React.FC = () => {
 
       <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-3 items-end">
-          <SearchableSelect
-            label="Brand"
-            value={filters.brand_id}
-            onChange={(v) => setFilters((f) => ({ ...f, brand_id: v }))}
-            options={[
-              { value: '', label: 'Select brand' },
-              ...(brands ?? []).map((b) => ({
-                value: String(b.id),
-                label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
-              })),
-            ]}
-            placeholder="Select brand"
-            minWidth="min-w-[180px]"
-          />
+          {!singleBrand && (
+            <SearchableSelect
+              label="Brand"
+              value={filters.brand_id}
+              onChange={(v) => setFilters((f) => ({ ...f, brand_id: v, menu_item_id: '' }))}
+              options={[
+                { value: '', label: 'All brands' },
+                ...(brands ?? []).map((b) => ({
+                  value: String(b.id),
+                  label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+                })),
+              ]}
+              placeholder="All brands"
+              minWidth="min-w-[180px]"
+            />
+          )}
+          {effectiveBrandId != null && (
+            <SearchableSelect
+              label="Menu Item"
+              value={filters.menu_item_id}
+              onChange={(v) => setFilters((f) => ({ ...f, menu_item_id: v }))}
+              options={[
+                { value: '', label: 'All items' },
+                ...(menuItemsForFilter ?? []).map((mi: { id: number; name: string }) => ({
+                  value: String(mi.id),
+                  label: mi.name,
+                })),
+              ]}
+              placeholder="All items"
+              minWidth="min-w-[180px]"
+            />
+          )}
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Search</label>
             <div className="relative">
@@ -529,23 +554,7 @@ const Modifiers: React.FC = () => {
               />
             </div>
           </div>
-          {effectiveBrandId != null && (
-            <SearchableSelect
-              label="Menu Item"
-              value={filters.menu_item_id}
-              onChange={(v) => setFilters((f) => ({ ...f, menu_item_id: v }))}
-              options={[
-                { value: '', label: 'All items' },
-                ...(menuItemsForFilter ?? []).map((mi: { id: number; name: string }) => ({
-                  value: String(mi.id),
-                  label: mi.name,
-                })),
-              ]}
-              placeholder="All items"
-              minWidth="min-w-[180px]"
-            />
-          )}
-          <ClearFiltersButton onClick={() => setFilters({ brand_id: '', search: '', menu_item_id: '' })} />
+          <ClearFiltersButton onClick={() => setFilters(singleBrand ? { brand_id: String(singleBrand.id), search: '', menu_item_id: '' } : { brand_id: '', search: '', menu_item_id: '' })} />
         </div>
       </Card>
 
@@ -951,7 +960,7 @@ const Modifiers: React.FC = () => {
         {filteredGroups.length === 0 ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">
             <p className="text-center text-gray-500 dark:text-slate-400 py-12">
-              {effectiveBrandId == null ? 'Select a brand to see modifier groups.' : 'No modifier groups found. Create a group above.'}
+              No modifier groups found. Create a group above.
             </p>
           </Card>
         ) : (
