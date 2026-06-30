@@ -72,6 +72,8 @@ export type DealSlot = {
   type: string;
   quantity: number;
   allow_customization: boolean;
+  /** Lock this slot's chosen item to one variant size (e.g. '12' = "All 12\" pizzas"). */
+  slot_size_key?: string | null;
   source_menu_item_id?: number | null;
   choice_items?: MenuItem[];
 };

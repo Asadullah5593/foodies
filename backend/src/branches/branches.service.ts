@@ -327,7 +327,7 @@ export class BranchesService {
                 address: dto.address ?? null,
                 phone: dto.phone ?? null,
                 email: dto.email ?? null,
-                timezone: dto.timezone ?? 'UTC',
+                timezone: dto.timezone ?? 'Asia/Karachi',
                 operatingHours: dto.operating_hours ?? null,
                 supportsDineIn: dto.supports_dine_in ?? true,
                 supportsTakeaway: dto.supports_takeaway ?? true,

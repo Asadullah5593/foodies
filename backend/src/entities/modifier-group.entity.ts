@@ -67,6 +67,14 @@ export class ModifierGroup {
     @Column({ name: 'price_tiers', type: 'jsonb', nullable: true })
     priceTiers: Record<string, number> | null;
 
+    /**
+     * Hide this group when the item is customized INSIDE a deal — for cross-sell groups
+     * ("Add a drink(s)", "Add a dip(s)") that the deal provides through its own slots, so
+     * they aren't offered (and charged) twice. Intrinsic groups (crust, cheese, toppings) stay.
+     */
+    @Column({ name: 'hide_in_deals', default: false })
+    hideInDeals: boolean;
+
     @Column({ name: 'sort_order', default: 0 })
     sortOrder: number;
 

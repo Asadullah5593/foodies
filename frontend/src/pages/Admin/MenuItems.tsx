@@ -40,6 +40,7 @@ interface MenuItem {
   available_for_order_types?: string[];
   allergens?: string[] | null;
   calories?: number | null;
+  label?: string | null;
   available_time_start?: string | null;
   available_time_end?: string | null;
   available_days_of_week?: number[] | null;
@@ -126,6 +127,7 @@ const MenuItems: React.FC = () => {
     channel_pickup: true,
     channel_dine_in: true,
     allergens: '',
+    label: '',
     calories: '',
     available_time_start: '',
     available_time_end: '',
@@ -245,6 +247,7 @@ const MenuItems: React.FC = () => {
     channel_pickup: true,
     channel_dine_in: true,
     allergens: '',
+    label: '',
     calories: '',
     available_time_start: '',
     available_time_end: '',
@@ -267,6 +270,7 @@ const MenuItems: React.FC = () => {
         channel_pickup: ch.pickup,
         channel_dine_in: ch.dine_in,
         allergens: (editingItem.allergens ?? []).join(', '),
+        label: editingItem.label ?? '',
         calories: editingItem.calories != null ? String(editingItem.calories) : '',
         available_time_start: editingItem.available_time_start ?? '',
         available_time_end: editingItem.available_time_end ?? '',
@@ -313,6 +317,7 @@ const MenuItems: React.FC = () => {
         deal_only?: boolean;
         available_for_order_types?: string[] | null;
         allergens?: string[] | null;
+        label?: string | null;
         calories?: number | null;
         available_time_start?: string | null;
         available_time_end?: string | null;
@@ -479,6 +484,7 @@ const MenuItems: React.FC = () => {
       channel_pickup: boolean;
       channel_dine_in: boolean;
       allergens?: string;
+      label?: string;
       calories?: string;
       available_time_start?: string;
       available_time_end?: string;
@@ -503,6 +509,7 @@ const MenuItems: React.FC = () => {
         deal_only: data.deal_only ?? false,
         image_url: data.image_url || undefined,
         allergens: parseAllergensInput(data.allergens),
+        label: data.label?.trim() || null,
         calories: data.calories?.trim() ? parseInt(data.calories, 10) : null,
         available_time_start: data.available_time_start || null,
         available_time_end: data.available_time_end || null,
@@ -533,6 +540,7 @@ const MenuItems: React.FC = () => {
         channel_pickup: true,
         channel_dine_in: true,
         allergens: '',
+        label: '',
         calories: '',
         available_time_start: '',
         available_time_end: '',
@@ -892,6 +900,7 @@ const MenuItems: React.FC = () => {
                   gallery_image_urls: [...editFormData.gallery_image_urls],
                   available_for_order_types: av,
                   allergens: parseAllergensInput(editFormData.allergens),
+                  label: editFormData.label.trim() || null,
                   calories: editFormData.calories.trim() ? parseInt(editFormData.calories, 10) : null,
                   available_time_start: editFormData.available_time_start || null,
                   available_time_end: editFormData.available_time_end || null,
@@ -1085,6 +1094,13 @@ const MenuItems: React.FC = () => {
                   onChange={(e) => setEditFormData((f) => ({ ...f, calories: e.target.value }))}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
               </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Label / badge</label>
+              <input type="text" value={editFormData.label}
+                onChange={(e) => setEditFormData((f) => ({ ...f, label: e.target.value }))}
+                placeholder="e.g. Classic, Signature, New"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
             </div>
             <div className="rounded-lg border border-gray-200 p-3 space-y-2">
               <p className="text-xs text-gray-500">Available only at certain times (branch timezone) — leave blank for all day.</p>
@@ -1380,6 +1396,17 @@ const MenuItems: React.FC = () => {
                 <option value="inactive">Inactive</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Label / badge</label>
+            <input
+              type="text"
+              value={formData.label}
+              onChange={(e) => setFormData({ ...formData, label: e.target.value })}
+              placeholder="e.g. Classic, Signature, New"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-4">

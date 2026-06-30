@@ -63,6 +63,10 @@ export class MenuItem {
     @Column({ type: 'int', nullable: true })
     calories: number | null;
 
+    /** Short badge/tag shown on the item (e.g. "Classic", "Signature", "New"). Null = none. */
+    @Column({ type: 'varchar', length: 40, nullable: true })
+    label: string | null;
+
     @Column({ default: true })
     isActive: boolean;
 
