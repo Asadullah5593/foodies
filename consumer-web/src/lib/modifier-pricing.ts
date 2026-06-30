@@ -83,25 +83,41 @@ export function computeModifiersPrice(
   return round2(total);
 }
 
-/** Total charge for `n` charged units given a tier table (e.g. {1:99,2:169,3:249}). */
+/**
+ * Total charge for `n` charged units given a tier table (e.g. {1:99,2:169,3:249}).
+ *
+ * Tier values are BUNDLE prices. An exact match returns that bundle's price; otherwise the
+ * charge is built by GREEDILY packing the largest bundles first, reusing them as needed —
+ * NOT by linear extrapolation. So 4 = 3 (249) + 1 (99) = 348; 7 = 3 + 3 + 1 = 597.
+ */
 export function resolveTierCharge(tiers: Record<string, number>, n: number): number {
   if (n <= 0) return 0;
   if (tiers[String(n)] != null) return round2(Number(tiers[String(n)]));
   const keys = Object.keys(tiers).map(Number).filter((k) => Number.isFinite(k) && k > 0).sort((a, b) => a - b);
   if (!keys.length) return 0;
-  const maxKey = keys[keys.length - 1];
-  if (n > maxKey) {
-    const lastVal = Number(tiers[String(maxKey)]);
-    const prevKey = keys.length > 1 ? keys[keys.length - 2] : 0;
-    const prevVal = prevKey > 0 ? Number(tiers[String(prevKey)]) : 0;
-    const marginal = (lastVal - prevVal) / (maxKey - prevKey || 1);
-    return round2(lastVal + (n - maxKey) * marginal);
+  if (n < keys[0]) {
+    // Below smallest tier: charge proportionally at that tier's per-unit rate.
+    return round2((Number(tiers[String(keys[0])]) / keys[0]) * n);
   }
-  let baseKey = 0;
-  let baseVal = 0;
-  for (const k of keys) {
-    if (k <= n) { baseKey = k; baseVal = Number(tiers[String(k)]); }
+  return fillWithTiers(tiers, keys, n);
+}
+
+/** Greedily fill n units using the provided tiers from largest to smallest (reused as needed). */
+function fillWithTiers(tiers: Record<string, number>, keys: number[], n: number): number {
+  if (n <= 0 || !keys.length) return 0;
+  const sorted = [...keys].sort((a, b) => b - a); // descending
+  let remaining = n;
+  let cost = 0;
+  for (const k of sorted) {
+    if (remaining <= 0) break;
+    const count = Math.floor(remaining / k);
+    cost += count * Number(tiers[String(k)]);
+    remaining -= count * k;
   }
-  const perUnit = baseKey > 0 ? baseVal / baseKey : 0;
-  return round2(baseVal + (n - baseKey) * perUnit);
+  if (remaining > 0) {
+    // Fractional remainder below the smallest tier: per-unit rate of the smallest tier.
+    const smallestKey = sorted[sorted.length - 1];
+    cost += (remaining * Number(tiers[String(smallestKey)])) / smallestKey;
+  }
+  return round2(cost);
 }
