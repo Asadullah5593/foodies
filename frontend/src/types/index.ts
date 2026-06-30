@@ -289,6 +289,8 @@ export interface MenuItem {
   allergens?: string[] | null;
   /** Energy in kcal for the standard serving. */
   calories?: number | null;
+  /** Short badge/tag (e.g. "Classic", "Signature"). */
+  label?: string | null;
   /** Recurring availability window (branch timezone), HH:mm; null = all day. */
   available_time_start?: string | null;
   available_time_end?: string | null;
@@ -343,6 +345,8 @@ export interface MenuModifierGroup {
   allow_quantity?: boolean;
   /** Quantity-tiered bundle price for charged units (charged count → total), e.g. {"1":99,"2":169,"3":249}. */
   price_tiers?: Record<string, number> | null;
+  /** Hide this cross-sell group when customizing the item inside a deal. */
+  hide_in_deals?: boolean;
   modifiers: MenuModifier[];
 }
 

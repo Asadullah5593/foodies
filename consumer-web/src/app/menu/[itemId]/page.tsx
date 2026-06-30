@@ -7,7 +7,7 @@ import {
   useState,
   type JSX,
 } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -29,7 +29,7 @@ import { useMenuImageLoaded } from "@/lib/use-menu-image-loaded";
 import { orderRedirectConfig } from "@/lib/config/order-redirect";
 import { useSessionStore } from "@/lib/store/session-store";
 import type { Modifier, ModifierGroup, Variant } from "@/lib/api/types";
-import { computeModifiersPrice, sizeKeyForVariant } from "@/lib/modifier-pricing";
+import { computeModifiersPrice, resolveModifierUnitPrice, sizeKeyForVariant } from "@/lib/modifier-pricing";
 
 const COLORS = {
   brand: "#E4002B",
@@ -64,6 +64,17 @@ function itemAvailableOrderChannels(item: { available_for_order_types?: string[]
 
 const TITLE_SKELETON = [68, 92, 55];
 const EMPTY_NUMBER_ARRAY: number[] = [];
+const EMPTY_QTY_MAP: Record<number, number> = {};
+
+/** "1: Rs.99, 2: Rs.169, 3: Rs.249" — the POS-style summary of a group's quantity-tiered extra price. */
+function formatTiers(tiers: Record<string, number>): string {
+  return Object.keys(tiers)
+    .map(Number)
+    .filter((k) => Number.isFinite(k))
+    .sort((a, b) => a - b)
+    .map((k) => `${k}: Rs.${Number(tiers[String(k)]).toFixed(0)}`)
+    .join(", ");
+}
 
 /** One size for every monetary amount on this page (totals, deltas, modifiers, add-ons, related). */
 const PDP_PRICE_TEXT = "text-base font-bold tabular-nums leading-none text-red-600";
@@ -448,11 +459,12 @@ function pickDefaultVariant(variants: Variant[]): Variant | null {
 }
 
 /** Pre-select modifiers required by min_select (first N in group order). */
-function buildDefaultModifierIds(groups: ModifierGroup[]): number[] {
+function buildDefaultModifierIds(groups: ModifierGroup[], sizeKey: string | null | undefined): number[] {
   const ids: number[] = [];
   for (const g of groups) {
     const min = Math.max(0, Math.floor(g.min_select ?? 0));
-    const mods = g.modifiers ?? [];
+    // Only pre-select options actually offered for the default size (e.g. no "Thin Crust" on 7").
+    const mods = (g.modifiers ?? []).filter((m) => isModAvailableForSize(m, sizeKey));
     if (min === 0 || !mods.length) continue;
     const take = Math.min(min, mods.length);
     for (let i = 0; i < take; i++) {
@@ -460,19 +472,6 @@ function buildDefaultModifierIds(groups: ModifierGroup[]): number[] {
     }
   }
   return ids;
-}
-
-function countSelectedInGroup(group: ModifierGroup, selectedIds: number[]): number {
-  const ids = new Set((group.modifiers ?? []).map((m) => m.id));
-  return selectedIds.filter((id) => ids.has(id)).length;
-}
-
-/** Same pattern as POS `ItemConfigModal`: "(choose min–max)" with "+" when max is open-ended */
-function groupChooseTitle(group: ModifierGroup): string {
-  const min = group.min_select ?? 0;
-  const max = group.max_select;
-  const maxStr = max != null ? `–${max}` : "+";
-  return `${group.name} (choose ${min}${maxStr})`;
 }
 
 /**
@@ -513,101 +512,26 @@ function sortVariantsPosStyle(variants: Variant[]): Variant[] {
   });
 }
 
-function sortModifiersById(modifiers: Modifier[]): Modifier[] {
-  return [...modifiers].sort((a, b) => a.id - b.id);
+/** Match POS/admin: render modifiers in the configured sort_order (then id as a stable tiebreak). */
+function sortModifiersByOrder(modifiers: Modifier[]): Modifier[] {
+  return [...modifiers].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id);
 }
 
-type SectionStatus = "complete" | "required-missing" | "optional-empty";
-
-function SectionStatusBadge({ status }: { status: SectionStatus }) {
-  const meta: Record<SectionStatus, { icon: string; label: string; className: string }> = {
-    complete: {
-      icon: "✓",
-      label: "Selected",
-      className: "bg-emerald-100 text-emerald-700",
-    },
-    "required-missing": {
-      icon: "!",
-      label: "Required",
-      className: "bg-amber-100 text-amber-800",
-    },
-    "optional-empty": {
-      icon: "—",
-      label: "Optional",
-      className: "bg-neutral-100 text-neutral-600",
-    },
-  };
-  const m = meta[status];
-  return (
-    <span
-      className={clsx(
-        "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold leading-none",
-        m.className,
-      )}
-      title={m.label}
-      aria-label={m.label}
-    >
-      {m.icon}
-    </span>
-  );
+/** A modifier is offered for a size when it has no size restriction, or lists the chosen size. */
+function isModAvailableForSize(mod: Modifier, sizeKey: string | null | undefined): boolean {
+  return !mod.available_for_sizes?.length || !sizeKey || mod.available_for_sizes.includes(sizeKey);
 }
 
-/** POS-style collapsible row + animated body. Remount via parent `key` when product or default open section changes. */
-function PdpAccordion({
-  title,
-  status,
-  defaultOpen,
-  children,
-}: {
-  title: string;
-  status?: SectionStatus;
-  defaultOpen: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div
-      className={clsx(
-        "border-b border-neutral-200 last:border-b-0",
-        open && "border-l-2 border-l-red-600 pl-2 bg-red-50/30",
-      )}
-    >
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between gap-2 px-1 py-2.5 text-left transition hover:bg-neutral-50/80"
-        aria-expanded={open}
-      >
-        <span className="flex min-w-0 items-center gap-2">
-          {status != null ? <SectionStatusBadge status={status} /> : null}
-          <span className="truncate text-[13px] font-semibold text-[var(--foreground)] sm:text-sm">{title}</span>
-        </span>
-        <motion.span
-          className="inline-flex shrink-0 text-red-600"
-          animate={{ rotate: open ? 180 : 0 }}
-          transition={{ type: "tween", duration: 0.2 }}
-        >
-          <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-            <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </motion.span>
-      </button>
-      <AnimatePresence initial={false}>
-        {open ? (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ type: "tween", duration: 0.22 }}
-            className="overflow-hidden"
-          >
-            <div className="pb-3 pl-1 pr-1 pt-0">{children}</div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
-    </div>
-  );
+/** Compact category label for the picker, dropping a leading "Choose your/a" so chips stay short. */
+function shortCategoryName(name: string): string {
+  const stripped = name.replace(/^\s*choose\s+(?:your\s+|a\s+|an\s+|the\s+)?/i, "").trim();
+  return stripped || name;
 }
+
+/** A pickable category in the two-pane selector: a modifier group, or the synthetic add-ons bucket. */
+type PdpCategory =
+  | { key: string; kind: "group"; group: ModifierGroup }
+  | { key: "addons"; kind: "addons" };
 
 function iconNode(kind: (typeof SERVICE_OPTIONS)[number]["icon"]): JSX.Element {
   if (kind === "truck") {
@@ -645,7 +569,16 @@ export default function MenuItemDetailPage() {
   const itemIdValid = Number.isFinite(itemId) && itemId > 0;
 
   const [selectionByItemId, setSelectionByItemId] = useState<
-    Record<number, { variantId: number | null; modifierIds: number[]; addonIds: number[] }>
+    Record<
+      number,
+      {
+        variantId: number | null;
+        modifierIds: number[];
+        /** Per-modifier unit count (POS "×N" stepper); absent id ⇒ quantity 1. */
+        modifierQty: Record<number, number>;
+        addonIds: number[];
+      }
+    >
   >({});
 
   const brandsQuery = useQuery({
@@ -705,14 +638,15 @@ export default function MenuItemDetailPage() {
   );
 
   const defaultModifierIds = useMemo(
-    () => buildDefaultModifierIds(modifierGroupsOrdered),
-    [modifierGroupsOrdered],
+    () => buildDefaultModifierIds(modifierGroupsOrdered, defaultVariant?.size_key ?? null),
+    [modifierGroupsOrdered, defaultVariant],
   );
 
   const defaultSelection = useMemo(
     () => ({
       variantId: defaultVariant?.id ?? null,
       modifierIds: defaultModifierIds,
+      modifierQty: {} as Record<number, number>,
       addonIds: [] as number[],
     }),
     [defaultModifierIds, defaultVariant?.id],
@@ -723,23 +657,75 @@ export default function MenuItemDetailPage() {
     : null;
   const selectedVariantId = currentSelection?.variantId ?? null;
   const selectedModifierIds = currentSelection?.modifierIds ?? EMPTY_NUMBER_ARRAY;
+  const selectedModifierQty = currentSelection?.modifierQty ?? EMPTY_QTY_MAP;
   const selectedAddonIds = currentSelection?.addonIds ?? EMPTY_NUMBER_ARRAY;
+
+  /** Units chosen for a modifier (the ×N stepper); defaults to 1 when selected. */
+  const quantityOf = (id: number) => Math.max(1, Math.floor(selectedModifierQty[id] ?? 1));
 
   const selectedVariant = useMemo(() => {
     if (!currentItem || selectedVariantId == null) return null;
     return variantsOrdered.find((v) => v.id === selectedVariantId) ?? null;
   }, [currentItem, selectedVariantId, variantsOrdered]);
 
+  /** size_key of the chosen variant drives per-size modifier pricing (null = flat prices). */
+  const sizeKey = useMemo(() => sizeKeyForVariant(selectedVariant), [selectedVariant]);
+
+  /**
+   * Selections that are actually offered for the current size. Options restricted by
+   * `available_for_sizes` are hidden in the picker, so we drop them here too — keeping the
+   * category status, the active marks, and the total all consistent with what's on screen.
+   */
+  const effectiveSelectedModifierIds = useMemo(() => {
+    if (!currentItem) return selectedModifierIds;
+    const modById = new Map<number, Modifier>();
+    for (const g of currentItem.modifier_groups ?? []) for (const m of g.modifiers ?? []) modById.set(m.id, m);
+    return selectedModifierIds.filter((id) => {
+      const mod = modById.get(id);
+      return mod ? isModAvailableForSize(mod, sizeKey) : false;
+    });
+  }, [currentItem, selectedModifierIds, sizeKey]);
+
+  /** Left-pane categories: every modifier group (with options), plus add-ons as a final bucket. */
+  const categories = useMemo<PdpCategory[]>(() => {
+    const cats: PdpCategory[] = modifierGroupsOrdered.map((g) => ({
+      key: `g-${g.id}`,
+      kind: "group" as const,
+      group: g,
+    }));
+    if (addonsOrdered.length) cats.push({ key: "addons", kind: "addons" as const });
+    return cats;
+  }, [modifierGroupsOrdered, addonsOrdered]);
+
+  const defaultCategoryKey = categories[0]?.key ?? null;
+  // The user's chosen category persists only while it still exists; when the item (and thus the
+  // category set) changes, the stale override no longer matches and we fall back to the first
+  // category — derived during render, so no resetting effect is needed.
+  const [activeCategoryOverride, setActiveCategoryOverride] = useState<string | null>(null);
+  const activeCategoryKey =
+    activeCategoryOverride && categories.some((c) => c.key === activeCategoryOverride)
+      ? activeCategoryOverride
+      : defaultCategoryKey;
+  const activeCategory =
+    categories.find((c) => c.key === activeCategoryKey) ?? categories[0] ?? null;
+
+  /** Total chosen units in a group (sum of per-modifier quantities) — what min/max gate on, POS-style. */
+  const unitsInGroup = (group: ModifierGroup) => {
+    const ids = new Set((group.modifiers ?? []).map((m) => m.id));
+    return effectiveSelectedModifierIds
+      .filter((id) => ids.has(id))
+      .reduce((sum, id) => sum + quantityOf(id), 0);
+  };
+
   const modifierPriceTotal = useMemo(() => {
     if (!currentItem) return 0;
-    const groups = currentItem.modifier_groups ?? [];
-    const uniqueIds = Array.from(new Set(selectedModifierIds));
+    const uniqueIds = Array.from(new Set(effectiveSelectedModifierIds));
     return computeModifiersPrice(
-      groups,
-      uniqueIds.map((id) => ({ modifier_id: id, quantity: 1 })),
-      sizeKeyForVariant(selectedVariant),
+      currentItem.modifier_groups ?? [],
+      uniqueIds.map((id) => ({ modifier_id: id, quantity: selectedModifierQty[id] ?? 1 })),
+      sizeKey,
     );
-  }, [currentItem, selectedModifierIds, selectedVariant]);
+  }, [currentItem, effectiveSelectedModifierIds, selectedModifierQty, sizeKey]);
 
   const relatedProducts = useMemo(() => {
     if (!currentItem) return [];
@@ -772,7 +758,12 @@ export default function MenuItemDetailPage() {
   }, [currentItem, modifierPriceTotal, selectedAddonIds, selectedVariant?.price_modifier]);
 
   const updateSelection = (
-    next: Partial<{ variantId: number | null; modifierIds: number[]; addonIds: number[] }>,
+    next: Partial<{
+      variantId: number | null;
+      modifierIds: number[];
+      modifierQty: Record<number, number>;
+      addonIds: number[];
+    }>,
   ) => {
     if (!currentItem) return;
     const existing = selectionByItemId[currentItem.id] ?? defaultSelection;
@@ -786,31 +777,64 @@ export default function MenuItemDetailPage() {
     if (!currentItem) return;
     const existing = selectionByItemId[currentItem.id] ?? defaultSelection;
     const selected = [...existing.modifierIds];
+    const qtyMap = { ...(existing.modifierQty ?? {}) };
     const modsInGroup = new Set((group.modifiers ?? []).map((m) => m.id));
-    const selectedInGroup = selected.filter((id) => modsInGroup.has(id));
     const isSelected = selected.includes(modifierId);
     const maxSel = group.max_select ?? 99;
     const minSel = group.min_select ?? 0;
+    const qOf = (id: number) => Math.max(1, Math.floor(qtyMap[id] ?? 1));
+    const unitsIn = selected.filter((id) => modsInGroup.has(id)).reduce((s, id) => s + qOf(id), 0);
 
+    // Single-select: tapping swaps the chosen option (and only deselects when nothing is required).
     if (maxSel === 1) {
       if (isSelected) {
         if (minSel === 0) {
-          updateSelection({ modifierIds: selected.filter((id) => id !== modifierId) });
+          delete qtyMap[modifierId];
+          updateSelection({ modifierIds: selected.filter((id) => id !== modifierId), modifierQty: qtyMap });
         }
         return;
       }
-      const rest = selected.filter((id) => !modsInGroup.has(id));
-      updateSelection({ modifierIds: [...rest, modifierId] });
+      for (const id of selected) if (modsInGroup.has(id)) delete qtyMap[id];
+      qtyMap[modifierId] = 1;
+      updateSelection({ modifierIds: [...selected.filter((id) => !modsInGroup.has(id)), modifierId], modifierQty: qtyMap });
       return;
     }
 
+    // Multi-select: min/max gate on total units, not distinct options.
     if (isSelected) {
-      if (selectedInGroup.length <= minSel) return;
-      updateSelection({ modifierIds: selected.filter((id) => id !== modifierId) });
+      if (unitsIn - qOf(modifierId) < minSel) return;
+      delete qtyMap[modifierId];
+      updateSelection({ modifierIds: selected.filter((id) => id !== modifierId), modifierQty: qtyMap });
       return;
     }
-    if (selectedInGroup.length >= maxSel) return;
-    updateSelection({ modifierIds: [...selected, modifierId] });
+    if (unitsIn >= maxSel) return;
+    qtyMap[modifierId] = 1;
+    updateSelection({ modifierIds: [...selected, modifierId], modifierQty: qtyMap });
+  };
+
+  /** POS "×N" stepper: clamp to the group's remaining unit allowance; 0 deselects (respecting min). */
+  const setModifierQuantity = (group: ModifierGroup, modifierId: number, nextQty: number) => {
+    if (!currentItem) return;
+    const existing = selectionByItemId[currentItem.id] ?? defaultSelection;
+    const selected = [...existing.modifierIds];
+    if (!selected.includes(modifierId)) return;
+    const qtyMap = { ...(existing.modifierQty ?? {}) };
+    const modsInGroup = new Set((group.modifiers ?? []).map((m) => m.id));
+    const maxSel = group.max_select ?? 99;
+    const minSel = group.min_select ?? 0;
+    const qOf = (id: number) => Math.max(1, Math.floor(qtyMap[id] ?? 1));
+    const unitsOther = selected
+      .filter((id) => modsInGroup.has(id) && id !== modifierId)
+      .reduce((s, id) => s + qOf(id), 0);
+
+    if (nextQty <= 0) {
+      if (unitsOther < minSel) return;
+      delete qtyMap[modifierId];
+      updateSelection({ modifierIds: selected.filter((id) => id !== modifierId), modifierQty: qtyMap });
+      return;
+    }
+    qtyMap[modifierId] = Math.max(1, Math.min(nextQty, Math.max(1, maxSel - unitsOther)));
+    updateSelection({ modifierIds: selected, modifierQty: qtyMap });
   };
 
   const toggleAddon = (addonId: number) => {
@@ -820,43 +844,7 @@ export default function MenuItemDetailPage() {
     updateSelection({ addonIds: nextAddons });
   };
 
-  const modifierGroupsFiltered = modifierGroupsOrdered;
   const hasVariants = variantsOrdered.length > 0;
-  const hasModifierGroups = modifierGroupsFiltered.length > 0;
-  const hasAddons = addonsOrdered.length > 0;
-
-  const variantSectionStatus = useMemo((): SectionStatus | undefined => {
-    if (!variantsOrdered.length) return undefined;
-    return selectedVariantId != null ? "complete" : "required-missing";
-  }, [variantsOrdered.length, selectedVariantId]);
-
-  const modifierOuterStatus = useMemo((): SectionStatus | undefined => {
-    if (!modifierGroupsFiltered.length) return undefined;
-    const anyRequiredMissing = modifierGroupsFiltered.some((g) => {
-      const min = g.min_select ?? 0;
-      if (min === 0) return false;
-      return countSelectedInGroup(g, selectedModifierIds) < min;
-    });
-    return anyRequiredMissing ? "required-missing" : "complete";
-  }, [modifierGroupsFiltered, selectedModifierIds]);
-
-  const addonSectionStatus = useMemo((): SectionStatus | undefined => {
-    if (!addonsOrdered.length) return undefined;
-    return selectedAddonIds.length > 0 ? "complete" : "optional-empty";
-  }, [addonsOrdered.length, selectedAddonIds]);
-
-  const accordionDefaults = useMemo(() => {
-    if (!currentItem) {
-      return { variants: true, modifiers: true, addons: true };
-    }
-    const hv = variantsOrdered.length > 0;
-    const hm = modifierGroupsFiltered.length > 0;
-    return {
-      variants: true,
-      modifiers: !hv,
-      addons: !hv && !hm,
-    };
-  }, [currentItem, modifierGroupsFiltered, variantsOrdered.length]);
 
   if (!itemIdValid) {
     return (
@@ -1000,227 +988,386 @@ export default function MenuItemDetailPage() {
                     </div>
                   ) : null}
 
-                  {hasVariants || hasModifierGroups || hasAddons ? (
-                    <div className="mt-6 overflow-hidden rounded-xl border border-neutral-200 bg-[var(--surface)] px-2 sm:px-3">
-                      {hasVariants ? (
-                        <PdpAccordion
-                          key={`${currentItem.id}-variants`}
-                          title="Select variant"
-                          status={variantSectionStatus}
-                          defaultOpen={accordionDefaults.variants}
-                        >
-                          <div className="space-y-2">
-                            {variantsOrdered.map((variant) => {
-                              const active = selectedVariantId === variant.id;
-                              return (
-                                <button
-                                  key={variant.id}
-                                  type="button"
-                                  onClick={() => updateSelection({ variantId: variant.id })}
+                  {hasVariants ? (
+                    <div className="mt-6">
+                      <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[var(--muted)] sm:text-xs">
+                        Select variant
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                        {variantsOrdered.map((variant) => {
+                          const active = selectedVariantId === variant.id;
+                          const total = currentItem.price + variant.price_modifier;
+                          return (
+                            <button
+                              key={variant.id}
+                              type="button"
+                              aria-pressed={active}
+                              onClick={() => updateSelection({ variantId: variant.id })}
+                              className={clsx(
+                                "min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 sm:basis-[116px]",
+                                active
+                                  ? "border-red-600 bg-red-600 text-white shadow-sm"
+                                  : "border-neutral-200 bg-white text-[var(--foreground)] hover:border-red-200",
+                              )}
+                            >
+                              <span className="block truncate text-[14px] font-bold leading-tight">{variant.name}</span>
+                              <span
+                                className={clsx(
+                                  "mt-0.5 block whitespace-nowrap text-[12px] font-bold tabular-nums leading-none",
+                                  active ? "text-white/90" : "text-red-600",
+                                )}
+                              >
+                                Rs.{total.toFixed(0)}
+                                {variant.price_modifier !== 0 ? (
+                                  <span className={clsx("ml-1 font-medium", active ? "text-white/70" : "text-[var(--muted)]")}>
+                                    ({variant.price_modifier > 0 ? "+" : "-"}Rs.{Math.abs(variant.price_modifier).toFixed(0)})
+                                  </span>
+                                ) : null}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {categories.length ? (
+                    <div className="mt-5 flex flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white sm:mt-6 sm:flex-row">
+                      {/* Categories: a horizontal scroll strip on mobile, a vertical list on sm+. */}
+                      <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-neutral-200 bg-neutral-50/70 p-2 [-ms-overflow-style:none] [scrollbar-width:none] sm:w-[182px] sm:flex-col sm:gap-1.5 sm:overflow-visible sm:border-b-0 sm:border-r sm:p-2.5 [&::-webkit-scrollbar]:hidden">
+                        <div className="hidden items-center gap-1.5 px-0.5 pb-1.5 sm:flex">
+                          <span className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-red-600 text-[11px] font-bold leading-none text-white">
+                            1
+                          </span>
+                          <span className="text-[9.5px] font-bold uppercase tracking-wide text-neutral-500 sm:text-[10px]">
+                            Tap a category
+                          </span>
+                        </div>
+                        {categories.map((cat) => {
+                          const isGroup = cat.kind === "group";
+                          const min = isGroup ? (cat.group.min_select ?? 0) : 0;
+                          const count = isGroup
+                            ? unitsInGroup(cat.group)
+                            : selectedAddonIds.length;
+                          const required = min > 0;
+                          const done = !required || count >= min;
+                          const hasSel = count > 0;
+                          const complete = required ? done : hasSel;
+                          const name = shortCategoryName(isGroup ? cat.group.name : "Add-ons");
+                          const sub = required
+                            ? done
+                              ? "Added"
+                              : "Required"
+                            : hasSel
+                              ? `${count} added`
+                              : "Optional";
+                          const subColor = required && !done
+                            ? "text-amber-600"
+                            : hasSel
+                              ? "text-emerald-600"
+                              : "text-neutral-400";
+                          const activeCat = activeCategoryKey === cat.key;
+                          return (
+                            <button
+                              key={cat.key}
+                              type="button"
+                              aria-pressed={activeCat}
+                              onClick={() => setActiveCategoryOverride(cat.key)}
+                              className={clsx(
+                                "flex shrink-0 items-center gap-1.5 rounded-lg border border-l-[3px] px-2 py-1.5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 sm:w-full sm:gap-2 sm:py-2",
+                                activeCat
+                                  ? "border-red-200 border-l-red-600 bg-red-50 shadow-sm"
+                                  : "border-neutral-200 border-l-neutral-200 bg-white hover:border-red-100",
+                              )}
+                            >
+                              <span className="flex h-4 w-4 shrink-0 items-center justify-center" aria-hidden>
+                                {complete ? (
+                                  <svg viewBox="0 0 12 12" fill="none" className="h-3.5 w-3.5">
+                                    <path d="M2.5 6.5 5 9l4.5-5.5" stroke="#16A34A" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                ) : (
+                                  <span
+                                    className={clsx(
+                                      "block h-3 w-3 rounded-full border-[1.6px]",
+                                      required ? "border-amber-400" : "border-neutral-300",
+                                    )}
+                                  />
+                                )}
+                              </span>
+                              <span className="sm:min-w-0 sm:flex-1">
+                                <span
                                   className={clsx(
-                                    "flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left transition sm:px-4 sm:py-3",
-                                    active ? "border-red-500 bg-white" : "border-neutral-200 bg-neutral-50 hover:bg-white",
+                                    "block whitespace-nowrap text-[13px] font-bold leading-tight sm:overflow-hidden sm:text-ellipsis",
+                                    activeCat ? "text-red-600" : "text-[var(--foreground)]",
                                   )}
                                 >
-                                  <span className="flex items-center gap-3">
-                                    <span
-                                      className={clsx(
-                                        "inline-flex h-5 w-5 items-center justify-center rounded-full border text-white",
-                                        active ? "border-red-600 bg-red-600" : "border-neutral-400 bg-white text-transparent",
-                                      )}
-                                    >
-                                      {CHECK_ICON}
-                                    </span>
-                                    <span>
-                                      <span className="block text-sm font-bold leading-tight text-[var(--foreground)] sm:text-[15px]">
-                                        {variant.name}
-                                      </span>
-                                      <span className="block text-base font-bold tabular-nums leading-none text-[var(--muted)]">
-                                        {variant.price_modifier >= 0 ? "+" : "-"} Rs.
-                                        {Math.abs(variant.price_modifier).toFixed(0)}
-                                      </span>
-                                    </span>
+                                  {name}
+                                </span>
+                                <span className={clsx("mt-0.5 block text-[11px] font-semibold leading-none", subColor)}>
+                                  {sub}
+                                </span>
+                              </span>
+                              <span className="hidden shrink-0 sm:inline-flex" aria-hidden>
+                                {activeCat ? (
+                                  <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white">
+                                    <svg viewBox="0 0 16 16" fill="none" className="h-2.5 w-2.5">
+                                      <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
                                   </span>
-                                  <span className={PDP_PRICE_TEXT}>
-                                    Rs.{(currentItem.price + variant.price_modifier).toFixed(0)}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </PdpAccordion>
-                      ) : null}
+                                ) : (
+                                  <svg viewBox="0 0 16 16" fill="none" className="h-3.5 w-3.5 text-neutral-400">
+                                    <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                )}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
 
-                      {hasModifierGroups ? (
-                        <PdpAccordion
-                          key={`${currentItem.id}-modifiers`}
-                          title="Modifiers"
-                          status={modifierOuterStatus}
-                          defaultOpen={accordionDefaults.modifiers}
-                        >
-                          <div className="max-h-64 space-y-1 overflow-y-auto pr-0.5 [-ms-overflow-style:auto] [scrollbar-width:thin]">
-                            {modifierGroupsFiltered.map((group, groupIndex) => {
-                              const minSelect = group.min_select ?? 0;
-                              const count = countSelectedInGroup(group, selectedModifierIds);
-                              const minOk = count >= minSelect;
-                              const maxOne = (group.max_select ?? 99) === 1;
-                              const groupStatus: SectionStatus = minOk
-                                ? "complete"
-                                : minSelect > 0
-                                  ? "required-missing"
-                                  : "optional-empty";
-
+                      <div className="min-w-0 flex-1 p-3 sm:p-4">
+                        {activeCategory
+                          ? (() => {
+                              const isGroup = activeCategory.kind === "group";
+                              const grp = isGroup ? activeCategory.group : null;
+                              const min = grp?.min_select ?? 0;
+                              const max = grp?.max_select ?? 99;
+                              const single = isGroup ? max === 1 : false;
+                              const count = grp ? unitsInGroup(grp) : selectedAddonIds.length;
+                              const helper = !isGroup
+                                ? "Add any"
+                                : single
+                                  ? "Choose 1"
+                                  : min > 0
+                                    ? `Choose at least ${min}`
+                                    : grp?.max_select == null || max >= 99
+                                      ? "Add any"
+                                      : `Up to ${max}`;
+                              const title = shortCategoryName(isGroup ? grp!.name : "Add-ons");
+                              const hasTiers = !!(grp?.price_tiers && Object.keys(grp.price_tiers).length > 0);
+                              // First-N-free allowance (size-aware), per UNIT and cheapest-first — the exact
+                              // rule the POS configurator and the backend pricing use.
+                              const includedFree = grp
+                                ? sizeKey && grp.included_by_size && grp.included_by_size[sizeKey] != null
+                                  ? Number(grp.included_by_size[sizeKey])
+                                  : grp.included_quantity ?? 0
+                                : 0;
+                              const freeUnitsByMod = new Map<number, number>();
+                              let freeRemaining = includedFree;
+                              if (grp && includedFree > 0) {
+                                const sel = (grp.modifiers ?? [])
+                                  .filter((m) => effectiveSelectedModifierIds.includes(m.id))
+                                  .map((m) => ({ id: m.id, qty: quantityOf(m.id), unit: resolveModifierUnitPrice(m, sizeKey) }))
+                                  .sort((a, b) => a.unit - b.unit);
+                                const maxQty = sel.reduce((mx, s) => Math.max(mx, s.qty), 0);
+                                outer: for (let slot = 0; slot < maxQty; slot++) {
+                                  for (const s of sel) {
+                                    if (freeRemaining <= 0) break outer;
+                                    if (s.qty <= slot) continue;
+                                    freeUnitsByMod.set(s.id, (freeUnitsByMod.get(s.id) ?? 0) + 1);
+                                    freeRemaining--;
+                                  }
+                                }
+                              }
                               return (
-                                <PdpAccordion
-                                  key={`${currentItem.id}-mod-g-${group.id}`}
-                                  title={groupChooseTitle(group)}
-                                  status={groupStatus}
-                                  defaultOpen={groupIndex === 0}
-                                >
-                                  {!minOk && minSelect > 0 ? (
-                                    <p className="mb-2 text-xs text-amber-700">
-                                      Select at least {minSelect}.
-                                    </p>
+                                <>
+                                  <p className="text-[10px] font-bold uppercase tracking-wide text-red-600 sm:text-[10.5px]">
+                                    2 · Options for
+                                  </p>
+                                  <div className="mb-3 mt-0.5 flex flex-wrap items-baseline gap-x-2">
+                                    <span className="text-[16px] font-bold leading-tight text-[var(--foreground)] sm:text-[17px]">
+                                      {title}
+                                    </span>
+                                    <span className="text-[12px] font-medium text-neutral-400">{helper}</span>
+                                  </div>
+                                  {hasTiers ? (
+                                    <div className="mb-2.5 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-[12px] font-medium text-emerald-700">
+                                      {includedFree > 0 ? `First ${includedFree} free · ` : ""}Extra: {formatTiers(grp!.price_tiers ?? {})}
+                                    </div>
+                                  ) : includedFree > 0 ? (
+                                    <div className="mb-2.5 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-[12px] font-medium text-emerald-700">
+                                      First {includedFree} free — extras charged at the price shown.
+                                    </div>
                                   ) : null}
-                                  {maxOne ? (
-                                    <div className="flex flex-wrap gap-2">
-                                      {sortModifiersById(group.modifiers ?? []).map((mod) => {
-                                        const active = selectedModifierIds.includes(mod.id);
-                                        return (
-                                          <button
-                                            key={mod.id}
-                                            type="button"
-                                            onClick={() => toggleModifier(group, mod.id)}
-                                            className={clsx(
-                                              "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition sm:px-3.5 sm:py-2 sm:text-[13px]",
-                                              active
-                                                ? "border-red-600 bg-red-600 text-white"
-                                                : "border-neutral-200 bg-white text-[var(--foreground)] hover:bg-neutral-100",
-                                            )}
-                                          >
-                                            {active ? (
-                                              <span className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/20 text-white">
-                                                {CHECK_ICON}
-                                              </span>
-                                            ) : null}
-                                            <span>{mod.name}</span>
-                                            <span
+                                  <div className="max-h-[18rem] space-y-1.5 overflow-y-auto pr-0.5 [scrollbar-width:thin]">
+                                    {isGroup
+                                      ? sortModifiersByOrder(grp!.modifiers ?? [])
+                                          .filter((mod) => isModAvailableForSize(mod, sizeKey))
+                                          .map((mod) => {
+                                          const active = selectedModifierIds.includes(mod.id);
+                                          const atMax = !single && max < 99 && count >= max && !active;
+                                          const unit = resolveModifierUnitPrice(mod, sizeKey);
+                                          const qty = active ? quantityOf(mod.id) : 0;
+                                          const freeUnits = freeUnitsByMod.get(mod.id) ?? 0;
+                                          // Price label — identical rules to the POS ItemConfigModal.
+                                          let priceLabel: string | null;
+                                          let charged = false;
+                                          if (unit <= 0) {
+                                            priceLabel = hasTiers ? null : min > 0 ? "Included" : "Free";
+                                          } else if (active) {
+                                            const chargedUnits = qty - freeUnits;
+                                            if (chargedUnits <= 0) {
+                                              priceLabel = "Included";
+                                            } else {
+                                              priceLabel = `+ Rs.${(unit * chargedUnits).toFixed(0)}`;
+                                              charged = true;
+                                            }
+                                          } else if (freeRemaining > 0) {
+                                            priceLabel = "Free";
+                                          } else {
+                                            priceLabel = `+ Rs.${unit.toFixed(0)}`;
+                                            charged = true;
+                                          }
+                                          const canRepeat =
+                                            active && !single && (unit > 0 || includedFree > 0 || min > 0 || !!grp!.allow_quantity);
+                                          return (
+                                            <div
+                                              key={mod.id}
                                               className={clsx(
-                                                "text-base font-bold tabular-nums leading-none",
-                                                active ? "text-white" : "text-red-600",
+                                                "flex items-center gap-2 rounded-lg border px-3 py-2 transition",
+                                                active ? "border-red-600 bg-red-50" : "border-neutral-200 bg-white",
+                                                atMax && "border-neutral-200 bg-neutral-50 opacity-60",
                                               )}
                                             >
-                                              {mod.price >= 0 ? "+" : "-"}Rs.{Math.abs(mod.price).toFixed(0)}
-                                            </span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  ) : (
-                                    <div className="space-y-2">
-                                      {sortModifiersById(group.modifiers ?? []).map((mod) => {
-                                        const active = selectedModifierIds.includes(mod.id);
-                                        return (
-                                          <button
-                                            key={mod.id}
-                                            type="button"
-                                            onClick={() => toggleModifier(group, mod.id)}
-                                            className={clsx(
-                                              "flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left transition sm:px-4 sm:py-3",
-                                              active ? "border-red-300 bg-red-50" : "border-neutral-200 bg-white hover:bg-neutral-50",
-                                            )}
-                                          >
-                                            <span className="flex items-center gap-3">
+                                              <button
+                                                type="button"
+                                                disabled={atMax}
+                                                aria-pressed={active}
+                                                onClick={() => toggleModifier(grp!, mod.id)}
+                                                className={clsx(
+                                                  "flex min-w-0 flex-1 items-center gap-2.5 rounded-md py-0.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500",
+                                                  atMax && "cursor-not-allowed",
+                                                )}
+                                              >
+                                                <span
+                                                  className={clsx(
+                                                    "inline-flex h-5 w-5 shrink-0 items-center justify-center border-[1.6px] text-white",
+                                                    single ? "rounded-full" : "rounded-md",
+                                                    active ? "border-red-600 bg-red-600" : "border-neutral-300 bg-white text-transparent",
+                                                  )}
+                                                >
+                                                  {CHECK_ICON}
+                                                </span>
+                                                <span
+                                                  className={clsx(
+                                                    "min-w-0 flex-1 truncate text-[14px] font-semibold",
+                                                    active ? "text-red-600" : "text-[var(--foreground)]",
+                                                  )}
+                                                >
+                                                  {mod.name}
+                                                </span>
+                                                {priceLabel ? (
+                                                  <span
+                                                    className={clsx(
+                                                      "shrink-0 text-[13px] font-bold tabular-nums leading-none",
+                                                      charged ? "text-neutral-600" : "text-emerald-600",
+                                                    )}
+                                                  >
+                                                    {priceLabel}
+                                                  </span>
+                                                ) : null}
+                                              </button>
+                                              {canRepeat ? (
+                                                <div className="inline-flex shrink-0 items-center overflow-hidden rounded-lg border border-neutral-300 bg-white">
+                                                  <button
+                                                    type="button"
+                                                    aria-label={`Decrease ${mod.name}`}
+                                                    onClick={() => setModifierQuantity(grp!, mod.id, qty - 1)}
+                                                    className="px-2 py-1 text-neutral-600 transition hover:bg-neutral-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500"
+                                                  >
+                                                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden>
+                                                      <path d="M5 12h14" strokeLinecap="round" />
+                                                    </svg>
+                                                  </button>
+                                                  <span className="min-w-[1.75rem] px-0.5 text-center text-[13px] font-bold tabular-nums">{qty}</span>
+                                                  <button
+                                                    type="button"
+                                                    aria-label={`Increase ${mod.name}`}
+                                                    disabled={!single && max < 99 && count >= max}
+                                                    onClick={() => setModifierQuantity(grp!, mod.id, qty + 1)}
+                                                    className="px-2 py-1 text-neutral-600 transition hover:bg-neutral-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                                  >
+                                                    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden>
+                                                      <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+                                                    </svg>
+                                                  </button>
+                                                </div>
+                                              ) : null}
+                                            </div>
+                                          );
+                                        })
+                                      : addonsOrdered.map((addon) => {
+                                          const active = selectedAddonIds.includes(addon.id);
+                                          return (
+                                            <button
+                                              key={addon.id}
+                                              type="button"
+                                              aria-pressed={active}
+                                              onClick={() => toggleAddon(addon.id)}
+                                              className={clsx(
+                                                "flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500",
+                                                active ? "border-red-600 bg-red-50" : "border-neutral-200 bg-white hover:border-neutral-300",
+                                              )}
+                                            >
                                               <span
                                                 className={clsx(
-                                                  "inline-flex h-5 w-5 items-center justify-center rounded border text-white",
-                                                  active ? "border-red-600 bg-red-600" : "border-neutral-400 bg-white text-transparent",
+                                                  "inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-[1.6px] text-white",
+                                                  active ? "border-red-600 bg-red-600" : "border-neutral-300 bg-white text-transparent",
                                                 )}
                                               >
                                                 {CHECK_ICON}
                                               </span>
-                                              <span className="text-sm font-semibold text-[var(--foreground)] sm:text-[15px]">
-                                                {mod.name}
+                                              <span
+                                                className={clsx(
+                                                  "min-w-0 flex-1 truncate text-[14px] font-semibold",
+                                                  active ? "text-red-600" : "text-[var(--foreground)]",
+                                                )}
+                                              >
+                                                {addon.name}
                                               </span>
-                                            </span>
-                                            <span className={PDP_PRICE_TEXT}>
-                                              {mod.price >= 0 ? "+" : "-"} Rs.{Math.abs(mod.price).toFixed(0)}
-                                            </span>
-                                          </button>
-                                        );
-                                      })}
-                                    </div>
-                                  )}
-                                </PdpAccordion>
+                                              <span
+                                                className={clsx(
+                                                  "shrink-0 text-[13px] font-bold tabular-nums leading-none",
+                                                  active ? "text-red-600" : addon.price > 0 ? "text-neutral-600" : "text-emerald-600",
+                                                )}
+                                              >
+                                                {addon.price > 0 ? `+ Rs.${addon.price.toFixed(0)}` : "Free"}
+                                              </span>
+                                            </button>
+                                          );
+                                        })}
+                                  </div>
+                                </>
                               );
-                            })}
-                          </div>
-                        </PdpAccordion>
-                      ) : null}
-
-                      {hasAddons ? (
-                        <PdpAccordion
-                          key={`${currentItem.id}-addons`}
-                          title="Add-ons"
-                          status={addonSectionStatus}
-                          defaultOpen={accordionDefaults.addons}
-                        >
-                          <div className="max-h-64 space-y-2 overflow-y-auto pr-0.5 [-ms-overflow-style:auto] [scrollbar-width:thin]">
-                            {addonsOrdered.map((addon) => {
-                              const active = selectedAddonIds.includes(addon.id);
-                              return (
-                                <button
-                                  key={addon.id}
-                                  type="button"
-                                  onClick={() => toggleAddon(addon.id)}
-                                  className={clsx(
-                                    "flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left transition sm:px-4 sm:py-3",
-                                    active ? "border-red-300 bg-red-50" : "border-neutral-200 bg-white hover:bg-neutral-50",
-                                  )}
-                                >
-                                  <span className="flex items-center gap-3">
-                                    <span
-                                      className={clsx(
-                                        "inline-flex h-5 w-5 items-center justify-center rounded border text-white",
-                                        active ? "border-red-600 bg-red-600" : "border-neutral-400 bg-white text-transparent",
-                                      )}
-                                    >
-                                      {CHECK_ICON}
-                                    </span>
-                                    <span className="text-sm font-semibold text-[var(--foreground)] sm:text-[15px]">
-                                      {addon.name}
-                                    </span>
-                                  </span>
-                                  <span className={PDP_PRICE_TEXT}>
-                                    + Rs.{addon.price.toFixed(0)}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </PdpAccordion>
-                      ) : null}
+                            })()
+                          : null}
+                      </div>
                     </div>
                   ) : null}
 
-                  <div className="mt-5 rounded-xl border border-neutral-200 bg-neutral-50 p-3 sm:mt-6 sm:p-4">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--muted)] sm:text-xs">Selected price</p>
-                    <p className={clsx("mt-0.5", PDP_PRICE_TEXT)}>Rs.{selectedPrice.toFixed(0)}</p>
+                  <div className="mt-5 flex flex-col gap-3 border-t border-neutral-200 pt-4 sm:mt-6 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted)]">Total</p>
+                      <p className="text-2xl font-black tabular-nums leading-tight text-red-600">
+                        Rs.{selectedPrice.toFixed(0)}
+                      </p>
+                    </div>
+                    <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
+                      <Link
+                        href="/order-info"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-black px-5 py-3 text-[13px] font-black uppercase tracking-wide !text-white transition hover:bg-neutral-900 sm:w-auto sm:text-sm"
+                      >
+                        <svg className="h-4 w-4 shrink-0 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                          <rect x="7" y="2.5" width="10" height="19" rx="2" />
+                          <path d="M10 18h4" />
+                        </svg>
+                        {orderRedirectConfig.ctaLabel}
+                      </Link>
+                      <p className="text-center text-[12px] text-[var(--muted)] sm:text-right">
+                        Ordering is currently available on our mobile app.
+                      </p>
+                    </div>
                   </div>
-
-                  <Link
-                    href="/order-info"
-                    className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-black px-4 py-2.5 text-xs font-black uppercase tracking-wide !text-white transition hover:bg-neutral-900 sm:mt-5 sm:py-3 sm:text-sm"
-                  >
-                    <svg className="h-4 w-4 shrink-0 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                      <rect x="7" y="2.5" width="10" height="19" rx="2" />
-                      <path d="M10 18h4" />
-                    </svg>
-                    {orderRedirectConfig.ctaLabel}
-                  </Link>
-                  <p className="mt-2 text-center text-xs text-[var(--muted)]">
-                    Ordering is currently available on our mobile app.
-                  </p>
                 </div>
               </div>
             </section>

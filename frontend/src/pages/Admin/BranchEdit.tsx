@@ -28,12 +28,26 @@ const emptyForm = {
   email: '',
   latitude: '',
   longitude: '',
+  timezone: 'Asia/Karachi',
   supports_dine_in: true,
   supports_takeaway: true,
   supports_delivery: false,
   delivery_radius_km: '10',
   is_active: true,
 };
+
+/** Common timezones; the branch's own time gates time-restricted items/deals (e.g. lunch offers). */
+const TIMEZONE_OPTIONS = [
+  'Asia/Karachi',
+  'Asia/Dubai',
+  'Asia/Riyadh',
+  'Asia/Kolkata',
+  'Europe/London',
+  'Europe/Amsterdam',
+  'Europe/Lisbon',
+  'Europe/Istanbul',
+  'UTC',
+];
 // ssh -i ~/Downloads/sera.pem ubuntu@3.148.166.208
 // asad@asad:~$ ssh -i ~/Downloads/foodies-dev.pem ubuntu@13.250.34.49
 
@@ -115,6 +129,7 @@ const BranchEdit: React.FC = () => {
         email: branch.email || '',
         latitude: branch.latitude != null ? String(branch.latitude) : '',
         longitude: branch.longitude != null ? String(branch.longitude) : '',
+        timezone: branch.timezone || 'Asia/Karachi',
         supports_dine_in: branch.supports_dine_in ?? true,
         // Pickup is deprecated; treat legacy branch flag as takeaway.
         supports_takeaway:
@@ -232,6 +247,7 @@ const BranchEdit: React.FC = () => {
         email: data.email || undefined,
         latitude: data.latitude ? +data.latitude : undefined,
         longitude: data.longitude ? +data.longitude : undefined,
+        timezone: data.timezone || undefined,
         supports_dine_in: data.supports_dine_in,
         supports_takeaway: data.supports_takeaway,
         supports_delivery: data.supports_delivery,
@@ -262,6 +278,7 @@ const BranchEdit: React.FC = () => {
         email: data.email || undefined,
         latitude: data.latitude ? +data.latitude : undefined,
         longitude: data.longitude ? +data.longitude : undefined,
+        timezone: data.timezone || undefined,
         supports_dine_in: data.supports_dine_in,
         supports_takeaway: data.supports_takeaway,
         supports_delivery: data.supports_delivery,
@@ -429,6 +446,21 @@ const BranchEdit: React.FC = () => {
                 <label className={labelClass}>Email</label>
                 <input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} className={inputClass} />
               </div>
+            </div>
+            <div>
+              <label className={labelClass}>Timezone</label>
+              <select
+                value={formData.timezone}
+                onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
+                className={inputClass}
+              >
+                {(TIMEZONE_OPTIONS.includes(formData.timezone) ? TIMEZONE_OPTIONS : [formData.timezone, ...TIMEZONE_OPTIONS]).map((tz) => (
+                  <option key={tz} value={tz}>{tz}</option>
+                ))}
+              </select>
+              <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                The branch's local time. Time-restricted items &amp; deals (e.g. lunch offers) go live by this clock.
+              </p>
             </div>
             <div>
               <label className={labelClass}>Pin location on map</label>

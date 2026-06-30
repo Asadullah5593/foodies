@@ -32,6 +32,8 @@ export type Modifier = {
   price_by_size?: Record<string, number> | null;
   /** Restrict this option to certain sizes (e.g. ["10","12","14"]); null/empty = every size. */
   available_for_sizes?: string[] | null;
+  /** Admin/POS-configured display order within the group; lower shows first. */
+  sort_order?: number;
 };
 
 export type ModifierGroup = {

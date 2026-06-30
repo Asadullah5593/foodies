@@ -218,6 +218,7 @@ export class MenuController {
             available_for_order_types?: string[] | null;
             allergens?: string[] | null;
             calories?: number | null;
+            label?: string | null;
             available_time_start?: string | null;
             available_time_end?: string | null;
             available_days_of_week?: number[] | null;
@@ -287,6 +288,7 @@ export class MenuController {
             available_for_order_types?: string[] | null;
             allergens?: string[] | null;
             calories?: number | null;
+            label?: string | null;
             available_time_start?: string | null;
             available_time_end?: string | null;
             available_days_of_week?: number[] | null;
@@ -473,6 +475,7 @@ export class MenuController {
     async modifierGroups(
         @CurrentUser() user: MenuUser,
         @Query('brand_id') brandIdParam: string,
+        @Query('menu_item_id') menuItemIdParam: string,
     ) {
         const brandId = this.resolveBrandScope(
             user,
@@ -483,7 +486,8 @@ export class MenuController {
                 brandId,
                 user.tenantId,
             );
-        return this.service.getModifierGroups(brandId, user.tenantId);
+        const menuItemId = menuItemIdParam ? +menuItemIdParam : null;
+        return this.service.getModifierGroups(brandId, user.tenantId, menuItemId);
     }
 
     @Post('modifier-groups')
@@ -499,6 +503,7 @@ export class MenuController {
             included_by_size?: Record<string, number> | null;
             allow_quantity?: boolean;
             price_tiers?: Record<string, number> | null;
+            hide_in_deals?: boolean;
         },
     ) {
         this.resolveBrandScope(user, dto.brand_id);
@@ -545,6 +550,7 @@ export class MenuController {
             included_by_size?: Record<string, number> | null;
             allow_quantity?: boolean;
             price_tiers?: Record<string, number> | null;
+            hide_in_deals?: boolean;
         },
     ) {
         await this.assertEntityBrand(user, 'modifier-group', +id);
@@ -723,6 +729,7 @@ export class MenuController {
                 quantity: number;
                 allow_customization: boolean;
                 slot_surcharges?: Record<string, number> | null;
+                slot_size_key?: string | null;
             }>;
         },
     ) {

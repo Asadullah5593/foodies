@@ -207,8 +207,10 @@ const Modifiers: React.FC = () => {
   const [page, setPage] = useState(1);
   // Local modifier order per group (groupId → ordered modifier ids).
   const [localOrder, setLocalOrder] = useState<Map<number, number[]>>(new Map());
-  // Local group order (brandId → ordered group ids).
+  // Local group order (brandId → ordered group ids) — used for brand-level reorder.
   const [localGroupOrder, setLocalGroupOrder] = useState<Map<number, number[]>>(new Map());
+  // Local group order per menu item (itemId → ordered group ids) — used for per-item reorder.
+  const [localItemGroupOrder, setLocalItemGroupOrder] = useState<Map<number, number[]>>(new Map());
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const { data: brands } = useQuery({
@@ -219,13 +221,24 @@ const Modifiers: React.FC = () => {
     },
   });
 
+  // Auto-select the brand when only one is accessible.
+  const singleBrand = brands?.length === 1 ? brands[0] : null;
+  useEffect(() => {
+    if (singleBrand && !filters.brand_id) {
+      setFilters((f) => ({ ...f, brand_id: String(singleBrand.id) }));
+    }
+  }, [singleBrand]);
+
   const effectiveBrandId = filters.brand_id ? +filters.brand_id : null;
+  const effectiveMenuItemId = filters.menu_item_id ? +filters.menu_item_id : null;
 
   const { data: modifierGroups, isLoading } = useQuery({
-    queryKey: ['modifierGroups', effectiveBrandId],
+    queryKey: ['modifierGroups', effectiveBrandId, effectiveMenuItemId],
     queryFn: () =>
       adminService.getModifierGroups(
-        effectiveBrandId != null ? { brand_id: effectiveBrandId } : undefined,
+        effectiveBrandId != null
+          ? { brand_id: effectiveBrandId, ...(effectiveMenuItemId != null ? { menu_item_id: effectiveMenuItemId } : {}) }
+          : undefined,
       ),
     enabled: true,
   });
@@ -238,8 +251,22 @@ const Modifiers: React.FC = () => {
 
   const filteredGroups = useMemo(() => {
     let groups = (modifierGroups ?? []) as ModifierGroupResponse[];
-    // Apply optimistic local reorder before filtering so drag-and-drop is immediately visible
-    if (localGroupOrder.size > 0) {
+    if (effectiveMenuItemId != null) {
+      // Per-item mode: server already filtered + sorted by per-item positions.
+      // Apply optimistic local reorder on top.
+      const itemOrder = localItemGroupOrder.get(effectiveMenuItemId);
+      if (itemOrder) {
+        groups = [...groups].sort((a, b) => {
+          const ai = itemOrder.indexOf(a.id);
+          const bi = itemOrder.indexOf(b.id);
+          if (ai === -1 && bi === -1) return 0;
+          if (ai === -1) return 1;
+          if (bi === -1) return -1;
+          return ai - bi;
+        });
+      }
+    } else if (localGroupOrder.size > 0) {
+      // Brand-level mode: apply optimistic brand-level reorder.
       groups = [...groups].sort((a, b) => {
         if (a.brand_id !== b.brand_id) return 0;
         const order = localGroupOrder.get(a.brand_id ?? -1);
@@ -258,12 +285,8 @@ const Modifiers: React.FC = () => {
         (g) => g.name.toLowerCase().includes(q) || (g.modifiers ?? []).some((m) => m.name.toLowerCase().includes(q)),
       );
     }
-    if (filters.menu_item_id) {
-      const itemId = +filters.menu_item_id;
-      groups = groups.filter((g) => (g.linked_menu_items ?? []).some((mi) => mi.id === itemId));
-    }
     return groups;
-  }, [modifierGroups, localGroupOrder, debouncedModifierSearch, filters.menu_item_id]);
+  }, [modifierGroups, localGroupOrder, localItemGroupOrder, effectiveMenuItemId, debouncedModifierSearch]);
 
   const modifierSearchTypeahead = useTypeaheadSuggestions({
     query: debouncedModifierSearch,
@@ -398,6 +421,9 @@ const Modifiers: React.FC = () => {
   const reorderItemGroupsMutation = useMutation({
     mutationFn: ({ itemId, orderedIds }: { itemId: number; orderedIds: number[] }) =>
       adminService.reorderItemModifierGroups(itemId, orderedIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['modifierGroups', effectiveBrandId, effectiveMenuItemId] });
+    },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to save item group order'),
   });
 
@@ -410,18 +436,22 @@ const Modifiers: React.FC = () => {
       for (const g of groups) next.set(g.id, (g.modifiers ?? []).map((m) => m.id));
       return next;
     });
-    setLocalGroupOrder((prev) => {
-      const next = new Map(prev);
-      // Group by brand_id
-      const byBrand = new Map<number, number[]>();
-      for (const g of groups) {
-        const arr = byBrand.get(g.brand_id) ?? [];
-        arr.push(g.id);
-        byBrand.set(g.brand_id, arr);
-      }
-      for (const [brandId, ids] of byBrand) next.set(brandId, ids);
-      return next;
-    });
+    if (effectiveMenuItemId != null) {
+      // Per-item mode: server returned groups already sorted by per-item positions.
+      setLocalItemGroupOrder((prev) => new Map(prev).set(effectiveMenuItemId, groups.map((g) => g.id)));
+    } else {
+      setLocalGroupOrder((prev) => {
+        const next = new Map(prev);
+        const byBrand = new Map<number, number[]>();
+        for (const g of groups) {
+          const arr = byBrand.get(g.brand_id) ?? [];
+          arr.push(g.id);
+          byBrand.set(g.brand_id, arr);
+        }
+        for (const [brandId, ids] of byBrand) next.set(brandId, ids);
+        return next;
+      });
+    }
   }, [modifierGroups]);
 
   const isSubmitting =
@@ -450,20 +480,38 @@ const Modifiers: React.FC = () => {
 
       <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-3 items-end">
-          <SearchableSelect
-            label="Brand"
-            value={filters.brand_id}
-            onChange={(v) => setFilters((f) => ({ ...f, brand_id: v }))}
-            options={[
-              { value: '', label: 'Select brand' },
-              ...(brands ?? []).map((b) => ({
-                value: String(b.id),
-                label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
-              })),
-            ]}
-            placeholder="Select brand"
-            minWidth="min-w-[180px]"
-          />
+          {!singleBrand && (
+            <SearchableSelect
+              label="Brand"
+              value={filters.brand_id}
+              onChange={(v) => setFilters((f) => ({ ...f, brand_id: v, menu_item_id: '' }))}
+              options={[
+                { value: '', label: 'All brands' },
+                ...(brands ?? []).map((b) => ({
+                  value: String(b.id),
+                  label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+                })),
+              ]}
+              placeholder="All brands"
+              minWidth="min-w-[180px]"
+            />
+          )}
+          {effectiveBrandId != null && (
+            <SearchableSelect
+              label="Menu Item"
+              value={filters.menu_item_id}
+              onChange={(v) => setFilters((f) => ({ ...f, menu_item_id: v }))}
+              options={[
+                { value: '', label: 'All items' },
+                ...(menuItemsForFilter ?? []).map((mi: { id: number; name: string }) => ({
+                  value: String(mi.id),
+                  label: mi.name,
+                })),
+              ]}
+              placeholder="All items"
+              minWidth="min-w-[180px]"
+            />
+          )}
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Search</label>
             <div className="relative">
@@ -506,23 +554,7 @@ const Modifiers: React.FC = () => {
               />
             </div>
           </div>
-          {effectiveBrandId != null && (
-            <SearchableSelect
-              label="Menu Item"
-              value={filters.menu_item_id}
-              onChange={(v) => setFilters((f) => ({ ...f, menu_item_id: v }))}
-              options={[
-                { value: '', label: 'All items' },
-                ...(menuItemsForFilter ?? []).map((mi: { id: number; name: string }) => ({
-                  value: String(mi.id),
-                  label: mi.name,
-                })),
-              ]}
-              placeholder="All items"
-              minWidth="min-w-[180px]"
-            />
-          )}
-          <ClearFiltersButton onClick={() => setFilters({ brand_id: '', search: '', menu_item_id: '' })} />
+          <ClearFiltersButton onClick={() => setFilters(singleBrand ? { brand_id: String(singleBrand.id), search: '', menu_item_id: '' } : { brand_id: '', search: '', menu_item_id: '' })} />
         </div>
       </Card>
 
@@ -928,7 +960,7 @@ const Modifiers: React.FC = () => {
         {filteredGroups.length === 0 ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">
             <p className="text-center text-gray-500 dark:text-slate-400 py-12">
-              {effectiveBrandId == null ? 'Select a brand to see modifier groups.' : 'No modifier groups found. Create a group above.'}
+              No modifier groups found. Create a group above.
             </p>
           </Card>
         ) : (
@@ -946,16 +978,24 @@ const Modifiers: React.FC = () => {
               if (!over || active.id === over.id) return;
               const activeGroup = filteredGroups.find((g) => g.id === Number(active.id));
               if (!activeGroup) return;
-              const brandId = activeGroup.brand_id;
-              const currentIds = localGroupOrder.get(brandId) ?? filteredGroups.filter((g) => g.brand_id === brandId).map((g) => g.id);
-              const oldIdx = currentIds.indexOf(Number(active.id));
-              const newIdx = currentIds.indexOf(Number(over.id));
-              const newIds = arrayMove(currentIds, oldIdx, newIdx);
-              setLocalGroupOrder((prev) => new Map(prev).set(brandId, newIds));
-              const selectedItemId = filters.menu_item_id ? +filters.menu_item_id : null;
-              if (selectedItemId) {
-                reorderItemGroupsMutation.mutate({ itemId: selectedItemId, orderedIds: newIds });
+              if (effectiveMenuItemId != null) {
+                // Per-item reorder: only send the IDs of groups visible for this item
+                const visibleIds = filteredGroups.map((g) => g.id);
+                const oldIdx = visibleIds.indexOf(Number(active.id));
+                const newIdx = visibleIds.indexOf(Number(over.id));
+                if (oldIdx === -1 || newIdx === -1) return;
+                const newIds = arrayMove(visibleIds, oldIdx, newIdx);
+                setLocalItemGroupOrder((prev) => new Map(prev).set(effectiveMenuItemId, newIds));
+                reorderItemGroupsMutation.mutate({ itemId: effectiveMenuItemId, orderedIds: newIds });
               } else {
+                // Brand-level reorder
+                const brandId = activeGroup.brand_id;
+                const currentIds = localGroupOrder.get(brandId) ?? filteredGroups.filter((g) => g.brand_id === brandId).map((g) => g.id);
+                const oldIdx = currentIds.indexOf(Number(active.id));
+                const newIdx = currentIds.indexOf(Number(over.id));
+                if (oldIdx === -1 || newIdx === -1) return;
+                const newIds = arrayMove(currentIds, oldIdx, newIdx);
+                setLocalGroupOrder((prev) => new Map(prev).set(brandId, newIds));
                 reorderGroupsMutation.mutate({ brandId, orderedIds: newIds });
               }
             }}

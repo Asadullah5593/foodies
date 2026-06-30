@@ -251,7 +251,7 @@ async function ensureBranchesForBrand(brandId: number, brandSlug: string) {
                 address: null,
                 phone: null,
                 email: null,
-                timezone: 'UTC',
+                timezone: 'Asia/Karachi',
                 operatingHours: null,
                 supportsDineIn: true,
                 supportsTakeaway: true,

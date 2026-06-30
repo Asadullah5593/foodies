@@ -209,9 +209,10 @@ export const adminService = {
   },
 
   // Modifier groups (brand-scoped)
-  getModifierGroups: async (params?: { brand_id?: number }): Promise<ModifierGroupResponse[]> => {
+  getModifierGroups: async (params?: { brand_id?: number; menu_item_id?: number }): Promise<ModifierGroupResponse[]> => {
     const search = new URLSearchParams();
     if (params?.brand_id != null) search.append('brand_id', String(params.brand_id));
+    if (params?.menu_item_id != null) search.append('menu_item_id', String(params.menu_item_id));
     const query = search.toString();
     const response = await apiClient.get(`/admin/menu/modifier-groups${query ? '?' + query : ''}`);
     return response.data;

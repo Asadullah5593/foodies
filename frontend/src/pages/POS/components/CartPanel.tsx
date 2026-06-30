@@ -100,20 +100,20 @@ const CartPanel: React.FC<CartPanelProps> = ({
                         {isDeal ? (item.dealName ?? item.menuItem.name) : item.menuItem.name}
                       </h4>
                       {isDeal && item.components?.length ? (
+                        // A deal is a fixed-price bundle — show the chosen components (names/sizes
+                        // only), never per-component prices, so the deal total isn't second-guessed.
                         <ul className="mt-1 text-xs text-foodies-textSecondary space-y-0.5">
                           {item.components.map((c, i) => {
                             const variant = c.variantId && c.menuItem.variants?.length ? c.menuItem.variants.find(v => v.id === c.variantId) : null;
-                            const variantPrice = variant ? Number(variant.price_modifier ?? 0) : 0;
                             return (
                               <li key={i} className="pl-1 border-l-2 border-foodies-border dark:border-slate-600">
                                 {c.quantity}x {c.menuItem.name}
-                                {variant ? <span className="text-foodies-textSecondary"> — {variant.name} ({formatCurrency(variantPrice)})</span> : null}
+                                {variant ? <span className="text-foodies-textSecondary"> — {variant.name}</span> : null}
                                 {(c.addons ?? []).length > 0 ? (
                                   <ul className="mt-0.5 ml-2 space-y-0.5">
                                     {(c.addons ?? []).map((a) => {
                                       const addon = c.menuItem.addons?.find(ad => ad.id === a.addonId);
-                                      const p = addon ? Number(addon.price ?? 0) * a.quantity : 0;
-                                      return addon ? <li key={a.addonId}>+ {addon.name} ×{a.quantity} {formatCurrency(p)}</li> : null;
+                                      return addon ? <li key={a.addonId}>+ {addon.name} ×{a.quantity}</li> : null;
                                     })}
                                   </ul>
                                 ) : null}
@@ -121,8 +121,7 @@ const CartPanel: React.FC<CartPanelProps> = ({
                                   <ul className="mt-0.5 ml-2 space-y-0.5">
                                     {(c.modifiers ?? []).map((m) => {
                                       const mod = c.menuItem.modifier_groups?.flatMap(g => g.modifiers).find(mo => mo.id === m.modifierId);
-                                      const p = mod ? resolveModifierUnitPrice(mod, sizeKeyForSelection(c.menuItem, c.variantId)) * m.quantity : 0;
-                                      return mod ? <li key={m.modifierId}>+ {mod.name}{m.quantity > 1 ? ` ×${m.quantity}` : ''} {formatCurrency(p)}</li> : null;
+                                      return mod ? <li key={m.modifierId}>+ {mod.name}{m.quantity > 1 ? ` ×${m.quantity}` : ''}</li> : null;
                                     })}
                                   </ul>
                                 ) : null}

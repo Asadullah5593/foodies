@@ -23,9 +23,14 @@ export type DealConfigModalProps = {
   }) => void;
 };
 
-type SlotState = {
+/** One independent selection within a slot. A multi-quantity choice slot has one pick per unit. */
+type SlotPick = {
   selectedItem: MenuItem | null;
   config: ItemConfig;
+};
+
+type SlotState = {
+  picks: SlotPick[];
 };
 
 const DealConfigModal: React.FC<DealConfigModalProps> = ({
@@ -36,50 +41,64 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
   onConfirm,
 }) => {
   const [slotStates, setSlotStates] = useState<Map<number, SlotState>>(new Map());
-  const [customizeSlotIndex, setCustomizeSlotIndex] = useState<number | null>(null);
+  const [customizeTarget, setCustomizeTarget] = useState<{ slotIndex: number; pickIdx: number } | null>(null);
+
+  // A choice slot for N>1 lets the customer pick N items independently (e.g. 2 different
+  // drinks). Fixed slots and single-unit choice slots stay one pick of quantity N / 1.
+  const isMultiPick = (slot: DealSlot) => slot.type !== 'fixed' && (slot.quantity ?? 1) > 1;
+  const pickCount = (slot: DealSlot) => (isMultiPick(slot) ? slot.quantity : 1);
+  const pickQuantity = (slot: DealSlot) => (isMultiPick(slot) ? 1 : slot.quantity ?? 1);
+
+  // A customizable group survives in-deal filtering (cross-sell groups are hidden in deals).
+  const hasOptions = (item: MenuItem | null) =>
+    !!item &&
+    !!(item.variants?.length || item.addons?.length || item.modifier_groups?.some((g) => !g.hide_in_deals));
+
+  // When a slot is size-locked (e.g. "All 12\" pizzas"), pre-select that size variant.
+  const variantIdForSlot = (item: MenuItem | null, slot: DealSlot): number | undefined => {
+    if (!item) return undefined;
+    if (slot.slot_size_key) {
+      const v = item.variants?.find((vr) => (vr.size_key ?? null) === slot.slot_size_key);
+      if (v) return v.id;
+    }
+    return defaultVariantIdForItem(item);
+  };
+
+  const initPick = (slot: DealSlot, item: MenuItem | null): SlotPick => ({
+    selectedItem: item,
+    config: { addons: [], modifiers: [], variantId: variantIdForSlot(item, slot) },
+  });
 
   const initSlotState = (slot: DealSlot): SlotState => {
     if (slot.type === 'fixed' && slot.choice_items?.length === 1) {
-      const selected = slot.choice_items[0] ?? null;
-      return {
-        selectedItem: selected,
-        config: {
-          addons: [],
-          modifiers: [],
-          variantId: defaultVariantIdForItem(selected),
-        },
-      };
+      return { picks: [initPick(slot, slot.choice_items[0] ?? null)] };
     }
     if (slot.type === 'choice_category' || slot.type === 'choice_list') {
       const first = slot.choice_items?.[0] ?? null;
-      return {
-        selectedItem: first,
-        config: {
-          addons: [],
-          modifiers: [],
-          variantId: defaultVariantIdForItem(first),
-        },
-      };
+      // Pre-select the first option for each unit; the customer can change any of them.
+      return { picks: Array.from({ length: pickCount(slot) }, () => initPick(slot, first)) };
     }
-    return { selectedItem: null, config: { addons: [], modifiers: [] } };
+    return { picks: [{ selectedItem: null, config: { addons: [], modifiers: [] } }] };
   };
 
   useEffect(() => {
     if (isOpen && deal?.slots?.length) {
       const initial = new Map<number, SlotState>();
       deal.slots.forEach((slot) => {
-        const fromExisting = (initialComponents ?? []).find(
+        const existing = (initialComponents ?? []).filter(
           (c) => (c.slot_index ?? slot.slot_index) === slot.slot_index,
         );
-        if (fromExisting?.menuItem) {
+        if (existing.length) {
           initial.set(slot.slot_index, {
-            selectedItem: fromExisting.menuItem,
-            config: {
-              variantId: fromExisting.variantId,
-              addons: fromExisting.addons ?? [],
-              modifiers: fromExisting.modifiers ?? [],
-              notes: fromExisting.notes,
-            },
+            picks: existing.map((c) => ({
+              selectedItem: c.menuItem,
+              config: {
+                variantId: c.variantId,
+                addons: c.addons ?? [],
+                modifiers: c.modifiers ?? [],
+                notes: c.notes,
+              },
+            })),
           });
         } else {
           initial.set(slot.slot_index, initSlotState(slot));
@@ -87,17 +106,23 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
       });
       setSlotStates(initial);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, deal?.deal_menu_item_id, initialComponents]);
 
   const getSlotState = (slotIndex: number, slot: DealSlot): SlotState => {
     return slotStates.get(slotIndex) ?? initSlotState(slot);
   };
 
-  const setSlotState = (slotIndex: number, state: Partial<SlotState>) => {
+  const setPick = (slotIndex: number, pickIdx: number, patch: Partial<SlotPick>) => {
     setSlotStates((prev) => {
       const next = new Map(prev);
-      const current = next.get(slotIndex) ?? { selectedItem: null, config: { addons: [], modifiers: [] } };
-      next.set(slotIndex, { ...current, ...state });
+      const current = next.get(slotIndex) ?? { picks: [] };
+      const picks = current.picks.slice();
+      picks[pickIdx] = {
+        ...(picks[pickIdx] ?? { selectedItem: null, config: { addons: [], modifiers: [] } }),
+        ...patch,
+      };
+      next.set(slotIndex, { picks });
       return next;
     });
   };
@@ -106,26 +131,30 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
     if (!deal?.slots?.length) return false;
     return deal.slots.every((slot) => {
       const state = getSlotState(slot.slot_index, slot);
-      if (slot.type === 'fixed') return state.selectedItem != null;
-      if (slot.choice_items?.length) return state.selectedItem != null;
+      if (slot.type === 'fixed') return state.picks.every((p) => p.selectedItem != null);
+      if (slot.choice_items?.length) return state.picks.length > 0 && state.picks.every((p) => p.selectedItem != null);
       return true;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deal, slotStates]);
 
   const handleConfirm = () => {
     if (!deal || !allSlotsComplete) return;
-    const components: DealComponentLine[] = deal.slots.map((slot) => {
+    const components: DealComponentLine[] = [];
+    deal.slots.forEach((slot) => {
       const state = slotStates.get(slot.slot_index) ?? initSlotState(slot);
-      const qty = slot.quantity ?? 1;
-      return {
-        menuItem: state.selectedItem!,
-        quantity: qty,
-        slot_index: slot.slot_index,
-        variantId: state.config.variantId,
-        addons: state.config.addons ?? [],
-        modifiers: state.config.modifiers ?? [],
-        notes: state.config.notes,
-      };
+      state.picks.forEach((pick) => {
+        if (!pick.selectedItem) return;
+        components.push({
+          menuItem: pick.selectedItem,
+          quantity: pickQuantity(slot),
+          slot_index: slot.slot_index,
+          variantId: pick.config.variantId,
+          addons: pick.config.addons ?? [],
+          modifiers: pick.config.modifiers ?? [],
+          notes: pick.config.notes,
+        });
+      });
     });
     onConfirm({
       dealId: deal.deal_menu_item_id,
@@ -134,18 +163,33 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
       components,
     });
     setSlotStates(new Map());
-    setCustomizeSlotIndex(null);
+    setCustomizeTarget(null);
     onClose();
   };
 
   const handleClose = () => {
     setSlotStates(new Map());
-    setCustomizeSlotIndex(null);
+    setCustomizeTarget(null);
     onClose();
   };
 
-  const itemToCustomize = customizeSlotIndex != null ? slotStates.get(customizeSlotIndex)?.selectedItem : null;
-  const configToCustomize = customizeSlotIndex != null ? slotStates.get(customizeSlotIndex)?.config ?? { addons: [], modifiers: [] } : { addons: [], modifiers: [] };
+  const customizeSlot = customizeTarget ? deal?.slots.find((s) => s.slot_index === customizeTarget.slotIndex) ?? null : null;
+  const customizePick = customizeTarget
+    ? slotStates.get(customizeTarget.slotIndex)?.picks[customizeTarget.pickIdx] ?? null
+    : null;
+  const rawItemToCustomize = customizePick?.selectedItem ?? null;
+  // Inside a deal, hide cross-sell groups ("Add a drink(s)", "Add a dip(s)") — the deal
+  // provides those through its own slots, so they shouldn't be offered/charged again.
+  const itemToCustomize = rawItemToCustomize
+    ? {
+        ...rawItemToCustomize,
+        modifier_groups: (rawItemToCustomize.modifier_groups ?? []).filter((g) => !g.hide_in_deals),
+      }
+    : null;
+  const configToCustomize = customizePick?.config ?? { addons: [], modifiers: [] };
+  const applyCustomizeConfig = (config: ItemConfig) => {
+    if (customizeTarget) setPick(customizeTarget.slotIndex, customizeTarget.pickIdx, { config });
+  };
 
   return (
     <>
@@ -164,11 +208,16 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
               const state = getSlotState(slot.slot_index, slot);
               const choiceItems = slot.choice_items ?? [];
               const isFixed = slot.type === 'fixed' && choiceItems.length <= 1;
-              const hasOptions =
-                state.selectedItem &&
-                (state.selectedItem.variants?.length || state.selectedItem.addons?.length || state.selectedItem.modifier_groups?.length);
-              const slotStatus: SectionStatus = state.selectedItem != null ? 'complete' : 'required-missing';
-              const slotTitle = `Slot ${slot.slot_index + 1}: ${slot.quantity}x ${slot.type === 'fixed' ? 'Item' : 'Choose one'}`;
+              const multi = isMultiPick(slot);
+              const slotComplete = state.picks.length > 0 && state.picks.every((p) => p.selectedItem != null);
+              const slotStatus: SectionStatus = slotComplete ? 'complete' : 'required-missing';
+              const slotTitle = `Slot ${slot.slot_index + 1}: ${
+                isFixed
+                  ? `${slot.quantity}x Item`
+                  : multi
+                    ? `Choose ${slot.quantity} (mix & match)`
+                    : `${slot.quantity}x Choose one`
+              }`;
 
               return (
                 <CollapsibleSection
@@ -180,64 +229,76 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
                   persist={false}
                 >
                   <div className="space-y-2 pt-1">
-                  {isFixed && choiceItems[0] && (
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium text-foodies-textPrimary">{choiceItems[0].name}</span>
-                      {slot.allow_customization && hasOptions && (
-                        <Button
-                          size="small"
-                          variant="outline"
-                          onClick={() => setCustomizeSlotIndex(slot.slot_index)}
-                        >
-                          Customize
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                  {!isFixed && choiceItems.length > 0 && (
-                    <div className="space-y-2">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {choiceItems.map((item) => {
-                          const isSelected = state.selectedItem?.id === item.id;
-                          return (
-                            <button
-                              key={item.id}
-                              type="button"
-                              onClick={() =>
-                                setSlotState(slot.slot_index, {
-                                  selectedItem: item,
-                                  config: {
-                                    addons: [],
-                                    modifiers: [],
-                                    variantId: defaultVariantIdForItem(item),
-                                  },
-                                })
-                              }
-                              className={`p-3 rounded-lg border-2 text-left transition-colors ${
-                                isSelected
-                                  ? 'border-foodies-primary bg-foodies-primary/10'
-                                  : 'border-foodies-border hover:border-foodies-primary/50'
-                              }`}
-                            >
-                              <span className="font-medium text-foodies-textPrimary block truncate">{item.name}</span>
-                              <span className="text-xs text-foodies-textSecondary">
-                                {formatCurrency(item.price ?? item.base_price ?? 0)}
-                              </span>
-                            </button>
-                          );
-                        })}
+                    {isFixed && choiceItems[0] && (
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-medium text-foodies-textPrimary">{choiceItems[0].name}</span>
+                        {slot.allow_customization && hasOptions(state.picks[0]?.selectedItem ?? null) && (
+                          <Button
+                            size="small"
+                            variant="outline"
+                            onClick={() => setCustomizeTarget({ slotIndex: slot.slot_index, pickIdx: 0 })}
+                          >
+                            Customize
+                          </Button>
+                        )}
                       </div>
-                      {state.selectedItem && slot.allow_customization && hasOptions && (
-                        <Button
-                          size="small"
-                          variant="outline"
-                          onClick={() => setCustomizeSlotIndex(slot.slot_index)}
-                        >
-                          Customize: {state.selectedItem.name}
-                        </Button>
-                      )}
-                    </div>
-                  )}
+                    )}
+                    {!isFixed && choiceItems.length > 0 && (
+                      <div className="space-y-4">
+                        {state.picks.map((pick, pickIdx) => (
+                          <div key={pickIdx} className={multi ? 'rounded-lg border border-foodies-border p-2' : ''}>
+                            {multi && (
+                              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-foodies-textSecondary">
+                                Choice {pickIdx + 1}
+                              </p>
+                            )}
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                              {choiceItems.map((item) => {
+                                const isSelected = pick.selectedItem?.id === item.id;
+                                return (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() =>
+                                      setPick(slot.slot_index, pickIdx, {
+                                        selectedItem: item,
+                                        config: {
+                                          addons: [],
+                                          modifiers: [],
+                                          variantId: variantIdForSlot(item, slot),
+                                        },
+                                      })
+                                    }
+                                    className={`p-3 rounded-lg border-2 text-left transition-colors ${
+                                      isSelected
+                                        ? 'border-foodies-primary bg-foodies-primary/10'
+                                        : 'border-foodies-border hover:border-foodies-primary/50'
+                                    }`}
+                                  >
+                                    <span className="font-medium text-foodies-textPrimary block truncate">{item.name}</span>
+                                    {item.label && (
+                                      <span className="mt-1 inline-block px-1.5 py-0.5 text-[10px] font-bold rounded bg-foodies-primary/10 text-foodies-primary">
+                                        {item.label}
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {pick.selectedItem && slot.allow_customization && hasOptions(pick.selectedItem) && (
+                              <Button
+                                size="small"
+                                variant="outline"
+                                className="mt-2"
+                                onClick={() => setCustomizeTarget({ slotIndex: slot.slot_index, pickIdx })}
+                              >
+                                Customize: {pick.selectedItem.name}
+                              </Button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </CollapsibleSection>
               );
@@ -254,21 +315,21 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
         )}
       </Modal>
       <ItemConfigModal
-        isOpen={customizeSlotIndex != null && !!itemToCustomize}
-        onClose={() => setCustomizeSlotIndex(null)}
+        isOpen={customizeTarget != null && !!itemToCustomize}
+        onClose={() => setCustomizeTarget(null)}
         item={itemToCustomize ?? null}
+        lockedSizeKey={customizeSlot?.slot_size_key ?? undefined}
+        hideRunningTotal
         config={configToCustomize}
-        onConfigChange={(config) =>
-          customizeSlotIndex != null && setSlotState(customizeSlotIndex, { config })
-        }
-        onConfirm={() => setCustomizeSlotIndex(null)}
+        onConfigChange={(config) => applyCustomizeConfig(config)}
+        onConfirm={() => setCustomizeTarget(null)}
         onToggleAddon={(addonId) => {
           const current = configToCustomize.addons ?? [];
           const exists = current.some((a) => a.addonId === addonId);
           const newAddons = exists
             ? current.filter((a) => a.addonId !== addonId)
             : [...current, { addonId, quantity: 1 }];
-          if (customizeSlotIndex != null) setSlotState(customizeSlotIndex, { config: { ...configToCustomize, addons: newAddons } });
+          applyCustomizeConfig({ ...configToCustomize, addons: newAddons });
         }}
         onToggleModifier={(modifierId) => {
           const current = configToCustomize.modifiers ?? [];
@@ -279,8 +340,7 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
           const isSingleSelect = groupForModifier && (groupForModifier.max_select ?? 0) === 1;
 
           if (exists) {
-            const newMods = current.filter((m) => m.modifierId !== modifierId);
-            if (customizeSlotIndex != null) setSlotState(customizeSlotIndex, { config: { ...configToCustomize, modifiers: newMods } });
+            applyCustomizeConfig({ ...configToCustomize, modifiers: current.filter((m) => m.modifierId !== modifierId) });
             return;
           }
           if (isSingleSelect && groupForModifier) {
@@ -290,17 +350,15 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
               );
               return g?.id !== groupForModifier.id;
             });
-            if (customizeSlotIndex != null) setSlotState(customizeSlotIndex, { config: { ...configToCustomize, modifiers: [...clearedOthers, { modifierId, quantity: 1 }] } });
+            applyCustomizeConfig({ ...configToCustomize, modifiers: [...clearedOthers, { modifierId, quantity: 1 }] });
             return;
           }
-          if (customizeSlotIndex != null) setSlotState(customizeSlotIndex, { config: { ...configToCustomize, modifiers: [...current, { modifierId, quantity: 1 }] } });
+          applyCustomizeConfig({ ...configToCustomize, modifiers: [...current, { modifierId, quantity: 1 }] });
         }}
         onUpdateAddonQuantity={(addonId, quantity) => {
           const current = configToCustomize.addons ?? [];
-          const newAddons = current.map((a) =>
-            a.addonId === addonId ? { ...a, quantity } : a,
-          );
-          if (customizeSlotIndex != null) setSlotState(customizeSlotIndex, { config: { ...configToCustomize, addons: newAddons } });
+          const newAddons = current.map((a) => (a.addonId === addonId ? { ...a, quantity } : a));
+          applyCustomizeConfig({ ...configToCustomize, addons: newAddons });
         }}
         onUpdateModifierQuantity={(modifierId, quantity) => {
           let next = Math.max(0, Math.floor(quantity));
@@ -315,7 +373,7 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
           const newMods = (configToCustomize.modifiers ?? [])
             .map((m) => (m.modifierId === modifierId ? { ...m, quantity: next } : m))
             .filter((m) => m.quantity > 0);
-          if (customizeSlotIndex != null) setSlotState(customizeSlotIndex, { config: { ...configToCustomize, modifiers: newMods } });
+          applyCustomizeConfig({ ...configToCustomize, modifiers: newMods });
         }}
       />
     </>

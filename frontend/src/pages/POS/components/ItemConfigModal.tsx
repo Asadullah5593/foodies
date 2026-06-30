@@ -37,6 +37,10 @@ export type ItemConfigModalProps = {
   onUpdateAddonQuantity: (addonId: number, quantity: number) => void;
   /** Optional: lets the same modifier be selected multiple times ("double meat"). */
   onUpdateModifierQuantity?: (modifierId: number, quantity: number) => void;
+  /** Optional: lock the item to a single variant size (e.g. inside a 12"-only deal slot). */
+  lockedSizeKey?: string;
+  /** Optional: hide the per-item running total (the item is part of a fixed-price deal). */
+  hideRunningTotal?: boolean;
 };
 
 const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
@@ -50,8 +54,14 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
   onToggleModifier,
   onUpdateAddonQuantity,
   onUpdateModifierQuantity,
+  lockedSizeKey,
+  hideRunningTotal,
 }) => {
   const [step, setStep] = useState(0);
+  // When locked to a size (e.g. a 12"-only deal slot), only that size variant is selectable.
+  const visibleVariants = lockedSizeKey
+    ? (item?.variants ?? []).filter((v) => (v.size_key ?? null) === lockedSizeKey)
+    : (item?.variants ?? []);
 
   useEffect(() => { setStep(0); }, [isOpen, item?.id]);
 
@@ -141,7 +151,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
     if (currentStepDef.kind === 'variant') {
       return (
         <div className="grid grid-cols-1 gap-4">
-          {item.variants!.map((variant) => {
+          {visibleVariants.map((variant) => {
             const selected = config.variantId === variant.id;
             return (
               <label
@@ -611,15 +621,19 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
               {/* ── Footer ── */}
               <div className="flex-none border-t border-gray-200 bg-gray-50 px-8 py-5">
                 <div className="flex items-center gap-4">
-                  {/* Running total */}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-500 font-medium uppercase tracking-wider leading-none mb-1">
-                      Running Total
-                    </p>
-                    <p className="text-2xl font-black text-gray-900 leading-none tabular-nums">
-                      {formatCurrency(runningTotal)}
-                    </p>
-                  </div>
+                  {/* Running total — hidden inside a deal (the deal price is fixed). */}
+                  {hideRunningTotal ? (
+                    <div className="flex-1 min-w-0" />
+                  ) : (
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs text-gray-500 font-medium uppercase tracking-wider leading-none mb-1">
+                        Running Total
+                      </p>
+                      <p className="text-2xl font-black text-gray-900 leading-none tabular-nums">
+                        {formatCurrency(runningTotal)}
+                      </p>
+                    </div>
+                  )}
 
                   {/* Cancel / Back */}
                   <button
@@ -642,7 +656,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                           : 'bg-red-600 text-white hover:bg-red-700 active:scale-95 shadow-md hover:shadow-lg shadow-red-200'
                       }`}
                     >
-                      Add to Order
+                      {hideRunningTotal ? 'Done' : 'Add to Order'}
                     </button>
                   ) : (
                     <button
