@@ -583,15 +583,25 @@ export class MenuService {
     }
 
     /** List modifier groups for a brand, or all for tenant when brandId is null. */
-    async getModifierGroups(brandId: number | null, tenantId?: number | null) {
+    async getModifierGroups(brandId: number | null, tenantId?: number | null, menuItemId?: number | null) {
         const qb = this.modifierGroupRepo
             .createQueryBuilder('mg')
             .leftJoinAndSelect('mg.modifiers', 'm')
             .leftJoinAndSelect('mg.menuItems', 'mi')
-            .orderBy('mg.sortOrder', 'ASC')
-            .addOrderBy('mg.id', 'ASC')
             .addOrderBy('m.sortOrder', 'ASC')
             .addOrderBy('m.id', 'ASC');
+
+        if (menuItemId != null) {
+            // Filter to groups linked to this item and sort by per-item positions
+            qb.innerJoin('mg.menuItems', 'miFilter', 'miFilter.id = :menuItemId', { menuItemId })
+              .leftJoin('menu_item_modifier_group_positions', 'pos',
+                  'pos.modifier_group_id = mg.id AND pos.menu_item_id = :menuItemId', { menuItemId })
+              .orderBy('COALESCE(pos.sort_order, mg.sort_order)', 'ASC')
+              .addOrderBy('mg.id', 'ASC');
+        } else {
+            qb.orderBy('mg.sortOrder', 'ASC').addOrderBy('mg.id', 'ASC');
+        }
+
         if (brandId != null) {
             qb.where('mg.brandId = :brandId', { brandId });
         } else if (tenantId != null) {

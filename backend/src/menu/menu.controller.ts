@@ -473,6 +473,7 @@ export class MenuController {
     async modifierGroups(
         @CurrentUser() user: MenuUser,
         @Query('brand_id') brandIdParam: string,
+        @Query('menu_item_id') menuItemIdParam: string,
     ) {
         const brandId = this.resolveBrandScope(
             user,
@@ -483,7 +484,8 @@ export class MenuController {
                 brandId,
                 user.tenantId,
             );
-        return this.service.getModifierGroups(brandId, user.tenantId);
+        const menuItemId = menuItemIdParam ? +menuItemIdParam : null;
+        return this.service.getModifierGroups(brandId, user.tenantId, menuItemId);
     }
 
     @Post('modifier-groups')
