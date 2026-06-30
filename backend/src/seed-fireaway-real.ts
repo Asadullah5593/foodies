@@ -765,8 +765,8 @@ async function seed() {
         description: 'Crispy chicken wings smothered in a choice of 5 flavours',
         basePrice: 799,
         sizes: [
-            { name: '5 Pcs', sizeKey: null, price: 799, isDefault: true },
-            { name: '10 Pcs', sizeKey: null, price: 1499 },
+            { name: '5 Pcs', sizeKey: '5', price: 799, isDefault: true },
+            { name: '10 Pcs', sizeKey: '10', price: 1499 },
         ],
     });
     await linkGroups(wings, [grpWingFlavour]);
@@ -777,8 +777,8 @@ async function seed() {
             '100% chicken breast breaded with our own spice blend, available in a choice of 5 flavours',
         basePrice: 799,
         sizes: [
-            { name: '5 Pcs', sizeKey: null, price: 799, isDefault: true },
-            { name: '10 Pcs', sizeKey: null, price: 1499 },
+            { name: '5 Pcs', sizeKey: '5', price: 799, isDefault: true },
+            { name: '10 Pcs', sizeKey: '10', price: 1499 },
         ],
     });
     await linkGroups(strips, [grpWingFlavour]);
@@ -1227,10 +1227,12 @@ async function seed() {
                 allowCustomization: true,
             },
             {
+                // "5 pcs chicken wings or strips" — lock to the 5-piece variant.
                 type: 'choice_list',
                 sourceMenuItemIds: [wings.id, strips.id],
                 quantity: 1,
                 allowCustomization: true,
+                slotSizeKey: '5',
             },
             {
                 type: 'fixed',
@@ -1325,10 +1327,13 @@ async function seed() {
                 slotSizeKey: '12',
             },
             {
+                // "Cheesy Garlic Bread or 5 wings or 5 strips" — lock wings/strips to 5 pcs
+                // (garlic bread has no size variants, so the lock is a no-op for it).
                 type: 'choice_list',
                 sourceMenuItemIds: [cheesyGarlicBread.id, wings.id, strips.id],
                 quantity: 1,
                 allowCustomization: true,
+                slotSizeKey: '5',
             },
             {
                 type: 'choice_list',

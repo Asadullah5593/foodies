@@ -58,10 +58,14 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
   hideRunningTotal,
 }) => {
   const [step, setStep] = useState(0);
-  // When locked to a size (e.g. a 12"-only deal slot), only that size variant is selectable.
-  const visibleVariants = lockedSizeKey
-    ? (item?.variants ?? []).filter((v) => (v.size_key ?? null) === lockedSizeKey)
-    : (item?.variants ?? []);
+  // When locked to a size (e.g. a 12"-only or 5-piece deal slot), only that size variant
+  // is selectable. If an item in the slot has no matching variant (e.g. a non-size side
+  // sharing the slot), fall back to all variants rather than an empty size step.
+  const allVariants = item?.variants ?? [];
+  const lockedVariants = lockedSizeKey
+    ? allVariants.filter((v) => (v.size_key ?? null) === lockedSizeKey)
+    : allVariants;
+  const visibleVariants = lockedSizeKey && lockedVariants.length === 0 ? allVariants : lockedVariants;
 
   useEffect(() => { setStep(0); }, [isOpen, item?.id]);
 
