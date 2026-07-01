@@ -730,6 +730,10 @@ export class MenuController {
                 allow_customization: boolean;
                 slot_surcharges?: Record<string, number> | null;
                 slot_size_key?: string | null;
+                allowed_size_keys?: string[] | null;
+                mirror_slot_index?: number | null;
+                mirror_match_size?: boolean;
+                mirror_match_category?: boolean;
             }>;
         },
     ) {

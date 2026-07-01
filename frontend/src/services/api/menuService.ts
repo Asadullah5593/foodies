@@ -74,6 +74,16 @@ export type DealSlot = {
   allow_customization: boolean;
   /** Lock this slot's chosen item to one variant size (e.g. '12' = "All 12\" pizzas"). */
   slot_size_key?: string | null;
+  /** Whitelist of variant sizeKeys allowed in this slot (e.g. ['12','14']); null = any size. */
+  allowed_size_keys?: string[] | null;
+  /** This slot must mirror the referenced slot's pick (BOGO 2nd pizza); null = independent. */
+  mirror_slot_index?: number | null;
+  /** With mirror_slot_index: force the same variant size as the mirrored slot. */
+  mirror_match_size?: boolean;
+  /** With mirror_slot_index: restrict choices to the same (category, label) as the mirrored slot. */
+  mirror_match_category?: boolean;
+  /** Per-item upgrade surcharge keyed by menu_item_id (e.g. {"42":100} = "+Rs100 for Firey Special"). */
+  slot_surcharges?: Record<string, number> | null;
   source_menu_item_id?: number | null;
   choice_items?: MenuItem[];
 };
@@ -82,5 +92,9 @@ export type DealDefinition = {
   deal_menu_item_id: number;
   name: string;
   price: number;
+  /** 'bogo' = dynamic (full + cheaper-at-percent); null/'fixed' = fixed bundle price. */
+  pricing_mode?: string | null;
+  /** For 'bogo': percent off the cheaper pizza (e.g. 50). */
+  bogo_get_percent?: number | null;
   slots: DealSlot[];
 };

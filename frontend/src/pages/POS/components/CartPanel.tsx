@@ -61,7 +61,9 @@ const CartPanel: React.FC<CartPanelProps> = ({
                         c.modifiers,
                         sizeKeyForSelection(c.menuItem, c.variantId),
                       );
-                      return s + addonsPrice + modifiersPrice;
+                      // Per-slot upgrade surcharge (e.g. +Rs100 Firey Special).
+                      const surcharge = (c.surcharge ?? 0) * c.quantity;
+                      return s + addonsPrice + modifiersPrice + surcharge;
                     }, 0);
                     return (item.dealPrice! + componentExtras) * item.quantity;
                   })()

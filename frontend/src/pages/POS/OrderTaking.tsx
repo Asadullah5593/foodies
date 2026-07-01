@@ -11,6 +11,7 @@ import { validatePakistaniPhone, PAKISTANI_PHONE_PLACEHOLDER, normalizePakistani
 import { MenuItem } from '../../types';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
+import { bogoDealTotal } from '../../utils/bogoPricing';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import SearchableSelect from '../../components/SearchableSelect';
@@ -886,6 +887,23 @@ const OrderTaking: React.FC = () => {
           })
           .filter((c): c is DealComponentLine => c != null);
         if (components.length === 0) continue;
+        // A BOGO deal's bundle price is dynamic (full + cheaper-at-half of its pizzas), not the
+        // deal root's base_price (which is 0). Recompute it from the restored components so the
+        // line total displays correctly; the server still reprices authoritatively.
+        const dealPrice =
+          dealItem.deal_pricing_mode === 'bogo'
+            ? bogoDealTotal(
+                components.map(
+                  (c) =>
+                    (c.menuItem.price ?? c.menuItem.base_price ?? 0) +
+                    (c.menuItem.variants?.find((v) => v.id === c.variantId)
+                      ?.price_modifier ?? 0),
+                ),
+                1,
+                1,
+                Number(dealItem.bogo_get_percent ?? 0),
+              )
+            : dealItem.price ?? dealItem.base_price ?? 0;
         lines.push({
           menuItem: dealItem,
           quantity: it.quantity,
@@ -893,7 +911,7 @@ const OrderTaking: React.FC = () => {
           modifiers: [],
           dealId: it.deal_menu_item_id,
           dealName: dealItem.name,
-          dealPrice: dealItem.price ?? dealItem.base_price ?? 0,
+          dealPrice,
           components,
         });
       } else if ('menu_item_id' in it && it.menu_item_id != null) {

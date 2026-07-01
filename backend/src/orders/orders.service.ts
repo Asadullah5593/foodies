@@ -39,6 +39,14 @@ import {
     isWithinSchedule,
     type BranchClock,
 } from '../utils/branch-schedule';
+import {
+    bogoUnitDiscounts,
+    priceBogoComponents,
+    validateBogoComponents,
+    isComponentAllowedInSlot,
+    round2 as bogoRound2,
+    type BogoComponentConstraint,
+} from './bogo-pricing';
 import { RiderDispatchState } from '../entities/rider-dispatch-state.entity';
 import { RiderAssignmentLedger } from '../entities/rider-assignment-ledger.entity';
 import { RiderOpsMetricsService } from '../rider-hrm/rider-ops-metrics.service';
@@ -1227,12 +1235,25 @@ export class OrdersService {
                     (v) => v.id === line.variant_id,
                 );
                 if (variant) {
-                    unitPrice += Number(variant.priceModifier);
+                    // Deal lines carry a fully-resolved deal_unit_price (the variant/size
+                    // price is already baked in by expandDealItems), so don't re-add the
+                    // variant modifier here — this mirrors the quote path
+                    // (computeSubtotalAndLinesWithBrands) and keeps the charged total equal
+                    // to the quoted total. Still record sizeKey for size-aware modifier pricing.
+                    if (line.deal_unit_price === undefined)
+                        unitPrice += Number(variant.priceModifier);
                     lineSizeKey = variant.sizeKey ?? null;
                 }
             }
             const quantity = line.quantity ?? 1;
-            let itemSubtotal = unitPrice * quantity;
+            // A deal line carries one fully-resolved deal_unit_price per emitted unit and the
+            // quote path (computeSubtotalAndLinesWithBrands) uses it UN-scaled by quantity, so
+            // match that here — otherwise a deal component with quantity>1 would be charged
+            // more than it was quoted. Non-deal lines scale by quantity as usual.
+            let itemSubtotal =
+                line.deal_unit_price !== undefined
+                    ? unitPrice
+                    : unitPrice * quantity;
             const itemName = menuItem.name;
             if (line.addons?.length) {
                 for (const addonLine of line.addons) {
@@ -3771,6 +3792,179 @@ export class OrdersService {
                     await this.menuService.getDealSlotSurcharges(
                         raw.deal_menu_item_id,
                     );
+
+                // BOGO deals price each component dynamically from its OWN menu price
+                // (full price incl. size), then discount the cheapest get-units of every
+                // (buy+get) cohort — "2nd pizza of same size & category, half price". The
+                // computed price already includes the variant/size modifier, so the
+                // createOrder and quote paths consume it verbatim (no double-count).
+                const dealPricingMode =
+                    (dealRoot as { dealPricingMode?: string | null } | null)
+                        ?.dealPricingMode ?? null;
+                let bogoUnitPrices: number[] | null = null;
+                if (dealPricingMode === 'bogo') {
+                    const meta = await this.menuService.getDealComponentMeta(
+                        raw.deal_menu_item_id,
+                    );
+                    const resolved: Array<{
+                        regularPrice: number;
+                        constraint: BogoComponentConstraint;
+                    }> = [];
+                    const seenSlots = new Set<number>();
+                    for (const comp of raw.components) {
+                        // slot_index and menu_item_id come straight from the client; bind each
+                        // to a DEFINED slot (no unknown/duplicate slots — which would collapse
+                        // the mirror and drop the size/category gate) and verify the chosen item
+                        // is actually one of that slot's allowed choices before pricing it.
+                        const m = meta.get(comp.slot_index);
+                        if (!m)
+                            throw new BadRequestException(
+                                'Invalid deal selection.',
+                            );
+                        if (seenSlots.has(comp.slot_index))
+                            throw new BadRequestException(
+                                'Duplicate deal slot selection.',
+                            );
+                        seenSlots.add(comp.slot_index);
+                        const item = await this.menuService.findMenuItem(
+                            comp.menu_item_id,
+                        );
+                        const itemCategoryId = item
+                            ? Number(item.categoryId)
+                            : null;
+                        if (
+                            !isComponentAllowedInSlot(
+                                {
+                                    menuItemId: comp.menu_item_id,
+                                    categoryId: itemCategoryId,
+                                },
+                                m,
+                            )
+                        )
+                            throw new BadRequestException(
+                                'That item is not available in this deal.',
+                            );
+                        const variant =
+                            comp.variant_id && item?.variants
+                                ? item.variants.find(
+                                      (v) => v.id === comp.variant_id,
+                                  )
+                                : null;
+                        const base =
+                            await this.menuService.getEffectiveUnitPrice(
+                                branchId,
+                                comp.menu_item_id,
+                            );
+                        const variantMod = variant
+                            ? Number(variant.priceModifier)
+                            : 0;
+                        resolved.push({
+                            regularPrice: base + variantMod,
+                            constraint: {
+                                slotIndex: comp.slot_index,
+                                categoryId: itemCategoryId,
+                                label:
+                                    (item as { label?: string | null } | null)
+                                        ?.label ?? null,
+                                sizeKey: variant?.sizeKey ?? null,
+                                allowedSizeKeys: m.allowedSizeKeys ?? null,
+                                mirrorSlotIndex: m.mirrorSlotIndex ?? null,
+                                mirrorMatchSize: m.mirrorMatchSize ?? false,
+                                mirrorMatchCategory:
+                                    m.mirrorMatchCategory ?? false,
+                            },
+                        });
+                    }
+                    // Every defined slot must be filled exactly once (no missing/extra pizzas).
+                    if (seenSlots.size !== meta.size)
+                        throw new BadRequestException(
+                            'Please choose an item for every part of this deal.',
+                        );
+                    const err = validateBogoComponents(
+                        resolved.map((r) => r.constraint),
+                    );
+                    if (err) throw new BadRequestException(err);
+                    const buyQ =
+                        Number(
+                            (
+                                dealRoot as {
+                                    dealBogoBuyQuantity?: number | null;
+                                } | null
+                            )?.dealBogoBuyQuantity,
+                        ) || 1;
+                    const getQ =
+                        Number(
+                            (
+                                dealRoot as {
+                                    dealBogoGetQuantity?: number | null;
+                                } | null
+                            )?.dealBogoGetQuantity,
+                        ) || 1;
+                    const pct =
+                        Number(
+                            (
+                                dealRoot as {
+                                    dealBogoGetPercent?: number | null;
+                                } | null
+                            )?.dealBogoGetPercent,
+                        ) || 0;
+                    bogoUnitPrices = priceBogoComponents(
+                        resolved.map((r) => r.regularPrice),
+                        buyQ,
+                        getQ,
+                        pct,
+                    );
+                } else {
+                    // Non-BOGO flat-price deal: enforce that each chosen component belongs to
+                    // its slot and honours the slot's size lock, so a crafted payload can't
+                    // swap in an expensive item (e.g. an XL pizza for a Rs899 medium deal) or a
+                    // different size. Sizeless items (e.g. pasta) skip the size check.
+                    const meta = await this.menuService.getDealComponentMeta(
+                        raw.deal_menu_item_id,
+                    );
+                    if (meta.size > 0) {
+                        for (const comp of raw.components) {
+                            const m = meta.get(comp.slot_index);
+                            if (!m)
+                                throw new BadRequestException(
+                                    'Invalid deal selection.',
+                                );
+                            const item = await this.menuService.findMenuItem(
+                                comp.menu_item_id,
+                            );
+                            const itemCategoryId = item
+                                ? Number(item.categoryId)
+                                : null;
+                            if (
+                                !isComponentAllowedInSlot(
+                                    {
+                                        menuItemId: comp.menu_item_id,
+                                        categoryId: itemCategoryId,
+                                    },
+                                    m,
+                                )
+                            )
+                                throw new BadRequestException(
+                                    'That item is not available in this deal.',
+                                );
+                            if (m.slotSizeKey && item?.variants?.length) {
+                                const variant = comp.variant_id
+                                    ? item.variants.find(
+                                          (v) => v.id === comp.variant_id,
+                                      )
+                                    : null;
+                                if (
+                                    !variant ||
+                                    (variant.sizeKey ?? null) !== m.slotSizeKey
+                                )
+                                    throw new BadRequestException(
+                                        'Please choose the correct size for this deal.',
+                                    );
+                            }
+                        }
+                    }
+                }
+
                 const qty = raw.quantity ?? 1;
                 for (let q = 0; q < qty; q++) {
                     raw.components.forEach((comp, idx) => {
@@ -3778,6 +3972,12 @@ export class OrdersService {
                             surchargeBySlot.get(comp.slot_index)?.[
                                 String(comp.menu_item_id)
                             ] ?? 0;
+                        const baseDealPrice =
+                            bogoUnitPrices != null
+                                ? bogoUnitPrices[idx] ?? 0
+                                : idx === 0
+                                  ? dealPrice
+                                  : 0;
                         expanded.push({
                             menu_item_id: comp.menu_item_id,
                             quantity: comp.quantity ?? 1,
@@ -3788,9 +3988,9 @@ export class OrdersService {
                             branch_id: raw.branch_id ?? defaultBranchId,
                             deal_id: raw.deal_menu_item_id,
                             deal_slot_index: comp.slot_index,
-                            deal_unit_price:
-                                (idx === 0 ? dealPrice : 0) +
-                                Number(slotSurcharge || 0),
+                            deal_unit_price: bogoRound2(
+                                baseDealPrice + Number(slotSurcharge || 0),
+                            ),
                         });
                     });
                 }
@@ -4115,7 +4315,6 @@ export class OrdersService {
             Math.max(0, Number(discount.getDiscountPercent) || 0),
         );
         if (pct <= 0) return 0;
-        const cohort = buyQ + getQ;
 
         const unitPricesFor = (
             lines: typeof eligible,
@@ -4129,21 +4328,12 @@ export class OrdersService {
             return units;
         };
 
-        const discountForUnits = (prices: number[]): number => {
-            // Sort descending so the cheapest units in each cohort get discounted.
-            const sorted = [...prices].sort((a, b) => b - a);
-            let total = 0;
-            for (
-                let start = 0;
-                start + cohort <= sorted.length;
-                start += cohort
-            ) {
-                for (let k = 0; k < getQ; k++) {
-                    total += (sorted[start + cohort - 1 - k] * pct) / 100;
-                }
-            }
-            return total;
-        };
+        // Same cohort/cheapest-units selection used by BOGO deals — single source of truth.
+        const discountForUnits = (prices: number[]): number =>
+            bogoUnitDiscounts(prices, buyQ, getQ, pct).reduce(
+                (a, b) => a + b,
+                0,
+            );
 
         let total = 0;
         if (discount.bogoMatchSameGroup) {

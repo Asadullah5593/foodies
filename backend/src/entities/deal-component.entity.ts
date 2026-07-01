@@ -62,6 +62,34 @@ export class DealComponent {
     @Column({ name: 'slot_size_key', type: 'varchar', length: 32, nullable: true })
     slotSizeKey: string | null;
 
+    /**
+     * Whitelist of variant sizeKeys allowed in this slot (e.g. ['12','14'] = "Large/XLarge
+     * only"). Stronger than slotSizeKey (a single lock) because a BOGO slot must allow EITHER
+     * 12" or 14". Null = any size. Enforced server-side at order time.
+     */
+    @Column({ name: 'allowed_size_keys', type: 'jsonb', nullable: true })
+    allowedSizeKeys: string[] | null;
+
+    /**
+     * Cross-slot "mirror" constraint: when set, this slot's chosen item must MATCH the
+     * referenced slot's pick. Used for BOGO's 2nd pizza ("same size & same category as the
+     * first"). Null = independent slot.
+     */
+    @Column({ name: 'mirror_slot_index', type: 'int', nullable: true })
+    mirrorSlotIndex: number | null;
+
+    /** With mirrorSlotIndex set: this slot's variant size must equal the mirrored slot's size. */
+    @Column({ name: 'mirror_match_size', type: 'boolean', default: false })
+    mirrorMatchSize: boolean;
+
+    /**
+     * With mirrorSlotIndex set: this slot's item must be the same STRICT category as the
+     * mirrored slot's — same catalog category AND same label (Classic↔Classic, Signature↔
+     * Signature; Build-Your-Own is its own category).
+     */
+    @Column({ name: 'mirror_match_category', type: 'boolean', default: false })
+    mirrorMatchCategory: boolean;
+
     @CreateDateColumn()
     createdAt: Date;
 

@@ -39,6 +39,8 @@ export type ItemConfigModalProps = {
   onUpdateModifierQuantity?: (modifierId: number, quantity: number) => void;
   /** Optional: lock the item to a single variant size (e.g. inside a 12"-only deal slot). */
   lockedSizeKey?: string;
+  /** Optional: restrict the size step to these sizes (e.g. a BOGO slot allows only 12"/14"). */
+  allowedSizeKeys?: string[];
   /** Optional: hide the per-item running total (the item is part of a fixed-price deal). */
   hideRunningTotal?: boolean;
 };
@@ -55,17 +57,27 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
   onUpdateAddonQuantity,
   onUpdateModifierQuantity,
   lockedSizeKey,
+  allowedSizeKeys,
   hideRunningTotal,
 }) => {
   const [step, setStep] = useState(0);
-  // When locked to a size (e.g. a 12"-only or 5-piece deal slot), only that size variant
-  // is selectable. If an item in the slot has no matching variant (e.g. a non-size side
-  // sharing the slot), fall back to all variants rather than an empty size step.
+  // Size restriction inside deals: `lockedSizeKey` pins one size (12"-only / 5-piece slot);
+  // `allowedSizeKeys` limits the size step to a set (e.g. a BOGO slot offers only 12"/14").
+  // If an item in the slot has no matching variant (e.g. a non-size side sharing the slot),
+  // fall back to all variants rather than rendering an empty size step.
   const allVariants = item?.variants ?? [];
-  const lockedVariants = lockedSizeKey
+  const sizeFilterActive = !!lockedSizeKey || !!allowedSizeKeys?.length;
+  const restrictedVariants = lockedSizeKey
     ? allVariants.filter((v) => (v.size_key ?? null) === lockedSizeKey)
-    : allVariants;
-  const visibleVariants = lockedSizeKey && lockedVariants.length === 0 ? allVariants : lockedVariants;
+    : allowedSizeKeys?.length
+      ? allVariants.filter(
+          (v) => v.size_key != null && allowedSizeKeys.includes(v.size_key),
+        )
+      : allVariants;
+  const visibleVariants =
+    sizeFilterActive && restrictedVariants.length === 0
+      ? allVariants
+      : restrictedVariants;
 
   useEffect(() => { setStep(0); }, [isOpen, item?.id]);
 

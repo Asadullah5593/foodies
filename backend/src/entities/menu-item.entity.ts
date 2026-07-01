@@ -78,6 +78,32 @@ export class MenuItem {
     dealOnly: boolean;
 
     /**
+     * Pricing mode for a DEAL root (an item that has deal_components):
+     *  - null / 'fixed' → legacy fixed-price bundle (deal price parked on slot 0).
+     *  - 'bogo'         → dynamic: each pizza slot is priced from its OWN menu price and the
+     *                     cheapest `dealBogoGetQuantity` of every (buy+get) cohort gets
+     *                     `dealBogoGetPercent`% off ("2nd pizza half price").
+     * Only meaningful on deal roots; ignored for normal items.
+     */
+    @Column({ name: 'deal_pricing_mode', type: 'varchar', length: 16, nullable: true })
+    dealPricingMode: string | null;
+
+    @Column({ name: 'deal_bogo_buy_quantity', type: 'int', nullable: true })
+    dealBogoBuyQuantity: number | null;
+
+    @Column({ name: 'deal_bogo_get_quantity', type: 'int', nullable: true })
+    dealBogoGetQuantity: number | null;
+
+    @Column({
+        name: 'deal_bogo_get_percent',
+        type: 'numeric',
+        precision: 5,
+        scale: 2,
+        nullable: true,
+    })
+    dealBogoGetPercent: number | null;
+
+    /**
      * Which order channels this item can be sold on: `delivery`, `pickup`, `dine_in`.
      * Null or empty (legacy) means all channels. POS `takeaway` maps to `pickup` when checking orders.
      */
