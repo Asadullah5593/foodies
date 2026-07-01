@@ -22,8 +22,8 @@ export class BankCardsAndCardDiscounts1760000000054
                 "network" character varying,
                 "bin_prefixes" text,
                 "is_active" boolean NOT NULL DEFAULT true,
-                "createdAt" TIMESTAMP NOT NULL DEFAULT now(),
-                "updatedAt" TIMESTAMP NOT NULL DEFAULT now(),
+                "created_at" TIMESTAMP NOT NULL DEFAULT now(),
+                "updated_at" TIMESTAMP NOT NULL DEFAULT now(),
                 CONSTRAINT "FK_bank_cards_tenant" FOREIGN KEY ("tenant_id")
                     REFERENCES "tenants"("id") ON DELETE CASCADE
             )
