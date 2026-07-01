@@ -23,6 +23,8 @@ const emptyForm = {
   eligibility_type: 'new_customer' as 'new_customer' | 'manual',
   is_active: true,
   expires_in_days: '',
+  valid_from: '',
+  valid_until: '',
 };
 
 const Promotions: React.FC = () => {
@@ -147,6 +149,8 @@ const Promotions: React.FC = () => {
       eligibility_type: p.eligibility_type,
       is_active: p.is_active,
       expires_in_days: p.expires_in_days?.toString() ?? '',
+      valid_from: p.valid_from ? p.valid_from.slice(0, 10) : '',
+      valid_until: p.valid_until ? p.valid_until.slice(0, 10) : '',
     });
     setShowForm(true);
   };
@@ -168,6 +172,8 @@ const Promotions: React.FC = () => {
       eligibility_type: formData.eligibility_type,
       is_active: formData.is_active,
       expires_in_days: formData.expires_in_days ? parseInt(formData.expires_in_days) : null,
+      valid_from: formData.valid_from || null,
+      valid_until: formData.valid_until || null,
     };
     if (editingPromotion) {
       updateMutation.mutate({ id: editingPromotion.id, data });
@@ -386,7 +392,7 @@ const Promotions: React.FC = () => {
                   />
                   <div>
                     <span className="font-medium">New customers</span>
-                    <p className="text-xs text-gray-500">Auto-assigned when a customer is registered at the POS</p>
+                    <p className="text-xs text-gray-500">Auto-assigned when a customer registers (app, web, or POS), if the promotion is active and within its valid dates</p>
                   </div>
                 </label>
                 <label className="flex items-center gap-2">
@@ -405,6 +411,30 @@ const Promotions: React.FC = () => {
             </div>
           )}
 
+          {/* Campaign window — when the promo is handed out to new customers */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Valid From</label>
+              <input
+                type="date"
+                value={formData.valid_from}
+                onChange={(e) => setFormData({ ...formData, valid_from: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-0.5">Campaign start. New customers only receive this on or after this date. Leave empty to start immediately.</p>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Valid Until</label>
+              <input
+                type="date"
+                value={formData.valid_until}
+                onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+              <p className="text-xs text-gray-500 mt-0.5">Campaign end. New customers stop receiving this after this date. Leave empty for no end date.</p>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Expires After (days)</label>
@@ -416,17 +446,20 @@ const Promotions: React.FC = () => {
                 placeholder="Never"
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
-              <p className="text-xs text-gray-500 mt-0.5">Days after assignment. Leave empty for no expiry.</p>
+              <p className="text-xs text-gray-500 mt-0.5">Per customer. Days each recipient has to use it once they receive it, then their copy expires. Leave empty for no per-customer expiry.</p>
             </div>
-            <div className="flex items-center pt-6">
-              <input
-                type="checkbox"
-                id="promo_active"
-                checked={formData.is_active}
-                onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-              />
-              <label htmlFor="promo_active" className="ml-2 text-sm text-gray-700">Active</label>
+            <div>
+              <div className="flex items-center pt-1">
+                <input
+                  type="checkbox"
+                  id="promo_active"
+                  checked={formData.is_active}
+                  onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                />
+                <label htmlFor="promo_active" className="ml-2 text-sm font-medium text-gray-700">Active</label>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Master switch. Turning this off stops new hand-outs, expires copies not yet claimed, and disables coupons already claimed from it. Used ones stay in history.</p>
             </div>
           </div>
 
