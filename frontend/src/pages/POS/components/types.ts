@@ -10,6 +10,8 @@ export type DealComponentLine = {
   addons: Array<{ addonId: number; quantity: number }>;
   modifiers: Array<{ modifierId: number; quantity: number }>;
   notes?: string;
+  /** Per-unit upgrade surcharge for the chosen item in this slot (e.g. +Rs100 Firey Special). */
+  surcharge?: number;
 };
 
 export type CartLine = {

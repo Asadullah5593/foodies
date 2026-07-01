@@ -7,7 +7,7 @@
  *  - "first N included free" allowances (modifier_group included counts)
  *  - time-restricted lunch deals (menu_item recurring availability window)
  *  - deal-slot paid upsell (deal_component.slotSurcharges — wrap upgrade +Rs100)
- *  - BUY-ONE-GET-ONE (discount.type='buy_x_get_y', bogoMatchSameGroup)
+ *  - BUY-ONE-GET-ONE as a dynamic-priced DEAL (deal_pricing_mode='bogo', mirror slots)
  *  - allergens/calories columns (blank in the sheet → left null, faithfully)
  *
  * Idempotent: clears this brand's existing menu (categories/items/groups/addons/deals)
@@ -28,6 +28,7 @@ import { MenuItem } from './entities/menu-item.entity';
 import { MenuAddon } from './entities/menu-addon.entity';
 import { MenuVariant } from './entities/menu-variant.entity';
 import { ModifierGroup } from './entities/modifier-group.entity';
+import { MenuItemModifierGroupPosition } from './entities/menu-item-modifier-group-position.entity';
 import { Modifier } from './entities/modifier.entity';
 import { BranchMenuItem } from './entities/branch-menu-item.entity';
 import { DealComponent } from './entities/deal-component.entity';
@@ -216,6 +217,10 @@ async function seed() {
         availableTimeStart?: string | null;
         availableTimeEnd?: string | null;
         availableDaysOfWeek?: number[] | null;
+        dealPricingMode?: string | null;
+        dealBogoBuyQuantity?: number | null;
+        dealBogoGetQuantity?: number | null;
+        dealBogoGetPercent?: number | null;
     }): Promise<MenuItem> => {
         const item = await itemRepo.save(
             itemRepo.create({
@@ -237,6 +242,10 @@ async function seed() {
                 availableTimeStart: opts.availableTimeStart ?? null,
                 availableTimeEnd: opts.availableTimeEnd ?? null,
                 availableDaysOfWeek: opts.availableDaysOfWeek ?? null,
+                dealPricingMode: opts.dealPricingMode ?? null,
+                dealBogoBuyQuantity: opts.dealBogoBuyQuantity ?? null,
+                dealBogoGetQuantity: opts.dealBogoGetQuantity ?? null,
+                dealBogoGetPercent: opts.dealBogoGetPercent ?? null,
             }),
         );
         if (opts.sizes?.length) {
@@ -303,12 +312,27 @@ async function seed() {
         return group;
     };
 
+    const positionRepo = dataSource.getRepository(
+        MenuItemModifierGroupPosition,
+    );
     const linkGroups = async (item: MenuItem, groups: ModifierGroup[]) => {
         await dataSource
             .createQueryBuilder()
             .relation(MenuItem, 'modifierGroups')
             .of(item.id)
             .add(groups.map((g) => g.id));
+        // Persist per-item display order so the customize wizard follows THIS array
+        // (e.g. "Pizza or Calzone" first), not the global group sort_order/id order.
+        for (let i = 0; i < groups.length; i++) {
+            await positionRepo.upsert(
+                {
+                    menuItemId: item.id,
+                    modifierGroupId: groups[i].id,
+                    sortOrder: i,
+                },
+                ['menuItemId', 'modifierGroupId'],
+            );
+        }
     };
     const linkAddons = async (item: MenuItem, addons: MenuAddon[]) => {
         if (!addons.length) return;
@@ -352,7 +376,7 @@ async function seed() {
     // Classic/Signature cheese: As It Comes / No Cheese / Extra Cheese (per size).
     const grpCheeseSig = await mkGroup(
         'Choose your Cheese',
-        { minSelect: 0, maxSelect: 2 },
+        { minSelect: 1, maxSelect: 1 }, // required, exactly one (auto-selects "As It Comes")
         [
             { name: 'As It Comes' },
             { name: 'No Cheese On The Pizza' },
@@ -407,6 +431,25 @@ async function seed() {
             })),
             ...VEGGIES.map((v) => ({
                 name: `Extra ${v}`,
+                price: VEG_PRICE_BY_SIZE['7'],
+                priceBySize: VEG_PRICE_BY_SIZE,
+            })),
+        ],
+    );
+    // Medium-deal pizza toppings: same option set as Signature, but 2 are INCLUDED free at the
+    // Medium (10") size (deal spec "choose 2 toppings"); a 3rd+ is charged per size. Any 2 —
+    // two different toppings, or the same topping twice (repeatable via the free-allowance qty).
+    const grpDealToppings = await mkGroup(
+        'Choose 2 Toppings',
+        { minSelect: 0, maxSelect: REPEAT_MAX, includedBySize: { '10': 2 } },
+        [
+            ...MEATS.map((m) => ({
+                name: m,
+                price: MEAT_PRICE_BY_SIZE['7'],
+                priceBySize: MEAT_PRICE_BY_SIZE,
+            })),
+            ...VEGGIES.map((v) => ({
+                name: v,
                 price: VEG_PRICE_BY_SIZE['7'],
                 priceBySize: VEG_PRICE_BY_SIZE,
             })),
@@ -507,6 +550,7 @@ async function seed() {
         grpAddDrinks,
     ];
 
+    const classicPizzas: MenuItem[] = []; // for Classic-only deals (e.g. Large Pizza Lunch Offer)
     const classics: Array<[string, string]> = [
         [
             'Twisted Hawaiian Pizza',
@@ -539,6 +583,7 @@ async function seed() {
             label: 'Classic',
         });
         await linkGroups(it, pizzaGroups);
+        classicPizzas.push(it);
     }
     const signatures: Array<[string, string]> = [
         [
@@ -570,6 +615,7 @@ async function seed() {
             'Peri peri tomato base, mozzarella, peri peri chicken, jalapenos, chillies',
         ],
     ];
+    const signaturePizzas: MenuItem[] = []; // for BOGO eligible pool
     for (const [name, desc] of signatures) {
         const it = await mkItem({
             category: catPizza,
@@ -580,6 +626,7 @@ async function seed() {
             label: 'Signature',
         });
         await linkGroups(it, pizzaGroups);
+        signaturePizzas.push(it);
     }
     // Margherita — its own price ladder.
     const margherita = await mkItem({
@@ -591,6 +638,7 @@ async function seed() {
         label: 'Classic',
     });
     await linkGroups(margherita, pizzaGroups);
+    classicPizzas.push(margherita);
 
     // ——— KIDS PIZZA ———
     // Single size; given size_key '7' so the shared per-size toppings price at 7" rates.
@@ -1082,6 +1130,10 @@ async function seed() {
         description: string;
         price: number;
         lunch?: boolean;
+        pricingMode?: string | null;
+        bogoBuyQuantity?: number | null;
+        bogoGetQuantity?: number | null;
+        bogoGetPercent?: number | null;
         slots: Array<{
             type: 'fixed' | 'choice_category' | 'choice_list';
             sourceMenuItemId?: number | null;
@@ -1091,6 +1143,10 @@ async function seed() {
             allowCustomization?: boolean;
             slotSurcharges?: Record<string, number> | null;
             slotSizeKey?: string | null;
+            allowedSizeKeys?: string[] | null;
+            mirrorSlotIndex?: number | null;
+            mirrorMatchSize?: boolean;
+            mirrorMatchCategory?: boolean;
         }>;
     }) => {
         const deal = await mkItem({
@@ -1102,6 +1158,10 @@ async function seed() {
             availableTimeStart: opts.lunch ? LUNCH_START : null,
             availableTimeEnd: opts.lunch ? LUNCH_END : null,
             availableDaysOfWeek: opts.lunch ? LUNCH_DAYS : null,
+            dealPricingMode: opts.pricingMode ?? null,
+            dealBogoBuyQuantity: opts.bogoBuyQuantity ?? null,
+            dealBogoGetQuantity: opts.bogoGetQuantity ?? null,
+            dealBogoGetPercent: opts.bogoGetPercent ?? null,
         });
         let slotIndex = 0;
         for (const s of opts.slots) {
@@ -1117,6 +1177,10 @@ async function seed() {
                     allowCustomization: s.allowCustomization ?? true,
                     slotSurcharges: s.slotSurcharges ?? null,
                     slotSizeKey: s.slotSizeKey ?? null,
+                    allowedSizeKeys: s.allowedSizeKeys ?? null,
+                    mirrorSlotIndex: s.mirrorSlotIndex ?? null,
+                    mirrorMatchSize: s.mirrorMatchSize ?? false,
+                    mirrorMatchCategory: s.mirrorMatchCategory ?? false,
                 }),
             );
         }
@@ -1160,8 +1224,9 @@ async function seed() {
         lunch: true,
         slots: [
             {
-                type: 'choice_category',
-                sourceCategoryId: catPizza.id,
+                // "All 12\" Classic Pizza options" — Classic pizzas only (no Signature).
+                type: 'choice_list',
+                sourceMenuItemIds: classicPizzas.map((p) => p.id),
                 quantity: 1,
                 allowCustomization: true,
                 slotSizeKey: '12',
@@ -1169,20 +1234,41 @@ async function seed() {
         ],
     });
 
-    // Medium Pizza/Pasta Lunch Offer — 9"/medium pizza or pasta for Rs899.
+    // Medium Pizza/Pasta Lunch Offer — choose EITHER a build-your-own 9" (Medium 10") pizza
+    // (base + cheese + 2 included toppings) OR a Pasta, flat Rs 899. Modeled as one choice_list
+    // slot over [the deal-only BYO pizza + the pastas]; each choice carries its own groups, so
+    // the pizza shows base/cheese/toppings and pasta shows its own options.
+    const byoMediumDeal = await mkItem({
+        category: catBYO,
+        name: 'Build Your Own Pizza (Medium Deal)',
+        description:
+            'Your 9" pizza, built your way: choose a base, cheese and 2 toppings.',
+        basePrice: 699,
+        sizes: pizzaSizes(699, 1449, 1949, 2849), // ladder so the Medium 10" variant exists
+        dealOnly: true, // used only inside this deal — hidden from the à-la-carte menu
+    });
+    await linkGroups(byoMediumDeal, [
+        grpCrust,
+        grpBase,
+        grpCheeseBYO, // "Choose Your Cheese" (Mozzarella + Extra Cheese, max 2)
+        grpDealToppings, // "Choose 2 Toppings" (2 included at 10", any/same twice)
+    ]);
     await mkDeal({
         name: 'Medium Pizza, Pasta Lunch Offer',
         description:
-            '9" pizza with 2 toppings (1 meat & 1 veg) or a pasta for only Rs 899. Monday–Friday 12–4pm.',
+            '9" build-your-own pizza (base, cheese & 2 toppings) or a pasta for only Rs 899. Monday–Friday 12–4pm.',
         price: 899,
         lunch: true,
         slots: [
             {
-                type: 'choice_category',
-                sourceCategoryId: catPizza.id,
+                type: 'choice_list',
+                sourceMenuItemIds: [
+                    byoMediumDeal.id,
+                    ...pastaItems.map((p) => p.id),
+                ],
                 quantity: 1,
                 allowCustomization: true,
-                slotSizeKey: '10',
+                slotSizeKey: '10', // pizza pins to Medium 10"; pasta is sizeless (lock is a no-op)
             },
         ],
     });
@@ -1423,29 +1509,48 @@ async function seed() {
     });
 
     // ===================================================================
-    // BUY ONE GET ONE HALF PRICE  (auto-applied discount)
+    // BUY ONE GET ONE HALF PRICE — a self-contained DEAL (not a discount).
     // ===================================================================
-    // NOTE: the sheet restricts this to 12"/14" pizzas. The discount engine pairs by
-    // category+size (bogoMatchSameGroup) but cannot exclude specific sizes, so this
-    // applies to same-size pairs across the pizza categories (7"+7", …, 14"+14").
-    await discountRepo.save(
-        discountRepo.create({
-            tenantId: tenant.id,
-            name: BOGO_NAME,
-            code: null,
-            requiresCode: false, // auto-applied, "all day every day"
-            type: 'buy_x_get_y',
-            value: 0,
-            buyQuantity: 1,
-            getQuantity: 1,
-            getDiscountPercent: 50,
-            bogoMatchSameGroup: true, // 2nd of same size & category at half price
-            applicationScope: 'category',
-            applicationScopeIds: [catPizza.id, catBYO.id],
-            eligibilityBrandIds: [brandId],
-            isActive: true,
-        }),
-    );
+    // Modeled as a deal so it NEVER bleeds onto other deals: the half-price is computed
+    // inside the deal's own two pizza slots, not by the order-wide discount engine.
+    // Dynamic pricing: full price of pizza 1 + the CHEAPER pizza at 50% off. The 2nd pizza
+    // must be the SAME SIZE and SAME (strict) CATEGORY as the 1st — Classic↔Classic,
+    // Signature↔Signature, Build-Your-Own↔Build-Your-Own. Large 12" / XLarge 14" only
+    // (7"/10" excluded by allowedSizeKeys). Available all day, every day.
+    const bogoPizzaIds = [
+        ...classicPizzas.map((p) => p.id), // includes Margherita (label 'Classic')
+        ...signaturePizzas.map((p) => p.id),
+        byo.id,
+    ];
+    await mkDeal({
+        name: BOGO_NAME,
+        description:
+            'Buy any Large 12" or XLarge 14" pizza and get a 2nd pizza of the same size and same category (Classic, Signature or Build Your Own) at HALF PRICE. Available all day, every day.',
+        price: 0, // dynamic — computed from the two chosen pizzas at order time
+        pricingMode: 'bogo',
+        bogoBuyQuantity: 1,
+        bogoGetQuantity: 1,
+        bogoGetPercent: 50,
+        slots: [
+            {
+                type: 'choice_list',
+                sourceMenuItemIds: bogoPizzaIds,
+                quantity: 1,
+                allowCustomization: true,
+                allowedSizeKeys: ['12', '14'],
+            },
+            {
+                type: 'choice_list',
+                sourceMenuItemIds: bogoPizzaIds,
+                quantity: 1,
+                allowCustomization: true,
+                allowedSizeKeys: ['12', '14'],
+                mirrorSlotIndex: 0,
+                mirrorMatchSize: true,
+                mirrorMatchCategory: true,
+            },
+        ],
+    });
 
     // ——— Make every item available at the brand's branches ———
     const branches = await branchRepo

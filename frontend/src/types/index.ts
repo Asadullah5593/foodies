@@ -291,6 +291,10 @@ export interface MenuItem {
   calories?: number | null;
   /** Short badge/tag (e.g. "Classic", "Signature"). */
   label?: string | null;
+  /** Deal-root pricing mode ('bogo' = dynamic full + cheaper-at-half); null/'fixed' otherwise. */
+  deal_pricing_mode?: string | null;
+  /** For a 'bogo' deal root: percent off the cheaper pizza (e.g. 50). */
+  bogo_get_percent?: number | null;
   /** Recurring availability window (branch timezone), HH:mm; null = all day. */
   available_time_start?: string | null;
   available_time_end?: string | null;

@@ -10,7 +10,6 @@ import {
     Query,
     Req,
     BadRequestException,
-    ConflictException,
     NotFoundException,
     UseGuards,
     UseInterceptors,
@@ -125,6 +124,7 @@ export class ConsumerController {
     private async resolveCartCustomerOrThrow(phone: string) {
         const customer = await this.customersService.findConsumerByPhone(
             phone.trim(),
+            this.getTenantIdFromEnv(),
         );
         if (!customer) {
             throw new NotFoundException(
@@ -339,7 +339,8 @@ export class ConsumerController {
     /**
      * Customer register: name, phone, password, confirm_password (email optional).
      * Requires a prior SMS phone-verification OTP (see `auth/send-otp` +
-     * `auth/verify-phone-otp` with purpose `phone_verification`). No tenant linkage.
+     * `auth/verify-phone-otp` with purpose `phone_verification`). The new
+     * customer is assigned the deployment's tenant (TENANT_ID env) at creation.
      */
     @Post('register')
     @ApiOperation({
@@ -376,13 +377,16 @@ export class ConsumerController {
                 'Phone number not verified. Request and confirm an OTP first.',
             );
         }
-        const customer = await this.customersService.createForConsumer(null, {
-            phone: dto.phone,
-            name: dto.name,
-            email: dto.email,
-            password: dto.password,
-            phoneVerified: true,
-        });
+        const customer = await this.customersService.createForConsumer(
+            this.getTenantIdFromEnv(),
+            {
+                phone: dto.phone,
+                name: dto.name,
+                email: dto.email,
+                password: dto.password,
+                phoneVerified: true,
+            },
+        );
         return {
             id: customer.id,
             tenant_id: customer.tenantId ?? null,
@@ -391,74 +395,6 @@ export class ConsumerController {
             email: customer.email ?? null,
             loyalty_points_balance: customer.loyaltyPointsBalance,
         };
-    }
-
-    /** One-time tenant linking: called after first branch selection. */
-    @Post('customers/sync-tenant')
-    @UseGuards(CustomerJwtAuthGuard)
-    @ApiBearerAuth()
-    @ApiOperation({
-        summary: 'Link logged-in customer to tenant (one-time) using branch_id',
-    })
-    @ApiBody({
-        schema: {
-            type: 'object',
-            required: ['branch_id'],
-            properties: {
-                branch_id: { type: 'number', example: 10 },
-                phone: {
-                    type: 'string',
-                    example: '03001234567',
-                    description:
-                        'Optional safety check: must match the logged-in customer phone when provided',
-                },
-            },
-        },
-    })
-    async syncTenant(
-        @Req() req: { user: Customer },
-        @Body() body: { branch_id: number; phone?: string },
-    ) {
-        const branchId = Number(body?.branch_id);
-        if (!Number.isFinite(branchId) || branchId <= 0) {
-            throw new BadRequestException('branch_id is required');
-        }
-        if (body?.phone?.trim()) {
-            const reqPhone = (req.user.phone ?? '').trim();
-            if (reqPhone && reqPhone !== body.phone.trim()) {
-                throw new BadRequestException(
-                    'phone does not match logged-in customer',
-                );
-            }
-        }
-
-        const tenantId = await this.getTenantIdFromBranch(branchId);
-        try {
-            const updated = await this.customersService.syncTenantForCustomer(
-                req.user.id,
-                tenantId,
-            );
-            const token = this.jwtService.sign({
-                sub: updated.id,
-                type: 'customer',
-                tenantId: updated.tenantId,
-            });
-            return {
-                token,
-                customer: {
-                    id: updated.id,
-                    tenant_id: updated.tenantId ?? null,
-                    phone: updated.phone,
-                    name: updated.name,
-                    email: updated.email ?? null,
-                    loyalty_points_balance: updated.loyaltyPointsBalance,
-                },
-            };
-        } catch (e) {
-            // normalize known conflict into a consistent message
-            if (e instanceof ConflictException) throw e;
-            throw e;
-        }
     }
 
     /**
@@ -495,6 +431,7 @@ export class ConsumerController {
             ? await this.customersService.validateCustomerByPhone(
                   phone,
                   password,
+                  this.getTenantIdFromEnv(),
               )
             : await this.customersService.validateCustomer(email, password);
         const token = this.jwtService.sign({
@@ -681,8 +618,10 @@ export class ConsumerController {
         );
 
         if (purpose === 'password_reset') {
-            const customer =
-                await this.customersService.findConsumerByPhone(phone);
+            const customer = await this.customersService.findConsumerByPhone(
+                phone,
+                this.getTenantIdFromEnv(),
+            );
             if (!customer) {
                 this.logger.log(
                     `send-otp(password_reset): no consumer for ${phone}`,
@@ -760,8 +699,10 @@ export class ConsumerController {
         await this.otpService.verifyForPhone(phone, code, purpose);
 
         if (purpose === 'password_reset') {
-            const customer =
-                await this.customersService.findConsumerByPhone(phone);
+            const customer = await this.customersService.findConsumerByPhone(
+                phone,
+                this.getTenantIdFromEnv(),
+            );
             if (!customer) throw new NotFoundException('Customer not found');
             await this.customersService.setPassword(
                 customer.id,
@@ -891,6 +832,7 @@ export class ConsumerController {
             throw new NotFoundException('branch_id and phone are required');
         const customer = await this.customersService.findConsumerByPhone(
             phone.trim(),
+            this.getTenantIdFromEnv(),
         );
         if (!customer) throw new NotFoundException('Customer not found');
         return {
@@ -937,6 +879,7 @@ export class ConsumerController {
             throw new NotFoundException('phone and branch_id are required');
         const customer = await this.customersService.findConsumerByPhone(
             dto.phone.trim(),
+            this.getTenantIdFromEnv(),
         );
         if (!customer) throw new NotFoundException('Customer not found');
         const updated = await this.customersService.update(customer.id, null, {

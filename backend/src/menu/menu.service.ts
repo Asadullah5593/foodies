@@ -121,6 +121,19 @@ function normalizeDaysOfWeek(input: unknown): number[] | null {
     return set.size ? [...set].sort((a, b) => a - b) : null;
 }
 
+/** Per-slot pricing/constraint metadata used by the order pipeline to price + validate deals. */
+export type DealSlotMeta = {
+    type: 'fixed' | 'choice_category' | 'choice_list';
+    sourceMenuItemId: number | null;
+    sourceCategoryId: number | null;
+    sourceMenuItemIds: number[] | null;
+    slotSizeKey: string | null;
+    allowedSizeKeys: string[] | null;
+    mirrorSlotIndex: number | null;
+    mirrorMatchSize: boolean;
+    mirrorMatchCategory: boolean;
+};
+
 /** Metadata + scheduling fields shared by every menu-item API response. */
 function itemMetaForApi(i: {
     allergens?: string[] | null;
@@ -129,6 +142,8 @@ function itemMetaForApi(i: {
     availableTimeStart?: string | null;
     availableTimeEnd?: string | null;
     availableDaysOfWeek?: number[] | null;
+    dealPricingMode?: string | null;
+    dealBogoGetPercent?: number | null;
 }) {
     return {
         allergens: i.allergens ?? null,
@@ -137,6 +152,10 @@ function itemMetaForApi(i: {
         available_time_start: i.availableTimeStart ?? null,
         available_time_end: i.availableTimeEnd ?? null,
         available_days_of_week: i.availableDaysOfWeek ?? null,
+        // Deal-root pricing mode so clients can recompute a dynamic (BOGO) deal's total.
+        deal_pricing_mode: i.dealPricingMode ?? null,
+        bogo_get_percent:
+            i.dealBogoGetPercent != null ? Number(i.dealBogoGetPercent) : null,
     };
 }
 
@@ -1718,6 +1737,46 @@ export class MenuService {
         return out;
     }
 
+    /**
+     * Per-slot pricing/constraint metadata for a deal, keyed by slot_index. Used by the
+     * order pipeline (expandDealItems) to enforce BOGO size/category constraints and to
+     * resolve per-slot allowed sizes server-side.
+     */
+    async getDealComponentMeta(menuItemId: number): Promise<
+        Map<number, DealSlotMeta>
+    > {
+        const comps = await this.dealComponentRepo.find({
+            where: { menuItemId },
+            select: [
+                'slotIndex',
+                'type',
+                'sourceMenuItemId',
+                'sourceCategoryId',
+                'sourceMenuItemIds',
+                'slotSizeKey',
+                'allowedSizeKeys',
+                'mirrorSlotIndex',
+                'mirrorMatchSize',
+                'mirrorMatchCategory',
+            ],
+        });
+        const out = new Map<number, DealSlotMeta>();
+        for (const c of comps) {
+            out.set(c.slotIndex, {
+                type: c.type,
+                sourceMenuItemId: c.sourceMenuItemId ?? null,
+                sourceCategoryId: c.sourceCategoryId ?? null,
+                sourceMenuItemIds: c.sourceMenuItemIds ?? null,
+                slotSizeKey: c.slotSizeKey ?? null,
+                allowedSizeKeys: c.allowedSizeKeys ?? null,
+                mirrorSlotIndex: c.mirrorSlotIndex ?? null,
+                mirrorMatchSize: !!c.mirrorMatchSize,
+                mirrorMatchCategory: !!c.mirrorMatchCategory,
+            });
+        }
+        return out;
+    }
+
     /** Get deal components for admin (edit form). Returns null if not a deal. */
     async getDealForAdmin(menuItemId: number) {
         const item = await this.itemRepo.findOne({
@@ -1753,6 +1812,10 @@ export class MenuService {
                 allow_customization: dc.allowCustomization,
                 slot_surcharges: dc.slotSurcharges ?? null,
                 slot_size_key: dc.slotSizeKey ?? null,
+                allowed_size_keys: dc.allowedSizeKeys ?? null,
+                mirror_slot_index: dc.mirrorSlotIndex ?? null,
+                mirror_match_size: !!dc.mirrorMatchSize,
+                mirror_match_category: !!dc.mirrorMatchCategory,
                 source_menu_item_name:
                     (dc.sourceMenuItem as { name?: string } | null)?.name ??
                     null,
@@ -1776,6 +1839,10 @@ export class MenuService {
             allow_customization: boolean;
             slot_surcharges?: Record<string, number> | null;
             slot_size_key?: string | null;
+            allowed_size_keys?: string[] | null;
+            mirror_slot_index?: number | null;
+            mirror_match_size?: boolean;
+            mirror_match_category?: boolean;
         }>,
     ) {
         const item = await this.itemRepo.findOne({ where: { id: menuItemId } });
@@ -1794,6 +1861,15 @@ export class MenuService {
                     allowCustomization: s.allow_customization ?? true,
                     slotSurcharges: normalizePriceBySize(s.slot_surcharges),
                     slotSizeKey: normalizeSizeKey(s.slot_size_key),
+                    allowedSizeKeys: Array.isArray(s.allowed_size_keys)
+                        ? s.allowed_size_keys.map((k) => String(k))
+                        : null,
+                    mirrorSlotIndex:
+                        s.mirror_slot_index != null
+                            ? Number(s.mirror_slot_index)
+                            : null,
+                    mirrorMatchSize: !!s.mirror_match_size,
+                    mirrorMatchCategory: !!s.mirror_match_category,
                 }),
             );
         }
@@ -1956,6 +2032,8 @@ export class MenuService {
         deal_menu_item_id: number;
         name: string;
         price: number;
+        pricing_mode?: string | null;
+        bogo_get_percent?: number | null;
         slots: Array<{
             slot_index: number;
             type: string;
@@ -1963,6 +2041,10 @@ export class MenuService {
             allow_customization: boolean;
             slot_surcharges?: Record<string, number> | null;
             slot_size_key?: string | null;
+            allowed_size_keys?: string[] | null;
+            mirror_slot_index?: number | null;
+            mirror_match_size?: boolean;
+            mirror_match_category?: boolean;
             source_menu_item_id?: number | null;
             choice_items?: Array<{
                 id: number;
@@ -2128,6 +2210,10 @@ export class MenuService {
                 allow_customization: dc.allowCustomization,
                 slot_surcharges: dc.slotSurcharges ?? null,
                 slot_size_key: dc.slotSizeKey ?? null,
+                allowed_size_keys: dc.allowedSizeKeys ?? null,
+                mirror_slot_index: dc.mirrorSlotIndex ?? null,
+                mirror_match_size: !!dc.mirrorMatchSize,
+                mirror_match_category: !!dc.mirrorMatchCategory,
             };
             if (dc.type === 'fixed' && dc.sourceMenuItemId != null) {
                 const slotItem = menuById.get(dc.sourceMenuItemId);
@@ -2162,6 +2248,17 @@ export class MenuService {
             deal_menu_item_id: menuItemId,
             name: dealItem.name,
             price,
+            pricing_mode:
+                (dealItem as { dealPricingMode?: string | null })
+                    .dealPricingMode ?? null,
+            bogo_get_percent:
+                (dealItem as { dealBogoGetPercent?: number | null })
+                    .dealBogoGetPercent != null
+                    ? Number(
+                          (dealItem as { dealBogoGetPercent?: number | null })
+                              .dealBogoGetPercent,
+                      )
+                    : null,
             slots,
         };
     }
