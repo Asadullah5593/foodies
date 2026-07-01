@@ -18,10 +18,10 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * carts/wallets/ratings/promotions cascade away, and any orders keep their
  * history via ON DELETE SET NULL. Deleted phones are reported for the record.
  */
-export class BackfillConsumerTenant1760000000053
+export class BackfillConsumerTenant1760000000055
     implements MigrationInterface
 {
-    name = 'BackfillConsumerTenant1760000000053';
+    name = 'BackfillConsumerTenant1760000000055';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         const raw = process.env.TENANT_ID;
