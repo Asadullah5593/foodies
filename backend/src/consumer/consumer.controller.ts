@@ -381,12 +381,20 @@ export class ConsumerController {
                 'password and confirm_password do not match',
             );
         }
+        // Phone verification is gated behind CONSUMER_REQUIRE_PHONE_OTP so it can be
+        // turned off while SMS (Amazon SNS) is unavailable. Unset/false ⇒ skip the OTP
+        // requirement and let registration through; set to true once SNS is live to
+        // enforce the send-otp → verify-phone-otp → register flow. Either way, the stored
+        // phone_verified flag reflects whether an OTP was actually confirmed.
+        const requireOtp = ['true', '1'].includes(
+            (process.env.CONSUMER_REQUIRE_PHONE_OTP ?? '').trim().toLowerCase(),
+        );
         const verified = await this.otpService.wasRecentlyVerified(
             dto.phone,
             'phone_verification',
             PHONE_VERIFICATION_WINDOW_MS,
         );
-        if (!verified) {
+        if (requireOtp && !verified) {
             throw new BadRequestException(
                 'Phone number not verified. Request and confirm an OTP first.',
             );
@@ -398,7 +406,7 @@ export class ConsumerController {
                 name: dto.name,
                 email: dto.email,
                 password: dto.password,
-                phoneVerified: true,
+                phoneVerified: verified,
             },
         );
         return {
