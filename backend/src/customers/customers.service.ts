@@ -259,12 +259,23 @@ export class CustomersService {
         return this.repo.findOne({ where: { tenantId, phone: normalized } });
     }
 
-    /** Find consumer (no tenant) by phone. Used for consumer app when tenant linkage is removed. */
-    async findConsumerByPhone(phone: string): Promise<Customer | null> {
+    /**
+     * Find a consumer by phone. When `tenantId` is provided (consumer app/web
+     * now register under the deployment's fixed tenant), scopes the lookup to
+     * that tenant. When omitted, falls back to legacy unlinked consumers
+     * (tenant_id IS NULL).
+     */
+    async findConsumerByPhone(
+        phone: string,
+        tenantId?: number | null,
+    ): Promise<Customer | null> {
         const normalized = normalizePakistaniPhone(phone);
         if (!normalized) return null;
         return this.repo.findOne({
-            where: { phone: normalized, tenantId: IsNull() },
+            where:
+                tenantId != null
+                    ? { phone: normalized, tenantId }
+                    : { phone: normalized, tenantId: IsNull() },
         });
     }
 
@@ -435,15 +446,17 @@ export class CustomersService {
     }
 
     /**
-     * Validate a consumer (tenant_id IS NULL) by phone and password.
+     * Validate a consumer by phone and password. Pass `tenantId` to scope the
+     * lookup to the deployment's consumer tenant (see findConsumerByPhone).
      * Legacy rows created at POS have no password and correctly fail here —
      * such users must set a password via the SMS password-reset flow first.
      */
     async validateCustomerByPhone(
         phone: string,
         password: string,
+        tenantId?: number | null,
     ): Promise<Customer> {
-        const customer = await this.findConsumerByPhone(phone);
+        const customer = await this.findConsumerByPhone(phone, tenantId);
         if (!customer || !customer.password) {
             throw new UnauthorizedException('Invalid phone or password');
         }
@@ -837,15 +850,4 @@ export class CustomersService {
         return null;
     }
 
-    /**
-     * One-time consumer tenant linking:
-     * - If customer already has tenantId, returns it (idempotent) unless different tenant requested.
-     * - Merges into existing tenant customer when phone is already registered under that tenant.
-     */
-    async syncTenantForCustomer(
-        customerId: number,
-        tenantId: number,
-    ): Promise<Customer> {
-        return this.linkConsumerToTenant(customerId, tenantId);
-    }
 }
