@@ -199,9 +199,12 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                   {selected && <div className="w-2 h-2 rounded-full bg-white" />}
                 </div>
                 <span className="flex-1 text-base font-semibold text-gray-800">{variant.name}</span>
-                <span className={`text-base font-bold ${selected ? 'text-red-600' : 'text-gray-700'}`}>
-                  {formatCurrency((item.price ?? item.base_price ?? 0) + variant.price_modifier)}
-                </span>
+                {/* Inside a deal the standalone size price is misleading (deal price is fixed), so hide it. */}
+                {!hideRunningTotal && (
+                  <span className={`text-base font-bold ${selected ? 'text-red-600' : 'text-gray-700'}`}>
+                    {formatCurrency((item.price ?? item.base_price ?? 0) + variant.price_modifier)}
+                  </span>
+                )}
                 {selected && <MdCheckCircle className="h-5 w-5 text-red-500 flex-none" />}
               </label>
             );
