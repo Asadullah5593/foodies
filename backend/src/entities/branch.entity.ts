@@ -58,6 +58,29 @@ export class Branch {
     deliveryRadiusKm: number;
 
     /**
+     * Per-tender GST rate (fraction, e.g. 0.15 = 15%). Pakistan FBR/PRA/SRB charge a REDUCED
+     * rate on card/digital payments vs cash. Null = inherit the tenant's single default rate
+     * (so unconfigured branches behave exactly as before). Set via branch admin.
+     */
+    @Column({
+        name: 'gst_rate_cash',
+        type: 'numeric',
+        precision: 5,
+        scale: 4,
+        nullable: true,
+    })
+    gstRateCash: number | null;
+
+    @Column({
+        name: 'gst_rate_card',
+        type: 'numeric',
+        precision: 5,
+        scale: 4,
+        nullable: true,
+    })
+    gstRateCard: number | null;
+
+    /**
      * Whole-branch master switch. When false the branch is hidden from customers
      * and takes NO orders on any channel (online AND POS). For pausing a single
      * brand's online orders use branch_brands.is_open instead.

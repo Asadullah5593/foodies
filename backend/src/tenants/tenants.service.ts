@@ -52,7 +52,8 @@ export class TenantsService {
         dto: {
             name?: string;
             legal_name?: string;
-            default_tax_rate?: number;
+            gst_rate_cash?: number | null;
+            gst_rate_card?: number | null;
             loyalty_enabled?: boolean;
         },
     ) {
@@ -90,7 +91,6 @@ export class TenantsService {
         legal_name?: string;
         default_currency?: string;
         default_timezone?: string;
-        default_tax_rate?: number;
         loyalty_enabled?: boolean;
         owner_email: string;
         owner_password: string;
@@ -125,7 +125,6 @@ export class TenantsService {
                     legalName: dto.legal_name ?? null,
                     defaultCurrency: dto.default_currency ?? 'PKR',
                     defaultTimezone: dto.default_timezone ?? 'UTC',
-                    defaultTaxRate: dto.default_tax_rate ?? 0,
                     defaultServiceCharge: 0,
                     loyaltyEnabled: dto.loyalty_enabled ?? false,
                 }),
@@ -174,7 +173,8 @@ export class TenantsService {
             legal_name?: string;
             default_currency?: string;
             default_timezone?: string;
-            default_tax_rate?: number;
+            gst_rate_cash?: number | null;
+            gst_rate_card?: number | null;
             loyalty_enabled?: boolean;
         },
     ) {
@@ -194,8 +194,10 @@ export class TenantsService {
             tenant.defaultCurrency = dto.default_currency;
         if (dto.default_timezone !== undefined)
             tenant.defaultTimezone = dto.default_timezone;
-        if (dto.default_tax_rate !== undefined)
-            tenant.defaultTaxRate = dto.default_tax_rate;
+        if (dto.gst_rate_cash !== undefined)
+            tenant.gstRateCash = dto.gst_rate_cash;
+        if (dto.gst_rate_card !== undefined)
+            tenant.gstRateCard = dto.gst_rate_card;
         // defaultServiceCharge is deprecated; keep it at 0 for all tenants.
         tenant.defaultServiceCharge = 0;
         if (dto.loyalty_enabled !== undefined)
@@ -225,7 +227,6 @@ export class TenantsService {
             legal_name?: string;
             default_currency?: string;
             default_timezone?: string;
-            default_tax_rate?: number;
             default_service_charge?: number;
             loyalty_enabled?: boolean;
         },
@@ -322,7 +323,8 @@ export class TenantsService {
             slug: t.slug,
             status: t.status,
             legal_name: t.legalName,
-            default_tax_rate: Number(t.defaultTaxRate),
+            gst_rate_cash: t.gstRateCash != null ? Number(t.gstRateCash) : null,
+            gst_rate_card: t.gstRateCard != null ? Number(t.gstRateCard) : null,
             default_service_charge: 0,
             loyalty_enabled: t.loyaltyEnabled,
             loyalty_settings: t.loyaltySettings ?? null,
@@ -341,7 +343,6 @@ export class TenantsService {
             legal_name: t.legalName,
             default_currency: t.defaultCurrency,
             default_timezone: t.defaultTimezone,
-            default_tax_rate: Number(t.defaultTaxRate),
             default_service_charge: 0,
             loyalty_enabled: t.loyaltyEnabled,
             loyalty_settings: t.loyaltySettings ?? null,

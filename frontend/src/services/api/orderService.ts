@@ -36,6 +36,8 @@ export interface CreateOrderRequest {
   notes?: string;
   discount_code?: string;
   loyalty_points_to_redeem?: number;
+  /** Tender split for per-tender GST (cash vs card). */
+  payment_split?: { cash_amount?: number; card_amount?: number };
 }
 
 export interface ProcessPaymentRequest {
@@ -60,6 +62,10 @@ export interface OrderQuoteResponse {
   loyalty_discount?: number;
   loyalty_points_redeemed?: number;
   tax_amount: number;
+  /** Which tender(s) drove the GST + the applied cash/card rates (fractions). */
+  tax_basis?: 'cash' | 'card' | 'split';
+  tax_rate_cash?: number;
+  tax_rate_card?: number;
   service_charge: number;
   delivery_fee: number;
   total_amount: number;
@@ -73,6 +79,8 @@ export type OrderQuoteRequest = {
   discount_code?: string;
   customer_phone?: string;
   loyalty_points_to_redeem?: number;
+  /** Tender split for per-tender GST (cash vs card). */
+  payment_split?: { cash_amount?: number; card_amount?: number };
 };
 
 export const orderService = {

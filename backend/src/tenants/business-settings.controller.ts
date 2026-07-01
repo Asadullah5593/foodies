@@ -38,7 +38,8 @@ export class BusinessSettingsController {
         dto: {
             name?: string;
             legal_name?: string;
-            default_tax_rate?: number;
+            gst_rate_cash?: number | null;
+            gst_rate_card?: number | null;
             loyalty_enabled?: boolean;
         },
     ) {

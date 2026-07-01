@@ -212,11 +212,25 @@ const OrderTaking: React.FC = () => {
     }
   }, [pendingKioskCart]);
 
+  // Tender split for per-tender GST (cash vs card). All-cash/all-card send a 1/0 ratio; a
+  // split sends the entered amounts. Included in the quote payload so the quote re-runs (and
+  // Tax/Total update) whenever the cashier toggles the tender or edits the split.
+  const paymentSplit =
+    paymentMode === 'card'
+      ? { cash_amount: 0, card_amount: 1 }
+      : paymentMode === 'multipay'
+        ? {
+            cash_amount: parseFloat(paymentCashAmount || '0') || 0,
+            card_amount: parseFloat(paymentCardAmount || '0') || 0,
+          }
+        : { cash_amount: 1, card_amount: 0 };
+
   const quotePayload =
     branchId != null && selectedItems.length > 0 && effectiveOrderType != null
     ? {
         branch_id: branchId,
         order_type: effectiveOrderType,
+        payment_split: paymentSplit,
         items: selectedItems.map((item) => {
           if (item.dealId != null && item.components?.length) {
             return {
@@ -825,6 +839,8 @@ const OrderTaking: React.FC = () => {
     const payload: CreateOrderRequest = {
       branch_id: branchId,
       order_type: effectiveOrderType,
+      // Tender split so the persisted GST matches the tender the customer actually pays with.
+      payment_split: paymentSplit,
       table_number: effectiveOrderType === 'dine_in' ? tableNumber : undefined,
       customer_name: customerName.trim(),
       customer_phone: customerPhone.trim(),

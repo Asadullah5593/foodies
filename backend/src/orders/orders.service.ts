@@ -47,6 +47,11 @@ import {
     round2 as bogoRound2,
     type BogoComponentConstraint,
 } from './bogo-pricing';
+import {
+    resolveGstRates,
+    computeTenderTax,
+    type TenderSplit,
+} from './tax-pricing';
 import { RiderDispatchState } from '../entities/rider-dispatch-state.entity';
 import { RiderAssignmentLedger } from '../entities/rider-assignment-ledger.entity';
 import { RiderOpsMetricsService } from '../rider-hrm/rider-ops-metrics.service';
@@ -1019,6 +1024,8 @@ export class OrdersService {
             discount_code?: string;
             /** Points to redeem as discount (requires customer_phone). */
             loyalty_points_to_redeem?: number;
+            /** Tender split for per-tender GST (cash vs card). Omit → cash rate. */
+            payment_split?: { cash_amount?: number; card_amount?: number };
             /** When set, must match normalized customer_phone for same tenant. */
             customer_id?: number;
             /** Optional drop-off coordinates (e.g. consumer map picker). */
@@ -1409,8 +1416,16 @@ export class OrdersService {
             (_, i) => (lineAuto[i] ?? 0) + (lineCoupon[i] ?? 0),
         );
 
-        const taxRate = Number(tenant.defaultTaxRate) || 0;
         const serviceChargeRate = 0;
+        // Per-tender GST (Pakistan reduced card/digital rate). The cashier's cash/card split is
+        // applied to each brand-order's own base; a branch without per-tender rates falls back to
+        // the tenant default (unchanged). No tender info → cash (higher) rate, never under-charges.
+        const paymentSplit: TenderSplit = dto.payment_split
+            ? {
+                  cash: dto.payment_split.cash_amount,
+                  card: dto.payment_split.card_amount,
+              }
+            : null;
         // Delivery fee is per brand: each order in the group charges its own brand's fee
         // (tier×distance when the brand opts into tier-based delivery, else its flat fee).
         const brandById = new Map<number, Brand>();
@@ -1573,10 +1588,23 @@ export class OrdersService {
                     Math.round((afterDiscount - loyaltyDiscountAmount) * 100) /
                     100;
             }
-            const brandTax = Math.round(afterDiscount * taxRate * 100) / 100;
+            const groupBranch = branchMap.get(branchId)!.branch;
+            const gstRates = resolveGstRates(
+                groupBranch as unknown as {
+                    gstRateCash?: number | null;
+                    gstRateCard?: number | null;
+                },
+                tenant,
+            );
+            const tax = computeTenderTax(
+                afterDiscount,
+                paymentSplit,
+                gstRates.cash,
+                gstRates.card,
+            );
+            const brandTax = tax.taxAmount;
             const brandServiceCharge =
                 Math.round(afterDiscount * serviceChargeRate * 100) / 100;
-            const groupBranch = branchMap.get(branchId)!.branch;
             const groupBrand = brandById.get(brandId);
             const deliveryResolved = groupBrand
                 ? this.resolveDeliveryForBrand(
@@ -1624,6 +1652,9 @@ export class OrdersService {
                     subtotal: brandSubtotal,
                     discountAmount: brandDiscountAmount,
                     taxAmount: brandTax,
+                    taxRateCash: gstRates.cash,
+                    taxRateCard: gstRates.card,
+                    taxBasis: tax.basis,
                     serviceCharge: brandServiceCharge,
                     deliveryFee: brandDeliveryFee,
                     deliveryTier: deliveryResolved.tier,
@@ -3420,6 +3451,8 @@ export class OrdersService {
             discount_code?: string;
             customer_phone?: string;
             loyalty_points_to_redeem?: number;
+            /** Tender split for per-tender GST (cash vs card). Omit → cash rate. */
+            payment_split?: { cash_amount?: number; card_amount?: number };
             /** Drop-off coords — required to price/return delivery tiers. */
             latitude?: number;
             longitude?: number;
@@ -3586,9 +3619,28 @@ export class OrdersService {
                 }
             }
         }
-        const taxRate = Number(tenant.defaultTaxRate) || 0;
         const serviceChargeRate = 0;
-        const taxAmount = Math.round(afterDiscount * taxRate * 100) / 100;
+        // Per-tender GST — mirrors createOrder so the quoted total equals the charged total.
+        const gstRates = resolveGstRates(
+            branch as unknown as {
+                gstRateCash?: number | null;
+                gstRateCard?: number | null;
+            },
+            tenant,
+        );
+        const paymentSplit: TenderSplit = dto.payment_split
+            ? {
+                  cash: dto.payment_split.cash_amount,
+                  card: dto.payment_split.card_amount,
+              }
+            : null;
+        const tax = computeTenderTax(
+            afterDiscount,
+            paymentSplit,
+            gstRates.cash,
+            gstRates.card,
+        );
+        const taxAmount = tax.taxAmount;
         const serviceCharge =
             Math.round(afterDiscount * serviceChargeRate * 100) / 100;
         // Delivery fee per brand: tier×distance when the brand opts in (also returns
@@ -3680,6 +3732,9 @@ export class OrdersService {
             loyalty_discount: loyaltyDiscount,
             loyalty_points_redeemed: loyaltyPointsRedeemed,
             tax_amount: taxAmount,
+            tax_basis: tax.basis,
+            tax_rate_cash: gstRates.cash,
+            tax_rate_card: gstRates.card,
             service_charge: serviceCharge,
             delivery_fee: deliveryFee,
             ...(deliveryOptions ? { delivery_options: deliveryOptions } : {}),

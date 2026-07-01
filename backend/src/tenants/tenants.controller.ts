@@ -84,7 +84,6 @@ export class TenantsController {
             legal_name?: string;
             default_currency?: string;
             default_timezone?: string;
-            default_tax_rate?: number;
             loyalty_enabled?: boolean;
             owner_email: string;
             owner_password: string;
@@ -108,7 +107,6 @@ export class TenantsController {
             legal_name?: string;
             default_currency?: string;
             default_timezone?: string;
-            default_tax_rate?: number;
             loyalty_enabled?: boolean;
         },
         @CurrentUser() user: { id: number; tenantId: number | null },

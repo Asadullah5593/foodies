@@ -101,6 +101,29 @@ export class Order {
     @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
     taxAmount: number;
 
+    /** Audit: the cash/card GST rates applied and which tender(s) drove the tax. */
+    @Column({
+        name: 'tax_rate_cash',
+        type: 'numeric',
+        precision: 5,
+        scale: 4,
+        nullable: true,
+    })
+    taxRateCash: number | null;
+
+    @Column({
+        name: 'tax_rate_card',
+        type: 'numeric',
+        precision: 5,
+        scale: 4,
+        nullable: true,
+    })
+    taxRateCard: number | null;
+
+    /** 'cash' | 'card' | 'split' — which tender(s) the tax was computed from. */
+    @Column({ name: 'tax_basis', type: 'varchar', length: 8, nullable: true })
+    taxBasis: string | null;
+
     @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
     serviceCharge: number;
 
