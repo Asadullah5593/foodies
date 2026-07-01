@@ -406,8 +406,9 @@ export class CustomersService {
                 );
         }
         const passwordHash = await bcrypt.hash(password, 10);
+        let customer: Customer;
         try {
-            return await this.repo.save(
+            customer = await this.repo.save(
                 this.repo.create({
                     tenantId: tenantId ?? null,
                     phone,
@@ -427,6 +428,23 @@ export class CustomersService {
             }
             throw e;
         }
+        // Assign any active, in-window new_customer promotions. Awaited but
+        // non-fatal so a promo hiccup never blocks signup, and the reward is
+        // present the moment the customer opens their promotions list.
+        if (tenantId != null && this.promotionsService) {
+            try {
+                await this.promotionsService.assignNewCustomerPromotions(
+                    tenantId,
+                    customer.id,
+                );
+            } catch (err) {
+                this.logger.warn(
+                    `Promotion auto-assign failed for customer ${customer.id}`,
+                    err as Error,
+                );
+            }
+        }
+        return customer;
     }
 
     /** Validate customer by email and password; return customer or throw. */
