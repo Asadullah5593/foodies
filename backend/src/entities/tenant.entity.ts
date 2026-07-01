@@ -33,8 +33,29 @@ export class Tenant {
     @Column({ default: 'UTC' })
     defaultTimezone: string;
 
-    @Column({ type: 'decimal', precision: 5, scale: 4, default: 0 })
-    defaultTaxRate: number;
+    /**
+     * Per-tender GST (fraction, e.g. 0.15). Pakistan FBR charges a REDUCED rate on card/digital
+     * payments vs cash. Set in Business Settings. Both are the sole tax config (the old single
+     * defaultTaxRate was removed). If card is null it inherits the cash rate; if cash is null the
+     * tax is 0 until the business sets its rates.
+     */
+    @Column({
+        name: 'gst_rate_cash',
+        type: 'numeric',
+        precision: 5,
+        scale: 4,
+        nullable: true,
+    })
+    gstRateCash: number | null;
+
+    @Column({
+        name: 'gst_rate_card',
+        type: 'numeric',
+        precision: 5,
+        scale: 4,
+        nullable: true,
+    })
+    gstRateCard: number | null;
 
     @Column({ type: 'decimal', precision: 5, scale: 4, default: 0 })
     defaultServiceCharge: number;

@@ -67,6 +67,8 @@ export class DiscountsController {
             get_quantity?: number | null;
             get_discount_percent?: number | null;
             bogo_match_same_group?: boolean;
+            requires_card?: boolean;
+            eligible_bank_card_ids?: number[] | null;
         },
     ) {
         if (!user.tenantId)
@@ -108,6 +110,8 @@ export class DiscountsController {
             get_quantity?: number | null;
             get_discount_percent?: number | null;
             bogo_match_same_group?: boolean;
+            requires_card?: boolean;
+            eligible_bank_card_ids?: number[] | null;
         },
     ) {
         if (!user.tenantId)

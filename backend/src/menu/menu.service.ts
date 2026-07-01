@@ -207,33 +207,12 @@ export class MenuService {
         });
     }
 
-    /** Resolve ids of the brands linked to a branch (via branch_brand). */
-    private async getBrandIdsForBranch(branchId: number): Promise<number[]> {
-        const branch = await this.branchRepo.findOne({
-            where: { id: branchId },
-            relations: ['branchBrands'],
-        });
-        // An inactive branch exposes no brands/categories (mirrors getBranchMenu
-        // returning an empty menu).
-        if (!branch || !branch.isActive) return [];
-        return (branch.branchBrands ?? []).map((bb) => bb.brandId);
-    }
-
     /**
-     * Consumer API: list unique category names across the active brands linked to a branch.
-     * Only brands actually present at the branch are considered, so categories belonging to
-     * other brands of the same tenant are not shown. Still dedupes by name so a category like
-     * "Milkshakes" appears once even if multiple of the branch's brands define it.
-     */
-    async getConsumerCategoriesForBranch(branchId: number) {
-        const brandIds = await this.getBrandIdsForBranch(branchId);
-        return this.getConsumerCategoriesForBrandIds(brandIds);
-    }
-
-    /**
-     * Consumer API: list unique category names across a given set of active brands. Same
-     * shape/dedupe as {@link getConsumerCategoriesForBranch}, but driven by brand ids directly
-     * so it can aggregate across multiple branches (e.g. brands available near a location).
+     * Consumer API: list unique category names across a given set of active brands.
+     * Dedupes by name so a category like "Milkshakes" appears once even if several of
+     * the brands define it, and reports how many of them offer each one (brandCount).
+     * Driven by brand ids directly so it works brand-first (consumer app) and across
+     * multiple branches (e.g. brands available near a location).
      */
     async getConsumerCategoriesForBrandIds(brandIds: number[]) {
         if (brandIds.length === 0) return [];
@@ -267,22 +246,10 @@ export class MenuService {
     }
 
     /**
-     * Consumer API: for a given category key (normalized name), return ids of active brands
-     * that are linked to the branch and have this category.
-     * The caller (e.g. BrandsService) is responsible for mapping ids to full brand responses.
-     */
-    async getConsumerBrandIdsForCategoryKeyAtBranch(
-        branchId: number,
-        categoryKey: string,
-    ): Promise<number[]> {
-        const brandIds = await this.getBrandIdsForBranch(branchId);
-        return this.getConsumerBrandIdsForCategoryKey(brandIds, categoryKey);
-    }
-
-    /**
      * Consumer API: from a given set of brand ids, return those that are active and define the
-     * category. Brand-ids variant of {@link getConsumerBrandIdsForCategoryKeyAtBranch} so it can
-     * span multiple branches (e.g. brands available near a location).
+     * category. Driven by brand ids directly so it works brand-first (consumer app) and can
+     * span multiple branches (e.g. brands available near a location). The caller (e.g.
+     * BrandsService) maps the ids to full brand responses.
      */
     async getConsumerBrandIdsForCategoryKey(
         brandIds: number[],

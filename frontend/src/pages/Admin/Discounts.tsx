@@ -49,6 +49,8 @@ const Discounts: React.FC = () => {
     get_quantity: '1',
     get_discount_percent: '50',
     bogo_match_same_group: true,
+    requires_card: false,
+    eligible_bank_card_ids: [] as number[],
   });
 
   const { data: discounts, isLoading } = useQuery({
@@ -81,6 +83,13 @@ const Discounts: React.FC = () => {
     queryKey: ['menuItems'],
     queryFn: async () => {
       const res = await apiClient.get<{ id: number; name: string }[]>('/admin/menu/items');
+      return res.data;
+    },
+  });
+  const { data: bankCards } = useQuery({
+    queryKey: ['bank-cards'],
+    queryFn: async () => {
+      const res = await apiClient.get<Array<{ id: number; name: string; bank: string | null }>>('/admin/bank-cards');
       return res.data;
     },
   });
@@ -156,6 +165,8 @@ const Discounts: React.FC = () => {
       get_quantity: '1',
       get_discount_percent: '50',
       bogo_match_same_group: true,
+      requires_card: false,
+      eligible_bank_card_ids: [],
     });
   };
 
@@ -186,6 +197,8 @@ const Discounts: React.FC = () => {
       get_quantity: (discount.get_quantity ?? 1).toString(),
       get_discount_percent: (discount.get_discount_percent ?? 50).toString(),
       bogo_match_same_group: discount.bogo_match_same_group ?? true,
+      requires_card: discount.requires_card ?? false,
+      eligible_bank_card_ids: discount.eligible_bank_card_ids ?? [],
     });
     setShowForm(true);
   };
@@ -249,6 +262,8 @@ const Discounts: React.FC = () => {
             bogo_match_same_group: formData.bogo_match_same_group,
           }
         : {}),
+      requires_card: formData.requires_card,
+      eligible_bank_card_ids: formData.requires_card ? formData.eligible_bank_card_ids : null,
     };
 
     if (editingDiscount) {
@@ -345,6 +360,53 @@ const Discounts: React.FC = () => {
             <label htmlFor="requires_code" className="text-sm text-gray-700">
               Requires code (coupon/promo only) — when unchecked, discount is applied automatically when scope & branch match
             </label>
+          </div>
+
+          <div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="requires_card"
+                checked={formData.requires_card}
+                onChange={(e) => setFormData({ ...formData, requires_card: e.target.checked })}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+              />
+              <label htmlFor="requires_card" className="text-sm text-gray-700">
+                Requires a specific bank card — applies only when the whole bill is paid by one of the selected cards
+              </label>
+            </div>
+            {formData.requires_card && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(bankCards ?? []).length === 0 ? (
+                  <span className="text-xs text-gray-500">No bank cards yet — add them under Bank Cards first.</span>
+                ) : (
+                  (bankCards ?? []).map((c) => {
+                    const selected = formData.eligible_bank_card_ids.includes(c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            eligible_bank_card_ids: selected
+                              ? formData.eligible_bank_card_ids.filter((x) => x !== c.id)
+                              : [...formData.eligible_bank_card_ids, c.id],
+                          })
+                        }
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
+                          selected
+                            ? 'border-blue-500 bg-blue-50 text-blue-700'
+                            : 'border-gray-300 text-gray-600 hover:border-blue-400'
+                        }`}
+                      >
+                        {c.bank ? `${c.bank} — ${c.name}` : c.name}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

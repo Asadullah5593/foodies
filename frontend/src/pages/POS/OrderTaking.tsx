@@ -71,6 +71,12 @@ const OrderTaking: React.FC = () => {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'multipay'>('cash');
   const [paymentCashAmount, setPaymentCashAmount] = useState<string>('');
   const [paymentCardAmount, setPaymentCardAmount] = useState<string>('');
+  // Selected bank card (for card-linked discounts); only meaningful when paying fully by card.
+  const [bankCardId, setBankCardId] = useState<number | null>(null);
+  const { data: bankCards } = useQuery({
+    queryKey: ['pos-bank-cards'],
+    queryFn: () => adminService.getBankCards(true),
+  });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [currentMenuPage, setCurrentMenuPage] = useState(1);
   const [removeConfirmIndex, setRemoveConfirmIndex] = useState<number | null>(null);
@@ -212,11 +218,27 @@ const OrderTaking: React.FC = () => {
     }
   }, [pendingKioskCart]);
 
+  // Tender split for per-tender GST (cash vs card). All-cash/all-card send a 1/0 ratio; a
+  // split sends the entered amounts. Included in the quote payload so the quote re-runs (and
+  // Tax/Total update) whenever the cashier toggles the tender or edits the split.
+  const paymentSplit =
+    paymentMode === 'card'
+      ? { cash_amount: 0, card_amount: 1 }
+      : paymentMode === 'multipay'
+        ? {
+            cash_amount: parseFloat(paymentCashAmount || '0') || 0,
+            card_amount: parseFloat(paymentCardAmount || '0') || 0,
+          }
+        : { cash_amount: 1, card_amount: 0 };
+
   const quotePayload =
     branchId != null && selectedItems.length > 0 && effectiveOrderType != null
     ? {
         branch_id: branchId,
         order_type: effectiveOrderType,
+        payment_split: paymentSplit,
+        // Card-linked discounts only apply on full-card tender.
+        bank_card_id: paymentMode === 'card' ? bankCardId : null,
         items: selectedItems.map((item) => {
           if (item.dealId != null && item.components?.length) {
             return {
@@ -825,6 +847,9 @@ const OrderTaking: React.FC = () => {
     const payload: CreateOrderRequest = {
       branch_id: branchId,
       order_type: effectiveOrderType,
+      // Tender split so the persisted GST matches the tender the customer actually pays with.
+      payment_split: paymentSplit,
+      bank_card_id: paymentMode === 'card' ? bankCardId : null,
       table_number: effectiveOrderType === 'dine_in' ? tableNumber : undefined,
       customer_name: customerName.trim(),
       customer_phone: customerPhone.trim(),
@@ -1557,6 +1582,9 @@ const OrderTaking: React.FC = () => {
               paymentCardAmount={paymentCardAmount}
               onPaymentCashAmountChange={setPaymentCashAmount}
               onPaymentCardAmountChange={setPaymentCardAmount}
+              bankCards={bankCards ?? []}
+              bankCardId={bankCardId}
+              onBankCardChange={setBankCardId}
               onCreateOrder={activeKioskCode ? handleFinalizeKiosk : handleCreateOrder}
               isSubmitting={activeKioskCode ? finalizeKioskMutation.isPending : createOrderMutation.isPending}
               itemCount={selectedItems.length}

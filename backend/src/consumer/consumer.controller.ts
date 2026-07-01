@@ -190,6 +190,20 @@ export class ConsumerController {
         return tenantId;
     }
 
+    /**
+     * Parse a `brand_ids` query param into a deduped list of positive integers.
+     * Accepts comma-separated (`brand_ids=1,2,3`) or repeated (`brand_ids=1&brand_ids=2`).
+     */
+    private parseBrandIds(param?: string | string[]): number[] {
+        const raw = Array.isArray(param)
+            ? param.flatMap((v) => v.split(','))
+            : (param ?? '').split(',');
+        const ids = raw
+            .map((v) => Number(v.trim()))
+            .filter((n) => Number.isInteger(n) && n > 0);
+        return Array.from(new Set(ids));
+    }
+
     @Get('brands')
     @ApiOperation({
         summary: 'List brands (optional: filter by branch_id, search by name)',
@@ -1023,52 +1037,71 @@ export class ConsumerController {
     }
 
     /**
-     * Consumer: list unique categories across the brands actually present at the branch.
-     * Categories of other brands of the same tenant (not linked to this branch) are excluded.
-     * Example response item:
+     * Consumer (brand-first): list unique categories pooled across a set of brands.
+     * Dedupes by name and reports how many of the given brands offer each. Example item:
      * { key: "milkshakes", name: "Milkshakes", brandCount: 3 }
      */
     @Get('categories/global')
     @ApiOperation({
         summary:
-            'List unique categories across the brands present at a branch (consumer app)',
+            'List unique categories pooled across a set of brands (consumer app, brand-first)',
     })
-    @ApiQuery({ name: 'branch_id', required: true, example: '1' })
-    async getGlobalCategories(@Query('branch_id') branchIdParam: string) {
-        const branchId = branchIdParam ? +branchIdParam : undefined;
-        if (!branchId) throw new NotFoundException('branch_id is required');
-        // Validates the branch exists (throws NotFound otherwise).
-        await this.getTenantIdFromBranch(branchId);
-        return this.menuService.getConsumerCategoriesForBranch(branchId);
+    @ApiQuery({
+        name: 'brand_ids',
+        required: true,
+        example: '1,2,3',
+        description:
+            'Brand ids to pool categories across. Comma-separated (brand_ids=1,2,3) or repeated (brand_ids=1&brand_ids=2).',
+    })
+    async getGlobalCategories(
+        @Query('brand_ids') brandIdsParam: string | string[],
+    ) {
+        const brandIds = this.parseBrandIds(brandIdsParam);
+        if (brandIds.length === 0) {
+            throw new BadRequestException(
+                'brand_ids is required (comma-separated or repeated)',
+            );
+        }
+        return this.menuService.getConsumerCategoriesForBrandIds(brandIds);
     }
 
     /**
-     * Consumer: for a given category key (e.g. "milkshakes"), list brands that offer it for the branch's tenant.
+     * Consumer (brand-first): for a category key (e.g. "milkshakes"), list which of the
+     * given brands offer it.
      */
     @Get('categories/:categoryKey/brands')
     @ApiOperation({
-        summary: 'List brands for a given category (consumer app)',
+        summary:
+            'List which of a set of brands offer a given category (consumer app, brand-first)',
     })
     @ApiParam({
         name: 'categoryKey',
         example: 'milkshakes',
         description: 'Category key from /categories/global (lowercased name)',
     })
-    @ApiQuery({ name: 'branch_id', required: true, example: '1' })
+    @ApiQuery({
+        name: 'brand_ids',
+        required: true,
+        example: '1,2,3',
+        description:
+            'Brand ids to search. Comma-separated (brand_ids=1,2,3) or repeated (brand_ids=1&brand_ids=2).',
+    })
     async getBrandsForCategory(
         @Param('categoryKey') categoryKey: string,
-        @Query('branch_id') branchIdParam: string,
+        @Query('brand_ids') brandIdsParam: string | string[],
     ) {
-        const branchId = branchIdParam ? +branchIdParam : undefined;
-        if (!branchId) throw new NotFoundException('branch_id is required');
-        // Validates the branch exists (throws NotFound otherwise).
-        await this.getTenantIdFromBranch(branchId);
-        const brandIds =
-            await this.menuService.getConsumerBrandIdsForCategoryKeyAtBranch(
-                branchId,
+        const brandIds = this.parseBrandIds(brandIdsParam);
+        if (brandIds.length === 0) {
+            throw new BadRequestException(
+                'brand_ids is required (comma-separated or repeated)',
+            );
+        }
+        const matchingBrandIds =
+            await this.menuService.getConsumerBrandIdsForCategoryKey(
+                brandIds,
                 categoryKey,
             );
-        return this.brandsService.findAllPublicByIds(brandIds);
+        return this.brandsService.findAllPublicByIds(matchingBrandIds);
     }
 
     /**

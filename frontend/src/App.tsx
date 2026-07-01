@@ -54,6 +54,7 @@ import Modifiers from './pages/Admin/Modifiers';
 import BranchMenuItems from './pages/Admin/BranchMenuItems';
 import BranchUsers from './pages/Admin/BranchUsers';
 import Discounts from './pages/Admin/Discounts';
+import BankCards from './pages/Admin/BankCards';
 import Banners from './pages/Admin/Banners';
 import Promotions from './pages/Admin/Promotions';
 import Roles from './pages/Admin/Roles';
@@ -311,6 +312,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { path: '/admin/modifiers', label: 'Modifiers', icon: MdOutlineTune },
     { path: '/admin/branch-menu-items', label: 'Branch Pricing', icon: MdOutlinePayments },
     { path: '/admin/discounts', label: 'Discounts', icon: MdOutlineLocalOffer },
+    { path: '/admin/bank-cards', label: 'Bank Cards', icon: MdOutlineLocalOffer },
     { path: '/admin/loyalty-settings', label: 'Loyalty Settings', icon: MdOutlineStarBorder },
     { path: '/admin/delivery-tiers', label: 'Delivery Tiers', icon: MdOutlineDeliveryDining },
     {
@@ -919,6 +921,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><Discounts /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/bank-cards"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><BankCards /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />

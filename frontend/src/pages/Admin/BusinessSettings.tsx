@@ -18,7 +18,8 @@ const BusinessSettings: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     legal_name: '',
-    default_tax_rate: '',
+    gst_rate_cash: '', // GST % for cash tender
+    gst_rate_card: '', // GST % for card/digital tender (blank = same as cash)
     loyalty_enabled: false,
   });
 
@@ -34,7 +35,8 @@ const BusinessSettings: React.FC = () => {
         name: settings.name ?? '',
         legal_name: settings.legal_name ?? '',
         // API stores as fraction (0–1); UI shows percent (0–100).
-        default_tax_rate: settings.default_tax_rate != null ? String(Number(settings.default_tax_rate) * 100) : '',
+        gst_rate_cash: settings.gst_rate_cash != null ? String(Number(settings.gst_rate_cash) * 100) : '',
+        gst_rate_card: settings.gst_rate_card != null ? String(Number(settings.gst_rate_card) * 100) : '',
         loyalty_enabled: settings.loyalty_enabled ?? false,
       });
     }
@@ -46,7 +48,8 @@ const BusinessSettings: React.FC = () => {
         name: data.name,
         legal_name: data.legal_name || undefined,
         // UI uses percent (0–100); API expects fraction (0–1).
-        default_tax_rate: data.default_tax_rate !== '' ? Number(data.default_tax_rate) / 100 : undefined,
+        gst_rate_cash: data.gst_rate_cash.trim() !== '' ? Number(data.gst_rate_cash) / 100 : null,
+        gst_rate_card: data.gst_rate_card.trim() !== '' ? Number(data.gst_rate_card) / 100 : null,
         loyalty_enabled: data.loyalty_enabled,
       }),
     onSuccess: () => {
@@ -122,19 +125,35 @@ const BusinessSettings: React.FC = () => {
               <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-600 pb-2">Tax & charges</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className={labelClass}>Default tax rate (%)</label>
+                  <label className={labelClass}>GST on cash payments (%)</label>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
                     max="100"
-                    value={formData.default_tax_rate}
-                    onChange={(e) => setFormData({ ...formData, default_tax_rate: e.target.value })}
+                    value={formData.gst_rate_cash}
+                    onChange={(e) => setFormData({ ...formData, gst_rate_cash: e.target.value })}
                     className={inputClass}
-                    placeholder="e.g. 10"
+                    placeholder="e.g. 15"
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>GST on card / digital payments (%)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    value={formData.gst_rate_card}
+                    onChange={(e) => setFormData({ ...formData, gst_rate_card: e.target.value })}
+                    className={inputClass}
+                    placeholder="e.g. 5"
                   />
                 </div>
               </div>
+              <p className="text-xs text-gray-500 dark:text-slate-400">
+                Pakistan FBR charges a lower GST on card/digital payments than cash. Leave blank to use the default tax rate for that tender. Split (part-cash/part-card) bills are taxed proportionally.
+              </p>
             </section>
 
             <section className="space-y-4">

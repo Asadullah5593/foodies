@@ -22,6 +22,9 @@ export type PaymentPanelProps = {
   paymentCardAmount: string;
   onPaymentCashAmountChange: (v: string) => void;
   onPaymentCardAmountChange: (v: string) => void;
+  bankCards?: Array<{ id: number; name: string; bank: string | null }>;
+  bankCardId?: number | null;
+  onBankCardChange?: (id: number | null) => void;
   onCreateOrder: () => void;
   isSubmitting: boolean;
   itemCount: number;
@@ -38,6 +41,9 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
   paymentCardAmount,
   onPaymentCashAmountChange,
   onPaymentCardAmountChange,
+  bankCards = [],
+  bankCardId = null,
+  onBankCardChange,
   onCreateOrder,
   isSubmitting,
   itemCount,
@@ -136,6 +142,25 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
             </button>
           ))}
         </div>
+        {paymentMode === 'card' && bankCards.length > 0 && (
+          <div className="mt-3">
+            <label className="block text-xs font-medium text-foodies-textSecondary dark:text-slate-400 mb-1">
+              Bank card (for card offers)
+            </label>
+            <select
+              value={bankCardId ?? ''}
+              onChange={(e) => onBankCardChange?.(e.target.value ? Number(e.target.value) : null)}
+              className="w-full px-3 py-2 border-2 border-foodies-border dark:border-slate-600 rounded-xl text-sm bg-foodies-surface dark:bg-slate-700 text-foodies-textPrimary dark:text-slate-200"
+            >
+              <option value="">No specific card</option>
+              {bankCards.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.bank ? `${c.bank} — ${c.name}` : c.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {paymentMode === 'multipay' && (
           <div className="grid grid-cols-2 gap-2 mt-3">
             <div>
