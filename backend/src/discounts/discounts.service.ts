@@ -137,6 +137,8 @@ export class DiscountsService {
             get_quantity?: number | null;
             get_discount_percent?: number | null;
             bogo_match_same_group?: boolean;
+            requires_card?: boolean;
+            eligible_bank_card_ids?: number[] | null;
         },
         tenantId: number,
         allowedBrandIds?: number[] | null,
@@ -227,6 +229,11 @@ export class DiscountsService {
                             ? Number(dto.get_discount_percent)
                             : null,
                     bogoMatchSameGroup: dto.bogo_match_same_group ?? false,
+                    requiresCard: dto.requires_card ?? false,
+                    eligibleBankCardIds:
+                        dto.requires_card && Array.isArray(dto.eligible_bank_card_ids)
+                            ? dto.eligible_bank_card_ids.map((id) => Number(id))
+                            : null,
                 }),
             );
             return this.toResponse(discount);
@@ -283,6 +290,8 @@ export class DiscountsService {
             get_quantity?: number | null;
             get_discount_percent?: number | null;
             bogo_match_same_group?: boolean;
+            requires_card?: boolean;
+            eligible_bank_card_ids?: number[] | null;
         },
         allowedBrandIds?: number[] | null,
     ) {
@@ -392,6 +401,12 @@ export class DiscountsService {
                         : null;
             if (dto.bogo_match_same_group !== undefined)
                 d.bogoMatchSameGroup = dto.bogo_match_same_group;
+            if (dto.requires_card !== undefined)
+                d.requiresCard = dto.requires_card;
+            if (dto.eligible_bank_card_ids !== undefined)
+                d.eligibleBankCardIds = Array.isArray(dto.eligible_bank_card_ids)
+                    ? dto.eligible_bank_card_ids.map((id) => Number(id))
+                    : null;
             await this.repo.save(d);
             return this.toResponse(d);
         } catch (err: unknown) {
@@ -496,6 +511,8 @@ export class DiscountsService {
                     ? Number(d.getDiscountPercent)
                     : null,
             bogo_match_same_group: d.bogoMatchSameGroup ?? false,
+            requires_card: d.requiresCard ?? false,
+            eligible_bank_card_ids: d.eligibleBankCardIds ?? null,
         };
     }
 }

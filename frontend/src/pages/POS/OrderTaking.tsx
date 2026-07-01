@@ -71,6 +71,12 @@ const OrderTaking: React.FC = () => {
   const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'multipay'>('cash');
   const [paymentCashAmount, setPaymentCashAmount] = useState<string>('');
   const [paymentCardAmount, setPaymentCardAmount] = useState<string>('');
+  // Selected bank card (for card-linked discounts); only meaningful when paying fully by card.
+  const [bankCardId, setBankCardId] = useState<number | null>(null);
+  const { data: bankCards } = useQuery({
+    queryKey: ['pos-bank-cards'],
+    queryFn: () => adminService.getBankCards(true),
+  });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [currentMenuPage, setCurrentMenuPage] = useState(1);
   const [removeConfirmIndex, setRemoveConfirmIndex] = useState<number | null>(null);
@@ -231,6 +237,8 @@ const OrderTaking: React.FC = () => {
         branch_id: branchId,
         order_type: effectiveOrderType,
         payment_split: paymentSplit,
+        // Card-linked discounts only apply on full-card tender.
+        bank_card_id: paymentMode === 'card' ? bankCardId : null,
         items: selectedItems.map((item) => {
           if (item.dealId != null && item.components?.length) {
             return {
@@ -841,6 +849,7 @@ const OrderTaking: React.FC = () => {
       order_type: effectiveOrderType,
       // Tender split so the persisted GST matches the tender the customer actually pays with.
       payment_split: paymentSplit,
+      bank_card_id: paymentMode === 'card' ? bankCardId : null,
       table_number: effectiveOrderType === 'dine_in' ? tableNumber : undefined,
       customer_name: customerName.trim(),
       customer_phone: customerPhone.trim(),
@@ -1573,6 +1582,9 @@ const OrderTaking: React.FC = () => {
               paymentCardAmount={paymentCardAmount}
               onPaymentCashAmountChange={setPaymentCashAmount}
               onPaymentCardAmountChange={setPaymentCardAmount}
+              bankCards={bankCards ?? []}
+              bankCardId={bankCardId}
+              onBankCardChange={setBankCardId}
               onCreateOrder={activeKioskCode ? handleFinalizeKiosk : handleCreateOrder}
               isSubmitting={activeKioskCode ? finalizeKioskMutation.isPending : createOrderMutation.isPending}
               itemCount={selectedItems.length}

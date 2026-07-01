@@ -25,6 +25,10 @@ export class Payment {
     @Column({ type: 'varchar', nullable: true })
     referenceNumber: string | null;
 
+    /** For card tenders: which bank card (bank_cards id) was used — enables card-linked discounts + audit. */
+    @Column({ name: 'bank_card_id', type: 'int', nullable: true })
+    bankCardId: number | null;
+
     @Column({ default: 'pending' })
     status: string;
 

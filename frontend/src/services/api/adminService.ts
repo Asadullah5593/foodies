@@ -762,6 +762,48 @@ export const adminService = {
     return response.data;
   },
 
+  // Bank cards (for card-linked discounts)
+  getBankCards: async (activeOnly = false) => {
+    const response = await apiClient.get('/admin/bank-cards', {
+      params: activeOnly ? { active: 1 } : {},
+    });
+    return response.data as Array<{
+      id: number;
+      name: string;
+      bank: string | null;
+      network: string | null;
+      bin_prefixes: string[] | null;
+      is_active: boolean;
+    }>;
+  },
+  createBankCard: async (data: {
+    name: string;
+    bank?: string | null;
+    network?: string | null;
+    bin_prefixes?: string[] | null;
+    is_active?: boolean;
+  }) => {
+    const response = await apiClient.post('/admin/bank-cards', data);
+    return response.data;
+  },
+  updateBankCard: async (
+    id: number,
+    data: {
+      name?: string;
+      bank?: string | null;
+      network?: string | null;
+      bin_prefixes?: string[] | null;
+      is_active?: boolean;
+    },
+  ) => {
+    const response = await apiClient.put(`/admin/bank-cards/${id}`, data);
+    return response.data;
+  },
+  deleteBankCard: async (id: number) => {
+    const response = await apiClient.delete(`/admin/bank-cards/${id}`);
+    return response.data;
+  },
+
   // Business settings (tenant users: get/update their own business details)
   getBusinessSettings: async () => {
     const response = await apiClient.get('/admin/business-settings');

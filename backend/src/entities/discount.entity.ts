@@ -80,6 +80,19 @@ export class Discount {
     @Column('simple-json', { nullable: true, name: 'eligibility_brand_ids' })
     eligibilityBrandIds: number[] | null;
 
+    /**
+     * Card-linked discount (Pakistan bank offers, e.g. "HBL Premium Debit = 10% off"). When true,
+     * the discount only applies to the CARD-paid portion of the bill and only if the selected bank
+     * card is in eligibleBankCardIds. Reuses maxDiscountAmount / minOrderAmount / validDaysOfWeek /
+     * validTimeStart-End for the cap / min-spend / day-time semantics these campaigns need.
+     */
+    @Column({ name: 'requires_card', default: false })
+    requiresCard: boolean;
+
+    /** Bank cards that unlock this discount (bank_cards ids); null/empty = none (never matches). */
+    @Column('simple-json', { nullable: true, name: 'eligible_bank_card_ids' })
+    eligibleBankCardIds: number[] | null;
+
     @Column({ default: true })
     isActive: boolean;
 

@@ -38,6 +38,8 @@ export interface CreateOrderRequest {
   loyalty_points_to_redeem?: number;
   /** Tender split for per-tender GST (cash vs card). */
   payment_split?: { cash_amount?: number; card_amount?: number };
+  /** Selected bank card (id) for card-linked discounts. */
+  bank_card_id?: number | null;
 }
 
 export interface ProcessPaymentRequest {
@@ -81,6 +83,8 @@ export type OrderQuoteRequest = {
   loyalty_points_to_redeem?: number;
   /** Tender split for per-tender GST (cash vs card). */
   payment_split?: { cash_amount?: number; card_amount?: number };
+  /** Selected bank card (id) for card-linked discounts. */
+  bank_card_id?: number | null;
 };
 
 export const orderService = {

@@ -398,6 +398,9 @@ export interface Discount {
   get_discount_percent?: number | null;
   /** Pair only within same category + variant size (e.g. 2nd Large pizza half price). */
   bogo_match_same_group?: boolean;
+  /** Card-linked: applies only when the whole bill is paid by one of eligible_bank_card_ids. */
+  requires_card?: boolean;
+  eligible_bank_card_ids?: number[] | null;
 }
 
 export interface Banner {

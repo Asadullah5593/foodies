@@ -1026,6 +1026,8 @@ export class OrdersService {
             loyalty_points_to_redeem?: number;
             /** Tender split for per-tender GST (cash vs card). Omit → cash rate. */
             payment_split?: { cash_amount?: number; card_amount?: number };
+            /** Selected bank card (bank_cards id) for card-linked discounts. */
+            bank_card_id?: number | null;
             /** When set, must match normalized customer_phone for same tenant. */
             customer_id?: number;
             /** Optional drop-off coordinates (e.g. consumer map picker). */
@@ -1368,6 +1370,12 @@ export class OrdersService {
         }
 
         // Resolve discounts at full-cart level and allocate to each line (use primary branch for discount context)
+        // Card-linked discounts apply only when the WHOLE bill is paid by the selected card.
+        const bankCardId =
+            dto.bank_card_id != null ? Number(dto.bank_card_id) : null;
+        const fullCardPayment =
+            (Number(dto.payment_split?.cash_amount) || 0) <= 0 &&
+            (Number(dto.payment_split?.card_amount) || 0) > 0;
         const auto = await this.resolveAutoDiscount(
             tenantId,
             subtotal,
@@ -1375,6 +1383,8 @@ export class OrdersService {
             primaryBranch.id,
             orderBrandId,
             lineDetails,
+            fullCardPayment,
+            bankCardId,
         );
         const lineAuto = this.allocateDiscountToLines(
             lineDetails,
@@ -1400,6 +1410,8 @@ export class OrdersService {
             orderBrandId,
             lineDetails,
             lineAfterAuto,
+            fullCardPayment,
+            bankCardId,
         );
         const lineCoupon = this.allocateDiscountToLinesUsingBase(
             lineDetails,
@@ -3453,6 +3465,8 @@ export class OrdersService {
             loyalty_points_to_redeem?: number;
             /** Tender split for per-tender GST (cash vs card). Omit → cash rate. */
             payment_split?: { cash_amount?: number; card_amount?: number };
+            /** Selected bank card (bank_cards id) for card-linked discounts. */
+            bank_card_id?: number | null;
             /** Drop-off coords — required to price/return delivery tiers. */
             latitude?: number;
             longitude?: number;
@@ -3536,6 +3550,11 @@ export class OrdersService {
             );
         }
 
+        const bankCardId =
+            dto.bank_card_id != null ? Number(dto.bank_card_id) : null;
+        const fullCardPayment =
+            (Number(dto.payment_split?.cash_amount) || 0) <= 0 &&
+            (Number(dto.payment_split?.card_amount) || 0) > 0;
         const auto = await this.resolveAutoDiscount(
             tenantId,
             subtotal,
@@ -3543,6 +3562,8 @@ export class OrdersService {
             branch.id,
             orderBrandId,
             lineDetails,
+            fullCardPayment,
+            bankCardId,
         );
         const lineAuto = this.allocateDiscountToLines(
             lineDetails,
@@ -3568,6 +3589,8 @@ export class OrdersService {
             orderBrandId,
             lineDetails,
             lineAfterAuto,
+            fullCardPayment,
+            bankCardId,
         );
         const lineCoupon = this.allocateDiscountToLinesUsingBase(
             lineDetails,
@@ -4451,6 +4474,8 @@ export class OrdersService {
             quantity?: number;
             sizeKey?: string | null;
         }[],
+        fullCardPayment = false,
+        bankCardId: number | null = null,
     ): Promise<{
         discountAmount: number;
         discountCode: string | null;
@@ -4479,6 +4504,12 @@ export class OrdersService {
             )
                 continue;
             if (discount.posOnly && source !== 'pos') continue;
+            // Card-linked offer: applies only when the WHOLE bill is paid by an eligible card.
+            if (discount.requiresCard) {
+                if (!fullCardPayment || bankCardId == null) continue;
+                const ids = (discount.eligibleBankCardIds ?? []).map(Number);
+                if (!ids.includes(Number(bankCardId))) continue;
+            }
             const eligibilityBranchIds = discount.eligibilityBranchIds ?? null;
             const eligibilityBrandIds = discount.eligibilityBrandIds ?? null;
             if (
@@ -4615,6 +4646,8 @@ export class OrdersService {
             sizeKey?: string | null;
         }[],
         lineAfterAuto: number[] | null,
+        fullCardPayment = false,
+        bankCardId: number | null = null,
     ): Promise<{
         discountAmount: number;
         discountCode: string | null;
@@ -4645,6 +4678,12 @@ export class OrdersService {
         )
             return empty;
         if (discount.posOnly && source !== 'pos') return empty;
+        // Card-linked offer: applies only when the WHOLE bill is paid by an eligible card.
+        if (discount.requiresCard) {
+            if (!fullCardPayment || bankCardId == null) return empty;
+            const ids = (discount.eligibleBankCardIds ?? []).map(Number);
+            if (!ids.includes(Number(bankCardId))) return empty;
+        }
         const eligibilityBranchIds = discount.eligibilityBranchIds ?? null;
         const eligibilityBrandIds = discount.eligibilityBrandIds ?? null;
         if (

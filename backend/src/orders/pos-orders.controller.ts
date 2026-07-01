@@ -66,6 +66,7 @@ export class PosOrdersController {
             customer_phone?: string;
             loyalty_points_to_redeem?: number;
             payment_split?: { cash_amount?: number; card_amount?: number };
+            bank_card_id?: number | null;
         },
     ) {
         const tenantId = await this.resolveTenantId(user, dto.branch_id);
@@ -108,6 +109,7 @@ export class PosOrdersController {
             discount_code?: string;
             loyalty_points_to_redeem?: number;
             payment_split?: { cash_amount?: number; card_amount?: number };
+            bank_card_id?: number | null;
         },
     ) {
         const tenantId = await this.resolveTenantId(user, dto.branch_id);
