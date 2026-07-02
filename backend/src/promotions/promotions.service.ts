@@ -405,6 +405,7 @@ export class PromotionsService {
 
         const list = await this.cpRepo.find({
             where: { promotionId },
+            relations: ['customer'],
             order: { assignedAt: 'DESC' },
         });
         return list.map((cp) => this.toCpResponse(cp));
@@ -457,6 +458,8 @@ export class PromotionsService {
         return {
             id: cp.id,
             customer_id: cp.customerId,
+            customer_name: cp.customer?.name ?? null,
+            customer_phone: cp.customer?.phone ?? null,
             promotion_id: cp.promotionId,
             coupon_code: cp.couponCode,
             discount_id: cp.discountId,

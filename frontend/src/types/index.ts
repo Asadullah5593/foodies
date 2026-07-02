@@ -439,6 +439,8 @@ export interface Promotion {
 export interface CustomerPromotion {
   id: number;
   customer_id: number;
+  customer_name?: string | null;
+  customer_phone?: string | null;
   promotion_id: number;
   coupon_code: string | null;
   discount_id: number | null;
