@@ -28,6 +28,12 @@ export interface PricingModifierGroup {
     includedBySize?: Record<string, number> | null;
     /** Quantity-tiered bundle price for charged units, keyed by charged count → total. */
     priceTiers?: Record<string, number> | null;
+    /**
+     * Conditional visibility: this group only applies when the line's selection includes at
+     * least one of these modifier ids. When the trigger is absent the group is treated as
+     * hidden — its selections are dropped (not charged, not persisted). Null/empty = always on.
+     */
+    visibleWhenModifierIds?: number[] | null;
     modifiers?: PricingModifier[] | null;
 }
 
@@ -195,6 +201,18 @@ export function priceModifiersForLine(params: {
         }
     }
 
+    // Conditional groups: drop selections belonging to a group whose visibility trigger
+    // isn't satisfied by the current selection (e.g. "Choose your Meal Drink" when no paid
+    // meal option is picked). Such a group is never charged and its lines aren't returned.
+    const selectedIds = new Set<number>(
+        (selections ?? []).map((s) => s.modifier_id),
+    );
+    const isGroupVisible = (group: PricingModifierGroup): boolean => {
+        const triggers = group.visibleWhenModifierIds;
+        if (!triggers || triggers.length === 0) return true;
+        return triggers.some((id) => selectedIds.has(id));
+    };
+
     // Per-modifier aggregate (merges duplicate selections of the same modifier id).
     const lineAgg = new Map<number, PricedModifierLine>();
     // Per-group unit list tagged with slot (0 = first unit of that modifier, 1 = second, …).
@@ -206,6 +224,7 @@ export function priceModifiersForLine(params: {
     for (const sel of selections ?? []) {
         const found = modIndex.get(sel.modifier_id);
         if (!found) continue;
+        if (!isGroupVisible(found.group)) continue; // conditional group not triggered
         const qty = Math.max(0, Math.floor(Number(sel.quantity ?? 1)) || 0);
         if (qty === 0) continue;
         const unitPrice = resolveModifierUnitPrice(found.mod, sizeKey);

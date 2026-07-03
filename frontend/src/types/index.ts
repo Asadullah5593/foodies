@@ -351,6 +351,12 @@ export interface MenuModifierGroup {
   price_tiers?: Record<string, number> | null;
   /** Hide this cross-sell group when customizing the item inside a deal. */
   hide_in_deals?: boolean;
+  /**
+   * Conditional visibility: only show/require this group when the current selection includes
+   * one of these modifier ids (e.g. show "Choose your Meal Drink" only when a paid "Make it a
+   * Meal?" option is picked). Null/empty = always visible.
+   */
+  visible_when_modifier_ids?: number[] | null;
   modifiers: MenuModifier[];
 }
 
@@ -439,6 +445,8 @@ export interface Promotion {
 export interface CustomerPromotion {
   id: number;
   customer_id: number;
+  customer_name?: string | null;
+  customer_phone?: string | null;
   promotion_id: number;
   coupon_code: string | null;
   discount_id: number | null;

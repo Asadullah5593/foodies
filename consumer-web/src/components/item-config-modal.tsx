@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { CartAddon, CartModifier, MenuItem } from "@/lib/api/types";
 import { Button, Card, Input } from "@/components/ui";
@@ -138,14 +138,48 @@ export function ItemConfigModal({
     [itemResolved.variants, variantId],
   );
 
+  // Conditional groups: a group with `visible_when_modifier_ids` only appears once the customer
+  // has selected one of those trigger options (e.g. a salad's "Choose your Flavour" shows only
+  // after "Peri Peri Chicken" is picked). Null/empty = always visible.
+  const selectedModifierIds = useMemo(
+    () => new Set(modifiers.map((m) => m.modifier_id)),
+    [modifiers],
+  );
+  const isGroupVisible = useCallback(
+    (g?: { visible_when_modifier_ids?: number[] | null }): boolean => {
+      const triggers = g?.visible_when_modifier_ids;
+      if (!triggers || triggers.length === 0) return true;
+      return triggers.some((id) => selectedModifierIds.has(id));
+    },
+    [selectedModifierIds],
+  );
+
+  // Ids belonging to a currently-hidden conditional group. Their selections are ignored for
+  // pricing/validation and dropped from the confirmed cart line, so the total and cart match
+  // what's actually offered (mirrors the server, which ignores hidden groups). Kept as a derived
+  // value (not cleared from state) so a re-revealed group keeps the user's prior picks.
+  const hiddenModifierIds = useMemo(() => {
+    const hidden = new Set<number>();
+    for (const g of itemResolved.modifier_groups ?? []) {
+      if (!isGroupVisible(g)) for (const mod of g.modifiers ?? []) hidden.add(mod.id);
+    }
+    return hidden;
+  }, [itemResolved.modifier_groups, isGroupVisible]);
+
+  // Selections that count: everything except options in a currently-hidden group.
+  const visibleModifiers = useMemo(
+    () => modifiers.filter((m) => !hiddenModifierIds.has(m.modifier_id)),
+    [modifiers, hiddenModifierIds],
+  );
+
   const heatModifierGroups = useMemo(
-    () => (itemResolved.modifier_groups ?? []).filter((g) => g.max_select === 1),
-    [itemResolved.modifier_groups],
+    () => (itemResolved.modifier_groups ?? []).filter((g) => g.max_select === 1 && isGroupVisible(g)),
+    [itemResolved.modifier_groups, isGroupVisible],
   );
 
   const signatureModifierGroups = useMemo(
-    () => (itemResolved.modifier_groups ?? []).filter((g) => g.max_select !== 1),
-    [itemResolved.modifier_groups],
+    () => (itemResolved.modifier_groups ?? []).filter((g) => g.max_select !== 1 && isGroupVisible(g)),
+    [itemResolved.modifier_groups, isGroupVisible],
   );
 
   const stepKeys = useMemo(() => {
@@ -175,7 +209,7 @@ export function ItemConfigModal({
     const variantExtra = selectedVariant?.price_modifier ?? 0;
     const modifiersExtra = computeModifiersPrice(
       itemResolved.modifier_groups,
-      modifiers,
+      visibleModifiers,
       sizeKey,
     );
     const addonsExtra = addons.reduce((sum, a) => {
@@ -189,7 +223,7 @@ export function ItemConfigModal({
     addons,
     itemResolved.price,
     itemResolved.modifier_groups,
-    modifiers,
+    visibleModifiers,
     selectedVariant,
     sizeKey,
   ]);
@@ -290,9 +324,11 @@ export function ItemConfigModal({
       .filter((a, idx, arr) => validAddonIds.has(a.addon_id) && arr.findIndex((x) => x.addon_id === a.addon_id) === idx)
       .map((a) => ({ addon_id: a.addon_id, quantity: Math.max(1, Math.floor(a.quantity ?? 1)) }));
     const cleanModifiers = modifiers
+      // Drop options in a currently-hidden conditional group so the cart line matches the total.
       .filter(
         (m, idx, arr) =>
           validModifierIds.has(m.modifier_id) &&
+          !hiddenModifierIds.has(m.modifier_id) &&
           arr.findIndex((x) => x.modifier_id === m.modifier_id) === idx,
       )
       .map((m) => ({
@@ -301,6 +337,8 @@ export function ItemConfigModal({
       }));
 
     for (const group of itemResolved.modifier_groups ?? []) {
+      // Hidden conditional groups aren't required (their min_select/max_select are ignored).
+      if (!isGroupVisible(group)) continue;
       const selectedInGroup = cleanModifiers.filter((selected) =>
         (group.modifiers ?? []).some((mod) => mod.id === selected.modifier_id),
       );

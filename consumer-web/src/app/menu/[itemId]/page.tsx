@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -461,7 +462,13 @@ function pickDefaultVariant(variants: Variant[]): Variant | null {
 /** Pre-select modifiers required by min_select (first N in group order). */
 function buildDefaultModifierIds(groups: ModifierGroup[], sizeKey: string | null | undefined): number[] {
   const ids: number[] = [];
+  const picked = new Set<number>();
   for (const g of groups) {
+    // Skip conditional groups whose trigger option isn't selected yet — they aren't shown or
+    // required until one of their triggers has been picked (groups are in POS order, so an
+    // earlier group can reveal a later one).
+    const triggers = g.visible_when_modifier_ids;
+    if (triggers?.length && !triggers.some((id) => picked.has(id))) continue;
     const min = Math.max(0, Math.floor(g.min_select ?? 0));
     // Only pre-select options actually offered for the default size (e.g. no "Thin Crust" on 7").
     const mods = (g.modifiers ?? []).filter((m) => isModAvailableForSize(m, sizeKey));
@@ -469,6 +476,7 @@ function buildDefaultModifierIds(groups: ModifierGroup[], sizeKey: string | null
     const take = Math.min(min, mods.length);
     for (let i = 0; i < take; i++) {
       ids.push(mods[i]!.id);
+      picked.add(mods[i]!.id);
     }
   }
   return ids;
@@ -686,16 +694,61 @@ export default function MenuItemDetailPage() {
     });
   }, [currentItem, selectedModifierIds, sizeKey]);
 
-  /** Left-pane categories: every modifier group (with options), plus add-ons as a final bucket. */
+  /**
+   * Conditional groups: a group with `visible_when_modifier_ids` only appears once one of those
+   * trigger options is selected (e.g. a salad's "Choose your Flavour" shows only after
+   * "Peri Peri Chicken" is picked). Null/empty = always visible. Keyed off the CURRENT selection,
+   * so it updates reactively as options are toggled.
+   */
+  const selectedModifierIdSet = useMemo(
+    () => new Set(effectiveSelectedModifierIds),
+    [effectiveSelectedModifierIds],
+  );
+  const isGroupVisible = useCallback(
+    (g?: { visible_when_modifier_ids?: number[] | null }): boolean => {
+      const triggers = g?.visible_when_modifier_ids;
+      if (!triggers || triggers.length === 0) return true;
+      return triggers.some((id) => selectedModifierIdSet.has(id));
+    },
+    [selectedModifierIdSet],
+  );
+
+  /** Only modifier groups that are visible under the current selection. */
+  const visibleModifierGroups = useMemo(
+    () => modifierGroupsOrdered.filter((g) => isGroupVisible(g)),
+    [modifierGroupsOrdered, isGroupVisible],
+  );
+
+  /**
+   * Ids selected but belonging to a currently-hidden conditional group. Ignored for pricing,
+   * completeness and totals — and dropped from the order — so everything matches what's actually
+   * offered (mirrors the server, which ignores hidden groups). Derived, not cleared from state,
+   * so a re-revealed group keeps the user's prior picks.
+   */
+  const hiddenModifierIds = useMemo(() => {
+    const hidden = new Set<number>();
+    for (const g of modifierGroupsOrdered) {
+      if (!isGroupVisible(g)) for (const mod of g.modifiers ?? []) hidden.add(mod.id);
+    }
+    return hidden;
+  }, [modifierGroupsOrdered, isGroupVisible]);
+
+  /** Effective selections that count: size-available AND not in a hidden group. */
+  const pricedModifierIds = useMemo(
+    () => effectiveSelectedModifierIds.filter((id) => !hiddenModifierIds.has(id)),
+    [effectiveSelectedModifierIds, hiddenModifierIds],
+  );
+
+  /** Left-pane categories: every VISIBLE modifier group (with options), plus add-ons as a final bucket. */
   const categories = useMemo<PdpCategory[]>(() => {
-    const cats: PdpCategory[] = modifierGroupsOrdered.map((g) => ({
+    const cats: PdpCategory[] = visibleModifierGroups.map((g) => ({
       key: `g-${g.id}`,
       kind: "group" as const,
       group: g,
     }));
     if (addonsOrdered.length) cats.push({ key: "addons", kind: "addons" as const });
     return cats;
-  }, [modifierGroupsOrdered, addonsOrdered]);
+  }, [visibleModifierGroups, addonsOrdered]);
 
   const defaultCategoryKey = categories[0]?.key ?? null;
   // The user's chosen category persists only while it still exists; when the item (and thus the
@@ -719,13 +772,13 @@ export default function MenuItemDetailPage() {
 
   const modifierPriceTotal = useMemo(() => {
     if (!currentItem) return 0;
-    const uniqueIds = Array.from(new Set(effectiveSelectedModifierIds));
+    const uniqueIds = Array.from(new Set(pricedModifierIds));
     return computeModifiersPrice(
       currentItem.modifier_groups ?? [],
       uniqueIds.map((id) => ({ modifier_id: id, quantity: selectedModifierQty[id] ?? 1 })),
       sizeKey,
     );
-  }, [currentItem, effectiveSelectedModifierIds, selectedModifierQty, sizeKey]);
+  }, [currentItem, pricedModifierIds, selectedModifierQty, sizeKey]);
 
   const relatedProducts = useMemo(() => {
     if (!currentItem) return [];

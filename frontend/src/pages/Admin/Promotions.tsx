@@ -39,6 +39,7 @@ const Promotions: React.FC = () => {
   const [assignmentsPromotion, setAssignmentsPromotion] = useState<Promotion | null>(null);
   const [assignCustomerIds, setAssignCustomerIds] = useState<number[]>([]);
   const [assignSearch, setAssignSearch] = useState('');
+  const [assignedSearch, setAssignedSearch] = useState('');
 
   const { data: promotions, isLoading } = useQuery({
     queryKey: ['promotions'],
@@ -135,6 +136,16 @@ const Promotions: React.FC = () => {
     if (!q) return customerOptions;
     return customerOptions.filter((c) => c.name.toLowerCase().includes(q) || (c.code ?? '').toLowerCase().includes(q));
   }, [customerOptions, assignSearch]);
+  const filteredAssignments = useMemo(() => {
+    const list = assignments ?? [];
+    const q = assignedSearch.trim().toLowerCase();
+    if (!q) return list;
+    return list.filter((cp) =>
+      (cp.customer_name ?? '').toLowerCase().includes(q) ||
+      (cp.customer_phone ?? '').toLowerCase().includes(q) ||
+      String(cp.customer_id).includes(q),
+    );
+  }, [assignments, assignedSearch]);
 
   const handleEdit = (p: Promotion) => {
     setEditingPromotion(p);
@@ -477,7 +488,7 @@ const Promotions: React.FC = () => {
       {/* Assignments modal */}
       <Modal
         isOpen={!!assignmentsPromotion}
-        onClose={() => { setAssignmentsPromotion(null); setAssignCustomerIds([]); setAssignSearch(''); }}
+        onClose={() => { setAssignmentsPromotion(null); setAssignCustomerIds([]); setAssignSearch(''); setAssignedSearch(''); }}
         title={`Assignments — ${assignmentsPromotion?.name ?? ''}`}
         size="large"
       >
@@ -544,23 +555,39 @@ const Promotions: React.FC = () => {
         ) : (assignments ?? []).length === 0 ? (
           <p className="text-center py-6 text-gray-400">No customers assigned yet.</p>
         ) : (
-          <div className="space-y-2 max-h-96 overflow-y-auto">
-            {(assignments ?? []).map((cp) => (
-              <div key={cp.id} className="flex items-center justify-between px-4 py-3 bg-gray-50 rounded-lg text-sm">
-                <div>
-                  <span className="font-medium">Customer #{cp.customer_id}</span>
-                  <span className="ml-3 text-gray-500">{cp.assigned_at?.split('T')[0]}</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  {cp.coupon_code && (
-                    <span className="font-mono text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
-                      {cp.coupon_code}
-                    </span>
-                  )}
-                  {statusBadge(cp.status)}
-                </div>
+          <div>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <input
+                value={assignedSearch}
+                onChange={(e) => setAssignedSearch(e.target.value)}
+                placeholder="Search assigned customers by name or phone…"
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+              />
+              <span className="text-xs text-gray-400 whitespace-nowrap">{filteredAssignments.length} of {(assignments ?? []).length}</span>
+            </div>
+            {filteredAssignments.length === 0 ? (
+              <p className="text-center py-6 text-gray-400">No assigned customers match “{assignedSearch}”.</p>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {filteredAssignments.map((cp) => (
+                  <div key={cp.id} className="flex items-center justify-between px-4 py-3 bg-gray-50 rounded-lg text-sm">
+                    <div>
+                      <span className="font-medium">{cp.customer_name || `Customer #${cp.customer_id}`}</span>
+                      {cp.customer_phone && <span className="ml-2 text-gray-400">{cp.customer_phone}</span>}
+                      <span className="ml-3 text-gray-500">{cp.assigned_at?.split('T')[0]}</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {cp.coupon_code && (
+                        <span className="font-mono text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+                          {cp.coupon_code}
+                        </span>
+                      )}
+                      {statusBadge(cp.status)}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         )}
       </Modal>

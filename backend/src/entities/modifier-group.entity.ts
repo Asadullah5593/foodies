@@ -75,6 +75,16 @@ export class ModifierGroup {
     @Column({ name: 'hide_in_deals', default: false })
     hideInDeals: boolean;
 
+    /**
+     * Conditional visibility: show/require this group ONLY when the customer's current
+     * selection includes at least one of these modifier ids (typically options in another
+     * group), e.g. "Choose your Meal Drink" appears only when a paid "Make it a Meal?" option
+     * is picked, not "On its Own". Null/empty = always visible. Enforced in the customize
+     * wizard (step is skipped) and in pricing (a hidden group is never charged).
+     */
+    @Column({ name: 'visible_when_modifier_ids', type: 'jsonb', nullable: true })
+    visibleWhenModifierIds: number[] | null;
+
     @Column({ name: 'sort_order', default: 0 })
     sortOrder: number;
 

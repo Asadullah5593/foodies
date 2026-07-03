@@ -93,17 +93,57 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
     sk: string | null,
   ) => !mod.available_for_sizes?.length || !sk || mod.available_for_sizes.includes(sk);
 
+  // Conditional groups: a group with `visible_when_modifier_ids` only appears once the customer
+  // has selected one of those trigger options (e.g. "Choose your Meal Drink" shows only after a
+  // paid "Make it a Meal?" option is picked). Null/empty = always visible.
+  const selectedModifierIds = useMemo(
+    () => new Set((config.modifiers ?? []).map((m) => m.modifierId)),
+    [config.modifiers],
+  );
+  const isGroupVisible = React.useCallback(
+    (g?: { visible_when_modifier_ids?: number[] | null }): boolean => {
+      const triggers = g?.visible_when_modifier_ids;
+      if (!triggers || triggers.length === 0) return true;
+      return triggers.some((id) => selectedModifierIds.has(id));
+    },
+    [selectedModifierIds],
+  );
+
   const steps = useMemo((): StepDef[] => {
     if (!item) return [];
     const s: StepDef[] = [];
     if (item.variants?.length) s.push({ kind: 'variant' });
-    (item.modifier_groups ?? []).forEach((_, i) =>
-      s.push({ kind: 'modifier-group', groupIndex: i }),
-    );
+    (item.modifier_groups ?? []).forEach((g, i) => {
+      if (isGroupVisible(g)) s.push({ kind: 'modifier-group', groupIndex: i });
+    });
     if (item.addons?.length) s.push({ kind: 'addons' });
     s.push({ kind: 'notes' });
     return s;
-  }, [item]);
+  }, [item, isGroupVisible]);
+
+  // Keep the current step in range when a conditional group appears/disappears mid-flow.
+  useEffect(() => {
+    if (step > steps.length - 1) setStep(Math.max(0, steps.length - 1));
+  }, [steps.length, step]);
+
+  // Drop any selections that belong to a now-hidden conditional group, so the running total and
+  // cart line match what's actually offered (mirrors the server, which ignores hidden groups).
+  useEffect(() => {
+    const groups = item?.modifier_groups;
+    if (!groups?.length) return;
+    const hiddenIds = new Set<number>();
+    for (const g of groups) {
+      if (!isGroupVisible(g)) {
+        for (const mod of g.modifiers) hiddenIds.add(mod.id);
+      }
+    }
+    if (!hiddenIds.size) return;
+    const current = config.modifiers ?? [];
+    const kept = current.filter((m) => !hiddenIds.has(m.modifierId));
+    if (kept.length !== current.length) {
+      onConfigChange({ ...config, modifiers: kept });
+    }
+  }, [item, config, isGroupVisible, onConfigChange]);
 
   const stepLabel = (s: StepDef): string => {
     switch (s.kind) {
