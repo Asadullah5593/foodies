@@ -71,6 +71,8 @@ export type DealSlot = {
   slot_index: number;
   type: string;
   quantity: number;
+  /** Optional slot: add 0..quantity units (any number, repeats allowed); picking none is valid. */
+  optional?: boolean;
   allow_customization: boolean;
   /** Lock this slot's chosen item to one variant size (e.g. '12' = "All 12\" pizzas"). */
   slot_size_key?: string | null;

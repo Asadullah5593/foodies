@@ -1021,14 +1021,6 @@ async function seed() {
     await mkItem({ category: catDrinks, name: 'Water 500ml', basePrice: 75 });
     await mkItem({ category: catDrinks, name: 'Juice 200ml', basePrice: 75 });
 
-    // Deal-only sentinel for the platters' optional "No Drink" choice.
-    const noDrink = await mkItem({
-        category: catDrinks,
-        name: 'No Drink',
-        basePrice: 0,
-        dealOnly: true,
-    });
-
     // Milkshake items (already created above) — resolve for deal drink upgrades.
     const milkshakeItems = await itemRepo.find({
         where: { brandId, name: In(MILKSHAKES.map((m) => `${m} Milkshake`)) },
@@ -1051,6 +1043,7 @@ async function seed() {
             sourceCategoryId?: number | null;
             sourceMenuItemIds?: number[] | null;
             quantity?: number;
+            optional?: boolean;
             allowCustomization?: boolean;
             slotSurcharges?: Record<string, number> | null;
         }>;
@@ -1072,6 +1065,7 @@ async function seed() {
                     sourceCategoryId: s.sourceCategoryId ?? null,
                     sourceMenuItemIds: s.sourceMenuItemIds ?? null,
                     quantity: s.quantity ?? 1,
+                    optional: s.optional ?? false,
                     allowCustomization: s.allowCustomization ?? true,
                     slotSurcharges: s.slotSurcharges ?? null,
                     slotSizeKey: null,
@@ -1085,7 +1079,10 @@ async function seed() {
         return deal;
     };
 
-    // Optional drink slot for the platters: No Drink (free) / 345ml +130 / 1L +199 / 1.5L +249.
+    // Optional drink slot for the platters: add any number of drinks (repeats allowed) or none —
+    // 345ml +130 / 1L +199 / 1.5L +249 each. Modeled as an OPTIONAL mix&match slot (0..DRINK_MAX
+    // units), so "No Drink" needs no sentinel and "multiple / same drinks" works via the steppers.
+    const DRINK_MAX = 10;
     const optionalDrinkSlot = () => {
         const surcharges: Record<string, number> = {};
         for (const id of sodas345) surcharges[String(id)] = 130;
@@ -1093,12 +1090,21 @@ async function seed() {
         for (const id of sodas15L) surcharges[String(id)] = 249;
         return {
             type: 'choice_list' as const,
-            sourceMenuItemIds: [noDrink.id, ...sodas345, ...sodas1L, ...sodas15L],
-            quantity: 1,
+            sourceMenuItemIds: [...sodas345, ...sodas1L, ...sodas15L],
+            quantity: DRINK_MAX,
+            optional: true,
             allowCustomization: false,
             slotSurcharges: surcharges,
         };
     };
+    // Classic-side slot: pick N sides but the item itself is NOT customizable (fries stay Regular —
+    // no size/large upsell inside these deals).
+    const sideSlot = (quantity: number) => ({
+        type: 'choice_category' as const,
+        sourceCategoryId: catSides.id,
+        quantity,
+        allowCustomization: false,
+    });
     // Included meal drink slot that ITEMISES the drink: any 345ml soda (free) or any milkshake (+250).
     const mealDrinkSlot = (quantity = 1) => {
         const surcharges: Record<string, number> = {};
@@ -1128,7 +1134,7 @@ async function seed() {
         price: 949,
         slots: [
             { type: 'fixed', sourceMenuItemId: chickenQuarter.id, quantity: 1 },
-            { type: 'choice_category', sourceCategoryId: catSides.id, quantity: 1 },
+            sideSlot(1),
             optionalDrinkSlot(),
         ],
     });
@@ -1139,7 +1145,7 @@ async function seed() {
         price: 1799,
         slots: [
             { type: 'fixed', sourceMenuItemId: chickenHalf.id, quantity: 1 },
-            { type: 'choice_category', sourceCategoryId: catSides.id, quantity: 2 },
+            sideSlot(2),
             optionalDrinkSlot(),
         ],
     });
@@ -1150,7 +1156,7 @@ async function seed() {
         price: 3499,
         slots: [
             { type: 'fixed', sourceMenuItemId: chickenFull.id, quantity: 1 },
-            { type: 'choice_category', sourceCategoryId: catSides.id, quantity: 4 },
+            sideSlot(4),
             optionalDrinkSlot(),
         ],
     });
@@ -1163,7 +1169,7 @@ async function seed() {
         price: 1079,
         slots: [
             { type: 'fixed', sourceMenuItemId: chickenQuarter.id, quantity: 1 },
-            { type: 'choice_category', sourceCategoryId: catSides.id, quantity: 1 },
+            sideSlot(1),
             {
                 type: 'choice_list',
                 sourceMenuItemIds: sodas345,
@@ -1179,7 +1185,7 @@ async function seed() {
         price: 1999,
         slots: [
             { type: 'fixed', sourceMenuItemId: chickenHalf.id, quantity: 1 },
-            { type: 'choice_category', sourceCategoryId: catSides.id, quantity: 2 },
+            sideSlot(2),
             {
                 type: 'choice_list',
                 sourceMenuItemIds: sodas1L,

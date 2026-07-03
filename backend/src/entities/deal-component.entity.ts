@@ -46,6 +46,15 @@ export class DealComponent {
     allowCustomization: boolean;
 
     /**
+     * Optional slot: the customer may add 0..quantity units instead of exactly `quantity`.
+     * Used for "add a drink(s)" style upsells where any number (including repeats of the same
+     * item) is allowed and picking none is also valid. Only meaningful for choice slots
+     * (`choice_list` / `choice_category`); ignored for 'fixed'. Server prices whatever is sent.
+     */
+    @Column({ name: 'optional', type: 'boolean', default: false })
+    optional: boolean;
+
+    /**
      * Per-choice price surcharge for this slot, keyed by source menu_item id
      * (e.g. { "<firey-special-wrap-id>": 100 } = "upgrade to Firey Special +Rs100").
      * Added to the deal price when the customer picks that item in this slot.
