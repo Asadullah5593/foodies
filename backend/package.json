@@ -17,6 +17,7 @@
     "seed:export-items": "ts-node -r tsconfig-paths/register src/seed-export-items.ts",
     "seed:wok-and-go": "ts-node -r tsconfig-paths/register src/seed-wok-and-go.ts",
     "seed:peri-peri-co": "ts-node -r tsconfig-paths/register src/seed-peri-peri-co.ts",
+    "seed:peri-peri-co-real": "ts-node -r tsconfig-paths/register src/seed-peri-peri-co-real.ts",
     "seed:fireaway": "ts-node -r tsconfig-paths/register src/seed-fireaway.ts",
     "seed:fireaway-real": "ts-node -r tsconfig-paths/register src/seed-fireaway-real.ts",
     "seed:pizza-pasta": "ts-node -r tsconfig-paths/register src/seed-pizza-pasta.ts",

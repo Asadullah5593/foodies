@@ -655,7 +655,13 @@ async function seed() {
         { minSelect: 1, maxSelect: 1 },
         [{ name: 'As It Comes' }, { name: 'No Cheese On The Pizza' }],
     );
-    await linkGroups(kids, [grpKidsCheese, grpSigToppings]);
+    // The kids meal always includes a juice drink → let the customer pick which one (free).
+    const grpKidsJuice = await mkGroup(
+        'Choose your Juice',
+        { minSelect: 1, maxSelect: 1 },
+        [{ name: 'Apple Juice' }, { name: 'Orange Juice' }, { name: 'Mango Juice' }],
+    );
+    await linkGroups(kids, [grpKidsCheese, grpKidsJuice, grpSigToppings]);
     const addonKidsFries = await addonRepo.save(
         addonRepo.create({
             brandId,
@@ -912,16 +918,33 @@ async function seed() {
         { minSelect: 0, maxSelect: REPEAT_MAX, allowQuantity: true },
         ['Mayo', 'BBQ', 'Ketchup', 'Sweet Chilli'].map((s) => ({ name: s })),
     );
-    const addonMakeMeal = await addonRepo.save(
-        addonRepo.create({
-            brandId,
-            categoryId: catWraps.id,
-            name: 'Make it a meal (Reg Fries + 345ml drink)',
-            price: 350,
-            isActive: true,
-            sortOrder: 0,
-        }),
+    // "Make it a meal" as a modifier group (not a flat addon) so the customer picks WHICH drink.
+    // Hidden inside deals (the deal supplies fries + drink via its own slots).
+    const grpWrapMeal = await mkGroup(
+        'Make it a Meal?',
+        { minSelect: 1, maxSelect: 1, hideInDeals: true },
+        [
+            { name: 'Wrap Only' },
+            { name: 'Make it a Meal (Reg Fries + 345ml Drink)', price: 350 },
+        ],
     );
+    // Conditional drink chooser — only shown once the paid meal option above is selected.
+    const grpWrapMealDrink = await mkGroup(
+        'Choose your Meal Drink',
+        { minSelect: 0, maxSelect: 1, hideInDeals: true },
+        [
+            ...SOFT_DRINKS.map((s) => ({ name: `${s} 345ml` })),
+            { name: 'Water 500ml' },
+            { name: 'Juice 200ml' },
+        ],
+    );
+    const wrapMealPaidIds = (
+        await modifierRepo.find({ where: { modifierGroupId: grpWrapMeal.id } })
+    )
+        .filter((m) => Number(m.price) > 0)
+        .map((m) => m.id);
+    grpWrapMealDrink.visibleWhenModifierIds = wrapMealPaidIds;
+    await groupRepo.save(grpWrapMealDrink);
     const wraps: Array<[string, string, number]> = [
         [
             'Chicken Tikka Wrap',
@@ -958,8 +981,13 @@ async function seed() {
             description: desc,
             basePrice: price,
         });
-        await linkGroups(it, [grpRemoveFilling, grpAddSauce, grpSideToppings]);
-        await linkAddons(it, [addonMakeMeal]);
+        await linkGroups(it, [
+            grpRemoveFilling,
+            grpAddSauce,
+            grpSideToppings,
+            grpWrapMeal,
+            grpWrapMealDrink,
+        ]);
         allWraps.push(it);
         if (name === 'Firey Special Wrap') firySpecialWrap = it;
     }
