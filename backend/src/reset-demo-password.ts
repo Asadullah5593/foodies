@@ -5,7 +5,7 @@
 import { config as dotenvConfig } from 'dotenv';
 import { join } from 'path';
 import { DataSource } from 'typeorm';
-import * as bcrypt from 'bcrypt';
+import * as bcrypt from 'bcryptjs';
 import { SnakeNamingStrategy } from 'typeorm-naming-strategies';
 import { User } from './entities/user.entity';
 
