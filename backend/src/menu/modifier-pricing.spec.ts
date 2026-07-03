@@ -252,6 +252,49 @@ describe('modifier-pricing', () => {
         });
     });
 
+    describe('conditional groups (visibleWhenModifierIds)', () => {
+        // "Make it a Meal?" (id 100=Burger Only free, 101=Meal +350) + a conditional
+        // "Choose your Meal Drink" (id 200 soda free, 201 milkshake +250) that only applies
+        // when the paid meal option (101) is selected.
+        const mealGroup: PricingModifierGroup = {
+            id: 10,
+            modifiers: [
+                { id: 100, price: 0 },
+                { id: 101, price: 350 },
+            ],
+        };
+        const drinkGroup: PricingModifierGroup = {
+            id: 11,
+            visibleWhenModifierIds: [101],
+            modifiers: [
+                { id: 200, price: 0 },
+                { id: 201, price: 250 },
+            ],
+        };
+        const price = (sels: Array<{ modifier_id: number; quantity?: number }>) =>
+            priceModifiersForLine({
+                modifierGroups: [mealGroup, drinkGroup],
+                selections: sels,
+                sizeKey: null,
+            });
+
+        it('drops the meal-drink milkshake when no paid meal option is selected', () => {
+            // "On its Own" (100) + a milkshake (201): the drink group is hidden → not charged.
+            const res = price([{ modifier_id: 100 }, { modifier_id: 201 }]);
+            expect(res.total).toBe(0);
+            expect(res.lines.some((l) => l.modifierId === 201)).toBe(false);
+        });
+        it('charges the milkshake once the paid meal option is selected', () => {
+            const res = price([{ modifier_id: 101 }, { modifier_id: 201 }]);
+            expect(res.total).toBe(600); // 350 meal + 250 milkshake
+        });
+        it('a free soda in a triggered meal adds nothing but is kept', () => {
+            const res = price([{ modifier_id: 101 }, { modifier_id: 200 }]);
+            expect(res.total).toBe(350);
+            expect(res.lines.some((l) => l.modifierId === 200)).toBe(true);
+        });
+    });
+
     describe('normalizers', () => {
         it('normalizePriceBySize drops invalid entries and empties to null', () => {
             expect(

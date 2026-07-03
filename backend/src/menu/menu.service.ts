@@ -438,7 +438,9 @@ export class MenuService {
                 allergens: normalizeAllergens(dto.allergens),
                 calories: normalizeCalories(dto.calories),
                 label: normalizeText40(dto.label),
-                availableTimeStart: normalizeTimeOfDay(dto.available_time_start),
+                availableTimeStart: normalizeTimeOfDay(
+                    dto.available_time_start,
+                ),
                 availableTimeEnd: normalizeTimeOfDay(dto.available_time_end),
                 availableDaysOfWeek: normalizeDaysOfWeek(
                     dto.available_days_of_week,
@@ -582,7 +584,11 @@ export class MenuService {
     }
 
     /** List modifier groups for a brand, or all for tenant when brandId is null. */
-    async getModifierGroups(brandId: number | null, tenantId?: number | null, menuItemId?: number | null) {
+    async getModifierGroups(
+        brandId: number | null,
+        tenantId?: number | null,
+        menuItemId?: number | null,
+    ) {
         const qb = this.modifierGroupRepo
             .createQueryBuilder('mg')
             .leftJoinAndSelect('mg.modifiers', 'm')
@@ -592,11 +598,20 @@ export class MenuService {
 
         if (menuItemId != null) {
             // Filter to groups linked to this item and sort by per-item positions
-            qb.innerJoin('mg.menuItems', 'miFilter', 'miFilter.id = :menuItemId', { menuItemId })
-              .leftJoin('menu_item_modifier_group_positions', 'pos',
-                  'pos.modifier_group_id = mg.id AND pos.menu_item_id = :menuItemId', { menuItemId })
-              .orderBy('COALESCE(pos.sort_order, mg.sort_order)', 'ASC')
-              .addOrderBy('mg.id', 'ASC');
+            qb.innerJoin(
+                'mg.menuItems',
+                'miFilter',
+                'miFilter.id = :menuItemId',
+                { menuItemId },
+            )
+                .leftJoin(
+                    'menu_item_modifier_group_positions',
+                    'pos',
+                    'pos.modifier_group_id = mg.id AND pos.menu_item_id = :menuItemId',
+                    { menuItemId },
+                )
+                .orderBy('COALESCE(pos.sort_order, mg.sort_order)', 'ASC')
+                .addOrderBy('mg.id', 'ASC');
         } else {
             qb.orderBy('mg.sortOrder', 'ASC').addOrderBy('mg.id', 'ASC');
         }
@@ -624,22 +639,26 @@ export class MenuService {
             allow_quantity: mg.allowQuantity ?? false,
             price_tiers: mg.priceTiers ?? null,
             hide_in_deals: mg.hideInDeals ?? false,
+            visible_when_modifier_ids: mg.visibleWhenModifierIds ?? null,
             sort_order: mg.sortOrder ?? 0,
             linked_menu_items: (mg.menuItems ?? []).map((mi) => ({
                 id: mi.id,
                 name: mi.name,
             })),
             modifiers: (mg.modifiers ?? [])
-                .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id)
+                .sort(
+                    (a, b) =>
+                        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id,
+                )
                 .map((m) => ({
-                id: m.id,
-                modifier_group_id: m.modifierGroupId,
-                name: m.name,
-                price: Number(m.price),
-                price_by_size: m.priceBySize ?? null,
-                available_for_sizes: m.availableForSizes ?? null,
-                sort_order: m.sortOrder ?? 0,
-            })),
+                    id: m.id,
+                    modifier_group_id: m.modifierGroupId,
+                    name: m.name,
+                    price: Number(m.price),
+                    price_by_size: m.priceBySize ?? null,
+                    available_for_sizes: m.availableForSizes ?? null,
+                    sort_order: m.sortOrder ?? 0,
+                })),
         }));
     }
 
@@ -678,6 +697,7 @@ export class MenuService {
             allow_quantity: mg.allowQuantity ?? false,
             price_tiers: mg.priceTiers ?? null,
             hide_in_deals: mg.hideInDeals ?? false,
+            visible_when_modifier_ids: mg.visibleWhenModifierIds ?? null,
             modifiers: [],
         };
     }
@@ -708,8 +728,7 @@ export class MenuService {
             mg.allowQuantity = dto.allow_quantity;
         if (dto.price_tiers !== undefined)
             mg.priceTiers = normalizePriceTiers(dto.price_tiers);
-        if (dto.hide_in_deals !== undefined)
-            mg.hideInDeals = dto.hide_in_deals;
+        if (dto.hide_in_deals !== undefined) mg.hideInDeals = dto.hide_in_deals;
         await this.modifierGroupRepo.save(mg);
         return mg;
     }
@@ -829,7 +848,10 @@ export class MenuService {
         const map = new Map<number, Map<number, number>>();
         for (const row of rows) {
             let g = map.get(row.menuItemId);
-            if (!g) { g = new Map(); map.set(row.menuItemId, g); }
+            if (!g) {
+                g = new Map();
+                map.set(row.menuItemId, g);
+            }
             g.set(row.modifierGroupId, row.sortOrder);
         }
         return map;
@@ -843,9 +865,13 @@ export class MenuService {
     ): ModifierGroup[] {
         const gp = posMap.get(itemId);
         return [...groups].sort((a, b) => {
-            const aPos = gp?.get(a.id) ?? (a.sortOrder ?? 999);
-            const bPos = gp?.get(b.id) ?? (b.sortOrder ?? 999);
-            return aPos - bPos || (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id;
+            const aPos = gp?.get(a.id) ?? a.sortOrder ?? 999;
+            const bPos = gp?.get(b.id) ?? b.sortOrder ?? 999;
+            return (
+                aPos - bPos ||
+                (a.sortOrder ?? 0) - (b.sortOrder ?? 0) ||
+                a.id - b.id
+            );
         });
     }
 
@@ -1115,7 +1141,8 @@ export class MenuService {
             v.priceModifier = dto.price_modifier;
         if (dto.is_default !== undefined) v.isDefault = dto.is_default;
         if (dto.sort_order !== undefined) v.sortOrder = dto.sort_order;
-        if (dto.size_key !== undefined) v.sizeKey = normalizeSizeKey(dto.size_key);
+        if (dto.size_key !== undefined)
+            v.sizeKey = normalizeSizeKey(dto.size_key);
         await this.variantRepo.save(v);
         return v;
     }
@@ -1309,6 +1336,8 @@ export class MenuService {
                     allow_quantity: mg.allowQuantity ?? false,
                     price_tiers: mg.priceTiers ?? null,
                     hide_in_deals: mg.hideInDeals ?? false,
+                    visible_when_modifier_ids:
+                        mg.visibleWhenModifierIds ?? null,
                     modifiers: [...(mg.modifiers ?? [])]
                         .sort(
                             (a, b) =>
@@ -1478,6 +1507,8 @@ export class MenuService {
                     allow_quantity: mg.allowQuantity ?? false,
                     price_tiers: mg.priceTiers ?? null,
                     hide_in_deals: mg.hideInDeals ?? false,
+                    visible_when_modifier_ids:
+                        mg.visibleWhenModifierIds ?? null,
                     modifiers: [...(mg.modifiers ?? [])]
                         .sort(
                             (a, b) =>
@@ -1570,6 +1601,8 @@ export class MenuService {
                         allow_quantity: mg.allowQuantity ?? false,
                         price_tiers: mg.priceTiers ?? null,
                         hide_in_deals: mg.hideInDeals ?? false,
+                        visible_when_modifier_ids:
+                            mg.visibleWhenModifierIds ?? null,
                         modifiers: [...(mg.modifiers ?? [])]
                             .sort(
                                 (a, b) =>
@@ -1581,7 +1614,8 @@ export class MenuService {
                                 name: m.name,
                                 price: Number(m.price),
                                 price_by_size: m.priceBySize ?? null,
-                                available_for_sizes: m.availableForSizes ?? null,
+                                available_for_sizes:
+                                    m.availableForSizes ?? null,
                                 sort_order: m.sortOrder ?? 0,
                             })),
                     })),
@@ -1709,9 +1743,9 @@ export class MenuService {
      * order pipeline (expandDealItems) to enforce BOGO size/category constraints and to
      * resolve per-slot allowed sizes server-side.
      */
-    async getDealComponentMeta(menuItemId: number): Promise<
-        Map<number, DealSlotMeta>
-    > {
+    async getDealComponentMeta(
+        menuItemId: number,
+    ): Promise<Map<number, DealSlotMeta>> {
         const comps = await this.dealComponentRepo.find({
             where: { menuItemId },
             select: [
@@ -1968,6 +2002,8 @@ export class MenuService {
                     allow_quantity: mg.allowQuantity ?? false,
                     price_tiers: mg.priceTiers ?? null,
                     hide_in_deals: mg.hideInDeals ?? false,
+                    visible_when_modifier_ids:
+                        mg.visibleWhenModifierIds ?? null,
                     modifiers: [...(mg.modifiers ?? [])]
                         .sort(
                             (a, b) =>
@@ -2037,6 +2073,7 @@ export class MenuService {
                     allow_quantity: boolean;
                     price_tiers: Record<string, number> | null;
                     hide_in_deals: boolean;
+                    visible_when_modifier_ids: number[] | null;
                     modifiers: Array<{
                         id: number;
                         name: string;
@@ -2310,6 +2347,8 @@ export class MenuService {
                     allow_quantity: mg.allowQuantity ?? false,
                     price_tiers: mg.priceTiers ?? null,
                     hide_in_deals: mg.hideInDeals ?? false,
+                    visible_when_modifier_ids:
+                        mg.visibleWhenModifierIds ?? null,
                     modifiers: [...(mg.modifiers ?? [])]
                         .sort(
                             (a, b) =>

@@ -41,6 +41,8 @@ export type ModifierGroup = {
   name: string;
   min_select?: number;
   max_select?: number;
+  /** Conditional visibility: only show/require when one of these modifier ids is selected. Null/empty = always. */
+  visible_when_modifier_ids?: number[] | null;
   /** Units included free before any are charged ("first N free"). */
   included_quantity?: number;
   /** Per-size override of included_quantity keyed by variant size_key. */

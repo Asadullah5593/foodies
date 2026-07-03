@@ -606,7 +606,18 @@ const OrderTaking: React.FC = () => {
       return;
     }
     const groups = selectedItemForConfig.modifier_groups ?? [];
+    // Conditional groups are only required when their trigger option is currently selected
+    // (e.g. "Choose your Flavour" on the salad only applies once Peri Peri Chicken is picked).
+    const selectedModifierIds = new Set(
+      (itemConfig.modifiers ?? []).map(m => m.modifierId)
+    );
+    const isGroupVisible = (group: { visible_when_modifier_ids?: number[] | null }) => {
+      const triggers = group.visible_when_modifier_ids;
+      if (!triggers || triggers.length === 0) return true;
+      return triggers.some(id => selectedModifierIds.has(id));
+    };
     for (const group of groups) {
+      if (!isGroupVisible(group)) continue;
       if ((group.min_select ?? 0) > 0) {
         const selectedInGroup = (itemConfig.modifiers ?? []).filter(m =>
           group.modifiers.some(mod => mod.id === m.modifierId)
