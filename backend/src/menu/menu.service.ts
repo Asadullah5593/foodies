@@ -2211,6 +2211,7 @@ export class MenuService {
                 slot_index: dc.slotIndex,
                 type: dc.type,
                 quantity: dc.quantity,
+                optional: !!dc.optional,
                 allow_customization: dc.allowCustomization,
                 slot_surcharges: dc.slotSurcharges ?? null,
                 slot_size_key: dc.slotSizeKey ?? null,

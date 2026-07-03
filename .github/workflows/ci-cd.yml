@@ -110,6 +110,21 @@ jobs:
           script: |
             set -euo pipefail
             REPO="${DEPLOY_REPO_PATH:-$HOME/foodies}"
+
+            # `npm ci` on this host intermittently aborts mid-reify with
+            # "ENOTEMPTY: rmdir .../node_modules/<pkg>/node_modules/<dep>/dist" (a known npm race /
+            # stale-cache issue). Wipe node_modules, and on failure clean the npm cache and retry
+            # once, so a transient install error doesn't fail the whole deploy.
+            npm_ci() {
+              rm -rf node_modules
+              if ! npm ci "$@"; then
+                echo "npm ci failed (ENOTEMPTY or similar) - wiping node_modules + npm cache and retrying once..."
+                rm -rf node_modules
+                npm cache clean --force || true
+                npm ci "$@"
+              fi
+            }
+
             cd "$REPO"
             git fetch origin
             git checkout main
@@ -117,22 +132,20 @@ jobs:
 
             # Backend
             cd "$REPO/backend"
-            rm -rf node_modules
-            npm ci --legacy-peer-deps
+            npm_ci --legacy-peer-deps
             npm run build
             pm2 restart foodies-backend --update-env
 
             # Frontend (admin/POS) -> served from /var/www/foodies
             cd "$REPO/frontend"
-            rm -rf node_modules
-            npm ci
+            npm_ci
             npm run build
             sudo rsync -a --delete dist/ /var/www/foodies/
 
             # Consumer web
             cd "$REPO/consumer-web"
-            rm -rf node_modules .next
-            npm ci
+            rm -rf .next
+            npm_ci
             npm run build
             pm2 restart website --update-env
 

@@ -223,6 +223,8 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
   const slotUnitCount = (state: SlotState) => state.picks.filter((p) => p.selectedItem != null).length;
 
   const slotComplete = (slot: DealSlot, state: SlotState): boolean => {
+    // Optional slots (e.g. "add a drink(s)") are always satisfied — 0 picks is valid.
+    if (slot.optional) return true;
     if (slot.type === 'fixed') return state.picks.length > 0 && state.picks.every((p) => p.selectedItem != null);
     if (slot.choice_items?.length) {
       if (isMultiPick(slot)) return slotUnitCount(state) >= (slot.quantity ?? 1);
@@ -346,6 +348,9 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
     const cat = categoryNameOf(slot.choice_items?.[0]);
     if (slot.type === 'fixed' && (slot.choice_items?.length ?? 0) <= 1) {
       return slot.choice_items?.[0]?.name ?? 'Included item';
+    }
+    if (slot.optional) {
+      return `Add ${cat ?? 'items'} — optional, choose any`;
     }
     if (isMultiPick(slot)) {
       return `Choose ${slot.quantity} ${cat ?? 'items'} — mix & match`;
@@ -551,6 +556,13 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
     }
     if (isMultiPick(slot)) {
       const c = slotUnitCount(state);
+      if (slot.optional) {
+        return (
+          <span className={`${base} bg-emerald-50 text-emerald-600`}>
+            {c > 0 ? `${c} added` : 'Optional'}
+          </span>
+        );
+      }
       const q = slot.quantity ?? 1;
       const done = c >= q;
       return (
