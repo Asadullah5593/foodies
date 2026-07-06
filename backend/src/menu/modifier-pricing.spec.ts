@@ -11,7 +11,11 @@ import {
 describe('modifier-pricing', () => {
     describe('resolveModifierUnitPrice', () => {
         it('uses the per-size price when the size matches', () => {
-            const mod = { id: 1, price: 0, priceBySize: { '7': 99, '12': 249 } };
+            const mod = {
+                id: 1,
+                price: 0,
+                priceBySize: { '7': 99, '12': 249 },
+            };
             expect(resolveModifierUnitPrice(mod, '12')).toBe(249);
         });
         it('falls back to flat price when size is absent from the map', () => {
@@ -72,7 +76,12 @@ describe('modifier-pricing', () => {
                             id: 10,
                             name: 'Extra Cheese',
                             price: 0,
-                            priceBySize: { '7': 99, '10': 149, '12': 249, '14': 349 },
+                            priceBySize: {
+                                '7': 99,
+                                '10': 149,
+                                '12': 249,
+                                '14': 349,
+                            },
                         },
                     ],
                 },
@@ -94,10 +103,30 @@ describe('modifier-pricing', () => {
                     id: 1,
                     includedBySize: { '7': 2, '12': 3 },
                     modifiers: [
-                        { id: 1, name: 'Chicken', price: 0, priceBySize: { '12': 199 } },
-                        { id: 2, name: 'Beef', price: 0, priceBySize: { '12': 199 } },
-                        { id: 3, name: 'Kebab', price: 0, priceBySize: { '12': 199 } },
-                        { id: 4, name: 'Sausage', price: 0, priceBySize: { '12': 199 } },
+                        {
+                            id: 1,
+                            name: 'Chicken',
+                            price: 0,
+                            priceBySize: { '12': 199 },
+                        },
+                        {
+                            id: 2,
+                            name: 'Beef',
+                            price: 0,
+                            priceBySize: { '12': 199 },
+                        },
+                        {
+                            id: 3,
+                            name: 'Kebab',
+                            price: 0,
+                            priceBySize: { '12': 199 },
+                        },
+                        {
+                            id: 4,
+                            name: 'Sausage',
+                            price: 0,
+                            priceBySize: { '12': 199 },
+                        },
                     ],
                 },
             ];
@@ -123,7 +152,12 @@ describe('modifier-pricing', () => {
                     id: 1,
                     includedBySize: { '7': 2 },
                     modifiers: [
-                        { id: 1, name: 'Chicken', price: 0, priceBySize: { '7': 99 } },
+                        {
+                            id: 1,
+                            name: 'Chicken',
+                            price: 0,
+                            priceBySize: { '7': 99 },
+                        },
                     ],
                 },
             ];
@@ -230,8 +264,14 @@ describe('modifier-pricing', () => {
                 { id: 4, name: 'Sweet Chilli', price: 0 },
             ],
         };
-        const price = (sels: Array<{ modifier_id: number; quantity?: number }>) =>
-            priceModifiersForLine({ modifierGroups: [dipGroup], selections: sels, sizeKey: null }).total;
+        const price = (
+            sels: Array<{ modifier_id: number; quantity?: number }>,
+        ) =>
+            priceModifiersForLine({
+                modifierGroups: [dipGroup],
+                selections: sels,
+                sizeKey: null,
+            }).total;
 
         it('1 dip is free', () => {
             expect(price([{ modifier_id: 1, quantity: 1 }])).toBe(0);
@@ -240,11 +280,22 @@ describe('modifier-pricing', () => {
             expect(price([{ modifier_id: 1 }, { modifier_id: 2 }])).toBe(99);
         });
         it('3 dips (1 free + 2 extra) = 169', () => {
-            expect(price([{ modifier_id: 1 }, { modifier_id: 2 }, { modifier_id: 3 }])).toBe(169);
+            expect(
+                price([
+                    { modifier_id: 1 },
+                    { modifier_id: 2 },
+                    { modifier_id: 3 },
+                ]),
+            ).toBe(169);
         });
         it('4 dips (1 free + 3 extra) = 249', () => {
             expect(
-                price([{ modifier_id: 1 }, { modifier_id: 2 }, { modifier_id: 3 }, { modifier_id: 4 }]),
+                price([
+                    { modifier_id: 1 },
+                    { modifier_id: 2 },
+                    { modifier_id: 3 },
+                    { modifier_id: 4 },
+                ]),
             ).toBe(249);
         });
         it('same dip ×3 (1 free + 2 extra) = 169', () => {
@@ -271,7 +322,9 @@ describe('modifier-pricing', () => {
                 { id: 201, price: 250 },
             ],
         };
-        const price = (sels: Array<{ modifier_id: number; quantity?: number }>) =>
+        const price = (
+            sels: Array<{ modifier_id: number; quantity?: number }>,
+        ) =>
             priceModifiersForLine({
                 modifierGroups: [mealGroup, drinkGroup],
                 selections: sels,
@@ -298,7 +351,12 @@ describe('modifier-pricing', () => {
     describe('normalizers', () => {
         it('normalizePriceBySize drops invalid entries and empties to null', () => {
             expect(
-                normalizePriceBySize({ '7': 99, '10': 'x', '12': -5, '14': 349 }),
+                normalizePriceBySize({
+                    '7': 99,
+                    '10': 'x',
+                    '12': -5,
+                    '14': 349,
+                }),
             ).toEqual({ '7': 99, '14': 349 });
             expect(normalizePriceBySize({})).toBeNull();
             expect(normalizePriceBySize(null)).toBeNull();

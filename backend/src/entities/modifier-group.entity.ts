@@ -31,6 +31,22 @@ export class ModifierGroup {
     maxSelect: number;
 
     /**
+     * Per-size override of `minSelect`, keyed by `MenuVariant.sizeKey`,
+     * e.g. { "large": 2, "xl": 3 } ("Large box picks 2 toppings, XL picks 3").
+     * When the ordered line's variant sizeKey is present here, this value wins over
+     * `minSelect`. Null ⇒ use `minSelect` for all sizes.
+     */
+    @Column({ name: 'min_select_by_size', type: 'jsonb', nullable: true })
+    minSelectBySize: Record<string, number> | null;
+
+    /**
+     * Per-size override of `maxSelect`, keyed by `MenuVariant.sizeKey`.
+     * Same semantics as `minSelectBySize`. Null ⇒ use `maxSelect` for all sizes.
+     */
+    @Column({ name: 'max_select_by_size', type: 'jsonb', nullable: true })
+    maxSelectBySize: Record<string, number> | null;
+
+    /**
      * Number of selected units in this group that are included free before any are
      * charged ("first N free"), e.g. "1 dip free, extra dip charged" ⇒ includedQuantity = 1.
      * Units are counted by quantity, so selecting the same modifier twice ("double meat")
@@ -82,7 +98,11 @@ export class ModifierGroup {
      * is picked, not "On its Own". Null/empty = always visible. Enforced in the customize
      * wizard (step is skipped) and in pricing (a hidden group is never charged).
      */
-    @Column({ name: 'visible_when_modifier_ids', type: 'jsonb', nullable: true })
+    @Column({
+        name: 'visible_when_modifier_ids',
+        type: 'jsonb',
+        nullable: true,
+    })
     visibleWhenModifierIds: number[] | null;
 
     @Column({ name: 'sort_order', default: 0 })

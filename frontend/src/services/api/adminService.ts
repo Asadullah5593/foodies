@@ -30,6 +30,10 @@ export interface ModifierGroupResponse {
   name: string;
   min_select: number;
   max_select: number;
+  /** Per-size override of min_select, keyed by variant size_key (e.g. {"large":2,"xl":3}). */
+  min_select_by_size?: Record<string, number> | null;
+  /** Per-size override of max_select, keyed by variant size_key. */
+  max_select_by_size?: Record<string, number> | null;
   /** Units in this group included free before any are charged ("first N free"). */
   included_quantity?: number;
   /** Per-size override of included_quantity, keyed by variant size_key (e.g. {"7":2,"12":3}). */
@@ -217,11 +221,11 @@ export const adminService = {
     const response = await apiClient.get(`/admin/menu/modifier-groups${query ? '?' + query : ''}`);
     return response.data;
   },
-  createModifierGroup: async (data: { brand_id: number; name: string; min_select?: number; max_select?: number; included_quantity?: number; included_by_size?: Record<string, number> | null; allow_quantity?: boolean }) => {
+  createModifierGroup: async (data: { brand_id: number; name: string; min_select?: number; max_select?: number; min_select_by_size?: Record<string, number> | null; max_select_by_size?: Record<string, number> | null; included_quantity?: number; included_by_size?: Record<string, number> | null; allow_quantity?: boolean }) => {
     const response = await apiClient.post('/admin/menu/modifier-groups', data);
     return response.data;
   },
-  updateModifierGroup: async (id: number, data: { name?: string; min_select?: number; max_select?: number; included_quantity?: number; included_by_size?: Record<string, number> | null; allow_quantity?: boolean }) => {
+  updateModifierGroup: async (id: number, data: { name?: string; min_select?: number; max_select?: number; min_select_by_size?: Record<string, number> | null; max_select_by_size?: Record<string, number> | null; included_quantity?: number; included_by_size?: Record<string, number> | null; allow_quantity?: boolean }) => {
     const response = await apiClient.put(`/admin/menu/modifier-groups/${id}`, data);
     return response.data;
   },

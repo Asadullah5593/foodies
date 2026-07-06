@@ -487,7 +487,11 @@ export class MenuController {
                 user.tenantId,
             );
         const menuItemId = menuItemIdParam ? +menuItemIdParam : null;
-        return this.service.getModifierGroups(brandId, user.tenantId, menuItemId);
+        return this.service.getModifierGroups(
+            brandId,
+            user.tenantId,
+            menuItemId,
+        );
     }
 
     @Post('modifier-groups')
@@ -499,6 +503,8 @@ export class MenuController {
             name: string;
             min_select?: number;
             max_select?: number;
+            min_select_by_size?: Record<string, number> | null;
+            max_select_by_size?: Record<string, number> | null;
             included_quantity?: number;
             included_by_size?: Record<string, number> | null;
             allow_quantity?: boolean;
@@ -521,7 +527,10 @@ export class MenuController {
         @Body() body: { brand_id: number; ordered_ids: number[] },
     ) {
         this.resolveBrandScope(user, body.brand_id);
-        return this.service.reorderModifierGroups(body.brand_id, body.ordered_ids ?? []);
+        return this.service.reorderModifierGroups(
+            body.brand_id,
+            body.ordered_ids ?? [],
+        );
     }
 
     @Patch('items/:itemId/reorder-modifier-groups')
@@ -546,6 +555,8 @@ export class MenuController {
             name?: string;
             min_select?: number;
             max_select?: number;
+            min_select_by_size?: Record<string, number> | null;
+            max_select_by_size?: Record<string, number> | null;
             included_quantity?: number;
             included_by_size?: Record<string, number> | null;
             allow_quantity?: boolean;

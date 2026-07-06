@@ -189,6 +189,8 @@ const Modifiers: React.FC = () => {
     name: '',
     min_select: '0',
     max_select: '1',
+    min_select_by_size: null as Record<string, number> | null,
+    max_select_by_size: null as Record<string, number> | null,
     included_quantity: '0',
     included_by_size: null as Record<string, number> | null,
   });
@@ -198,7 +200,7 @@ const Modifiers: React.FC = () => {
     price: '',
     price_by_size: null as Record<string, number> | null,
   });
-  const [editGroupFormData, setEditGroupFormData] = useState({ name: '', min_select: '0', max_select: '1', included_quantity: '0', included_by_size: null as Record<string, number> | null });
+  const [editGroupFormData, setEditGroupFormData] = useState({ name: '', min_select: '0', max_select: '1', min_select_by_size: null as Record<string, number> | null, max_select_by_size: null as Record<string, number> | null, included_quantity: '0', included_by_size: null as Record<string, number> | null });
   const [editModifierFormData, setEditModifierFormData] = useState({ name: '', price: '', price_by_size: null as Record<string, number> | null });
   // Deep-link from the Menu Items page: ?brand_id= pre-filters the list.
   const [filters, setFilters] = useState<{ brand_id: string; search: string; menu_item_id: string }>({ brand_id: searchParams.get('brand_id') ?? '', search: '', menu_item_id: '' });
@@ -326,6 +328,8 @@ const Modifiers: React.FC = () => {
         name: editingGroup.name,
         min_select: String(editingGroup.min_select ?? 0),
         max_select: String(editingGroup.max_select ?? 1),
+        min_select_by_size: editingGroup.min_select_by_size ?? null,
+        max_select_by_size: editingGroup.max_select_by_size ?? null,
         included_quantity: String(editingGroup.included_quantity ?? 0),
         included_by_size: editingGroup.included_by_size ?? null,
       });
@@ -343,19 +347,19 @@ const Modifiers: React.FC = () => {
   }, [editingModifier]);
 
   const createGroupMutation = useMutation({
-    mutationFn: (data: { brand_id: number; name: string; min_select?: number; max_select?: number; included_quantity?: number; included_by_size?: Record<string, number> | null }) =>
+    mutationFn: (data: { brand_id: number; name: string; min_select?: number; max_select?: number; min_select_by_size?: Record<string, number> | null; max_select_by_size?: Record<string, number> | null; included_quantity?: number; included_by_size?: Record<string, number> | null }) =>
       adminService.createModifierGroup(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['modifierGroups'] });
       setShowGroupForm(false);
-      setGroupFormData({ brand_id: '', name: '', min_select: '0', max_select: '1', included_quantity: '0', included_by_size: null });
+      setGroupFormData({ brand_id: '', name: '', min_select: '0', max_select: '1', min_select_by_size: null, max_select_by_size: null, included_quantity: '0', included_by_size: null });
       toast.success('Modifier group created.');
     },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to create group'),
   });
 
   const updateGroupMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: { name?: string; min_select?: number; max_select?: number; included_quantity?: number; included_by_size?: Record<string, number> | null } }) =>
+    mutationFn: ({ id, data }: { id: number; data: { name?: string; min_select?: number; max_select?: number; min_select_by_size?: Record<string, number> | null; max_select_by_size?: Record<string, number> | null; included_quantity?: number; included_by_size?: Record<string, number> | null } }) =>
       adminService.updateModifierGroup(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['modifierGroups'] });
@@ -563,7 +567,7 @@ const Modifiers: React.FC = () => {
         isOpen={showGroupForm}
         onClose={() => {
           setShowGroupForm(false);
-          setGroupFormData({ brand_id: '', name: '', min_select: '0', max_select: '1', included_quantity: '0', included_by_size: null });
+          setGroupFormData({ brand_id: '', name: '', min_select: '0', max_select: '1', min_select_by_size: null, max_select_by_size: null, included_quantity: '0', included_by_size: null });
         }}
         title="Add Modifier Group"
         size="medium"
@@ -580,6 +584,8 @@ const Modifiers: React.FC = () => {
               name: groupFormData.name.trim(),
               min_select: parseInt(groupFormData.min_select, 10) || 0,
               max_select: parseInt(groupFormData.max_select, 10) || 1,
+              min_select_by_size: groupFormData.min_select_by_size,
+              max_select_by_size: groupFormData.max_select_by_size,
               included_quantity: parseInt(groupFormData.included_quantity, 10) || 0,
               included_by_size: groupFormData.included_by_size,
             });
@@ -633,6 +639,22 @@ const Modifiers: React.FC = () => {
               />
             </div>
           </div>
+          <SizeMapEditor
+            label="Min select per size (optional)"
+            valueLabel="min"
+            value={groupFormData.min_select_by_size}
+            onChange={(m) => setGroupFormData({ ...groupFormData, min_select_by_size: m })}
+            suggestedKeys={SIZE_KEYS}
+            hint='Overrides "Min select" for matching sizes, e.g. large: 2, xl: 3.'
+          />
+          <SizeMapEditor
+            label="Max select per size (optional)"
+            valueLabel="max"
+            value={groupFormData.max_select_by_size}
+            onChange={(m) => setGroupFormData({ ...groupFormData, max_select_by_size: m })}
+            suggestedKeys={SIZE_KEYS}
+            hint='Overrides "Max select" for matching sizes, e.g. large: 2, xl: 3.'
+          />
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Included free (units)</label>
             <input
@@ -676,6 +698,8 @@ const Modifiers: React.FC = () => {
                   name: editGroupFormData.name.trim(),
                   min_select: parseInt(editGroupFormData.min_select, 10),
                   max_select: parseInt(editGroupFormData.max_select, 10),
+                  min_select_by_size: editGroupFormData.min_select_by_size,
+                  max_select_by_size: editGroupFormData.max_select_by_size,
                   included_quantity: parseInt(editGroupFormData.included_quantity, 10) || 0,
                   included_by_size: editGroupFormData.included_by_size,
                 },
@@ -715,6 +739,22 @@ const Modifiers: React.FC = () => {
                 />
               </div>
             </div>
+            <SizeMapEditor
+              label="Min select per size (optional)"
+              valueLabel="min"
+              value={editGroupFormData.min_select_by_size}
+              onChange={(m) => setEditGroupFormData({ ...editGroupFormData, min_select_by_size: m })}
+              suggestedKeys={SIZE_KEYS}
+              hint='Overrides "Min select" for matching sizes, e.g. large: 2, xl: 3.'
+            />
+            <SizeMapEditor
+              label="Max select per size (optional)"
+              valueLabel="max"
+              value={editGroupFormData.max_select_by_size}
+              onChange={(m) => setEditGroupFormData({ ...editGroupFormData, max_select_by_size: m })}
+              suggestedKeys={SIZE_KEYS}
+              hint='Overrides "Max select" for matching sizes, e.g. large: 2, xl: 3.'
+            />
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Included free (units)</label>
               <input

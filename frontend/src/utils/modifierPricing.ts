@@ -38,6 +38,36 @@ export function resolveIncludedQuantity(
   return Math.max(0, Number(group.included_quantity) || 0);
 }
 
+/**
+ * Size-aware selection limits: a group's min/max_select_by_size (keyed by variant size_key)
+ * overrides its flat min_select/max_select for the chosen size — e.g. WOK&GO Express Box
+ * "Large = choose 2 toppings, XL = choose 3".
+ */
+export function resolveMinSelect(
+  group: Pick<MenuModifierGroup, 'min_select' | 'min_select_by_size'>,
+  sizeKey: string | null | undefined,
+): number {
+  if (sizeKey && group.min_select_by_size && group.min_select_by_size[sizeKey] != null) {
+    return Math.max(0, Number(group.min_select_by_size[sizeKey]) || 0);
+  }
+  return Math.max(0, Number(group.min_select) || 0);
+}
+
+/**
+ * Returns null when neither a per-size override nor a flat max_select is set, so call
+ * sites keep their own fallback semantics (`?? 99` = uncapped stepper, `?? 0` = not
+ * single-select) exactly as they behaved with the raw field.
+ */
+export function resolveMaxSelect(
+  group: Pick<MenuModifierGroup, 'max_select' | 'max_select_by_size'>,
+  sizeKey: string | null | undefined,
+): number | null {
+  if (sizeKey && group.max_select_by_size && group.max_select_by_size[sizeKey] != null) {
+    return Math.max(0, Number(group.max_select_by_size[sizeKey]) || 0);
+  }
+  return group.max_select ?? null;
+}
+
 /** Resolve the size_key for a chosen variant of an item (null when none/sizeless). */
 export function sizeKeyForSelection(
   item: Pick<MenuItem, 'variants'>,

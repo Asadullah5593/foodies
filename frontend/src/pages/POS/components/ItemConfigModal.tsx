@@ -6,6 +6,8 @@ import { MenuItem } from '../../../types';
 import { ItemConfig } from './types';
 import {
   resolveModifierUnitPrice,
+  resolveMinSelect,
+  resolveMaxSelect,
   sizeKeyForSelection,
   computeModifiersPrice,
 } from '../../../utils/modifierPricing';
@@ -86,7 +88,10 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
     return () => { document.body.style.overflow = 'unset'; };
   }, [isOpen]);
 
-  const sizeKey = item ? sizeKeyForSelection(item, config.variantId) : null;
+  // Inside a size-locked deal slot the lock IS the size, even before the (single) variant
+  // auto-selects — so per-size pricing/limits resolve correctly from the first render.
+  const sizeKey =
+    lockedSizeKey ?? (item ? sizeKeyForSelection(item, config.variantId) : null);
 
   const isModAvailableForSize = (
     mod: { available_for_sizes?: string[] | null },
@@ -157,7 +162,10 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
   const isStepRequired = (s: StepDef): boolean => {
     switch (s.kind) {
       case 'variant': return true;
-      case 'modifier-group': return (item?.modifier_groups?.[s.groupIndex]?.min_select ?? 0) > 0;
+      case 'modifier-group': {
+        const g = item?.modifier_groups?.[s.groupIndex];
+        return g ? resolveMinSelect(g, sizeKey) > 0 : false;
+      }
       default: return false;
     }
   };
@@ -168,7 +176,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
       case 'modifier-group': {
         const g = item?.modifier_groups?.[s.groupIndex];
         if (!g) return true;
-        const min = g.min_select ?? 0;
+        const min = resolveMinSelect(g, sizeKey);
         if (min === 0) return true;
         const units = (config.modifiers ?? [])
           .filter((m) => g.modifiers.some((mod) => mod.id === m.modifierId))
@@ -224,10 +232,28 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                   checked={selected}
                   onChange={() => {
                     const newSize = variant.size_key ?? null;
-                    const modifiers = (config.modifiers ?? []).filter((m) => {
+                    let modifiers = (config.modifiers ?? []).filter((m) => {
                       const md = item.modifier_groups?.flatMap((g) => g.modifiers).find((x) => x.id === m.modifierId);
                       return !md || isModAvailableForSize(md, newSize);
                     });
+                    // Per-size limits can SHRINK with the new size (e.g. XL 3 toppings → Large 2):
+                    // trim each group's units down to the new resolved max, dropping the most
+                    // recently added selections first, so the line can't carry an over-cap pick.
+                    for (const g of item.modifier_groups ?? []) {
+                      const max = resolveMaxSelect(g, newSize);
+                      if (max == null) continue;
+                      const inGroup = (id: number) => g.modifiers.some((mod) => mod.id === id);
+                      let units = modifiers.filter((m) => inGroup(m.modifierId)).reduce((s, m) => s + (m.quantity || 1), 0);
+                      for (let i = modifiers.length - 1; i >= 0 && units > max; i--) {
+                        const m = modifiers[i];
+                        if (!inGroup(m.modifierId)) continue;
+                        const drop = Math.min((m.quantity || 1), units - max);
+                        units -= drop;
+                        modifiers = (m.quantity || 1) - drop > 0
+                          ? modifiers.map((x, xi) => (xi === i ? { ...x, quantity: (m.quantity || 1) - drop } : x))
+                          : modifiers.filter((_, xi) => xi !== i);
+                      }
+                    }
                     onConfigChange({ ...config, variantId: variant.id, modifiers });
                   }}
                   className="sr-only"
@@ -261,11 +287,11 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
       );
       const visibleModifiers = group.modifiers.filter((mod) => isModAvailableForSize(mod, sizeKey));
       const unitsInGroup = selectedInGroup.reduce((s, m) => s + (m.quantity || 1), 0);
-      const minSelect = group.min_select ?? 0;
-      const maxUnits = group.max_select ?? 99;
+      const minSelect = resolveMinSelect(group, sizeKey);
+      const maxUnits = resolveMaxSelect(group, sizeKey) ?? 99;
       const minOk = unitsInGroup >= minSelect;
       const atMax = unitsInGroup >= maxUnits;
-      const isSingleSelect = (group.max_select ?? 0) === 1;
+      const isSingleSelect = (resolveMaxSelect(group, sizeKey) ?? 0) === 1;
 
       const includedFree =
         sizeKey && group.included_by_size && group.included_by_size[sizeKey] != null
@@ -648,8 +674,8 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                     {currentStepDef ? stepLabel(currentStepDef) : ''}
                     {currentStepDef?.kind === 'modifier-group' && (() => {
                       const g = item.modifier_groups![currentStepDef.groupIndex];
-                      const min = g.min_select ?? 0;
-                      const max = g.max_select ?? 0;
+                      const min = resolveMinSelect(g, sizeKey);
+                      const max = resolveMaxSelect(g, sizeKey) ?? 0;
                       if (min || max) {
                         return (
                           <span className="ml-2 text-sm font-normal text-gray-500">

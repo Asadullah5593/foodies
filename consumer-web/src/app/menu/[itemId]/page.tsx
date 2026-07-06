@@ -30,7 +30,13 @@ import { useMenuImageLoaded } from "@/lib/use-menu-image-loaded";
 import { orderRedirectConfig } from "@/lib/config/order-redirect";
 import { useSessionStore } from "@/lib/store/session-store";
 import type { Modifier, ModifierGroup, Variant } from "@/lib/api/types";
-import { computeModifiersPrice, resolveModifierUnitPrice, sizeKeyForVariant } from "@/lib/modifier-pricing";
+import {
+  computeModifiersPrice,
+  resolveMaxSelect,
+  resolveMinSelect,
+  resolveModifierUnitPrice,
+  sizeKeyForVariant,
+} from "@/lib/modifier-pricing";
 
 const COLORS = {
   brand: "#E4002B",
@@ -469,7 +475,7 @@ function buildDefaultModifierIds(groups: ModifierGroup[], sizeKey: string | null
     // earlier group can reveal a later one).
     const triggers = g.visible_when_modifier_ids;
     if (triggers?.length && !triggers.some((id) => picked.has(id))) continue;
-    const min = Math.max(0, Math.floor(g.min_select ?? 0));
+    const min = resolveMinSelect(g, sizeKey);
     // Only pre-select options actually offered for the default size (e.g. no "Thin Crust" on 7").
     const mods = (g.modifiers ?? []).filter((m) => isModAvailableForSize(m, sizeKey));
     if (min === 0 || !mods.length) continue;
@@ -833,8 +839,8 @@ export default function MenuItemDetailPage() {
     const qtyMap = { ...(existing.modifierQty ?? {}) };
     const modsInGroup = new Set((group.modifiers ?? []).map((m) => m.id));
     const isSelected = selected.includes(modifierId);
-    const maxSel = group.max_select ?? 99;
-    const minSel = group.min_select ?? 0;
+    const maxSel = resolveMaxSelect(group, sizeKey) ?? 99;
+    const minSel = resolveMinSelect(group, sizeKey);
     const qOf = (id: number) => Math.max(1, Math.floor(qtyMap[id] ?? 1));
     const unitsIn = selected.filter((id) => modsInGroup.has(id)).reduce((s, id) => s + qOf(id), 0);
 
@@ -853,9 +859,10 @@ export default function MenuItemDetailPage() {
       return;
     }
 
-    // Multi-select: min/max gate on total units, not distinct options.
+    // Multi-select: max gates on total units. Deselecting below min is ALLOWED (the category
+    // status flips to "Required") — with exactly-N per-size limits (min == max), blocking
+    // deselection would deadlock the group on its pre-picked defaults.
     if (isSelected) {
-      if (unitsIn - qOf(modifierId) < minSel) return;
       delete qtyMap[modifierId];
       updateSelection({ modifierIds: selected.filter((id) => id !== modifierId), modifierQty: qtyMap });
       return;
@@ -865,7 +872,7 @@ export default function MenuItemDetailPage() {
     updateSelection({ modifierIds: [...selected, modifierId], modifierQty: qtyMap });
   };
 
-  /** POS "×N" stepper: clamp to the group's remaining unit allowance; 0 deselects (respecting min). */
+  /** POS "×N" stepper: clamp to the group's remaining unit allowance; 0 deselects. */
   const setModifierQuantity = (group: ModifierGroup, modifierId: number, nextQty: number) => {
     if (!currentItem) return;
     const existing = selectionByItemId[currentItem.id] ?? defaultSelection;
@@ -873,15 +880,14 @@ export default function MenuItemDetailPage() {
     if (!selected.includes(modifierId)) return;
     const qtyMap = { ...(existing.modifierQty ?? {}) };
     const modsInGroup = new Set((group.modifiers ?? []).map((m) => m.id));
-    const maxSel = group.max_select ?? 99;
-    const minSel = group.min_select ?? 0;
+    const maxSel = resolveMaxSelect(group, sizeKey) ?? 99;
     const qOf = (id: number) => Math.max(1, Math.floor(qtyMap[id] ?? 1));
     const unitsOther = selected
       .filter((id) => modsInGroup.has(id) && id !== modifierId)
       .reduce((s, id) => s + qOf(id), 0);
 
     if (nextQty <= 0) {
-      if (unitsOther < minSel) return;
+      // Removal below min is allowed (status shows "Required") — see toggleModifier.
       delete qtyMap[modifierId];
       updateSelection({ modifierIds: selected.filter((id) => id !== modifierId), modifierQty: qtyMap });
       return;
@@ -1098,23 +1104,29 @@ export default function MenuItemDetailPage() {
                         </div>
                         {categories.map((cat) => {
                           const isGroup = cat.kind === "group";
-                          const min = isGroup ? (cat.group.min_select ?? 0) : 0;
+                          const min = isGroup ? resolveMinSelect(cat.group, sizeKey) : 0;
+                          const catMax = isGroup ? resolveMaxSelect(cat.group, sizeKey) : null;
                           const count = isGroup
                             ? unitsInGroup(cat.group)
                             : selectedAddonIds.length;
                           const required = min > 0;
-                          const done = !required || count >= min;
+                          // A size switch can shrink the cap below what's already selected
+                          // (XL 3 toppings → Large 2) — flag that as needing attention too.
+                          const overMax = catMax != null && count > catMax;
+                          const done = (!required || count >= min) && !overMax;
                           const hasSel = count > 0;
-                          const complete = required ? done : hasSel;
+                          const complete = (required ? done : hasSel) && !overMax;
                           const name = shortCategoryName(isGroup ? cat.group.name : "Add-ons");
-                          const sub = required
-                            ? done
-                              ? "Added"
-                              : "Required"
-                            : hasSel
-                              ? `${count} added`
-                              : "Optional";
-                          const subColor = required && !done
+                          const sub = overMax
+                            ? `Remove ${count - (catMax ?? 0)}`
+                            : required
+                              ? done
+                                ? "Added"
+                                : "Required"
+                              : hasSel
+                                ? `${count} added`
+                                : "Optional";
+                          const subColor = (required && !done) || overMax
                             ? "text-amber-600"
                             : hasSel
                               ? "text-emerald-600"
@@ -1183,8 +1195,9 @@ export default function MenuItemDetailPage() {
                           ? (() => {
                               const isGroup = activeCategory.kind === "group";
                               const grp = isGroup ? activeCategory.group : null;
-                              const min = grp?.min_select ?? 0;
-                              const max = grp?.max_select ?? 99;
+                              const min = grp ? resolveMinSelect(grp, sizeKey) : 0;
+                              const maxResolved = grp ? resolveMaxSelect(grp, sizeKey) : null;
+                              const max = maxResolved ?? 99;
                               const single = isGroup ? max === 1 : false;
                               const count = grp ? unitsInGroup(grp) : selectedAddonIds.length;
                               const helper = !isGroup
@@ -1193,7 +1206,7 @@ export default function MenuItemDetailPage() {
                                   ? "Choose 1"
                                   : min > 0
                                     ? `Choose at least ${min}`
-                                    : grp?.max_select == null || max >= 99
+                                    : maxResolved == null || max >= 99
                                       ? "Add any"
                                       : `Up to ${max}`;
                               const title = shortCategoryName(isGroup ? grp!.name : "Add-ons");
