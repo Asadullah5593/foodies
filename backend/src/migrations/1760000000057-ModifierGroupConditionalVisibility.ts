@@ -6,9 +6,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * those modifier ids. Used so "Choose your Meal Drink" appears only after a paid "Make it a Meal?"
  * option is chosen (not "On its Own"). Null = always visible (existing behaviour unchanged).
  */
-export class ModifierGroupConditionalVisibility1760000000057
-    implements MigrationInterface
-{
+export class ModifierGroupConditionalVisibility1760000000057 implements MigrationInterface {
     name = 'ModifierGroupConditionalVisibility1760000000057';
 
     public async up(queryRunner: QueryRunner): Promise<void> {

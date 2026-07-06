@@ -58,7 +58,9 @@ export function priceBogoComponents(
     pct: number,
 ): number[] {
     const discounts = bogoUnitDiscounts(regularPrices, buyQ, getQ, pct);
-    return regularPrices.map((price, i) => round2((Number(price) || 0) - discounts[i]));
+    return regularPrices.map((price, i) =>
+        round2((Number(price) || 0) - discounts[i]),
+    );
 }
 
 export type BogoComponentConstraint = {
@@ -129,8 +131,12 @@ export function validateBogoComponents(
         }
         if (c.mirrorSlotIndex != null) {
             const m = bySlot.get(c.mirrorSlotIndex);
-            if (!m) return 'Invalid deal configuration: a mirrored slot is missing.';
-            if (c.mirrorMatchSize && (c.sizeKey ?? null) !== (m.sizeKey ?? null)) {
+            if (!m)
+                return 'Invalid deal configuration: a mirrored slot is missing.';
+            if (
+                c.mirrorMatchSize &&
+                (c.sizeKey ?? null) !== (m.sizeKey ?? null)
+            ) {
                 return 'Both pizzas in this deal must be the same size.';
             }
             if (

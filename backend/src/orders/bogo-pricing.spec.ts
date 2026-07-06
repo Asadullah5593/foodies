@@ -49,7 +49,9 @@ describe('bogo-pricing', () => {
         });
 
         it('clamps pct above 100 and floors buy/get to >= 1', () => {
-            expect(bogoUnitDiscounts([1000, 1000], 1, 1, 150)).toEqual([0, 1000]);
+            expect(bogoUnitDiscounts([1000, 1000], 1, 1, 150)).toEqual([
+                0, 1000,
+            ]);
             expect(bogoUnitDiscounts([1000, 800], 0, 0, 50)).toEqual([0, 400]);
         });
 
@@ -205,8 +207,18 @@ describe('bogo-pricing', () => {
                 sourceCategoryId: null,
                 sourceMenuItemIds: [10, 20, 30],
             };
-            expect(isComponentAllowedInSlot({ menuItemId: 20, categoryId: 1 }, slot)).toBe(true);
-            expect(isComponentAllowedInSlot({ menuItemId: 99, categoryId: 1 }, slot)).toBe(false);
+            expect(
+                isComponentAllowedInSlot(
+                    { menuItemId: 20, categoryId: 1 },
+                    slot,
+                ),
+            ).toBe(true);
+            expect(
+                isComponentAllowedInSlot(
+                    { menuItemId: 99, categoryId: 1 },
+                    slot,
+                ),
+            ).toBe(false);
         });
         it('choice_category: only items of the source category are allowed', () => {
             const slot = {
@@ -215,9 +227,24 @@ describe('bogo-pricing', () => {
                 sourceCategoryId: 7,
                 sourceMenuItemIds: null,
             };
-            expect(isComponentAllowedInSlot({ menuItemId: 1, categoryId: 7 }, slot)).toBe(true);
-            expect(isComponentAllowedInSlot({ menuItemId: 1, categoryId: 8 }, slot)).toBe(false);
-            expect(isComponentAllowedInSlot({ menuItemId: 1, categoryId: null }, slot)).toBe(false);
+            expect(
+                isComponentAllowedInSlot(
+                    { menuItemId: 1, categoryId: 7 },
+                    slot,
+                ),
+            ).toBe(true);
+            expect(
+                isComponentAllowedInSlot(
+                    { menuItemId: 1, categoryId: 8 },
+                    slot,
+                ),
+            ).toBe(false);
+            expect(
+                isComponentAllowedInSlot(
+                    { menuItemId: 1, categoryId: null },
+                    slot,
+                ),
+            ).toBe(false);
         });
         it('fixed: only the single source item is allowed', () => {
             const slot = {
@@ -226,8 +253,18 @@ describe('bogo-pricing', () => {
                 sourceCategoryId: null,
                 sourceMenuItemIds: null,
             };
-            expect(isComponentAllowedInSlot({ menuItemId: 42, categoryId: 1 }, slot)).toBe(true);
-            expect(isComponentAllowedInSlot({ menuItemId: 43, categoryId: 1 }, slot)).toBe(false);
+            expect(
+                isComponentAllowedInSlot(
+                    { menuItemId: 42, categoryId: 1 },
+                    slot,
+                ),
+            ).toBe(true);
+            expect(
+                isComponentAllowedInSlot(
+                    { menuItemId: 43, categoryId: 1 },
+                    slot,
+                ),
+            ).toBe(false);
         });
     });
 });

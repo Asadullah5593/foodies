@@ -11,7 +11,9 @@ import { Repository } from 'typeorm';
 import { Discount } from '../entities/discount.entity';
 
 /** Accept 'HH:mm' / 'HH:mm:ss' (Postgres time); empty/invalid → null. */
-function normalizeDiscountTime(input: string | null | undefined): string | null {
+function normalizeDiscountTime(
+    input: string | null | undefined,
+): string | null {
     if (input == null) return null;
     const s = String(input).trim();
     return /^\d{1,2}:\d{2}(:\d{2})?$/.test(s) ? s : null;
@@ -231,7 +233,8 @@ export class DiscountsService {
                     bogoMatchSameGroup: dto.bogo_match_same_group ?? false,
                     requiresCard: dto.requires_card ?? false,
                     eligibleBankCardIds:
-                        dto.requires_card && Array.isArray(dto.eligible_bank_card_ids)
+                        dto.requires_card &&
+                        Array.isArray(dto.eligible_bank_card_ids)
                             ? dto.eligible_bank_card_ids.map((id) => Number(id))
                             : null,
                 }),
@@ -404,7 +407,9 @@ export class DiscountsService {
             if (dto.requires_card !== undefined)
                 d.requiresCard = dto.requires_card;
             if (dto.eligible_bank_card_ids !== undefined)
-                d.eligibleBankCardIds = Array.isArray(dto.eligible_bank_card_ids)
+                d.eligibleBankCardIds = Array.isArray(
+                    dto.eligible_bank_card_ids,
+                )
                     ? dto.eligible_bank_card_ids.map((id) => Number(id))
                     : null;
             await this.repo.save(d);

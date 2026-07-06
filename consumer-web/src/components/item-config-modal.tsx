@@ -7,6 +7,8 @@ import { Button, Card, Input } from "@/components/ui";
 import { toImageUrl } from "@/lib/api/client";
 import {
   computeModifiersPrice,
+  resolveMaxSelect,
+  resolveMinSelect,
   resolveModifierUnitPrice,
   sizeKeyForVariant,
 } from "@/lib/modifier-pricing";
@@ -172,14 +174,22 @@ export function ItemConfigModal({
     [modifiers, hiddenModifierIds],
   );
 
+  const sizeKey = useMemo(() => sizeKeyForVariant(selectedVariant), [selectedVariant]);
+
   const heatModifierGroups = useMemo(
-    () => (itemResolved.modifier_groups ?? []).filter((g) => g.max_select === 1 && isGroupVisible(g)),
-    [itemResolved.modifier_groups, isGroupVisible],
+    () =>
+      (itemResolved.modifier_groups ?? []).filter(
+        (g) => (resolveMaxSelect(g, sizeKey) ?? 0) === 1 && isGroupVisible(g),
+      ),
+    [itemResolved.modifier_groups, isGroupVisible, sizeKey],
   );
 
   const signatureModifierGroups = useMemo(
-    () => (itemResolved.modifier_groups ?? []).filter((g) => g.max_select !== 1 && isGroupVisible(g)),
-    [itemResolved.modifier_groups, isGroupVisible],
+    () =>
+      (itemResolved.modifier_groups ?? []).filter(
+        (g) => (resolveMaxSelect(g, sizeKey) ?? 0) !== 1 && isGroupVisible(g),
+      ),
+    [itemResolved.modifier_groups, isGroupVisible, sizeKey],
   );
 
   const stepKeys = useMemo(() => {
@@ -200,7 +210,6 @@ export function ItemConfigModal({
   const getStepNum = (key: "variant" | "heat" | "signature" | "addons" | "notes") =>
     stepKeys.findIndex((s) => s === key) + 1;
 
-  const sizeKey = useMemo(() => sizeKeyForVariant(selectedVariant), [selectedVariant]);
   // Hide options restricted to other sizes (e.g. Thin Crust on 7"). No size ⇒ show all.
   const isModAvailableForSize = (mod: { available_for_sizes?: string[] | null }) =>
     !mod.available_for_sizes?.length || !sizeKey || mod.available_for_sizes.includes(sizeKey);
@@ -255,7 +264,8 @@ export function ItemConfigModal({
 
     if (checked) {
       if (modMap.has(modId)) return;
-      if (group.max_select === 1) {
+      const maxSelect = resolveMaxSelect(group, sizeKey);
+      if (maxSelect === 1) {
         setModifiers((prev) => [
           ...prev.filter(
             (selected) => !(group.modifiers ?? []).some((m) => m.id === selected.modifier_id),
@@ -264,9 +274,9 @@ export function ItemConfigModal({
         ]);
         return;
       }
-      if ((group.max_select ?? 99) <= unitsInGroup) {
+      if ((maxSelect ?? 99) <= unitsInGroup) {
         setValidationError(
-          `You can select at most ${group.max_select} for "${group.name}".`,
+          `You can select at most ${maxSelect} for "${group.name}".`,
         );
         return;
       }
@@ -285,7 +295,7 @@ export function ItemConfigModal({
       (g.modifiers ?? []).some((m) => m.id === modId),
     );
     if (group && qty > 0) {
-      const max = group.max_select ?? 99;
+      const max = resolveMaxSelect(group, sizeKey) ?? 99;
       const otherUnits = modifiers
         .filter((m) => m.modifier_id !== modId && (group.modifiers ?? []).some((mod) => mod.id === m.modifier_id))
         .reduce((s, m) => s + (m.quantity ?? 1), 0);
@@ -343,14 +353,16 @@ export function ItemConfigModal({
         (group.modifiers ?? []).some((mod) => mod.id === selected.modifier_id),
       );
       const count = selectedInGroup.length;
-      if ((group.min_select ?? 0) > count) {
+      const minSelect = resolveMinSelect(group, sizeKey);
+      const maxSelect = resolveMaxSelect(group, sizeKey);
+      if (minSelect > count) {
         setOpenSection("modifiers");
-        setValidationError(`Please select at least ${group.min_select} for "${group.name}".`);
+        setValidationError(`Please select at least ${minSelect} for "${group.name}".`);
         return;
       }
-      if (group.max_select != null && count > group.max_select) {
+      if (maxSelect != null && count > maxSelect) {
         setOpenSection("modifiers");
-        setValidationError(`Please select at most ${group.max_select} for "${group.name}".`);
+        setValidationError(`Please select at most ${maxSelect} for "${group.name}".`);
         return;
       }
     }
@@ -514,7 +526,7 @@ export function ItemConfigModal({
                             const selectedInGroup = modifiers.filter((selected) =>
                               (group.modifiers ?? []).some((m) => m.id === selected.modifier_id),
                             );
-                            const required = (group.min_select ?? 0) > 0;
+                            const required = resolveMinSelect(group, sizeKey) > 0;
                             return (
                               <div key={group.id}>
                                 <div className="flex items-center justify-between gap-3">
@@ -531,7 +543,7 @@ export function ItemConfigModal({
                                   </p>
                                 </div>
 
-                                <div className={`mt-3 grid gap-2 ${group.max_select === 1 ? "grid-cols-3" : "grid-cols-2"}`}>
+                                <div className={`mt-3 grid gap-2 ${resolveMaxSelect(group, sizeKey) === 1 ? "grid-cols-3" : "grid-cols-2"}`}>
                                   {(group.modifiers ?? []).filter(isModAvailableForSize).map((mod) => {
                                     const active = modMap.has(mod.id);
                                     const unitPrice = resolveModifierUnitPrice(mod, sizeKey);
@@ -581,7 +593,7 @@ export function ItemConfigModal({
                             const selectedInGroup = modifiers.filter((selected) =>
                               (group.modifiers ?? []).some((m) => m.id === selected.modifier_id),
                             );
-                            const required = (group.min_select ?? 0) > 0;
+                            const required = resolveMinSelect(group, sizeKey) > 0;
                             // "First N free" allowance, allocated to the cheapest selected units first.
                             const includedFree =
                               sizeKey && group.included_by_size && group.included_by_size[sizeKey] != null
@@ -622,7 +634,7 @@ export function ItemConfigModal({
 
                                 <div
                                   className={`mt-3 grid gap-2 ${
-                                    (group.max_select ?? 99) > 1 ? "grid-cols-2" : "grid-cols-3"
+                                    (resolveMaxSelect(group, sizeKey) ?? 99) > 1 ? "grid-cols-2" : "grid-cols-3"
                                   }`}
                                 >
                                   {(group.modifiers ?? []).filter(isModAvailableForSize).map((mod) => {
@@ -635,7 +647,7 @@ export function ItemConfigModal({
                                     // like "Remove a filling" / "Add a Sauce".
                                     const canRepeat =
                                       active &&
-                                      (unitPrice > 0 || includedFree > 0 || (group.min_select ?? 0) > 0 || !!group.allow_quantity);
+                                      (unitPrice > 0 || includedFree > 0 || resolveMinSelect(group, sizeKey) > 0 || !!group.allow_quantity);
                                     return (
                                       <div
                                         key={mod.id}

@@ -68,7 +68,12 @@ export class DealComponent {
      * e.g. '12' = "All 12\" pizza options". When set, the customer can't change the size
      * during customization and toppings price at that size. Null = any size.
      */
-    @Column({ name: 'slot_size_key', type: 'varchar', length: 32, nullable: true })
+    @Column({
+        name: 'slot_size_key',
+        type: 'varchar',
+        length: 32,
+        nullable: true,
+    })
     slotSizeKey: string | null;
 
     /**

@@ -9,11 +9,7 @@ import { PromotionsService } from './promotions.service';
  * methods the code under test actually calls.
  */
 describe('PromotionsService', () => {
-    const makeService = (repos: {
-        promo?: any;
-        cp?: any;
-        discount?: any;
-    }) =>
+    const makeService = (repos: { promo?: any; cp?: any; discount?: any }) =>
         new PromotionsService(
             repos.promo ?? {},
             repos.cp ?? {},
@@ -74,8 +70,18 @@ describe('PromotionsService', () => {
 
         it('swallows a per-promo save failure and continues', async () => {
             const promos = [
-                { id: 1, validFrom: null, validUntil: null, expiresInDays: null },
-                { id: 2, validFrom: null, validUntil: null, expiresInDays: null },
+                {
+                    id: 1,
+                    validFrom: null,
+                    validUntil: null,
+                    expiresInDays: null,
+                },
+                {
+                    id: 2,
+                    validFrom: null,
+                    validUntil: null,
+                    expiresInDays: null,
+                },
             ];
             const saved: number[] = [];
             const svc = makeService({
@@ -104,9 +110,24 @@ describe('PromotionsService', () => {
         it('expires pending copies, expires+disables claimed coupons, leaves used untouched', async () => {
             const promo = { id: 7, tenantId: 3, isActive: true };
             const copies = [
-                { id: 10, status: 'pending', expiresAt: null, discountId: null },
-                { id: 11, status: 'claimed', expiresAt: new Date(), discountId: 500 },
-                { id: 12, status: 'used', expiresAt: new Date(), discountId: 501 },
+                {
+                    id: 10,
+                    status: 'pending',
+                    expiresAt: null,
+                    discountId: null,
+                },
+                {
+                    id: 11,
+                    status: 'claimed',
+                    expiresAt: new Date(),
+                    discountId: 500,
+                },
+                {
+                    id: 12,
+                    status: 'used',
+                    expiresAt: new Date(),
+                    discountId: 501,
+                },
             ];
             const cpSaved: any[] = [];
             const discountUpdates: any[] = [];

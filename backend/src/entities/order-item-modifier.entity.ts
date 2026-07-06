@@ -42,7 +42,12 @@ export class OrderItemModifier {
      * size-dependent `priceSnapshot` can be reconstructed for receipts/refunds even if
      * the modifier's price map later changes. Null when the item had no size.
      */
-    @Column({ name: 'variant_size_snapshot', type: 'varchar', length: 32, nullable: true })
+    @Column({
+        name: 'variant_size_snapshot',
+        type: 'varchar',
+        length: 32,
+        nullable: true,
+    })
     variantSizeSnapshot: string | null;
 
     @CreateDateColumn()

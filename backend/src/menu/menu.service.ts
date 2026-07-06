@@ -124,6 +124,10 @@ function normalizeDaysOfWeek(input: unknown): number[] | null {
 /** Per-slot pricing/constraint metadata used by the order pipeline to price + validate deals. */
 export type DealSlotMeta = {
     type: 'fixed' | 'choice_category' | 'choice_list';
+    /** Units this slot holds (e.g. "choose 2 sides" = 2). */
+    quantity: number;
+    /** Optional slot: 0..quantity units are valid; required slots need exactly `quantity`. */
+    optional: boolean;
     sourceMenuItemId: number | null;
     sourceCategoryId: number | null;
     sourceMenuItemIds: number[] | null;
@@ -634,6 +638,8 @@ export class MenuService {
             name: mg.name,
             min_select: mg.minSelect,
             max_select: mg.maxSelect,
+            min_select_by_size: mg.minSelectBySize ?? null,
+            max_select_by_size: mg.maxSelectBySize ?? null,
             included_quantity: mg.includedQuantity ?? 0,
             included_by_size: mg.includedBySize ?? null,
             allow_quantity: mg.allowQuantity ?? false,
@@ -667,6 +673,8 @@ export class MenuService {
         name: string;
         min_select?: number;
         max_select?: number;
+        min_select_by_size?: Record<string, number> | null;
+        max_select_by_size?: Record<string, number> | null;
         included_quantity?: number;
         included_by_size?: Record<string, number> | null;
         allow_quantity?: boolean;
@@ -679,6 +687,12 @@ export class MenuService {
                 name: dto.name,
                 minSelect: dto.min_select ?? 0,
                 maxSelect: dto.max_select ?? 1,
+                minSelectBySize: normalizeIncludedBySize(
+                    dto.min_select_by_size,
+                ),
+                maxSelectBySize: normalizeIncludedBySize(
+                    dto.max_select_by_size,
+                ),
                 includedQuantity: Math.max(0, dto.included_quantity ?? 0),
                 includedBySize: normalizeIncludedBySize(dto.included_by_size),
                 allowQuantity: dto.allow_quantity ?? false,
@@ -692,6 +706,8 @@ export class MenuService {
             name: mg.name,
             min_select: mg.minSelect,
             max_select: mg.maxSelect,
+            min_select_by_size: mg.minSelectBySize ?? null,
+            max_select_by_size: mg.maxSelectBySize ?? null,
             included_quantity: mg.includedQuantity,
             included_by_size: mg.includedBySize ?? null,
             allow_quantity: mg.allowQuantity ?? false,
@@ -708,6 +724,8 @@ export class MenuService {
             name?: string;
             min_select?: number;
             max_select?: number;
+            min_select_by_size?: Record<string, number> | null;
+            max_select_by_size?: Record<string, number> | null;
             included_quantity?: number;
             included_by_size?: Record<string, number> | null;
             allow_quantity?: boolean;
@@ -720,6 +738,14 @@ export class MenuService {
         if (dto.name !== undefined) mg.name = dto.name;
         if (dto.min_select !== undefined) mg.minSelect = dto.min_select;
         if (dto.max_select !== undefined) mg.maxSelect = dto.max_select;
+        if (dto.min_select_by_size !== undefined)
+            mg.minSelectBySize = normalizeIncludedBySize(
+                dto.min_select_by_size,
+            );
+        if (dto.max_select_by_size !== undefined)
+            mg.maxSelectBySize = normalizeIncludedBySize(
+                dto.max_select_by_size,
+            );
         if (dto.included_quantity !== undefined)
             mg.includedQuantity = Math.max(0, dto.included_quantity);
         if (dto.included_by_size !== undefined)
@@ -885,7 +911,7 @@ export class MenuService {
                 where: { id: menuItemId },
                 select: ['id', 'brandId'],
             });
-            if (!item || !allowedBrandIds.includes(item.brandId!)) {
+            if (!item || !allowedBrandIds.includes(item.brandId)) {
                 throw new ForbiddenException(
                     'You do not have access to this menu item',
                 );
@@ -1331,6 +1357,8 @@ export class MenuService {
                     name: mg.name,
                     min_select: mg.minSelect,
                     max_select: mg.maxSelect,
+                    min_select_by_size: mg.minSelectBySize ?? null,
+                    max_select_by_size: mg.maxSelectBySize ?? null,
                     included_quantity: mg.includedQuantity ?? 0,
                     included_by_size: mg.includedBySize ?? null,
                     allow_quantity: mg.allowQuantity ?? false,
@@ -1502,6 +1530,8 @@ export class MenuService {
                     name: mg.name,
                     min_select: mg.minSelect,
                     max_select: mg.maxSelect,
+                    min_select_by_size: mg.minSelectBySize ?? null,
+                    max_select_by_size: mg.maxSelectBySize ?? null,
                     included_quantity: mg.includedQuantity ?? 0,
                     included_by_size: mg.includedBySize ?? null,
                     allow_quantity: mg.allowQuantity ?? false,
@@ -1596,6 +1626,8 @@ export class MenuService {
                         name: mg.name,
                         min_select: mg.minSelect,
                         max_select: mg.maxSelect,
+                        min_select_by_size: mg.minSelectBySize ?? null,
+                        max_select_by_size: mg.maxSelectBySize ?? null,
                         included_quantity: mg.includedQuantity ?? 0,
                         included_by_size: mg.includedBySize ?? null,
                         allow_quantity: mg.allowQuantity ?? false,
@@ -1751,6 +1783,8 @@ export class MenuService {
             select: [
                 'slotIndex',
                 'type',
+                'quantity',
+                'optional',
                 'sourceMenuItemId',
                 'sourceCategoryId',
                 'sourceMenuItemIds',
@@ -1765,6 +1799,8 @@ export class MenuService {
         for (const c of comps) {
             out.set(c.slotIndex, {
                 type: c.type,
+                quantity: Math.max(1, Number(c.quantity) || 1),
+                optional: !!c.optional,
                 sourceMenuItemId: c.sourceMenuItemId ?? null,
                 sourceCategoryId: c.sourceCategoryId ?? null,
                 sourceMenuItemIds: c.sourceMenuItemIds ?? null,
@@ -1997,6 +2033,8 @@ export class MenuService {
                     name: mg.name,
                     min_select: mg.minSelect,
                     max_select: mg.maxSelect,
+                    min_select_by_size: mg.minSelectBySize ?? null,
+                    max_select_by_size: mg.maxSelectBySize ?? null,
                     included_quantity: mg.includedQuantity ?? 0,
                     included_by_size: mg.includedBySize ?? null,
                     allow_quantity: mg.allowQuantity ?? false,
@@ -2068,6 +2106,8 @@ export class MenuService {
                     name: string;
                     min_select: number;
                     max_select: number;
+                    min_select_by_size: Record<string, number> | null;
+                    max_select_by_size: Record<string, number> | null;
                     included_quantity: number;
                     included_by_size: Record<string, number> | null;
                     allow_quantity: boolean;
@@ -2343,6 +2383,8 @@ export class MenuService {
                     name: mg.name,
                     min_select: mg.minSelect,
                     max_select: mg.maxSelect,
+                    min_select_by_size: mg.minSelectBySize ?? null,
+                    max_select_by_size: mg.maxSelectBySize ?? null,
                     included_quantity: mg.includedQuantity ?? 0,
                     included_by_size: mg.includedBySize ?? null,
                     allow_quantity: mg.allowQuantity ?? false,

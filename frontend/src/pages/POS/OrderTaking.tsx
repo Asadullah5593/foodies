@@ -34,7 +34,7 @@ import type { OrderTypeOption, CartLine, DealComponentLine } from './components'
 import type { KioskFinalizeRequest } from '../../services/api/orderService';
 import { defaultVariantIdForItem } from './components/types';
 import { isMenuItemAvailableForOrderType } from '../../utils/menu-order-type';
-import { computeModifiersPrice, sizeKeyForSelection } from '../../utils/modifierPricing';
+import { computeModifiersPrice, resolveMinSelect, resolveMaxSelect, sizeKeyForSelection } from '../../utils/modifierPricing';
 
 const OrderTaking: React.FC = () => {
   const [selectedItems, setSelectedItems] = useState<CartLine[]>([]);
@@ -273,6 +273,52 @@ const OrderTaking: React.FC = () => {
     queryFn: () => orderService.getQuote(quotePayload!),
     enabled: quotePayload != null,
   });
+
+  // Cash-vs-card preview: GST differs per tender (e.g. 16% cash / 5% card), so show the
+  // customer both outcomes before a tender is picked. Derived from the current quote's
+  // rates; the quote itself re-runs (discounts included) once the cashier toggles the tender,
+  // so this is a preview — the charged figures always come from the re-quoted totals.
+  const tenderPreview = (() => {
+    if (!quote) return null;
+    const rateCash = Number(quote.tax_rate_cash ?? 0);
+    const rateCard = Number(quote.tax_rate_card ?? 0);
+    if (rateCash === rateCard) return null; // same rate — nothing to compare
+    const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+    const afterDiscount = Math.max(
+      0,
+      round2((Number(quote.subtotal) || 0) - (Number(quote.discount_amount) || 0) - (Number(quote.loyalty_discount) || 0)),
+    );
+    const extras = (Number(quote.service_charge) || 0) + (Number(quote.delivery_fee) || 0);
+    const cashTax = round2(afterDiscount * rateCash);
+    const cardTax = round2(afterDiscount * rateCard);
+    return {
+      rateCash, rateCard, cashTax, cardTax,
+      cashTotal: round2(afterDiscount + extras + cashTax),
+      cardTotal: round2(afterDiscount + extras + cardTax),
+    };
+  })();
+
+  const renderTenderPreview = () =>
+    tenderPreview && (
+      <div className="mb-2 space-y-1 rounded-lg bg-foodies-background dark:bg-slate-700/40 px-3 py-2">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-foodies-textSecondary dark:text-slate-400">
+            Pay by cash — incl. {Math.round(tenderPreview.rateCash * 100)}% GST ({formatCurrency(tenderPreview.cashTax)})
+          </span>
+          <span className="font-semibold text-foodies-textPrimary dark:text-slate-100">
+            {formatCurrency(tenderPreview.cashTotal)}
+          </span>
+        </div>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-foodies-textSecondary dark:text-slate-400">
+            Pay by card — incl. {Math.round(tenderPreview.rateCard * 100)}% GST ({formatCurrency(tenderPreview.cardTax)})
+          </span>
+          <span className="font-semibold text-foodies-textPrimary dark:text-slate-100">
+            {formatCurrency(tenderPreview.cardTotal)}
+          </span>
+        </div>
+      </div>
+    );
 
   const normalizedPhone = customerPhone.trim() ? normalizePakistaniPhone(customerPhone.trim()) : null;
   // POS redeems against the brand-scoped POS wallet, so the balance depends on
@@ -616,17 +662,24 @@ const OrderTaking: React.FC = () => {
       if (!triggers || triggers.length === 0) return true;
       return triggers.some(id => selectedModifierIds.has(id));
     };
+    const configSizeKey = sizeKeyForSelection(selectedItemForConfig, itemConfig.variantId);
     for (const group of groups) {
       if (!isGroupVisible(group)) continue;
-      if ((group.min_select ?? 0) > 0) {
-        const selectedInGroup = (itemConfig.modifiers ?? []).filter(m =>
-          group.modifiers.some(mod => mod.id === m.modifierId)
-        );
-        const totalUnits = selectedInGroup.reduce((s, m) => s + (m.quantity || 1), 0);
-        if (totalUnits < group.min_select) {
-          toast.error(`Please select at least ${group.min_select} for "${group.name}"`);
-          return;
-        }
+      const minSelect = resolveMinSelect(group, configSizeKey);
+      const maxSelect = resolveMaxSelect(group, configSizeKey);
+      const selectedInGroup = (itemConfig.modifiers ?? []).filter(m =>
+        group.modifiers.some(mod => mod.id === m.modifierId)
+      );
+      const totalUnits = selectedInGroup.reduce((s, m) => s + (m.quantity || 1), 0);
+      if (minSelect > 0 && totalUnits < minSelect) {
+        toast.error(`Please select at least ${minSelect} for "${group.name}"`);
+        return;
+      }
+      // Per-size caps can shrink after a size switch (XL 3 toppings → Large 2), so the
+      // cap is re-checked here rather than only at selection time.
+      if (maxSelect != null && totalUnits > maxSelect) {
+        toast.error(`Please select at most ${maxSelect} for "${group.name}"`);
+        return;
       }
     }
     const newLine = {
@@ -691,9 +744,12 @@ const OrderTaking: React.FC = () => {
       return;
     }
 
+    const toggleSizeKey = selectedItemForConfig
+      ? sizeKeyForSelection(selectedItemForConfig, itemConfig.variantId)
+      : null;
     // For single-select groups (min/max 1), behave like radio buttons:
     // clicking a new option unselects any previous one in this group and selects the new one.
-    if (groupForModifier && (groupForModifier.max_select ?? 0) === 1) {
+    if (groupForModifier && (resolveMaxSelect(groupForModifier, toggleSizeKey) ?? 0) === 1) {
       const clearedOthers = (itemConfig.modifiers ?? []).filter((m) => {
         const g = selectedItemForConfig?.modifier_groups?.find((gr) =>
           gr.modifiers.some((mod) => mod.id === m.modifierId),
@@ -710,8 +766,9 @@ const OrderTaking: React.FC = () => {
     // Multi-select groups: max_select bounds TOTAL UNITS (sum of quantities), so a
     // dip selected twice already fills a "choose 2" group.
     const unitsInGroup = currentInGroup.reduce((s, m) => s + (m.quantity || 1), 0);
-    if (groupForModifier && unitsInGroup >= (groupForModifier.max_select || 99)) {
-      toast.error(`Maximum ${groupForModifier.max_select} allowed for ${groupForModifier.name}`);
+    const maxUnits = groupForModifier ? resolveMaxSelect(groupForModifier, toggleSizeKey) || 99 : 99;
+    if (groupForModifier && unitsInGroup >= maxUnits) {
+      toast.error(`Maximum ${maxUnits} allowed for ${groupForModifier.name}`);
       return;
     }
 
@@ -755,7 +812,10 @@ const OrderTaking: React.FC = () => {
       g.modifiers.some((m) => m.id === modifierId),
     );
     if (group && next > 0) {
-      const max = group.max_select ?? 99;
+      const qtySizeKey = selectedItemForConfig
+        ? sizeKeyForSelection(selectedItemForConfig, itemConfig.variantId)
+        : null;
+      const max = resolveMaxSelect(group, qtySizeKey) ?? 99;
       const otherUnits = (itemConfig.modifiers ?? [])
         .filter((m) => m.modifierId !== modifierId && group.modifiers.some((mod) => mod.id === m.modifierId))
         .reduce((s, m) => s + (m.quantity || 1), 0);
@@ -1429,6 +1489,7 @@ const OrderTaking: React.FC = () => {
           />
         </div>
         <div className="flex-shrink-0 p-6 border-t border-foodies-border dark:border-slate-700 bg-foodies-surface dark:bg-slate-800">
+          {renderTenderPreview()}
           <div className="flex items-center justify-between text-sm text-foodies-textSecondary dark:text-slate-400">
             <span>Total</span>
             <span className="font-bold text-foodies-textPrimary dark:text-slate-100">{formatCurrency(quote?.total_amount ?? total)}</span>
@@ -1530,6 +1591,7 @@ const OrderTaking: React.FC = () => {
               <span>Total</span>
               <span className="font-bold text-foodies-textPrimary">{formatCurrency(quote?.total_amount ?? total)}</span>
             </div>
+            <div className="mt-2">{renderTenderPreview()}</div>
             {effectiveOrderType != null && (
               <div className="flex items-center justify-between text-sm text-foodies-textSecondary mt-2 pt-2 border-t border-foodies-border/60">
                 <span>Order type</span>

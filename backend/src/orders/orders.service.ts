@@ -3836,7 +3836,11 @@ export class OrdersService {
                 }>;
                 branch_id?: number;
             };
-            if (raw.deal_menu_item_id != null && raw.components?.length) {
+            if (raw.deal_menu_item_id != null) {
+                // A deal line with NO components must still enter this branch: falling through
+                // to the plain-item path would order the deal root with no contents (and a
+                // missing menu_item_id). The completeness check below rejects it cleanly.
+                const components = raw.components ?? [];
                 const branchId = raw.branch_id ?? defaultBranchId;
                 const dealRoot = await this.menuService.findMenuItem(
                     raw.deal_menu_item_id,
@@ -3847,10 +3851,13 @@ export class OrdersService {
                     // window on the deal root, in the branch timezone.
                     this.assertMenuItemAvailableNow(
                         dealRoot,
-                        await this.getBranchClockCached(branchId, branchClockCache),
+                        await this.getBranchClockCached(
+                            branchId,
+                            branchClockCache,
+                        ),
                     );
                 }
-                for (const comp of raw.components) {
+                for (const comp of components) {
                     const compItem = await this.menuService.findMenuItem(
                         comp.menu_item_id,
                     );
@@ -3884,12 +3891,18 @@ export class OrdersService {
                     const meta = await this.menuService.getDealComponentMeta(
                         raw.deal_menu_item_id,
                     );
+                    // A BOGO root without defined slots is unorderable (an empty payload
+                    // would otherwise sail through `seenSlots.size === meta.size` at 0=0).
+                    if (meta.size === 0)
+                        throw new BadRequestException(
+                            'Invalid deal selection.',
+                        );
                     const resolved: Array<{
                         regularPrice: number;
                         constraint: BogoComponentConstraint;
                     }> = [];
                     const seenSlots = new Set<number>();
-                    for (const comp of raw.components) {
+                    for (const comp of components) {
                         // slot_index and menu_item_id come straight from the client; bind each
                         // to a DEFINED slot (no unknown/duplicate slots — which would collapse
                         // the mirror and drop the size/category gate) and verify the chosen item
@@ -4000,59 +4013,92 @@ export class OrdersService {
                     const meta = await this.menuService.getDealComponentMeta(
                         raw.deal_menu_item_id,
                     );
-                    if (meta.size > 0) {
-                        for (const comp of raw.components) {
-                            const m = meta.get(comp.slot_index);
-                            if (!m)
-                                throw new BadRequestException(
-                                    'Invalid deal selection.',
-                                );
-                            const item = await this.menuService.findMenuItem(
-                                comp.menu_item_id,
+                    // A deal line must reference a REAL deal. Without defined slots every
+                    // check below would be skipped — and components would be priced at the
+                    // referenced item's flat price (first slot) and 0 (the rest).
+                    if (meta.size === 0)
+                        throw new BadRequestException(
+                            'Invalid deal selection.',
+                        );
+                    for (const comp of components) {
+                        const m = meta.get(comp.slot_index);
+                        if (!m)
+                            throw new BadRequestException(
+                                'Invalid deal selection.',
                             );
-                            const itemCategoryId = item
-                                ? Number(item.categoryId)
+                        const item = await this.menuService.findMenuItem(
+                            comp.menu_item_id,
+                        );
+                        const itemCategoryId = item
+                            ? Number(item.categoryId)
+                            : null;
+                        if (
+                            !isComponentAllowedInSlot(
+                                {
+                                    menuItemId: comp.menu_item_id,
+                                    categoryId: itemCategoryId,
+                                },
+                                m,
+                            )
+                        )
+                            throw new BadRequestException(
+                                'That item is not available in this deal.',
+                            );
+                        if (m.slotSizeKey && item?.variants?.length) {
+                            const variant = comp.variant_id
+                                ? item.variants.find(
+                                      (v) => v.id === comp.variant_id,
+                                  )
                                 : null;
                             if (
-                                !isComponentAllowedInSlot(
-                                    {
-                                        menuItemId: comp.menu_item_id,
-                                        categoryId: itemCategoryId,
-                                    },
-                                    m,
-                                )
+                                !variant ||
+                                (variant.sizeKey ?? null) !== m.slotSizeKey
                             )
                                 throw new BadRequestException(
-                                    'That item is not available in this deal.',
+                                    'Please choose the correct size for this deal.',
                                 );
-                            if (m.slotSizeKey && item?.variants?.length) {
-                                const variant = comp.variant_id
-                                    ? item.variants.find(
-                                          (v) => v.id === comp.variant_id,
-                                      )
-                                    : null;
-                                if (
-                                    !variant ||
-                                    (variant.sizeKey ?? null) !== m.slotSizeKey
-                                )
-                                    throw new BadRequestException(
-                                        'Please choose the correct size for this deal.',
-                                    );
-                            }
                         }
+                    }
+                    // Structural completeness (the BOGO branch already enforces its own):
+                    // every REQUIRED slot must be filled with exactly its configured unit
+                    // count ("Deal for 2" = 2 boxes + 2 drinks — no fewer); optional slots
+                    // ("add a drink(s)") may hold 0..quantity units. Counts sum component
+                    // quantities, matching the POS payload (multi-unit slots send one
+                    // entry per unit; fixed slots one entry carrying the slot quantity).
+                    const unitsBySlot = new Map<number, number>();
+                    for (const comp of components) {
+                        const units = Math.max(
+                            1,
+                            Math.floor(Number(comp.quantity ?? 1)) || 1,
+                        );
+                        unitsBySlot.set(
+                            comp.slot_index,
+                            (unitsBySlot.get(comp.slot_index) ?? 0) + units,
+                        );
+                    }
+                    for (const [slotIndex, m] of meta) {
+                        const units = unitsBySlot.get(slotIndex) ?? 0;
+                        if (!m.optional && units < m.quantity)
+                            throw new BadRequestException(
+                                'Please choose an item for every part of this deal.',
+                            );
+                        if (units > m.quantity)
+                            throw new BadRequestException(
+                                'Too many items selected for a part of this deal.',
+                            );
                     }
                 }
 
                 const qty = raw.quantity ?? 1;
                 for (let q = 0; q < qty; q++) {
-                    raw.components.forEach((comp, idx) => {
+                    components.forEach((comp, idx) => {
                         const slotSurcharge =
                             surchargeBySlot.get(comp.slot_index)?.[
                                 String(comp.menu_item_id)
                             ] ?? 0;
                         const baseDealPrice =
                             bogoUnitPrices != null
-                                ? bogoUnitPrices[idx] ?? 0
+                                ? (bogoUnitPrices[idx] ?? 0)
                                 : idx === 0
                                   ? dealPrice
                                   : 0;
@@ -4394,9 +4440,7 @@ export class OrdersService {
         );
         if (pct <= 0) return 0;
 
-        const unitPricesFor = (
-            lines: typeof eligible,
-        ): number[] => {
+        const unitPricesFor = (lines: typeof eligible): number[] => {
             const units: number[] = [];
             for (const l of lines) {
                 const q = Math.max(1, Math.floor(Number(l.quantity) || 1));

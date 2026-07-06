@@ -85,7 +85,12 @@ export class MenuItem {
      *                     `dealBogoGetPercent`% off ("2nd pizza half price").
      * Only meaningful on deal roots; ignored for normal items.
      */
-    @Column({ name: 'deal_pricing_mode', type: 'varchar', length: 16, nullable: true })
+    @Column({
+        name: 'deal_pricing_mode',
+        type: 'varchar',
+        length: 16,
+        nullable: true,
+    })
     dealPricingMode: string | null;
 
     @Column({ name: 'deal_bogo_buy_quantity', type: 'int', nullable: true })

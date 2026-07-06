@@ -10,9 +10,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *
  * Guarded: on a fresh DB (where 054 already creates created_at/updated_at) this is a no-op.
  */
-export class FixBankCardsTimestampColumns1760000000056
-    implements MigrationInterface
-{
+export class FixBankCardsTimestampColumns1760000000056 implements MigrationInterface {
     name = 'FixBankCardsTimestampColumns1760000000056';
 
     public async up(queryRunner: QueryRunner): Promise<void> {

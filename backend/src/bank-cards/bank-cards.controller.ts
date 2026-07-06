@@ -35,7 +35,10 @@ export class BankCardsController {
     /** POS + admin: list the tenant's cards. `?active=1` returns only active ones (for the POS picker). */
     @Get()
     index(@CurrentUser() user: CardUser, @Query('active') active?: string) {
-        return this.service.findAll(user.tenantId, active === '1' || active === 'true');
+        return this.service.findAll(
+            user.tenantId,
+            active === '1' || active === 'true',
+        );
     }
 
     @Post()

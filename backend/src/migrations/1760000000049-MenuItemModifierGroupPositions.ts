@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class MenuItemModifierGroupPositions1760000000049
-    implements MigrationInterface
-{
+export class MenuItemModifierGroupPositions1760000000049 implements MigrationInterface {
     async up(runner: QueryRunner): Promise<void> {
         await runner.query(`
             CREATE TABLE IF NOT EXISTS "menu_item_modifier_group_positions" (

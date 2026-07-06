@@ -437,11 +437,12 @@ async function seed() {
         ],
     );
     // Medium-deal pizza toppings: same option set as Signature, but 2 are INCLUDED free at the
-    // Medium (10") size (deal spec "choose 2 toppings"); a 3rd+ is charged per size. Any 2 —
-    // two different toppings, or the same topping twice (repeatable via the free-allowance qty).
+    // Medium (10") size (deal spec "choose 2 toppings"); capped at 2 units TOTAL — the sheet
+    // grants exactly 2 (two different, or the same twice) with NO surcharge, so no charged
+    // extras are offered. Free at both lunch-deal sizes (7" small offer / 10" medium offer).
     const grpDealToppings = await mkGroup(
         'Choose 2 Toppings',
-        { minSelect: 0, maxSelect: REPEAT_MAX, includedBySize: { '10': 2 } },
+        { minSelect: 0, maxSelect: 2, includedBySize: { '7': 2, '10': 2 } },
         [
             ...MEATS.map((m) => ({
                 name: m,
@@ -659,7 +660,11 @@ async function seed() {
     const grpKidsJuice = await mkGroup(
         'Choose your Juice',
         { minSelect: 1, maxSelect: 1 },
-        [{ name: 'Apple Juice' }, { name: 'Orange Juice' }, { name: 'Mango Juice' }],
+        [
+            { name: 'Apple Juice' },
+            { name: 'Orange Juice' },
+            { name: 'Mango Juice' },
+        ],
     );
     await linkGroups(kids, [grpKidsCheese, grpKidsJuice, grpSigToppings]);
     const addonKidsFries = await addonRepo.save(
@@ -1219,7 +1224,32 @@ async function seed() {
     const drink345Ids = deal345Drinks.map((d) => d.id);
     const drink1LIds = deal1LDrinks.map((d) => d.id);
 
-    // Small Pizza Lunch Offer — 7" BYO pizza (2 free toppings) + 250ml drink. Mon–Fri 12–16, collection.
+    // Deal cheese: the lunch-deal sheets price the cheese column at 0 — Mozzarella or Extra
+    // Cheese are both included, unlike the à-la-carte BYO group where Extra Cheese is charged.
+    const grpCheeseDeal = await mkGroup(
+        'Choose Your Cheese',
+        { minSelect: 1, maxSelect: 2 },
+        [{ name: 'Mozzarella' }, { name: 'Extra Cheese' }],
+    );
+
+    // Small Pizza Lunch Offer — a DEAL-ONLY 7" BYO pizza (2 free toppings TOTAL, free cheese)
+    // + 250ml drink. Mon–Fri 12–16, collection. The à-la-carte BYO item is NOT reused here:
+    // its meat/veg groups each include 2 free per size (up to 4 free + charged extras), far
+    // beyond the deal's "2 toppings (1 meat & 1 veg)" grant.
+    const byoSmallDeal = await mkItem({
+        category: catBYO,
+        name: 'Build Your Own Pizza (Small Deal)',
+        description: 'Your 7" pizza: choose a base, cheese and 2 toppings.',
+        basePrice: 699,
+        sizes: pizzaSizes(699, 1449, 1949, 2849), // ladder so the 7" variant exists
+        dealOnly: true,
+    });
+    await linkGroups(byoSmallDeal, [
+        grpCrust,
+        grpBase,
+        grpCheeseDeal,
+        grpDealToppings, // "Choose 2 Toppings" (both included at 7", no charged extras)
+    ]);
     await mkDeal({
         name: 'Small Pizza Lunch Offer',
         description:
@@ -1229,7 +1259,7 @@ async function seed() {
         slots: [
             {
                 type: 'choice_list',
-                sourceMenuItemIds: [byo.id],
+                sourceMenuItemIds: [byoSmallDeal.id],
                 quantity: 1,
                 allowCustomization: true,
                 slotSizeKey: '7',
@@ -1278,8 +1308,8 @@ async function seed() {
     await linkGroups(byoMediumDeal, [
         grpCrust,
         grpBase,
-        grpCheeseBYO, // "Choose Your Cheese" (Mozzarella + Extra Cheese, max 2)
-        grpDealToppings, // "Choose 2 Toppings" (2 included at 10", any/same twice)
+        grpCheeseDeal, // sheet prices the deal's cheese column at 0 — Extra Cheese included
+        grpDealToppings, // "Choose 2 Toppings" (2 included at 10", any/same twice, no extras)
     ]);
     await mkDeal({
         name: 'Medium Pizza, Pasta Lunch Offer',
@@ -1302,7 +1332,9 @@ async function seed() {
     });
 
     // Fireaway Wrap Lunch Deal — any wrap + 250ml drink Rs549; upgrade to Firey Special +Rs100.
-    await mkDeal({
+    // Sheet: "instore only" (unlike the pizza lunch offers' "Collection / In-store") — the
+    // dine_in-only channel override is applied right after creation.
+    const wrapLunchDeal = await mkDeal({
         name: 'Fireaway Wrap Lunch Deal',
         description:
             'Choose any wrap and a 250ml drink for Rs 549 (upgrade to Firey Special wrap for +Rs 100). Monday–Friday 12–4pm.',
@@ -1325,6 +1357,10 @@ async function seed() {
                 allowCustomization: false,
             },
         ],
+    });
+    // "instore only": dine_in, no collection/delivery.
+    await itemRepo.update(wrapLunchDeal.id, {
+        availableForOrderTypes: ['dine_in'],
     });
 
     // Snack Special Rs1299 — Cheesy Garlic Bread (auto) + 5 wings or strips + 2 dips.

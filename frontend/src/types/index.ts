@@ -341,6 +341,10 @@ export interface MenuModifierGroup {
   name: string;
   min_select: number;
   max_select: number;
+  /** Per-size override of min_select keyed by variant size_key (e.g. {"large":2,"xl":3}). */
+  min_select_by_size?: Record<string, number> | null;
+  /** Per-size override of max_select keyed by variant size_key. */
+  max_select_by_size?: Record<string, number> | null;
   /** Units included free before any are charged ("first N free"). */
   included_quantity?: number;
   /** Per-size override of included_quantity keyed by variant size_key. */
