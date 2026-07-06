@@ -4,7 +4,7 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
 import {
     Brand,
     BrandDeliveryTiers,
@@ -763,7 +763,7 @@ export class BrandsService {
     async remove(id: number, tenantId: number) {
         const brand = await this.repo.findOne({ where: { id, tenantId } });
         if (!brand) throw new NotFoundException('Brand not found');
-        await this.repo.remove(brand);
+        await this.deleteBrandWithInventoryCleanup(brand);
         return { message: 'Brand deleted successfully' };
     }
 
@@ -771,8 +771,59 @@ export class BrandsService {
         const where = tenantId != null ? { id, tenantId } : { id };
         const brand = await this.repo.findOne({ where });
         if (!brand) throw new NotFoundException('Brand not found');
-        await this.repo.remove(brand);
+        await this.deleteBrandWithInventoryCleanup(brand);
         return { message: 'Brand deleted successfully' };
+    }
+
+    /**
+     * Delete a brand, first releasing its brand-bucket inventory back to the branch pool.
+     *
+     * inventory_on_hand / inventory_batch_on_hand carry a nullable brand_id where NULL = the
+     * branch pool and a non-null value is that brand's allocated bucket. The brands FK on those
+     * tables is ON DELETE SET NULL, but a brand bucket row and its branch-pool (NULL) sibling
+     * share a unique key `(branch, item|batch, COALESCE(location,0), COALESCE(brand,0))`, so a
+     * plain SET NULL collides with the existing pool row and the whole delete fails. We instead
+     * fold each brand bucket's qty back into the pool with the same additive upsert the inventory
+     * service uses, drop the now-merged brand rows, then delete the brand — letting the remaining
+     * FKs (ledger, transfers, shifts, branch_users, …) SET NULL / CASCADE cleanly.
+     */
+    private async deleteBrandWithInventoryCleanup(brand: Brand): Promise<void> {
+        await this.repo.manager.transaction(async (em) => {
+            await this.releaseBrandInventoryToBranchPool(em, brand.id);
+            await em.remove(brand);
+        });
+    }
+
+    private async releaseBrandInventoryToBranchPool(
+        em: EntityManager,
+        brandId: number,
+    ): Promise<void> {
+        await em.query(
+            `INSERT INTO inventory_on_hand
+                (tenant_id, branch_id, inventory_item_id, location_id, brand_id, qty, updated_at)
+             SELECT tenant_id, branch_id, inventory_item_id, location_id, NULL, qty, now()
+             FROM inventory_on_hand WHERE brand_id = $1
+             ON CONFLICT (branch_id, inventory_item_id, COALESCE(location_id, 0), COALESCE(brand_id, 0))
+             DO UPDATE SET qty = inventory_on_hand.qty + EXCLUDED.qty, updated_at = now()`,
+            [brandId],
+        );
+        await em.query(`DELETE FROM inventory_on_hand WHERE brand_id = $1`, [
+            brandId,
+        ]);
+
+        await em.query(
+            `INSERT INTO inventory_batch_on_hand
+                (tenant_id, branch_id, inventory_batch_id, location_id, brand_id, qty, updated_at)
+             SELECT tenant_id, branch_id, inventory_batch_id, location_id, NULL, qty, now()
+             FROM inventory_batch_on_hand WHERE brand_id = $1
+             ON CONFLICT (branch_id, inventory_batch_id, COALESCE(location_id, 0), COALESCE(brand_id, 0))
+             DO UPDATE SET qty = inventory_batch_on_hand.qty + EXCLUDED.qty, updated_at = now()`,
+            [brandId],
+        );
+        await em.query(
+            `DELETE FROM inventory_batch_on_hand WHERE brand_id = $1`,
+            [brandId],
+        );
     }
 
     private toResponse(b: Brand) {
