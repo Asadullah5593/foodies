@@ -57,7 +57,13 @@ const FLAVOURS = [
     'Mango and Lime',
     'Lemon and Herbs',
 ];
-const SODAS = ['Coca-Cola', 'Diet Coke', 'Coca-Cola Zero', 'Fanta Orange', 'Sprite'];
+const SODAS = [
+    'Coca-Cola',
+    'Diet Coke',
+    'Coca-Cola Zero',
+    'Fanta Orange',
+    'Sprite',
+];
 const MILKSHAKES = [
     'Vanilla',
     'Oreo',
@@ -106,7 +112,9 @@ async function seed() {
     const modifierRepo = dataSource.getRepository(Modifier);
     const bmiRepo = dataSource.getRepository(BranchMenuItem);
     const dealComponentRepo = dataSource.getRepository(DealComponent);
-    const positionRepo = dataSource.getRepository(MenuItemModifierGroupPosition);
+    const positionRepo = dataSource.getRepository(
+        MenuItemModifierGroupPosition,
+    );
 
     const [tenant] = await tenantRepo.find({ order: { id: 'ASC' }, take: 1 });
     if (!tenant) {
@@ -122,7 +130,8 @@ async function seed() {
                 tenantId: tenant.id,
                 name: BRAND_NAME,
                 slug: BRAND_SLUG,
-                description: 'Flame-grilled peri peri chicken, smashed burgers & more.',
+                description:
+                    'Flame-grilled peri peri chicken, smashed burgers & more.',
                 logoUrl: null,
                 isActive: true,
             }),
@@ -141,7 +150,9 @@ async function seed() {
     console.log('Clearing existing Peperi. Co menu for a clean re-seed…');
     await itemRepo.delete({ brandId }); // cascades variants, deal_components, m2m links, order_items
     await groupRepo.delete({ brandId }); // cascades modifiers
-    await dataSource.query('DELETE FROM menu_addons WHERE brand_id = $1', [brandId]);
+    await dataSource.query('DELETE FROM menu_addons WHERE brand_id = $1', [
+        brandId,
+    ]);
     await categoryRepo.delete({ brandId });
 
     // ===================================================================
@@ -262,7 +273,11 @@ async function seed() {
         // Persist per-item display order so the customize wizard follows THIS array.
         for (let i = 0; i < groups.length; i++) {
             await positionRepo.upsert(
-                { menuItemId: item.id, modifierGroupId: groups[i].id, sortOrder: i },
+                {
+                    menuItemId: item.id,
+                    modifierGroupId: groups[i].id,
+                    sortOrder: i,
+                },
                 ['menuItemId', 'modifierGroupId'],
             );
         }
@@ -299,32 +314,28 @@ async function seed() {
             { name: 'Triple Meat', price: 400 },
         ],
     );
-    const grpMeatBeef = await mkGroup(
-        'Meat',
-        { minSelect: 1, maxSelect: 1 },
-        [
-            { name: 'Single Meat (as it comes)' },
-            { name: 'Double Meat', price: 250 },
-            { name: 'Triple Meat', price: 500 },
-        ],
-    );
-    const grpMeatPatty = await mkGroup(
-        'Meat',
-        { minSelect: 1, maxSelect: 1 },
-        [
-            { name: 'As it comes' },
-            { name: 'Add Extra single patty', price: 250 },
-            { name: 'Add Extra 2 patties', price: 500 },
-        ],
-    );
+    const grpMeatBeef = await mkGroup('Meat', { minSelect: 1, maxSelect: 1 }, [
+        { name: 'Single Meat (as it comes)' },
+        { name: 'Double Meat', price: 250 },
+        { name: 'Triple Meat', price: 500 },
+    ]);
+    const grpMeatPatty = await mkGroup('Meat', { minSelect: 1, maxSelect: 1 }, [
+        { name: 'As it comes' },
+        { name: 'Add Extra single patty', price: 250 },
+        { name: 'Add Extra 2 patties', price: 500 },
+    ]);
 
     // Sauce groups — up to 2 (free). Same picks, different "as it comes" default per burger family.
     const grpSaucePeri = await mkGroup(
         'Sauce Options (choose up to 2)',
         { minSelect: 0, maxSelect: 2 },
-        ['Peri Peri Mayo', 'Chipotle', 'BBQ', 'Sweet Chilli', 'Garlic Mayo'].map(
-            (s) => ({ name: s }),
-        ),
+        [
+            'Peri Peri Mayo',
+            'Chipotle',
+            'BBQ',
+            'Sweet Chilli',
+            'Garlic Mayo',
+        ].map((s) => ({ name: s })),
     );
     const grpSauceSecret = await mkGroup(
         'Sauce Options (choose up to 2)',
@@ -356,44 +367,62 @@ async function seed() {
     const saladRemoveLTOJ = await mkGroup(
         'Salad Options',
         { minSelect: 0, maxSelect: 4 },
-        ['Remove Lettuce', 'Remove Tomato', 'Remove Onion', 'Remove Jalapenos'].map(
-            (s) => ({ name: s }),
-        ),
+        [
+            'Remove Lettuce',
+            'Remove Tomato',
+            'Remove Onion',
+            'Remove Jalapenos',
+        ].map((s) => ({ name: s })),
     );
     const saladAddLTOJ = await mkGroup(
         'Salad Options',
         { minSelect: 0, maxSelect: 4 },
-        ['Add Lettuce', 'Add Tomato', 'Add Onion', 'Add Jalapenos'].map((s) => ({
-            name: s,
-        })),
+        ['Add Lettuce', 'Add Tomato', 'Add Onion', 'Add Jalapenos'].map(
+            (s) => ({
+                name: s,
+            }),
+        ),
     );
     const saladRemovePine = await mkGroup(
         'Salad Options',
         { minSelect: 0, maxSelect: 4 },
-        ['Remove Lettuce', 'Remove Tomato', 'Remove Onion', 'Remove Pineapple'].map(
-            (s) => ({ name: s }),
-        ),
+        [
+            'Remove Lettuce',
+            'Remove Tomato',
+            'Remove Onion',
+            'Remove Pineapple',
+        ].map((s) => ({ name: s })),
     );
     const saladRemovePickle = await mkGroup(
         'Salad Options',
         { minSelect: 0, maxSelect: 4 },
-        ['Remove Lettuce', 'Remove Tomato', 'Remove Onion', 'Remove Pickle'].map(
-            (s) => ({ name: s }),
-        ),
+        [
+            'Remove Lettuce',
+            'Remove Tomato',
+            'Remove Onion',
+            'Remove Pickle',
+        ].map((s) => ({ name: s })),
     );
     const saladRemoveSupreme = await mkGroup(
         'Salad Options',
         { minSelect: 0, maxSelect: 4 },
-        ['Remove Onion', 'Remove Mushroom', 'Remove Pickle', 'Remove Pineapple'].map(
-            (s) => ({ name: s }),
-        ),
+        [
+            'Remove Onion',
+            'Remove Mushroom',
+            'Remove Pickle',
+            'Remove Pineapple',
+        ].map((s) => ({ name: s })),
     );
     const saladAddCrispy = await mkGroup(
         'Salad Options',
         { minSelect: 0, maxSelect: 5 },
-        ['Add Lettuce', 'Add Tomato', 'Add Onion', 'Add Jalapenos', 'Add Pickle'].map(
-            (s) => ({ name: s }),
-        ),
+        [
+            'Add Lettuce',
+            'Add Tomato',
+            'Add Onion',
+            'Add Jalapenos',
+            'Add Pickle',
+        ].map((s) => ({ name: s })),
     );
 
     // "Make it a Meal?" for burgers — mutually-exclusive priced meal variants. Hidden inside deals
@@ -453,15 +482,19 @@ async function seed() {
         });
         return mods.filter((m) => Number(m.price) > 0).map((m) => m.id);
     };
-    grpMealDrinkShake.visibleWhenModifierIds = await paidModifierIds(grpBurgerMeal);
+    grpMealDrinkShake.visibleWhenModifierIds =
+        await paidModifierIds(grpBurgerMeal);
     await groupRepo.save(grpMealDrinkShake);
-    grpMealDrinkSoda.visibleWhenModifierIds = await paidModifierIds(grpSimpleMeal);
+    grpMealDrinkSoda.visibleWhenModifierIds =
+        await paidModifierIds(grpSimpleMeal);
     await groupRepo.save(grpMealDrinkSoda);
 
     // Paid drink cross-sell (pasta/rice) — drink NOT included; charged at full price, repeatable.
+    // Hidden inside deals: the Chicken & Rice deal supplies its included drink through its own
+    // slot, so this paid chooser must not show up next to it.
     const grpAddDrinksPaid = await mkGroup(
         'Add a Drink(s)',
-        { minSelect: 0, maxSelect: 12, allowQuantity: true },
+        { minSelect: 0, maxSelect: 12, allowQuantity: true, hideInDeals: true },
         [
             ...SODAS.map((s) => ({ name: `${s} 345ml`, price: 130 })),
             { name: 'Water 500ml', price: 75 },
@@ -493,9 +526,13 @@ async function seed() {
     const grpWrapSauce = await mkGroup(
         'Add a Sauce',
         { minSelect: 0, maxSelect: 5, allowQuantity: true },
-        ['Garlic Mayo', 'Burger Sauce', 'Chipotle', 'Sweet Chilli', 'Peri Peri Mayo'].map(
-            (s) => ({ name: s }),
-        ),
+        [
+            'Garlic Mayo',
+            'Burger Sauce',
+            'Chipotle',
+            'Sweet Chilli',
+            'Peri Peri Mayo',
+        ].map((s) => ({ name: s })),
     );
 
     // ===================================================================
@@ -678,8 +715,16 @@ async function seed() {
     // "Add Extra Toppings" group OMITTED (its source list is absent from the sheet).
     // ===================================================================
     const wraps: Array<[string, string, number]> = [
-        ['Chicken Tikka Wrap', 'Chicken tikka, lettuce, onion, cucumber and mayo', 549],
-        ['Krunchy Chicken', 'Krunchy chicken, lettuce, onion, cucumber and mayo', 549],
+        [
+            'Chicken Tikka Wrap',
+            'Chicken tikka, lettuce, onion, cucumber and mayo',
+            549,
+        ],
+        [
+            'Krunchy Chicken',
+            'Krunchy chicken, lettuce, onion, cucumber and mayo',
+            549,
+        ],
         [
             'Peri Peri Chicken Wrap',
             'Peri peri chicken, lettuce, onion, cucumber and peri peri mayo',
@@ -717,7 +762,8 @@ async function seed() {
     const wings = await mkItem({
         category: catWings,
         name: 'Peri Peri Wings',
-        description: 'Peri peri chicken wings grilled in a choice of 5 flavours',
+        description:
+            'Peri peri chicken wings grilled in a choice of 5 flavours',
         basePrice: 699,
         sizes: [
             { name: '5 Pcs', sizeKey: '5', price: 699, isDefault: true },
@@ -742,16 +788,24 @@ async function seed() {
     const grpSaladMeat = await mkGroup(
         'Choose Your Meat',
         { minSelect: 0, maxSelect: 6, includedQuantity: 2 },
-        ['Chicken Muglai', 'Chicken Fajita', 'Chicken Tikka', 'Peri Peri Chicken'].map(
-            (m) => ({ name: m, price: 149 }),
-        ),
+        [
+            'Chicken Muglai',
+            'Chicken Fajita',
+            'Chicken Tikka',
+            'Peri Peri Chicken',
+        ].map((m) => ({ name: m, price: 149 })),
     );
     const grpSaladVeg = await mkGroup(
         'Choose Your Veggies',
         { minSelect: 0, maxSelect: 8, includedQuantity: 4 },
-        ['Black Olives', 'Onion', 'Sweet Corn', 'Jalapeños', 'Tomato', 'Mixed Peppers'].map(
-            (v) => ({ name: v, price: 29 }),
-        ),
+        [
+            'Black Olives',
+            'Onion',
+            'Sweet Corn',
+            'Jalapeños',
+            'Tomato',
+            'Mixed Peppers',
+        ].map((v) => ({ name: v, price: 29 })),
     );
     // "If Peri Peri Chicken → Choose 1 flavour" (sheet): the flavour is only asked when the
     // Peri Peri Chicken meat is picked. A DEDICATED group (not the shared always-required
@@ -784,7 +838,8 @@ async function seed() {
     const pasta = await mkItem({
         category: catPasta,
         name: 'Peri Peri Chicken Pasta',
-        description: 'Smooth and creamy pasta with fresh grilled peri peri chicken',
+        description:
+            'Smooth and creamy pasta with fresh grilled peri peri chicken',
         basePrice: 949,
     });
     await linkGroups(pasta, pastaGroups);
@@ -910,7 +965,11 @@ async function seed() {
     const grpKidsJuice = await mkGroup(
         'Choose Drink',
         { minSelect: 1, maxSelect: 1 },
-        [{ name: 'Apple Juice' }, { name: 'Orange Juice' }, { name: 'Mango Juice' }],
+        [
+            { name: 'Apple Juice' },
+            { name: 'Orange Juice' },
+            { name: 'Mango Juice' },
+        ],
     );
     const kidsMeal = await mkItem({
         category: catKids,
@@ -927,9 +986,13 @@ async function seed() {
     const grpCookieFlavour = await mkGroup(
         'Choose Your Flavour',
         { minSelect: 1, maxSelect: 1 },
-        ['Chocolate Cookies', 'Triple Chocolate', 'Pistachio', 'Lotus', 'Red Velvet'].map(
-            (f) => ({ name: f }),
-        ),
+        [
+            'Chocolate Cookies',
+            'Triple Chocolate',
+            'Pistachio',
+            'Lotus',
+            'Red Velvet',
+        ].map((f) => ({ name: f })),
     );
     const cookie = await mkItem({
         category: catDesserts,
@@ -941,7 +1004,10 @@ async function seed() {
     const grpSpread = await mkGroup(
         'Choose Your Flavour',
         { minSelect: 1, maxSelect: 1 },
-        [{ name: 'With Chocolate Spread' }, { name: 'Without Chocolate Spread' }],
+        [
+            { name: 'With Chocolate Spread' },
+            { name: 'Without Chocolate Spread' },
+        ],
     );
     const brownie = await mkItem({
         category: catDesserts,
@@ -953,9 +1019,13 @@ async function seed() {
     const grpCookieCreamFlavour = await mkGroup(
         'Choose your Cookie Flavour',
         { minSelect: 1, maxSelect: 1 },
-        ['Chocolate Cookies', 'Triple Chocolate', 'Pistachio', 'Lotus', 'Red Velvet'].map(
-            (f) => ({ name: f }),
-        ),
+        [
+            'Chocolate Cookies',
+            'Triple Chocolate',
+            'Pistachio',
+            'Lotus',
+            'Red Velvet',
+        ].map((f) => ({ name: f })),
     );
     const cookieCream = await mkItem({
         category: catDesserts,
@@ -994,7 +1064,8 @@ async function seed() {
         await mkItem({
             category: catShakes,
             name: `${s} Milkshake`,
-            description: 'Freshly made luscious milkshake with real fresh ingredients',
+            description:
+                'Freshly made luscious milkshake with real fresh ingredients',
             basePrice: 499,
         });
     }
@@ -1018,8 +1089,16 @@ async function seed() {
             drinkItems[`${flavour} ${label}`] = it;
         }
     }
-    await mkItem({ category: catDrinks, name: 'Water 500ml', basePrice: 75 });
-    await mkItem({ category: catDrinks, name: 'Juice 200ml', basePrice: 75 });
+    const waterItem = await mkItem({
+        category: catDrinks,
+        name: 'Water 500ml',
+        basePrice: 75,
+    });
+    const juiceItem = await mkItem({
+        category: catDrinks,
+        name: 'Juice 200ml',
+        basePrice: 75,
+    });
 
     // Milkshake items (already created above) — resolve for deal drink upgrades.
     const milkshakeItems = await itemRepo.find({
@@ -1105,13 +1184,21 @@ async function seed() {
         quantity,
         allowCustomization: false,
     });
-    // Included meal drink slot that ITEMISES the drink: any 345ml soda (free) or any milkshake (+250).
+    // Included meal drink slot that ITEMISES the drink: any 345ml soda, water or juice (free)
+    // or any milkshake (+250). The sheet's "MEAL DEAL DRINKS OPTIONS" section includes
+    // Water 500ml and Juice 200ml alongside the sodas.
     const mealDrinkSlot = (quantity = 1) => {
         const surcharges: Record<string, number> = {};
-        for (const m of milkshakeItems) surcharges[String(m.id)] = MILKSHAKE_UPGRADE;
+        for (const m of milkshakeItems)
+            surcharges[String(m.id)] = MILKSHAKE_UPGRADE;
         return {
             type: 'choice_list' as const,
-            sourceMenuItemIds: [...sodas345, ...milkshakeItems.map((m) => m.id)],
+            sourceMenuItemIds: [
+                ...sodas345,
+                waterItem.id,
+                juiceItem.id,
+                ...milkshakeItems.map((m) => m.id),
+            ],
             quantity,
             allowCustomization: false,
             slotSurcharges: surcharges,
@@ -1211,7 +1298,8 @@ async function seed() {
     const friedBox = await mkItem({
         category: catChicken,
         name: 'Fried Chicken Box',
-        description: 'Boneless fried chicken on large fries with choice of sauce',
+        description:
+            'Boneless fried chicken on large fries with choice of sauce',
         basePrice: 0,
         dealOnly: true,
     });
@@ -1219,7 +1307,8 @@ async function seed() {
     const periBox = await mkItem({
         category: catChicken,
         name: 'Peri Peri Chicken Box',
-        description: 'Boneless grilled peri peri chicken on large fries with choice of sauce',
+        description:
+            'Boneless grilled peri peri chicken on large fries with choice of sauce',
         basePrice: 0,
         dealOnly: true,
     });
