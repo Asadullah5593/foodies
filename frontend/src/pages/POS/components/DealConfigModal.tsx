@@ -8,7 +8,7 @@ import type { DealComponentLine } from './types';
 import { defaultVariantIdForItem, type ItemConfig } from './types';
 import ItemConfigModal from './ItemConfigModal';
 import { bogoDealTotal } from '../../../utils/bogoPricing';
-import { computeModifiersPrice } from '../../../utils/modifierPricing';
+import { computeModifiersPrice, resolveMinSelect, resolveMaxSelect } from '../../../utils/modifierPricing';
 
 export type DealConfigModalProps = {
   isOpen: boolean;
@@ -222,13 +222,48 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
 
   const slotUnitCount = (state: SlotState) => state.picks.filter((p) => p.selectedItem != null).length;
 
+  /**
+   * A picked item whose REQUIRED options (min-select groups like "Choose your Base" /
+   * "Choose your Toppings", or a size the slot doesn't pin) haven't been chosen yet —
+   * the pick must go through Customize before the deal can be added, otherwise the box
+   * would be sent to the kitchen with no base/toppings/flavour. Mirrors the à-la-carte
+   * ItemConfigModal's required-step rules (hide_in_deals groups are the deal's own slots;
+   * conditional groups only count once triggered; min resolves per the locked/chosen size).
+   * Multi-unit mix&match slots are exempt — they have no Customize affordance, and every
+   * menu puts only customization-free items (sides/drinks) in them.
+   */
+  const pickNeedsOptions = (slot: DealSlot, pick: SlotPick): boolean => {
+    const item = pick.selectedItem;
+    if (!item || !slot.allow_customization || isMultiPick(slot)) return false;
+    const config = pick.config;
+    if ((item.variants?.length ?? 0) > 0 && config.variantId == null) return true;
+    const sizeKey = slot.slot_size_key ?? sizeKeyOf(item, config.variantId);
+    const selectedIds = new Set((config.modifiers ?? []).map((m) => m.modifierId));
+    for (const g of item.modifier_groups ?? []) {
+      if (g.hide_in_deals) continue;
+      const triggers = g.visible_when_modifier_ids;
+      if (triggers?.length && !triggers.some((id) => selectedIds.has(id))) continue;
+      const min = resolveMinSelect(g, sizeKey);
+      if (min <= 0) continue;
+      const units = (config.modifiers ?? [])
+        .filter((m) => g.modifiers.some((mod) => mod.id === m.modifierId))
+        .reduce((s, m) => s + (m.quantity || 1), 0);
+      if (units < min) return true;
+    }
+    return false;
+  };
+
   const slotComplete = (slot: DealSlot, state: SlotState): boolean => {
-    // Optional slots (e.g. "add a drink(s)") are always satisfied — 0 picks is valid.
-    if (slot.optional) return true;
-    if (slot.type === 'fixed') return state.picks.length > 0 && state.picks.every((p) => p.selectedItem != null);
+    // Every picked item must have its required options chosen (see pickNeedsOptions).
+    const picksConfigured = state.picks.every((p) => !pickNeedsOptions(slot, p));
+    // Optional slots (e.g. "add a drink(s)") need no picks — but a picked item still
+    // has to be fully configured.
+    if (slot.optional) return picksConfigured;
+    if (slot.type === 'fixed')
+      return state.picks.length > 0 && state.picks.every((p) => p.selectedItem != null) && picksConfigured;
     if (slot.choice_items?.length) {
       if (isMultiPick(slot)) return slotUnitCount(state) >= (slot.quantity ?? 1);
-      return slotUnitCount(state) >= 1;
+      return slotUnitCount(state) >= 1 && picksConfigured;
     }
     return true;
   };
@@ -552,6 +587,9 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
     const state = getSlotState(slot.slot_index, slot);
     const base = 'flex-none text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap';
     if (slot.type === 'fixed') {
+      if (state.picks.some((p) => pickNeedsOptions(slot, p))) {
+        return <span className={`${base} bg-amber-50 text-amber-700`}>Options required</span>;
+      }
       return <span className={`${base} bg-emerald-50 text-emerald-600`}>Included</span>;
     }
     if (isMultiPick(slot)) {
@@ -571,6 +609,9 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
         </span>
       );
     }
+    if (state.picks.some((p) => pickNeedsOptions(slot, p))) {
+      return <span className={`${base} bg-amber-50 text-amber-700`}>Options required</span>;
+    }
     const done = slotComplete(slot, state);
     return (
       <span className={`${base} ${done ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
@@ -589,27 +630,56 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
 
     if (isFixed) {
       const item = state.picks[0]?.selectedItem ?? rawChoiceItems[0] ?? null;
+      const needsOptions = state.picks.some((p) => pickNeedsOptions(slot, p));
       return (
         <div>
-          <div className="flex items-center gap-3 rounded-xl border-2 border-emerald-200 bg-emerald-50 p-4">
-            <span className="flex-none w-7 h-7 rounded-full bg-emerald-500 flex items-center justify-center">
+          <div
+            className={`flex items-center gap-3 rounded-xl border-2 p-4 ${
+              needsOptions ? 'border-amber-300 bg-amber-50' : 'border-emerald-200 bg-emerald-50'
+            }`}
+          >
+            <span
+              className={`flex-none w-7 h-7 rounded-full flex items-center justify-center ${
+                needsOptions ? 'bg-amber-500' : 'bg-emerald-500'
+              }`}
+            >
               <MdCheck className="w-4 h-4 text-white" />
             </span>
             <div className="flex-1 min-w-0">
-              <div className="text-[11px] font-bold uppercase tracking-wide text-emerald-600">Included</div>
-              <div className="text-base font-bold text-emerald-800 truncate">{item?.name ?? 'Included item'}</div>
+              <div
+                className={`text-[11px] font-bold uppercase tracking-wide ${
+                  needsOptions ? 'text-amber-600' : 'text-emerald-600'
+                }`}
+              >
+                {needsOptions ? 'Options required' : 'Included'}
+              </div>
+              <div
+                className={`text-base font-bold truncate ${
+                  needsOptions ? 'text-amber-800' : 'text-emerald-800'
+                }`}
+              >
+                {item?.name ?? 'Included item'}
+              </div>
             </div>
             {slot.allow_customization && hasOptions(item) && (
               <button
                 type="button"
                 onClick={() => setCustomizeTarget({ slotIndex: slot.slot_index, pickIdx: 0 })}
-                className="flex-none px-4 py-2 rounded-lg border-[1.5px] border-emerald-300 bg-white text-sm font-bold text-emerald-600 hover:bg-emerald-50 transition-colors"
+                className={`flex-none px-4 py-2 rounded-lg border-[1.5px] bg-white text-sm font-bold transition-colors ${
+                  needsOptions
+                    ? 'border-amber-400 text-amber-700 hover:bg-amber-50'
+                    : 'border-emerald-300 text-emerald-600 hover:bg-emerald-50'
+                }`}
               >
                 Customize
               </button>
             )}
           </div>
-          <p className="mt-3 text-xs text-gray-500">Nothing to pick — this step is already complete.</p>
+          <p className="mt-3 text-xs text-gray-500">
+            {needsOptions
+              ? 'This item has required options — tap Customize to choose them.'
+              : 'Nothing to pick — this step is already complete.'}
+          </p>
         </div>
       );
     }
@@ -671,6 +741,21 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
             );
           })}
         </div>
+        {!multi && state.picks[0] && pickNeedsOptions(slot, state.picks[0]) && (
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-sm font-semibold text-amber-800">
+              {state.picks[0].selectedItem?.name} has required options (base, toppings, …) — choose
+              them before continuing.
+            </p>
+            <button
+              type="button"
+              onClick={() => setCustomizeTarget({ slotIndex: slot.slot_index, pickIdx: 0 })}
+              className="flex-none px-4 py-2 rounded-lg bg-amber-500 text-sm font-bold text-white hover:bg-amber-600 transition-colors"
+            >
+              Customize
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -865,7 +950,10 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
           const groupForModifier = itemToCustomize?.modifier_groups?.find((g) =>
             g.modifiers.some((m) => m.id === modifierId),
           );
-          const isSingleSelect = groupForModifier && (groupForModifier.max_select ?? 0) === 1;
+          const customizeSizeKey =
+            customizeLockedSize ?? sizeKeyOf(itemToCustomize, configToCustomize.variantId);
+          const isSingleSelect =
+            groupForModifier && (resolveMaxSelect(groupForModifier, customizeSizeKey) ?? 0) === 1;
 
           if (exists) {
             applyCustomizeConfig({ ...configToCustomize, modifiers: current.filter((m) => m.modifierId !== modifierId) });
@@ -892,7 +980,11 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
           let next = Math.max(0, Math.floor(quantity));
           const group = itemToCustomize?.modifier_groups?.find((g) => g.modifiers.some((m) => m.id === modifierId));
           if (group && next > 0) {
-            const max = group.max_select ?? 99;
+            const max =
+              resolveMaxSelect(
+                group,
+                customizeLockedSize ?? sizeKeyOf(itemToCustomize, configToCustomize.variantId),
+              ) ?? 99;
             const otherUnits = (configToCustomize.modifiers ?? [])
               .filter((m) => m.modifierId !== modifierId && group.modifiers.some((mod) => mod.id === m.modifierId))
               .reduce((s, m) => s + (m.quantity || 1), 0);
