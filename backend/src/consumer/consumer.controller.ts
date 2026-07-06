@@ -2141,7 +2141,9 @@ export class ConsumerController {
     // ─── CMS Banners ─────────────────────────────────────────────────────────
 
     @Get('banners')
-    @ApiOperation({ summary: 'List active banners (tenant resolved from server TENANT_ID)' })
+    @ApiOperation({
+        summary: 'List active banners (tenant resolved from server TENANT_ID)',
+    })
     async getActiveBanners() {
         const tenantId = this.getTenantIdFromEnv();
         return this.bannersService.findActiveForTenant(tenantId);

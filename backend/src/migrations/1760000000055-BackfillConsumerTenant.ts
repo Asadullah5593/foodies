@@ -18,9 +18,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * carts/wallets/ratings/promotions cascade away, and any orders keep their
  * history via ON DELETE SET NULL. Deleted phones are reported for the record.
  */
-export class BackfillConsumerTenant1760000000055
-    implements MigrationInterface
-{
+export class BackfillConsumerTenant1760000000055 implements MigrationInterface {
     name = 'BackfillConsumerTenant1760000000055';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
@@ -28,7 +26,6 @@ export class BackfillConsumerTenant1760000000055
         const tenantId =
             raw != null && raw.trim() !== '' ? Number(raw) : Number.NaN;
         if (!Number.isInteger(tenantId) || tenantId <= 0) {
-            // eslint-disable-next-line no-console
             console.warn(
                 '[BackfillConsumerTenant] TENANT_ID not configured; skipping consumer backfill.',
             );
@@ -53,7 +50,7 @@ export class BackfillConsumerTenant1760000000055
                 `DELETE FROM customers WHERE ${dupeFilter}`,
                 [tenantId],
             );
-            // eslint-disable-next-line no-console
+
             console.warn(
                 `[BackfillConsumerTenant] deleted ${dupes.length} redundant consumer(s) already present under tenant ${tenantId}: ${dupes
                     .map((r) => r.phone)

@@ -7,9 +7,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *  - payments.bank_card_id: which card a card tender used (discount validation + audit).
  * All additive/nullable → existing discounts and payments are unchanged.
  */
-export class BankCardsAndCardDiscounts1760000000054
-    implements MigrationInterface
-{
+export class BankCardsAndCardDiscounts1760000000054 implements MigrationInterface {
     name = 'BankCardsAndCardDiscounts1760000000054';
 
     public async up(queryRunner: QueryRunner): Promise<void> {

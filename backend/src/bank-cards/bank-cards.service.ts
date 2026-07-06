@@ -49,7 +49,9 @@ export class BankCardsService {
                 bank: dto.bank?.trim() || null,
                 network: dto.network?.trim() || null,
                 binPrefixes: Array.isArray(dto.bin_prefixes)
-                    ? dto.bin_prefixes.map((b) => String(b).trim()).filter(Boolean)
+                    ? dto.bin_prefixes
+                          .map((b) => String(b).trim())
+                          .filter(Boolean)
                     : null,
                 isActive: dto.is_active ?? true,
             }),

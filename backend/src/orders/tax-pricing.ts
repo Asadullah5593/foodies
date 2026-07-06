@@ -34,7 +34,10 @@ export type TaxResult = {
  * to 0 when nothing is configured.
  */
 export function resolveGstRates(
-    branch: { gstRateCash?: number | null; gstRateCard?: number | null } | null | undefined,
+    branch:
+        | { gstRateCash?: number | null; gstRateCard?: number | null }
+        | null
+        | undefined,
     tenant:
         | { gstRateCash?: number | null; gstRateCard?: number | null }
         | null
@@ -74,13 +77,28 @@ export function computeTenderTax(
 
     if (sum <= 0) {
         // Unknown tender: default to cash (higher) so the shown total never under-charges.
-        return { taxAmount: round2(base * rc), basis: 'cash', rateCash: rc, rateCard: rk };
+        return {
+            taxAmount: round2(base * rc),
+            basis: 'cash',
+            rateCash: rc,
+            rateCard: rk,
+        };
     }
     if (card <= 0) {
-        return { taxAmount: round2(base * rc), basis: 'cash', rateCash: rc, rateCard: rk };
+        return {
+            taxAmount: round2(base * rc),
+            basis: 'cash',
+            rateCash: rc,
+            rateCard: rk,
+        };
     }
     if (cash <= 0) {
-        return { taxAmount: round2(base * rk), basis: 'card', rateCash: rc, rateCard: rk };
+        return {
+            taxAmount: round2(base * rk),
+            basis: 'card',
+            rateCash: rc,
+            rateCard: rk,
+        };
     }
     // Mixed tender: partition the pre-tax base by the entered tender ratio.
     const cardBase = round2(base * (card / sum));

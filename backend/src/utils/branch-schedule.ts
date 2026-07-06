@@ -23,7 +23,10 @@ export interface BranchClock {
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** Current wall-clock minutes + weekday in the given IANA timezone. */
-export function getBranchClock(timezone: string | null | undefined, now: Date = new Date()): BranchClock {
+export function getBranchClock(
+    timezone: string | null | undefined,
+    now: Date = new Date(),
+): BranchClock {
     const tz = timezone || 'UTC';
     const parts = new Intl.DateTimeFormat('en-GB', {
         timeZone: tz,
@@ -38,7 +41,8 @@ export function getBranchClock(timezone: string | null | undefined, now: Date = 
     for (const p of parts) {
         if (p.type === 'hour') hour = parseInt(p.value, 10) || 0;
         if (p.type === 'minute') minute = parseInt(p.value, 10) || 0;
-        if (p.type === 'weekday') dayOfWeek = Math.max(0, WEEKDAYS.indexOf(p.value));
+        if (p.type === 'weekday')
+            dayOfWeek = Math.max(0, WEEKDAYS.indexOf(p.value));
     }
     // Intl can emit hour "24" at midnight in some locales; normalize to 0.
     if (hour >= 24) hour -= 24;
@@ -55,13 +59,17 @@ const parseTimeToMinutes = (t: string | null | undefined): number | null => {
 };
 
 /** True when the schedule has no constraints, or `clock` falls inside the window. */
-export function isWithinSchedule(schedule: RecurringSchedule, clock: BranchClock): boolean {
+export function isWithinSchedule(
+    schedule: RecurringSchedule,
+    clock: BranchClock,
+): boolean {
     const hasTime = schedule.timeStart != null || schedule.timeEnd != null;
     const hasDays =
         Array.isArray(schedule.daysOfWeek) && schedule.daysOfWeek.length > 0;
     if (!hasTime && !hasDays) return true;
 
-    if (hasDays && !schedule.daysOfWeek!.includes(clock.dayOfWeek)) return false;
+    if (hasDays && !schedule.daysOfWeek!.includes(clock.dayOfWeek))
+        return false;
 
     if (hasTime) {
         const startM = parseTimeToMinutes(schedule.timeStart);

@@ -64,7 +64,8 @@ export interface ModifierPricingResult {
     lines: PricedModifierLine[];
 }
 
-const round2 = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
+const round2 = (n: number): number =>
+    Math.round((n + Number.EPSILON) * 100) / 100;
 
 /**
  * Clean a size→number map from API input: keep only finite numeric entries (>= 0),
@@ -142,8 +143,7 @@ function fillWithTiers(
     }
     if (remaining > 0) {
         const smallestKey = sorted[sorted.length - 1];
-        cost +=
-            (remaining * Number(tiers[String(smallestKey)])) / smallestKey;
+        cost += (remaining * Number(tiers[String(smallestKey)])) / smallestKey;
     }
     return round2(cost);
 }
