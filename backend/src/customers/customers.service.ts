@@ -769,14 +769,28 @@ export class CustomersService {
             return this.linkConsumerToTenant(consumer.id, tenantId);
         }
 
-        const newCustomer = await this.repo.save(
-            this.repo.create({
-                tenantId,
-                phone: normalized,
-                name: name?.trim() || 'Customer',
-                loyaltyPointsBalance: 0,
-            }),
-        );
+        let newCustomer: Customer;
+        try {
+            newCustomer = await this.repo.save(
+                this.repo.create({
+                    tenantId,
+                    phone: normalized,
+                    name: name?.trim() || 'Customer',
+                    loyaltyPointsBalance: 0,
+                }),
+            );
+        } catch (e) {
+            // Two concurrent first orders for the same new phone race the
+            // (tenant_id, phone) unique index. Re-fetch the row the winner created
+            // instead of 500ing (which would fail the loser's order + loyalty earn).
+            if (isUniqueViolation(e)) {
+                const existing = await this.repo.findOne({
+                    where: { tenantId, phone: normalized },
+                });
+                if (existing) return existing;
+            }
+            throw e;
+        }
         // Fire-and-forget: assign any active new_customer promotions
         if (this.promotionsService) {
             this.promotionsService

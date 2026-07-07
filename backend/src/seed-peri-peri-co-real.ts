@@ -20,7 +20,8 @@
  *  - the meal drink chooser can't be conditionally shown only when a meal upgrade is picked
  *    (it's optional, so leaving it empty = "burger only");
  *  - "REPEAT BURGER & DRINK CHOICES TWICE" deals are modelled as two burger + two drink slots;
- *  - in-deal fries "Large" upgrades (+Rs150/180) are omitted (à-la-carte only); peri-fries +Rs30 kept;
+ *  - in-deal fries chooser offers the sheet's paid upgrades — Peri Peri +Rs30, Large +Rs150,
+ *    Large Peri Peri +Rs180 — via deal-only "Large …" items (slot surcharges are per-item);
  *  - Firey Wraps "Add Extra Toppings" group is omitted (its source list is absent from the sheet);
  *  - Kcal / Allergens columns are blank on the sheet → left null.
  *
@@ -1204,13 +1205,41 @@ async function seed() {
             slotSurcharges: surcharges,
         };
     };
-    // Fries slot: Regular Fries (included) or Peri Peri Fries (+30). Large upgrades are à-la-carte only.
+    // Fries slot for the burger-meal deals — the sheet's "Choose Fries" column:
+    // Regular Fries (included) / Peri Peri Fries +30 / Large Fries +150 / Large Peri Peri
+    // Fries +180. À la carte Large is a VARIANT of Fries, but deal-slot surcharges are
+    // per-item, so the Large upgrades are dedicated DEAL-ONLY items. They live in "Special
+    // Sides" (not "Classic Sides") so the platters' choice_category side slots can never
+    // serve a Large uncharged.
+    const largeFriesDeal = await mkItem({
+        category: catSpecialSides,
+        name: 'Large Fries',
+        description: 'Large portion of regular chips',
+        basePrice: 399,
+        dealOnly: true,
+    });
+    const largePeriFriesDeal = await mkItem({
+        category: catSpecialSides,
+        name: 'Large Peri Peri Fries',
+        description: 'Large portion of chips with our secret spices',
+        basePrice: 425,
+        dealOnly: true,
+    });
     const friesSlot = () => ({
         type: 'choice_list' as const,
-        sourceMenuItemIds: [fries.id, periFries.id],
+        sourceMenuItemIds: [
+            fries.id,
+            periFries.id,
+            largeFriesDeal.id,
+            largePeriFriesDeal.id,
+        ],
         quantity: 1,
         allowCustomization: false,
-        slotSurcharges: { [String(periFries.id)]: 30 },
+        slotSurcharges: {
+            [String(periFries.id)]: 30,
+            [String(largeFriesDeal.id)]: 150,
+            [String(largePeriFriesDeal.id)]: 180,
+        },
     });
 
     // — Peri Peri Chicken Platters (chicken + classic side(s) + optional drink) —

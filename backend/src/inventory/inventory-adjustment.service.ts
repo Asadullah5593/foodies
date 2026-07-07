@@ -1,5 +1,6 @@
 import {
     BadRequestException,
+    ConflictException,
     ForbiddenException,
     Injectable,
     NotFoundException,
@@ -11,6 +12,7 @@ import { InventoryAdjustmentLine } from '../entities/inventory-adjustment-line.e
 import { InventoryBatch } from '../entities/inventory-batch.entity';
 import { InventoryItem } from '../entities/inventory-item.entity';
 import { InventoryService } from './inventory.service';
+import { transitionStatus } from '../common/db-concurrency';
 
 type TenantContextUser = {
     id: number;
@@ -122,8 +124,26 @@ export class InventoryAdjustmentService {
         }
 
         return this.dataSource.transaction(async (manager) => {
-            const sign = adjustment.adjustmentType === 'in' ? 1 : -1;
             const postedAt = new Date();
+            // Atomic draft -> posted FIRST: only one concurrent poster proceeds to
+            // create batches/movements. Without it a double-post of an 'in' adjustment
+            // mints a duplicate orphan batch and mis-points the line.
+            const prevStatus = await transitionStatus(
+                manager,
+                'inventory_adjustments',
+                adjustment.id,
+                'posted',
+                {
+                    allowedFrom: ['draft'],
+                    set: { posted_by: user.id, posted_at: postedAt },
+                },
+            );
+            if (prevStatus === null) {
+                throw new ConflictException(
+                    'This adjustment has already been posted',
+                );
+            }
+            const sign = adjustment.adjustmentType === 'in' ? 1 : -1;
             const movements = [];
             for (const line of adjustment.lines) {
                 const item = await manager

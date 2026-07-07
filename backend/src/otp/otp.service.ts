@@ -1,15 +1,17 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Not, Repository } from 'typeorm';
+import { DataSource, IsNull, Not, Repository } from 'typeorm';
 import { OtpCode } from '../entities/otp-code.entity';
 import { normalizePakistaniPhone } from '../utils/phone';
+import { AdvisoryLock } from '../common/db-concurrency';
 
 @Injectable()
 export class OtpService {
     constructor(
         @InjectRepository(OtpCode) private repo: Repository<OtpCode>,
         private config: ConfigService,
+        private dataSource: DataSource,
     ) {}
 
     /** Generate a 6-digit numeric OTP code. */
@@ -95,8 +97,19 @@ export class OtpService {
     ): Promise<OtpCode> {
         const otp = await this.findValid(email, code, purpose);
         if (!otp) throw new BadRequestException('Invalid or expired OTP');
+        // Atomic single-use claim: only the FIRST concurrent verifier flips used_at,
+        // so a code cannot be consumed twice (e.g. a reset-race where two requests
+        // submit the same code with different new passwords).
+        const res = await this.repo
+            .createQueryBuilder()
+            .update(OtpCode)
+            .set({ usedAt: () => 'now()' })
+            .where('id = :id AND used_at IS NULL', { id: otp.id })
+            .execute();
+        if (res.affected === 0) {
+            throw new BadRequestException('Invalid or expired OTP');
+        }
         otp.usedAt = new Date();
-        await this.repo.save(otp);
         return otp;
     }
 
@@ -111,27 +124,40 @@ export class OtpService {
         purpose: string,
     ): Promise<{ code: string; expiresAt: Date }> {
         const normalized = this.normalizePhoneOrThrow(phone);
-        const cooldown = this.resendCooldownMs;
-        if (cooldown > 0) {
-            const last = await this.repo.findOne({
-                where: { phone: normalized, purpose },
-                order: { id: 'DESC' },
-            });
-            if (
-                last &&
-                Date.now() - new Date(last.createdAt).getTime() < cooldown
-            ) {
-                throw new BadRequestException(
-                    'Please wait before requesting another code',
-                );
+        return this.dataSource.transaction(async (manager) => {
+            // Serialize sends per (phone, purpose) so two concurrent requests can't
+            // both pass the cooldown check and fire two SMS / mint two live codes.
+            await manager.query(
+                'SELECT pg_advisory_xact_lock($1, hashtext($2))',
+                [AdvisoryLock.OTP_IDENTIFIER, `${normalized}:${purpose}`],
+            );
+            const cooldown = this.resendCooldownMs;
+            if (cooldown > 0) {
+                const last = await manager.getRepository(OtpCode).findOne({
+                    where: { phone: normalized, purpose },
+                    order: { id: 'DESC' },
+                });
+                if (
+                    last &&
+                    Date.now() - new Date(last.createdAt).getTime() < cooldown
+                ) {
+                    throw new BadRequestException(
+                        'Please wait before requesting another code',
+                    );
+                }
             }
-        }
-        const code = this.generateCode();
-        const expiresAt = new Date(Date.now() + this.expiryMs);
-        await this.repo.save(
-            this.repo.create({ phone: normalized, code, purpose, expiresAt }),
-        );
-        return { code, expiresAt };
+            const code = this.generateCode();
+            const expiresAt = new Date(Date.now() + this.expiryMs);
+            await manager.getRepository(OtpCode).save(
+                manager.getRepository(OtpCode).create({
+                    phone: normalized,
+                    code,
+                    purpose,
+                    expiresAt,
+                }),
+            );
+            return { code, expiresAt };
+        });
     }
 
     /** Find valid phone OTP by code (not expired, not used). */
@@ -151,17 +177,70 @@ export class OtpService {
         return row;
     }
 
-    /** Verify phone OTP and mark as used (single-use). */
+    /** Max failed verify attempts before a phone code is burned (brute-force cap). */
+    private static readonly MAX_VERIFY_ATTEMPTS = 5;
+
+    /** Verify phone OTP and mark as used (single-use), with a race-safe brute-force cap. */
     async verifyForPhone(
         phone: string,
         code: string,
         purpose: string,
     ): Promise<OtpCode> {
-        const otp = await this.findValidForPhone(phone, code, purpose);
-        if (!otp) throw new BadRequestException('Invalid or expired OTP');
-        otp.usedAt = new Date();
-        await this.repo.save(otp);
-        return otp;
+        const normalized = normalizePakistaniPhone(phone);
+        const codeTrim = typeof code === 'string' ? code.trim() : '';
+        if (!normalized || !codeTrim) {
+            throw new BadRequestException('Invalid or expired OTP');
+        }
+        // Latest live code for this identifier, independent of the guessed value, so a
+        // WRONG guess can still be counted toward the cap.
+        const latest = await this.repo.findOne({
+            where: { phone: normalized, purpose, usedAt: IsNull() },
+            order: { id: 'DESC' },
+        });
+        if (!latest || new Date() > latest.expiresAt) {
+            throw new BadRequestException('Invalid or expired OTP');
+        }
+        // Atomically count this attempt: concurrent guesses each get a distinct,
+        // serialised value, so an attacker cannot outrun the cap by firing in parallel.
+        // NOTE: for an UPDATE ... RETURNING, TypeORM's query() returns [rows, count]
+        // (verified at runtime) — not a bare rows array like INSERT ... RETURNING —
+        // so unwrap the first element. An affected-0 update (already used) yields [].
+        const result: unknown = await this.repo.query(
+            `UPDATE otp_codes SET attempts = attempts + 1
+             WHERE id = $1 AND used_at IS NULL RETURNING attempts`,
+            [latest.id],
+        );
+        const updatedRows = (
+            Array.isArray(result) && Array.isArray(result[0])
+                ? result[0]
+                : result
+        ) as Array<{ attempts: number }>;
+        const attempts = Number(
+            updatedRows?.[0]?.attempts ?? OtpService.MAX_VERIFY_ATTEMPTS + 1,
+        );
+        if (attempts > OtpService.MAX_VERIFY_ATTEMPTS) {
+            // Burn the code so it can no longer be guessed at all.
+            await this.repo.update({ id: latest.id }, { usedAt: new Date() });
+            throw new BadRequestException(
+                'Too many attempts. Please request a new code.',
+            );
+        }
+        if (latest.code !== codeTrim) {
+            throw new BadRequestException('Invalid or expired OTP');
+        }
+        // Correct code, under the cap → consume atomically (single-use claim). Closes
+        // the reset-race takeover where two requests submit the same code concurrently.
+        const claim = await this.repo
+            .createQueryBuilder()
+            .update(OtpCode)
+            .set({ usedAt: () => 'now()' })
+            .where('id = :id AND used_at IS NULL', { id: latest.id })
+            .execute();
+        if (claim.affected === 0) {
+            throw new BadRequestException('Invalid or expired OTP');
+        }
+        latest.usedAt = new Date();
+        return latest;
     }
 
     /**

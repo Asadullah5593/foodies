@@ -110,6 +110,8 @@ export class PosOrdersController {
             loyalty_points_to_redeem?: number;
             payment_split?: { cash_amount?: number; card_amount?: number };
             bank_card_id?: number | null;
+            /** Optional idempotency key so a retried/double-tapped placement is deduped. */
+            idempotency_key?: string;
         },
     ) {
         const tenantId = await this.resolveTenantId(user, dto.branch_id);
@@ -120,6 +122,7 @@ export class PosOrdersController {
             'pos',
             null,
             user.allowedBrandIds ?? null,
+            dto.idempotency_key ?? null,
         );
     }
 

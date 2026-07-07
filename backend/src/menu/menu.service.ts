@@ -2,6 +2,7 @@ import {
     Injectable,
     NotFoundException,
     ForbiddenException,
+    BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -1672,6 +1673,42 @@ export class MenuService {
      * Effective unit price for a menu item at a branch: branch price_override if set, else base price.
      * Used by POS quote/order so branch pricing is applied.
      */
+    /**
+     * Re-validate at order-commit time that a branch has not just 86'd the item
+     * (branch_menu_items.is_available=false), or hidden it online for online
+     * channels. The branch menu is filtered for DISPLAY, but that read happens in an
+     * earlier request; without this check a sold-out item placed after the menu was
+     * loaded would still be accepted (TOCTOU). A missing branch override row means
+     * the item is orderable by default (parity with the flat menu).
+     */
+    async assertBranchItemOrderable(
+        branchId: number,
+        menuItemId: number,
+        source: string,
+        itemName?: string,
+    ): Promise<void> {
+        const bmi = await this.branchMenuItemRepo.findOne({
+            where: { branchId, menuItemId },
+            select: { id: true, isAvailable: true, isHiddenOnline: true },
+        });
+        if (!bmi) return;
+        const label = itemName ?? 'This item';
+        if (bmi.isAvailable === false) {
+            throw new BadRequestException(
+                `"${label}" is currently unavailable at this branch.`,
+            );
+        }
+        const online =
+            source === 'consumer_app' ||
+            source === 'consumer_web' ||
+            source === 'kiosk';
+        if (online && bmi.isHiddenOnline) {
+            throw new BadRequestException(
+                `"${label}" is not available for online ordering.`,
+            );
+        }
+    }
+
     async getEffectiveUnitPrice(
         branchId: number,
         menuItemId: number,

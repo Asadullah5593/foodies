@@ -25,6 +25,13 @@ describe('InventoryAdjustmentService', () => {
         } as any;
         const manager = {
             getRepository: jest.fn().mockReturnValue(managerRepo),
+            // transitionStatus (atomic draft->posted) issues a `SELECT status AS cur
+            // ... FOR UPDATE` then an UPDATE; report 'draft' so the post proceeds.
+            query: jest.fn(async (sql: string) =>
+                typeof sql === 'string' && sql.includes(' AS cur ')
+                    ? [{ cur: 'draft' }]
+                    : [],
+            ),
         } as any;
         const dataSource = {
             transaction: jest

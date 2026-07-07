@@ -210,20 +210,31 @@ export class LoyaltyService {
                 brandKey,
             );
             if (!wallet) return;
-            await manager.save(
-                manager.create(LoyaltyTransaction, {
-                    customerId: customer.id,
-                    orderId: order.id,
-                    walletId: wallet.id,
+            // Insert the earn lot guarded by UQ_loyalty_tx_order_earn. If a
+            // concurrent completion (KDS + POS, double-click, retried socket event)
+            // already earned for this order, the insert is a no-op and we must NOT
+            // credit the wallet again. The unlocked loyaltyPointsEarned check above
+            // is only a fast path; this ON CONFLICT is the real idempotency guard.
+            const inserted: Array<{ id: number }> = await manager.query(
+                `INSERT INTO loyalty_transactions
+                   (customer_id, order_id, wallet_id, wallet_type, brand_id,
+                    points, type, expiry_date, points_remaining, expired, created_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, 'earn', $7, $8, false, now())
+                 ON CONFLICT (order_id) WHERE type = 'earn' AND order_id IS NOT NULL
+                 DO NOTHING
+                 RETURNING id`,
+                [
+                    customer.id,
+                    order.id,
+                    wallet.id,
                     walletType,
-                    brandId: brandKey,
+                    brandKey,
                     points,
-                    type: 'earn',
-                    expiryDate: expiry,
-                    pointsRemaining: points,
-                    expired: false,
-                }),
+                    expiry,
+                    points,
+                ],
             );
+            if (inserted.length === 0) return; // already earned — idempotent no-op
             await manager.update(LoyaltyWallet, wallet.id, {
                 balance: wallet.balance + points,
             });
@@ -390,6 +401,23 @@ export class LoyaltyService {
                 walletType,
                 brandKey,
             );
+            // Per-order idempotency: a retried createOrder (same order) must not debit
+            // twice. The wallet lock serialises redeems for this wallet, so an existing
+            // redeem lot for this order means the debit already happened; return the
+            // same discount without touching the balance again. UQ_loyalty_tx_order_redeem
+            // is the DB backstop.
+            if (wallet) {
+                const existingRedeem = await manager
+                    .getRepository(LoyaltyTransaction)
+                    .findOne({ where: { orderId, type: 'redeem' } });
+                if (existingRedeem) {
+                    return {
+                        discountAmount:
+                            Math.abs(Number(existingRedeem.points)) *
+                            settings.cashValuePerPoint,
+                    };
+                }
+            }
             const balance = wallet?.balance ?? 0;
             if (!wallet || pointsToRedeem <= 0 || pointsToRedeem > balance) {
                 throw new BadRequestException(

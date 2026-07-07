@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, QueryFailedError, Repository } from 'typeorm';
+import { transitionStatus, raw } from '../common/db-concurrency';
 import { Server } from 'socket.io';
 import { Notification } from '../entities/notification.entity';
 import { NotificationRecipient } from '../entities/notification-recipient.entity';
@@ -343,28 +344,40 @@ export class NotificationsService {
                 'You are not a recipient of this notification',
             );
         }
-        if (notif.status === 'resolved') {
-            return this.toClientDto(notif, recipient.readAt);
-        }
-        notif.status = 'resolved';
-        notif.resolvedAt = new Date();
-        notif.resolvedByUserId = userId;
-        notif.resolvedAction = actionKey ?? null;
-        await this.notifRepo.save(notif);
-
-        const recipients = await this.recipientRepo.find({
-            where: { notificationId },
-        });
-        this.emitToUsers(
-            recipients.map((r) => r.userId),
-            'notification:resolved',
+        // Atomic resolve: only the FIRST actor flips the status and runs the
+        // recipient fan-out, so two cashiers tapping Accept on a shared alert cannot
+        // double-emit or overwrite who actually resolved it.
+        const prev = await transitionStatus(
+            this.dataSource,
+            'notifications',
+            notificationId,
+            'resolved',
             {
-                id: notificationId,
-                resolvedByUserId: userId,
-                resolvedAction: actionKey ?? null,
+                set: {
+                    resolved_at: raw('now()'),
+                    resolved_by_user_id: userId,
+                    resolved_action: actionKey ?? null,
+                },
             },
         );
-        return this.toClientDto(notif, recipient.readAt);
+        if (prev !== null) {
+            const recipients = await this.recipientRepo.find({
+                where: { notificationId },
+            });
+            this.emitToUsers(
+                recipients.map((r) => r.userId),
+                'notification:resolved',
+                {
+                    id: notificationId,
+                    resolvedByUserId: userId,
+                    resolvedAction: actionKey ?? null,
+                },
+            );
+        }
+        const fresh = await this.notifRepo.findOne({
+            where: { id: notificationId },
+        });
+        return this.toClientDto(fresh ?? notif, recipient.readAt);
     }
 
     async markRead(notificationId: number, userId: number) {
@@ -397,10 +410,21 @@ export class NotificationsService {
     // ---------------- Internals ----------------
 
     private async resolveSystem(notif: Notification) {
-        notif.status = 'resolved';
-        notif.resolvedAt = new Date();
-        notif.resolvedAction = 'auto';
-        await this.notifRepo.save(notif);
+        // Atomic resolve so two overlapping reconcile sweeps can't both resolve the
+        // same alert and double-emit; only the winner runs the fan-out.
+        const prev = await transitionStatus(
+            this.dataSource,
+            'notifications',
+            notif.id,
+            'resolved',
+            {
+                set: {
+                    resolved_at: raw('now()'),
+                    resolved_action: 'auto',
+                },
+            },
+        );
+        if (prev === null) return;
         const recipients = await this.recipientRepo.find({
             where: { notificationId: notif.id },
         });

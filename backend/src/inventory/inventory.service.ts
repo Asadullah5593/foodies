@@ -1,11 +1,17 @@
 import {
     BadRequestException,
+    ConflictException,
     ForbiddenException,
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+import {
+    transitionStatus,
+    raw,
+    isUniqueViolation,
+} from '../common/db-concurrency';
 import { BranchesService } from '../branches/branches.service';
 import { Uom } from '../entities/uom.entity';
 import { Vendor } from '../entities/vendor.entity';
@@ -1092,39 +1098,45 @@ export class InventoryService {
             args.qtyUomId,
         );
 
-        const wastage = await this.wastageRepo.save(
-            this.wastageRepo.create({
-                tenantId: args.tenantId,
-                branchId: args.branchId,
-                inventoryItemId: args.inventoryItemId,
-                inventoryBatchId: args.inventoryBatchId ?? null,
-                locationId: args.locationId ?? null,
-                qty: qtyBase,
-                reason: args.reason,
-                notes: args.notes ?? null,
-                createdBy: args.createdBy,
-            }),
-        );
-
-        await this.postLedgerMovements({
-            tenantId: args.tenantId,
-            branchId: args.branchId,
-            movements: [
-                {
+        // Atomic: the wastage row and its stock deduction must commit together,
+        // otherwise a crash between them leaves a wastage record with no on-hand
+        // deduction (or vice-versa). Run both inside one transaction.
+        return this.dataSource.transaction(async (manager) => {
+            const wastage = await manager.getRepository(WastageEvent).save(
+                manager.getRepository(WastageEvent).create({
+                    tenantId: args.tenantId,
+                    branchId: args.branchId,
                     inventoryItemId: args.inventoryItemId,
                     inventoryBatchId: args.inventoryBatchId ?? null,
                     locationId: args.locationId ?? null,
-                    qtyDelta: -qtyBase,
-                    eventType: 'waste',
-                    eventRefType: 'wastage_event',
-                    eventRefId: wastage.id,
-                    idempotencyKey: `waste:${wastage.id}`,
+                    qty: qtyBase,
+                    reason: args.reason,
+                    notes: args.notes ?? null,
                     createdBy: args.createdBy,
-                },
-            ],
-        });
+                }),
+            );
 
-        return wastage;
+            await this.postLedgerMovements({
+                tenantId: args.tenantId,
+                branchId: args.branchId,
+                manager,
+                movements: [
+                    {
+                        inventoryItemId: args.inventoryItemId,
+                        inventoryBatchId: args.inventoryBatchId ?? null,
+                        locationId: args.locationId ?? null,
+                        qtyDelta: -qtyBase,
+                        eventType: 'waste',
+                        eventRefType: 'wastage_event',
+                        eventRefId: wastage.id,
+                        idempotencyKey: `waste:${wastage.id}`,
+                        createdBy: args.createdBy,
+                    },
+                ],
+            });
+
+            return wastage;
+        });
     }
 
     async listWastage(
@@ -1424,16 +1436,32 @@ export class InventoryService {
             },
         });
         if (existing) return existing;
-        return this.stocktakesRepo.save(
-            this.stocktakesRepo.create({
-                tenantId: args.tenantId,
-                branchId: args.branchId,
-                weekStart: args.weekStart,
-                weekEnd: args.weekEnd,
-                financeDay: args.financeDay,
-                status: 'open',
-            }),
-        );
+        try {
+            return await this.stocktakesRepo.save(
+                this.stocktakesRepo.create({
+                    tenantId: args.tenantId,
+                    branchId: args.branchId,
+                    weekStart: args.weekStart,
+                    weekEnd: args.weekEnd,
+                    financeDay: args.financeDay,
+                    status: 'open',
+                }),
+            );
+        } catch (e) {
+            // Concurrent "open this week's stocktake" — the (branch, week) unique
+            // index rejects the loser; return the winner's row instead of 500ing.
+            if (isUniqueViolation(e)) {
+                const row = await this.stocktakesRepo.findOne({
+                    where: {
+                        tenantId: args.tenantId,
+                        branchId: args.branchId,
+                        weekStart: args.weekStart,
+                    },
+                });
+                if (row) return row;
+            }
+            throw e;
+        }
     }
 
     async upsertStocktakeLine(args: {
@@ -1457,29 +1485,34 @@ export class InventoryService {
         if (st.status !== 'open')
             throw new BadRequestException('Stocktake is not open');
 
-        const existing = await this.stocktakeLinesRepo.findOne({
+        // Atomic upsert against UQ_stl_stocktake_item_loc_coalesce so two concurrent
+        // counts of the same item merge instead of racing: without it the loser 500s
+        // on the unique violation and, worse, a NULL/pool location bypassed the plain
+        // unique index entirely and double-counted the item at close.
+        await this.stocktakeLinesRepo.query(
+            `INSERT INTO stocktake_lines
+                (stocktake_id, inventory_item_id, counted_qty, counted_uom_id, location_id, notes)
+             VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (stocktake_id, inventory_item_id, COALESCE(location_id, 0))
+             DO UPDATE SET counted_qty = EXCLUDED.counted_qty,
+                           counted_uom_id = EXCLUDED.counted_uom_id,
+                           notes = EXCLUDED.notes`,
+            [
+                st.id,
+                args.inventoryItemId,
+                args.countedQty,
+                args.countedUomId,
+                args.locationId,
+                args.notes,
+            ],
+        );
+        return this.stocktakeLinesRepo.findOne({
             where: {
                 stocktakeId: st.id,
                 inventoryItemId: args.inventoryItemId,
                 locationId: args.locationId,
             } as any,
         });
-        if (existing) {
-            existing.countedQty = args.countedQty;
-            existing.countedUomId = args.countedUomId;
-            existing.notes = args.notes;
-            return this.stocktakeLinesRepo.save(existing);
-        }
-        return this.stocktakeLinesRepo.save(
-            this.stocktakeLinesRepo.create({
-                stocktakeId: st.id,
-                inventoryItemId: args.inventoryItemId,
-                countedQty: args.countedQty,
-                countedUomId: args.countedUomId,
-                locationId: args.locationId,
-                notes: args.notes,
-            }),
-        );
     }
 
     async submitStocktake(args: {
@@ -1545,77 +1578,112 @@ export class InventoryService {
             );
         }
 
-        // Theoretical on-hand by item (sum all locations)
-        const theoRows: Array<{
-            inventory_item_id: number | string;
-            qty: number | string;
-        }> = await this.dataSource.query(
-            `
-            SELECT inventory_item_id, SUM(qty)::numeric AS qty
-            FROM inventory_on_hand
-            WHERE tenant_id = $1 AND branch_id = $2
-            GROUP BY inventory_item_id
-            `,
-            [args.tenantId, args.branchId],
-        );
-        const theoreticalByItem = new Map<number, number>(
-            theoRows.map((r) => [Number(r.inventory_item_id), Number(r.qty)]),
-        );
-
-        // Post variance entries
-        const movements: Array<{
-            inventoryItemId: number;
-            qtyDelta: number;
-            eventType: string;
-            eventRefType: string;
-            eventRefId: number;
-            idempotencyKey: string;
-            createdBy: number;
-        }> = [];
-
-        for (const [itemId, counted] of countedByItem.entries()) {
-            const theoretical = theoreticalByItem.get(itemId) ?? 0;
-            const variance = counted - theoretical;
-            if (Math.abs(variance) < 1e-9) continue;
-            if (variance > 0) {
-                const item = await this.itemsRepo.findOne({
-                    where: { id: itemId, tenantId: args.tenantId },
-                });
-                if (item?.trackExpiry) {
-                    throw new BadRequestException(
-                        `Stocktake positive variance for expiry-tracked item ${item.code} is blocked. Use adjustment IN with expiry date and lot code.`,
-                    );
-                }
+        // The theoretical read and the variance apply must be consistent: run them in
+        // ONE transaction that first locks this branch's on-hand rows FOR UPDATE, so a
+        // sale/consumption committing between "read theoretical" and "post variance"
+        // cannot corrupt the reconciliation (TOCTOU). Consumption's own on-hand upsert
+        // takes the same row lock, so it serialises against this brief close.
+        return this.dataSource.transaction(async (manager) => {
+            await manager.query(
+                `SELECT 1 FROM inventory_on_hand
+                 WHERE tenant_id = $1 AND branch_id = $2
+                 ORDER BY inventory_item_id, COALESCE(location_id, 0), COALESCE(brand_id, 0)
+                 FOR UPDATE`,
+                [args.tenantId, args.branchId],
+            );
+            // Atomic submitted -> closed guard: a concurrent double-close is refused.
+            const prev = await transitionStatus(
+                manager,
+                'stocktakes',
+                st.id,
+                'closed',
+                {
+                    allowedFrom: ['submitted'],
+                    set: {
+                        closed_by: args.closedBy,
+                        closed_at: raw('now()'),
+                    },
+                },
+            );
+            if (prev === null) {
+                throw new ConflictException(
+                    'Stocktake has already been closed',
+                );
             }
-            movements.push({
-                inventoryItemId: itemId,
-                qtyDelta: variance,
-                eventType: 'stocktake_variance',
-                eventRefType: 'stocktake',
-                eventRefId: st.id,
-                idempotencyKey: `stocktake:${st.id}:item:${itemId}:variance`,
-                createdBy: args.closedBy,
+
+            const theoRows: Array<{
+                inventory_item_id: number | string;
+                qty: number | string;
+            }> = await manager.query(
+                `
+                SELECT inventory_item_id, SUM(qty)::numeric AS qty
+                FROM inventory_on_hand
+                WHERE tenant_id = $1 AND branch_id = $2
+                GROUP BY inventory_item_id
+                `,
+                [args.tenantId, args.branchId],
+            );
+            const theoreticalByItem = new Map<number, number>(
+                theoRows.map((r) => [
+                    Number(r.inventory_item_id),
+                    Number(r.qty),
+                ]),
+            );
+
+            const movements: Array<{
+                inventoryItemId: number;
+                qtyDelta: number;
+                eventType: string;
+                eventRefType: string;
+                eventRefId: number;
+                idempotencyKey: string;
+                createdBy: number;
+            }> = [];
+
+            for (const [itemId, counted] of countedByItem.entries()) {
+                const theoretical = theoreticalByItem.get(itemId) ?? 0;
+                const variance = counted - theoretical;
+                if (Math.abs(variance) < 1e-9) continue;
+                if (variance > 0) {
+                    const item = await this.itemsRepo.findOne({
+                        where: { id: itemId, tenantId: args.tenantId },
+                    });
+                    if (item?.trackExpiry) {
+                        throw new BadRequestException(
+                            `Stocktake positive variance for expiry-tracked item ${item.code} is blocked. Use adjustment IN with expiry date and lot code.`,
+                        );
+                    }
+                }
+                movements.push({
+                    inventoryItemId: itemId,
+                    qtyDelta: variance,
+                    eventType: 'stocktake_variance',
+                    eventRefType: 'stocktake',
+                    eventRefId: st.id,
+                    idempotencyKey: `stocktake:${st.id}:item:${itemId}:variance`,
+                    createdBy: args.closedBy,
+                });
+            }
+
+            await this.postLedgerMovements({
+                tenantId: args.tenantId,
+                branchId: args.branchId,
+                manager,
+                movements: movements.map((m) => ({
+                    inventoryItemId: m.inventoryItemId,
+                    qtyDelta: m.qtyDelta,
+                    eventType: m.eventType,
+                    eventRefType: m.eventRefType,
+                    eventRefId: m.eventRefId,
+                    idempotencyKey: m.idempotencyKey,
+                    createdBy: m.createdBy,
+                })),
             });
-        }
 
-        await this.postLedgerMovements({
-            tenantId: args.tenantId,
-            branchId: args.branchId,
-            movements: movements.map((m) => ({
-                inventoryItemId: m.inventoryItemId,
-                qtyDelta: m.qtyDelta,
-                eventType: m.eventType,
-                eventRefType: m.eventRefType,
-                eventRefId: m.eventRefId,
-                idempotencyKey: m.idempotencyKey,
-                createdBy: m.createdBy,
-            })),
+            return manager
+                .getRepository(Stocktake)
+                .findOne({ where: { id: st.id } });
         });
-
-        st.status = 'closed';
-        st.closedBy = args.closedBy;
-        st.closedAt = new Date();
-        return this.stocktakesRepo.save(st);
     }
 
     // ---------------- Weekly usage report ----------------

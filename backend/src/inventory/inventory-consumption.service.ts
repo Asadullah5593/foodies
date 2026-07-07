@@ -10,6 +10,11 @@ import { InventoryItem } from '../entities/inventory-item.entity';
 import { InventoryBatchOnHand } from '../entities/inventory-batch-on-hand.entity';
 import { OrderInventoryAllocation } from '../entities/order-inventory-allocation.entity';
 import { InventoryService } from './inventory.service';
+import {
+    advisoryXactLock,
+    AdvisoryLock,
+    retryOnConcurrencyError,
+} from '../common/db-concurrency';
 
 @Injectable()
 export class InventoryConsumptionService {
@@ -102,123 +107,177 @@ export class InventoryConsumptionService {
 
         if (requiredByItemId.size === 0) return { ok: true };
 
-        return this.dataSource.transaction(async (manager) => {
-            for (const [itemId, requiredQty] of requiredByItemId.entries()) {
-                await this.allocateAndConsumeItem({
+        // Lock inventory_on_hand / batch rows in a deterministic order (ascending
+        // item id) so this flow and closeStocktake (which scans on_hand ORDER BY
+        // inventory_item_id) can never acquire the same rows in opposite order. The
+        // retry wrapper additionally self-heals any residual FEFO-vs-batch-id lock
+        // ordering deadlock (e.g. against reverseGRN) without failing the sale.
+        const orderedItems = [...requiredByItemId.entries()].sort(
+            (a, b) => a[0] - b[0],
+        );
+        return retryOnConcurrencyError(() =>
+            this.dataSource.transaction(async (manager) => {
+                // Serialize every consume/reverse for this order on one advisory lock, so
+                // a concurrent consume (retry / at-least-once event) or a racing cancel
+                // cannot double-deduct or leak stock. Recipe computation above is done
+                // outside the lock to keep the critical section short.
+                await advisoryXactLock(
                     manager,
-                    tenantId: order.tenantId,
-                    branchId: order.branchId,
-                    // Orders are single-brand; deduct strictly from this brand's
-                    // bucket (null only for legacy/brand-less orders => branch pool).
-                    brandId: order.brandId ?? null,
-                    orderId: order.id,
-                    inventoryItemId: itemId,
-                    requiredQty,
-                    createdBy: null,
+                    AdvisoryLock.ORDER_INVENTORY,
+                    order.id,
+                );
+                // Re-check idempotency UNDER the lock: a peer consume that committed while
+                // we waited is now visible, so we must not deduct again.
+                const already = await manager
+                    .getRepository(OrderInventoryAllocation)
+                    .findOne({ where: { orderId: order.id } });
+                if (already) return { ok: true, already_consumed: true };
+                // Re-check order state under the lock: if the order was cancelled before
+                // consumption ran (cancel-arrives-first ordering), do not consume — the
+                // cancel's reverse found nothing and this deduction would leak forever.
+                const fresh = await manager.getRepository(Order).findOne({
+                    where: { id: order.id },
+                    select: { id: true, status: true },
                 });
-            }
-            return { ok: true };
-        });
+                if (fresh && fresh.status === 'cancelled') {
+                    return { ok: true, skipped_cancelled: true };
+                }
+                for (const [itemId, requiredQty] of orderedItems) {
+                    await this.allocateAndConsumeItem({
+                        manager,
+                        tenantId: order.tenantId,
+                        branchId: order.branchId,
+                        // Orders are single-brand; deduct strictly from this brand's
+                        // bucket (null only for legacy/brand-less orders => branch pool).
+                        brandId: order.brandId ?? null,
+                        orderId: order.id,
+                        inventoryItemId: itemId,
+                        requiredQty,
+                        createdBy: null,
+                    });
+                }
+                return { ok: true };
+            }),
+        );
     }
 
     async reverseConsumptionForOrder(orderId: number, userId: number | null) {
         const order = await this.ordersRepo.findOne({ where: { id: orderId } });
         if (!order) throw new NotFoundException('Order not found');
 
-        const allocations = await this.allocationsRepo.find({
-            where: { orderId: order.id },
-        });
-        if (allocations.length === 0)
-            return { ok: true, nothing_to_reverse: true };
+        // Retry backstop: consume locks batch_on_hand before inventory_on_hand
+        // (FEFO selection requires the batch lock) while reverse/postLedgerMovements
+        // take them the other way, so a shared (item,batch) across two orders can
+        // deadlock. Retrying self-heals it without leaking stock on cancel.
+        return retryOnConcurrencyError(() =>
+            this.dataSource.transaction(async (manager) => {
+                // Same advisory lock as consume: a reverse that races an in-flight
+                // consume waits for it to commit, then sees and reverses its allocations
+                // (instead of reading zero rows and leaking). Two concurrent reverses
+                // serialize too — the second sees the allocations already deleted.
+                await advisoryXactLock(
+                    manager,
+                    AdvisoryLock.ORDER_INVENTORY,
+                    order.id,
+                );
+                const allocations = await manager
+                    .getRepository(OrderInventoryAllocation)
+                    .find({ where: { orderId: order.id } });
+                if (allocations.length === 0)
+                    return { ok: true, nothing_to_reverse: true };
+                // Reverse in a canonical item-id order (matches stocktake-close's sorted
+                // on_hand scan) to reduce cross-flow lock-order divergence.
+                allocations.sort(
+                    (x, y) => x.inventoryItemId - y.inventoryItemId,
+                );
+                // Reverse into the same brand bucket / batch.
+                for (const a of allocations) {
+                    const qty = Number(a.qty);
+                    const brandId = a.brandId ?? null;
+                    const reverseKey = `order:${order.id}:reverse:item:${a.inventoryItemId}:batch:${a.inventoryBatchId ?? 'none'}`;
 
-        return this.dataSource.transaction(async (manager) => {
-            // Reverse into the same brand bucket / batch.
-            for (const a of allocations) {
-                const qty = Number(a.qty);
-                const brandId = a.brandId ?? null;
-                const reverseKey = `order:${order.id}:reverse:item:${a.inventoryItemId}:batch:${a.inventoryBatchId ?? 'none'}`;
-
-                await manager.query(
-                    `
+                    await manager.query(
+                        `
                     INSERT INTO inventory_ledger_entries
                         (tenant_id, branch_id, brand_id, inventory_item_id, inventory_batch_id, location_id, qty_delta,
                          event_type, event_ref_type, event_ref_id, idempotency_key, created_by, created_at)
                     VALUES ($1,$2,$3,$4,$5,NULL,$6,'consume_reversal','order',$7,$8,$9,now())
                     ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
                     `,
-                    [
-                        order.tenantId,
-                        order.branchId,
-                        brandId,
-                        a.inventoryItemId,
-                        a.inventoryBatchId,
-                        qty,
-                        order.id,
-                        reverseKey,
-                        userId,
-                    ],
-                );
+                        [
+                            order.tenantId,
+                            order.branchId,
+                            brandId,
+                            a.inventoryItemId,
+                            a.inventoryBatchId,
+                            qty,
+                            order.id,
+                            reverseKey,
+                            userId,
+                        ],
+                    );
 
-                await manager.query(
-                    `
+                    await manager.query(
+                        `
                     INSERT INTO inventory_on_hand (tenant_id, branch_id, inventory_item_id, location_id, brand_id, qty)
                     VALUES ($1,$2,$3,NULL,$4,$5)
                     ON CONFLICT (branch_id, inventory_item_id, COALESCE(location_id, 0), COALESCE(brand_id, 0))
                     DO UPDATE SET qty = inventory_on_hand.qty + EXCLUDED.qty, updated_at = now()
                     `,
-                    [
-                        order.tenantId,
-                        order.branchId,
-                        a.inventoryItemId,
-                        brandId,
-                        qty,
-                    ],
-                );
+                        [
+                            order.tenantId,
+                            order.branchId,
+                            a.inventoryItemId,
+                            brandId,
+                            qty,
+                        ],
+                    );
 
-                // Clear the negative flag once the bucket is back to non-negative.
-                await manager.query(
-                    `
+                    // Clear the negative flag once the bucket is back to non-negative.
+                    await manager.query(
+                        `
                     UPDATE inventory_on_hand
                     SET negative_flagged_at = NULL
                     WHERE tenant_id = $1 AND branch_id = $2 AND inventory_item_id = $3
                       AND location_id IS NULL AND brand_id IS NOT DISTINCT FROM $4
                       AND qty >= 0 AND negative_flagged_at IS NOT NULL
                     `,
-                    [
-                        order.tenantId,
-                        order.branchId,
-                        a.inventoryItemId,
-                        brandId,
-                    ],
-                );
+                        [
+                            order.tenantId,
+                            order.branchId,
+                            a.inventoryItemId,
+                            brandId,
+                        ],
+                    );
 
-                // Batchless shortfall allocations have no batch row to re-credit.
-                if (a.inventoryBatchId != null) {
-                    await manager.query(
-                        `
+                    // Batchless shortfall allocations have no batch row to re-credit.
+                    if (a.inventoryBatchId != null) {
+                        await manager.query(
+                            `
                         INSERT INTO inventory_batch_on_hand (tenant_id, branch_id, inventory_batch_id, location_id, brand_id, qty)
                         VALUES ($1,$2,$3,NULL,$4,$5)
                         ON CONFLICT (branch_id, inventory_batch_id, COALESCE(location_id, 0), COALESCE(brand_id, 0))
                         DO UPDATE SET qty = inventory_batch_on_hand.qty + EXCLUDED.qty, updated_at = now()
                         `,
-                        [
-                            order.tenantId,
-                            order.branchId,
-                            a.inventoryBatchId,
-                            brandId,
-                            qty,
-                        ],
-                    );
+                            [
+                                order.tenantId,
+                                order.branchId,
+                                a.inventoryBatchId,
+                                brandId,
+                                qty,
+                            ],
+                        );
+                    }
                 }
-            }
 
-            // Delete allocations (they're not immutable; ledger is immutable)
-            await manager.getRepository(OrderInventoryAllocation).delete({
-                orderId: order.id,
-            });
+                // Delete allocations (they're not immutable; ledger is immutable)
+                await manager.getRepository(OrderInventoryAllocation).delete({
+                    orderId: order.id,
+                });
 
-            return { ok: true };
-        });
+                return { ok: true };
+            }),
+        );
     }
 
     /**
@@ -342,13 +401,19 @@ export class InventoryConsumptionService {
 
             const idempotencyKey = `order:${orderId}:item:${inventoryItemId}:batch:${r.batch_id}`;
 
-            await args.manager.query(
+            // Gate the on-hand / batch / allocation writes on the ledger row ACTUALLY
+            // being inserted. The ledger is the immutable source of truth; if this
+            // consume movement already exists (idempotency-key conflict — e.g. a
+            // consume after a reverse that deleted allocations but kept the ledger),
+            // the deduction has already been applied and must not run again.
+            const ledgerIns: Array<{ id: number }> = await args.manager.query(
                 `
                 INSERT INTO inventory_ledger_entries
                     (tenant_id, branch_id, brand_id, inventory_item_id, inventory_batch_id, location_id, qty_delta,
                      event_type, event_ref_type, event_ref_id, idempotency_key, created_by, created_at)
                 VALUES ($1,$2,$3,$4,$5,NULL,$6,'consume','order',$7,$8,$9,now())
                 ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL DO NOTHING
+                RETURNING id
                 `,
                 [
                     tenantId,
@@ -362,6 +427,7 @@ export class InventoryConsumptionService {
                     args.createdBy,
                 ],
             );
+            if (ledgerIns.length === 0) continue;
 
             await args.manager.query(
                 `

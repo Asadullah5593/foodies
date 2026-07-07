@@ -1,10 +1,18 @@
 import {
     BadRequestException,
+    ConflictException,
     ForbiddenException,
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import {
+    transitionStatus,
+    advisoryXactLock,
+    AdvisoryLock,
+    raw,
+    retryOnConcurrencyError,
+} from '../common/db-concurrency';
 import { DataSource, EntityManager, Not, Repository } from 'typeorm';
 import { BranchesService } from '../branches/branches.service';
 import { InventoryService } from '../inventory/inventory.service';
@@ -391,10 +399,27 @@ export class ProcurementService {
         await this.ensureUniquePONumber(tenantId, poNumber);
 
         const poId = await this.dataSource.transaction(async (manager) => {
-            pr.status = 'approved';
-            pr.approvedBy = args.user.id;
-            pr.approvedAt = new Date();
-            await manager.getRepository(PurchaseRequisition).save(pr);
+            // Atomic submitted -> approved under a row lock: a double-clicked approve
+            // (or two approvers) cannot both proceed and spawn duplicate POs. The
+            // loser gets a clean 409.
+            const prevPrStatus = await transitionStatus(
+                manager,
+                'purchase_requisitions',
+                pr.id,
+                'approved',
+                {
+                    allowedFrom: ['submitted'],
+                    set: {
+                        approved_by: args.user.id,
+                        approved_at: raw('now()'),
+                    },
+                },
+            );
+            if (prevPrStatus === null) {
+                throw new ConflictException(
+                    'This requisition has already been approved',
+                );
+            }
 
             const po = await manager.getRepository(PurchaseOrder).save(
                 manager.getRepository(PurchaseOrder).create({
@@ -709,8 +734,9 @@ export class ProcurementService {
         tenantId: number,
         branchId: number,
         poId: number,
+        executor: DataSource | EntityManager = this.dataSource,
     ) {
-        const po = await this.poRepo.findOne({
+        const po = await executor.getRepository(PurchaseOrder).findOne({
             where: { tenantId, id: poId },
             relations: { lines: true },
         });
@@ -729,7 +755,7 @@ export class ProcurementService {
             );
         }
         const receivedTotals = await this.getPostedGrnReceiveTotalsByItem(
-            this.dataSource,
+            executor,
             tenantId,
             branchId,
             poId,
@@ -1261,11 +1287,47 @@ export class ProcurementService {
 
         const postedGrnId = await this.dataSource.transaction(
             async (manager) => {
-                // Mark GRN posted
-                grn.status = 'posted';
-                grn.postedAt = postedAt;
-                grn.postedBy = user.id;
-                await manager.getRepository(GoodsReceiptNote).save(grn);
+                // Serialize every post against this PO: two GRNs cannot both pass the
+                // fully-received check and over-receive it, and the PO receipt-status
+                // recompute below cannot be a stale-read lost update.
+                await advisoryXactLock(
+                    manager,
+                    AdvisoryLock.PURCHASE_ORDER,
+                    po.id,
+                );
+                // Atomic draft -> posted under a row lock. A double-click / retry that
+                // already posted this GRN gets a clean 409 instead of creating
+                // duplicate batches, cost snapshots and a second on-hand credit.
+                const prevGrnStatus = await transitionStatus(
+                    manager,
+                    'goods_receipt_notes',
+                    grn.id,
+                    'posted',
+                    {
+                        allowedFrom: ['draft'],
+                        set: { posted_at: postedAt, posted_by: user.id },
+                    },
+                );
+                if (prevGrnStatus === null) {
+                    throw new ConflictException(
+                        'This GRN has already been posted',
+                    );
+                }
+                // Over-receipt guard re-checked under the PO lock against committed
+                // receipts — closes the race where two drafts each pass createGRN's
+                // fully-received check and then both post.
+                if (
+                    await this.isPOFullyReceived(
+                        tenantId,
+                        grn.branchId,
+                        po.id,
+                        manager,
+                    )
+                ) {
+                    throw new BadRequestException(
+                        'This purchase order has already been fully received',
+                    );
+                }
 
                 const movements: Array<{
                     inventoryItemId: number;
@@ -1439,8 +1501,38 @@ export class ProcurementService {
             throw new BadRequestException('No batches found for this GRN');
         }
 
-        const reversedGrnId = await this.dataSource.transaction(
-            async (manager) => {
+        const reversedGrnId = await retryOnConcurrencyError(() =>
+            this.dataSource.transaction(async (manager) => {
+                // Serialize against concurrent posts/reverses on the same PO.
+                await advisoryXactLock(
+                    manager,
+                    AdvisoryLock.PURCHASE_ORDER,
+                    grn.purchaseOrderId,
+                );
+                // Atomic posted -> reversed: a double-click cannot reverse twice.
+                const prevStatus = await transitionStatus(
+                    manager,
+                    'goods_receipt_notes',
+                    grn.id,
+                    'reversed',
+                    { allowedFrom: ['posted'] },
+                );
+                if (prevStatus === null) {
+                    throw new ConflictException(
+                        'This GRN has already been reversed',
+                    );
+                }
+                // Lock the batch on-hand rows BEFORE the "untouched" check so a
+                // concurrent sale/consumption of these batches cannot slip between
+                // the check and the reversal and drive on-hand negative.
+                await manager.query(
+                    `SELECT 1 FROM inventory_batch_on_hand
+                     WHERE tenant_id = $1 AND branch_id = $2
+                       AND inventory_batch_id = ANY($3::int[])
+                     ORDER BY inventory_batch_id
+                     FOR UPDATE`,
+                    [tenantId, grn.branchId, batches.map((b) => b.id)],
+                );
                 // Ensure none of the batches were consumed/adjusted after receiving:
                 for (const b of batches) {
                     const movementRows = await manager.query(
@@ -1493,10 +1585,8 @@ export class ProcurementService {
                     });
                 }
 
-                // Mark GRN reversed and batches blocked (so FEFO won't pick them)
-                grn.status = 'reversed';
-                await manager.getRepository(GoodsReceiptNote).save(grn);
-
+                // GRN already marked 'reversed' atomically above. Block the batches
+                // so FEFO won't pick them.
                 await manager.query(
                     `
                 UPDATE inventory_batches
@@ -1514,7 +1604,7 @@ export class ProcurementService {
                 );
 
                 return grn.id;
-            },
+            }),
         );
         return this.getGRN(tenantId, reversedGrnId);
     }

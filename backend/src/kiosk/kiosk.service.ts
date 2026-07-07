@@ -461,9 +461,16 @@ export class KioskService {
             };
         });
 
-        // Apply payments after the order + finalized state are committed.
-        if (!result.alreadyFinalized && result.payments?.length) {
-            await this.applyPayments(result.group.orders, result.payments);
+        // Apply payments idempotently AFTER the order + finalized state are committed.
+        // This runs on BOTH the fresh finalize and the idempotent retry path, so if
+        // the process crashed / timed out between commit and payment application, the
+        // cashier's retry heals the missing payments instead of losing them. The
+        // per-slice idempotency key (in applyPayments) prevents double-recording.
+        const validPayments = (payments ?? []).filter(
+            (p) => p && Number(p.amount) > 0,
+        );
+        if (validPayments.length && result.group?.orders?.length) {
+            await this.applyPayments(result.group.orders, validPayments);
         }
 
         return { ...result.group, kiosk_code: result.kioskCode };
@@ -483,13 +490,19 @@ export class KioskService {
             const orderTotal = Number(order.total_amount ?? 0);
             if (orderTotal <= 0) continue;
             const ratio = orderTotal / grandTotal;
-            for (const p of payments) {
+            for (let i = 0; i < payments.length; i++) {
+                const p = payments[i];
                 const amount = Math.round(Number(p.amount) * ratio * 100) / 100;
                 if (amount > 0) {
+                    // Stable per-slice idempotency key: a retry re-applies the SAME
+                    // keys, so processPayment deduplicates and a partial/lost
+                    // application is completed without double-charging.
                     await this.paymentsService.processPayment(
                         order.id,
                         p.method,
                         amount,
+                        undefined,
+                        `kiosk:order:${order.id}:pay:${i}:${p.method}`,
                     );
                 }
             }

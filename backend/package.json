@@ -21,6 +21,7 @@
     "seed:peri-peri-co-real": "ts-node -r tsconfig-paths/register src/seed-peri-peri-co-real.ts",
     "seed:fireaway": "ts-node -r tsconfig-paths/register src/seed-fireaway.ts",
     "seed:fireaway-real": "ts-node -r tsconfig-paths/register src/seed-fireaway-real.ts",
+    "seed:loranzo-real": "ts-node -r tsconfig-paths/register src/seed-loranzo-real.ts",
     "seed:pizza-pasta": "ts-node -r tsconfig-paths/register src/seed-pizza-pasta.ts",
     "seed:inventory": "ts-node -r tsconfig-paths/register src/seed-inventory.ts",
     "seed:uoms": "ts-node -r tsconfig-paths/register src/seed-uoms.ts",

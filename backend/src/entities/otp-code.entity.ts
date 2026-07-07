@@ -30,6 +30,10 @@ export class OtpCode {
     @Column({ type: 'timestamp', nullable: true })
     usedAt: Date | null;
 
+    /** Failed-verify attempts against this code; a race-safe cap locks out brute force. */
+    @Column({ type: 'int', default: 0 })
+    attempts: number;
+
     @CreateDateColumn()
     createdAt: Date;
 }
