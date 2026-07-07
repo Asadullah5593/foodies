@@ -11,6 +11,7 @@ import { OrderItem } from '../entities/order-item.entity';
 import { RiderOrderRating } from '../entities/rider-order-rating.entity';
 import { BrandOrderRating } from '../entities/brand-order-rating.entity';
 import { Customer } from '../entities/customer.entity';
+import { advisoryXactLock, AdvisoryLock } from '../common/db-concurrency';
 import { OrdersService } from '../orders/orders.service';
 import { BrandsService } from '../brands/brands.service';
 import { normalizePakistaniPhone } from '../utils/phone';
@@ -204,6 +205,9 @@ export class RatingsService {
         const stars = assertStars(starsRaw);
         const comment = normalizeOptionalComment(commentRaw);
         return this.dataSource.transaction(async (manager) => {
+            // Serialize rating writes for this order so a double-submit merges into
+            // one row instead of racing the unique index into a 500.
+            await advisoryXactLock(manager, AdvisoryLock.RATING, orderId);
             const order = await manager.findOne(Order, {
                 where: { id: orderId },
                 relations: ['orderItems'],
@@ -248,6 +252,8 @@ export class RatingsService {
         const stars = assertStars(starsRaw);
         const comment = normalizeOptionalComment(commentRaw);
         return this.dataSource.transaction(async (manager) => {
+            // Serialize rating writes for this order (see upsertRiderRating).
+            await advisoryXactLock(manager, AdvisoryLock.RATING, orderId);
             const order = await manager.findOne(Order, {
                 where: { id: orderId },
                 relations: ['orderItems'],

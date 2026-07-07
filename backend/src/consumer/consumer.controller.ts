@@ -1394,6 +1394,8 @@ export class ConsumerController {
             branch_longitude?: number;
             /** Chosen delivery tier ('saver'|'standard'|'priority') for tier-enabled brands. */
             delivery_tier?: string;
+            /** Optional idempotency key so a retried/double-tapped placement is deduped. */
+            idempotency_key?: string;
         },
     ) {
         const tenantId = await this.getTenantIdFromBranch(dto.branch_id);
@@ -1404,6 +1406,8 @@ export class ConsumerController {
             null,
             source,
             req.user?.id ?? null,
+            null,
+            dto.idempotency_key ?? null,
         );
     }
 

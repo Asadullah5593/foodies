@@ -71,6 +71,21 @@ import {
 import { resolveRiderBrandScope } from './rider-brand-scope.util';
 import { PushNotificationService } from '../push-notifications/push-notification.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import {
+    transitionStatus,
+    raw,
+    isUniqueViolation,
+    advisoryXactLock,
+    AdvisoryLock,
+} from '../common/db-concurrency';
+
+/** Internal signal: a concurrent placement with the same idempotency key already
+ * created this group, so createOrder should return it instead of a fresh order. */
+class IdempotentReplay extends Error {
+    constructor(public readonly orderGroupId: string) {
+        super('idempotent-replay');
+    }
+}
 
 @Injectable()
 export class OrdersService {
@@ -677,6 +692,16 @@ export class OrdersService {
             );
             if (selectedRiderId == null) return;
 
+            // Serialize on the selected rider across ALL assignment paths (manual
+            // assign/change/group + other auto-dispatch streams that share this rider
+            // across brands), so the live-load re-check below is not a stale read and
+            // a shared rider cannot be double-booked.
+            await advisoryXactLock(
+                manager,
+                AdvisoryLock.RIDER_ASSIGNMENT,
+                selectedRiderId,
+            );
+
             // Concurrency guard: a parallel dispatch from another brand stream sharing this
             // rider could have filled them since eligibility was resolved. Re-validate the
             // selected rider's live load inside the txn before committing.
@@ -1045,11 +1070,26 @@ export class OrdersService {
         loggedInCustomerId: number | null = null,
         /** Brand lock of the creating user (null = unrestricted). Items outside these brands are rejected. */
         allowedBrandIds: number[] | null = null,
+        /** Optional client idempotency key — a retry/double-tap returns the same group. */
+        idempotencyKey: string | null = null,
     ) {
         const tenant = await this.tenantRepo.findOne({
             where: { id: tenantId },
         });
         if (!tenant) throw new NotFoundException('Tenant not found');
+
+        // Idempotent placement: a retried / double-tapped request carrying a key that
+        // already produced an order group returns that group instead of creating a
+        // second real order (double charge, double stock depletion, double redeem).
+        if (idempotencyKey) {
+            const existing = await this.orderRepo.findOne({
+                where: { tenantId, idempotencyKey },
+                select: { id: true, orderGroupId: true },
+            });
+            if (existing?.orderGroupId) {
+                return this.getOrderGroup(existing.orderGroupId);
+            }
+        }
 
         // Resolve branch per line (for multi-branch carts). Load all involved branches and their brands.
         // Note: we will expand deal items below, so use dto.items only for initial branch list.
@@ -1064,10 +1104,18 @@ export class OrdersService {
         });
         const branchMap = new Map<
             number,
-            { branch: (typeof branches)[0]; brandIds: Set<number> }
+            {
+                branch: (typeof branches)[0];
+                brandIds: Set<number>;
+                closedBrandIds: Set<number>;
+            }
         >();
         type BranchWithBrands = (typeof branches)[0] & {
-            branchBrands?: Array<{ brandId: number; brand?: { id: number } }>;
+            branchBrands?: Array<{
+                brandId: number;
+                brand?: { id: number };
+                isOpen?: boolean;
+            }>;
         };
         for (const b of branches) {
             const raw = b as BranchWithBrands;
@@ -1076,7 +1124,14 @@ export class OrdersService {
                     .map((bb) => Number(bb.brandId ?? bb.brand?.id))
                     .filter((id: number) => Number.isFinite(id)),
             );
-            branchMap.set(b.id, { branch: b, brandIds });
+            // Brands taken offline for online ordering (branch_brands.is_open=false).
+            const closedBrandIds = new Set<number>(
+                (raw.branchBrands ?? [])
+                    .filter((bb) => bb.isOpen === false)
+                    .map((bb) => Number(bb.brandId ?? bb.brand?.id))
+                    .filter((id: number) => Number.isFinite(id)),
+            );
+            branchMap.set(b.id, { branch: b, brandIds, closedBrandIds });
         }
         const primaryBranch = branchMap.get(dto.branch_id)?.branch;
         if (!primaryBranch) throw new NotFoundException('Branch not found');
@@ -1226,6 +1281,24 @@ export class OrdersService {
             ) {
                 throw new ForbiddenException(
                     `"${menuItem.name}" belongs to another brand. This till can only sell items of its own brand.`,
+                );
+            }
+            // Re-check availability at commit time (TOCTOU): the item may have been
+            // 86'd or hidden online since the menu was loaded for this order.
+            await this.menuService.assertBranchItemOrderable(
+                lineBranchId,
+                line.menu_item_id,
+                source,
+                menuItem.name,
+            );
+            // Brand online open/close is online-only (POS is exempt). Re-check it at
+            // commit so an order can't slip through for a brand just taken offline.
+            if (
+                source !== 'pos' &&
+                branchInfo.closedBrandIds.has(menuItemBrandId)
+            ) {
+                throw new BadRequestException(
+                    `"${menuItem.name}" is not accepting online orders right now.`,
                 );
             }
 
@@ -1577,190 +1650,256 @@ export class OrdersService {
         const priorityOrderIds: number[] = [];
         let firstOrderIdForLoyalty: number | null = null;
 
-        for (const key of sortedGroups) {
-            const [branchIdStr, brandIdStr] = key.split('-');
-            const branchId = Number(branchIdStr);
-            const brandId = Number(brandIdStr);
-            const indices = groupToIndices.get(key)!;
-            const { orderId: newOrderId, orderNumber } =
-                identifiersByKey.get(key)!;
-            const brandSubtotal = indices.reduce(
-                (s, i) => s + lineDetails[i].itemSubtotal,
-                0,
-            );
-            const brandDiscountAmount = indices.reduce(
-                (s, i) => s + (combinedLineDiscount[i] ?? 0),
-                0,
-            );
-            const isFirstOrder = key === firstKey;
-            let afterDiscount =
-                Math.round((brandSubtotal - brandDiscountAmount) * 100) / 100;
-            if (isFirstOrder && loyaltyDiscountAmount > 0) {
-                afterDiscount =
-                    Math.round((afterDiscount - loyaltyDiscountAmount) * 100) /
-                    100;
-            }
-            const groupBranch = branchMap.get(branchId)!.branch;
-            const gstRates = resolveGstRates(
-                groupBranch as unknown as {
-                    gstRateCash?: number | null;
-                    gstRateCard?: number | null;
-                },
-                tenant,
-            );
-            const tax = computeTenderTax(
-                afterDiscount,
-                paymentSplit,
-                gstRates.cash,
-                gstRates.card,
-            );
-            const brandTax = tax.taxAmount;
-            const brandServiceCharge =
-                Math.round(afterDiscount * serviceChargeRate * 100) / 100;
-            const groupBrand = brandById.get(brandId);
-            const deliveryResolved = groupBrand
-                ? this.resolveDeliveryForBrand(
-                      groupBranch,
-                      groupBrand,
-                      dto.order_type,
-                      deliveryLatitude,
-                      deliveryLongitude,
-                      dto.delivery_tier,
-                  )
-                : { fee: 0, tier: null, etaMin: null, etaMax: null };
-            const brandDeliveryFee = deliveryResolved.fee;
-            const totalAmount =
-                Math.round(
-                    (afterDiscount +
-                        brandTax +
-                        brandServiceCharge +
-                        brandDeliveryFee) *
-                        100,
-                ) / 100;
-            const order = await this.orderRepo.save(
-                this.orderRepo.create({
-                    tenantId,
-                    brandId,
-                    orderGroupId,
-                    branchId,
-                    orderId: newOrderId,
-                    orderNumber,
-                    orderType: dto.order_type,
-                    tableNumber: dto.table_number ?? null,
-                    customerName: dto.customer_name ?? null,
-                    customerPhone:
-                        customerPhoneNormalized ??
-                        dto.customer_phone?.trim() ??
-                        null,
-                    customerId,
-                    deliveryAddress: dto.delivery_address ?? null,
-                    deliveryLatitude,
-                    deliveryLongitude,
-                    branchLatitude,
-                    branchLongitude,
-                    status: 'placed',
-                    source,
-                    notes: dto.notes ?? null,
-                    subtotal: brandSubtotal,
-                    discountAmount: brandDiscountAmount,
-                    taxAmount: brandTax,
-                    taxRateCash: gstRates.cash,
-                    taxRateCard: gstRates.card,
-                    taxBasis: tax.basis,
-                    serviceCharge: brandServiceCharge,
-                    deliveryFee: brandDeliveryFee,
-                    deliveryTier: deliveryResolved.tier,
-                    deliveryEtaMinMinutes: deliveryResolved.etaMin,
-                    deliveryEtaMaxMinutes: deliveryResolved.etaMax,
-                    totalAmount,
-                    // Persist the user-entered discount code if provided, even if it ends up ineligible.
-                    // This matches consumer expectations (they want to see what they tried to apply).
-                    discountCode:
-                        dto.discount_code?.trim() ||
-                        coupon.discountCode ||
-                        auto.discountCode ||
-                        null,
-                    discountId: coupon.discountId ?? auto.discountId ?? null,
-                    loyaltyPointsRedeemed: isFirstOrder
-                        ? loyaltyPointsToRedeem
-                        : 0,
-                    ...(createdBy != null && {
-                        creator: { id: createdBy } as { id: number },
-                    }),
-                    placedAt: new Date(),
-                }),
-            );
-            createdOrderIds.push(order.id);
-            if (deliveryResolved.tier === 'priority') {
-                priorityOrderIds.push(order.id);
-            }
-            if (isFirstOrder && loyaltyPointsToRedeem > 0) {
-                firstOrderIdForLoyalty = order.id;
-            }
-
-            const brandInputs = indices.map((i) => orderItemInputs[i]);
-            for (const {
-                menuItem,
-                line,
-                unitPrice,
-                itemSubtotal,
-                itemName,
-                brandId: bid,
-                modifierPricing,
-                lineSizeKey,
-            } of brandInputs) {
-                const orderItem = await this.orderItemRepo.save(
-                    this.orderItemRepo.create({
-                        orderId: order.id,
-                        menuItemId: line.menu_item_id,
-                        brandId: bid,
-                        variantId: line.variant_id ?? null,
-                        nameSnapshot: itemName,
-                        priceSnapshot: unitPrice,
-                        quantity: line.quantity ?? 1,
-                        unitPrice,
-                        subtotal: itemSubtotal,
-                        notes: line.notes ?? null,
-                        dealId: line.deal_id ?? null,
-                        dealSlotIndex: line.deal_slot_index ?? null,
-                    }),
+        try {
+            for (const key of sortedGroups) {
+                const [branchIdStr, brandIdStr] = key.split('-');
+                const branchId = Number(branchIdStr);
+                const brandId = Number(brandIdStr);
+                const indices = groupToIndices.get(key)!;
+                let { orderId: newOrderId, orderNumber } =
+                    identifiersByKey.get(key)!;
+                const brandSubtotal = indices.reduce(
+                    (s, i) => s + lineDetails[i].itemSubtotal,
+                    0,
                 );
-                if (line.addons?.length) {
-                    for (const addonLine of line.addons) {
-                        const addon = menuItem.addons?.find(
-                            (a: { id: number; price: number }) =>
-                                a.id === addonLine.addon_id,
-                        );
-                        if (addon) {
-                            const addonQty = addonLine.quantity ?? 1;
-                            await this.orderItemAddonRepo.save(
-                                this.orderItemAddonRepo.create({
-                                    orderItemId: orderItem.id,
-                                    addonId: addon.id,
-                                    quantity: addonQty,
-                                    unitPrice: Number(addon.price),
-                                    subtotal: Number(addon.price) * addonQty,
+                const brandDiscountAmount = indices.reduce(
+                    (s, i) => s + (combinedLineDiscount[i] ?? 0),
+                    0,
+                );
+                const isFirstOrder = key === firstKey;
+                let afterDiscount =
+                    Math.round((brandSubtotal - brandDiscountAmount) * 100) /
+                    100;
+                if (isFirstOrder && loyaltyDiscountAmount > 0) {
+                    afterDiscount =
+                        Math.round(
+                            (afterDiscount - loyaltyDiscountAmount) * 100,
+                        ) / 100;
+                }
+                const groupBranch = branchMap.get(branchId)!.branch;
+                const gstRates = resolveGstRates(
+                    groupBranch as unknown as {
+                        gstRateCash?: number | null;
+                        gstRateCard?: number | null;
+                    },
+                    tenant,
+                );
+                const tax = computeTenderTax(
+                    afterDiscount,
+                    paymentSplit,
+                    gstRates.cash,
+                    gstRates.card,
+                );
+                const brandTax = tax.taxAmount;
+                const brandServiceCharge =
+                    Math.round(afterDiscount * serviceChargeRate * 100) / 100;
+                const groupBrand = brandById.get(brandId);
+                const deliveryResolved = groupBrand
+                    ? this.resolveDeliveryForBrand(
+                          groupBranch,
+                          groupBrand,
+                          dto.order_type,
+                          deliveryLatitude,
+                          deliveryLongitude,
+                          dto.delivery_tier,
+                      )
+                    : { fee: 0, tier: null, etaMin: null, etaMax: null };
+                const brandDeliveryFee = deliveryResolved.fee;
+                const totalAmount =
+                    Math.round(
+                        (afterDiscount +
+                            brandTax +
+                            brandServiceCharge +
+                            brandDeliveryFee) *
+                            100,
+                    ) / 100;
+                let order: Order;
+                // Order number/id sequence is derived from a COUNT, so two orders placed
+                // in the same second for the same branch+brand collide on the unique
+                // index. Regenerate the sequence and retry instead of failing the whole
+                // placement with a 500.
+                for (let attempt = 0; ; attempt++) {
+                    try {
+                        order = await this.orderRepo.save(
+                            this.orderRepo.create({
+                                tenantId,
+                                brandId,
+                                orderGroupId,
+                                branchId,
+                                orderId: newOrderId,
+                                orderNumber,
+                                orderType: dto.order_type,
+                                tableNumber: dto.table_number ?? null,
+                                customerName: dto.customer_name ?? null,
+                                customerPhone:
+                                    customerPhoneNormalized ??
+                                    dto.customer_phone?.trim() ??
+                                    null,
+                                customerId,
+                                deliveryAddress: dto.delivery_address ?? null,
+                                deliveryLatitude,
+                                deliveryLongitude,
+                                branchLatitude,
+                                branchLongitude,
+                                status: 'placed',
+                                source,
+                                notes: dto.notes ?? null,
+                                subtotal: brandSubtotal,
+                                discountAmount: brandDiscountAmount,
+                                taxAmount: brandTax,
+                                taxRateCash: gstRates.cash,
+                                taxRateCard: gstRates.card,
+                                taxBasis: tax.basis,
+                                serviceCharge: brandServiceCharge,
+                                deliveryFee: brandDeliveryFee,
+                                deliveryTier: deliveryResolved.tier,
+                                deliveryEtaMinMinutes: deliveryResolved.etaMin,
+                                deliveryEtaMaxMinutes: deliveryResolved.etaMax,
+                                totalAmount,
+                                // Persist the user-entered discount code if provided, even if it ends up ineligible.
+                                // This matches consumer expectations (they want to see what they tried to apply).
+                                discountCode:
+                                    dto.discount_code?.trim() ||
+                                    coupon.discountCode ||
+                                    auto.discountCode ||
+                                    null,
+                                discountId:
+                                    coupon.discountId ??
+                                    auto.discountId ??
+                                    null,
+                                loyaltyPointsRedeemed: isFirstOrder
+                                    ? loyaltyPointsToRedeem
+                                    : 0,
+                                // Carry the idempotency key on the first order of the group only,
+                                // so (tenant_id, idempotency_key) stays unique across the group.
+                                idempotencyKey: isFirstOrder
+                                    ? idempotencyKey
+                                    : null,
+                                ...(createdBy != null && {
+                                    creator: { id: createdBy } as {
+                                        id: number;
+                                    },
                                 }),
-                            );
+                                placedAt: new Date(),
+                            }),
+                        );
+                        break;
+                    } catch (e) {
+                        if (isUniqueViolation(e)) {
+                            const constraint = (
+                                e as { driverError?: { constraint?: string } }
+                            ).driverError?.constraint;
+                            // Concurrent placement with the same idempotency key won the race:
+                            // return the group it created instead of a duplicate.
+                            if (
+                                constraint === 'UQ_orders_tenant_idempotency' &&
+                                idempotencyKey
+                            ) {
+                                const winner = await this.orderRepo.findOne({
+                                    where: { tenantId, idempotencyKey },
+                                    select: { id: true, orderGroupId: true },
+                                });
+                                if (winner?.orderGroupId) {
+                                    throw new IdempotentReplay(
+                                        winner.orderGroupId,
+                                    );
+                                }
+                            }
+                            if (attempt < 4) {
+                                const regen =
+                                    await this.generateOrderIdentifiers(
+                                        branchId,
+                                        brandId,
+                                    );
+                                newOrderId = regen.orderId;
+                                orderNumber = regen.orderNumber;
+                                continue;
+                            }
                         }
+                        throw e;
                     }
                 }
-                // Persist one row per modifier from the size-aware pricing result
-                // (priceSnapshot = per-unit size price; freeQuantity = units included free).
-                for (const pm of modifierPricing.lines) {
-                    await this.orderItemModifierRepo.save(
-                        this.orderItemModifierRepo.create({
-                            orderItemId: orderItem.id,
-                            modifierId: pm.modifierId,
-                            nameSnapshot: pm.name,
-                            priceSnapshot: pm.unitPrice,
-                            quantity: pm.quantity,
-                            freeQuantity: pm.freeQuantity,
-                            variantSizeSnapshot: lineSizeKey,
+                createdOrderIds.push(order.id);
+                if (deliveryResolved.tier === 'priority') {
+                    priorityOrderIds.push(order.id);
+                }
+                if (isFirstOrder && loyaltyPointsToRedeem > 0) {
+                    firstOrderIdForLoyalty = order.id;
+                }
+
+                const brandInputs = indices.map((i) => orderItemInputs[i]);
+                for (const {
+                    menuItem,
+                    line,
+                    unitPrice,
+                    itemSubtotal,
+                    itemName,
+                    brandId: bid,
+                    modifierPricing,
+                    lineSizeKey,
+                } of brandInputs) {
+                    const orderItem = await this.orderItemRepo.save(
+                        this.orderItemRepo.create({
+                            orderId: order.id,
+                            menuItemId: line.menu_item_id,
+                            brandId: bid,
+                            variantId: line.variant_id ?? null,
+                            nameSnapshot: itemName,
+                            priceSnapshot: unitPrice,
+                            quantity: line.quantity ?? 1,
+                            unitPrice,
+                            subtotal: itemSubtotal,
+                            notes: line.notes ?? null,
+                            dealId: line.deal_id ?? null,
+                            dealSlotIndex: line.deal_slot_index ?? null,
                         }),
                     );
+                    if (line.addons?.length) {
+                        for (const addonLine of line.addons) {
+                            const addon = menuItem.addons?.find(
+                                (a: { id: number; price: number }) =>
+                                    a.id === addonLine.addon_id,
+                            );
+                            if (addon) {
+                                const addonQty = addonLine.quantity ?? 1;
+                                await this.orderItemAddonRepo.save(
+                                    this.orderItemAddonRepo.create({
+                                        orderItemId: orderItem.id,
+                                        addonId: addon.id,
+                                        quantity: addonQty,
+                                        unitPrice: Number(addon.price),
+                                        subtotal:
+                                            Number(addon.price) * addonQty,
+                                    }),
+                                );
+                            }
+                        }
+                    }
+                    // Persist one row per modifier from the size-aware pricing result
+                    // (priceSnapshot = per-unit size price; freeQuantity = units included free).
+                    for (const pm of modifierPricing.lines) {
+                        await this.orderItemModifierRepo.save(
+                            this.orderItemModifierRepo.create({
+                                orderItemId: orderItem.id,
+                                modifierId: pm.modifierId,
+                                nameSnapshot: pm.name,
+                                priceSnapshot: pm.unitPrice,
+                                quantity: pm.quantity,
+                                freeQuantity: pm.freeQuantity,
+                                variantSizeSnapshot: lineSizeKey,
+                            }),
+                        );
+                    }
                 }
             }
+        } catch (e) {
+            // A concurrent placement with the same idempotency key already created
+            // this group (and ran its consumption); return it. No cleanup needed:
+            // the collision happens on the first order before any row is committed.
+            if (e instanceof IdempotentReplay) {
+                return this.getOrderGroup(e.orderGroupId);
+            }
+            throw e;
         }
 
         if (
@@ -1774,6 +1913,19 @@ export class OrdersService {
                 for (const id of createdOrderIds) {
                     await this.inventoryConsumptionService.consumeForOrder(id);
                 }
+                // Redeem INSIDE the same try so a redeem failure also reverses the
+                // consumption and cancels the orders — otherwise the order would be
+                // committed with a points-discounted total but no matching debit
+                // (an un-backed discount on an orphaned live order).
+                await this.loyaltyService.redeemForOrder(
+                    tenantId,
+                    customerPhoneNormalized,
+                    firstOrderIdForLoyalty,
+                    loyaltyPointsToRedeem,
+                    firstOrderAfterDiscount,
+                    source,
+                    firstBrandId,
+                );
             } catch (e) {
                 // Best-effort rollback: reverse any consumption already posted and cancel the created orders.
                 for (const id of createdOrderIds) {
@@ -1793,16 +1945,6 @@ export class OrdersService {
                 }
                 throw e;
             }
-
-            await this.loyaltyService.redeemForOrder(
-                tenantId,
-                customerPhoneNormalized,
-                firstOrderIdForLoyalty,
-                loyaltyPointsToRedeem,
-                firstOrderAfterDiscount,
-                source,
-                firstBrandId,
-            );
         }
 
         // If no loyalty redemption block ran, still deduct inventory now.
@@ -2512,52 +2654,80 @@ export class OrdersService {
             );
         }
 
-        const previousStatus = order.status;
-        const wasCompleted = order.status === 'completed';
-        if (wasCompleted && status !== 'completed') {
-            await this.loyaltyService.revokeEarnedPoints(id);
-            order.completedAt = null;
-        }
+        // Atomic, lock-serialised transition. Only the caller that actually changes
+        // the status observes a non-null previousStatus and runs the side effects,
+        // so a KDS+POS race or a double-click cannot double-earn loyalty or
+        // double-count shift cash, and a complete-vs-cancel race resolves
+        // deterministically (the loser is a no-op). completed_at/cancelled_at are set
+        // in the same atomic UPDATE; completed_at is cleared when leaving 'completed'.
+        const previousStatus = await transitionStatus(
+            this.dataSource,
+            'orders',
+            id,
+            status,
+            {
+                set: (cur) => ({
+                    completed_at:
+                        status === 'completed'
+                            ? raw('now()')
+                            : cur === 'completed'
+                              ? raw('NULL')
+                              : raw('completed_at'),
+                    cancelled_at:
+                        status === 'cancelled'
+                            ? raw('now()')
+                            : cur === 'cancelled'
+                              ? raw('NULL')
+                              : raw('cancelled_at'),
+                }),
+            },
+        );
 
-        order.status = status;
-        if (status === 'completed') {
-            order.completedAt = new Date();
-            await this.orderRepo.save(order);
-            await this.loyaltyService.earnOnOrderComplete(id);
-            await this.shiftsService.addCompletedOrderAmount(
-                order.branchId,
-                Number(order.totalAmount),
-                order.brandId ?? null,
-            );
-        } else if (status === 'cancelled') {
-            order.cancelledAt = new Date();
-            await this.orderRepo.save(order);
-            // Reverse inventory consumption allocations (if any).
-            try {
-                await this.inventoryConsumptionService.reverseConsumptionForOrder(
-                    order.id,
-                    null,
-                );
-            } catch {
-                void 0;
+        if (previousStatus !== null) {
+            // Reflect the committed transition on the in-memory entity for the
+            // downstream helpers that read order.status.
+            order.status = status;
+            const leftCompleted =
+                previousStatus === 'completed' && status !== 'completed';
+            if (leftCompleted) {
+                await this.loyaltyService.revokeEarnedPoints(id);
             }
-        } else {
-            await this.orderRepo.save(order);
-        }
-        await this.maybeAutoAssignDeliveryOnPreparing(order, previousStatus);
-        if (status === 'cancelled' && previousStatus !== 'cancelled') {
-            this.pushNotificationService.notifyConsumerOrder(
+            if (status === 'completed') {
+                await this.loyaltyService.earnOnOrderComplete(id);
+                await this.shiftsService.addCompletedOrderAmount(
+                    order.branchId,
+                    Number(order.totalAmount),
+                    order.brandId ?? null,
+                );
+            } else if (status === 'cancelled') {
+                // Reverse inventory consumption allocations (if any).
+                try {
+                    await this.inventoryConsumptionService.reverseConsumptionForOrder(
+                        order.id,
+                        null,
+                    );
+                } catch {
+                    void 0;
+                }
+            }
+            await this.maybeAutoAssignDeliveryOnPreparing(
                 order,
-                'cancelled',
+                previousStatus,
             );
-        }
-        // Parity with the kitchen accept flow: notify the customer when an order
-        // is accepted (e.g. a till accepting an online order from a notification).
-        if (status === 'accepted' && previousStatus !== 'accepted') {
-            this.pushNotificationService.notifyConsumerOrder(
-                order,
-                'kitchen_accepted',
-            );
+            if (status === 'cancelled' && previousStatus !== 'cancelled') {
+                this.pushNotificationService.notifyConsumerOrder(
+                    order,
+                    'cancelled',
+                );
+            }
+            // Parity with the kitchen accept flow: notify the customer when an
+            // order is accepted (e.g. a till accepting an online order).
+            if (status === 'accepted' && previousStatus !== 'accepted') {
+                this.pushNotificationService.notifyConsumerOrder(
+                    order,
+                    'kitchen_accepted',
+                );
+            }
         }
         return this.findForAdmin(id, tenantId);
     }
@@ -2944,34 +3114,64 @@ export class OrdersService {
         // brand's maxBatchSize and never onto a priority-locked rider.
         const { effectiveTier, maxBatchSize } =
             await this.resolveOrderTierCap(order);
-        const riderState = await this.getRiderActiveState(
-            tenantId,
-            riderId,
-            order.id,
-        );
-        if (!riderPassesTierCap(riderState, effectiveTier, maxBatchSize)) {
-            throw new BadRequestException(
-                effectiveTier === 'priority'
-                    ? 'A priority order needs an idle rider; this rider already has an active order.'
-                    : riderState.hasPriorityActive
-                      ? 'This rider is locked to a priority delivery and cannot take another order.'
-                      : `This rider is at capacity (max ${maxBatchSize} active ${maxBatchSize === 1 ? 'order' : 'orders'}).`,
-            );
-        }
         const previousDeliveryStatus = order.deliveryStatus;
+        await this.dataSource.transaction(async (manager) => {
+            // Serialize every assignment for this rider so the single-active-order
+            // cap check-and-set is atomic across all paths (manual + auto-dispatch).
+            await advisoryXactLock(
+                manager,
+                AdvisoryLock.RIDER_ASSIGNMENT,
+                riderId,
+            );
+            // Re-check capacity UNDER the lock: a concurrent assignment that committed
+            // while we waited is now visible.
+            const riderState = await this.getRiderActiveState(
+                tenantId,
+                riderId,
+                order.id,
+            );
+            if (!riderPassesTierCap(riderState, effectiveTier, maxBatchSize)) {
+                throw new BadRequestException(
+                    effectiveTier === 'priority'
+                        ? 'A priority order needs an idle rider; this rider already has an active order.'
+                        : riderState.hasPriorityActive
+                          ? 'This rider is locked to a priority delivery and cannot take another order.'
+                          : `This rider is at capacity (max ${maxBatchSize} active ${maxBatchSize === 1 ? 'order' : 'orders'}).`,
+                );
+            }
+            // Scoped, terminal-state-guarded update (not a full-entity save): never
+            // assign a cancelled/completed order or clobber a concurrent status write.
+            const res = await manager
+                .getRepository(Order)
+                .createQueryBuilder()
+                .update(Order)
+                .set({
+                    riderId,
+                    deliveryStatus: 'accepted',
+                    deliveryFailedReason: null,
+                })
+                .where('id = :id AND status NOT IN (:...terminal)', {
+                    id: order.id,
+                    terminal: ['cancelled', 'completed'],
+                })
+                .execute();
+            if (res.affected === 0) {
+                throw new BadRequestException(
+                    'This order can no longer be assigned (it may have been cancelled or completed).',
+                );
+            }
+            await this.createAssignmentLedgerEntry({
+                tenantId,
+                branchId: order.branchId,
+                orderId: order.id,
+                eventType: 'manual',
+                selectedRiderUserId: riderId,
+                reasonCode: 'manual_assignment',
+                reasonDetail: 'Assigned manually by admin',
+            });
+        });
         order.riderId = riderId;
         order.deliveryStatus = 'accepted';
-        order.deliveryFailedReason = null;
-        await this.orderRepo.save(order);
-        await this.createAssignmentLedgerEntry({
-            tenantId,
-            branchId: order.branchId,
-            orderId: order.id,
-            eventType: 'manual',
-            selectedRiderUserId: riderId,
-            reasonCode: 'manual_assignment',
-            reasonDetail: 'Assigned manually by admin',
-        });
         if (previousDeliveryStatus !== 'accepted') {
             this.pushNotificationService.notifyConsumerOrder(
                 order,
@@ -3020,31 +3220,53 @@ export class OrdersService {
             throw new BadRequestException('Invalid rider for this tenant');
         }
         await this.assertRiderLinkedToBrand(tenantId, order.brandId, riderId);
-        // A rider carries exactly one order at a time (excluding this order,
-        // which is being reassigned away from its current rider).
-        const activeElsewhere = await this.orderRepo
-            .createQueryBuilder('o')
-            .where('o.tenantId = :tenantId', { tenantId })
-            .andWhere('o.riderId = :riderId', { riderId })
-            .andWhere("o.deliveryStatus IN ('accepted', 'picked_up')")
-            .andWhere('o.id != :orderId', { orderId })
-            .getCount();
-        if (activeElsewhere > 0) {
-            throw new BadRequestException(
-                'This rider already has an active order. A rider can deliver only one order at a time.',
+        await this.dataSource.transaction(async (manager) => {
+            // Serialize on the rider so the single-active-order check-and-set is atomic.
+            await advisoryXactLock(
+                manager,
+                AdvisoryLock.RIDER_ASSIGNMENT,
+                riderId,
             );
-        }
-        order.riderId = riderId;
-        await this.orderRepo.save(order);
-        await this.createAssignmentLedgerEntry({
-            tenantId,
-            branchId: order.branchId,
-            orderId: order.id,
-            eventType: 'change',
-            selectedRiderUserId: riderId,
-            reasonCode: 'manual_change',
-            reasonDetail: 'Rider changed manually by admin',
+            // A rider carries exactly one order at a time (excluding this order,
+            // which is being reassigned away from its current rider).
+            const activeElsewhere = await this.orderRepo
+                .createQueryBuilder('o')
+                .where('o.tenantId = :tenantId', { tenantId })
+                .andWhere('o.riderId = :riderId', { riderId })
+                .andWhere("o.deliveryStatus IN ('accepted', 'picked_up')")
+                .andWhere('o.id != :orderId', { orderId })
+                .getCount();
+            if (activeElsewhere > 0) {
+                throw new BadRequestException(
+                    'This rider already has an active order. A rider can deliver only one order at a time.',
+                );
+            }
+            // Scoped update guarded on still-accepted (pre-pickup) status.
+            const res = await manager
+                .getRepository(Order)
+                .createQueryBuilder()
+                .update(Order)
+                .set({ riderId })
+                .where("id = :id AND delivery_status = 'accepted'", {
+                    id: order.id,
+                })
+                .execute();
+            if (res.affected === 0) {
+                throw new BadRequestException(
+                    'Rider can only be changed before they have picked up the order',
+                );
+            }
+            await this.createAssignmentLedgerEntry({
+                tenantId,
+                branchId: order.branchId,
+                orderId: order.id,
+                eventType: 'change',
+                selectedRiderUserId: riderId,
+                reasonCode: 'manual_change',
+                reasonDetail: 'Rider changed manually by admin',
+            });
         });
+        order.riderId = riderId;
         this.pushNotificationService.notifyRiderNewAssignment(order);
         return this.findForAdmin(orderId, tenantId, allowedBranchIds);
     }
@@ -3094,18 +3316,6 @@ export class OrdersService {
                 'A rider can deliver only one order at a time. Assign a separate rider to each order in this group.',
             );
         }
-        const groupActiveCount = await this.orderRepo
-            .createQueryBuilder('o')
-            .where('o.tenantId = :tenantId', { tenantId })
-            .andWhere('o.riderId = :riderId', { riderId })
-            .andWhere("o.deliveryStatus IN ('accepted', 'picked_up')")
-            .andWhere('o.orderGroupId != :orderGroupId', { orderGroupId })
-            .getCount();
-        if (groupActiveCount > 0) {
-            throw new BadRequestException(
-                'This rider already has an active order. A rider can deliver only one order at a time.',
-            );
-        }
         for (const order of orders) {
             this.assertOrderBrandAllowed(order, allowedBrandIds);
             await this.assertRiderLinkedToBrand(
@@ -3114,21 +3324,60 @@ export class OrdersService {
                 riderId,
             );
         }
+        await this.dataSource.transaction(async (manager) => {
+            // Serialize on the rider so the single-active-order check-and-set is atomic.
+            await advisoryXactLock(
+                manager,
+                AdvisoryLock.RIDER_ASSIGNMENT,
+                riderId,
+            );
+            const groupActiveCount = await this.orderRepo
+                .createQueryBuilder('o')
+                .where('o.tenantId = :tenantId', { tenantId })
+                .andWhere('o.riderId = :riderId', { riderId })
+                .andWhere("o.deliveryStatus IN ('accepted', 'picked_up')")
+                .andWhere('o.orderGroupId != :orderGroupId', { orderGroupId })
+                .getCount();
+            if (groupActiveCount > 0) {
+                throw new BadRequestException(
+                    'This rider already has an active order. A rider can deliver only one order at a time.',
+                );
+            }
+            for (const order of orders) {
+                const res = await manager
+                    .getRepository(Order)
+                    .createQueryBuilder()
+                    .update(Order)
+                    .set({
+                        riderId,
+                        deliveryStatus: 'accepted',
+                        deliveryFailedReason: null,
+                    })
+                    .where('id = :id AND status NOT IN (:...terminal)', {
+                        id: order.id,
+                        terminal: ['cancelled', 'completed'],
+                    })
+                    .execute();
+                if (res.affected === 0) {
+                    throw new BadRequestException(
+                        'This order can no longer be assigned (it may have been cancelled or completed).',
+                    );
+                }
+                await this.createAssignmentLedgerEntry({
+                    tenantId,
+                    branchId: order.branchId,
+                    orderId: order.id,
+                    eventType: 'manual',
+                    selectedRiderUserId: riderId,
+                    reasonCode: 'manual_group_assignment',
+                    reasonDetail: `Assigned manually for group ${orderGroupId}`,
+                });
+            }
+        });
         for (const order of orders) {
             const previousDeliveryStatus = order.deliveryStatus;
             order.riderId = riderId;
             order.deliveryStatus = 'accepted';
-            order.deliveryFailedReason = null;
-            await this.orderRepo.save(order);
-            await this.createAssignmentLedgerEntry({
-                tenantId,
-                branchId: order.branchId,
-                orderId: order.id,
-                eventType: 'manual',
-                selectedRiderUserId: riderId,
-                reasonCode: 'manual_group_assignment',
-                reasonDetail: `Assigned manually for group ${orderGroupId}`,
-            });
             if (previousDeliveryStatus !== 'accepted') {
                 this.pushNotificationService.notifyConsumerOrder(
                     order,
@@ -3204,33 +3453,53 @@ export class OrdersService {
                 riderId,
             );
         }
-        // A rider carries exactly one order at a time — reject if the target
-        // rider already has an active order outside this group.
-        const activeElsewhere = await this.orderRepo
-            .createQueryBuilder('o')
-            .where('o.tenantId = :tenantId', { tenantId })
-            .andWhere('o.riderId = :riderId', { riderId })
-            .andWhere("o.deliveryStatus IN ('accepted', 'picked_up')")
-            .andWhere('o.orderGroupId != :orderGroupId', { orderGroupId })
-            .getCount();
-        if (activeElsewhere > 0) {
-            throw new BadRequestException(
-                'This rider already has an active order. A rider can deliver only one order at a time.',
+        await this.dataSource.transaction(async (manager) => {
+            // Serialize on the rider so the single-active-order check-and-set is atomic.
+            await advisoryXactLock(
+                manager,
+                AdvisoryLock.RIDER_ASSIGNMENT,
+                riderId,
             );
-        }
-        for (const order of orders) {
-            order.riderId = riderId;
-            await this.orderRepo.save(order);
-            await this.createAssignmentLedgerEntry({
-                tenantId,
-                branchId: order.branchId,
-                orderId: order.id,
-                eventType: 'change',
-                selectedRiderUserId: riderId,
-                reasonCode: 'manual_group_change',
-                reasonDetail: `Rider changed manually for group ${orderGroupId}`,
-            });
-        }
+            // A rider carries exactly one order at a time — reject if the target
+            // rider already has an active order outside this group.
+            const activeElsewhere = await this.orderRepo
+                .createQueryBuilder('o')
+                .where('o.tenantId = :tenantId', { tenantId })
+                .andWhere('o.riderId = :riderId', { riderId })
+                .andWhere("o.deliveryStatus IN ('accepted', 'picked_up')")
+                .andWhere('o.orderGroupId != :orderGroupId', { orderGroupId })
+                .getCount();
+            if (activeElsewhere > 0) {
+                throw new BadRequestException(
+                    'This rider already has an active order. A rider can deliver only one order at a time.',
+                );
+            }
+            for (const order of orders) {
+                const res = await manager
+                    .getRepository(Order)
+                    .createQueryBuilder()
+                    .update(Order)
+                    .set({ riderId })
+                    .where("id = :id AND delivery_status = 'accepted'", {
+                        id: order.id,
+                    })
+                    .execute();
+                if (res.affected === 0) {
+                    throw new BadRequestException(
+                        'Rider can only be changed for the group before any order has been picked up.',
+                    );
+                }
+                await this.createAssignmentLedgerEntry({
+                    tenantId,
+                    branchId: order.branchId,
+                    orderId: order.id,
+                    eventType: 'change',
+                    selectedRiderUserId: riderId,
+                    reasonCode: 'manual_group_change',
+                    reasonDetail: `Rider changed manually for group ${orderGroupId}`,
+                });
+            }
+        });
         return {
             order_group_id: orderGroupId,
             updated_count: orders.length,
@@ -3412,18 +3681,35 @@ export class OrdersService {
             order.deliveryFailedReason = null;
         }
         order.deliveryStatus = deliveryStatus;
+        // Scoped update for the delivery fields — avoids a full-entity save
+        // clobbering a concurrent order mutation (lost update).
+        await this.orderRepo.update(
+            { id: order.id },
+            {
+                deliveryStatus,
+                deliveryFailedReason: order.deliveryFailedReason ?? null,
+            },
+        );
         if (deliveryStatus === 'delivered') {
-            order.status = 'completed';
-            order.completedAt = new Date();
-            await this.orderRepo.save(order);
-            await this.loyaltyService.earnOnOrderComplete(order.id);
-            await this.shiftsService.addCompletedOrderAmount(
-                order.branchId,
-                Number(order.totalAmount),
-                order.brandId ?? null,
+            // Atomic completion transition: loyalty earn + shift-cash credit fire
+            // exactly once even if a POS 'complete' or a retried 'delivered' event
+            // races this delivery confirmation.
+            const prevStatus = await transitionStatus(
+                this.dataSource,
+                'orders',
+                order.id,
+                'completed',
+                { set: () => ({ completed_at: raw('now()') }) },
             );
-        } else {
-            await this.orderRepo.save(order);
+            order.status = 'completed';
+            if (prevStatus !== null) {
+                await this.loyaltyService.earnOnOrderComplete(order.id);
+                await this.shiftsService.addCompletedOrderAmount(
+                    order.branchId,
+                    Number(order.totalAmount),
+                    order.brandId ?? null,
+                );
+            }
         }
         if (
             deliveryStatus === 'picked_up' &&

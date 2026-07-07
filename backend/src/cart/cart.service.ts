@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Cart } from '../entities/cart.entity';
 import { CartItem } from '../entities/cart-item.entity';
+import { isUniqueViolation } from '../common/db-concurrency';
 
 @Injectable()
 export class CartService {
@@ -12,14 +13,26 @@ export class CartService {
     ) {}
 
     async getOrCreateCart(customerId: number, branchId: number): Promise<Cart> {
-        let cart = await this.cartRepo.findOne({
-            where: { customerId, branchId },
-            relations: ['items', 'items.menuItem', 'items.variant'],
-        });
+        const load = () =>
+            this.cartRepo.findOne({
+                where: { customerId, branchId },
+                relations: ['items', 'items.menuItem', 'items.variant'],
+            });
+        let cart = await load();
         if (!cart) {
-            cart = await this.cartRepo.save(
-                this.cartRepo.create({ customerId, branchId }),
-            );
+            try {
+                cart = await this.cartRepo.save(
+                    this.cartRepo.create({ customerId, branchId }),
+                );
+            } catch (e) {
+                // Concurrent first-touch (app + web on the same phone): the
+                // (customer, branch) unique index rejects the loser — reuse the
+                // winner's cart instead of 500ing.
+                if (isUniqueViolation(e)) {
+                    cart = await load();
+                }
+                if (!cart) throw e;
+            }
         }
         return cart;
     }
@@ -104,29 +117,53 @@ export class CartService {
 
         const hasQuantityUpdate =
             updates.quantity !== undefined && updates.quantity !== null;
-        if (hasQuantityUpdate) {
-            const q = Math.max(0, Math.floor(updates.quantity ?? 1));
-            if (q === 0) {
-                await this.cartItemRepo.remove(item);
-                return { message: 'Item removed', quantity: 0 };
-            }
-            item.quantity = q;
+        if (
+            hasQuantityUpdate &&
+            Math.max(0, Math.floor(updates.quantity ?? 1)) === 0
+        ) {
+            // Scoped delete: if a concurrent remove already deleted the row, report
+            // NotFound rather than a false success.
+            const del = await this.cartItemRepo.delete({
+                id: cartItemId,
+                cartId: item.cartId,
+            });
+            if (!del.affected)
+                throw new NotFoundException('Cart item not found');
+            return { message: 'Item removed', quantity: 0 };
         }
 
+        // Build a column-scoped patch (only the provided fields) and apply it as an
+        // atomic UPDATE. If a concurrent remove deleted the row, affected=0 → NotFound
+        // instead of the stale in-memory entity being returned as a false success.
+        const patch: {
+            quantity?: number;
+            variantId?: number | null;
+            addons?: { addon_id: number; quantity?: number }[] | null;
+            modifiers?: { modifier_id: number; quantity?: number }[] | null;
+            notes?: string | null;
+        } = {};
+        if (hasQuantityUpdate) {
+            patch.quantity = Math.max(1, Math.floor(updates.quantity ?? 1));
+        }
         if (updates.variant_id !== undefined) {
-            item.variantId = updates.variant_id ?? null;
+            patch.variantId = updates.variant_id ?? null;
         }
         if (updates.addons !== undefined) {
-            item.addons = updates.addons ?? null;
+            patch.addons = updates.addons ?? null;
         }
         if (updates.modifiers !== undefined) {
-            item.modifiers = updates.modifiers ?? null;
+            patch.modifiers = updates.modifiers ?? null;
         }
         if (updates.notes !== undefined) {
-            item.notes = updates.notes?.trim() || null;
+            patch.notes = updates.notes?.trim() || null;
         }
 
-        await this.cartItemRepo.save(item);
+        const res = await this.cartItemRepo.update(
+            { id: cartItemId, cartId: item.cartId },
+            patch,
+        );
+        if (!res.affected) throw new NotFoundException('Cart item not found');
+        Object.assign(item, patch);
         return {
             id: item.id,
             menu_item_id: item.menuItemId,
@@ -145,7 +182,11 @@ export class CartService {
         });
         if (!item || item.cart.customerId !== customerId)
             throw new NotFoundException('Cart item not found');
-        await this.cartItemRepo.remove(item);
+        const del = await this.cartItemRepo.delete({
+            id: cartItemId,
+            cartId: item.cartId,
+        });
+        if (!del.affected) throw new NotFoundException('Cart item not found');
         return { message: 'Item removed' };
     }
 

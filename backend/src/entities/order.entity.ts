@@ -46,6 +46,15 @@ export class Order {
     orderId: string | null;
 
     /**
+     * Optional client-supplied idempotency key (carried on the FIRST order of a
+     * group). A retried / double-submitted placement with the same key returns the
+     * already-created order group instead of creating duplicates. Backed by the
+     * partial unique index UQ_orders_tenant_idempotency.
+     */
+    @Column({ name: 'idempotency_key', type: 'varchar', nullable: true })
+    idempotencyKey: string | null;
+
+    /**
      * Short daily call-out number shown to staff and printed on receipts/KDS.
      * Format: `001`, `002` … resets to `001` every day per branch+brand.
      * NOT globally unique — the permanent tracking key is `orderId`.

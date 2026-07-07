@@ -9,11 +9,23 @@ import { PromotionsService } from './promotions.service';
  * methods the code under test actually calls.
  */
 describe('PromotionsService', () => {
-    const makeService = (repos: { promo?: any; cp?: any; discount?: any }) =>
+    const makeService = (repos: {
+        promo?: any;
+        cp?: any;
+        discount?: any;
+        dataSource?: any;
+    }) =>
         new PromotionsService(
             repos.promo ?? {},
             repos.cp ?? {},
             repos.discount ?? {},
+            repos.dataSource ?? {
+                transaction: async (fn: any) =>
+                    fn({
+                        query: async () => [],
+                        getRepository: () => ({}),
+                    }),
+            },
         );
 
     describe('assignNewCustomerPromotions', () => {
@@ -129,37 +141,46 @@ describe('PromotionsService', () => {
                     discountId: 501,
                 },
             ];
-            const cpSaved: any[] = [];
-            const discountUpdates: any[] = [];
+            void copies;
+            // deactivateAssignments now runs two atomic bulk UPDATEs inside a
+            // transaction (advisory-locked) instead of a stale per-copy loop.
+            const queries: Array<{ sql: string; params: any[] }> = [];
+            const manager = {
+                query: jest.fn(async (sql: string, params: any[]) => {
+                    queries.push({ sql, params });
+                    return [];
+                }),
+            };
             const svc = makeService({
                 promo: {
                     findOne: jest.fn().mockResolvedValue(promo),
                     save: jest.fn(async (p: any) => p),
                 },
-                cp: {
-                    find: jest.fn().mockResolvedValue(copies),
-                    save: jest.fn(async (cp: any) => {
-                        cpSaved.push(cp);
-                        return cp;
-                    }),
-                },
-                discount: {
-                    update: jest.fn(async (where: any, patch: any) => {
-                        discountUpdates.push({ where, patch });
-                    }),
+                cp: {},
+                discount: {},
+                dataSource: {
+                    transaction: async (fn: any) => fn(manager),
                 },
             });
 
             await svc.update(7, 3, { is_active: false });
 
-            // pending + claimed were re-saved as expired; used was not touched
-            expect(cpSaved.map((c) => c.id).sort()).toEqual([10, 11]);
-            expect(cpSaved.find((c) => c.id === 10).status).toBe('expired');
-            expect(cpSaved.find((c) => c.id === 11).status).toBe('expired');
-            // only the claimed copy's discount was disabled
-            expect(discountUpdates).toEqual([
-                { where: { id: 500 }, patch: { isActive: false } },
-            ]);
+            // Claimed copies' discounts are disabled...
+            const discountUpd = queries.find((q) =>
+                q.sql.includes('UPDATE discounts'),
+            );
+            expect(discountUpd).toBeTruthy();
+            expect(discountUpd!.sql).toContain('is_active = false');
+            expect(discountUpd!.sql).toContain("status = 'claimed'");
+            expect(discountUpd!.params).toEqual([7]);
+            // ...and pending + claimed copies are expired, used left untouched.
+            const cpUpd = queries.find((q) =>
+                q.sql.includes('UPDATE customer_promotions'),
+            );
+            expect(cpUpd).toBeTruthy();
+            expect(cpUpd!.sql).toContain("status = 'expired'");
+            expect(cpUpd!.sql).toContain("status IN ('pending', 'claimed')");
+            expect(cpUpd!.params).toEqual([7]);
         });
 
         it('does NOT cascade when the promo was already inactive', async () => {

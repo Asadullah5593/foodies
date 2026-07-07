@@ -9,6 +9,7 @@ describe('InventoryTransferService', () => {
         } as any;
         const batchSave = jest.fn(async (x: any) => ({ ...x, id: 888 }));
         const orderSave = jest.fn(async (o: any) => o);
+        const orderUpdate = jest.fn(async () => ({ affected: 1 }));
         const receiptLineSave = jest.fn(async (x: any) => x);
         const manager: any = {
             getRepository: (Entity: any) => {
@@ -31,7 +32,18 @@ describe('InventoryTransferService', () => {
                 if (name === 'InventoryTransferReceiptLine')
                     return { create: (x: any) => x, save: receiptLineSave };
                 if (name === 'InventoryTransferOrder')
-                    return { create: (x: any) => x, save: orderSave };
+                    return {
+                        create: (x: any) => x,
+                        save: orderSave,
+                        // Under-lock status re-check + scoped status update added for
+                        // concurrency safety. 'dispatched_partial' is valid for both
+                        // dispatch and receive re-validation.
+                        findOne: jest.fn(async () => ({
+                            id: 21,
+                            status: 'dispatched_partial',
+                        })),
+                        update: orderUpdate,
+                    };
                 if (name === 'InventoryTransferRequest')
                     return {
                         create: (x: any) => x,
@@ -41,7 +53,13 @@ describe('InventoryTransferService', () => {
                     return { create: (x: any) => x, save: jest.fn() };
                 throw new Error(`Unexpected repo ${name}`);
             },
-            query: jest.fn().mockResolvedValue([{ qty: '999' }]),
+            // transitionStatus (approve/reject) issues `SELECT status AS cur ... FOR
+            // UPDATE`; return a 'submitted' current status so the transition proceeds.
+            query: jest.fn(async (sql: string) =>
+                typeof sql === 'string' && sql.includes(' AS cur ')
+                    ? [{ cur: 'submitted' }]
+                    : [{ qty: '999' }],
+            ),
             ...managerOverrides,
         };
         const dataSource = {
@@ -77,6 +95,7 @@ describe('InventoryTransferService', () => {
             manager,
             batchSave,
             orderSave,
+            orderUpdate,
         };
     };
 
@@ -320,10 +339,13 @@ describe('InventoryTransferService', () => {
     });
 
     it('cross-branch receive creates a new batch at the destination brand bucket', async () => {
-        const query = jest
-            .fn()
-            .mockResolvedValue([{ inventory_item_id: 50, qty: '100' }]);
-        const { service, inventoryService, orderRepo, batchSave, orderSave } =
+        // cross-branch cap query (`... AS remaining`) must report enough in transit.
+        const query = jest.fn(async (sql: string) =>
+            typeof sql === 'string' && sql.includes('AS remaining')
+                ? [{ item: 50, remaining: '100' }]
+                : [{ inventory_item_id: 50, qty: '100' }],
+        );
+        const { service, inventoryService, orderRepo, batchSave, orderUpdate } =
             makeService({ query });
 
         orderRepo.findOne.mockResolvedValue({
@@ -374,7 +396,7 @@ describe('InventoryTransferService', () => {
                 ],
             }),
         );
-        expect(orderSave.mock.calls[0][0].status).toBe('closed');
+        expect(orderUpdate.mock.calls[0][1].status).toBe('closed');
     });
 
     it('blocks a brand admin from approving their own pull (no source authority)', async () => {

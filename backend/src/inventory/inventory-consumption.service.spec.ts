@@ -20,6 +20,12 @@ describe('InventoryConsumptionService', () => {
                 if (sql.includes('FROM inventory_batch_on_hand iboh')) {
                     return opts.fefoBatches;
                 }
+                // The consume ledger INSERT now RETURNs id; a real insert returns a
+                // row, so the on-hand/allocation writes proceed (ON CONFLICT skip
+                // would return []).
+                if (sql.includes('RETURNING id')) {
+                    return [{ id: 1 }];
+                }
                 return [];
             }),
             getRepository: () => ({
@@ -28,6 +34,11 @@ describe('InventoryConsumptionService', () => {
                     savedAllocations.push(x);
                     return x;
                 }),
+                // Under-lock re-checks added for concurrency safety: no prior
+                // allocation, order not cancelled, nothing to reverse.
+                findOne: jest.fn(async () => null),
+                find: jest.fn(async () => []),
+                delete: jest.fn(),
             }),
         };
         const dataSource = {
@@ -146,7 +157,9 @@ describe('InventoryConsumptionService', () => {
             query: jest.fn(async (sql: string) =>
                 sql.includes('FROM inventory_batch_on_hand iboh')
                     ? [{ batch_id: 900, qty: '100' }]
-                    : [],
+                    : sql.includes('RETURNING id')
+                      ? [{ id: 1 }]
+                      : [],
             ),
             getRepository: () => ({
                 create: (x: any) => x,
@@ -154,6 +167,11 @@ describe('InventoryConsumptionService', () => {
                     savedAllocations.push(x);
                     return x;
                 }),
+                // Under-lock re-checks added for concurrency safety: no prior
+                // allocation, order not cancelled, nothing to reverse.
+                findOne: jest.fn(async () => null),
+                find: jest.fn(async () => []),
+                delete: jest.fn(),
             }),
         };
         const dataSource = {

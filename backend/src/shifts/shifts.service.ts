@@ -319,14 +319,26 @@ export class ShiftsService {
                     ? { branchId, brandId, status: 'open' }
                     : { branchId, status: 'open' },
             order: { openedAt: 'DESC' },
+            select: { id: true },
         });
         if (!shift) return;
-        const current =
-            shift.expectedCash != null
-                ? Number(shift.expectedCash)
-                : Number(shift.openingCash);
-        shift.expectedCash = current + amount;
-        await this.repo.save(shift);
+        // Atomic increment scoped to the still-open shift row. Avoids the
+        // read-modify-write lost update when two orders complete concurrently, and
+        // the `status = 'open'` guard means a shift closed in the meantime is left
+        // untouched (0 rows affected) rather than resurrected by a full-entity save.
+        await this.repo
+            .createQueryBuilder()
+            .update(Shift)
+            .set({
+                expectedCash: () =>
+                    'COALESCE(expected_cash, opening_cash) + :amount',
+            })
+            .where('id = :id AND status = :open', {
+                id: shift.id,
+                open: 'open',
+            })
+            .setParameter('amount', amount)
+            .execute();
     }
 
     async close(
@@ -340,26 +352,38 @@ export class ShiftsService {
         if (tenantId != null) {
             await this.findOne(id, tenantId, allowedBranchIds, allowedBrandIds);
         }
-        const shift = await this.repo.findOne({
-            where: { id },
-            relations: ['user', 'branch'],
-        });
-        if (!shift) throw new NotFoundException('Shift not found');
-        if (shift.status === 'closed')
-            throw new Error('Shift is already closed');
-        shift.closingCash = dto.actual_cash;
-        if (shift.expectedCash == null)
-            shift.expectedCash = Number(shift.openingCash);
-        shift.status = 'closed';
-        shift.closedAt = new Date();
-        shift.closedByUserId = closedByUserId ?? null;
-        if (dto.notes !== undefined) shift.notes = dto.notes;
-        await this.repo.save(shift);
+        // Atomic close: only the caller that flips open -> closed wins. A concurrent
+        // double-close (double-click, or GM + cashier) affects 0 rows and gets a
+        // clean 409 instead of silently overwriting the first close's reconciliation
+        // figures. Using a scoped UPDATE (not a full-entity save) also means a
+        // completion increment racing this close cannot revert it.
+        const res = await this.repo
+            .createQueryBuilder()
+            .update(Shift)
+            .set({
+                closingCash: dto.actual_cash,
+                status: 'closed',
+                closedAt: () => 'now()',
+                closedByUserId: closedByUserId ?? null,
+                expectedCash: () => 'COALESCE(expected_cash, opening_cash)',
+                ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+            })
+            .where('id = :id AND status = :open', { id, open: 'open' })
+            .execute();
+        if (res.affected === 0) {
+            const exists = await this.repo.findOne({
+                where: { id },
+                select: { id: true },
+            });
+            if (!exists) throw new NotFoundException('Shift not found');
+            throw new ConflictException('Shift is already closed');
+        }
         const loaded = await this.repo.findOne({
             where: { id },
             relations: ['user', 'branch', 'closer', 'brand'],
         });
-        return this.toResponse(loaded ?? shift);
+        if (!loaded) throw new NotFoundException('Shift not found');
+        return this.toResponse(loaded);
     }
 
     /**

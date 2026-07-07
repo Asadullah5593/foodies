@@ -1,11 +1,19 @@
 import {
     BadRequestException,
+    ConflictException,
     ForbiddenException,
     Injectable,
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, IsNull, Repository } from 'typeorm';
+import {
+    isUniqueViolation,
+    transitionStatus,
+    advisoryXactLock,
+    AdvisoryLock,
+    raw,
+} from '../common/db-concurrency';
 import { RiderProfile } from '../entities/rider-profile.entity';
 import { RiderAttendanceSession } from '../entities/rider-attendance-session.entity';
 import { RiderBreakSession } from '../entities/rider-break-session.entity';
@@ -504,6 +512,12 @@ export class RiderHrmService {
             throw new BadRequestException('Rider must be checked in first');
         }
         const now = new Date();
+        const patch: {
+            lastHeartbeatAt: Date;
+            lastLatitude?: number;
+            lastLongitude?: number;
+            lastLocationAt?: Date;
+        } = { lastHeartbeatAt: now };
         presence.lastHeartbeatAt = now;
         if (
             dto.latitude != null &&
@@ -524,8 +538,17 @@ export class RiderHrmService {
             presence.lastLatitude = lat;
             presence.lastLongitude = lng;
             presence.lastLocationAt = now;
+            patch.lastLatitude = lat;
+            patch.lastLongitude = lng;
+            patch.lastLocationAt = now;
         }
-        await this.presenceRepo.save(presence);
+        // Column-scoped update guarded on still-checked-in: the high-frequency
+        // heartbeat must NOT full-entity-save (that would revert a concurrent
+        // setPause/checkOut back to its stale in-memory snapshot).
+        await this.presenceRepo.update(
+            { riderUserId, isCheckedIn: true },
+            patch,
+        );
         return {
             rider_user_id: presence.riderUserId,
             branch_id: presence.branchId,
@@ -665,28 +688,39 @@ export class RiderHrmService {
             throw new BadRequestException('At least one component is required');
         }
 
-        const latest = await this.compPlanRepo.findOne({
-            where: {
+        // Serialize the version read+insert on the same scope lock that
+        // activateCompPlan uses, so two concurrent creates cannot both read version N
+        // and insert N+1 (duplicate versions that make the active-plan tiebreak
+        // nondeterministic).
+        const plan = await this.dataSource.transaction(async (manager) => {
+            await advisoryXactLock(
+                manager,
+                AdvisoryLock.COMP_PLAN_SCOPE,
                 tenantId,
-                branchId: dto.branch_id != null ? dto.branch_id : IsNull(),
-            },
-            order: { version: 'DESC' },
+            );
+            const repo = manager.getRepository(RiderCompPlan);
+            const latest = await repo.findOne({
+                where: {
+                    tenantId,
+                    branchId: dto.branch_id != null ? dto.branch_id : IsNull(),
+                },
+                order: { version: 'DESC' },
+            });
+            const version = (latest?.version ?? 0) + 1;
+            return repo.save(
+                repo.create({
+                    tenantId,
+                    branchId: dto.branch_id ?? null,
+                    name: dto.name.trim(),
+                    payMethod: dto.pay_method || 'hybrid',
+                    status: 'draft',
+                    version,
+                    effectiveFrom: dto.effective_from ?? null,
+                    effectiveTo: dto.effective_to ?? null,
+                    createdBy: actorUserId,
+                }),
+            );
         });
-        const version = (latest?.version ?? 0) + 1;
-
-        const plan = await this.compPlanRepo.save(
-            this.compPlanRepo.create({
-                tenantId,
-                branchId: dto.branch_id ?? null,
-                name: dto.name.trim(),
-                payMethod: dto.pay_method || 'hybrid',
-                status: 'draft',
-                version,
-                effectiveFrom: dto.effective_from ?? null,
-                effectiveTo: dto.effective_to ?? null,
-                createdBy: actorUserId,
-            }),
-        );
 
         const components = dto.components.map((c, idx) =>
             this.compComponentRepo.create({
@@ -756,19 +790,33 @@ export class RiderHrmService {
                 'Compensation plan must have at least one component',
             );
         }
-        await this.compPlanRepo.update(
-            {
+        return this.dataSource.transaction(async (manager) => {
+            // Serialize activations for this scope so the deactivate-then-activate
+            // pair is atomic: two concurrent activations cannot both end 'active'.
+            await advisoryXactLock(
+                manager,
+                AdvisoryLock.COMP_PLAN_SCOPE,
                 tenantId,
-                branchId: plan.branchId != null ? plan.branchId : IsNull(),
-                status: 'active',
-            },
-            { status: 'inactive' },
-        );
-        plan.status = 'active';
-        plan.approvedBy = actorUserId;
-        plan.approvedAt = new Date();
-        await this.compPlanRepo.save(plan);
-        return this.getCompPlan(plan.id, tenantId);
+            );
+            const repo = manager.getRepository(RiderCompPlan);
+            await repo.update(
+                {
+                    tenantId,
+                    branchId: plan.branchId != null ? plan.branchId : IsNull(),
+                    status: 'active',
+                },
+                { status: 'inactive' },
+            );
+            await repo.update(
+                { id: plan.id },
+                {
+                    status: 'active',
+                    approvedBy: actorUserId,
+                    approvedAt: new Date(),
+                },
+            );
+            return this.getCompPlan(plan.id, tenantId);
+        });
     }
 
     async getCompPlan(planId: number, tenantId: number) {
@@ -847,50 +895,66 @@ export class RiderHrmService {
         const timelyMinutes = dto.timely_minutes ?? 45;
         const expectedMonthlyMinutes = dto.expected_monthly_minutes ?? 12480;
 
-        const run = await this.payrollRunRepo.save(
-            this.payrollRunRepo.create({
-                tenantId,
-                branchId: dto.branch_id ?? null,
-                periodFrom: dto.from,
-                periodTo: dto.to,
-                status: 'draft',
-                requestedBy: actorUserId,
-            }),
-        );
+        let run: RiderPayrollRun;
+        try {
+            run = await this.payrollRunRepo.save(
+                this.payrollRunRepo.create({
+                    tenantId,
+                    branchId: dto.branch_id ?? null,
+                    periodFrom: dto.from,
+                    periodTo: dto.to,
+                    status: 'draft',
+                    requestedBy: actorUserId,
+                }),
+            );
+        } catch (e) {
+            // UQ_payroll_run_scope_active enforces one non-reversed run per
+            // (tenant, branch, period), so a concurrent or repeat run is rejected
+            // here instead of paying every rider twice.
+            if (isUniqueViolation(e)) {
+                throw new ConflictException(
+                    'A payroll run for this period and branch already exists',
+                );
+            }
+            throw e;
+        }
 
-        const riders: Array<{ rider_user_id: number }> =
-            await this.dataSource.query(
-                `SELECT DISTINCT rp.user_id AS rider_user_id
+        // Populate under a guard: a mid-run failure discards the draft (its lines
+        // and items cascade-delete) so it neither leaks nor blocks a re-run.
+        try {
+            const riders: Array<{ rider_user_id: number }> =
+                await this.dataSource.query(
+                    `SELECT DISTINCT rp.user_id AS rider_user_id
              FROM rider_profiles rp
              INNER JOIN users u ON u.id = rp.user_id AND u.status = 'active'
              WHERE rp.tenant_id = $1
                AND rp.is_active = true`,
-                [tenantId],
-            );
-        const lines: RiderPayrollLine[] = [];
-        for (const rider of riders) {
-            const riderUserId = Number(rider.rider_user_id);
-            const attendanceRows = await this.attendanceRepo.find({
-                where: { riderUserId },
-                order: { checkedInAt: 'ASC' },
-            });
-            const attendanceMinutes = attendanceRows.reduce(
-                (sum, row) =>
-                    sum +
-                    this.calcAttendanceMinutes(
-                        from,
-                        to,
-                        row.checkedInAt,
-                        row.checkedOutAt,
-                    ),
-                0,
-            );
+                    [tenantId],
+                );
+            const lines: RiderPayrollLine[] = [];
+            for (const rider of riders) {
+                const riderUserId = Number(rider.rider_user_id);
+                const attendanceRows = await this.attendanceRepo.find({
+                    where: { riderUserId },
+                    order: { checkedInAt: 'ASC' },
+                });
+                const attendanceMinutes = attendanceRows.reduce(
+                    (sum, row) =>
+                        sum +
+                        this.calcAttendanceMinutes(
+                            from,
+                            to,
+                            row.checkedInAt,
+                            row.checkedOutAt,
+                        ),
+                    0,
+                );
 
-            const orderRows: Array<{
-                completed_rides: string;
-                timely_deliveries: string;
-            }> = await this.dataSource.query(
-                `SELECT COUNT(*)::text AS completed_rides,
+                const orderRows: Array<{
+                    completed_rides: string;
+                    timely_deliveries: string;
+                }> = await this.dataSource.query(
+                    `SELECT COUNT(*)::text AS completed_rides,
                         COUNT(*) FILTER (
                             WHERE EXTRACT(EPOCH FROM (o.completed_at - o.placed_at)) / 60 <= $4
                         )::text AS timely_deliveries
@@ -901,160 +965,170 @@ export class RiderHrmService {
                    AND o.completed_at IS NOT NULL
                    AND o.completed_at BETWEEN $3::timestamp AND $5::timestamp
                    ${dto.branch_id != null ? 'AND o.branch_id = $6' : ''}`,
-                dto.branch_id != null
-                    ? [
-                          tenantId,
-                          riderUserId,
-                          from.toISOString(),
-                          timelyMinutes,
-                          to.toISOString(),
-                          dto.branch_id,
-                      ]
-                    : [
-                          tenantId,
-                          riderUserId,
-                          from.toISOString(),
-                          timelyMinutes,
-                          to.toISOString(),
-                      ],
-            );
-            const completedRides = Number(orderRows[0]?.completed_rides ?? 0);
-            const timelyDeliveries = Number(
-                orderRows[0]?.timely_deliveries ?? 0,
-            );
+                    dto.branch_id != null
+                        ? [
+                              tenantId,
+                              riderUserId,
+                              from.toISOString(),
+                              timelyMinutes,
+                              to.toISOString(),
+                              dto.branch_id,
+                          ]
+                        : [
+                              tenantId,
+                              riderUserId,
+                              from.toISOString(),
+                              timelyMinutes,
+                              to.toISOString(),
+                          ],
+                );
+                const completedRides = Number(
+                    orderRows[0]?.completed_rides ?? 0,
+                );
+                const timelyDeliveries = Number(
+                    orderRows[0]?.timely_deliveries ?? 0,
+                );
 
-            const ratingRows: Array<{ avg_rating: string | null }> =
-                await this.dataSource.query(
-                    `SELECT AVG(ror.stars)::text AS avg_rating
+                const ratingRows: Array<{ avg_rating: string | null }> =
+                    await this.dataSource.query(
+                        `SELECT AVG(ror.stars)::text AS avg_rating
                      FROM rider_order_ratings ror
                      INNER JOIN orders o ON o.id = ror.order_id
                      WHERE o.tenant_id = $1
                        AND ror.rider_user_id = $2
                        AND ror.updated_at BETWEEN $3::timestamp AND $4::timestamp`,
-                    [
-                        tenantId,
-                        riderUserId,
-                        from.toISOString(),
-                        to.toISOString(),
-                    ],
+                        [
+                            tenantId,
+                            riderUserId,
+                            from.toISOString(),
+                            to.toISOString(),
+                        ],
+                    );
+                const avgRating =
+                    ratingRows[0]?.avg_rating != null
+                        ? Number(ratingRows[0].avg_rating)
+                        : null;
+
+                const activePlan = await this.getActiveCompPlan(
+                    tenantId,
+                    dto.branch_id ?? null,
                 );
-            const avgRating =
-                ratingRows[0]?.avg_rating != null
-                    ? Number(ratingRows[0].avg_rating)
-                    : null;
-
-            const activePlan = await this.getActiveCompPlan(
-                tenantId,
-                dto.branch_id ?? null,
-            );
-            const profile = await this.riderProfileRepo.findOne({
-                where: { userId: riderUserId, tenantId },
-            });
-            const line = this.payrollLineRepo.create({
-                runId: run.id,
-                riderUserId,
-                planId: activePlan?.id ?? null,
-                currency: 'PKR',
-                attendanceMinutes,
-                completedRides,
-                timelyDeliveries,
-                avgRating,
-                totalAmount: 0,
-            });
-            const savedLine = await this.payrollLineRepo.save(line);
-
-            const items: RiderPayrollLineItem[] = [];
-            const pushItem = (
-                componentKey: string,
-                componentName: string,
-                amount: number,
-                formulaMeta: Record<string, unknown>,
-            ) => {
-                items.push(
-                    this.payrollLineItemRepo.create({
-                        payrollLineId: savedLine.id,
-                        componentKey,
-                        componentName,
-                        amount,
-                        formulaMeta,
-                    }),
-                );
-            };
-
-            const baseSalary = Number(profile?.baseSalary ?? 0);
-            const proratedBase = proratedAmount(
-                baseSalary,
-                attendanceMinutes,
-                expectedMonthlyMinutes,
-            );
-            if (baseSalary > 0) {
-                pushItem('base_salary', 'Base Salary', proratedBase, {
-                    base_salary: baseSalary,
-                    attendance_minutes: attendanceMinutes,
-                    expected_monthly_minutes: expectedMonthlyMinutes,
-                    attendance_ratio:
-                        expectedMonthlyMinutes > 0
-                            ? Math.min(
-                                  1,
-                                  attendanceMinutes / expectedMonthlyMinutes,
-                              )
-                            : 0,
+                const profile = await this.riderProfileRepo.findOne({
+                    where: { userId: riderUserId, tenantId },
                 });
-            }
-
-            const defaultPerRide = Number(
-                profile?.defaultPerRideCommission ?? 0,
-            );
-            if (defaultPerRide > 0 && completedRides > 0) {
-                pushItem(
-                    'default_per_ride',
-                    'Per-Ride Commission',
-                    defaultPerRide * completedRides,
-                    {
-                        rate: defaultPerRide,
-                        completed_rides: completedRides,
-                    },
-                );
-            }
-
-            for (const c of activePlan?.components ?? []) {
-                if (!c.isEnabled) continue;
-                const rate = Number(c.value ?? 0);
-                const minRating = Number(
-                    (c.conditions?.min_rating as number) ?? 0,
-                );
-                const amount = componentAmount(c.calcBasis, rate, {
+                const line = this.payrollLineRepo.create({
+                    runId: run.id,
+                    riderUserId,
+                    planId: activePlan?.id ?? null,
+                    currency: 'PKR',
+                    attendanceMinutes,
                     completedRides,
                     timelyDeliveries,
                     avgRating,
-                    minRating,
+                    totalAmount: 0,
                 });
-                if (amount === 0) continue;
-                pushItem(c.componentKey, c.name, amount, {
-                    calc_basis: c.calcBasis,
-                    value: rate,
-                    conditions: c.conditions ?? {},
-                    completed_rides: completedRides,
-                    timely_deliveries: timelyDeliveries,
-                    avg_rating: avgRating,
-                    min_rating: minRating,
-                });
+                const savedLine = await this.payrollLineRepo.save(line);
+
+                const items: RiderPayrollLineItem[] = [];
+                const pushItem = (
+                    componentKey: string,
+                    componentName: string,
+                    amount: number,
+                    formulaMeta: Record<string, unknown>,
+                ) => {
+                    items.push(
+                        this.payrollLineItemRepo.create({
+                            payrollLineId: savedLine.id,
+                            componentKey,
+                            componentName,
+                            amount,
+                            formulaMeta,
+                        }),
+                    );
+                };
+
+                const baseSalary = Number(profile?.baseSalary ?? 0);
+                const proratedBase = proratedAmount(
+                    baseSalary,
+                    attendanceMinutes,
+                    expectedMonthlyMinutes,
+                );
+                if (baseSalary > 0) {
+                    pushItem('base_salary', 'Base Salary', proratedBase, {
+                        base_salary: baseSalary,
+                        attendance_minutes: attendanceMinutes,
+                        expected_monthly_minutes: expectedMonthlyMinutes,
+                        attendance_ratio:
+                            expectedMonthlyMinutes > 0
+                                ? Math.min(
+                                      1,
+                                      attendanceMinutes /
+                                          expectedMonthlyMinutes,
+                                  )
+                                : 0,
+                    });
+                }
+
+                const defaultPerRide = Number(
+                    profile?.defaultPerRideCommission ?? 0,
+                );
+                if (defaultPerRide > 0 && completedRides > 0) {
+                    pushItem(
+                        'default_per_ride',
+                        'Per-Ride Commission',
+                        defaultPerRide * completedRides,
+                        {
+                            rate: defaultPerRide,
+                            completed_rides: completedRides,
+                        },
+                    );
+                }
+
+                for (const c of activePlan?.components ?? []) {
+                    if (!c.isEnabled) continue;
+                    const rate = Number(c.value ?? 0);
+                    const minRating = Number(
+                        (c.conditions?.min_rating as number) ?? 0,
+                    );
+                    const amount = componentAmount(c.calcBasis, rate, {
+                        completedRides,
+                        timelyDeliveries,
+                        avgRating,
+                        minRating,
+                    });
+                    if (amount === 0) continue;
+                    pushItem(c.componentKey, c.name, amount, {
+                        calc_basis: c.calcBasis,
+                        value: rate,
+                        conditions: c.conditions ?? {},
+                        completed_rides: completedRides,
+                        timely_deliveries: timelyDeliveries,
+                        avg_rating: avgRating,
+                        min_rating: minRating,
+                    });
+                }
+
+                const savedItems = await this.payrollLineItemRepo.save(items);
+                const total = savedItems.reduce(
+                    (sum, item) => sum + Number(item.amount),
+                    0,
+                );
+                savedLine.totalAmount = total;
+                const finalizedLine =
+                    await this.payrollLineRepo.save(savedLine);
+                lines.push(finalizedLine);
             }
 
-            const savedItems = await this.payrollLineItemRepo.save(items);
-            const total = savedItems.reduce(
-                (sum, item) => sum + Number(item.amount),
-                0,
-            );
-            savedLine.totalAmount = total;
-            const finalizedLine = await this.payrollLineRepo.save(savedLine);
-            lines.push(finalizedLine);
+            run.status = 'finalized';
+            run.finalizedAt = new Date();
+            run.ruleVersion = `plan-snapshot-${run.id}`;
+            await this.payrollRunRepo.save(run);
+        } catch (e) {
+            await this.payrollRunRepo
+                .delete({ id: run.id })
+                .catch(() => undefined);
+            throw e;
         }
-
-        run.status = 'finalized';
-        run.finalizedAt = new Date();
-        run.ruleVersion = `plan-snapshot-${run.id}`;
-        await this.payrollRunRepo.save(run);
         this.metrics.inc('payroll_run_success');
         this.metrics.observe('payroll_run_duration_ms', Date.now() - started);
         return this.getPayrollRun(run.id, tenantId);
@@ -1132,32 +1206,51 @@ export class RiderHrmService {
             relations: ['lines'],
         });
         if (!run) throw new NotFoundException('Payroll run not found');
-        if (run.status !== 'finalized') {
-            throw new BadRequestException(
-                'Only finalized runs can be reversed',
-            );
-        }
 
-        for (const line of run.lines ?? []) {
-            const reversal = this.payrollLineItemRepo.create({
-                payrollLineId: line.id,
-                componentKey: 'reversal',
-                componentName: 'Reversal Entry',
-                amount: Number(line.totalAmount) * -1,
-                formulaMeta: {
-                    reversed_by: actorUserId,
-                    reversed_at: new Date().toISOString(),
+        return this.dataSource.transaction(async (manager) => {
+            // Atomic finalized -> reversed under a row lock: only one concurrent
+            // reverse proceeds, so a double-click cannot post two -total reversal
+            // items per line. The loser gets a clean 409.
+            const prev = await transitionStatus(
+                manager,
+                'rider_payroll_runs',
+                runId,
+                'reversed',
+                {
+                    allowedFrom: ['finalized'],
+                    set: {
+                        approved_by: actorUserId,
+                        approved_at: raw('now()'),
+                    },
                 },
-            });
-            await this.payrollLineItemRepo.save(reversal);
-            line.totalAmount = 0;
-            await this.payrollLineRepo.save(line);
-        }
-        run.status = 'reversed';
-        run.approvedBy = actorUserId;
-        run.approvedAt = new Date();
-        await this.payrollRunRepo.save(run);
-        this.metrics.inc('payroll_run_reversal_count');
-        return this.getPayrollRun(run.id, tenantId);
+            );
+            if (prev === null) {
+                throw new ConflictException(
+                    'Only a finalized run can be reversed (it may already be reversed)',
+                );
+            }
+            for (const line of run.lines ?? []) {
+                const reversal = manager
+                    .getRepository(RiderPayrollLineItem)
+                    .create({
+                        payrollLineId: line.id,
+                        componentKey: 'reversal',
+                        componentName: 'Reversal Entry',
+                        amount: Number(line.totalAmount) * -1,
+                        formulaMeta: {
+                            reversed_by: actorUserId,
+                            reversed_at: new Date().toISOString(),
+                        },
+                    });
+                await manager
+                    .getRepository(RiderPayrollLineItem)
+                    .save(reversal);
+                await manager
+                    .getRepository(RiderPayrollLine)
+                    .update({ id: line.id }, { totalAmount: 0 });
+            }
+            this.metrics.inc('payroll_run_reversal_count');
+            return this.getPayrollRun(run.id, tenantId);
+        });
     }
 }

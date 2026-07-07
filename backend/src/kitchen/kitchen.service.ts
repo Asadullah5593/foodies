@@ -4,7 +4,8 @@ import {
     ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
+import { transitionStatus, raw } from '../common/db-concurrency';
 import { Order } from '../entities/order.entity';
 import { ShiftsService } from '../shifts/shifts.service';
 import { OrdersService } from '../orders/orders.service';
@@ -23,6 +24,7 @@ const KITCHEN_STATUSES = [
 export class KitchenService {
     constructor(
         @InjectRepository(Order) private orderRepo: Repository<Order>,
+        private dataSource: DataSource,
         private shiftsService: ShiftsService,
         private ordersService: OrdersService,
         private pushNotificationService: PushNotificationService,
@@ -167,17 +169,29 @@ export class KitchenService {
         if (!order) throw new NotFoundException('Order not found');
         this.assertBrandAccess(order, allowedBrandIds);
         const previousStatus = order.status;
-        order.status = status;
-        if (status === 'completed') {
-            order.completedAt = new Date();
-            await this.orderRepo.save(order);
-            await this.shiftsService.addCompletedOrderAmount(
-                branchId,
-                Number(order.totalAmount),
-                order.brandId ?? null,
-            );
-        } else {
-            await this.orderRepo.save(order);
+        // Atomic, lock-serialised transition: shift-cash is credited exactly once
+        // even if two KDS terminals (or a double-tap) complete the same order.
+        const changed = await transitionStatus(
+            this.dataSource,
+            'orders',
+            id,
+            status,
+            {
+                set: () =>
+                    status === 'completed'
+                        ? { completed_at: raw('now()') }
+                        : {},
+            },
+        );
+        if (changed !== null) {
+            order.status = status;
+            if (status === 'completed') {
+                await this.shiftsService.addCompletedOrderAmount(
+                    branchId,
+                    Number(order.totalAmount),
+                    order.brandId ?? null,
+                );
+            }
         }
         await this.ordersService.triggerAutoAssignAfterStatusChange(
             id,

@@ -1,5 +1,6 @@
 import {
     BadRequestException,
+    ConflictException,
     ForbiddenException,
     Injectable,
     NotFoundException,
@@ -7,6 +8,12 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { InventoryService } from './inventory.service';
+import {
+    transitionStatus,
+    advisoryXactLock,
+    AdvisoryLock,
+    raw,
+} from '../common/db-concurrency';
 import { InventoryTransferRequest } from '../entities/inventory-transfer-request.entity';
 import { InventoryTransferRequestLine } from '../entities/inventory-transfer-request-line.entity';
 import { InventoryTransferOrder } from '../entities/inventory-transfer-order.entity';
@@ -316,12 +323,33 @@ export class InventoryTransferService {
         this.assertSourceApprovalAuthority(user, request);
 
         return this.dataSource.transaction(async (manager) => {
-            request.status = 'approved';
-            request.approvedBy = user.id;
-            request.approvedAt = new Date();
-            if (notes)
-                request.notes = `${request.notes ?? ''}\n${notes}`.trim();
-            await manager.getRepository(InventoryTransferRequest).save(request);
+            // Atomic submitted -> approved under a row lock. Prevents two approvers
+            // (or a double-click) from both creating a transfer order for one request,
+            // and coordinates with a concurrent reject (whichever transitions first
+            // wins; the loser gets a clean 409).
+            const prev = await transitionStatus(
+                manager,
+                'inventory_transfer_requests',
+                request.id,
+                'approved',
+                {
+                    allowedFrom: ['submitted'],
+                    set: {
+                        approved_by: user.id,
+                        approved_at: raw('now()'),
+                        ...(notes
+                            ? {
+                                  notes: `${request.notes ?? ''}\n${notes}`.trim(),
+                              }
+                            : {}),
+                    },
+                },
+            );
+            if (prev === null) {
+                throw new ConflictException(
+                    'This transfer request is no longer awaiting approval',
+                );
+            }
 
             const order = await manager
                 .getRepository(InventoryTransferOrder)
@@ -362,11 +390,33 @@ export class InventoryTransferService {
         }
         // Rejecting a pull is a source-side decision, same authority as approving.
         this.assertSourceApprovalAuthority(user, request);
-        request.status = 'rejected';
-        if (reason)
-            request.notes =
-                `${request.notes ?? ''}\nREJECTED: ${reason}`.trim();
-        return this.requestRepo.save(request);
+        return this.dataSource.transaction(async (manager) => {
+            // Atomic submitted -> rejected under a row lock; coordinates with a
+            // concurrent approve so a request cannot end up 'rejected' while a live
+            // dispatchable order exists.
+            const prev = await transitionStatus(
+                manager,
+                'inventory_transfer_requests',
+                request.id,
+                'rejected',
+                {
+                    allowedFrom: ['submitted'],
+                    set: reason
+                        ? {
+                              notes: `${request.notes ?? ''}\nREJECTED: ${reason}`.trim(),
+                          }
+                        : {},
+                },
+            );
+            if (prev === null) {
+                throw new ConflictException(
+                    'This transfer request is no longer awaiting approval',
+                );
+            }
+            return manager
+                .getRepository(InventoryTransferRequest)
+                .findOne({ where: { id: request.id } });
+        });
     }
 
     async dispatchOrder(
@@ -405,6 +455,31 @@ export class InventoryTransferService {
         const sourceBrandId = order.sourceBrandId ?? null;
 
         return this.dataSource.transaction(async (manager) => {
+            // Serialize every dispatch/receive for this order so two concurrent
+            // dispatches cannot each FEFO-pick and double-deduct the source bucket.
+            await advisoryXactLock(
+                manager,
+                AdvisoryLock.TRANSFER_ORDER,
+                order.id,
+            );
+            // Re-validate status under the lock (a peer dispatch/receive may have
+            // moved it since the pre-transaction read).
+            const locked = await manager
+                .getRepository(InventoryTransferOrder)
+                .findOne({
+                    where: { id: order.id },
+                    select: { id: true, status: true },
+                });
+            if (
+                !locked ||
+                ![
+                    'approved',
+                    'dispatched_partial',
+                    'received_partial',
+                ].includes(locked.status)
+            ) {
+                throw new BadRequestException('Order is not dispatchable');
+            }
             const movements = [];
             for (const l of dto.lines) {
                 const qtyBase =
@@ -481,10 +556,19 @@ export class InventoryTransferService {
                 movements,
                 manager,
             });
-            order.status = 'dispatched_partial';
-            order.dispatchedBy = user.id;
-            order.dispatchedAt = new Date();
-            return manager.getRepository(InventoryTransferOrder).save(order);
+            // Scoped update (not a full-entity save) so a concurrent receive that
+            // moved status/audit columns is not clobbered by a stale snapshot.
+            await manager.getRepository(InventoryTransferOrder).update(
+                { id: order.id },
+                {
+                    status: 'dispatched_partial',
+                    dispatchedBy: user.id,
+                    dispatchedAt: new Date(),
+                },
+            );
+            return manager
+                .getRepository(InventoryTransferOrder)
+                .findOne({ where: { id: order.id } });
         });
     }
 
@@ -673,6 +757,30 @@ export class InventoryTransferService {
         this.assertDestinationAuthority(user, order);
 
         return this.dataSource.transaction(async (manager) => {
+            // Serialize dispatch/receive for this order so two concurrent receives
+            // cannot both read the same in-transit total and over-credit the
+            // destination bucket.
+            await advisoryXactLock(
+                manager,
+                AdvisoryLock.TRANSFER_ORDER,
+                order.id,
+            );
+            const locked = await manager
+                .getRepository(InventoryTransferOrder)
+                .findOne({
+                    where: { id: order.id },
+                    select: { id: true, status: true },
+                });
+            if (
+                !locked ||
+                ![
+                    'dispatched_partial',
+                    'dispatched_full',
+                    'received_partial',
+                ].includes(locked.status)
+            ) {
+                throw new BadRequestException('Order is not receivable');
+            }
             const receipt = await manager
                 .getRepository(InventoryTransferReceipt)
                 .save(
@@ -699,6 +807,52 @@ export class InventoryTransferService {
             // brand buckets of the SAME batch — no new batch, lot/expiry lineage kept.
             const sameBranch =
                 order.sourceBranchId === order.destinationBranchId;
+
+            // Cross-branch moves mint a fresh destination batch, so there is no
+            // batch-level in-transit cap like the same-branch path. Enforce an
+            // item-level cap instead: total received across all receipts must never
+            // exceed total dispatched. Computed under the advisory lock so it also
+            // reflects any concurrent receipt that committed first.
+            const crossBranchRemaining = new Map<number, number>();
+            if (!sameBranch) {
+                const rows: Array<{ item: number; remaining: string }> =
+                    await manager.query(
+                        `SELECT d.inventory_item_id AS item,
+                                (d.dispatched - COALESCE(r.received, 0)) AS remaining
+                         FROM (
+                           SELECT inventory_item_id, SUM(-qty_delta) AS dispatched
+                           FROM inventory_ledger_entries
+                           WHERE tenant_id = $1 AND branch_id = $2
+                             AND event_type = 'transfer_order'
+                             AND event_ref_type = 'transfer_order'
+                             AND event_ref_id = $3
+                           GROUP BY inventory_item_id
+                         ) d
+                         LEFT JOIN (
+                           SELECT le.inventory_item_id, SUM(le.qty_delta) AS received
+                           FROM inventory_ledger_entries le
+                           INNER JOIN inventory_transfer_receipts tr
+                             ON tr.id = le.event_ref_id
+                           WHERE le.tenant_id = $1 AND le.branch_id = $4
+                             AND le.event_type = 'transfer_receipt'
+                             AND le.event_ref_type = 'transfer_receipt'
+                             AND tr.transfer_order_id = $3
+                           GROUP BY le.inventory_item_id
+                         ) r ON r.inventory_item_id = d.inventory_item_id`,
+                        [
+                            tenantId,
+                            order.sourceBranchId,
+                            order.id,
+                            order.destinationBranchId,
+                        ],
+                    );
+                for (const row of rows) {
+                    crossBranchRemaining.set(
+                        Number(row.item),
+                        Number(row.remaining),
+                    );
+                }
+            }
 
             const movements = [];
             for (const l of dto.lines) {
@@ -774,6 +928,17 @@ export class InventoryTransferService {
                 } else {
                     // Cross-branch: the stock physically moved, so create a new batch
                     // at the destination, owned by the destination brand bucket.
+                    const rem =
+                        crossBranchRemaining.get(l.inventory_item_id) ?? 0;
+                    if (qtyBase > rem + 1e-9) {
+                        throw new BadRequestException(
+                            `Cannot receive ${qtyBase} of item ${item.code}: only ${Math.max(0, rem)} is in transit for this transfer`,
+                        );
+                    }
+                    crossBranchRemaining.set(
+                        l.inventory_item_id,
+                        rem - qtyBase,
+                    );
                     if (item.trackExpiry && !l.expiry_date) {
                         throw new BadRequestException(
                             `Missing expiry_date for item ${item.code}`,
@@ -860,8 +1025,14 @@ export class InventoryTransferService {
                     break;
                 }
             }
-            order.status = allReceived ? 'closed' : 'received_partial';
-            await manager.getRepository(InventoryTransferOrder).save(order);
+            // Scoped update (not a full-entity save) so a concurrent dispatch's
+            // audit-column write is not clobbered by this stale snapshot.
+            await manager
+                .getRepository(InventoryTransferOrder)
+                .update(
+                    { id: order.id },
+                    { status: allReceived ? 'closed' : 'received_partial' },
+                );
             return this.receiptRepo.findOne({
                 where: { id: receipt.id },
                 relations: { lines: true },

@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, Repository } from 'typeorm';
+import { advisoryXactLock, AdvisoryLock } from '../common/db-concurrency';
 import {
     Brand,
     BrandDeliveryTiers,
@@ -798,6 +799,20 @@ export class BrandsService {
         em: EntityManager,
         brandId: number,
     ): Promise<void> {
+        // Serialize the fold against concurrent inventory movement on this brand.
+        // The advisory lock coordinates with any other brand-inventory operation, and
+        // locking the brand's existing on-hand rows FOR UPDATE makes a concurrent
+        // consumption/transfer that decrements them wait until the fold+delete commit,
+        // so stock cannot be captured with a stale value and then wiped by the DELETE.
+        await advisoryXactLock(em, AdvisoryLock.BRAND_INVENTORY, brandId);
+        await em.query(
+            `SELECT 1 FROM inventory_on_hand WHERE brand_id = $1 ORDER BY id FOR UPDATE`,
+            [brandId],
+        );
+        await em.query(
+            `SELECT 1 FROM inventory_batch_on_hand WHERE brand_id = $1 ORDER BY id FOR UPDATE`,
+            [brandId],
+        );
         await em.query(
             `INSERT INTO inventory_on_hand
                 (tenant_id, branch_id, inventory_item_id, location_id, brand_id, qty, updated_at)
