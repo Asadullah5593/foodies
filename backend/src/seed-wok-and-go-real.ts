@@ -20,8 +20,7 @@
  *
  * Faithful gaps (present on the sheet, not exactly expressible) — see the report to the client:
  *  - the sheet prices nothing per-channel ("Collection / In-store & Delivery" share one column);
- *  - Spring Rolls are named "4 Pcs" but described as "5 spring rolls" on the sheet — the name
- *    (4 Pcs) is kept and the count in the description follows the name;
+ *  - Spring Rolls: client confirmed 5 Pcs (sheet name said 4, description said 5);
  *  - Single Dip's description says "Ranch…" but the selectable option cells start with "Soy" —
  *    we follow the option cells (same template quirk as the Peperico sheet);
  *  - Kids Meal "Choose your cheese" header actually lists bases (noodles/rice) — template
@@ -168,6 +167,12 @@ async function seed() {
     // so re-running this on a brand with LIVE sales would remove those orders' line items —
     // reseed only after archiving/exporting history.
     console.log('Clearing existing Wok & Go menu for a clean re-seed…');
+    // Campaigns may pin this brand's items/deals (FK SET NULL violates the kind-consistency
+    // CHECK), so drop those campaign entries before wiping the menu.
+    await dataSource.query(
+        'DELETE FROM campaign_items WHERE deal_menu_item_id IN (SELECT id FROM menu_items WHERE brand_id = $1)',
+        [brandId],
+    );
     await itemRepo.delete({ brandId }); // cascades variants, deal_components, m2m links, order_items
     await groupRepo.delete({ brandId }); // cascades modifiers
     await dataSource.query('DELETE FROM menu_addons WHERE brand_id = $1', [
@@ -379,7 +384,14 @@ async function seed() {
     const grpMealDrinkSoda = await mkGroup(
         'Choose your Meal Drink',
         { minSelect: 0, maxSelect: 1, hideInDeals: true },
-        SODAS.map((s) => ({ name: `${s} 345ml` })),
+        [
+            ...SODAS.map((s) => ({ name: `${s} 345ml` })),
+            // Milkshakes are offered in every drink chooser at an extra price.
+            ...MILKSHAKES.map((m) => ({
+                name: `${m} Milkshake`,
+                price: MILKSHAKE_UPGRADE,
+            })),
+        ],
     );
     grpMealDrinkSoda.visibleWhenModifierIds =
         await paidModifierIds(grpClassicMeal);
@@ -400,6 +412,7 @@ async function seed() {
             { name: 'Water 500ml', price: 75 },
             ...SODAS.map((s) => ({ name: `${s} 1L`, price: 199 })),
             ...SODAS.map((s) => ({ name: `${s} 1.5L`, price: 249 })),
+            ...MILKSHAKES.map((m) => ({ name: `${m} Milkshake`, price: 499 })),
         ],
     );
 
@@ -798,8 +811,8 @@ async function seed() {
     // ===================================================================
     await mkItem({
         category: catSides,
-        name: 'Spring Rolls (4 Pcs)',
-        description: 'Freshly fried spring rolls',
+        name: 'Spring Rolls (5 Pcs)',
+        description: 'Freshly fried 5 spring rolls',
         basePrice: 599,
     });
     await mkItem({
@@ -1038,14 +1051,17 @@ async function seed() {
     // ===================================================================
     // MILKSHAKES (Rs499 each)
     // ===================================================================
+    const milkshakeItems: MenuItem[] = [];
     for (const s of MILKSHAKES) {
-        await mkItem({
-            category: catShakes,
-            name: `${s} Milkshake`,
-            description:
-                'Freshly made luscious milkshake with real fresh ingredients',
-            basePrice: 499,
-        });
+        milkshakeItems.push(
+            await mkItem({
+                category: catShakes,
+                name: `${s} Milkshake`,
+                description:
+                    'Freshly made luscious milkshake with real fresh ingredients',
+                basePrice: 499,
+            }),
+        );
     }
 
     // ===================================================================
@@ -1136,12 +1152,16 @@ async function seed() {
         allowCustomization: true,
         slotSizeKey: 'large',
     });
-    // "Choose your drink — give options of 345ml drinks from drinks section" (included).
+    // "Choose your drink — give options of 345ml drinks from drinks section" (included);
+    // milkshakes offered in every drink chooser at +Rs250 (client-confirmed).
     const drink345Slot = () => ({
         type: 'choice_list' as const,
-        sourceMenuItemIds: sodas345,
+        sourceMenuItemIds: [...sodas345, ...milkshakeItems.map((m) => m.id)],
         quantity: 1,
         allowCustomization: false,
+        slotSurcharges: Object.fromEntries(
+            milkshakeItems.map((m) => [String(m.id), MILKSHAKE_UPGRADE]),
+        ),
     });
 
     await mkDeal({

@@ -149,6 +149,12 @@ async function seed() {
     // (Re-running this after real orders exist would remove those orders' line items — reseed on a
     // brand with live sales only after archiving/exporting history.)
     console.log('Clearing existing Peperi. Co menu for a clean re-seed…');
+    // Campaigns may pin this brand's items/deals (FK SET NULL violates the kind-consistency
+    // CHECK), so drop those campaign entries before wiping the menu.
+    await dataSource.query(
+        'DELETE FROM campaign_items WHERE deal_menu_item_id IN (SELECT id FROM menu_items WHERE brand_id = $1)',
+        [brandId],
+    );
     await itemRepo.delete({ brandId }); // cascades variants, deal_components, m2m links, order_items
     await groupRepo.delete({ brandId }); // cascades modifiers
     await dataSource.query('DELETE FROM menu_addons WHERE brand_id = $1', [
@@ -320,6 +326,16 @@ async function seed() {
         { name: 'Double Meat', price: 250 },
         { name: 'Triple Meat', price: 500 },
     ]);
+    // Crispy chicken burgers: paid extra fillet (client-confirmed +200/+400).
+    const grpMeatCrispy = await mkGroup(
+        'Meat',
+        { minSelect: 1, maxSelect: 1 },
+        [
+            { name: 'As it comes' },
+            { name: 'Add Extra Crispy Fillet', price: 200 },
+            { name: 'Add 2 Extra Crispy Fillets', price: 400 },
+        ],
+    );
     const grpMeatPatty = await mkGroup('Meat', { minSelect: 1, maxSelect: 1 }, [
         { name: 'As it comes' },
         { name: 'Add Extra single patty', price: 250 },
@@ -446,8 +462,6 @@ async function seed() {
         { minSelect: 0, maxSelect: 1, hideInDeals: true },
         [
             ...SODAS.map((s) => ({ name: `${s} 345ml` })),
-            { name: 'Water 500ml' },
-            { name: 'Juice 200ml' },
             ...MILKSHAKES.map((m) => ({
                 name: `${m} Milkshake`,
                 price: MILKSHAKE_UPGRADE,
@@ -469,8 +483,10 @@ async function seed() {
         { minSelect: 0, maxSelect: 1, hideInDeals: true },
         [
             ...SODAS.map((s) => ({ name: `${s} 345ml` })),
-            { name: 'Water 500ml' },
-            { name: 'Juice 200ml' },
+            ...MILKSHAKES.map((m) => ({
+                name: `${m} Milkshake`,
+                price: MILKSHAKE_UPGRADE,
+            })),
         ],
     );
 
@@ -502,6 +518,7 @@ async function seed() {
             { name: 'Juice 200ml', price: 75 },
             ...SODAS.map((s) => ({ name: `${s} 1L`, price: 199 })),
             ...SODAS.map((s) => ({ name: `${s} 1.5L`, price: 249 })),
+            ...MILKSHAKES.map((m) => ({ name: `${m} Milkshake`, price: 499 })),
         ],
     );
 
@@ -654,7 +671,7 @@ async function seed() {
             'Crispy Blaze',
             549,
             'Our best fried chicken with fresh iceberg lettuce and mayo',
-            [grpCheese, saladAddCrispy, grpSauceCrispy],
+            [grpCheese, grpMeatCrispy, saladAddCrispy, grpSauceCrispy],
         ),
     );
     crispyBurgers.push(
@@ -662,7 +679,7 @@ async function seed() {
             'Spicey Sizzler',
             549,
             'Our special spicy fried chicken with iceberg lettuce and our secret burger sauce',
-            [grpCheese, saladAddCrispy, grpSauceCrispy],
+            [grpCheese, grpMeatCrispy, saladAddCrispy, grpSauceCrispy],
         ),
     );
     crispyBurgers.push(
@@ -670,7 +687,7 @@ async function seed() {
             'Crisp Tower',
             749,
             'Double the crisp with fresh lettuce and mayo',
-            [grpCheese, saladAddCrispy, grpSauceCrispy],
+            [grpCheese, grpMeatCrispy, saladAddCrispy, grpSauceCrispy],
         ),
     );
     crispyBurgers.push(
@@ -678,7 +695,7 @@ async function seed() {
             'Sizzler Tower',
             749,
             'Double sizzler with fresh lettuce and our secret burger sauce',
-            [grpCheese, saladAddCrispy, grpSauceCrispy],
+            [grpCheese, grpMeatCrispy, saladAddCrispy, grpSauceCrispy],
         ),
     );
     crispyBurgers.push(
@@ -687,7 +704,7 @@ async function seed() {
             'Snap Chick',
             299,
             'Crispy chicken with lettuce and mayo',
-            [grpCheese, grpSauceCrispy],
+            [grpCheese, grpMeatCrispy, grpSauceCrispy],
         ),
     );
 
@@ -1090,16 +1107,8 @@ async function seed() {
             drinkItems[`${flavour} ${label}`] = it;
         }
     }
-    const waterItem = await mkItem({
-        category: catDrinks,
-        name: 'Water 500ml',
-        basePrice: 75,
-    });
-    const juiceItem = await mkItem({
-        category: catDrinks,
-        name: 'Juice 200ml',
-        basePrice: 75,
-    });
+    await mkItem({ category: catDrinks, name: 'Water 500ml', basePrice: 75 });
+    await mkItem({ category: catDrinks, name: 'Juice 200ml', basePrice: 75 });
 
     // Milkshake items (already created above) — resolve for deal drink upgrades.
     const milkshakeItems = await itemRepo.find({
@@ -1168,9 +1177,15 @@ async function seed() {
         for (const id of sodas345) surcharges[String(id)] = 130;
         for (const id of sodas1L) surcharges[String(id)] = 199;
         for (const id of sodas15L) surcharges[String(id)] = 249;
+        for (const m of milkshakeItems) surcharges[String(m.id)] = 499;
         return {
             type: 'choice_list' as const,
-            sourceMenuItemIds: [...sodas345, ...sodas1L, ...sodas15L],
+            sourceMenuItemIds: [
+                ...sodas345,
+                ...sodas1L,
+                ...sodas15L,
+                ...milkshakeItems.map((m) => m.id),
+            ],
             quantity: DRINK_MAX,
             optional: true,
             allowCustomization: false,
@@ -1184,10 +1199,15 @@ async function seed() {
         sourceCategoryId: catSides.id,
         quantity,
         allowCustomization: false,
+        // Fries upgrades are purchasable inside deals (client-confirmed).
+        slotSurcharges: {
+            [String(periFries.id)]: 30,
+            [String(largeFriesDeal.id)]: 150,
+            [String(largePeriFriesDeal.id)]: 180,
+        },
     });
-    // Included meal drink slot that ITEMISES the drink: any 345ml soda, water or juice (free)
-    // or any milkshake (+250). The sheet's "MEAL DEAL DRINKS OPTIONS" section includes
-    // Water 500ml and Juice 200ml alongside the sodas.
+    // Included meal drink slot that ITEMISES the drink: any 345ml soda (free) or any
+    // milkshake (+250). Client-confirmed: no water/juice in meal-drink choosers.
     const mealDrinkSlot = (quantity = 1) => {
         const surcharges: Record<string, number> = {};
         for (const m of milkshakeItems)
@@ -1196,8 +1216,6 @@ async function seed() {
             type: 'choice_list' as const,
             sourceMenuItemIds: [
                 ...sodas345,
-                waterItem.id,
-                juiceItem.id,
                 ...milkshakeItems.map((m) => m.id),
             ],
             quantity,
@@ -1208,18 +1226,17 @@ async function seed() {
     // Fries slot for the burger-meal deals — the sheet's "Choose Fries" column:
     // Regular Fries (included) / Peri Peri Fries +30 / Large Fries +150 / Large Peri Peri
     // Fries +180. À la carte Large is a VARIANT of Fries, but deal-slot surcharges are
-    // per-item, so the Large upgrades are dedicated DEAL-ONLY items. They live in "Special
-    // Sides" (not "Classic Sides") so the platters' choice_category side slots can never
-    // serve a Large uncharged.
+    // per-item, so the Large upgrades are dedicated DEAL-ONLY items. They live in Classic
+    // Sides so the platters' side slots offer them too — PAID via the slot surcharges below.
     const largeFriesDeal = await mkItem({
-        category: catSpecialSides,
+        category: catSides,
         name: 'Large Fries',
         description: 'Large portion of regular chips',
         basePrice: 399,
         dealOnly: true,
     });
     const largePeriFriesDeal = await mkItem({
-        category: catSpecialSides,
+        category: catSides,
         name: 'Large Peri Peri Fries',
         description: 'Large portion of chips with our secret spices',
         basePrice: 425,
