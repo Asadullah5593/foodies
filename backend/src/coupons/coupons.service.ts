@@ -89,10 +89,42 @@ export class CouponsService {
                 }
             } else if (audience === 'new_customer') {
                 await this.ensureTemplateVoucher(coupon.id, tenantId);
+            } else if (audience === 'all') {
+                await this.issueVouchersForAll(coupon.id, tenantId);
             }
         } catch {
             // non-fatal — the coupon is still created; vouchers can be retried.
         }
+    }
+
+    /**
+     * An `all`-audience coupon materializes a REAL voucher for every existing
+     * customer in the tenant, so each one sees it in the app (GET /vouchers/mine)
+     * and at POS. New customers get theirs on registration
+     * (`awardNewCustomerVouchers`). Idempotent — skips customers who already have
+     * one — and runs as a single bulk INSERT…SELECT to stay fast on large bases.
+     */
+    async issueVouchersForAll(couponId: number, tenantId: number): Promise<void> {
+        const coupon = await this.discountRepo.findOne({
+            where: { id: couponId, tenantId },
+        });
+        if (!coupon || (coupon as { offerKind?: string }).offerKind !== 'coupon')
+            return;
+        const expiresAt = this.computeExpiry(coupon);
+        await this.voucherRepo.query(
+            `INSERT INTO vouchers
+                (tenant_id, offer_id, customer_id, code, qr_token, status, expires_at, uses, granted_at)
+             SELECT $1, $2, c.id, $3,
+                    md5(random()::text || clock_timestamp()::text || c.id::text),
+                    'active', $4, 0, now()
+             FROM customers c
+             WHERE c.tenant_id = $1
+               AND NOT EXISTS (
+                   SELECT 1 FROM vouchers v
+                   WHERE v.offer_id = $2 AND v.customer_id = c.id
+               )`,
+            [tenantId, couponId, coupon.code ?? '', expiresAt],
+        );
     }
 
     /**
@@ -187,9 +219,10 @@ export class CouponsService {
     }
 
     /**
-     * Mint vouchers for active `audience='new_customer'` coupons — called on
-     * customer registration to preserve the shipped new-customer auto-award in
-     * the voucher model. Non-fatal / idempotent.
+     * On customer registration, mint a voucher for every active coupon this
+     * customer should hold: `new_customer` coupons (the welcome offer) AND
+     * `all`-audience coupons (offered to everyone, so new sign-ups get one too).
+     * Non-fatal / idempotent.
      */
     async awardNewCustomerVouchers(
         tenantId: number,
@@ -201,8 +234,8 @@ export class CouponsService {
         });
         for (const c of coupons) {
             if ((c as { offerKind?: string }).offerKind !== 'coupon') continue;
-            if ((c as { audience?: string }).audience !== 'new_customer')
-                continue;
+            const aud = (c as { audience?: string }).audience;
+            if (aud !== 'new_customer' && aud !== 'all') continue;
             if (c.validFrom && now < c.validFrom) continue;
             if (c.validUntil && now > c.validUntil) continue;
             const exists = await this.voucherRepo.findOne({

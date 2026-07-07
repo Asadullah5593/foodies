@@ -41,10 +41,10 @@ const BRAND_NAME = 'Fireaway';
 const BOGO_NAME = 'Buy One Get One Half Price';
 
 // ——— Per-size pricing constants (straight from the sheet) ———
-const MEAT_PRICE_BY_SIZE = { '7': 99, '10': 149, '12': 199, '14': 299 };
-const VEG_PRICE_BY_SIZE = { '7': 49, '10': 69, '12': 89, '14': 99 };
-const CHEESE_PRICE_BY_SIZE = { '7': 99, '10': 149, '12': 249, '14': 349 };
-const INCLUDED_BY_SIZE = { '7': 2, '10': 2, '12': 3, '14': 3 }; // free meats/veg per size
+const MEAT_PRICE_BY_SIZE = { '7': 99, '9': 149, '12': 199, '14': 299 };
+const VEG_PRICE_BY_SIZE = { '7': 49, '9': 69, '12': 89, '14': 99 };
+const CHEESE_PRICE_BY_SIZE = { '7': 99, '9': 149, '12': 249, '14': 349 };
+const INCLUDED_BY_SIZE = { '7': 2, '9': 2, '12': 3, '14': 3 }; // free meats/veg per size
 // "Each topping can be selected multiple times at an additional charge" → effectively no cap.
 const REPEAT_MAX = 99;
 const LUNCH_DAYS = [1, 2, 3, 4, 5]; // Mon–Fri
@@ -96,6 +96,19 @@ const DIPS = [
     'Tomato Ketchup',
     'Hot Peri-Peri',
 ];
+const MILKSHAKE_FLAVOURS = [
+    'Vanilla',
+    'Oreo',
+    'Nutella',
+    'Lotus Biscoff',
+    'Banana',
+    'Strawberry',
+    'Bubble-gum',
+    'Raspberry',
+    'Chocolate',
+    'Pistachio',
+    'Mango',
+];
 const SOFT_DRINKS = [
     'Coca-Cola',
     'Diet Coke',
@@ -106,7 +119,7 @@ const SOFT_DRINKS = [
 // "Add a dip(s)" on a pizza/calzone: free allowance by size, then a tiered bundle price
 // for the extras. Sheet rule: "ONLY 1 Dip is free with 7\", 10\", 12\". With 14\" 3 free Dips".
 const DIP_PRICE_TIERS = { '1': 99, '2': 169, '3': 249 };
-const DIP_INCLUDED_BY_SIZE = { '7': 1, '10': 1, '12': 1, '14': 3 };
+const DIP_INCLUDED_BY_SIZE = { '7': 1, '9': 1, '12': 1, '14': 3 };
 const WING_FLAVOURS = [
     'Plain',
     'BBQ Crunch',
@@ -178,6 +191,12 @@ async function seed() {
 
     // ——— Idempotency: clear this brand's menu (FK cascades handle children) ———
     console.log('Clearing existing Fireaway menu for a clean re-seed…');
+    // Campaigns may pin this brand's items/deals (FK SET NULL violates the kind-consistency
+    // CHECK), so drop those campaign entries before wiping the menu.
+    await dataSource.query(
+        'DELETE FROM campaign_items WHERE deal_menu_item_id IN (SELECT id FROM menu_items WHERE brand_id = $1)',
+        [brandId],
+    );
     await itemRepo.delete({ brandId }); // cascades variants, deal_components, m2m links
     await groupRepo.delete({ brandId }); // cascades modifiers
     await addonRepo.delete({ brandId });
@@ -351,7 +370,7 @@ async function seed() {
         'Choose your Crust',
         { minSelect: 1, maxSelect: 1 },
         [
-            { name: 'Thin Crust', availableForSizes: ['10', '12', '14'] },
+            { name: 'Thin Crust', availableForSizes: ['9', '12', '14'] },
             { name: 'Regular Crust' },
         ],
     );
@@ -437,12 +456,12 @@ async function seed() {
         ],
     );
     // Medium-deal pizza toppings: same option set as Signature, but 2 are INCLUDED free at the
-    // Medium (10") size (deal spec "choose 2 toppings"); capped at 2 units TOTAL — the sheet
+    // Medium (9") size (deal spec "choose 2 toppings"); capped at 2 units TOTAL — the sheet
     // grants exactly 2 (two different, or the same twice) with NO surcharge, so no charged
     // extras are offered. Free at both lunch-deal sizes (7" small offer / 10" medium offer).
     const grpDealToppings = await mkGroup(
         'Choose 2 Toppings',
-        { minSelect: 0, maxSelect: 2, includedBySize: { '7': 2, '10': 2 } },
+        { minSelect: 0, maxSelect: 2, includedBySize: { '7': 2, '9': 2 } },
         [
             ...MEATS.map((m) => ({
                 name: m,
@@ -514,7 +533,7 @@ async function seed() {
         p14: number,
     ): SizeDef[] => [
         { name: 'Small 7"', sizeKey: '7', price: p7, isDefault: true },
-        { name: 'Medium 10"', sizeKey: '10', price: p10 },
+        { name: 'Medium 9"', sizeKey: '9', price: p10 },
         { name: 'Large 12"', sizeKey: '12', price: p12 },
         { name: 'Extra Large 14"', sizeKey: '14', price: p14 },
     ];
@@ -660,11 +679,7 @@ async function seed() {
     const grpKidsJuice = await mkGroup(
         'Choose your Juice',
         { minSelect: 1, maxSelect: 1 },
-        [
-            { name: 'Apple Juice' },
-            { name: 'Orange Juice' },
-            { name: 'Mango Juice' },
-        ],
+        [{ name: 'Orange Juice' }, { name: 'Mango Juice' }],
     );
     await linkGroups(kids, [grpKidsCheese, grpKidsJuice, grpSigToppings]);
     const addonKidsFries = await addonRepo.save(
@@ -936,11 +951,17 @@ async function seed() {
     // Conditional drink chooser — only shown once the paid meal option above is selected.
     const grpWrapMealDrink = await mkGroup(
         'Choose your Meal Drink',
-        { minSelect: 0, maxSelect: 1, hideInDeals: true },
+        { minSelect: 1, maxSelect: 1, hideInDeals: true },
         [
             ...SOFT_DRINKS.map((s) => ({ name: `${s} 345ml` })),
             { name: 'Water 500ml' },
-            { name: 'Juice 200ml' },
+            { name: 'Orange Juice 200ml' },
+            { name: 'Mango Juice 200ml' },
+            // Milkshakes are offered in every drink chooser at an extra price.
+            ...MILKSHAKE_FLAVOURS.map((f) => ({
+                name: `${f} Milkshake`,
+                price: 250,
+            })),
         ],
     );
     const wrapMealPaidIds = (
@@ -1086,27 +1107,17 @@ async function seed() {
     await linkGroups(doughnut, [grpDoughnutFlavour]);
 
     // ——— MILKSHAKES (Rs499 each) ———
-    const shakes = [
-        'Vanilla',
-        'Oreo',
-        'Nutella',
-        'Lotus Biscoff',
-        'Banana',
-        'Strawberry',
-        'Bubble-gum',
-        'Raspberry',
-        'Chocolate',
-        'Pistachio',
-        'Mango',
-    ];
-    for (const s of shakes) {
-        await mkItem({
-            category: catShakes,
-            name: `${s} Milkshake`,
-            description:
-                'Freshly made luscious milkshake with real fresh ingredients',
-            basePrice: 499,
-        });
+    const shakeItems: MenuItem[] = [];
+    for (const s of MILKSHAKE_FLAVOURS) {
+        shakeItems.push(
+            await mkItem({
+                category: catShakes,
+                name: `${s} Milkshake`,
+                description:
+                    'Freshly made luscious milkshake with real fresh ingredients',
+                basePrice: 499,
+            }),
+        );
     }
 
     // ——— DRINKS (standalone) ———
@@ -1127,7 +1138,16 @@ async function seed() {
         }
     }
     await mkItem({ category: catDrinks, name: 'Water 500ml', basePrice: 75 });
-    await mkItem({ category: catDrinks, name: 'Juice 200ml', basePrice: 75 });
+    await mkItem({
+        category: catDrinks,
+        name: 'Orange Juice 200ml',
+        basePrice: 75,
+    });
+    await mkItem({
+        category: catDrinks,
+        name: 'Mango Juice 200ml',
+        basePrice: 75,
+    });
 
     // Deal-only 250ml drinks (used by lunch deal drink slots; hidden from standalone menu).
     const deal250Drinks: MenuItem[] = [];
@@ -1223,13 +1243,10 @@ async function seed() {
     const drink250Ids = deal250Drinks.map((d) => d.id);
     const drink345Ids = deal345Drinks.map((d) => d.id);
     const drink1LIds = deal1LDrinks.map((d) => d.id);
-
-    // Deal cheese: the lunch-deal sheets price the cheese column at 0 — Mozzarella or Extra
-    // Cheese are both included, unlike the à-la-carte BYO group where Extra Cheese is charged.
-    const grpCheeseDeal = await mkGroup(
-        'Choose Your Cheese',
-        { minSelect: 1, maxSelect: 2 },
-        [{ name: 'Mozzarella' }, { name: 'Extra Cheese' }],
+    // Every deal drink chooser also offers the 11 milkshakes at +Rs250.
+    const shakeItemIds = shakeItems.map((it) => it.id);
+    const shakeUpgradeSurcharges = Object.fromEntries(
+        shakeItemIds.map((id) => [String(id), 250]),
     );
 
     // Small Pizza Lunch Offer — a DEAL-ONLY 7" BYO pizza (2 free toppings TOTAL, free cheese)
@@ -1247,7 +1264,7 @@ async function seed() {
     await linkGroups(byoSmallDeal, [
         grpCrust,
         grpBase,
-        grpCheeseDeal,
+        grpCheeseBYO, // Extra Cheese charged per size (client-confirmed)
         grpDealToppings, // "Choose 2 Toppings" (both included at 7", no charged extras)
     ]);
     await mkDeal({
@@ -1266,9 +1283,10 @@ async function seed() {
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: drink250Ids,
+                sourceMenuItemIds: [...drink250Ids, ...shakeItemIds],
                 quantity: 1,
                 allowCustomization: false,
+                slotSurcharges: shakeUpgradeSurcharges,
             },
         ],
     });
@@ -1292,7 +1310,7 @@ async function seed() {
         ],
     });
 
-    // Medium Pizza/Pasta Lunch Offer — choose EITHER a build-your-own 9" (Medium 10") pizza
+    // Medium Pizza/Pasta Lunch Offer — choose EITHER a build-your-own 9" (Medium 9") pizza
     // (base + cheese + 2 included toppings) OR a Pasta, flat Rs 899. Modeled as one choice_list
     // slot over [the deal-only BYO pizza + the pastas]; each choice carries its own groups, so
     // the pizza shows base/cheese/toppings and pasta shows its own options.
@@ -1302,14 +1320,14 @@ async function seed() {
         description:
             'Your 9" pizza, built your way: choose a base, cheese and 2 toppings.',
         basePrice: 699,
-        sizes: pizzaSizes(699, 1449, 1949, 2849), // ladder so the Medium 10" variant exists
+        sizes: pizzaSizes(699, 1449, 1949, 2849), // ladder so the Medium 9" variant exists
         dealOnly: true, // used only inside this deal — hidden from the à-la-carte menu
     });
     await linkGroups(byoMediumDeal, [
         grpCrust,
         grpBase,
-        grpCheeseDeal, // sheet prices the deal's cheese column at 0 — Extra Cheese included
-        grpDealToppings, // "Choose 2 Toppings" (2 included at 10", any/same twice, no extras)
+        grpCheeseBYO, // Extra Cheese charged per size (client-confirmed)
+        grpDealToppings, // "Choose 2 Toppings" (2 included at 9", any/same twice, no extras)
     ]);
     await mkDeal({
         name: 'Medium Pizza, Pasta Lunch Offer',
@@ -1326,15 +1344,13 @@ async function seed() {
                 ],
                 quantity: 1,
                 allowCustomization: true,
-                slotSizeKey: '10', // pizza pins to Medium 10"; pasta is sizeless (lock is a no-op)
+                slotSizeKey: '9', // pizza pins to Medium 9"; pasta is sizeless (lock is a no-op)
             },
         ],
     });
 
     // Fireaway Wrap Lunch Deal — any wrap + 250ml drink Rs549; upgrade to Firey Special +Rs100.
-    // Sheet: "instore only" (unlike the pizza lunch offers' "Collection / In-store") — the
-    // dine_in-only channel override is applied right after creation.
-    const wrapLunchDeal = await mkDeal({
+    await mkDeal({
         name: 'Fireaway Wrap Lunch Deal',
         description:
             'Choose any wrap and a 250ml drink for Rs 549 (upgrade to Firey Special wrap for +Rs 100). Monday–Friday 12–4pm.',
@@ -1352,17 +1368,13 @@ async function seed() {
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: drink250Ids,
+                sourceMenuItemIds: [...drink250Ids, ...shakeItemIds],
                 quantity: 1,
                 allowCustomization: false,
+                slotSurcharges: shakeUpgradeSurcharges,
             },
         ],
     });
-    // "instore only": dine_in, no collection/delivery.
-    await itemRepo.update(wrapLunchDeal.id, {
-        availableForOrderTypes: ['dine_in'],
-    });
-
     // Snack Special Rs1299 — Cheesy Garlic Bread (auto) + 5 wings or strips + 2 dips.
     await mkDeal({
         name: 'Snack Special',
@@ -1409,9 +1421,10 @@ async function seed() {
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: drink345Ids,
+                sourceMenuItemIds: [...drink345Ids, ...shakeItemIds],
                 quantity: 1,
                 allowCustomization: false,
+                slotSurcharges: shakeUpgradeSurcharges,
             },
         ],
     });
@@ -1420,7 +1433,7 @@ async function seed() {
     await mkDeal({
         name: 'Medium Pizza Deal',
         description:
-            '1 any Medium (9"/10") Classic or Signature pizza, 2 soft drinks (345ml).',
+            '1 any Medium (9") Classic or Signature pizza, 2 soft drinks (345ml).',
         price: 1399,
         slots: [
             {
@@ -1428,13 +1441,14 @@ async function seed() {
                 sourceCategoryId: catPizza.id,
                 quantity: 1,
                 allowCustomization: true,
-                slotSizeKey: '10',
+                slotSizeKey: '9',
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: drink345Ids,
+                sourceMenuItemIds: [...drink345Ids, ...shakeItemIds],
                 quantity: 2,
                 allowCustomization: false,
+                slotSurcharges: shakeUpgradeSurcharges,
             },
         ],
     });
@@ -1455,9 +1469,10 @@ async function seed() {
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: drink1LIds,
+                sourceMenuItemIds: [...drink1LIds, ...shakeItemIds],
                 quantity: 1,
                 allowCustomization: false,
+                slotSurcharges: shakeUpgradeSurcharges,
             },
         ],
     });
@@ -1487,9 +1502,10 @@ async function seed() {
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: drink345Ids,
+                sourceMenuItemIds: [...drink345Ids, ...shakeItemIds],
                 quantity: 2,
                 allowCustomization: false,
+                slotSurcharges: shakeUpgradeSurcharges,
             },
         ],
     });
@@ -1508,9 +1524,10 @@ async function seed() {
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: drink345Ids,
+                sourceMenuItemIds: [...drink345Ids, ...shakeItemIds],
                 quantity: 1,
                 allowCustomization: false,
+                slotSurcharges: shakeUpgradeSurcharges,
             },
         ],
     });
@@ -1536,9 +1553,10 @@ async function seed() {
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: drink345Ids,
+                sourceMenuItemIds: [...drink345Ids, ...shakeItemIds],
                 quantity: 1,
                 allowCustomization: false,
+                slotSurcharges: shakeUpgradeSurcharges,
             },
         ],
     });
@@ -1565,9 +1583,10 @@ async function seed() {
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: drink345Ids,
+                sourceMenuItemIds: [...drink345Ids, ...shakeItemIds],
                 quantity: 2,
                 allowCustomization: false,
+                slotSurcharges: shakeUpgradeSurcharges,
             },
         ],
     });

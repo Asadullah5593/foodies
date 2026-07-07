@@ -229,11 +229,11 @@ const Coupons: React.FC = () => {
               ? '⚡ A template voucher is generated up front (shown below). When a customer registers, a real copy is minted and linked to them automatically. Nothing to do here.'
               : vAudience === 'specific'
                 ? '🎯 Auto-generated for the eligible customers you set on the coupon. To add/remove people, edit the coupon\'s "Specific customers" list.'
-                : '🌐 This coupon applies to ALL customers at checkout via its code — there are no per-customer vouchers to generate.'}
+                : '🌐 A voucher is auto-generated for every existing customer (and for each new sign-up) so it appears in their app. Redemption stays limited per customer by the usage rules.'}
           </div>
         )}
         <div className="max-h-[30rem] overflow-y-auto grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 pr-1">
-          {(vouchers ?? []).map((v) => {
+          {(vouchers ?? []).slice(0, 120).map((v) => {
             const isTemplate = v.is_template || v.status === 'template';
             const statusColor =
               isTemplate ? 'bg-indigo-100 text-indigo-700'
@@ -285,13 +285,18 @@ const Coupons: React.FC = () => {
               </div>
             );
           })}
+          {(vouchers?.length ?? 0) > 120 && (
+            <p className="col-span-full px-3 py-3 text-center text-xs text-gray-400">
+              Showing 120 of {vouchers?.length} vouchers. Use Report for full usage stats.
+            </p>
+          )}
           {(vouchers?.length ?? 0) === 0 && (
             <p className="col-span-full px-3 py-10 text-center text-sm text-gray-400">
               {vAudience === 'new_customer'
                 ? 'Re-save this coupon (Edit → Update) to generate its template voucher — a linked copy is then minted for each new sign-up.'
                 : vAudience === 'specific'
                   ? 'No vouchers yet — add eligible customers on the coupon (Edit) and one is auto-generated for each.'
-                  : 'This coupon works for everyone via its code — there are no per-customer vouchers.'}
+                  : 'No vouchers yet — re-save this coupon (Edit → Update) to generate one for every existing customer.'}
             </p>
           )}
         </div>
