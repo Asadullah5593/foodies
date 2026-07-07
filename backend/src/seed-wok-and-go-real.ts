@@ -345,10 +345,10 @@ async function seed() {
     );
     // Drink chooser that ITEMISES the meal's included drink. Sodas = free (covered by the meal
     // upgrade above); any milkshake = +Rs250 ("Upgrade to any milkshake - Add Rs 250", flavours
-    // from the Milkshakes section). Optional (leave empty = no drink picked yet). Hidden in deals.
+    // from the Milkshakes section). REQUIRED once a paid meal option is picked (min 1). Hidden in deals.
     const grpMealDrinkShake = await mkGroup(
         'Choose your Meal Drink',
-        { minSelect: 0, maxSelect: 1, hideInDeals: true },
+        { minSelect: 1, maxSelect: 1, hideInDeals: true },
         [
             ...SODAS.map((s) => ({ name: `${s} 345ml` })),
             ...MILKSHAKES.map((m) => ({
@@ -364,7 +364,7 @@ async function seed() {
     // options but NO "upgrade to any milkshake" line). Same trigger: grpBoxMeal's paid picks.
     const grpBoxMealDrinkSoda = await mkGroup(
         'Choose your Meal Drink',
-        { minSelect: 0, maxSelect: 1, hideInDeals: true },
+        { minSelect: 1, maxSelect: 1, hideInDeals: true },
         SODAS.map((s) => ({ name: `${s} 345ml` })),
     );
     grpBoxMealDrinkSoda.visibleWhenModifierIds =
@@ -383,7 +383,7 @@ async function seed() {
     // "(give choices from Drinks section)" — 345ml sodas, itemised, shown only on the paid pick.
     const grpMealDrinkSoda = await mkGroup(
         'Choose your Meal Drink',
-        { minSelect: 0, maxSelect: 1, hideInDeals: true },
+        { minSelect: 1, maxSelect: 1, hideInDeals: true },
         [
             ...SODAS.map((s) => ({ name: `${s} 345ml` })),
             // Milkshakes are offered in every drink chooser at an extra price.

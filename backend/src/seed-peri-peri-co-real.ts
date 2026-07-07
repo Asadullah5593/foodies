@@ -455,11 +455,11 @@ async function seed() {
         ],
     );
     // Drink chooser that ITEMISES the meal's included drink. Soda/water/juice = free (covered by the
-    // meal upgrade above); any milkshake = +Rs250 ("upgrade to any milkshake"). Optional (leave empty
-    // for "Burger Only"). Hidden inside deals. Used by burgers.
+    // meal upgrade above); any milkshake = +Rs250 ("upgrade to any milkshake"). Required once a paid
+    // meal option is picked (min 1). Hidden inside deals. Used by burgers.
     const grpMealDrinkShake = await mkGroup(
         'Choose your Meal Drink',
-        { minSelect: 0, maxSelect: 1, hideInDeals: true },
+        { minSelect: 1, maxSelect: 1, hideInDeals: true },
         [
             ...SODAS.map((s) => ({ name: `${s} 345ml` })),
             ...MILKSHAKES.map((m) => ({
@@ -480,7 +480,7 @@ async function seed() {
     );
     const grpMealDrinkSoda = await mkGroup(
         'Choose your Meal Drink',
-        { minSelect: 0, maxSelect: 1, hideInDeals: true },
+        { minSelect: 1, maxSelect: 1, hideInDeals: true },
         [
             ...SODAS.map((s) => ({ name: `${s} 345ml` })),
             ...MILKSHAKES.map((m) => ({

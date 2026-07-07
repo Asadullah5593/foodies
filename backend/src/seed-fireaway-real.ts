@@ -951,7 +951,7 @@ async function seed() {
     // Conditional drink chooser — only shown once the paid meal option above is selected.
     const grpWrapMealDrink = await mkGroup(
         'Choose your Meal Drink',
-        { minSelect: 0, maxSelect: 1, hideInDeals: true },
+        { minSelect: 1, maxSelect: 1, hideInDeals: true },
         [
             ...SOFT_DRINKS.map((s) => ({ name: `${s} 345ml` })),
             { name: 'Water 500ml' },
