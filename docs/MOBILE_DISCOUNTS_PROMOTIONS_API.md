@@ -226,13 +226,18 @@ QR generated from `qr_token`** (see §6). No coupon code is shown to the custome
 `uses` vs `per_customer_limit` tells you if it's spent. `reference` is the serial
 staff see at POS.
 
-> **Active-only + the new-customer welcome voucher.** This endpoint returns **only
+> **Active-only + auto-issued vouchers.** This endpoint returns **only
 > `status='active'`, non-expired** vouchers — spent/expired ones are filtered out
-> server-side, so don't build a used/expired history from it. Also: when a customer
-> registers, any live `new_customer` coupon is auto-issued to them as a real voucher
-> (no admin action, no code needed) and it appears here automatically. **Refresh
-> `GET /vouchers/mine` right after signup / first login** so the welcome voucher is
-> shown immediately.
+> server-side, so don't build a used/expired history from it. Vouchers are issued
+> automatically by audience, no code needed:
+> - **`all`-audience coupons** → a voucher is minted for **every** customer (all
+>   existing ones the moment the coupon is created, and each new sign-up), so it
+>   appears here for everyone.
+> - **`new_customer` coupons** → a voucher is minted for a customer when they register.
+>
+> Because issuance happens server-side, **refresh `GET /vouchers/mine` right after
+> signup / first login** (and after the app regains focus) so newly-issued vouchers
+> show up immediately.
 
 ### 5.2 Resolve a voucher to an applyable code (tap-to-apply or QR scan)
 
