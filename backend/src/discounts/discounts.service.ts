@@ -87,16 +87,29 @@ export class DiscountsService {
         return requested;
     }
 
-    async findAll(tenantId: number | null, allowedBrandIds?: number[] | null) {
+    async findAll(
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+        kinds?: string[],
+    ) {
         if (tenantId == null) return [];
         const list = await this.repo.find({
             where: { tenantId },
             order: { createdAt: 'DESC' },
         });
+        const kindSet = kinds && kinds.length ? new Set(kinds) : null;
+        const kindFiltered =
+            kindSet == null
+                ? list
+                : list.filter((d) =>
+                      kindSet.has(
+                          (d as { offerKind?: string }).offerKind ?? 'discount',
+                      ),
+                  );
         const visible =
             allowedBrandIds == null
-                ? list
-                : list.filter(
+                ? kindFiltered
+                : kindFiltered.filter(
                       (d) =>
                           Array.isArray(d.eligibilityBrandIds) &&
                           d.eligibilityBrandIds.some((id) =>
@@ -141,6 +154,14 @@ export class DiscountsService {
             bogo_match_same_group?: boolean;
             requires_card?: boolean;
             eligible_bank_card_ids?: number[] | null;
+            offer_kind?: string;
+            audience?: string | null;
+            eligible_customer_ids?: number[] | null;
+            per_customer_limit?: number | null;
+            voucher_validity_days?: number | null;
+            global_limit?: number | null;
+            priority?: number;
+            funding?: string;
         },
         tenantId: number,
         allowedBrandIds?: number[] | null,
@@ -237,6 +258,32 @@ export class DiscountsService {
                         Array.isArray(dto.eligible_bank_card_ids)
                             ? dto.eligible_bank_card_ids.map((id) => Number(id))
                             : null,
+                    offerKind:
+                        (dto.offer_kind as Discount['offerKind']) ??
+                        (requiresCode
+                            ? 'coupon'
+                            : dto.requires_card
+                              ? 'card_offer'
+                              : applicationScope === 'products'
+                                ? 'product_promotion'
+                                : 'discount'),
+                    audience: (dto.audience as Discount['audience']) ?? null,
+                    eligibleCustomerIds: Array.isArray(dto.eligible_customer_ids)
+                        ? dto.eligible_customer_ids.map((id) => Number(id))
+                        : null,
+                    perCustomerLimit: normalizeIntOrNull(dto.per_customer_limit),
+                    voucherValidityDays: normalizeIntOrNull(
+                        dto.voucher_validity_days,
+                    ),
+                    globalLimit: normalizeIntOrNull(dto.global_limit),
+                    priority:
+                        dto.priority != null
+                            ? Math.max(0, Math.floor(Number(dto.priority)))
+                            : 0,
+                    funding:
+                        dto.funding === 'bank' || dto.requires_card
+                            ? 'bank'
+                            : 'merchant',
                 }),
             );
             return this.toResponse(discount);
@@ -295,6 +342,14 @@ export class DiscountsService {
             bogo_match_same_group?: boolean;
             requires_card?: boolean;
             eligible_bank_card_ids?: number[] | null;
+            offer_kind?: string;
+            audience?: string | null;
+            eligible_customer_ids?: number[] | null;
+            per_customer_limit?: number | null;
+            voucher_validity_days?: number | null;
+            global_limit?: number | null;
+            priority?: number;
+            funding?: string;
         },
         allowedBrandIds?: number[] | null,
     ) {
@@ -412,6 +467,26 @@ export class DiscountsService {
                 )
                     ? dto.eligible_bank_card_ids.map((id) => Number(id))
                     : null;
+            if (dto.offer_kind !== undefined)
+                d.offerKind = dto.offer_kind as Discount['offerKind'];
+            if (dto.audience !== undefined)
+                d.audience = (dto.audience as Discount['audience']) ?? null;
+            if (dto.eligible_customer_ids !== undefined)
+                d.eligibleCustomerIds = Array.isArray(dto.eligible_customer_ids)
+                    ? dto.eligible_customer_ids.map((id) => Number(id))
+                    : null;
+            if (dto.per_customer_limit !== undefined)
+                d.perCustomerLimit = normalizeIntOrNull(dto.per_customer_limit);
+            if (dto.voucher_validity_days !== undefined)
+                d.voucherValidityDays = normalizeIntOrNull(
+                    dto.voucher_validity_days,
+                );
+            if (dto.global_limit !== undefined)
+                d.globalLimit = normalizeIntOrNull(dto.global_limit);
+            if (dto.priority !== undefined)
+                d.priority = Math.max(0, Math.floor(Number(dto.priority) || 0));
+            if (dto.funding !== undefined)
+                d.funding = dto.funding === 'bank' ? 'bank' : 'merchant';
             await this.repo.save(d);
             return this.toResponse(d);
         } catch (err: unknown) {
@@ -518,6 +593,22 @@ export class DiscountsService {
             bogo_match_same_group: d.bogoMatchSameGroup ?? false,
             requires_card: d.requiresCard ?? false,
             eligible_bank_card_ids: d.eligibleBankCardIds ?? null,
+            offer_kind:
+                (d as { offerKind?: string }).offerKind ?? 'discount',
+            audience: (d as { audience?: string | null }).audience ?? null,
+            eligible_customer_ids:
+                (d as { eligibleCustomerIds?: number[] | null })
+                    .eligibleCustomerIds ?? null,
+            per_customer_limit:
+                (d as { perCustomerLimit?: number | null }).perCustomerLimit ??
+                null,
+            voucher_validity_days:
+                (d as { voucherValidityDays?: number | null })
+                    .voucherValidityDays ?? null,
+            global_limit:
+                (d as { globalLimit?: number | null }).globalLimit ?? null,
+            priority: (d as { priority?: number }).priority ?? 0,
+            funding: (d as { funding?: string }).funding ?? 'merchant',
         };
     }
 }

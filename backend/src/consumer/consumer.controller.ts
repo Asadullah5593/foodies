@@ -43,8 +43,11 @@ import { MailService } from '../mail/mail.service';
 import { SmsService } from '../sms/sms.service';
 import { Branch } from '../entities/branch.entity';
 import { Customer } from '../entities/customer.entity';
+import { Voucher } from '../entities/voucher.entity';
+import { Discount } from '../entities/discount.entity';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { CampaignsService } from '../campaigns/campaigns.service';
 import { RegisterDto } from './dto/register.dto';
 import { DeleteAccountDto } from './dto/delete-account.dto';
 import { MediaStorageService } from '../media/media-storage.service';
@@ -88,6 +91,9 @@ export class ConsumerController {
         @InjectRepository(Branch) private branchRepo: Repository<Branch>,
         private bannersService: BannersService,
         private promotionsService: PromotionsService,
+        private campaignsService: CampaignsService,
+        @InjectRepository(Voucher) private voucherRepo: Repository<Voucher>,
+        @InjectRepository(Discount) private discountRepo: Repository<Discount>,
     ) {}
 
     /** Resolve tenant id from branch (for customer-scoped APIs). */
@@ -2184,5 +2190,97 @@ export class ConsumerController {
         @Param('id') id: string,
     ) {
         return this.promotionsService.claimPromotion(+id, req.user.id);
+    }
+
+    // ─── Campaigns & Vouchers (mobile app) ───────────────────────────────────
+
+    @Get('campaigns/feed')
+    @ApiOperation({ summary: 'Active campaigns + banners for the mobile app' })
+    async getCampaignFeed(
+        @Query('limit') limit?: string,
+        @Query('offset') offset?: string,
+    ) {
+        const tenantId = this.getTenantIdFromEnv();
+        return this.campaignsService.feed(
+            tenantId,
+            new Date(),
+            limit ? Math.max(1, Math.min(100, +limit)) : 50,
+            offset ? Math.max(0, +offset) : 0,
+        );
+    }
+
+    @Get('campaigns/items/:id')
+    @ApiOperation({ summary: 'Resolve a campaign item (deep-link target)' })
+    async getCampaignItem(@Param('id') id: string) {
+        const tenantId = this.getTenantIdFromEnv();
+        return this.campaignsService.feedItemById(+id, tenantId);
+    }
+
+    @Get('vouchers/mine')
+    @UseGuards(CustomerJwtAuthGuard)
+    @ApiBearerAuth()
+    @ApiOperation({ summary: "The authenticated customer's active vouchers" })
+    async getMyVouchers(@Req() req: { user: Customer }) {
+        const now = new Date();
+        const rows = await this.voucherRepo.find({
+            where: { customerId: req.user.id, status: 'active' as never },
+            order: { grantedAt: 'DESC' },
+        });
+        const offerIds = [...new Set(rows.map((v) => v.offerId))];
+        const offers = offerIds.length
+            ? await this.discountRepo.find({ where: { id: In(offerIds) } })
+            : [];
+        const byId = new Map(offers.map((o) => [o.id, o]));
+        return rows
+            .filter((v) => !v.expiresAt || v.expiresAt >= now)
+            .map((v) => {
+                const o = byId.get(v.offerId);
+                return {
+                    id: v.id,
+                    reference: `VCH-${v.id}`,
+                    // Opaque QR token — the app renders this as a QR on the
+                    // voucher card. It is NOT the coupon code; safe to expose to
+                    // the voucher's own holder.
+                    qr_token: v.qrToken,
+                    title: o?.name ?? 'Voucher',
+                    type: o?.type ?? null,
+                    value: o != null ? Number(o.value) : null,
+                    min_order_amount:
+                        o?.minOrderAmount != null
+                            ? Number(o.minOrderAmount)
+                            : null,
+                    per_customer_limit:
+                        (o as { perCustomerLimit?: number | null } | undefined)
+                            ?.perCustomerLimit ?? null,
+                    uses: v.uses,
+                    expires_at: v.expiresAt?.toISOString() ?? null,
+                };
+            });
+    }
+
+    @Get('vouchers/resolve')
+    @ApiOperation({
+        summary: 'Resolve a scanned voucher QR token to an applyable code',
+    })
+    @ApiQuery({ name: 'token', required: true })
+    async resolveVoucher(@Query('token') token: string) {
+        const tenantId = this.getTenantIdFromEnv();
+        if (!token?.trim()) throw new NotFoundException('Voucher not found');
+        const v = await this.voucherRepo.findOne({
+            where: { qrToken: token.trim(), tenantId },
+        });
+        if (!v) throw new NotFoundException('Voucher not found');
+        const now = new Date();
+        const valid =
+            v.status === 'active' && (!v.expiresAt || v.expiresAt >= now);
+        const offer = await this.discountRepo.findOne({
+            where: { id: v.offerId },
+        });
+        return {
+            valid,
+            voucher_id: v.id,
+            code: valid ? (offer?.code ?? null) : null,
+            title: offer?.name ?? null,
+        };
     }
 }

@@ -55,6 +55,10 @@ export class MenuItem {
     @Column({ type: 'decimal', precision: 10, scale: 2 })
     basePrice: number;
 
+    /** Unit cost (COGS) for the never-below-cost floor; null = unknown (no cost floor). */
+    @Column({ name: 'cost_price', type: 'decimal', precision: 10, scale: 2, nullable: true })
+    costPrice: number | null;
+
     /** Allergen labels shown to customers (e.g. ["Gluten","Dairy"]). Null/empty = none declared. */
     @Column({ type: 'jsonb', nullable: true })
     allergens: string[] | null;

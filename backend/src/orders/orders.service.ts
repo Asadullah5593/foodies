@@ -78,6 +78,14 @@ import {
     advisoryXactLock,
     AdvisoryLock,
 } from '../common/db-concurrency';
+import {
+    runOfferEngine,
+    round2 as oround2,
+    EngineLine,
+    EngineStage,
+    OfferStageKind,
+} from './offer-engine';
+import { resolveOfferSettings, OfferSettings } from './offer-settings';
 
 /** Internal signal: a concurrent placement with the same idempotency key already
  * created this group, so createOrder should return it instead of a fresh order. */
@@ -1449,57 +1457,37 @@ export class OrdersService {
         const fullCardPayment =
             (Number(dto.payment_split?.cash_amount) || 0) <= 0 &&
             (Number(dto.payment_split?.card_amount) || 0) > 0;
-        const auto = await this.resolveAutoDiscount(
+        const offerSettings = resolveOfferSettings(
+            (tenant as { offerSettings?: OfferSettings | null })
+                .offerSettings ?? null,
+        );
+        const staged = await this.resolveStagedOffers({
             tenantId,
             subtotal,
             source,
-            primaryBranch.id,
+            branchId: primaryBranch.id,
             orderBrandId,
             lineDetails,
+            couponCode: dto.discount_code?.trim() ?? null,
+            customerPhone: customerPhoneNormalized ?? null,
+            customerId: loggedInCustomerId ?? null,
             fullCardPayment,
             bankCardId,
-        );
-        const lineAuto = this.allocateDiscountToLines(
-            lineDetails,
-            subtotal,
-            auto.discountAmount,
-            auto.scope,
-            auto.scopeIds,
-            auto.discountableAmount,
-            orderBrandId,
-            auto.eligibilityBrandIds ?? null,
-        );
-        const afterAuto = subtotal - auto.discountAmount;
-        const lineAfterAuto = lineDetails.map(
-            (l, i) =>
-                Math.round((l.itemSubtotal - (lineAuto[i] ?? 0)) * 100) / 100,
-        );
-        const coupon = await this.resolveCouponDiscount(
-            tenantId,
-            dto.discount_code?.trim() ?? null,
-            afterAuto,
-            source,
-            primaryBranch.id,
-            orderBrandId,
-            lineDetails,
-            lineAfterAuto,
-            fullCardPayment,
-            bankCardId,
-        );
-        const lineCoupon = this.allocateDiscountToLinesUsingBase(
-            lineDetails,
-            lineAfterAuto,
-            afterAuto,
-            coupon.discountAmount,
-            coupon.scope,
-            coupon.scopeIds,
-            coupon.discountableAmount,
-            orderBrandId,
-            coupon.eligibilityBrandIds ?? null,
-        );
-        const combinedLineDiscount = lineDetails.map(
-            (_, i) => (lineAuto[i] ?? 0) + (lineCoupon[i] ?? 0),
-        );
+            settings: offerSettings,
+        });
+        const combinedLineDiscount = staged.combinedLineDiscount;
+        // Compat shims for the per-brand persistence below (unchanged): auto_ =
+        // product-promo + discount + card stages combined; coupon_ = coupon stage.
+        const auto = {
+            discountAmount: staged.autoDiscountAmount,
+            discountCode: null as string | null,
+            discountId: staged.discountId,
+        };
+        const coupon = {
+            discountAmount: staged.couponDiscountAmount,
+            discountCode: staged.discountCode,
+            discountId: staged.discountId,
+        };
 
         const serviceChargeRate = 0;
         // Per-tender GST (Pakistan reduced card/digital rate). The cashier's cash/card split is
@@ -1586,25 +1574,29 @@ export class OrdersService {
                 firstBrandId,
             );
             if (preview) {
-                loyaltyPointsToRedeem = Math.min(
-                    dto.loyalty_points_to_redeem!,
-                    preview.redeemablePoints,
+                // Loyalty is the final stage; honour the order cap when
+                // capIncludesLoyalty (single-brand only — web splits never redeem).
+                const loyaltyCeiling =
+                    offerSettings.capIncludesLoyalty &&
+                    staged.capRemaining != null
+                        ? Math.min(firstOrderAfterDiscount, staged.capRemaining)
+                        : firstOrderAfterDiscount;
+                const maxPoints =
+                    preview.cashValuePerPoint > 0
+                        ? Math.floor(loyaltyCeiling / preview.cashValuePerPoint)
+                        : 0;
+                loyaltyPointsToRedeem = Math.max(
+                    0,
+                    Math.min(
+                        dto.loyalty_points_to_redeem!,
+                        preview.redeemablePoints,
+                        maxPoints,
+                    ),
                 );
                 loyaltyDiscountAmount =
-                    loyaltyPointsToRedeem * preview.cashValuePerPoint;
-                loyaltyDiscountAmount = Math.min(
-                    loyaltyDiscountAmount,
-                    firstOrderAfterDiscount,
-                );
-                loyaltyDiscountAmount =
-                    Math.round(loyaltyDiscountAmount * 100) / 100;
-                if (loyaltyDiscountAmount > 0) {
-                    loyaltyPointsToRedeem = Math.floor(
-                        loyaltyDiscountAmount / preview.cashValuePerPoint,
-                    );
-                } else {
-                    loyaltyPointsToRedeem = 0;
-                }
+                    Math.round(
+                        loyaltyPointsToRedeem * preview.cashValuePerPoint * 100,
+                    ) / 100;
             }
         }
 
@@ -1900,6 +1892,36 @@ export class OrdersService {
                 return this.getOrderGroup(e.orderGroupId);
             }
             throw e;
+        }
+
+        // Book the coupon realization (race-safe) before inventory/loyalty side
+        // effects. A per-customer/global limit breached in a concurrent race
+        // throws → cancel the just-created orders (no consumption posted yet).
+        if (
+            staged.couponOffer &&
+            staged.couponDiscountAmount > 0 &&
+            createdOrderIds.length > 0
+        ) {
+            try {
+                await this.enforceAndRecordRealization({
+                    tenantId,
+                    offer: staged.couponOffer,
+                    customerId,
+                    customerPhone: customerPhoneNormalized ?? null,
+                    orderId: createdOrderIds[0],
+                    source,
+                    amount: staged.couponDiscountAmount,
+                });
+            } catch (e) {
+                for (const id of createdOrderIds) {
+                    try {
+                        await this.updateStatus(id, tenantId, 'cancelled');
+                    } catch {
+                        void 0;
+                    }
+                }
+                throw e;
+            }
         }
 
         if (
@@ -2705,6 +2727,16 @@ export class OrdersService {
                     await this.inventoryConsumptionService.reverseConsumptionForOrder(
                         order.id,
                         null,
+                    );
+                } catch {
+                    void 0;
+                }
+                // Free any coupon redemption booked against this order (restores
+                // per-customer/global usage and re-activates the voucher).
+                try {
+                    await this.reverseCouponRealizations(
+                        order.id,
+                        'order_cancelled',
                     );
                 } catch {
                     void 0;
@@ -3841,60 +3873,37 @@ export class OrdersService {
         const fullCardPayment =
             (Number(dto.payment_split?.cash_amount) || 0) <= 0 &&
             (Number(dto.payment_split?.card_amount) || 0) > 0;
-        const auto = await this.resolveAutoDiscount(
+        const offerSettings = resolveOfferSettings(
+            (tenant as { offerSettings?: OfferSettings | null })
+                .offerSettings ?? null,
+        );
+        const staged = await this.resolveStagedOffers({
             tenantId,
             subtotal,
             source,
-            branch.id,
+            branchId: branch.id,
             orderBrandId,
             lineDetails,
+            couponCode: dto.discount_code?.trim() ?? null,
+            customerPhone: dto.customer_phone?.trim()
+                ? normalizePakistaniPhone(dto.customer_phone.trim())
+                : null,
             fullCardPayment,
             bankCardId,
-        );
-        const lineAuto = this.allocateDiscountToLines(
-            lineDetails,
-            subtotal,
-            auto.discountAmount,
-            auto.scope,
-            auto.scopeIds,
-            auto.discountableAmount,
-            orderBrandId,
-            auto.eligibilityBrandIds ?? null,
-        );
-        const afterAuto = subtotal - auto.discountAmount;
-        const lineAfterAuto = lineDetails.map(
-            (l, i) =>
-                Math.round((l.itemSubtotal - (lineAuto[i] ?? 0)) * 100) / 100,
-        );
-        const coupon = await this.resolveCouponDiscount(
-            tenantId,
-            dto.discount_code?.trim() ?? null,
-            afterAuto,
-            source,
-            branch.id,
-            orderBrandId,
-            lineDetails,
-            lineAfterAuto,
-            fullCardPayment,
-            bankCardId,
-        );
-        const lineCoupon = this.allocateDiscountToLinesUsingBase(
-            lineDetails,
-            lineAfterAuto,
-            afterAuto,
-            coupon.discountAmount,
-            coupon.scope,
-            coupon.scopeIds,
-            coupon.discountableAmount,
-            orderBrandId,
-            coupon.eligibilityBrandIds ?? null,
-        );
-        const totalDiscount = auto.discountAmount + coupon.discountAmount;
-        const combinedLineDiscount = lineDetails.map(
-            (_, i) => (lineAuto[i] ?? 0) + (lineCoupon[i] ?? 0),
-        );
+            settings: offerSettings,
+        });
+        const combinedLineDiscount = staged.combinedLineDiscount;
+        const totalDiscount = staged.totalDiscount;
+        // Compat shims: auto_ = product-promo + discount + card stages combined;
+        // coupon_ = the coupon stage. Individual kinds surfaced separately below.
+        const auto = { discountAmount: staged.autoDiscountAmount };
+        const coupon = {
+            discountAmount: staged.couponDiscountAmount,
+            discountCode: staged.discountCode,
+        };
 
-        let afterDiscount = subtotal - totalDiscount;
+        let afterDiscount =
+            Math.round((subtotal - totalDiscount) * 100) / 100;
         let loyaltyDiscount = 0;
         let loyaltyPointsRedeemed = 0;
         if (
@@ -3914,14 +3923,33 @@ export class OrdersService {
                     orderBrandId,
                 );
                 if (preview) {
-                    loyaltyPointsRedeemed = Math.min(
-                        dto.loyalty_points_to_redeem!,
-                        preview.redeemablePoints,
+                    // Loyalty is the last stage. It also honours the order cap
+                    // when capIncludesLoyalty — clamp cash and re-derive points.
+                    const loyaltyCeiling =
+                        offerSettings.capIncludesLoyalty &&
+                        staged.capRemaining != null
+                            ? Math.min(afterDiscount, staged.capRemaining)
+                            : afterDiscount;
+                    const maxPoints =
+                        preview.cashValuePerPoint > 0
+                            ? Math.floor(
+                                  loyaltyCeiling / preview.cashValuePerPoint,
+                              )
+                            : 0;
+                    loyaltyPointsRedeemed = Math.max(
+                        0,
+                        Math.min(
+                            dto.loyalty_points_to_redeem!,
+                            preview.redeemablePoints,
+                            maxPoints,
+                        ),
                     );
                     loyaltyDiscount =
-                        loyaltyPointsRedeemed * preview.cashValuePerPoint;
-                    loyaltyDiscount = Math.min(loyaltyDiscount, afterDiscount);
-                    loyaltyDiscount = Math.round(loyaltyDiscount * 100) / 100;
+                        Math.round(
+                            loyaltyPointsRedeemed *
+                                preview.cashValuePerPoint *
+                                100,
+                        ) / 100;
                     afterDiscount =
                         Math.round((afterDiscount - loyaltyDiscount) * 100) /
                         100;
@@ -4025,19 +4053,25 @@ export class OrdersService {
             menu_item_id: line.menuItemId,
             brand_id: (line as { brandId?: number }).brandId ?? null,
             subtotal: line.itemSubtotal,
+            original_subtotal: line.itemSubtotal,
             discount_amount: combinedLineDiscount[i] ?? 0,
             after_discount:
                 Math.round(
                     (line.itemSubtotal - (combinedLineDiscount[i] ?? 0)) * 100,
                 ) / 100,
+            is_deal: !!(line as { isDeal?: boolean }).isDeal,
         }));
 
         return {
             subtotal,
             auto_discount_amount: auto.discountAmount,
+            product_promo_amount: staged.productPromoAmount,
+            order_discount_amount: staged.discountAmount,
+            card_discount_amount: staged.cardDiscountAmount,
             coupon_discount_amount: coupon.discountAmount,
             discount_amount: totalDiscount,
             discount_code: coupon.discountCode ?? null,
+            cap_applied: staged.capApplied,
             loyalty_discount: loyaltyDiscount,
             loyalty_points_redeemed: loyaltyPointsRedeemed,
             tax_amount: taxAmount,
@@ -4449,6 +4483,8 @@ export class OrdersService {
             itemSubtotal: number;
             quantity?: number;
             sizeKey?: string | null;
+            isDeal?: boolean;
+            unitCost?: number | null;
         }[];
         orderBrandId: number | null;
     }> {
@@ -4478,6 +4514,8 @@ export class OrdersService {
             itemSubtotal: number;
             quantity?: number;
             sizeKey?: string | null;
+            isDeal?: boolean;
+            unitCost?: number | null;
         }[] = [];
         const itemBrandIds = new Set<number>();
         let subtotal = 0;
@@ -4515,6 +4553,13 @@ export class OrdersService {
             // Resolve the variant size for both deal and non-deal lines so deal
             // component toppings (e.g. a 12" pizza inside a deal) price per size.
             let lineSizeKey: string | null = null;
+            const baseCost =
+                (menuItem as { costPrice?: number | null }).costPrice != null
+                    ? Number(
+                          (menuItem as { costPrice?: number | null }).costPrice,
+                      )
+                    : null;
+            let lineUnitCost: number | null = baseCost;
             if (line.variant_id && menuItem.variants?.length) {
                 const variant = menuItem.variants.find(
                     (v) => v.id === line.variant_id,
@@ -4523,6 +4568,10 @@ export class OrdersService {
                     if (!isDealPriceLine)
                         unitPrice += Number(variant.priceModifier);
                     lineSizeKey = variant.sizeKey ?? null;
+                    const vc = (variant as { costPrice?: number | null })
+                        .costPrice;
+                    if (vc != null)
+                        lineUnitCost = (lineUnitCost ?? 0) + Number(vc);
                 }
             }
             let itemSubtotalForDetail: number;
@@ -4560,6 +4609,8 @@ export class OrdersService {
                 itemSubtotal: itemSubtotalForDetail,
                 quantity: line.quantity ?? 1,
                 sizeKey: lineSizeKey,
+                isDeal: isDealPriceLine,
+                unitCost: isDealPriceLine ? null : lineUnitCost,
             });
         }
         const orderBrandId =
@@ -4790,6 +4841,579 @@ export class OrdersService {
     }
 
     /** Resolve best auto-applied discount. Multi-brand: brand-scoped discounts apply to the eligible portion only. */
+    /**
+     * Evaluate one offer against the CURRENT running per-line amounts and return
+     * its per-line allocation, or null if ineligible / applies to nothing.
+     * Date + branch-time are assumed already checked by the caller (async); this
+     * runs the remaining synchronous gauntlet identical to resolveAutoDiscount,
+     * but on `running` so stages compound, and skips lines flagged `excluded`
+     * (deals / price overrides).
+     */
+    private evalOfferOnRunning(
+        discount: Discount,
+        ctx: {
+            subtotal: number;
+            source: string;
+            branchId: number;
+            orderBrandId: number | null;
+            lineDetails: {
+                menuItemId: number;
+                categoryId: number;
+                itemSubtotal: number;
+                brandId?: number;
+                quantity?: number;
+                sizeKey?: string | null;
+            }[];
+            excluded: boolean[];
+            fullCardPayment: boolean;
+            bankCardId: number | null;
+        },
+        running: number[],
+    ): { alloc: number[]; amount: number } | null {
+        const {
+            subtotal,
+            source,
+            branchId,
+            orderBrandId,
+            lineDetails,
+            excluded,
+            fullCardPayment,
+            bankCardId,
+        } = ctx;
+        const n = lineDetails.length;
+        if (
+            discount.minOrderAmount != null &&
+            Number(discount.minOrderAmount) > subtotal
+        )
+            return null;
+        if (discount.posOnly && source !== 'pos') return null;
+        if (discount.requiresCard) {
+            if (!fullCardPayment || bankCardId == null) return null;
+            const ids = (discount.eligibleBankCardIds ?? []).map(Number);
+            if (!ids.includes(Number(bankCardId))) return null;
+        }
+        const eligibilityBranchIds = discount.eligibilityBranchIds ?? null;
+        const eligibilityBrandIds = discount.eligibilityBrandIds ?? null;
+        if (
+            eligibilityBranchIds != null &&
+            eligibilityBranchIds.length > 0 &&
+            !eligibilityBranchIds.includes(branchId)
+        )
+            return null;
+        const brandSet =
+            eligibilityBrandIds != null && eligibilityBrandIds.length > 0
+                ? new Set(eligibilityBrandIds.map((id) => Number(id)))
+                : null;
+        if (orderBrandId != null && brandSet != null) {
+            if (!brandSet.has(Number(orderBrandId))) return null;
+        }
+        const scope = discount.applicationScope ?? 'whole_order';
+        const scopeIds = (discount.applicationScopeIds ?? []).map((id) =>
+            Number(id),
+        );
+        const inScope = (
+            l: { menuItemId: number; categoryId: number },
+            i: number,
+        ): boolean => {
+            if (excluded[i]) return false;
+            if (
+                scope === 'category' &&
+                scopeIds.length > 0 &&
+                !scopeIds.includes(l.categoryId)
+            )
+                return false;
+            if (
+                scope === 'products' &&
+                scopeIds.length > 0 &&
+                !scopeIds.includes(l.menuItemId)
+            )
+                return false;
+            if (brandSet != null && orderBrandId == null) {
+                const lineBrand = this.lineDetailBrandId(
+                    lineDetails[i],
+                    i,
+                    lineDetails,
+                );
+                if (lineBrand == null || !brandSet.has(Number(lineBrand)))
+                    return false;
+            }
+            return true;
+        };
+        const inScopeIdx: number[] = [];
+        lineDetails.forEach((l, i) => {
+            if (inScope(l, i)) inScopeIdx.push(i);
+        });
+        let discountableAmount = 0;
+        for (const i of inScopeIdx) discountableAmount += running[i];
+        if (discountableAmount <= 0) return null;
+        let amount = 0;
+        if (discount.type === 'buy_x_get_y') {
+            const eligibleLines = inScopeIdx.map((i) => lineDetails[i]);
+            amount = Math.min(
+                this.computeBogoDiscount(discount, eligibleLines),
+                discountableAmount,
+            );
+        } else if (discount.type === 'flat') {
+            amount = Math.min(Number(discount.value), discountableAmount);
+        } else {
+            amount = (discountableAmount * Number(discount.value)) / 100;
+        }
+        if (discount.maxDiscountAmount != null)
+            amount = Math.min(amount, Number(discount.maxDiscountAmount));
+        amount = oround2(amount);
+        if (amount <= 0) return null;
+        const alloc = new Array<number>(n).fill(0);
+        let allocatedSum = 0;
+        for (const i of inScopeIdx) {
+            const share = oround2(amount * (running[i] / discountableAmount));
+            alloc[i] = share;
+            allocatedSum += share;
+        }
+        const diff = oround2(amount - allocatedSum);
+        if (diff !== 0 && inScopeIdx.length > 0) {
+            const last = inScopeIdx[inScopeIdx.length - 1];
+            alloc[last] = oround2(alloc[last] + diff);
+        }
+        return { alloc, amount };
+    }
+
+    /**
+     * Staged offer resolution — the single pricing engine used by both quote and
+     * createOrder. Applies product_promotion → discount → coupon → card_offer as
+     * stacking stages (loyalty is applied by the caller with `capRemaining`),
+     * best-value within a group, on running amounts, honouring deal / override
+     * exclusion, per-line floors and the progressive cap.
+     */
+    private async resolveStagedOffers(ctx: {
+        tenantId: number;
+        subtotal: number;
+        source: string;
+        branchId: number;
+        orderBrandId: number | null;
+        lineDetails: {
+            menuItemId: number;
+            categoryId: number;
+            itemSubtotal: number;
+            brandId?: number;
+            quantity?: number;
+            sizeKey?: string | null;
+            isDeal?: boolean;
+            unitCost?: number | null;
+            overridden?: boolean;
+        }[];
+        couponCode: string | null;
+        customerId?: number | null;
+        customerPhone?: string | null;
+        fullCardPayment: boolean;
+        bankCardId: number | null;
+        settings: OfferSettings;
+    }): Promise<{
+        combinedLineDiscount: number[];
+        totalDiscount: number;
+        productPromoAmount: number;
+        discountAmount: number;
+        couponDiscountAmount: number;
+        cardDiscountAmount: number;
+        autoDiscountAmount: number;
+        discountId: number | null;
+        discountCode: string | null;
+        capRemaining: number | null;
+        capApplied: boolean;
+        couponOffer: Discount | null;
+        lineBreakdown: {
+            original: number;
+            discounts: { kind: OfferStageKind; amount: number }[];
+            after_discount: number;
+        }[];
+    }> {
+        const {
+            tenantId,
+            subtotal,
+            source,
+            branchId,
+            orderBrandId,
+            lineDetails,
+            couponCode,
+            fullCardPayment,
+            bankCardId,
+            settings,
+        } = ctx;
+        const n = lineDetails.length;
+        const engineLines: EngineLine[] = lineDetails.map((l) => ({
+            itemSubtotal: l.itemSubtotal,
+            lineCost:
+                l.unitCost != null
+                    ? oround2(Number(l.unitCost) * (l.quantity ?? 1))
+                    : null,
+            isDeal: !!l.isDeal,
+            isOverridden: !!l.overridden,
+        }));
+        const excluded = engineLines.map(
+            (l) =>
+                (l.isDeal && !settings.allowOffersOnDeals) ||
+                (l.isOverridden && !settings.offersApplyToOverriddenLines),
+        );
+
+        const now = new Date();
+        const dateOk = (d: Discount): boolean =>
+            !(d.validFrom && now < d.validFrom) &&
+            !(d.validUntil && now > d.validUntil);
+
+        const autoOffers = await this.discountRepo.find({
+            where: { tenantId, isActive: true, requiresCode: false },
+        });
+        const eligibleAuto: Discount[] = [];
+        for (const d of autoOffers) {
+            if (!dateOk(d)) continue;
+            if (!(await this.isDiscountValidForBranchTime(d, branchId)))
+                continue;
+            eligibleAuto.push(d);
+        }
+        const kindOf = (d: Discount): string =>
+            (d as { offerKind?: string }).offerKind ?? 'discount';
+        const productPromos = eligibleAuto.filter(
+            (d) => kindOf(d) === 'product_promotion',
+        );
+        const orderDiscounts = eligibleAuto.filter(
+            (d) => kindOf(d) === 'discount',
+        );
+        const cardOffers = eligibleAuto.filter(
+            (d) => kindOf(d) === 'card_offer',
+        );
+
+        let coupon: Discount | null = null;
+        if (couponCode?.trim()) {
+            const c = await this.discountRepo.findOne({
+                where: { code: couponCode.trim(), tenantId, isActive: true },
+            });
+            if (
+                c &&
+                dateOk(c) &&
+                (await this.isDiscountValidForBranchTime(c, branchId)) &&
+                (await this.couponRedeemableSoft(
+                    c,
+                    tenantId,
+                    ctx.customerId ?? null,
+                    ctx.customerPhone ?? null,
+                ))
+            )
+                coupon = c;
+        }
+
+        const evalCtx = {
+            subtotal,
+            source,
+            branchId,
+            orderBrandId,
+            lineDetails,
+            excluded,
+            fullCardPayment,
+            bankCardId,
+        };
+        const stages: EngineStage[] = [];
+        let discountChosen: Discount | null = null;
+        let cardChosen: Discount | null = null;
+
+        if (productPromos.length > 0) {
+            stages.push({
+                kind: 'product_promotion',
+                funding: 'merchant',
+                compute: (running) => {
+                    const best = new Array<number>(n).fill(0);
+                    for (const d of productPromos) {
+                        const r = this.evalOfferOnRunning(d, evalCtx, running);
+                        if (!r) continue;
+                        for (let i = 0; i < n; i++)
+                            if (r.alloc[i] > best[i]) best[i] = r.alloc[i];
+                    }
+                    return best;
+                },
+            });
+        }
+        if (orderDiscounts.length > 0) {
+            stages.push({
+                kind: 'discount',
+                funding: 'merchant',
+                compute: (running) => {
+                    let bestAlloc: number[] | null = null;
+                    let bestAmt = 0;
+                    let chosen: Discount | null = null;
+                    for (const d of orderDiscounts) {
+                        const r = this.evalOfferOnRunning(d, evalCtx, running);
+                        if (r && r.amount > bestAmt) {
+                            bestAmt = r.amount;
+                            bestAlloc = r.alloc;
+                            chosen = d;
+                        }
+                    }
+                    discountChosen = chosen;
+                    return bestAlloc ?? new Array<number>(n).fill(0);
+                },
+            });
+        }
+        if (coupon) {
+            const c = coupon;
+            stages.push({
+                kind: 'coupon',
+                funding: c.funding === 'bank' ? 'bank' : 'merchant',
+                compute: (running) => {
+                    const r = this.evalOfferOnRunning(c, evalCtx, running);
+                    return r ? r.alloc : new Array<number>(n).fill(0);
+                },
+            });
+        }
+        if (cardOffers.length > 0 && fullCardPayment && bankCardId != null) {
+            stages.push({
+                kind: 'card_offer',
+                funding: 'bank',
+                compute: (running) => {
+                    let bestAlloc: number[] | null = null;
+                    let bestAmt = 0;
+                    let chosen: Discount | null = null;
+                    for (const d of cardOffers) {
+                        const r = this.evalOfferOnRunning(d, evalCtx, running);
+                        if (r && r.amount > bestAmt) {
+                            bestAmt = r.amount;
+                            bestAlloc = r.alloc;
+                            chosen = d;
+                        }
+                    }
+                    cardChosen = chosen;
+                    return bestAlloc ?? new Array<number>(n).fill(0);
+                },
+            });
+        }
+
+        const result = runOfferEngine(engineLines, stages, settings);
+        const combinedLineDiscount = result.lines.map((l) => l.totalDiscount);
+        const promoUsed = result.byKind.product_promotion > 0;
+        const discountId =
+            coupon?.id ??
+            (discountChosen as Discount | null)?.id ??
+            (cardChosen as Discount | null)?.id ??
+            (promoUsed && productPromos.length > 0 ? productPromos[0].id : null);
+        return {
+            combinedLineDiscount,
+            totalDiscount: result.totalDiscount,
+            productPromoAmount: result.byKind.product_promotion,
+            discountAmount: result.byKind.discount,
+            couponDiscountAmount: result.byKind.coupon,
+            cardDiscountAmount: result.byKind.card_offer,
+            autoDiscountAmount: oround2(
+                result.byKind.product_promotion +
+                    result.byKind.discount +
+                    result.byKind.card_offer,
+            ),
+            discountId,
+            discountCode: coupon?.code ?? null,
+            capRemaining: result.capRemaining,
+            capApplied: result.capApplied,
+            couponOffer: coupon,
+            lineBreakdown: result.lines.map((l) => ({
+                original: l.original,
+                discounts: l.discounts,
+                after_discount: l.after,
+            })),
+        };
+    }
+
+    /**
+     * Soft (non-transactional) redeemability check for a coupon: audience
+     * targeting + per-customer / global usage limits. Used at quote and as a
+     * pre-check at order time so an over-limit or ineligible coupon is simply
+     * NOT applied (greyed-out UX), never an error. The authoritative race-safe
+     * check happens in enforceAndRecordRealization at order-create.
+     */
+    private async couponRedeemableSoft(
+        coupon: Discount,
+        tenantId: number,
+        customerId: number | null,
+        customerPhone: string | null,
+    ): Promise<boolean> {
+        const audience =
+            (coupon as { audience?: string | null }).audience ?? null;
+        const perLimit =
+            (coupon as { perCustomerLimit?: number | null }).perCustomerLimit ??
+            null;
+        const globalLimit =
+            (coupon as { globalLimit?: number | null }).globalLimit ?? null;
+        const eligibleIds =
+            (coupon as { eligibleCustomerIds?: number[] | null })
+                .eligibleCustomerIds ?? null;
+
+        // Resolve a customer id from phone when only a phone is known.
+        let cid = customerId;
+        if (cid == null && customerPhone) {
+            const rows = await this.dataSource.query(
+                `SELECT id FROM customers WHERE tenant_id = $1 AND phone = $2 LIMIT 1`,
+                [tenantId, customerPhone],
+            );
+            cid = rows[0]?.id ?? null;
+        }
+
+        if (audience === 'specific' || audience === 'new_customer') {
+            // Both require the customer to be targeted: 'specific' via the
+            // eligible list OR a held voucher; 'new_customer' via the voucher
+            // minted at registration.
+            let ok = false;
+            if (
+                audience === 'specific' &&
+                cid != null &&
+                Array.isArray(eligibleIds) &&
+                eligibleIds.map(Number).includes(Number(cid))
+            )
+                ok = true;
+            if (!ok && cid != null) {
+                const v = await this.dataSource.query(
+                    `SELECT 1 FROM vouchers WHERE offer_id = $1 AND customer_id = $2 AND status = 'active' LIMIT 1`,
+                    [coupon.id, cid],
+                );
+                if (v.length > 0) ok = true;
+            }
+            if (!ok) return false;
+        }
+
+        if (perLimit != null) {
+            if (cid == null && !customerPhone) return false; // identity required
+            const clause = cid != null ? 'customer_id = $2' : 'customer_phone = $2';
+            const rows = await this.dataSource.query(
+                `SELECT count(*)::int AS n FROM coupon_realizations WHERE offer_id = $1 AND ${clause} AND reversed_at IS NULL`,
+                [coupon.id, cid ?? customerPhone],
+            );
+            if (Number(rows[0]?.n ?? 0) >= perLimit) return false;
+        }
+        if (globalLimit != null) {
+            const rows = await this.dataSource.query(
+                `SELECT count(*)::int AS n FROM coupon_realizations WHERE offer_id = $1 AND reversed_at IS NULL`,
+                [coupon.id],
+            );
+            if (Number(rows[0]?.n ?? 0) >= globalLimit) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Race-safe redemption booking at order-create. Serialized on a per-offer
+     * advisory lock; re-counts under the lock and throws if the limit is now
+     * exceeded (a concurrent winner), then inserts the ledger row
+     * (ON CONFLICT (offer_id, order_id) DO NOTHING) and bumps the voucher.
+     */
+    private async enforceAndRecordRealization(params: {
+        tenantId: number;
+        offer: Discount;
+        customerId: number | null;
+        customerPhone: string | null;
+        orderId: number;
+        source: string;
+        amount: number;
+    }): Promise<void> {
+        const {
+            tenantId,
+            offer,
+            customerId,
+            customerPhone,
+            orderId,
+            source,
+            amount,
+        } = params;
+        const perLimit =
+            (offer as { perCustomerLimit?: number | null }).perCustomerLimit ??
+            null;
+        const globalLimit =
+            (offer as { globalLimit?: number | null }).globalLimit ?? null;
+        await this.dataSource.transaction(async (manager) => {
+            await advisoryXactLock(
+                manager,
+                AdvisoryLock.COUPON_REALIZATION,
+                offer.id,
+            );
+            if (perLimit != null && (customerId != null || customerPhone)) {
+                const clause =
+                    customerId != null
+                        ? 'customer_id = $2'
+                        : 'customer_phone = $2';
+                const rows = await manager.query(
+                    `SELECT count(*)::int AS n FROM coupon_realizations WHERE offer_id = $1 AND ${clause} AND reversed_at IS NULL`,
+                    [offer.id, customerId ?? customerPhone],
+                );
+                if (Number(rows[0]?.n ?? 0) >= perLimit)
+                    throw new BadRequestException(
+                        'Coupon usage limit reached for this customer.',
+                    );
+            }
+            if (globalLimit != null) {
+                const rows = await manager.query(
+                    `SELECT count(*)::int AS n FROM coupon_realizations WHERE offer_id = $1 AND reversed_at IS NULL`,
+                    [offer.id],
+                );
+                if (Number(rows[0]?.n ?? 0) >= globalLimit)
+                    throw new BadRequestException(
+                        'Coupon redemption limit reached.',
+                    );
+            }
+            let voucherId: number | null = null;
+            if (customerId != null) {
+                const v = await manager.query(
+                    `SELECT id FROM vouchers WHERE offer_id = $1 AND customer_id = $2 LIMIT 1`,
+                    [offer.id, customerId],
+                );
+                voucherId = v[0]?.id ?? null;
+            }
+            await manager.query(
+                `INSERT INTO coupon_realizations
+                    (tenant_id, offer_id, voucher_id, customer_id, customer_phone, order_id, source, amount)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 ON CONFLICT (offer_id, order_id) DO NOTHING`,
+                [
+                    tenantId,
+                    offer.id,
+                    voucherId,
+                    customerId,
+                    customerPhone,
+                    orderId,
+                    source,
+                    amount,
+                ],
+            );
+            if (voucherId != null) {
+                await manager.query(
+                    `UPDATE vouchers
+                     SET uses = uses + 1, last_used_at = now(),
+                         status = CASE WHEN $2::int IS NOT NULL AND uses + 1 >= $2::int THEN 'exhausted' ELSE status END
+                     WHERE id = $1`,
+                    [voucherId, perLimit],
+                );
+            }
+        });
+    }
+
+    /** Reverse all non-reversed realizations for a cancelled order and restore voucher uses. */
+    private async reverseCouponRealizations(
+        orderId: number,
+        reason: string,
+    ): Promise<void> {
+        await this.dataSource.transaction(async (manager) => {
+            const rows = await manager.query(
+                `UPDATE coupon_realizations
+                 SET reversed_at = now(), reversal_reason = $2
+                 WHERE order_id = $1 AND reversed_at IS NULL
+                 RETURNING voucher_id`,
+                [orderId, reason],
+            );
+            for (const r of rows) {
+                if (r.voucher_id != null) {
+                    await manager.query(
+                        `UPDATE vouchers
+                         SET uses = GREATEST(uses - 1, 0),
+                             status = CASE WHEN status = 'exhausted' THEN 'active' ELSE status END
+                         WHERE id = $1`,
+                        [r.voucher_id],
+                    );
+                }
+            }
+        });
+    }
+
     private async resolveAutoDiscount(
         tenantId: number,
         subtotal: number,

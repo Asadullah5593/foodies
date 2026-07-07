@@ -58,6 +58,14 @@ export class OrderItem {
     @Column({ name: 'deal_slot_index', type: 'int', nullable: true })
     dealSlotIndex: number | null;
 
+    /** POS per-order price override: true when a cashier set unitPrice manually. priceSnapshot keeps the real menu price. */
+    @Column({ name: 'price_overridden', type: 'boolean', default: false })
+    priceOverridden: boolean;
+
+    /** User id who applied the price override (audit). */
+    @Column({ name: 'overridden_by', type: 'int', nullable: true })
+    overriddenBy: number | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

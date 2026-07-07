@@ -7,6 +7,11 @@ import {
   Banner,
   Promotion,
   CustomerPromotion,
+  Campaign,
+  CampaignItem,
+  CouponVoucher,
+  OfferReport,
+  OfferSettings,
   Shift,
   ShiftOrdersResponse,
   User,
@@ -400,6 +405,102 @@ export const adminService = {
   assignPromotion: async (promotionId: number, customerId: number): Promise<CustomerPromotion> => {
     const response = await apiClient.post(`/admin/promotions/${promotionId}/assign`, { customer_id: customerId });
     return response.data;
+  },
+
+  // Product Promotions (offer_kind=product_promotion)
+  getProductPromotions: async (): Promise<Discount[]> => {
+    const r = await apiClient.get('/admin/product-promotions');
+    return r.data;
+  },
+  createProductPromotion: async (data: Partial<Discount>): Promise<Discount> => {
+    const r = await apiClient.post('/admin/product-promotions', data);
+    return r.data;
+  },
+  updateProductPromotion: async (id: number, data: Partial<Discount>): Promise<Discount> => {
+    const r = await apiClient.put(`/admin/product-promotions/${id}`, data);
+    return r.data;
+  },
+  deleteProductPromotion: async (id: number): Promise<void> => {
+    await apiClient.delete(`/admin/product-promotions/${id}`);
+  },
+
+  // Coupons (offer_kind=coupon) + vouchers + report
+  getCoupons: async (): Promise<Discount[]> => {
+    const r = await apiClient.get('/admin/coupons');
+    return r.data;
+  },
+  createCoupon: async (data: Partial<Discount>): Promise<Discount> => {
+    const r = await apiClient.post('/admin/coupons', data);
+    return r.data;
+  },
+  updateCoupon: async (id: number, data: Partial<Discount>): Promise<Discount> => {
+    const r = await apiClient.put(`/admin/coupons/${id}`, data);
+    return r.data;
+  },
+  deleteCoupon: async (id: number): Promise<void> => {
+    await apiClient.delete(`/admin/coupons/${id}`);
+  },
+  issueVouchers: async (couponId: number, customerIds: number[]): Promise<{ issued: number; existing: number }> => {
+    const r = await apiClient.post(`/admin/coupons/${couponId}/issue-vouchers`, { customer_ids: customerIds });
+    return r.data;
+  },
+  getCouponVouchers: async (couponId: number): Promise<CouponVoucher[]> => {
+    const r = await apiClient.get(`/admin/coupons/${couponId}/vouchers`);
+    return r.data;
+  },
+  getCouponReport: async (couponId: number): Promise<OfferReport> => {
+    const r = await apiClient.get(`/admin/coupons/${couponId}/report`);
+    return r.data;
+  },
+  getCustomerVouchers: async (phone: string): Promise<{ customer: { id: number; name: string | null; phone: string | null } | null; vouchers: CouponVoucher[] }> => {
+    const r = await apiClient.get('/admin/coupons/customer-vouchers', { params: { phone } });
+    return r.data;
+  },
+
+  // Campaigns + items + report
+  getCampaigns: async (): Promise<Campaign[]> => {
+    const r = await apiClient.get('/admin/campaigns');
+    return r.data;
+  },
+  createCampaign: async (data: Partial<Campaign>): Promise<Campaign> => {
+    const r = await apiClient.post('/admin/campaigns', data);
+    return r.data;
+  },
+  updateCampaign: async (id: number, data: Partial<Campaign>): Promise<Campaign> => {
+    const r = await apiClient.put(`/admin/campaigns/${id}`, data);
+    return r.data;
+  },
+  deleteCampaign: async (id: number): Promise<void> => {
+    await apiClient.delete(`/admin/campaigns/${id}`);
+  },
+  getCampaignReport: async (id: number): Promise<OfferReport> => {
+    const r = await apiClient.get(`/admin/campaigns/${id}/report`);
+    return r.data;
+  },
+  getCampaignItems: async (id: number): Promise<CampaignItem[]> => {
+    const r = await apiClient.get(`/admin/campaigns/${id}/items`);
+    return r.data;
+  },
+  createCampaignItem: async (id: number, data: Partial<CampaignItem>): Promise<CampaignItem> => {
+    const r = await apiClient.post(`/admin/campaigns/${id}/items`, data);
+    return r.data;
+  },
+  updateCampaignItem: async (id: number, itemId: number, data: Partial<CampaignItem>): Promise<CampaignItem> => {
+    const r = await apiClient.put(`/admin/campaigns/${id}/items/${itemId}`, data);
+    return r.data;
+  },
+  deleteCampaignItem: async (id: number, itemId: number): Promise<void> => {
+    await apiClient.delete(`/admin/campaigns/${id}/items/${itemId}`);
+  },
+
+  // Offer engine settings
+  getOfferSettings: async (): Promise<OfferSettings> => {
+    const r = await apiClient.get('/admin/offer-settings');
+    return r.data;
+  },
+  updateOfferSettings: async (data: Partial<OfferSettings>): Promise<OfferSettings> => {
+    const r = await apiClient.put('/admin/offer-settings', data);
+    return r.data;
   },
 
   // Shifts (opened per brand per branch)

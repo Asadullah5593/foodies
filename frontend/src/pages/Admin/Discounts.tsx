@@ -79,13 +79,6 @@ const Discounts: React.FC = () => {
       return res.data;
     },
   });
-  const { data: menuItems } = useQuery({
-    queryKey: ['menuItems'],
-    queryFn: async () => {
-      const res = await apiClient.get<{ id: number; name: string }[]>('/admin/menu/items');
-      return res.data;
-    },
-  });
   const { data: bankCards } = useQuery({
     queryKey: ['bank-cards'],
     queryFn: async () => {
@@ -102,14 +95,11 @@ const Discounts: React.FC = () => {
 
   const createMutation = useMutation({
     mutationFn: adminService.createDiscount,
-    onSuccess: (data: Discount) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['discounts'] });
       setShowForm(false);
       resetForm();
       toast.success('Discount created successfully!');
-      if (data.requires_code && data.code) {
-        toast.success(`Coupon code: ${data.code}`, { duration: 6000 });
-      }
     },
     onError: (error: { response?: { data?: { message?: string } } }) => {
       toast.error(error.response?.data?.message || 'Failed to create discount');
@@ -219,7 +209,6 @@ const Discounts: React.FC = () => {
 
     const data: Record<string, unknown> = {
       name: formData.name,
-      code: formData.code.trim() || undefined,
       type: formData.type,
       value: parseFloat(formData.value),
       min_order_amount:
@@ -236,7 +225,7 @@ const Discounts: React.FC = () => {
               const n = parseFloat(formData.max_discount_amount);
               return Number.isFinite(n) ? n : null;
             })(),
-      requires_code: formData.requires_code,
+      requires_code: false,
       application_scope: formData.application_scope,
       application_scope_ids:
         formData.application_scope === 'whole_order'
@@ -285,9 +274,6 @@ const Discounts: React.FC = () => {
   const categoryOptions: SearchableMultiSelectOption[] = (categories ?? []).map(
     (c) => ({ id: c.id, name: c.name }),
   );
-  const productOptions: SearchableMultiSelectOption[] = (menuItems ?? []).map(
-    (m) => ({ id: m.id, name: m.name }),
-  );
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
   if (isLoading || isSubmitting) {
@@ -329,38 +315,12 @@ const Discounts: React.FC = () => {
               />
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Code {formData.requires_code ? '(optional)' : '(auto-apply only)'}
-              </label>
-              <input
-                type="text"
-                value={formData.code}
-                onChange={(e) =>
-                  setFormData({ ...formData, code: e.target.value.toUpperCase() })
-                }
-                placeholder={
-                  formData.requires_code
-                    ? 'Leave empty to auto-generate a meaningful code'
-                    : 'Not used for auto-apply discounts'
-                }
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="requires_code"
-              checked={formData.requires_code}
-              onChange={(e) => setFormData({ ...formData, requires_code: e.target.checked })}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-            />
-            <label htmlFor="requires_code" className="text-sm text-gray-700">
-              Requires code (coupon/promo only) — when unchecked, discount is applied automatically when scope & branch match
-            </label>
-          </div>
+          <p className="text-xs text-gray-500 -mt-2">
+            Discounts here apply automatically (no code). For code/voucher offers use the{' '}
+            <span className="font-medium">Coupons</span> module.
+          </p>
 
           <div>
             <div className="flex items-center gap-2">
@@ -551,18 +511,11 @@ const Discounts: React.FC = () => {
                 />
                 <span>Selected categories</span>
               </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="application_scope"
-                  checked={formData.application_scope === 'products'}
-                  onChange={() =>
-                    setFormData({ ...formData, application_scope: 'products' })
-                  }
-                />
-                <span>Selected products</span>
-              </label>
             </div>
+            <p className="text-xs text-gray-500 mb-3">
+              To discount specific products, use the{' '}
+              <span className="font-medium">Product Promotions</span> module.
+            </p>
             {formData.application_scope === 'category' && (
               <SearchableMultiSelect
                 options={categoryOptions}
@@ -572,19 +525,6 @@ const Discounts: React.FC = () => {
                 }
                 placeholder="Select categories..."
                 label="Categories"
-                required
-                maxHeight="14rem"
-              />
-            )}
-            {formData.application_scope === 'products' && (
-              <SearchableMultiSelect
-                options={productOptions}
-                selectedIds={formData.application_scope_ids}
-                onChange={(ids) =>
-                  setFormData({ ...formData, application_scope_ids: ids })
-                }
-                placeholder="Select products..."
-                label="Products"
                 required
                 maxHeight="14rem"
               />
@@ -739,7 +679,6 @@ const Discounts: React.FC = () => {
                   subtitle={
                     <>
                       <p>Type: <span className="font-medium">{discount.type === 'flat' ? 'Flat' : 'Percentage'}</span> · Value: <span className="font-medium">{discount.type === 'percentage' ? `${discount.value}%` : formatCurrency(discount.value)}</span></p>
-                      {discount.requires_code && discount.code && <p className="font-mono text-xs">{discount.code}</p>}
                       {discount.min_order_amount && <p>Min order: {formatCurrency(discount.min_order_amount)}</p>}
                     </>
                   }

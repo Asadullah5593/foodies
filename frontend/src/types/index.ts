@@ -411,6 +411,105 @@ export interface Discount {
   /** Card-linked: applies only when the whole bill is paid by one of eligible_bank_card_ids. */
   requires_card?: boolean;
   eligible_bank_card_ids?: number[] | null;
+  /** Offer store discriminator. */
+  offer_kind?: 'discount' | 'product_promotion' | 'coupon' | 'card_offer';
+  /** Coupons: how the voucher reaches customers. */
+  audience?: 'all' | 'specific' | 'new_customer' | null;
+  eligible_customer_ids?: number[] | null;
+  per_customer_limit?: number | null;
+  voucher_validity_days?: number | null;
+  global_limit?: number | null;
+  priority?: number;
+  funding?: 'merchant' | 'bank';
+}
+
+export interface CouponVoucher {
+  id: number;
+  reference?: string;
+  code?: string | null;
+  qr_token?: string | null;
+  title?: string | null;
+  type?: string | null;
+  value?: number | null;
+  min_order_amount?: number | null;
+  per_customer_limit?: number | null;
+  is_template?: boolean;
+  customer_id: number | null;
+  customer_name: string | null;
+  customer_phone: string | null;
+  status: string;
+  uses: number;
+  granted_at: string | null;
+  expires_at: string | null;
+  last_used_at: string | null;
+}
+
+export interface OfferReport {
+  redemptions?: number;
+  total_redemptions?: number;
+  total_value: number;
+  merchant_funded?: number;
+  bank_funded?: number;
+  reversed?: number;
+  rows?: Array<{
+    id: number;
+    order_id: number;
+    customer_id: number | null;
+    customer_phone: string | null;
+    source: string | null;
+    amount: number;
+    created_at: string | null;
+    reversed_at: string | null;
+  }>;
+}
+
+export interface Campaign {
+  id: number;
+  tenant_id?: number;
+  name: string;
+  description?: string | null;
+  image_url?: string | null;
+  is_active: boolean;
+  sort_order?: number;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  eligibility_brand_ids?: number[];
+  item_count?: number;
+}
+
+export interface CampaignItem {
+  id: number;
+  campaign_id?: number;
+  kind: 'offer' | 'deal' | 'info';
+  title?: string | null;
+  subtitle?: string | null;
+  image_url?: string | null;
+  sort_order?: number;
+  is_active?: boolean;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  offer_id?: number | null;
+  deal_menu_item_id?: number | null;
+  destination_type?: string | null;
+  destination_id?: number | null;
+  deep_link_url?: string | null;
+}
+
+export interface OfferSettings {
+  stackingOrder?: string[];
+  withinGroup?: 'best_value' | 'priority';
+  maxTotalDiscountPercent?: number | null;
+  maxTotalDiscountAmount?: number | null;
+  maxTotalDiscountBase?: 'non_deal_subtotal' | 'full_subtotal';
+  capIncludesCardOffers?: boolean;
+  capIncludesLoyalty?: boolean;
+  costFloorEnabled?: boolean;
+  dealsCountTowardThresholds?: boolean;
+  loyaltyAppliesToDeals?: boolean;
+  allowOffersOnDeals?: boolean;
+  allowVoucherStacking?: boolean;
+  offersApplyToOverriddenLines?: boolean;
+  priceOverrideBypassesCostFloor?: boolean;
 }
 
 export interface Banner {

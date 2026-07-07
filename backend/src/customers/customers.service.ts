@@ -16,6 +16,7 @@ import {
     normalizePakistaniPhone,
 } from '../utils/phone';
 import { PromotionsService } from '../promotions/promotions.service';
+import { CouponsService } from '../coupons/coupons.service';
 
 /**
  * Union `add` into `current` brand-id list (deduped). Returns the new array, or
@@ -53,6 +54,7 @@ export class CustomersService {
         @InjectRepository(Customer) private repo: Repository<Customer>,
         private dataSource: DataSource,
         @Optional() private promotionsService: PromotionsService,
+        @Optional() private couponsService: CouponsService,
     ) {}
 
     /**
@@ -444,6 +446,20 @@ export class CustomersService {
                 );
             }
         }
+        // New model: mint vouchers for audience='new_customer' coupons.
+        if (tenantId != null && this.couponsService) {
+            try {
+                await this.couponsService.awardNewCustomerVouchers(
+                    tenantId,
+                    customer.id,
+                );
+            } catch (err) {
+                this.logger.warn(
+                    `New-customer voucher award failed for customer ${customer.id}`,
+                    err as Error,
+                );
+            }
+        }
         return customer;
     }
 
@@ -798,6 +814,17 @@ export class CustomersService {
                 .catch((err) =>
                     this.logger.warn(
                         `Promotion auto-assign failed for customer ${newCustomer.id}`,
+                        err,
+                    ),
+                );
+        }
+        // Fire-and-forget: mint audience='new_customer' coupon vouchers.
+        if (this.couponsService) {
+            this.couponsService
+                .awardNewCustomerVouchers(tenantId, newCustomer.id)
+                .catch((err) =>
+                    this.logger.warn(
+                        `New-customer voucher award failed for customer ${newCustomer.id}`,
                         err,
                     ),
                 );

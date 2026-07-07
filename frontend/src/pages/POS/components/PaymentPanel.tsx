@@ -9,6 +9,9 @@ export type PaymentPanelProps = {
     subtotal?: number;
     total_amount?: number;
     auto_discount_amount?: number;
+    product_promo_amount?: number;
+    order_discount_amount?: number;
+    card_discount_amount?: number;
     coupon_discount_amount?: number;
     loyalty_discount?: number;
     discount_amount?: number;
@@ -78,12 +81,33 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
           <span>Subtotal</span>
           <span>{formatCurrency(quote?.subtotal ?? subtotal)}</span>
         </div>
-        {(quote?.auto_discount_amount ?? 0) > 0 && (
+        {(quote?.product_promo_amount ?? 0) > 0 && (
           <div className="flex justify-between text-foodies-cta">
-            <span>Discount (auto)</span>
-            <span>-{formatCurrency(quote!.auto_discount_amount!)}</span>
+            <span>Product promos</span>
+            <span>-{formatCurrency(quote!.product_promo_amount!)}</span>
           </div>
         )}
+        {(quote?.order_discount_amount ?? 0) > 0 && (
+          <div className="flex justify-between text-foodies-cta">
+            <span>Discount</span>
+            <span>-{formatCurrency(quote!.order_discount_amount!)}</span>
+          </div>
+        )}
+        {(quote?.card_discount_amount ?? 0) > 0 && (
+          <div className="flex justify-between text-foodies-cta">
+            <span>Card offer</span>
+            <span>-{formatCurrency(quote!.card_discount_amount!)}</span>
+          </div>
+        )}
+        {quote?.product_promo_amount == null &&
+          quote?.order_discount_amount == null &&
+          quote?.card_discount_amount == null &&
+          (quote?.auto_discount_amount ?? 0) > 0 && (
+            <div className="flex justify-between text-foodies-cta">
+              <span>Discount (auto)</span>
+              <span>-{formatCurrency(quote!.auto_discount_amount!)}</span>
+            </div>
+          )}
         {(quote?.coupon_discount_amount ?? 0) > 0 && (
           <div className="flex justify-between text-foodies-cta">
             <span>Coupon{quote?.discount_code ? ` (${quote.discount_code})` : ''}</span>
