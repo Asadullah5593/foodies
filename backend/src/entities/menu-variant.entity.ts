@@ -34,6 +34,10 @@ export class MenuVariant {
     @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
     priceModifier: number;
 
+    /** Unit cost (COGS) for this variant; null = unknown (no cost floor). */
+    @Column({ name: 'cost_price', type: 'decimal', precision: 10, scale: 2, nullable: true })
+    costPrice: number | null;
+
     @Column({ default: false })
     isDefault: boolean;
 

@@ -35,6 +35,8 @@ import { FirebaseModule } from './firebase/firebase.module';
 import { KioskModule } from './kiosk/kiosk.module';
 import { BannersModule } from './banners/banners.module';
 import { PromotionsModule } from './promotions/promotions.module';
+import { CouponsModule } from './coupons/coupons.module';
+import { CampaignsModule } from './campaigns/campaigns.module';
 import { NotificationsModule } from './notifications/notifications.module';
 @Module({
     imports: [
@@ -91,6 +93,8 @@ import { NotificationsModule } from './notifications/notifications.module';
         KioskModule,
         BannersModule,
         PromotionsModule,
+        CouponsModule,
+        CampaignsModule,
         NotificationsModule,
     ],
     controllers: [AppController],

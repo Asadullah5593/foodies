@@ -120,6 +120,42 @@ export class Discount {
     @Column('simple-json', { nullable: true })
     validDaysOfWeek: number[] | null;
 
+    /**
+     * Offers store discriminator. 'discount' = order/category/brand/branch auto price cut;
+     * 'product_promotion' = per-product auto cut; 'coupon' = voucher-backed; 'card_offer' = bank
+     * card offer. The pricing engine reads this to route each row to its stacking group.
+     */
+    @Column({ name: 'offer_kind', type: 'varchar', default: 'discount' })
+    offerKind: 'discount' | 'product_promotion' | 'coupon' | 'card_offer';
+
+    /** Coupons only: how the voucher reaches customers. null = legacy/all. */
+    @Column({ type: 'varchar', nullable: true })
+    audience: 'all' | 'specific' | 'new_customer' | null;
+
+    /** audience='specific' → customer ids allowed to hold a voucher for this coupon. */
+    @Column('simple-json', { nullable: true, name: 'eligible_customer_ids' })
+    eligibleCustomerIds: number[] | null;
+
+    /** Coupons: max redemptions per customer (once=1, N times=N; null = unlimited). */
+    @Column({ name: 'per_customer_limit', type: 'int', nullable: true })
+    perCustomerLimit: number | null;
+
+    /** Coupons: issued vouchers expire granted_at + N days, capped at validUntil; null = no clock. */
+    @Column({ name: 'voucher_validity_days', type: 'int', nullable: true })
+    voucherValidityDays: number | null;
+
+    /** Coupons: optional global redemption cap across all customers. */
+    @Column({ name: 'global_limit', type: 'int', nullable: true })
+    globalLimit: number | null;
+
+    /** Within-group ordering when not resolving by best value. */
+    @Column({ type: 'int', default: 0 })
+    priority: number;
+
+    /** Who funds the discount — drives cap exemption + reporting. Card offers default 'bank'. */
+    @Column({ type: 'varchar', default: 'merchant' })
+    funding: 'merchant' | 'bank';
+
     @CreateDateColumn()
     createdAt: Date;
 

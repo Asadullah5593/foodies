@@ -13,6 +13,11 @@ import { DealComponent } from '../entities/deal-component.entity';
 import { MenuAddon } from '../entities/menu-addon.entity';
 import { MenuCategory } from '../entities/menu-category.entity';
 import { MenuItem } from '../entities/menu-item.entity';
+import { Discount } from '../entities/discount.entity';
+import {
+    previewItemOffers,
+    PreviewOffer,
+} from '../discounts/offer-preview.util';
 import { MenuVariant } from '../entities/menu-variant.entity';
 import { ModifierGroup } from '../entities/modifier-group.entity';
 import { Modifier } from '../entities/modifier.entity';
@@ -184,8 +189,84 @@ export class MenuService {
         @InjectRepository(Modifier) private modifierRepo: Repository<Modifier>,
         @InjectRepository(MenuItemModifierGroupPosition)
         private positionRepo: Repository<MenuItemModifierGroupPosition>,
+        @InjectRepository(Discount)
+        private discountRepo: Repository<Discount>,
         private mediaStorage: MediaStorageService,
     ) {}
+
+    /** Load active auto offers (product_promotion + discount) usable for the menu price preview. */
+    private async loadPreviewOffers(
+        tenantId: number | null,
+    ): Promise<PreviewOffer[]> {
+        if (tenantId == null) return [];
+        const rows = await this.discountRepo.find({
+            where: { tenantId, isActive: true, requiresCode: false },
+        });
+        return rows
+            .filter((d) => {
+                const k = (d as { offerKind?: string }).offerKind ?? 'discount';
+                return k === 'discount' || k === 'product_promotion';
+            })
+            .map((d) => ({
+                name: d.name,
+                offerKind: (d as { offerKind?: string }).offerKind ?? 'discount',
+                type: d.type,
+                value: Number(d.value),
+                minOrderAmount:
+                    d.minOrderAmount != null ? Number(d.minOrderAmount) : null,
+                maxDiscountAmount:
+                    d.maxDiscountAmount != null
+                        ? Number(d.maxDiscountAmount)
+                        : null,
+                applicationScope: d.applicationScope ?? 'whole_order',
+                applicationScopeIds: d.applicationScopeIds ?? null,
+                eligibilityBranchIds: d.eligibilityBranchIds ?? null,
+                eligibilityBrandIds: d.eligibilityBrandIds ?? null,
+                audience:
+                    (d as { audience?: string | null }).audience ?? null,
+                requiresCard: d.requiresCard ?? false,
+                validFrom: d.validFrom ?? null,
+                validUntil: d.validUntil ?? null,
+                validTimeStart: d.validTimeStart ?? null,
+                validTimeEnd: d.validTimeEnd ?? null,
+                validDaysOfWeek: d.validDaysOfWeek ?? null,
+            }));
+    }
+
+    /** Per-item preview fields for the consumer menu (safe: time-boxed offers excluded). */
+    private previewFor(
+        item: { id?: number; categoryId?: number; brandId?: number } | null,
+        price: number,
+        offers: PreviewOffer[],
+        branchId: number | null,
+        now: Date,
+    ) {
+        if (!item?.id || offers.length === 0)
+            return {
+                discounted_price: Math.round(price * 100) / 100,
+                discount_amount: 0,
+                discount_percent: 0,
+                discount_label: null,
+                has_cart_level_offer: false,
+            };
+        const p = previewItemOffers(
+            {
+                menuItemId: item.id,
+                categoryId: item.categoryId ?? null,
+                brandId: item.brandId ?? null,
+                price,
+            },
+            offers,
+            { branchId, allowTimeBoxed: false, now },
+        );
+        return {
+            discounted_price: p.discounted_price,
+            discount_amount: p.discount_amount,
+            discount_percent: p.discount_percent,
+            discount_label: p.discount_label,
+            has_cart_level_offer: p.has_cart_level_offer,
+        };
+    }
 
     /** List categories for a brand, or all categories for tenant when brandId is null. */
     async getCategories(brandId: number | null, tenantId?: number | null) {
@@ -1296,6 +1377,17 @@ export class MenuService {
             .filter((id): id is number => id != null);
         const posMap = await this.buildPositionsMap(itemIds);
 
+        const previewTenantId =
+            (
+                (
+                    branch as {
+                        branchBrands?: Array<{ brand?: { tenantId?: number } }>;
+                    }
+                ).branchBrands ?? []
+            )[0]?.brand?.tenantId ?? null;
+        const previewOffers = await this.loadPreviewOffers(previewTenantId);
+        const previewNow = new Date();
+
         return linked.map((bmi) => {
             const item = bmi.menuItem;
             const price =
@@ -1310,6 +1402,20 @@ export class MenuService {
                 gallery_image_urls: item ? galleryUrlsForApi(item) : [],
                 price,
                 base_price: Number(item?.basePrice ?? 0),
+                ...this.previewFor(
+                    item
+                        ? {
+                              id: item.id,
+                              categoryId:
+                                  item.categoryId ?? item.category?.id,
+                              brandId: item.brandId,
+                          }
+                        : null,
+                    price,
+                    previewOffers,
+                    branchId,
+                    previewNow,
+                ),
                 category: item?.category?.name,
                 category_id: item?.categoryId ?? item?.category?.id ?? null,
                 brand_id:
@@ -2025,6 +2131,13 @@ export class MenuService {
             bmi?.priceOverride != null
                 ? Number(bmi.priceOverride)
                 : await this.getEffectiveUnitPrice(branchId, itemId);
+        const detailOffers = await this.loadPreviewOffers(
+            item.brandId != null
+                ? ((await this.brandRepo.findOne({
+                      where: { id: item.brandId },
+                  })) as { tenantId?: number } | null)?.tenantId ?? null
+                : null,
+        );
         return {
             id: item.id,
             name: item.name,
@@ -2033,6 +2146,17 @@ export class MenuService {
             gallery_image_urls: galleryUrlsForApi(item),
             price,
             base_price: Number(item.basePrice ?? 0),
+            ...this.previewFor(
+                {
+                    id: item.id,
+                    categoryId: item.categoryId ?? item.category?.id,
+                    brandId: item.brandId,
+                },
+                price,
+                detailOffers,
+                branchId,
+                new Date(),
+            ),
             category: item.category?.name ?? null,
             category_id: item.categoryId ?? item.category?.id ?? null,
             brand_id:

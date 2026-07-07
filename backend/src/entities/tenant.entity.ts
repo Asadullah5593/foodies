@@ -81,6 +81,28 @@ export class Tenant {
         expiryUnit?: 'day' | 'month' | 'year';
     } | null;
 
+    /**
+     * Offer engine knobs. Null → code defaults apply (cap off, deals excluded,
+     * one voucher/order, Option-B cap base). See OfferEngine for the full shape.
+     */
+    @Column('simple-json', { nullable: true })
+    offerSettings: {
+        stackingOrder?: string[];
+        withinGroup?: 'best_value' | 'priority';
+        maxTotalDiscountPercent?: number | null;
+        maxTotalDiscountAmount?: number | null;
+        maxTotalDiscountBase?: 'non_deal_subtotal' | 'full_subtotal';
+        capIncludesCardOffers?: boolean;
+        capIncludesLoyalty?: boolean;
+        costFloorEnabled?: boolean;
+        dealsCountTowardThresholds?: boolean;
+        loyaltyAppliesToDeals?: boolean;
+        allowOffersOnDeals?: boolean;
+        allowVoucherStacking?: boolean;
+        offersApplyToOverriddenLines?: boolean;
+        priceOverrideBypassesCostFloor?: boolean;
+    } | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

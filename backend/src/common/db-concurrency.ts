@@ -81,6 +81,7 @@ export const AdvisoryLock = {
     PROMOTION: 1014,
     OTP_IDENTIFIER: 1015,
     RATING: 1016,
+    COUPON_REALIZATION: 1017,
 } as const;
 
 /**

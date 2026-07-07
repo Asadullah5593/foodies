@@ -2,7 +2,10 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { Branch } from '../entities/branch.entity';
+import { Voucher } from '../entities/voucher.entity';
+import { Discount } from '../entities/discount.entity';
 import { BrandsModule } from '../brands/brands.module';
+import { CampaignsModule } from '../campaigns/campaigns.module';
 import { BranchesModule } from '../branches/branches.module';
 import { MenuModule } from '../menu/menu.module';
 import { OrdersModule } from '../orders/orders.module';
@@ -24,7 +27,7 @@ import { PromotionsModule } from '../promotions/promotions.module';
 
 @Module({
     imports: [
-        TypeOrmModule.forFeature([Branch]),
+        TypeOrmModule.forFeature([Branch, Voucher, Discount]),
         // registerAsync so getJwtSecret() runs at instantiation (after
         // ConfigModule has loaded .env), not at module-import time.
         JwtModule.registerAsync({
@@ -49,6 +52,7 @@ import { PromotionsModule } from '../promotions/promotions.module';
         RatingsModule,
         BannersModule,
         PromotionsModule,
+        CampaignsModule,
     ],
     controllers: [ConsumerController, ConsumerRiderLocationController],
 })

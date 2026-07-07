@@ -5,12 +5,14 @@ import { Customer } from '../entities/customer.entity';
 import { CustomersController } from './customers.controller';
 import { CustomersService } from './customers.service';
 import { PromotionsModule } from '../promotions/promotions.module';
+import { CouponsModule } from '../coupons/coupons.module';
 
 @Module({
     imports: [
         RoleAccessModule,
         TypeOrmModule.forFeature([Customer]),
         PromotionsModule,
+        CouponsModule,
     ],
     controllers: [CustomersController],
     providers: [CustomersService],

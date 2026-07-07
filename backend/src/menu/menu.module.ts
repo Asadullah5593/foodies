@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { RoleAccessModule } from '../auth/role-access.module';
 import { MenuCategory } from '../entities/menu-category.entity';
 import { MenuItem } from '../entities/menu-item.entity';
+import { Discount } from '../entities/discount.entity';
 import { MenuAddon } from '../entities/menu-addon.entity';
 import { MenuVariant } from '../entities/menu-variant.entity';
 import { Brand } from '../entities/brand.entity';
@@ -32,6 +33,7 @@ import { MenuService } from './menu.service';
             ModifierGroup,
             Modifier,
             MenuItemModifierGroupPosition,
+            Discount,
         ]),
     ],
     controllers: [MenuController],

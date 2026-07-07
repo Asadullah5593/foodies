@@ -31,7 +31,12 @@ export class DiscountsController {
             allowedBrandIds?: number[] | null;
         },
     ) {
-        return this.service.findAll(user.tenantId, user.allowedBrandIds);
+        // The "Discounts" surface owns order/category/brand/branch auto discounts
+        // and bank-card offers; product promotions and coupons have their own modules.
+        return this.service.findAll(user.tenantId, user.allowedBrandIds, [
+            'discount',
+            'card_offer',
+        ]);
     }
 
     @Post()

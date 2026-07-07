@@ -33,7 +33,6 @@ import {
   MdOutlineShoppingCart,
   MdOutlineTv,
   MdOutlineSoupKitchen,
-  MdOutlineImage,
   MdOutlineNotificationsActive,
 } from 'react-icons/md';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -57,6 +56,10 @@ import Discounts from './pages/Admin/Discounts';
 import BankCards from './pages/Admin/BankCards';
 import Banners from './pages/Admin/Banners';
 import Promotions from './pages/Admin/Promotions';
+import ProductPromotions from './pages/Admin/ProductPromotions';
+import Coupons from './pages/Admin/Coupons';
+import Campaigns from './pages/Admin/Campaigns';
+import OfferSettings from './pages/Admin/OfferSettings';
 import Roles from './pages/Admin/Roles';
 import Shifts from './pages/Admin/Shifts';
 import Reports from './pages/Admin/Reports';
@@ -311,20 +314,22 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { path: '/admin/menu-addons', label: 'Addons', icon: MdOutlineAddCircleOutline },
     { path: '/admin/modifiers', label: 'Modifiers', icon: MdOutlineTune },
     { path: '/admin/branch-menu-items', label: 'Branch Pricing', icon: MdOutlinePayments },
-    { path: '/admin/discounts', label: 'Discounts', icon: MdOutlineLocalOffer },
-    { path: '/admin/bank-cards', label: 'Bank Cards', icon: MdOutlineLocalOffer },
-    { path: '/admin/loyalty-settings', label: 'Loyalty Settings', icon: MdOutlineStarBorder },
-    { path: '/admin/delivery-tiers', label: 'Delivery Tiers', icon: MdOutlineDeliveryDining },
     {
       type: 'group',
-      id: 'cms',
-      label: 'CMS',
-      icon: MdOutlineImage,
+      id: 'discounts-promotions',
+      label: 'Discounts & Promotions',
+      icon: MdOutlineLocalOffer,
       children: [
-        { path: '/admin/banners', label: 'Banners' },
-        { path: '/admin/promotions', label: 'Promotions' },
+        { path: '/admin/discounts', label: 'Discounts' },
+        { path: '/admin/product-promotions', label: 'Product Promotions' },
+        { path: '/admin/coupons', label: 'Coupons' },
+        { path: '/admin/bank-cards', label: 'Bank Cards' },
+        { path: '/admin/campaigns', label: 'Campaigns' },
+        { path: '/admin/offer-settings', label: 'Offer Settings' },
       ],
     },
+    { path: '/admin/loyalty-settings', label: 'Loyalty Settings', icon: MdOutlineStarBorder },
+    { path: '/admin/delivery-tiers', label: 'Delivery Tiers', icon: MdOutlineDeliveryDining },
     { path: '/admin/roles', label: 'Roles', icon: MdOutlineLock },
     { path: '/admin/notification-settings', label: 'Notifications', icon: MdOutlineNotificationsActive },
     {
@@ -921,6 +926,38 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><Discounts /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/product-promotions"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><ProductPromotions /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/coupons"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><Coupons /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/campaigns"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><Campaigns /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/offer-settings"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><OfferSettings /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />
