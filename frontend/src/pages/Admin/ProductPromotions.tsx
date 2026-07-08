@@ -13,6 +13,7 @@ import SearchableMultiSelect, {
   SearchableMultiSelectOption,
 } from '../../components/SearchableMultiSelect';
 import ValidityFields, { emptyValidity } from '../../components/ValidityFields';
+import OfferChannelsField, { channelsToApi, channelsToForm, ALL_OFFER_CHANNELS } from '../../components/OfferChannelsField';
 import { confirmDialog } from '../../utils/sweetAlert';
 
 const emptyForm = {
@@ -23,6 +24,7 @@ const emptyForm = {
   max_discount_amount: '' as number | '',
   priority: 0,
   is_active: true,
+  channels: [...ALL_OFFER_CHANNELS] as string[],
   ...emptyValidity,
 };
 
@@ -73,6 +75,7 @@ const ProductPromotions: React.FC = () => {
       max_discount_amount: p.max_discount_amount ?? '',
       priority: p.priority ?? 0,
       is_active: p.is_active,
+      channels: channelsToForm(p.channels),
       valid_from: p.valid_from ? p.valid_from.slice(0, 10) : '',
       valid_until: p.valid_until ? p.valid_until.slice(0, 10) : '',
       valid_time_start: p.valid_time_start ?? '',
@@ -86,6 +89,7 @@ const ProductPromotions: React.FC = () => {
     e.preventDefault();
     if (form.application_scope_ids.length === 0) { toast.error('Select at least one product'); return; }
     if (!form.valid_from || !form.valid_until) { toast.error('Set the valid-from and valid-until dates'); return; }
+    if (form.channels.length === 0) { toast.error('Select at least one channel (POS / app / web / kiosk)'); return; }
     const data: Partial<Discount> = {
       name: form.name,
       type: form.type,
@@ -94,6 +98,7 @@ const ProductPromotions: React.FC = () => {
       max_discount_amount: form.max_discount_amount === '' ? undefined : Number(form.max_discount_amount),
       priority: Number(form.priority),
       is_active: form.is_active,
+      channels: channelsToApi(form.channels),
       valid_from: form.valid_from || undefined,
       valid_until: form.valid_until || undefined,
       valid_time_start: form.valid_time_start || null,
@@ -157,6 +162,7 @@ const ProductPromotions: React.FC = () => {
                 />
                 <p className="text-xs text-gray-400 mt-1">Deals are excluded — they are price-locked and untouched by offers.</p>
               </div>
+              <OfferChannelsField value={form.channels} onChange={(channels) => setForm({ ...form, channels })} />
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /> Active</label>
             </div>
 

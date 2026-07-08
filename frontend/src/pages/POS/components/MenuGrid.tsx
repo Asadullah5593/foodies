@@ -100,9 +100,24 @@ const MenuGrid: React.FC<MenuGridProps> = ({
                 <p className="text-[11px] text-foodies-textSecondary dark:text-slate-400 line-clamp-1 mb-1">{item.description}</p>
               )}
               <div className="flex items-center justify-between gap-1 flex-wrap mb-1">
-                <p className="text-sm font-bold text-foodies-cta dark:text-red-400">
-                  {formatCurrency(item.price || item.base_price || 0)}
-                </p>
+                {(item.discount_amount ?? 0) > 0 && item.discounted_price != null ? (
+                  <p className="text-sm font-bold text-foodies-cta dark:text-red-400 flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-medium text-foodies-textSecondary dark:text-slate-400 line-through">
+                      {formatCurrency(item.price || item.base_price || 0)}
+                    </span>
+                    {formatCurrency(item.discounted_price)}
+                    <span
+                      className="inline-block px-1.5 py-0.5 text-[10px] font-bold text-white bg-foodies-cta dark:bg-red-500 rounded"
+                      title={item.discount_label ?? undefined}
+                    >
+                      −{item.discount_percent}%
+                    </span>
+                  </p>
+                ) : (
+                  <p className="text-sm font-bold text-foodies-cta dark:text-red-400">
+                    {formatCurrency(item.price || item.base_price || 0)}
+                  </p>
+                )}
               </div>
               <div className="flex flex-wrap gap-1">
                 {(typeof item.category === 'object' ? item.category?.name : item.category ? String(item.category) : null) && (

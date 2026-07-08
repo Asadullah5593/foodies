@@ -973,6 +973,7 @@ export class ConsumerController {
                     : undefined,
             search,
             orderType,
+            channel: 'app',
         });
     }
 

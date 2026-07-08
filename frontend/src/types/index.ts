@@ -302,6 +302,14 @@ export interface MenuItem {
   available_days_of_week?: number[] | null;
   /** Server-computed (branch timezone): is this orderable right now? Only present on the branch menu. */
   available_now?: boolean;
+  /** Offer price preview (branch menu only): price after auto promotions/discounts guaranteed at checkout. */
+  discounted_price?: number;
+  discount_amount?: number;
+  discount_percent?: number;
+  /** Name of the offer driving the preview (e.g. "Summer 10% off"); null when no discount. */
+  discount_label?: string | null;
+  /** True when a cart-level offer (whole-order / min-spend / BOGO) may further discount this item. */
+  has_cart_level_offer?: boolean;
 }
 
 export interface MenuVariant {
@@ -385,6 +393,8 @@ export interface Discount {
   min_order_amount?: number;
   max_discount_amount?: number;
   pos_only?: boolean;
+  /** Channels the offer applies on ('pos' | 'app' | 'web' | 'kiosk'); null/empty = all channels. */
+  channels?: string[] | null;
   allowed_roles?: string[];
   /** What gets discounted: whole_order | category | products */
   application_scope?: string;

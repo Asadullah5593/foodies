@@ -99,6 +99,15 @@ export class Discount {
     @Column({ default: false })
     posOnly: boolean;
 
+    /**
+     * Channels the offer applies on: 'pos' | 'app' | 'web' | 'kiosk'.
+     * null/empty = all channels. Order sources map as pos→pos,
+     * consumer_app→app, consumer_web→web, kiosk→kiosk. Enforced in the
+     * pricing engine AND mirrored in the menu price preview.
+     */
+    @Column('simple-json', { nullable: true })
+    channels: string[] | null;
+
     @Column('simple-json', { nullable: true })
     allowedRoles: string[] | null;
 

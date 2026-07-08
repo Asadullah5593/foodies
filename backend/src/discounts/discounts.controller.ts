@@ -56,6 +56,7 @@ export class DiscountsController {
             min_order_amount?: number;
             max_discount_amount?: number;
             pos_only?: boolean;
+            channels?: string[] | null;
             allowed_roles?: string[];
             requires_code?: boolean;
             application_scope?: string;
@@ -99,6 +100,7 @@ export class DiscountsController {
             min_order_amount?: number;
             max_discount_amount?: number;
             pos_only?: boolean;
+            channels?: string[] | null;
             allowed_roles?: string[];
             requires_code?: boolean;
             application_scope?: string;
