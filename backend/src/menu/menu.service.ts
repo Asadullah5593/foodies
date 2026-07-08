@@ -17,6 +17,7 @@ import { Discount } from '../entities/discount.entity';
 import {
     previewItemOffers,
     PreviewOffer,
+    OfferChannel,
 } from '../discounts/offer-preview.util';
 import { MenuVariant } from '../entities/menu-variant.entity';
 import { ModifierGroup } from '../entities/modifier-group.entity';
@@ -209,7 +210,8 @@ export class MenuService {
             })
             .map((d) => ({
                 name: d.name,
-                offerKind: (d as { offerKind?: string }).offerKind ?? 'discount',
+                offerKind:
+                    (d as { offerKind?: string }).offerKind ?? 'discount',
                 type: d.type,
                 value: Number(d.value),
                 minOrderAmount:
@@ -222,9 +224,10 @@ export class MenuService {
                 applicationScopeIds: d.applicationScopeIds ?? null,
                 eligibilityBranchIds: d.eligibilityBranchIds ?? null,
                 eligibilityBrandIds: d.eligibilityBrandIds ?? null,
-                audience:
-                    (d as { audience?: string | null }).audience ?? null,
+                audience: (d as { audience?: string | null }).audience ?? null,
                 requiresCard: d.requiresCard ?? false,
+                posOnly: d.posOnly ?? false,
+                channels: d.channels ?? null,
                 validFrom: d.validFrom ?? null,
                 validUntil: d.validUntil ?? null,
                 validTimeStart: d.validTimeStart ?? null,
@@ -240,6 +243,7 @@ export class MenuService {
         offers: PreviewOffer[],
         branchId: number | null,
         now: Date,
+        channel: OfferChannel | null = null,
     ) {
         if (!item?.id || offers.length === 0)
             return {
@@ -257,7 +261,7 @@ export class MenuService {
                 price,
             },
             offers,
-            { branchId, allowTimeBoxed: false, now },
+            { branchId, allowTimeBoxed: false, now, channel },
         );
         return {
             discounted_price: p.discounted_price,
@@ -1274,6 +1278,8 @@ export class MenuService {
             search?: string;
             /** When set, only items that support this order channel are returned (delivery, pickup, dine_in; takeaway → pickup). */
             orderType?: string;
+            /** Sale channel the menu is rendered for (price preview); null = only channel-unrestricted offers show. */
+            channel?: OfferChannel | null;
         },
     ) {
         const branch = await this.branchRepo.findOne({
@@ -1378,13 +1384,11 @@ export class MenuService {
         const posMap = await this.buildPositionsMap(itemIds);
 
         const previewTenantId =
-            (
-                (
-                    branch as {
-                        branchBrands?: Array<{ brand?: { tenantId?: number } }>;
-                    }
-                ).branchBrands ?? []
-            )[0]?.brand?.tenantId ?? null;
+            ((
+                branch as {
+                    branchBrands?: Array<{ brand?: { tenantId?: number } }>;
+                }
+            ).branchBrands ?? [])[0]?.brand?.tenantId ?? null;
         const previewOffers = await this.loadPreviewOffers(previewTenantId);
         const previewNow = new Date();
 
@@ -1406,8 +1410,7 @@ export class MenuService {
                     item
                         ? {
                               id: item.id,
-                              categoryId:
-                                  item.categoryId ?? item.category?.id,
+                              categoryId: item.categoryId ?? item.category?.id,
                               brandId: item.brandId,
                           }
                         : null,
@@ -1415,6 +1418,7 @@ export class MenuService {
                     previewOffers,
                     branchId,
                     previewNow,
+                    options?.channel ?? null,
                 ),
                 category: item?.category?.name,
                 category_id: item?.categoryId ?? item?.category?.id ?? null,
@@ -2073,6 +2077,7 @@ export class MenuService {
     private async getMenuItemForDealResolution(
         itemId: number,
         branchId: number,
+        channel: OfferChannel | null = null,
     ): Promise<Awaited<ReturnType<MenuService['getBranchMenu']>>[0] | null> {
         const bmi = await this.branchMenuItemRepo.findOne({
             where: { branchId, menuItemId: itemId },
@@ -2133,9 +2138,11 @@ export class MenuService {
                 : await this.getEffectiveUnitPrice(branchId, itemId);
         const detailOffers = await this.loadPreviewOffers(
             item.brandId != null
-                ? ((await this.brandRepo.findOne({
-                      where: { id: item.brandId },
-                  })) as { tenantId?: number } | null)?.tenantId ?? null
+                ? ((
+                      (await this.brandRepo.findOne({
+                          where: { id: item.brandId },
+                      })) as { tenantId?: number } | null
+                  )?.tenantId ?? null)
                 : null,
         );
         return {
@@ -2156,6 +2163,7 @@ export class MenuService {
                 detailOffers,
                 branchId,
                 new Date(),
+                channel,
             ),
             category: item.category?.name ?? null,
             category_id: item.categoryId ?? item.category?.id ?? null,
@@ -2230,6 +2238,7 @@ export class MenuService {
         menuItemId: number,
         branchId: number,
         orderType?: string,
+        channel: OfferChannel | null = null,
     ): Promise<{
         deal_menu_item_id: number;
         name: string;
@@ -2327,6 +2336,7 @@ export class MenuService {
             const resolved = await this.getMenuItemForDealResolution(
                 id,
                 branchId,
+                channel,
             );
             if (resolved) menuById.set(id, resolved);
         }
@@ -2368,6 +2378,7 @@ export class MenuService {
                 const resolved = await this.getMenuItemForDealResolution(
                     mi.id,
                     branchId,
+                    channel,
                 );
                 if (resolved) menuById.set(mi.id, resolved);
             }
@@ -2384,6 +2395,7 @@ export class MenuService {
                 const resolved = await this.getMenuItemForDealResolution(
                     mi.id,
                     branchId,
+                    channel,
                 );
                 if (resolved) menuById.set(mi.id, resolved);
             }
@@ -2502,12 +2514,33 @@ export class MenuService {
             bmi.priceOverride != null
                 ? Number(bmi.priceOverride)
                 : Number(item.basePrice ?? 0);
+        const detailOffers = await this.loadPreviewOffers(
+            item.brandId != null
+                ? ((
+                      (await this.brandRepo.findOne({
+                          where: { id: item.brandId },
+                      })) as { tenantId?: number } | null
+                  )?.tenantId ?? null)
+                : null,
+        );
         const base = {
             id: item.id,
             name: item.name,
             description: item.description ?? null,
             price,
             base_price: Number(item.basePrice ?? 0),
+            ...this.previewFor(
+                {
+                    id: item.id,
+                    categoryId: item.categoryId ?? item.category?.id,
+                    brandId: item.brandId,
+                },
+                price,
+                detailOffers,
+                branchId,
+                new Date(),
+                'app',
+            ),
             image_url: item.imageUrl ?? null,
             gallery_image_urls: galleryUrlsForApi(item),
             category: item.category?.name ?? null,
@@ -2573,6 +2606,7 @@ export class MenuService {
             menuItemId,
             branchId,
             orderType,
+            'app',
         );
         return { ...base, ...(deal ? { deal } : {}) };
     }

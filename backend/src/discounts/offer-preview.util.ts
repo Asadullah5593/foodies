@@ -8,6 +8,42 @@
  * No OrdersService import — avoids a circular dependency with menu.service.
  */
 
+/** Sale channel an offer can be restricted to. */
+export type OfferChannel = 'pos' | 'app' | 'web' | 'kiosk';
+
+/** Map an order `source` to its offer channel. */
+export function sourceToOfferChannel(source: string): OfferChannel | null {
+    switch (source) {
+        case 'pos':
+            return 'pos';
+        case 'consumer_app':
+            return 'app';
+        case 'consumer_web':
+            return 'web';
+        case 'kiosk':
+            return 'kiosk';
+        default:
+            return null;
+    }
+}
+
+/**
+ * Channel gate shared by the pricing engine and the menu price preview.
+ * `channels` null/empty = all channels; legacy `posOnly` = ['pos'].
+ * An unknown channel (null) only passes unrestricted offers.
+ */
+export function offerAllowedOnChannel(
+    channels: string[] | null | undefined,
+    posOnly: boolean | null | undefined,
+    channel: OfferChannel | null,
+): boolean {
+    if (posOnly && channel !== 'pos') return false;
+    if (Array.isArray(channels) && channels.length > 0) {
+        if (channel == null || !channels.includes(channel)) return false;
+    }
+    return true;
+}
+
 export interface PreviewOffer {
     name: string;
     offerKind: string;
@@ -21,6 +57,8 @@ export interface PreviewOffer {
     eligibilityBrandIds: number[] | null;
     audience: string | null;
     requiresCard: boolean;
+    posOnly: boolean;
+    channels: string[] | null;
     validFrom: Date | null;
     validUntil: Date | null;
     validTimeStart: string | null;
@@ -49,7 +87,13 @@ const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 export function previewItemOffers(
     item: PreviewItem,
     offers: PreviewOffer[],
-    opts: { branchId: number | null; allowTimeBoxed: boolean; now: Date },
+    opts: {
+        branchId: number | null;
+        allowTimeBoxed: boolean;
+        now: Date;
+        /** Sale channel the preview is rendered for; null = only unrestricted offers. */
+        channel?: OfferChannel | null;
+    },
 ): PreviewResult {
     const timeBoxed = (o: PreviewOffer) =>
         !!o.validTimeStart ||
@@ -58,6 +102,8 @@ export function previewItemOffers(
 
     const applies = (o: PreviewOffer): boolean => {
         if (o.requiresCard) return false;
+        if (!offerAllowedOnChannel(o.channels, o.posOnly, opts.channel ?? null))
+            return false;
         if (o.minOrderAmount != null) return false;
         if (o.type !== 'flat' && o.type !== 'percentage') return false;
         if (o.audience != null && o.audience !== 'all') return false;
@@ -137,6 +183,8 @@ export function previewItemOffers(
     // per-item (whole_order / BOGO), gated to the item's brand where scoped.
     const hasCart = offers.some((o) => {
         if (o.offerKind !== 'discount' && o.offerKind !== 'product_promotion')
+            return false;
+        if (!offerAllowedOnChannel(o.channels, o.posOnly, opts.channel ?? null))
             return false;
         const cartShaped =
             o.applicationScope === 'whole_order' ||

@@ -30,6 +30,20 @@ function normalizeDiscountDays(input: unknown): number[] | null {
     return set.size ? [...set].sort((a, b) => a - b) : null;
 }
 
+const OFFER_CHANNELS = ['pos', 'app', 'web', 'kiosk'] as const;
+
+/** Channels subset ('pos'|'app'|'web'|'kiosk'); empty / all selected / invalid → null (= all channels). */
+function normalizeChannels(input: unknown): string[] | null {
+    if (!Array.isArray(input)) return null;
+    const set = new Set<string>();
+    for (const x of input) {
+        const s = String(x).trim().toLowerCase();
+        if ((OFFER_CHANNELS as readonly string[]).includes(s)) set.add(s);
+    }
+    if (set.size === 0 || set.size === OFFER_CHANNELS.length) return null;
+    return OFFER_CHANNELS.filter((c) => set.has(c));
+}
+
 /** Non-negative integer or null. */
 function normalizeIntOrNull(input: unknown): number | null {
     if (input == null || input === '') return null;
@@ -136,6 +150,7 @@ export class DiscountsService {
             min_order_amount?: number;
             max_discount_amount?: number;
             pos_only?: boolean;
+            channels?: string[] | null;
             allowed_roles?: string[];
             requires_code?: boolean;
             application_scope?: string;
@@ -225,6 +240,7 @@ export class DiscountsService {
                             ? Number(dto.max_discount_amount)
                             : null,
                     posOnly: dto.pos_only ?? false,
+                    channels: normalizeChannels(dto.channels),
                     allowedRoles: dto.allowed_roles ?? null,
                     requiresCode,
                     applicationScope,
@@ -268,10 +284,14 @@ export class DiscountsService {
                                 ? 'product_promotion'
                                 : 'discount'),
                     audience: (dto.audience as Discount['audience']) ?? null,
-                    eligibleCustomerIds: Array.isArray(dto.eligible_customer_ids)
+                    eligibleCustomerIds: Array.isArray(
+                        dto.eligible_customer_ids,
+                    )
                         ? dto.eligible_customer_ids.map((id) => Number(id))
                         : null,
-                    perCustomerLimit: normalizeIntOrNull(dto.per_customer_limit),
+                    perCustomerLimit: normalizeIntOrNull(
+                        dto.per_customer_limit,
+                    ),
                     voucherValidityDays: normalizeIntOrNull(
                         dto.voucher_validity_days,
                     ),
@@ -324,6 +344,7 @@ export class DiscountsService {
             min_order_amount?: number;
             max_discount_amount?: number;
             pos_only?: boolean;
+            channels?: string[] | null;
             allowed_roles?: string[];
             requires_code?: boolean;
             application_scope?: string;
@@ -398,6 +419,8 @@ export class DiscountsService {
                         ? Number(dto.max_discount_amount)
                         : null;
             if (dto.pos_only !== undefined) d.posOnly = dto.pos_only;
+            if (dto.channels !== undefined)
+                d.channels = normalizeChannels(dto.channels);
             if (dto.allowed_roles !== undefined)
                 d.allowedRoles = dto.allowed_roles;
             if (dto.application_scope !== undefined)
@@ -573,6 +596,7 @@ export class DiscountsService {
                     ? Number(d.maxDiscountAmount)
                     : null,
             pos_only: d.posOnly,
+            channels: d.channels ?? null,
             allowed_roles: d.allowedRoles ?? [],
             application_scope: d.applicationScope ?? 'whole_order',
             application_scope_ids: d.applicationScopeIds ?? [],
@@ -593,8 +617,7 @@ export class DiscountsService {
             bogo_match_same_group: d.bogoMatchSameGroup ?? false,
             requires_card: d.requiresCard ?? false,
             eligible_bank_card_ids: d.eligibleBankCardIds ?? null,
-            offer_kind:
-                (d as { offerKind?: string }).offerKind ?? 'discount',
+            offer_kind: (d as { offerKind?: string }).offerKind ?? 'discount',
             audience: (d as { audience?: string | null }).audience ?? null,
             eligible_customer_ids:
                 (d as { eligibleCustomerIds?: number[] | null })
