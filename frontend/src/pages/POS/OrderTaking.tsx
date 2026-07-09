@@ -39,6 +39,10 @@ import { computeModifiersPrice, resolveMinSelect, resolveMaxSelect, sizeKeyForSe
 const OrderTaking: React.FC = () => {
   const [selectedItems, setSelectedItems] = useState<CartLine[]>([]);
   const [orderType, setOrderType] = useState<OrderTypeOption | null>(null);
+  const [pendingOrderTypeChange, setPendingOrderTypeChange] = useState<{
+    next: OrderTypeOption;
+    removable: CartLine[];
+  } | null>(null);
   const [tableNumber, setTableNumber] = useState('');
   const [discountCode, setDiscountCode] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -201,10 +205,43 @@ const OrderTaking: React.FC = () => {
   const getBrandName = (brandId: number | null | undefined): string | null =>
     brandId != null ? (brands.find((b) => b.id === brandId)?.name ?? null) : null;
 
-  /** Changing order channel invalidates cart lines (items may not be valid for the new type). */
-  React.useEffect(() => {
-    setSelectedItems([]);
-  }, [orderType]);
+  /** True when a cart line's item (or, for a deal line, its deal root) can be sold on `type`. */
+  const orderTypeSupportsLine = React.useCallback(
+    (line: CartLine, type: OrderTypeOption): boolean => {
+      const channels =
+        line.dealId != null
+          ? rawMenu.find((m) => m.id === line.dealId)?.available_for_order_types ??
+            line.menuItem.available_for_order_types ??
+            null
+          : line.menuItem.available_for_order_types ?? null;
+      return isMenuItemAvailableForOrderType(channels, type);
+    },
+    [rawMenu],
+  );
+
+  /**
+   * Switching order channel keeps the cart — only lines the new channel can't
+   * fulfil are dropped. If any exist, confirm first (cancel keeps the current
+   * type and the full cart). Reset-to-null, kiosk-load and branch-change paths
+   * call setOrderType directly and are intentionally unaffected.
+   */
+  const handleOrderTypeChange = (next: OrderTypeOption) => {
+    if (next === orderType) return;
+    const removable = selectedItems.filter((l) => !orderTypeSupportsLine(l, next));
+    if (removable.length === 0) {
+      setOrderType(next);
+      return;
+    }
+    setPendingOrderTypeChange({ next, removable });
+  };
+
+  const confirmOrderTypeChange = () => {
+    if (!pendingOrderTypeChange) return;
+    const { next } = pendingOrderTypeChange;
+    setSelectedItems((prev) => prev.filter((l) => orderTypeSupportsLine(l, next)));
+    setOrderType(next);
+    setPendingOrderTypeChange(null);
+  };
 
   /**
    * Load a kiosk cart AFTER the order-type change has cleared the cart above.
@@ -1322,7 +1359,7 @@ const OrderTaking: React.FC = () => {
     onPickSearchSuggestion: (label: string) => setPosSearch(label),
     orderTypeOptions,
     orderType,
-    onOrderTypeChange: setOrderType,
+    onOrderTypeChange: handleOrderTypeChange,
   };
 
   if (effectiveBranchId != null && branchId != null && !openShift) {
@@ -1524,7 +1561,7 @@ const OrderTaking: React.FC = () => {
             <OrderTypeSelector
               options={orderTypeOptions}
               value={effectiveOrderType}
-              onChange={setOrderType}
+              onChange={handleOrderTypeChange}
             />
             <div className="flex-shrink-0 px-4 py-3 bg-foodies-surface border-b border-foodies-border dark:bg-slate-800 dark:border-slate-700">
               <div className="lg:hidden">
@@ -1700,6 +1737,48 @@ const OrderTaking: React.FC = () => {
             <Button variant="outline" onClick={() => setShowKioskModal(false)}>Cancel</Button>
             <Button variant="gradient" onClick={loadKioskOrder} disabled={kioskLoading}>
               {kioskLoading ? 'Loading…' : 'Load Order'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Order-type switch: warn about items the new channel can't fulfil */}
+      <Modal
+        isOpen={pendingOrderTypeChange !== null}
+        onClose={() => setPendingOrderTypeChange(null)}
+        title="Some items aren't available"
+      >
+        <div className="space-y-4">
+          <p className="text-foodies-textPrimary">
+            {pendingOrderTypeChange && (
+              <>
+                {pendingOrderTypeChange.removable.length === selectedItems.length
+                  ? 'None of the items in your cart are available for '
+                  : 'These items aren’t available for '}
+                <strong>
+                  {orderTypeOptions.find((o) => o.value === pendingOrderTypeChange.next)?.label ??
+                    pendingOrderTypeChange.next}
+                </strong>{' '}
+                and will be removed from the cart:
+              </>
+            )}
+          </p>
+          {pendingOrderTypeChange && (
+            <ul className="list-disc space-y-1 pl-5 text-sm text-foodies-textSecondary dark:text-slate-400">
+              {pendingOrderTypeChange.removable.map((line, i) => (
+                <li key={i}>
+                  {(line.dealName ?? line.menuItem.name) || 'Item'}
+                  {line.quantity > 1 ? ` × ${line.quantity}` : ''}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setPendingOrderTypeChange(null)}>
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={confirmOrderTypeChange}>
+              Remove &amp; switch
             </Button>
           </div>
         </div>

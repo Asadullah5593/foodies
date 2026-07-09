@@ -25,6 +25,7 @@
     "react-icons": "^5.6.0",
     "react-leaflet": "^4.2.1",
     "react-router-dom": "^6.20.0",
+    "react-simple-keyboard": "^3.8.233",
     "recharts": "^2.15.4",
     "socket.io-client": "^4.8.3",
     "sweetalert2": "^11.26.24",

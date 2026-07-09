@@ -34,9 +34,15 @@ import {
   MdOutlineTv,
   MdOutlineSoupKitchen,
   MdOutlineNotificationsActive,
+  MdOutlineKeyboard,
+  MdKeyboardHide,
 } from 'react-icons/md';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import {
+  OnScreenKeyboardProvider,
+  useOnScreenKeyboard,
+} from './contexts/OnScreenKeyboardContext';
 import Login from './pages/Admin/Login';
 import Dashboard from './pages/Admin/Dashboard';
 import Tenants from './pages/Admin/Tenants';
@@ -57,6 +63,7 @@ import BankCards from './pages/Admin/BankCards';
 import Banners from './pages/Admin/Banners';
 import Promotions from './pages/Admin/Promotions';
 import ProductPromotions from './pages/Admin/ProductPromotions';
+import InvoiceTemplates from './pages/Admin/InvoiceTemplates';
 import Coupons from './pages/Admin/Coupons';
 import Campaigns from './pages/Admin/Campaigns';
 import OfferSettings from './pages/Admin/OfferSettings';
@@ -237,6 +244,7 @@ const SIDEBAR_COLLAPSED_KEY = 'foodies-sidebar-collapsed';
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { logout, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { enabled: keyboardEnabled, toggle: toggleKeyboard } = useOnScreenKeyboard();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
@@ -329,6 +337,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       ],
     },
     { path: '/admin/loyalty-settings', label: 'Loyalty Settings', icon: MdOutlineStarBorder },
+    ...(isTenantUser ? [{ path: '/admin/invoice-templates', label: 'Invoice Templates', icon: MdOutlineReceiptLong }] : []),
     { path: '/admin/delivery-tiers', label: 'Delivery Tiers', icon: MdOutlineDeliveryDining },
     { path: '/admin/roles', label: 'Roles', icon: MdOutlineLock },
     { path: '/admin/notification-settings', label: 'Notifications', icon: MdOutlineNotificationsActive },
@@ -752,6 +761,24 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <NotificationBell />
               <button
                 type="button"
+                onClick={toggleKeyboard}
+                className={`p-2 rounded-lg transition-colors hover:bg-slate-100 dark:hover:bg-slate-700 ${
+                  keyboardEnabled
+                    ? 'text-foodies-primary'
+                    : 'text-slate-500 dark:text-slate-400'
+                }`}
+                title={keyboardEnabled ? 'On-screen keyboard: on' : 'On-screen keyboard: off'}
+                aria-label={keyboardEnabled ? 'Disable on-screen keyboard' : 'Enable on-screen keyboard'}
+                aria-pressed={keyboardEnabled}
+              >
+                {keyboardEnabled ? (
+                  <MdOutlineKeyboard className="h-5 w-5" />
+                ) : (
+                  <MdKeyboardHide className="h-5 w-5" />
+                )}
+              </button>
+              <button
+                type="button"
                 onClick={toggleTheme}
                 className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
                 title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
@@ -934,6 +961,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><ProductPromotions /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/invoice-templates"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><InvoiceTemplates /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />
@@ -1182,13 +1217,15 @@ const App: React.FC = () => {
       }}
     >
       <ThemeProvider>
-        <AuthProvider>
-          <NotificationsProvider>
-            <NavigationLoader>
-              <AppRoutes />
-            </NavigationLoader>
-          </NotificationsProvider>
-        </AuthProvider>
+        <OnScreenKeyboardProvider>
+          <AuthProvider>
+            <NotificationsProvider>
+              <NavigationLoader>
+                <AppRoutes />
+              </NavigationLoader>
+            </NotificationsProvider>
+          </AuthProvider>
+        </OnScreenKeyboardProvider>
       </ThemeProvider>
     </BrowserRouter>
   );

@@ -330,9 +330,7 @@ async function seed() {
     // ===================================================================
     // "Make it Meal?" for Express Box / Pasta / Dirty Fries — mutually-exclusive priced meal
     // variants (sheet lists the same four options on all three). Hidden inside deals (the deal
-    // supplies the drink through its own slots). NOTE: the "+Rs250 milkshake" upgrade below is
-    // only offered on Express Box and Pasta — the Dirty Fries block has no milkshake line, so
-    // Dirty Fries gets a soda-only chooser instead.
+    // supplies the drink through its own slots).
     const grpBoxMeal = await mkGroup(
         'Make it Meal?',
         { minSelect: 1, maxSelect: 1, hideInDeals: true },
@@ -360,16 +358,6 @@ async function seed() {
     grpMealDrinkShake.visibleWhenModifierIds =
         await paidModifierIds(grpBoxMeal);
     await groupRepo.save(grpMealDrinkShake);
-    // Soda-only variant of the above for Dirty Fries (its sheet block lists the four meal
-    // options but NO "upgrade to any milkshake" line). Same trigger: grpBoxMeal's paid picks.
-    const grpBoxMealDrinkSoda = await mkGroup(
-        'Choose your Meal Drink',
-        { minSelect: 1, maxSelect: 1, hideInDeals: true },
-        SODAS.map((s) => ({ name: `${s} 345ml` })),
-    );
-    grpBoxMealDrinkSoda.visibleWhenModifierIds =
-        await paidModifierIds(grpBoxMeal);
-    await groupRepo.save(grpBoxMealDrinkSoda);
 
     // "Make it Meal" for Classic Boxes — "Just the box" or "Add a drink 345ml - Add Rs130".
     const grpClassicMeal = await mkGroup(
@@ -900,7 +888,7 @@ async function seed() {
         grpDirtyCheese,
         grpDirtyMeat,
         grpBoxMeal,
-        grpBoxMealDrinkSoda,
+        grpMealDrinkShake, // client-confirmed: milkshakes offered on Dirty Fries too
     ]);
 
     // ===================================================================

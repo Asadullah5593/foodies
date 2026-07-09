@@ -207,7 +207,22 @@ const CartPanel: React.FC<CartPanelProps> = ({
                               : freeUnits > 0 && chargedUnits === 0 ? <span className="text-emerald-600">Included</span>
                               : freeUnits > 0 ? <>{formatCurrency(p)} <span className="text-emerald-600">({freeUnits} free)</span></>
                               : formatCurrency(p);
-                            lines.push(<li key={sel.modifierId}>{mod.name}{qty > 1 ? ` ×${qty}` : ''}{priceNode ? <> {priceNode}</> : null}</li>);
+                            // Conditional chooser pick (e.g. meal drink) → nest under its trigger
+                            // option so "+130 meal" and "+250 shake" read as one upgrade chain.
+                            const vw = group?.visible_when_modifier_ids;
+                            const triggerSel = vw?.length
+                              ? (item.modifiers ?? []).find(s2 => vw.includes(s2.modifierId))
+                              : undefined;
+                            if (triggerSel) {
+                              lines.push(
+                                <li key={sel.modifierId} className="pl-3">
+                                  ↳ {mod.name}{qty > 1 ? ` ×${qty}` : ''}{' '}
+                                  {unitPrice <= 0 ? <span className="text-emerald-600">Included</span> : priceNode}
+                                </li>
+                              );
+                            } else {
+                              lines.push(<li key={sel.modifierId}>{mod.name}{qty > 1 ? ` ×${qty}` : ''}{priceNode ? <> {priceNode}</> : null}</li>);
+                            }
                           }
                         }
                         return <ul className="text-xs text-foodies-textSecondary mt-0.5 space-y-0.5">{lines}</ul>;

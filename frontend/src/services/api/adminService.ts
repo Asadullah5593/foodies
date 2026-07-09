@@ -424,6 +424,27 @@ export const adminService = {
     await apiClient.delete(`/admin/product-promotions/${id}`);
   },
 
+  // Invoice templates (selectable invoice schemas + field toggles)
+  getInvoiceTemplates: async (): Promise<any[]> => {
+    const r = await apiClient.get('/admin/invoice-templates');
+    return r.data;
+  },
+  createInvoiceTemplate: async (data: Record<string, unknown>): Promise<any> => {
+    const r = await apiClient.post('/admin/invoice-templates', data);
+    return r.data;
+  },
+  updateInvoiceTemplate: async (id: number, data: Record<string, unknown>): Promise<any> => {
+    const r = await apiClient.put(`/admin/invoice-templates/${id}`, data);
+    return r.data;
+  },
+  activateInvoiceTemplate: async (id: number): Promise<any> => {
+    const r = await apiClient.put(`/admin/invoice-templates/${id}/activate`, {});
+    return r.data;
+  },
+  deleteInvoiceTemplate: async (id: number): Promise<void> => {
+    await apiClient.delete(`/admin/invoice-templates/${id}`);
+  },
+
   // Coupons (offer_kind=coupon) + vouchers + report
   getCoupons: async (): Promise<Discount[]> => {
     const r = await apiClient.get('/admin/coupons');

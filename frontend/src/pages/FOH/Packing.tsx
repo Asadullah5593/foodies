@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { orderModifiersWithNesting } from '../../utils/modifierNesting';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -292,16 +293,16 @@ const FOHPacking: React.FC = () => {
                             </p>
                             {item.modifiers?.length ? (
                               <ul className="mt-1 space-y-0.5">
-                                {item.modifiers.map((m, idx) => (
-                                  <li key={idx} className="flex gap-1.5 text-sm text-gray-700 dark:text-gray-300">
-                                    <span className="text-gray-400 dark:text-gray-500" aria-hidden>•</span>
+                                {orderModifiersWithNesting(item.modifiers).map(({ mod: m, nested }, idx) => (
+                                  <li key={idx} className={`flex gap-1.5 text-sm text-gray-700 dark:text-gray-300${nested ? ' pl-4' : ''}`}>
+                                    <span className="text-gray-400 dark:text-gray-500" aria-hidden>{nested ? '↳' : '•'}</span>
                                     <span>
-                                      {m.group ? <span className="text-gray-500 dark:text-gray-400">{m.group}: </span> : null}
+                                      {!nested && m.group ? <span className="text-gray-500 dark:text-gray-400">{m.group}: </span> : null}
                                       {m.name}
                                       {m.quantity > 1 ? ` ×${m.quantity}` : ''}
                                     </span>
                                   </li>
-                                ))}
+                                  ))}
                               </ul>
                             ) : null}
                             {item.addons?.length ? (
