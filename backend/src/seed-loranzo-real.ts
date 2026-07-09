@@ -14,7 +14,6 @@
  *  - flat-priced sections (Iced Coffees / Iced Teas & Refreshers / Frappe Specials Rs799,
  *    Milkshakes Rs499)
  *  - single-select flavour choosers for the desserts (cookie / brownie / sundae / doughnut …)
- *  - size variants for the fizzy drinks (345ml / 1L / 1.5L)
  *  No deals, no per-size selection limits, no meal upsells, no add-ons — none appear on the sheet.
  *
  * Interpretation notes (documented for the client report):
@@ -30,8 +29,7 @@
  *  - obvious sheet spelling slips in customer-facing names are normalised (Frerrero→Ferrero,
  *    Claasic→Classic, Coffe→Coffee, Macha→Matcha, Valvet→Velvet, Dounut→Doughnut, Plian→Plain);
  *    prices and item set are kept verbatim.
- *  - fizzy drinks: 345ml sodas are Rs130 (Coke/Diet/Zero/Fanta/Sprite), each also offered as 1L
- *    (Rs199) and 1.5L (Rs249) per "1 L / 1.5 L — all above options"; Water 500ml & Juice 200ml
+ *  - fizzy drinks: 345ml sodas only, Rs130 (client-confirmed: no 1L/1.5L); Water 500ml & Juice 200ml
  *    are single-size at Rs75. Modelled as size variants (no deals reference them, unlike WOK&GO).
  *  - Kcal / Allergens columns are present but BLANK on the sheet → left null.
  *
@@ -503,8 +501,6 @@ async function seed() {
             basePrice: 130,
             sizes: [
                 { name: '345ml', sizeKey: null, price: 130, isDefault: true },
-                { name: '1L', sizeKey: null, price: 199 },
-                { name: '1.5L', sizeKey: null, price: 249 },
             ],
         });
     }
