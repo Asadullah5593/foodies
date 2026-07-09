@@ -25,6 +25,7 @@ export interface InvoiceTemplateConfig {
   showVariant: boolean;
   showModifiers: boolean;
   showItemNotes: boolean;
+  showOrderNotes: boolean;
   showUnitPrice: boolean;
 
   showSubtotal: boolean;
@@ -63,7 +64,8 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showCategory: false,
   showVariant: true,
   showModifiers: true,
-  showItemNotes: false,
+  showItemNotes: true,
+  showOrderNotes: true,
   showUnitPrice: true,
 
   showSubtotal: true,
@@ -110,6 +112,7 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
       { key: 'showVariant', label: 'Show variant' },
       { key: 'showModifiers', label: 'Show modifiers / add-ons' },
       { key: 'showItemNotes', label: 'Show item notes' },
+      { key: 'showOrderNotes', label: 'Show order note' },
       { key: 'showUnitPrice', label: 'Show unit price' },
     ],
   },
@@ -184,6 +187,7 @@ export type InvoiceOrderVM = {
   brand_logo_url?: string | null;
   order_type?: string | null;
   table_number?: string | null;
+  notes?: string | null;
   placed_at?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;

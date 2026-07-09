@@ -2165,9 +2165,9 @@ export class OrdersService {
                             ? Number(oi.priceSnapshot)
                             : Number(oi.unitPrice),
                     quantity: oi.quantity,
+                    notes: oi.notes ?? null,
                     unit_price: Number(oi.unitPrice),
                     subtotal: Number(oi.subtotal),
-                    notes: oi.notes ?? null,
                     deal_id: oi.dealId ?? null,
                     deal_slot_index: oi.dealSlotIndex ?? null,
                     variant_id: oi.variantId ?? null,
@@ -2352,6 +2352,7 @@ export class OrdersService {
                             ? Number(oi.priceSnapshot)
                             : Number(oi.unitPrice),
                     quantity: oi.quantity,
+                    notes: oi.notes ?? null,
                     unit_price: Number(oi.unitPrice),
                     subtotal: Number(oi.subtotal),
                     category:
@@ -2423,6 +2424,7 @@ export class OrdersService {
                 status: o.status,
                 order_type: o.orderType ?? null,
                 table_number: o.tableNumber ?? null,
+                notes: o.notes ?? null,
                 placed_at: o.placedAt?.toISOString() ?? null,
                 customer_name: o.customerName ?? null,
                 customer_phone: o.customerPhone ?? null,
@@ -2453,6 +2455,7 @@ export class OrdersService {
                                 oi.nameSnapshot ??
                                 (oi.menuItem as { name?: string } | null)?.name,
                             quantity: oi.quantity,
+                            notes: oi.notes ?? null,
                             unit_price: Number(oi.unitPrice),
                             subtotal: Number(oi.subtotal),
                             deal_id: oi.dealId ?? null,
@@ -2578,6 +2581,7 @@ export class OrdersService {
                 : null,
             order_type: order.orderType,
             table_number: order.tableNumber,
+            notes: order.notes ?? null,
             placed_at: order.placedAt?.toISOString() ?? null,
             customer_name: order.customerName ?? null,
             customer_phone: order.customerPhone ?? null,
@@ -2597,6 +2601,7 @@ export class OrdersService {
                             oi.nameSnapshot ??
                             (oi.menuItem as { name?: string } | null)?.name,
                         quantity: oi.quantity,
+                    notes: oi.notes ?? null,
                         unit_price: Number(oi.unitPrice),
                         subtotal: Number(oi.subtotal),
                         deal_id: oi.dealId ?? null,
@@ -2980,6 +2985,7 @@ export class OrdersService {
             order_type: order.orderType,
             order_group_id: order.orderGroupId ?? null,
             table_number: order.tableNumber,
+            notes: order.notes ?? null,
             customer_name: order.customerName,
             customer_phone: order.customerPhone,
             delivery_address: order.deliveryAddress,
@@ -3031,9 +3037,9 @@ export class OrdersService {
                                 ? Number(oi.priceSnapshot)
                                 : Number(oi.unitPrice),
                         quantity: oi.quantity,
+                    notes: oi.notes ?? null,
                         unit_price: Number(oi.unitPrice),
                         subtotal: Number(oi.subtotal),
-                        notes: oi.notes,
                         deal_id: oi.dealId ?? null,
                         deal_slot_index: oi.dealSlotIndex ?? null,
                         deal_name: oi.dealMenuItem?.name ?? null,
@@ -3798,6 +3804,7 @@ export class OrdersService {
                     id: oi.id,
                     name_snapshot: oi.nameSnapshot ?? oi.menuItem?.name,
                     quantity: oi.quantity,
+                    notes: oi.notes ?? null,
                     unit_price: Number(oi.unitPrice),
                 })) ?? [],
         }));
@@ -3867,6 +3874,7 @@ export class OrdersService {
                     id: oi.id,
                     name_snapshot: oi.nameSnapshot ?? oi.menuItem?.name,
                     quantity: oi.quantity,
+                    notes: oi.notes ?? null,
                     unit_price: Number(oi.unitPrice),
                     addons:
                         oi.addons?.map((a) => ({

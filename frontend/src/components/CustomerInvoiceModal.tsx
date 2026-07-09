@@ -59,6 +59,7 @@ function singleToPrintVM(s: Record<string, unknown>): InvoiceVM {
     deal_name: (i.deal_name as string) ?? null,
     addons: (i.addons as never) ?? [],
     modifiers: (i.modifiers as never) ?? [],
+    notes: (i.notes as string) ?? null,
   }));
   const brand = s.brand as { name?: string; logo_url?: string } | null;
   return {
@@ -74,6 +75,7 @@ function singleToPrintVM(s: Record<string, unknown>): InvoiceVM {
         brand_logo_url: brand?.logo_url ?? null,
         order_type: (s.order_type as string) ?? null,
         table_number: (s.table_number as string) ?? null,
+    notes: (s.notes as string) ?? null,
         placed_at: (s.placed_at as string) ?? null,
         customer_name: (s.customer_name as string) ?? null,
         customer_phone: (s.customer_phone as string) ?? null,

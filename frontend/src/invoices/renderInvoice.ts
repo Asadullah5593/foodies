@@ -215,6 +215,8 @@ function metaHtml(order: InvoiceOrderVM, cfg: InvoiceTemplateConfig): string {
     rows.push(
       row('Customer', esc([order.customer_name, order.customer_phone].filter(Boolean).join(' · ')), 'meta'),
     );
+  if (cfg.showOrderNotes && order.notes)
+    rows.push(row('Note', `<em>${esc(order.notes)}</em>`, 'meta'));
   return rows.length ? `<div class="meta">${rows.join('')}</div>` : '';
 }
 

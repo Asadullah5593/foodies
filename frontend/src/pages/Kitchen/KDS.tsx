@@ -33,6 +33,7 @@ interface KitchenOrder {
   customer_name?: string;
   placed_at?: string;
   items: Array<KitchenItem>;
+  notes?: string | null;
 }
 
 type KitchenItem = {
@@ -363,6 +364,11 @@ const KDS: React.FC = () => {
                     <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Customer: {order.customer_name}</p>
                   )}
                 </div>
+                {order.notes ? (
+                  <div className="mx-4 mt-3 text-sm font-medium text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/40 px-3 py-2 rounded-lg border border-amber-200 dark:border-amber-700">
+                    Order note: {order.notes}
+                  </div>
+                ) : null}
                 {/* Items with variant, add-ons, notes */}
                 <div className="px-4 py-3 space-y-3">
                   {(() => {
