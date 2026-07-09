@@ -22,6 +22,7 @@ import {
     offerAllowedOnChannel,
     sourceToOfferChannel,
 } from '../discounts/offer-preview.util';
+import { InvoiceTemplatesService } from '../invoices/invoice-templates.service';
 import { User } from '../entities/user.entity';
 import { MenuService } from '../menu/menu.service';
 import {
@@ -91,6 +92,19 @@ import {
 } from './offer-engine';
 import { resolveOfferSettings, OfferSettings } from './offer-settings';
 
+/** The tax rate (fraction, e.g. 0.15) to print, chosen by the tender the tax was based on. */
+function effectiveTaxRate(o: {
+    taxBasis?: string | null;
+    taxRateCash?: number | null;
+    taxRateCard?: number | null;
+}): number | null {
+    const cash = o.taxRateCash != null ? Number(o.taxRateCash) : null;
+    const card = o.taxRateCard != null ? Number(o.taxRateCard) : null;
+    if (o.taxBasis === 'card') return card ?? cash;
+    if (o.taxBasis === 'cash') return cash ?? card;
+    return cash ?? card; // split/unknown → cash (never under-states)
+}
+
 /** Internal signal: a concurrent placement with the same idempotency key already
  * created this group, so createOrder should return it instead of a fresh order. */
 class IdempotentReplay extends Error {
@@ -127,6 +141,7 @@ export class OrdersService {
         private dataSource: DataSource,
         private pushNotificationService: PushNotificationService,
         private notificationsService: NotificationsService,
+        private invoiceTemplatesService: InvoiceTemplatesService,
     ) {}
 
     /**
@@ -1480,6 +1495,12 @@ export class OrdersService {
             settings: offerSettings,
         });
         const combinedLineDiscount = staged.combinedLineDiscount;
+        // Per-line amount for one offer stage (sums to combinedLineDiscount[i]).
+        // Lets each brand-order below persist its promo/order/coupon/card split.
+        const stageLineAmount = (i: number, kind: string): number =>
+            (staged.lineBreakdown?.[i]?.discounts ?? [])
+                .filter((d) => d.kind === kind)
+                .reduce((s, d) => s + d.amount, 0);
         // Compat shims for the per-brand persistence below (unchanged): auto_ =
         // product-promo + discount + card stages combined; coupon_ = coupon stage.
         const auto = {
@@ -1662,6 +1683,31 @@ export class OrdersService {
                     (s, i) => s + (combinedLineDiscount[i] ?? 0),
                     0,
                 );
+                const r2 = (n: number) => Math.round(n * 100) / 100;
+                const brandPromoDiscount = r2(
+                    indices.reduce(
+                        (s, i) => s + stageLineAmount(i, 'product_promotion'),
+                        0,
+                    ),
+                );
+                const brandOrderDiscount = r2(
+                    indices.reduce(
+                        (s, i) => s + stageLineAmount(i, 'discount'),
+                        0,
+                    ),
+                );
+                const brandCouponDiscount = r2(
+                    indices.reduce(
+                        (s, i) => s + stageLineAmount(i, 'coupon'),
+                        0,
+                    ),
+                );
+                const brandCardDiscount = r2(
+                    indices.reduce(
+                        (s, i) => s + stageLineAmount(i, 'card_offer'),
+                        0,
+                    ),
+                );
                 const isFirstOrder = key === firstKey;
                 let afterDiscount =
                     Math.round((brandSubtotal - brandDiscountAmount) * 100) /
@@ -1742,6 +1788,10 @@ export class OrdersService {
                                 notes: dto.notes ?? null,
                                 subtotal: brandSubtotal,
                                 discountAmount: brandDiscountAmount,
+                                promoDiscountAmount: brandPromoDiscount,
+                                orderDiscountAmount: brandOrderDiscount,
+                                couponDiscountAmount: brandCouponDiscount,
+                                cardDiscountAmount: brandCardDiscount,
                                 taxAmount: brandTax,
                                 taxRateCash: gstRates.cash,
                                 taxRateCard: gstRates.card,
@@ -2346,6 +2396,7 @@ export class OrdersService {
             where: { orderGroupId },
             relations: [
                 'brand',
+                'creator',
                 'orderItems',
                 'orderItems.menuItem',
                 'orderItems.menuItem.category',
@@ -2368,10 +2419,25 @@ export class OrdersService {
                 order_number: o.orderNumber,
                 brand_id: o.brandId,
                 brand_name: o.brand?.name ?? null,
+                brand_logo_url: o.brand?.logoUrl ?? null,
                 status: o.status,
+                order_type: o.orderType ?? null,
+                table_number: o.tableNumber ?? null,
+                placed_at: o.placedAt?.toISOString() ?? null,
+                customer_name: o.customerName ?? null,
+                customer_phone: o.customerPhone ?? null,
+                cashier_name:
+                    (o.creator as { name?: string } | undefined)?.name ?? null,
                 subtotal: Number(o.subtotal),
                 discount_amount: Number(o.discountAmount),
+                promo_discount_amount: Number(o.promoDiscountAmount ?? 0),
+                order_discount_amount: Number(o.orderDiscountAmount ?? 0),
+                coupon_discount_amount: Number(o.couponDiscountAmount ?? 0),
+                card_discount_amount: Number(o.cardDiscountAmount ?? 0),
+                discount_code: o.discountCode ?? null,
                 tax_amount: Number(o.taxAmount),
+                tax_rate: effectiveTaxRate(o),
+                tax_basis: o.taxBasis ?? null,
                 service_charge: Number(o.serviceCharge),
                 delivery_fee: Number(o.deliveryFee),
                 delivery_tier: o.deliveryTier ?? null,
@@ -2466,6 +2532,8 @@ export class OrdersService {
             relations: [
                 'brand',
                 'branch',
+                'tenant',
+                'creator',
                 'orderItems',
                 'orderItems.menuItem',
                 'orderItems.menuItem.category',
@@ -2479,6 +2547,10 @@ export class OrdersService {
             ],
         });
         if (!order) throw new NotFoundException('Order not found');
+        const invoiceTemplate = await this.invoiceTemplatesService.resolveActive(
+            order.tenantId,
+            order.brandId,
+        );
         const orderWalletType = mapSourceToWalletType(order.source);
         const loyalty =
             order.customerPhone && orderWalletType != null
@@ -2495,7 +2567,11 @@ export class OrdersService {
             order_number: order.orderNumber,
             order_group_id: order.orderGroupId ?? null,
             brand: order.brand
-                ? { id: order.brand.id, name: order.brand.name }
+                ? {
+                      id: order.brand.id,
+                      name: order.brand.name,
+                      logo_url: order.brand.logoUrl ?? null,
+                  }
                 : null,
             branch: order.branch
                 ? { id: order.branch.id, name: order.branch.name }
@@ -2503,6 +2579,10 @@ export class OrdersService {
             order_type: order.orderType,
             table_number: order.tableNumber,
             placed_at: order.placedAt?.toISOString() ?? null,
+            customer_name: order.customerName ?? null,
+            customer_phone: order.customerPhone ?? null,
+            cashier_name:
+                (order.creator as { name?: string } | undefined)?.name ?? null,
             items:
                 [...(order.orderItems ?? [])]
                     .sort((a, b) => a.id - b.id)
@@ -2533,19 +2613,56 @@ export class OrdersService {
                                 unit_price: Number(a.unitPrice),
                                 subtotal: Number(a.subtotal),
                             })) ?? [],
-                        modifiers:
-                            (
-                                oi as {
-                                    modifiers?: Array<{
-                                        nameSnapshot: string | null;
-                                        priceSnapshot: number | null;
-                                        modifier?: {
-                                            name?: string;
-                                            price?: number;
-                                        };
-                                    }>;
+                        modifiers: (() => {
+                            const mods =
+                                (
+                                    oi as {
+                                        modifiers?: Array<{
+                                            nameSnapshot: string | null;
+                                            priceSnapshot: number | null;
+                                            modifier?: {
+                                                id?: number;
+                                                name?: string;
+                                                price?: number;
+                                                modifierGroup?: {
+                                                    name?: string;
+                                                    visibleWhenModifierIds?:
+                                                        | number[]
+                                                        | null;
+                                                };
+                                            };
+                                        }>;
+                                    }
+                                ).modifiers ?? [];
+                            // Conditional chooser lines (e.g. "Choose your Meal Drink") nest
+                            // under the selected option that made them visible, so the receipt
+                            // reads "Meal +130 -> milkshake upgrade +250" instead of two
+                            // unrelated drink lines.
+                            const byId = new Map(
+                                mods
+                                    .filter((x) => x.modifier?.id != null)
+                                    .map((x) => [x.modifier!.id!, x]),
+                            );
+                            const triggerNameOf = (
+                                m: (typeof mods)[number],
+                            ): string | null => {
+                                const vw =
+                                    m.modifier?.modifierGroup
+                                        ?.visibleWhenModifierIds;
+                                if (!vw?.length) return null;
+                                for (const id of vw) {
+                                    const t = byId.get(id);
+                                    if (t)
+                                        return (
+                                            t.nameSnapshot ??
+                                            t.modifier?.name ??
+                                            null
+                                        );
                                 }
-                            ).modifiers?.map((m) => ({
+                                return null;
+                            };
+                            return mods.map((m) => ({
+                                triggered_by: triggerNameOf(m),
                                 group:
                                     (
                                         m.modifier as
@@ -2574,11 +2691,19 @@ export class OrdersService {
                                                       | undefined
                                               )?.price ?? 0,
                                           ),
-                            })) ?? [],
+                            }));
+                        })(),
                     })) ?? [],
             subtotal: Number(order.subtotal),
             discount_amount: Number(order.discountAmount),
+            promo_discount_amount: Number(order.promoDiscountAmount ?? 0),
+            order_discount_amount: Number(order.orderDiscountAmount ?? 0),
+            coupon_discount_amount: Number(order.couponDiscountAmount ?? 0),
+            card_discount_amount: Number(order.cardDiscountAmount ?? 0),
+            discount_code: order.discountCode ?? null,
             tax_amount: Number(order.taxAmount),
+            tax_rate: effectiveTaxRate(order),
+            tax_basis: order.taxBasis ?? null,
             service_charge: Number(order.serviceCharge),
             delivery_fee: Number(order.deliveryFee),
             delivery_tier: order.deliveryTier ?? null,
@@ -2588,6 +2713,16 @@ export class OrdersService {
             loyalty_points_earned: order.loyaltyPointsEarned ?? 0,
             loyalty_points_redeemed: order.loyaltyPointsRedeemed ?? 0,
             loyalty_points_remaining: Number(loyaltyBalance ?? 0),
+            currency: order.tenant?.defaultCurrency ?? null,
+            header: {
+                legal_name: order.tenant?.legalName ?? order.tenant?.name ?? null,
+                tenant_name: order.tenant?.name ?? null,
+                branch_name: order.branch?.name ?? null,
+                address: order.branch?.address ?? null,
+                phone: order.branch?.phone ?? null,
+                email: order.branch?.email ?? null,
+            },
+            template: invoiceTemplate,
         };
     }
 
@@ -2596,7 +2731,7 @@ export class OrdersService {
         const group = await this.getOrderGroup(orderGroupId);
         const firstOrder = await this.orderRepo.findOne({
             where: { orderGroupId },
-            select: ['id', 'tenantId', 'customerPhone', 'source', 'brandId'],
+            relations: ['tenant', 'branch'],
         });
         const groupWalletType = firstOrder
             ? mapSourceToWalletType(firstOrder.source)
@@ -2615,38 +2750,63 @@ export class OrdersService {
             (sum, o) => sum + Number(o.total_amount),
             0,
         );
+        // Resolve the invoice template. A group is usually single-brand (POS/app);
+        // if it spans brands (web split), fall back to the tenant-wide template.
+        const brandIds = [...new Set(group.orders.map((o) => o.brand_id))];
+        const templateBrandId = brandIds.length === 1 ? brandIds[0] : null;
+        const template = await this.invoiceTemplatesService.resolveActive(
+            firstOrder?.tenantId ?? null,
+            templateBrandId,
+        );
         return {
             order_group_id: orderGroupId,
             orders: group.orders.map((o) => ({
                 order_id: o.id,
                 order_number: o.order_number,
                 brand_name: o.brand_name,
+                brand_logo_url: o.brand_logo_url,
+                order_type: o.order_type,
+                table_number: o.table_number,
+                placed_at: o.placed_at,
+                customer_name: o.customer_name,
+                customer_phone: o.customer_phone,
+                cashier_name: o.cashier_name,
                 items: o.items,
                 subtotal: o.subtotal,
                 discount_amount: o.discount_amount,
+                promo_discount_amount: o.promo_discount_amount,
+                order_discount_amount: o.order_discount_amount,
+                coupon_discount_amount: o.coupon_discount_amount,
+                card_discount_amount: o.card_discount_amount,
+                discount_code: o.discount_code,
                 tax_amount: o.tax_amount,
+                tax_rate: o.tax_rate,
+                tax_basis: o.tax_basis,
                 service_charge: o.service_charge,
                 delivery_fee: o.delivery_fee,
-                delivery_tier:
-                    (o as { delivery_tier?: string | null }).delivery_tier ??
-                    null,
-                delivery_eta_min_minutes:
-                    (o as { delivery_eta_min_minutes?: number | null })
-                        .delivery_eta_min_minutes ?? null,
-                delivery_eta_max_minutes:
-                    (o as { delivery_eta_max_minutes?: number | null })
-                        .delivery_eta_max_minutes ?? null,
+                delivery_tier: o.delivery_tier ?? null,
+                delivery_eta_min_minutes: o.delivery_eta_min_minutes ?? null,
+                delivery_eta_max_minutes: o.delivery_eta_max_minutes ?? null,
                 total_amount: o.total_amount,
-                loyalty_points_earned:
-                    (o as { loyalty_points_earned?: number })
-                        .loyalty_points_earned ?? 0,
-                loyalty_points_redeemed:
-                    (o as { loyalty_points_redeemed?: number })
-                        .loyalty_points_redeemed ?? 0,
+                loyalty_points_earned: o.loyalty_points_earned ?? 0,
+                loyalty_points_redeemed: o.loyalty_points_redeemed ?? 0,
                 loyalty_points_remaining: Number(groupLoyaltyBalance ?? 0),
             })),
             gross_total: Math.round(grossTotal * 100) / 100,
             loyalty_points_remaining: Number(groupLoyaltyBalance ?? 0),
+            currency: firstOrder?.tenant?.defaultCurrency ?? null,
+            header: {
+                legal_name:
+                    firstOrder?.tenant?.legalName ??
+                    firstOrder?.tenant?.name ??
+                    null,
+                tenant_name: firstOrder?.tenant?.name ?? null,
+                branch_name: firstOrder?.branch?.name ?? null,
+                address: firstOrder?.branch?.address ?? null,
+                phone: firstOrder?.branch?.phone ?? null,
+                email: firstOrder?.branch?.email ?? null,
+            },
+            template,
         };
     }
 
@@ -2888,19 +3048,56 @@ export class OrdersService {
                                 quantity: a.quantity,
                                 subtotal: Number(a.subtotal),
                             })) ?? [],
-                        modifiers:
-                            (
-                                oi as {
-                                    modifiers?: Array<{
-                                        nameSnapshot: string | null;
-                                        priceSnapshot: number | null;
-                                        modifier?: {
-                                            name?: string;
-                                            price?: number;
-                                        };
-                                    }>;
+                        modifiers: (() => {
+                            const mods =
+                                (
+                                    oi as {
+                                        modifiers?: Array<{
+                                            nameSnapshot: string | null;
+                                            priceSnapshot: number | null;
+                                            modifier?: {
+                                                id?: number;
+                                                name?: string;
+                                                price?: number;
+                                                modifierGroup?: {
+                                                    name?: string;
+                                                    visibleWhenModifierIds?:
+                                                        | number[]
+                                                        | null;
+                                                };
+                                            };
+                                        }>;
+                                    }
+                                ).modifiers ?? [];
+                            // Conditional chooser lines (e.g. "Choose your Meal Drink") nest
+                            // under the selected option that made them visible, so the receipt
+                            // reads "Meal +130 -> milkshake upgrade +250" instead of two
+                            // unrelated drink lines.
+                            const byId = new Map(
+                                mods
+                                    .filter((x) => x.modifier?.id != null)
+                                    .map((x) => [x.modifier!.id!, x]),
+                            );
+                            const triggerNameOf = (
+                                m: (typeof mods)[number],
+                            ): string | null => {
+                                const vw =
+                                    m.modifier?.modifierGroup
+                                        ?.visibleWhenModifierIds;
+                                if (!vw?.length) return null;
+                                for (const id of vw) {
+                                    const t = byId.get(id);
+                                    if (t)
+                                        return (
+                                            t.nameSnapshot ??
+                                            t.modifier?.name ??
+                                            null
+                                        );
                                 }
-                            ).modifiers?.map((m) => ({
+                                return null;
+                            };
+                            return mods.map((m) => ({
+                                triggered_by: triggerNameOf(m),
                                 group:
                                     (
                                         m.modifier as
@@ -2929,7 +3126,8 @@ export class OrdersService {
                                                       | undefined
                                               )?.price ?? 0,
                                           ),
-                            })) ?? [],
+                            }));
+                        })(),
                     })) ?? [],
             payments:
                 order.payments?.map((p) => ({

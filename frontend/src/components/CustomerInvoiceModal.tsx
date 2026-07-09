@@ -3,13 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { orderService } from '../services/api';
 import { formatCurrency } from '../utils/currency';
 import { printContent } from '../utils/print';
+import { renderInvoiceHtml } from '../invoices/renderInvoice';
+import { InvoiceVM, InvoiceLayout } from '../invoices/types';
 import Modal from './Modal';
 import Loader from './Loader';
 import Button from './Button';
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
 
 export type MainInvoiceLine = {
   name_snapshot?: string;
@@ -21,7 +19,7 @@ export type MainInvoiceLine = {
   deal_slot_index?: number | null;
   deal_name?: string | null;
   addons?: Array<{ name?: string | null; quantity: number; unit_price: number; subtotal?: number }>;
-  modifiers?: Array<{ name?: string | null; unit_price: number; group?: string | null }>;
+  modifiers?: Array<{ name?: string | null; unit_price: number; group?: string | null; triggered_by?: string | null }>;
 };
 
 export type MainInvoiceOrder = {
@@ -46,6 +44,62 @@ export type MainInvoiceData = {
   gross_total: number;
   loyalty_points_remaining?: number;
 };
+
+/** Normalize the single-order invoice payload into the group-shaped view model (print only). */
+function singleToPrintVM(s: Record<string, unknown>): InvoiceVM {
+  const items = ((s.items as Array<Record<string, unknown>>) ?? []).map((i) => ({
+    name_snapshot: (i.name as string) ?? (i.name_snapshot as string),
+    quantity: i.quantity as number,
+    unit_price: i.unit_price as number,
+    subtotal: i.subtotal as number,
+    variant_name: (i.variant_name as string) ?? null,
+    category: (i.category as string) ?? null,
+    deal_id: (i.deal_id as number) ?? null,
+    deal_slot_index: (i.deal_slot_index as number) ?? null,
+    deal_name: (i.deal_name as string) ?? null,
+    addons: (i.addons as never) ?? [],
+    modifiers: (i.modifiers as never) ?? [],
+  }));
+  const brand = s.brand as { name?: string; logo_url?: string } | null;
+  return {
+    order_group_id: (s.order_group_id as string) ?? `order-${s.order_id}`,
+    currency: (s.currency as string) ?? null,
+    header: (s.header as never) ?? undefined,
+    template: (s.template as never) ?? undefined,
+    orders: [
+      {
+        order_id: s.order_id as number,
+        order_number: s.order_number as string,
+        brand_name: brand?.name ?? null,
+        brand_logo_url: brand?.logo_url ?? null,
+        order_type: (s.order_type as string) ?? null,
+        table_number: (s.table_number as string) ?? null,
+        placed_at: (s.placed_at as string) ?? null,
+        customer_name: (s.customer_name as string) ?? null,
+        customer_phone: (s.customer_phone as string) ?? null,
+        cashier_name: (s.cashier_name as string) ?? null,
+        items,
+        subtotal: (s.subtotal as number) ?? 0,
+        discount_amount: (s.discount_amount as number) ?? 0,
+        promo_discount_amount: (s.promo_discount_amount as number) ?? 0,
+        order_discount_amount: (s.order_discount_amount as number) ?? 0,
+        coupon_discount_amount: (s.coupon_discount_amount as number) ?? 0,
+        card_discount_amount: (s.card_discount_amount as number) ?? 0,
+        discount_code: (s.discount_code as string) ?? null,
+        tax_amount: (s.tax_amount as number) ?? 0,
+        tax_rate: (s.tax_rate as number) ?? null,
+        service_charge: (s.service_charge as number) ?? 0,
+        delivery_fee: (s.delivery_fee as number) ?? 0,
+        total_amount: (s.total_amount as number) ?? 0,
+        loyalty_points_earned: (s.loyalty_points_earned as number) ?? 0,
+        loyalty_points_redeemed: (s.loyalty_points_redeemed as number) ?? 0,
+        loyalty_points_remaining: (s.loyalty_points_remaining as number) ?? 0,
+      },
+    ],
+    gross_total: (s.total_amount as number) ?? 0,
+    loyalty_points_remaining: (s.loyalty_points_remaining as number) ?? 0,
+  };
+}
 
 interface CustomerInvoiceModalProps {
   isOpen: boolean;
@@ -142,74 +196,20 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
     return result;
   };
 
+  /**
+   * PRINT ONLY: render the printout from the tenant's configured invoice template
+   * (selectable schema + field toggles). The on-screen view below is unchanged.
+   */
   const handlePrint = () => {
-    if (!invoiceData) return;
-    const ordersHtml = (invoiceData.orders ?? []).map((o: MainInvoiceOrder) => {
-      const groups = groupItemsForReceipt(o.items ?? []);
-      const itemsRows = groups.map((group) => {
-        if (group.dealId != null && group.lines.length > 0) {
-          const dealTotal = group.lines.reduce((s, l) => s + Number(l.subtotal), 0);
-          const subRows = group.lines
-            .map((line) => {
-              const name = line.name_snapshot ?? 'Item';
-              const variant = (line.variant_name ?? '').trim();
-              return `<tr class="sub"><td style="padding-left:14px;">${escapeHtml(name)}${variant ? ` (${escapeHtml(variant)})` : ''} × ${line.quantity}</td><td class="text-right">${Number(line.unit_price) === 0 ? '—' : formatCurrency(Number(line.subtotal))}</td></tr>`;
-            })
-            .join('');
-          const dealName = group.lines.find((l) => l.deal_name)?.deal_name ?? 'Deal';
-          return `<tr><td><strong>${escapeHtml(dealName)}</strong></td><td class="text-right">${formatCurrency(dealTotal)}</td></tr>${subRows}`;
-        }
-        return group.lines.map((line) => {
-          const name = line.name_snapshot ?? 'Item';
-          const variant = (line.variant_name ?? '').trim();
-          const base = lineBaseTotal(line);
-          const addons = (line.addons ?? [])
-            .map((a) => {
-              const label = a.name ? `Add-on: ${a.name}` : 'Add-on';
-              const qty = Number(a.quantity ?? 1);
-              const amount = addonTotal(a);
-              return `<tr class="sub"><td style="padding-left:14px;">${escapeHtml(label)}${qty !== 1 ? ` × ${qty}` : ''}</td><td class="text-right">${formatCurrency(amount)}</td></tr>`;
-            })
-            .join('');
-          const mods = (line.modifiers ?? [])
-            .map((m) => {
-              const prefix = m.group ?? 'Modifier';
-              const label = m.name ? `${prefix}: ${m.name}` : prefix;
-              return `<tr class="sub"><td style="padding-left:14px;">${escapeHtml(label)}</td><td class="text-right">${formatCurrency(Number(m.unit_price))}</td></tr>`;
-            })
-            .join('');
-          const baseRow = `<tr><td>${escapeHtml(name)}${variant ? ` <span style="color:#666;">(Variant: ${escapeHtml(variant)})</span>` : ''} × ${line.quantity}</td><td class="text-right">${formatCurrency(base)}</td></tr>`;
-          const lineTotalRow = (addons || mods)
-            ? `<tr class="sub"><td style="padding-left:14px; font-style:italic; color:#666;">Line total</td><td class="text-right" style="font-style:italic; color:#666;">${formatCurrency(Number(line.subtotal))}</td></tr>`
-            : '';
-          return `${baseRow}${addons}${mods}${lineTotalRow}`;
-        }).join('');
-      }).join('');
-      const pointsEarned = Number((o as MainInvoiceOrder).loyalty_points_earned ?? 0);
-      const pointsRedeemed = Number((o as MainInvoiceOrder).loyalty_points_redeemed ?? 0);
-      const pointsRemaining = Number((o as MainInvoiceOrder).loyalty_points_remaining ?? invoiceData.loyalty_points_remaining ?? 0);
-      return `
-        <div class="section">
-          <h2>${o.brand_name ? escapeHtml(o.brand_name) + ' — ' : ''}Order #${escapeHtml(o.order_number)}</h2>
-          <table><tbody>${itemsRows}</tbody></table>
-          <p class="text-sm py-2 border-t">Subtotal: ${formatCurrency(Number(o.subtotal))}</p>
-          ${Number(o.discount_amount) > 0 ? `<p class="text-sm">Discount: -${formatCurrency(Number(o.discount_amount))}</p>` : ''}
-          <p class="text-sm">Tax: ${formatCurrency(Number(o.tax_amount))}</p>
-          ${Number(o.delivery_fee) > 0 ? `<p class="text-sm">Delivery fee: ${formatCurrency(Number(o.delivery_fee))}</p>` : ''}
-          <p class="text-sm text-green-700">Earned points: ${pointsEarned}</p>
-          <p class="text-sm text-gray-600">Redeemed points: ${pointsRedeemed}</p>
-          <p class="text-sm text-gray-800">Remaining points: ${pointsRemaining}</p>
-          <p class="font-semibold py-2">Total: ${formatCurrency(Number(o.total_amount))}</p>
-        </div>
-      `;
-    }).join('');
-    const html = `
-      ${ordersHtml}
-      <div class="section border-t total-row" style="margin-top: 24px; padding-top: 16px;">
-        <p class="font-bold">${invoiceData.orders.length > 1 ? 'Gross total' : 'Total'}: ${formatCurrency(Number(invoiceData.gross_total ?? 0))}</p>
-      </div>
-    `;
-    printContent(html, 'Customer invoice');
+    const printData: InvoiceVM | null = hasGroup
+      ? ((mainInvoice as unknown as InvoiceVM) ?? null)
+      : singleInvoice
+        ? singleToPrintVM(singleInvoice as unknown as Record<string, unknown>)
+        : null;
+    if (!printData) return;
+    const layout: InvoiceLayout = printData.template?.layout ?? 'thermal_80mm';
+    const { html, css } = renderInvoiceHtml(printData, layout, printData.template?.config ?? null);
+    printContent(html, 'Customer invoice', css);
   };
 
   return (
@@ -229,6 +229,13 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
         <p className="text-red-600 py-4">Failed to load invoice. Please try again.</p>
       ) : invoiceData ? (
         <div className="space-y-6">
+          <div className="flex justify-center">
+            <img
+              src="/foodies-logo.png"
+              alt="Foodies"
+              className="w-20 h-20 object-contain"
+            />
+          </div>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
             {(invoiceData.orders ?? []).map((o: MainInvoiceOrder) => (
               <div
@@ -306,16 +313,42 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                                       </td>
                                     </tr>
                                   ))}
-                                  {(line.modifiers ?? []).map((m, mi: number) => (
-                                    <tr key={`m-${gi}-${i}-${mi}`} className="border-b border-gray-100">
-                                      <td className="py-1 text-gray-500 pl-4">
-                                        {m.group ?? 'Modifier'}: {m.name ?? '—'}
-                                      </td>
-                                      <td className="py-1 text-right text-gray-600">
-                                        {formatCurrency(Number(m.unit_price))}
-                                      </td>
-                                    </tr>
-                                  ))}
+                                  {(() => {
+                                    // Nest conditional chooser picks under their trigger option
+                                    // (e.g. milkshake upgrade under "Add a 345ml Drink").
+                                    const mods = line.modifiers ?? [];
+                                    const isChild = (m: (typeof mods)[number]) =>
+                                      !!m.triggered_by && mods.some((x) => x !== m && (x.name ?? '') === m.triggered_by);
+                                    const roots = mods.filter((m) => !isChild(m));
+                                    const rows: React.ReactNode[] = [];
+                                    roots.forEach((m, mi) => {
+                                      rows.push(
+                                        <tr key={`m-${gi}-${i}-${mi}`} className="border-b border-gray-100">
+                                          <td className="py-1 text-gray-500 pl-4">
+                                            {m.group ?? 'Modifier'}: {m.name ?? '—'}
+                                          </td>
+                                          <td className="py-1 text-right text-gray-600">
+                                            {formatCurrency(Number(m.unit_price))}
+                                          </td>
+                                        </tr>,
+                                      );
+                                      mods
+                                        .filter((c) => isChild(c) && c.triggered_by === (m.name ?? ''))
+                                        .forEach((c, ci) => {
+                                          rows.push(
+                                            <tr key={`mc-${gi}-${i}-${mi}-${ci}`} className="border-b border-gray-100">
+                                              <td className="py-1 text-gray-500 pl-8">↳ {c.name ?? '—'}</td>
+                                              <td className="py-1 text-right text-gray-600">
+                                                {Number(c.unit_price) ? formatCurrency(Number(c.unit_price)) : (
+                                                  <span className="text-emerald-600">Included</span>
+                                                )}
+                                              </td>
+                                            </tr>,
+                                          );
+                                        });
+                                    });
+                                    return rows;
+                                  })()}
                                   {hasExtras && (
                                     <tr className="border-b border-gray-100 last:border-0">
                                       <td className="py-1 text-gray-500 pl-4 italic">
