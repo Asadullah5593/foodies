@@ -29,7 +29,8 @@
  *  - obvious sheet spelling slips in customer-facing names are normalised (Frerrero→Ferrero,
  *    Claasic→Classic, Coffe→Coffee, Macha→Matcha, Valvet→Velvet, Dounut→Doughnut, Plian→Plain);
  *    prices and item set are kept verbatim.
- *  - fizzy drinks: 345ml sodas only, Rs130 (client-confirmed: no 1L/1.5L); Water 500ml & Juice 200ml
+ *  - fizzy drinks: 345ml sodas are Rs130 (Coke/Diet/Zero/Fanta/Sprite), each also offered as 1L
+ *    (Rs199) and 1.5L (Rs249), matching the other brands; Water 500ml & Juice 200ml
  *    are single-size at Rs75. Modelled as size variants (no deals reference them, unlike WOK&GO).
  *  - Kcal / Allergens columns are present but BLANK on the sheet → left null.
  *
@@ -501,6 +502,8 @@ async function seed() {
             basePrice: 130,
             sizes: [
                 { name: '345ml', sizeKey: null, price: 130, isDefault: true },
+                { name: '1L', sizeKey: null, price: 199 },
+                { name: '1.5L', sizeKey: null, price: 249 },
             ],
         });
     }
