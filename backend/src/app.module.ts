@@ -16,6 +16,7 @@ import { CategoriesModule } from './categories/categories.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { DiscountsModule } from './discounts/discounts.module';
+import { InvoicesModule } from './invoices/invoices.module';
 import { BankCardsModule } from './bank-cards/bank-cards.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { ReportsModule } from './reports/reports.module';
@@ -75,6 +76,7 @@ import { NotificationsModule } from './notifications/notifications.module';
         OrdersModule,
         PaymentsModule,
         DiscountsModule,
+        InvoicesModule,
         BankCardsModule,
         ShiftsModule,
         ReportsModule,

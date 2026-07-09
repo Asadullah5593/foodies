@@ -381,3 +381,35 @@ they show up in that customer's `GET /vouchers/mine` automatically.
 | GET | `/public/consumer/vouchers/mine` | **Bearer** |
 | GET | `/public/consumer/vouchers/resolve?token=` | — |
 | GET | `/public/consumer/banners` | — |
+
+---
+
+## Invoice payload (order receipt) — new fields
+
+The order-invoice payloads (`GET /pos/orders/:id/invoice` and `GET /pos/orders/group/:groupId/main-invoice`) were **extended** — all additive, nothing renamed. Any client rendering a receipt can now honour the tenant's configured invoice template.
+
+Each order in the payload now also carries the **discount breakdown** (they sum to the existing combined `discount_amount`; populated for orders placed after this change, `0` on older orders):
+
+```jsonc
+{
+  "discount_amount": 96,           // combined (unchanged)
+  "promo_discount_amount": 70,     // ← product-promotion stage
+  "order_discount_amount": 0,      // ← order-discount stage
+  "coupon_discount_amount": 26,    // ← coupon stage
+  "card_discount_amount": 0,       // ← bank-card stage
+  "discount_code": "SAVE10",
+  "tax_rate": 0.15,                // ← fraction; multiply by 100 for the % label
+  "tax_basis": "cash",
+  "brand_logo_url": "https://…",   // ← per-brand logo
+  "order_type": "dine_in", "table_number": "7", "placed_at": "…",
+  "customer_name": "…", "customer_phone": "…", "cashier_name": "…",
+  "payment_method": "cash"         // ← distinct completed tenders, "cash + card" for split; null if untendered
+}
+```
+
+Group/single invoice root now also returns:
+- `currency` — tenant currency code (format the symbol client-side).
+- `header` — `{ legal_name, tenant_name, branch_name, address, phone, email }`.
+- `template` — the **resolved active invoice template**: `{ id, layout, config: { …field toggles… } }`. `layout` is one of `"bill_bordered"` (dine-in bill, bordered Item/Qty/Rate/Amount table), `"receipt_logo"` (logo-forward counter receipt with a big Order # band), `"thermal_modern"` (clean minimal), `"thermal_classic"` (monospace), `"thermal_58mm"` (narrow roll) or `"a4_invoice"` (full page) — all but A4 are thermal-roll widths. Header details (order no, date, cashier, payment, customer) render as a two-column label/value table in every layout. The `config` booleans (e.g. `showCategory`, `showTax`, `showPromoDiscount`, `showPaymentMethod`, `showPoweredBy`) tell the client which fields to render; resolution is brand-default → tenant-default → built-in default, so `template` is always present. There is **no** `logoUrl` or `taxLabel` key — each order's own brand logo always prints (the platform logo is used only when a brand has none), and the tax line label is fixed. For a native renderer, mirror `frontend/src/invoices/renderInvoice.ts`.
+
+Admin manage the templates via `GET/POST/PUT/DELETE /admin/invoice-templates` (+ `PUT /admin/invoice-templates/:id/activate`, `GET /admin/invoice-templates/active?brand_id=`). See `backend/src/invoices/invoice-template-config.ts` for the full config contract.

@@ -76,9 +76,12 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
           </label>
           <input
             type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            data-keyboard="numeric"
             required
             value={tableNumber}
-            onChange={(e) => onTableNumberChange(e.target.value)}
+            onChange={(e) => onTableNumberChange(e.target.value.replace(/\D/g, ''))}
             placeholder="e.g. 5"
             className="w-full px-4 py-2.5 border border-foodies-border rounded-xl bg-foodies-surface text-foodies-textPrimary placeholder-foodies-textSecondary focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
           />

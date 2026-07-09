@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { orderModifiersWithNesting } from '../../utils/modifierNesting';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -22,6 +23,7 @@ type OrderDetailItem = {
   unit_price: number;
   subtotal: number;
   notes?: string;
+  triggered_by?: string | null;
   variant_id?: number | null;
   variant_name?: string | null;
   deal_id?: number | null;
@@ -49,6 +51,7 @@ type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   order_type?: string;
   order_group_id?: string | null;
   table_number?: string;
+  notes?: string;
   customer_name?: string;
   customer_phone?: string;
   delivery_address?: string;
@@ -158,16 +161,24 @@ const OrderDetail: React.FC = () => {
         const base = Number(item.unit_price ?? 0) * item.quantity;
         const baseRow = `<tr><td>${escapeHtml(String(item.name_snapshot ?? 'Item'))}${item.variant_name ? ` <span style="color:#666;">(Variant: ${escapeHtml(item.variant_name)})</span>` : ''} × ${item.quantity}</td><td class="text-right">${formatCurrency(base)}</td></tr>`;
         const addonRows = (item.addons ?? []).map((a) => `<tr class="sub"><td style="padding-left:14px;">Add-on: ${escapeHtml(a.name ?? '—')}${Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</td><td class="text-right">${formatCurrency(addonTotal(a))}</td></tr>`).join('');
-        const modRows = (item.modifiers ?? []).map((m) => `<tr class="sub"><td style="padding-left:14px;">Modifier: ${escapeHtml(m.name ?? '—')}</td><td class="text-right">${formatCurrency(Number(m.unit_price))}</td></tr>`).join('');
+        const modRows = orderModifiersWithNesting(item.modifiers ?? [])
+          .map(({ mod: m, nested }) =>
+            nested
+              ? `<tr class="sub"><td style="padding-left:28px;">↳ ${escapeHtml(m.name ?? '—')}</td><td class="text-right">${Number(m.unit_price) ? formatCurrency(Number(m.unit_price)) : '<span style="color:#067647;">Included</span>'}</td></tr>`
+              : `<tr class="sub"><td style="padding-left:14px;">${escapeHtml(m.group ?? 'Modifier')}: ${escapeHtml(m.name ?? '—')}</td><td class="text-right">${formatCurrency(Number(m.unit_price))}</td></tr>`,
+          )
+          .join('');
+        const noteRow = item.notes ? `<tr class="sub"><td colspan="2" style="padding-left:28px; font-style:italic; color:#b45309;">Note: ${escapeHtml(item.notes)}</td></tr>` : '';
         const hasExtras = (item.addons?.length ?? 0) > 0 || (item.modifiers?.length ?? 0) > 0;
         const lineTotalRow = hasExtras ? `<tr class="sub"><td style="padding-left:14px; font-style:italic; color:#666;">Line total</td><td class="text-right" style="font-style:italic; color:#666;">${formatCurrency(Number(item.subtotal ?? 0))}</td></tr>` : '';
-        return `${baseRow}${addonRows}${modRows}${lineTotalRow}`;
+        return `${baseRow}${addonRows}${modRows}${noteRow}${lineTotalRow}`;
       })
       .join('');
     const html = `
       <h1>Order #${escapeHtml(String(orderNum))}</h1>
       ${o.brand?.name ? `<p class="meta">${escapeHtml(o.brand.name)}</p>` : ''}
       <p class="meta">${escapeHtml(typeLabel)} · ${o.branch ? escapeHtml(o.branch.name) : ''} · ${o.placed_at ? new Date(o.placed_at).toLocaleString() : ''}</p>
+      ${o.notes ? `<div class="section"><p class="font-medium">Order note: ${escapeHtml(o.notes)}</p></div>` : ''}
       ${o.table_number || o.customer_name || o.customer_phone ? `<div class="section"><p class="font-medium">${o.table_number ? `Table: ${escapeHtml(o.table_number)}` : ''} ${o.customer_name ? ` · Customer: ${escapeHtml(o.customer_name)}` : ''} ${o.customer_phone ? ` · Phone: ${escapeHtml(o.customer_phone)}` : ''}</p></div>` : ''}
       <h2>Items</h2>
       <table><thead><tr><th>Item</th><th class="text-right">Amount</th></tr></thead><tbody>${itemsHtml}</tbody></table>
@@ -240,6 +251,11 @@ const OrderDetail: React.FC = () => {
           {o.creator && <span>Created by: {o.creator.name}</span>}
           {o.placed_at && <span>Placed: {new Date(o.placed_at).toLocaleString()}</span>}
         </div>
+        {o.notes && (
+          <div className="mt-3 text-sm font-medium text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/40 px-3 py-2 rounded-lg border border-amber-200 dark:border-amber-700">
+            Order note: {o.notes}
+          </div>
+        )}
         {(o.table_number || o.customer_name || o.customer_phone || o.delivery_address) && (
           <div className="rounded-lg bg-gray-50 dark:bg-slate-700/50 p-4 text-sm text-gray-700 dark:text-slate-300 space-y-1 mb-4">
             {o.table_number && <p><span className="font-medium text-gray-500 dark:text-slate-400">Table:</span> {o.table_number}</p>}
@@ -302,10 +318,10 @@ const OrderDetail: React.FC = () => {
                       <span>{formatCurrency(addonTotal(a))}</span>
                     </div>
                   ))}
-                  {(item.modifiers ?? []).map((m, i) => (
-                    <div key={`m-${i}`} className="flex justify-between items-center mt-1.5 pl-4 text-sm text-gray-600 dark:text-slate-400 border-b border-gray-100 dark:border-slate-600 pb-1">
-                      <span>{m.group ?? 'Modifier'}: {m.name ?? '—'}</span>
-                      <span>{formatCurrency(Number(m.unit_price))}</span>
+                  {orderModifiersWithNesting(item.modifiers ?? []).map(({ mod: m, nested }, i) => (
+                    <div key={`m-${i}`} className={`flex justify-between items-center mt-1.5 ${nested ? 'pl-8' : 'pl-4'} text-sm text-gray-600 dark:text-slate-400 border-b border-gray-100 dark:border-slate-600 pb-1`}>
+                      <span>{nested ? <>↳ {m.name ?? '—'}</> : <>{m.group ?? 'Modifier'}: {m.name ?? '—'}</>}</span>
+                      <span>{nested && !Number(m.unit_price) ? <span className="text-emerald-600">Included</span> : formatCurrency(Number(m.unit_price))}</span>
                     </div>
                   ))}
                   {hasExtras && (
