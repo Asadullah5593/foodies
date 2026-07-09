@@ -305,15 +305,17 @@ function itemsTableHtml(
 }
 
 /**
- * Meta block as a two-column label / value table — order no, type, table, date,
- * cashier, payment, customer, note. Shared by every template so the header
- * details read the same way everywhere.
+ * Meta block as a two-column label / value table — order no, invoice no, type,
+ * table, date, cashier, payment, customer. Shared by every template so the
+ * header details read the same way everywhere. The order note is intentionally
+ * NOT here — it renders below the items (see orderNoteHtml).
  */
 function metaTableHtml(order: InvoiceOrderVM, cfg: InvoiceTemplateConfig): string {
   const rows: string[] = [];
   const add = (k: string, v: string) =>
     rows.push(`<tr><td class="mk">${esc(k)}</td><td class="mv">${v}</td></tr>`);
   if (cfg.showOrderNumber) add('Order #', esc(order.order_number));
+  if (cfg.showInvoiceNumber && order.invoice_number) add('Invoice #', esc(order.invoice_number));
   if (cfg.showOrderType && order.order_type) add('Type', esc(titleCase(String(order.order_type))));
   if (cfg.showTableNumber && order.table_number) add('Table', esc(order.table_number));
   if (cfg.showDateTime && order.placed_at) add('Date', esc(fmtDateTime(order.placed_at)));
@@ -321,8 +323,14 @@ function metaTableHtml(order: InvoiceOrderVM, cfg: InvoiceTemplateConfig): strin
   if (cfg.showPaymentMethod && order.payment_method) add('Payment', esc(titleCase(order.payment_method)));
   if (cfg.showCustomerInfo && (order.customer_name || order.customer_phone))
     add('Customer', esc([order.customer_name, order.customer_phone].filter(Boolean).join(' · ')));
-  if (cfg.showOrderNotes && order.notes) add('Note', `<em>${esc(order.notes)}</em>`);
   return rows.length ? `<table class="metatbl"><tbody>${rows.join('')}</tbody></table>` : '';
+}
+
+/** Order-level note, shown BELOW the items (never in the top meta block). */
+function orderNoteHtml(order: InvoiceOrderVM, cfg: InvoiceTemplateConfig): string {
+  return cfg.showOrderNotes && order.notes
+    ? `<div class="onote">Note: ${esc(order.notes)}</div>`
+    : '';
 }
 
 function totalsHtml(
@@ -391,11 +399,12 @@ function totalsHtml(
 }
 
 /**
- * Business header (logo, name, branch, address, phone) shared by all layouts.
- * A single-brand receipt leads with THAT brand's name (like the real samples);
- * a multi-brand group leads with the business name and shows each brand per
- * section. The legal/tenant name renders as a sub-line when it differs from the
- * brand title, so tax/legal identity is never lost.
+ * Business header: logo, brand/business name, then whatever the admin typed in
+ * the template's Header Text box. Branch address / phone are NOT auto-filled —
+ * that area is empty by default and the admin controls it entirely via Header
+ * Text (so each brand shows exactly the contact details it wants). A single-
+ * brand receipt leads with THAT brand's name; a multi-brand group leads with
+ * the business name and shows each brand per section.
  */
 function bizHeaderHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
   const header = data.header ?? {};
@@ -404,16 +413,10 @@ function bizHeaderHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
   const logoUrl = headerLogoUrl(cfg, first, multi);
   const legal = header.legal_name || header.tenant_name || '';
   const title = (!multi && first?.brand_name) || legal;
-  const subLegal = title !== legal && legal ? legal : '';
   return `
     <div class="head">
       ${logoUrl ? `<img class="logo" src="${esc(logoUrl)}" alt="" />` : ''}
       <div class="biz">${esc(title)}</div>
-      ${subLegal ? `<div class="line biz-legal">${esc(subLegal)}</div>` : ''}
-      ${header.branch_name ? `<div class="line">${esc(header.branch_name)}</div>` : ''}
-      ${header.address ? `<div class="line">${esc(header.address)}</div>` : ''}
-      ${header.phone ? `<div class="line">Ph: ${esc(header.phone)}</div>` : ''}
-      ${header.email ? `<div class="line">${esc(header.email)}</div>` : ''}
       ${cfg.headerText ? `<div class="line note">${esc(cfg.headerText)}</div>` : ''}
     </div>`;
 }
@@ -451,6 +454,7 @@ function billBorderedBody(
           ${multi ? brandBlockHtml(o, cfg) : ''}
           ${metaTableHtml(o, cfg)}
           ${itemsTableHtml(o, cfg, { item: 'Item Name', qty: 'Qty', rate: 'Rate', amount: 'Amount' })}
+          ${orderNoteHtml(o, cfg)}
           ${totalsHtml(o, cfg, money, 'Grand Total')}
         </div>`,
     )
@@ -476,20 +480,34 @@ function receiptLogoBody(
       const typeBits: string[] = [];
       if (cfg.showOrderType && o.order_type) typeBits.push(titleCase(String(o.order_type)));
       if (cfg.showTableNumber && o.table_number) typeBits.push(`Table ${o.table_number}`);
-      const band = cfg.showOrderNumber
-        ? `<div class="orderband"><div class="onum">Order # ${esc(o.order_number)}</div>${typeBits.length ? `<div class="otype">${esc(typeBits.join(' · '))}</div>` : ''}</div>`
-        : typeBits.length
-          ? `<div class="orderband"><div class="otype">${esc(typeBits.join(' · '))}</div></div>`
+      const onumLine = cfg.showOrderNumber
+        ? `<div class="onum">Order # ${esc(o.order_number)}</div>`
+        : '';
+      const invLine =
+        cfg.showInvoiceNumber && o.invoice_number
+          ? `<div class="oinv">Invoice # ${esc(o.invoice_number)}</div>`
           : '';
-      // The big Order # band already carries order no / type / table, so drop
-      // them from the meta table here to avoid repeating the same three fields.
-      const metaCfg = { ...cfg, showOrderNumber: false, showOrderType: false, showTableNumber: false };
+      const typeLine = typeBits.length ? `<div class="otype">${esc(typeBits.join(' · '))}</div>` : '';
+      const band =
+        onumLine || invLine || typeLine
+          ? `<div class="orderband">${onumLine}${invLine}${typeLine}</div>`
+          : '';
+      // The big band already carries order no / invoice no / type / table, so
+      // drop them from the meta table here to avoid repeating the same fields.
+      const metaCfg = {
+        ...cfg,
+        showOrderNumber: false,
+        showInvoiceNumber: false,
+        showOrderType: false,
+        showTableNumber: false,
+      };
       return `
         <div class="order">
           ${multi ? brandBlockHtml(o, cfg) : ''}
           ${band}
           ${metaTableHtml(o, metaCfg)}
           ${itemsTableHtml(o, cfg, { item: 'Product', qty: 'Qty', rate: 'Rate', amount: 'Total' })}
+          ${orderNoteHtml(o, cfg)}
           ${totalsHtml(o, cfg, money, 'Grand Total')}
         </div>`;
     })
@@ -517,6 +535,7 @@ function modernBody(
           ${metaTableHtml(o, cfg)}
           <div class="seclabel">Order</div>
           <div class="items">${itemsHtml(o, cfg, money)}</div>
+          ${orderNoteHtml(o, cfg)}
           ${totalsHtml(o, cfg, money)}
         </div>`,
     )
@@ -541,6 +560,7 @@ function classicMonoBody(
           ${multi ? brandBlockHtml(o, cfg) : ''}
           ${metaTableHtml(o, cfg)}
           <div class="items">${itemsHtml(o, cfg, money)}</div>
+          ${orderNoteHtml(o, cfg)}
           ${totalsHtml(o, cfg, money, 'TOTAL')}
         </div>`,
     )
@@ -562,6 +582,7 @@ function classicBody(
           ${multi ? brandBlockHtml(o, cfg) : ''}
           ${metaTableHtml(o, cfg)}
           <div class="items">${itemsHtml(o, cfg, money)}</div>
+          ${orderNoteHtml(o, cfg)}
           ${totalsHtml(o, cfg, money)}
         </div>`,
     )
@@ -592,11 +613,29 @@ export function renderInvoiceHtml(
             ? classicMonoBody(data, cfg, money)
             : classicBody(data, cfg, money);
   const html = `<div class="inv-root inv-${layout}">${body}</div>`;
-  return { html, css: cssFor(layout) };
+  return { html, css: cssFor(layout, cfg) };
 }
 
-function cssFor(layout: InvoiceLayout): string {
+/** Each layout's base font size in px at 100% scale. */
+const LAYOUT_BASE_PX: Record<InvoiceLayout, number> = {
+  bill_bordered: 11,
+  receipt_logo: 11,
+  thermal_modern: 11,
+  thermal_classic: 12,
+  thermal_58mm: 10,
+  a4_invoice: 13,
+};
+
+const clampPct = (n: unknown, min = 50, max = 200): number =>
+  Math.min(max, Math.max(min, Number(n) || 100));
+
+function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
   const widthMm = LAYOUT_META[layout].widthMm;
+  // Whole-receipt font scaling: everything else is sized in em, so scaling the
+  // root px cascades. Powered-by gets its own size + weight for readability.
+  const rootPx = Math.round(LAYOUT_BASE_PX[layout] * (clampPct(cfg.fontScalePct) / 100) * 100) / 100;
+  const poweredPx = Math.round(rootPx * (clampPct(cfg.poweredByFontPct) / 100) * 100) / 100;
+  const poweredWeight = cfg.poweredByBold ? 700 : 400;
   const base = `
     .inv-root { box-sizing: border-box; color: #000; background: #fff; margin: 0 auto; }
     .inv-root * { box-sizing: border-box; }
@@ -629,7 +668,8 @@ function cssFor(layout: InvoiceLayout): string {
     .inv-root .grandtotal { border-top: 2px solid #000; margin-top: 8px; padding-top: 6px; font-size: 1.1em; }
     .inv-root .foot { text-align: center; margin-top: 10px; font-size: .8em; color: #333; }
     .inv-root .foot .line { white-space: pre-line; }
-    .inv-root .powered { margin-top: 6px; font-size: .78em; color: #666; }
+    .inv-root .powered { margin-top: 6px; color: #222; font-size: ${poweredPx}px; font-weight: ${poweredWeight}; }
+    .inv-root .onote { margin: 6px 0; font-style: italic; color: #222; font-size: .9em; }
     .inv-root .seclabel { text-transform: uppercase; letter-spacing: .12em; font-size: .72em; color: #555; margin: 8px 0 2px; }
     .inv-root .itbl { width: 100%; border-collapse: collapse; margin: 6px 0; }
     .inv-root .itbl th, .inv-root .itbl td { padding: 2px 3px; vertical-align: top; }
@@ -643,7 +683,7 @@ function cssFor(layout: InvoiceLayout): string {
   `;
   if (layout === 'bill_bordered') {
     return `${base}
-      .inv-root.inv-bill_bordered { width: ${widthMm}mm; max-width: ${widthMm}mm; font-family: Arial, system-ui, sans-serif; font-size: 11px; padding: 6px; }
+      .inv-root.inv-bill_bordered { width: ${widthMm}mm; max-width: ${widthMm}mm; font-family: Arial, system-ui, sans-serif; font-size: ${rootPx}px; padding: 6px; }
       .inv-root.inv-bill_bordered .metatbl { border: 1px solid #000; padding: 4px 6px; }
       .inv-root.inv-bill_bordered .metatbl td { padding: 1px 4px; }
       .inv-root.inv-bill_bordered .itbl th, .inv-root.inv-bill_bordered .itbl td { border: 1px solid #000; }
@@ -655,12 +695,13 @@ function cssFor(layout: InvoiceLayout): string {
   }
   if (layout === 'receipt_logo') {
     return `${base}
-      .inv-root.inv-receipt_logo { width: ${widthMm}mm; max-width: ${widthMm}mm; font-family: Arial, system-ui, sans-serif; font-size: 11px; padding: 6px; }
+      .inv-root.inv-receipt_logo { width: ${widthMm}mm; max-width: ${widthMm}mm; font-family: Arial, system-ui, sans-serif; font-size: ${rootPx}px; padding: 6px; }
       .inv-root.inv-receipt_logo .logo { max-width: 170px; max-height: 130px; }
       .inv-root.inv-receipt_logo .biz { font-weight: 800; font-size: 1.5em; letter-spacing: .08em; text-transform: uppercase; }
       .inv-root.inv-receipt_logo .metatbl { border-top: 1px solid #000; padding-top: 6px; margin-top: 8px; }
       .inv-root.inv-receipt_logo .orderband { text-align: center; margin: 10px 0 4px; }
       .inv-root.inv-receipt_logo .onum { font-weight: 800; font-size: 1.35em; }
+      .inv-root.inv-receipt_logo .oinv { font-weight: 700; font-size: 1em; }
       .inv-root.inv-receipt_logo .otype { font-weight: 600; font-size: .95em; }
       .inv-root.inv-receipt_logo .itbl th { border-bottom: 1px solid #000; font-weight: 700; }
       .inv-root.inv-receipt_logo .itbl tbody tr td { border-bottom: 1px dotted #bbb; }
@@ -672,7 +713,7 @@ function cssFor(layout: InvoiceLayout): string {
   }
   if (layout === 'thermal_modern') {
     return `${base}
-      .inv-root.inv-thermal_modern { width: ${widthMm}mm; max-width: ${widthMm}mm; font-family: 'Helvetica Neue', Arial, system-ui, sans-serif; font-size: 11px; padding: 8px; line-height: 1.5; }
+      .inv-root.inv-thermal_modern { width: ${widthMm}mm; max-width: ${widthMm}mm; font-family: 'Helvetica Neue', Arial, system-ui, sans-serif; font-size: ${rootPx}px; padding: 8px; line-height: 1.5; }
       .inv-root.inv-thermal_modern .logo { max-width: 80px; max-height: 60px; }
       .inv-root.inv-thermal_modern .biz { font-weight: 400; font-size: 1.35em; letter-spacing: .18em; text-transform: uppercase; }
       .inv-root.inv-thermal_modern .metatbl { margin: 10px 0; }
@@ -687,7 +728,7 @@ function cssFor(layout: InvoiceLayout): string {
   }
   if (layout === 'thermal_classic') {
     return `${base}
-      .inv-root.inv-thermal_classic { width: ${widthMm}mm; max-width: ${widthMm}mm; font-family: 'Courier New', ui-monospace, monospace; font-size: 12px; padding: 6px; }
+      .inv-root.inv-thermal_classic { width: ${widthMm}mm; max-width: ${widthMm}mm; font-family: 'Courier New', ui-monospace, monospace; font-size: ${rootPx}px; padding: 6px; }
       .inv-root.inv-thermal_classic .biz { font-size: 1.2em; text-transform: uppercase; letter-spacing: .05em; }
       .inv-root.inv-thermal_classic .line { font-size: .85em; }
       .inv-root.inv-thermal_classic .metatbl { border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 4px 0; }
@@ -700,13 +741,13 @@ function cssFor(layout: InvoiceLayout): string {
   }
   if (layout === 'thermal_58mm') {
     return `${base}
-      .inv-root.inv-thermal_58mm { width: ${widthMm}mm; max-width: ${widthMm}mm; font-family: 'Courier New', ui-monospace, monospace; font-size: 10px; padding: 6px; }
+      .inv-root.inv-thermal_58mm { width: ${widthMm}mm; max-width: ${widthMm}mm; font-family: 'Courier New', ui-monospace, monospace; font-size: ${rootPx}px; padding: 6px; }
       .inv-root.inv-thermal_58mm .metatbl .mk { width: 42%; }
       @media print { @page { size: ${widthMm}mm auto; margin: 0; } }
     `;
   }
   return `${base}
-    .inv-root.inv-a4_invoice { width: 190mm; max-width: 190mm; font-family: system-ui, -apple-system, sans-serif; font-size: 13px; padding: 12mm; }
+    .inv-root.inv-a4_invoice { width: 190mm; max-width: 190mm; font-family: system-ui, -apple-system, sans-serif; font-size: ${rootPx}px; padding: 12mm; }
     .inv-root.inv-a4_invoice .items { border-color: #ccc; }
     .inv-root.inv-a4_invoice .row.grand { font-size: 1.15em; }
     @media print { @page { size: A4; margin: 12mm; } .inv-root.inv-a4_invoice { padding: 0; width: auto; max-width: none; } }
@@ -729,6 +770,7 @@ export function sampleInvoice(): InvoiceVM {
       {
         order_id: 1,
         order_number: 'BR-1-000123',
+        invoice_number: 'BR-1-10-20260708-0011',
         brand_name: 'Fireaway',
         brand_logo_url: null,
         order_type: 'dine_in',
@@ -792,7 +834,8 @@ export function richSampleInvoice(): InvoiceVM {
     orders: [
       {
         order_id: 481,
-        order_number: 'BR-1-000481',
+        order_number: '014',
+        invoice_number: 'BR-1-10-20260709-0481',
         brand_name: 'Fireaway',
         brand_logo_url: null, // preview uses the Foodies fallback mark
         order_type: 'dine_in',

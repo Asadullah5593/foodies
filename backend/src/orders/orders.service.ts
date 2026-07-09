@@ -2435,6 +2435,7 @@ export class OrdersService {
             orders: orders.map((o) => ({
                 id: o.id,
                 order_number: o.orderNumber,
+                invoice_number: o.orderId ?? String(o.id),
                 brand_id: o.brandId,
                 brand_name: o.brand?.name ?? null,
                 brand_logo_url: o.brand?.logoUrl ?? null,
@@ -2622,6 +2623,7 @@ export class OrdersService {
         return {
             order_id: order.id,
             order_number: order.orderNumber,
+            invoice_number: order.orderId ?? String(order.id),
             order_group_id: order.orderGroupId ?? null,
             brand: order.brand
                 ? {
@@ -2824,6 +2826,7 @@ export class OrdersService {
             orders: group.orders.map((o) => ({
                 order_id: o.id,
                 order_number: o.order_number,
+                invoice_number: o.invoice_number,
                 brand_name: o.brand_name,
                 brand_logo_url: o.brand_logo_url,
                 order_type: o.order_type,

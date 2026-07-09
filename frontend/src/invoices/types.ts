@@ -43,7 +43,10 @@ export interface InvoiceTemplateConfig {
   showLogo: boolean;
   headerText: string | null;
   footerText: string | null;
+  fontScalePct: number;
   showPoweredBy: boolean;
+  poweredByFontPct: number;
+  poweredByBold: boolean;
 
   showCategory: boolean;
   showVariant: boolean;
@@ -70,6 +73,7 @@ export interface InvoiceTemplateConfig {
   showLoyaltyBalance: boolean;
 
   showOrderNumber: boolean;
+  showInvoiceNumber: boolean;
   showOrderType: boolean;
   showTableNumber: boolean;
   showDateTime: boolean;
@@ -82,7 +86,10 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showLogo: true,
   headerText: null,
   footerText: null,
+  fontScalePct: 100,
   showPoweredBy: true,
+  poweredByFontPct: 95,
+  poweredByBold: false,
 
   showCategory: false,
   showVariant: true,
@@ -109,6 +116,7 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showLoyaltyBalance: false,
 
   showOrderNumber: true,
+  showInvoiceNumber: true,
   showOrderType: true,
   showTableNumber: true,
   showDateTime: true,
@@ -172,6 +180,7 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
     title: 'Meta',
     items: [
       { key: 'showOrderNumber', label: 'Show order number' },
+      { key: 'showInvoiceNumber', label: 'Show invoice number' },
       { key: 'showOrderType', label: 'Show order type' },
       { key: 'showTableNumber', label: 'Show table number' },
       { key: 'showDateTime', label: 'Show date / time' },
@@ -207,6 +216,8 @@ export type InvoiceLineVM = {
 export type InvoiceOrderVM = {
   order_id: number;
   order_number: string;
+  /** Permanent globally-unique reference (BR-…) used as the invoice number. */
+  invoice_number?: string | null;
   brand_name?: string | null;
   brand_logo_url?: string | null;
   order_type?: string | null;

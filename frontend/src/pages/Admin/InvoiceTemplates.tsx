@@ -100,8 +100,10 @@ const InvoiceTemplates: React.FC = () => {
     setShowForm(true);
   };
 
-  const setCfg = (key: keyof InvoiceTemplateConfig, value: boolean | string | null) =>
+  const setCfg = (key: keyof InvoiceTemplateConfig, value: boolean | string | number | null) =>
     setForm((f) => ({ ...f, config: { ...f.config, [key]: value } }));
+
+  const clampPct = (v: string) => Math.min(200, Math.max(50, Math.round(Number(v) || 100)));
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -214,6 +216,30 @@ const InvoiceTemplates: React.FC = () => {
               <textarea value={form.config.footerText ?? ''} onChange={(e) => setCfg('footerText', e.target.value || null)} rows={2}
                 className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-slate-800 dark:border-slate-600" />
             </label>
+
+            <div>
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1.5">Typography</h4>
+              <div className="grid grid-cols-3 gap-3 items-end">
+                <label className="block">
+                  <span className="text-sm text-gray-700 dark:text-slate-300">Font size (%)</span>
+                  <input type="number" min={50} max={200} step={5} value={form.config.fontScalePct ?? 100}
+                    onChange={(e) => setCfg('fontScalePct', clampPct(e.target.value))}
+                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-slate-800 dark:border-slate-600" />
+                </label>
+                <label className="block">
+                  <span className="text-sm text-gray-700 dark:text-slate-300">“Powered by” size (%)</span>
+                  <input type="number" min={50} max={200} step={5} value={form.config.poweredByFontPct ?? 95}
+                    onChange={(e) => setCfg('poweredByFontPct', clampPct(e.target.value))}
+                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-slate-800 dark:border-slate-600" />
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 pb-2.5">
+                  <input type="checkbox" checked={Boolean(form.config.poweredByBold)}
+                    onChange={(e) => setCfg('poweredByBold', e.target.checked)} />
+                  “Powered by” bold
+                </label>
+              </div>
+              <p className="text-xs text-gray-400 mt-1">Font size scales the whole receipt (50–200%). The “powered by” line has its own size &amp; weight so it stays readable.</p>
+            </div>
 
             {INVOICE_TOGGLE_GROUPS.map((group) => (
               <div key={group.title}>

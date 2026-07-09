@@ -30,8 +30,14 @@ export interface InvoiceTemplateConfig {
     headerText: string | null;
     /** Free text at the bottom (thank-you note, return policy). */
     footerText: string | null;
+    /** Overall receipt font size, percent of the template's base (50–200). */
+    fontScalePct: number;
     /** "Powered by Rex Technologies" line at the very end. */
     showPoweredBy: boolean;
+    /** Size of the "powered by" line, percent of the base font (50–200). */
+    poweredByFontPct: number;
+    /** Bold the "powered by" line. */
+    poweredByBold: boolean;
 
     // Line items
     showCategory: boolean;
@@ -63,6 +69,8 @@ export interface InvoiceTemplateConfig {
 
     // Meta
     showOrderNumber: boolean;
+    /** Permanent invoice reference (order's globally-unique ref), under the order number. */
+    showInvoiceNumber: boolean;
     showOrderType: boolean;
     showTableNumber: boolean;
     showDateTime: boolean;
@@ -76,7 +84,10 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     showLogo: true,
     headerText: null,
     footerText: null,
+    fontScalePct: 100,
     showPoweredBy: true,
+    poweredByFontPct: 95,
+    poweredByBold: false,
 
     showCategory: false,
     showVariant: true,
@@ -103,12 +114,19 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     showLoyaltyBalance: false,
 
     showOrderNumber: true,
+    showInvoiceNumber: true,
     showOrderType: true,
     showTableNumber: true,
     showDateTime: true,
     showCashier: false,
     showCustomerInfo: true,
     showPaymentMethod: true,
+};
+
+/** Numeric config keys and their clamp ranges (percent). */
+const NUMERIC_KEYS: Record<string, { min: number; max: number }> = {
+    fontScalePct: { min: 50, max: 200 },
+    poweredByFontPct: { min: 50, max: 200 },
 };
 
 /** Merge stored config over defaults; unknown/missing keys fall back to default. */
@@ -130,7 +148,10 @@ export function sanitizeInvoiceTemplateConfig(
         const val = src[key];
         if (typeof def === 'boolean' && typeof val === 'boolean')
             out[key] = val;
-        else if (
+        else if (NUMERIC_KEYS[key] && typeof val === 'number' && !isNaN(val)) {
+            const { min, max } = NUMERIC_KEYS[key];
+            out[key] = Math.min(max, Math.max(min, Math.round(val)));
+        } else if (
             (key === 'headerText' || key === 'footerText') &&
             (typeof val === 'string' || val === null)
         )
