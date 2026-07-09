@@ -37,6 +37,7 @@ type PromoBody = {
     valid_days_of_week?: number[] | null;
     priority?: number;
     funding?: string;
+    channels?: string[] | null;
 };
 
 /**

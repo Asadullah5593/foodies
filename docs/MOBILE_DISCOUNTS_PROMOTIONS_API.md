@@ -101,6 +101,14 @@ time-boxed offers are excluded and applied at checkout instead):
 `has_cart_level_offer` is true, add a small "more offers at checkout" hint (those
 are whole-order / BOGO / min-order offers that only resolve in the cart).
 
+**Channel targeting (server-side, nothing to send):** every offer can be
+restricted by the admin to specific channels (`pos` / `app` / `web` / `kiosk`).
+This endpoint previews the **app** channel, and quote/checkout enforce the same
+rule from the order source — so a POS-only promotion never shows a discounted
+price in the app nor applies at app checkout, and vice versa. Item detail
+(`GET /public/consumer/menu/items/:id?branch_id=…`) carries the same preview
+fields as of this change.
+
 ---
 
 ## 3. Cart pricing (quote) — the authoritative "real / discounted / difference"

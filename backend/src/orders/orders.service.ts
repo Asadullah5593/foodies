@@ -18,6 +18,10 @@ import { Branch } from '../entities/branch.entity';
 import { Brand } from '../entities/brand.entity';
 import { Tenant } from '../entities/tenant.entity';
 import { Discount } from '../entities/discount.entity';
+import {
+    offerAllowedOnChannel,
+    sourceToOfferChannel,
+} from '../discounts/offer-preview.util';
 import { User } from '../entities/user.entity';
 import { MenuService } from '../menu/menu.service';
 import {
@@ -3902,8 +3906,7 @@ export class OrdersService {
             discountCode: staged.discountCode,
         };
 
-        let afterDiscount =
-            Math.round((subtotal - totalDiscount) * 100) / 100;
+        let afterDiscount = Math.round((subtotal - totalDiscount) * 100) / 100;
         let loyaltyDiscount = 0;
         let loyaltyPointsRedeemed = 0;
         if (
@@ -4886,7 +4889,14 @@ export class OrdersService {
             Number(discount.minOrderAmount) > subtotal
         )
             return null;
-        if (discount.posOnly && source !== 'pos') return null;
+        if (
+            !offerAllowedOnChannel(
+                discount.channels,
+                discount.posOnly,
+                sourceToOfferChannel(source),
+            )
+        )
+            return null;
         if (discount.requiresCard) {
             if (!fullCardPayment || bankCardId == null) return null;
             const ids = (discount.eligibleBankCardIds ?? []).map(Number);
@@ -5191,7 +5201,9 @@ export class OrdersService {
             coupon?.id ??
             (discountChosen as Discount | null)?.id ??
             (cardChosen as Discount | null)?.id ??
-            (promoUsed && productPromos.length > 0 ? productPromos[0].id : null);
+            (promoUsed && productPromos.length > 0
+                ? productPromos[0].id
+                : null);
         return {
             combinedLineDiscount,
             totalDiscount: result.totalDiscount,
@@ -5275,7 +5287,8 @@ export class OrdersService {
 
         if (perLimit != null) {
             if (cid == null && !customerPhone) return false; // identity required
-            const clause = cid != null ? 'customer_id = $2' : 'customer_phone = $2';
+            const clause =
+                cid != null ? 'customer_id = $2' : 'customer_phone = $2';
             const rows = await this.dataSource.query(
                 `SELECT count(*)::int AS n FROM coupon_realizations WHERE offer_id = $1 AND ${clause} AND reversed_at IS NULL`,
                 [coupon.id, cid ?? customerPhone],

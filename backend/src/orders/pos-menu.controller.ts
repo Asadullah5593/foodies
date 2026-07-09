@@ -166,6 +166,7 @@ export class PosMenuController {
                     orderTypeParam != null && orderTypeParam.trim() !== ''
                         ? orderTypeParam.trim()
                         : undefined,
+                channel: 'pos',
             }),
             this.shiftsService.findOpenShiftsByBranch(branchId),
         ]);
@@ -248,6 +249,7 @@ export class PosMenuController {
             menuItemId,
             branchId,
             orderType,
+            'pos',
         );
     }
 }

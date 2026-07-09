@@ -17,6 +17,8 @@ const base = (o: Partial<PreviewOffer>): PreviewOffer => ({
     eligibilityBrandIds: null,
     audience: null,
     requiresCard: false,
+    posOnly: false,
+    channels: null,
     validFrom: null,
     validUntil: null,
     validTimeStart: null,
@@ -108,6 +110,62 @@ describe('previewItemOffers', () => {
             opts,
         );
         expect(r.discount_amount).toBe(0);
+    });
+
+    it('channel-restricted offer only previews on its channels', () => {
+        const offers = [
+            base({
+                name: 'app only',
+                applicationScope: 'category',
+                applicationScopeIds: [3],
+                channels: ['app'],
+            }),
+        ];
+        const onPos = previewItemOffers(item, offers, {
+            ...opts,
+            channel: 'pos',
+        });
+        expect(onPos.discount_amount).toBe(0);
+        const onApp = previewItemOffers(item, offers, {
+            ...opts,
+            channel: 'app',
+        });
+        expect(onApp.discount_amount).toBe(80);
+        // Unknown channel → only unrestricted offers show.
+        const unknown = previewItemOffers(item, offers, opts);
+        expect(unknown.discount_amount).toBe(0);
+    });
+
+    it('legacy posOnly offer previews only on POS', () => {
+        const offers = [
+            base({
+                applicationScope: 'category',
+                applicationScopeIds: [3],
+                posOnly: true,
+            }),
+        ];
+        expect(
+            previewItemOffers(item, offers, { ...opts, channel: 'app' })
+                .discount_amount,
+        ).toBe(0);
+        expect(
+            previewItemOffers(item, offers, { ...opts, channel: 'pos' })
+                .discount_amount,
+        ).toBe(80);
+    });
+
+    it('channel-restricted cart-level offer only flags its channels', () => {
+        const offers = [
+            base({ applicationScope: 'whole_order', channels: ['pos'] }),
+        ];
+        expect(
+            previewItemOffers(item, offers, { ...opts, channel: 'pos' })
+                .has_cart_level_offer,
+        ).toBe(true);
+        expect(
+            previewItemOffers(item, offers, { ...opts, channel: 'app' })
+                .has_cart_level_offer,
+        ).toBe(false);
     });
 
     it('time-boxed offers are excluded from the per-item preview', () => {

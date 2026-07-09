@@ -15,6 +15,11 @@ import { confirmDialog } from '../../utils/sweetAlert';
 import SearchableMultiSelect, {
   SearchableMultiSelectOption,
 } from '../../components/SearchableMultiSelect';
+import OfferChannelsField, {
+  channelsToApi,
+  channelsToForm,
+  ALL_OFFER_CHANNELS,
+} from '../../components/OfferChannelsField';
 
 interface Option {
   id: number;
@@ -40,6 +45,7 @@ const Discounts: React.FC = () => {
     eligibility_branch_ids: [] as number[],
     eligibility_brand_ids: [] as number[],
     is_active: true,
+    channels: [...ALL_OFFER_CHANNELS] as string[],
     valid_from: '',
     valid_until: '',
     valid_time_start: '',
@@ -146,6 +152,7 @@ const Discounts: React.FC = () => {
       eligibility_branch_ids: [],
       eligibility_brand_ids: [],
       is_active: true,
+      channels: [...ALL_OFFER_CHANNELS],
       valid_from: '',
       valid_until: '',
       valid_time_start: '',
@@ -178,6 +185,7 @@ const Discounts: React.FC = () => {
       eligibility_branch_ids: discount.eligibility_branch_ids ?? [],
       eligibility_brand_ids: discount.eligibility_brand_ids ?? [],
       is_active: discount.is_active,
+      channels: channelsToForm(discount.channels),
       valid_from: discount.valid_from ? discount.valid_from.split('T')[0] : '',
       valid_until: discount.valid_until ? discount.valid_until.split('T')[0] : '',
       valid_time_start: discount.valid_time_start ?? '',
@@ -204,6 +212,10 @@ const Discounts: React.FC = () => {
       toast.error(
         `Please select at least one ${formData.application_scope === 'category' ? 'category' : 'product'}.`,
       );
+      return;
+    }
+    if (formData.channels.length === 0) {
+      toast.error('Select at least one channel (POS / app / web / kiosk).');
       return;
     }
 
@@ -236,6 +248,7 @@ const Discounts: React.FC = () => {
       eligibility_branch_ids: formData.eligibility_branch_ids,
       eligibility_brand_ids: formData.eligibility_brand_ids,
       is_active: formData.is_active,
+      channels: channelsToApi(formData.channels),
       valid_from: formData.valid_from || undefined,
       valid_until: formData.valid_until || undefined,
       valid_time_start: formData.valid_time_start || null,
@@ -630,6 +643,11 @@ const Discounts: React.FC = () => {
               })}
             </div>
           </div>
+
+          <OfferChannelsField
+            value={formData.channels}
+            onChange={(channels) => setFormData({ ...formData, channels })}
+          />
 
           <div className="flex items-center">
             <input
