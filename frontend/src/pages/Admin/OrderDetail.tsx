@@ -161,10 +161,17 @@ const OrderDetail: React.FC = () => {
         const base = Number(item.unit_price ?? 0) * item.quantity;
         const baseRow = `<tr><td>${escapeHtml(String(item.name_snapshot ?? 'Item'))}${item.variant_name ? ` <span style="color:#666;">(Variant: ${escapeHtml(item.variant_name)})</span>` : ''} × ${item.quantity}</td><td class="text-right">${formatCurrency(base)}</td></tr>`;
         const addonRows = (item.addons ?? []).map((a) => `<tr class="sub"><td style="padding-left:14px;">Add-on: ${escapeHtml(a.name ?? '—')}${Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</td><td class="text-right">${formatCurrency(addonTotal(a))}</td></tr>`).join('');
-        const modRows = (item.modifiers ?? []).map((m) => `<tr class="sub"><td style="padding-left:14px;">Modifier: ${escapeHtml(m.name ?? '—')}</td><td class="text-right">${formatCurrency(Number(m.unit_price))}</td></tr>`).join('');
+        const modRows = orderModifiersWithNesting(item.modifiers ?? [])
+          .map(({ mod: m, nested }) =>
+            nested
+              ? `<tr class="sub"><td style="padding-left:28px;">↳ ${escapeHtml(m.name ?? '—')}</td><td class="text-right">${Number(m.unit_price) ? formatCurrency(Number(m.unit_price)) : '<span style="color:#067647;">Included</span>'}</td></tr>`
+              : `<tr class="sub"><td style="padding-left:14px;">${escapeHtml(m.group ?? 'Modifier')}: ${escapeHtml(m.name ?? '—')}</td><td class="text-right">${formatCurrency(Number(m.unit_price))}</td></tr>`,
+          )
+          .join('');
+        const noteRow = item.notes ? `<tr class="sub"><td colspan="2" style="padding-left:28px; font-style:italic; color:#b45309;">Note: ${escapeHtml(item.notes)}</td></tr>` : '';
         const hasExtras = (item.addons?.length ?? 0) > 0 || (item.modifiers?.length ?? 0) > 0;
         const lineTotalRow = hasExtras ? `<tr class="sub"><td style="padding-left:14px; font-style:italic; color:#666;">Line total</td><td class="text-right" style="font-style:italic; color:#666;">${formatCurrency(Number(item.subtotal ?? 0))}</td></tr>` : '';
-        return `${baseRow}${addonRows}${modRows}${lineTotalRow}`;
+        return `${baseRow}${addonRows}${modRows}${noteRow}${lineTotalRow}`;
       })
       .join('');
     const html = `

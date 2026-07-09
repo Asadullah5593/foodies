@@ -136,10 +136,15 @@ const KDS: React.FC = () => {
         const notesLine = i.notes ? `<div class="kot-note">Note: ${escapeHtml(i.notes)}</div>` : '';
         const addonsStr = (i.addons ?? []).map((a: any) => `${a.name} ×${a.quantity ?? 1}`).join(', ');
         const addonsLine = addonsStr ? `<div class="kot-addons">Add-ons: ${escapeHtml(addonsStr)}</div>` : '';
-        const modifiersStr = orderModifiersWithNesting((i.modifiers ?? []) as Array<{ name?: string; triggered_by?: string | null; quantity?: number }>)
-          .map(({ mod: m, nested }) => `${nested ? '↳ ' : ''}${m.name}${(m.quantity ?? 1) > 1 ? ` ×${m.quantity}` : ''}`)
-          .join(', ');
-        const modifiersLine = modifiersStr ? `<div class="kot-addons">${escapeHtml(modifiersStr)}</div>` : '';
+        const modifiersLine = orderModifiersWithNesting(
+          (i.modifiers ?? []) as Array<{ name?: string; group?: string | null; triggered_by?: string | null; quantity?: number }>,
+        )
+          .map(({ mod: m, nested }) =>
+            nested
+              ? `<div class="kot-addons" style="padding-left:14px;">↳ ${escapeHtml(m.name ?? '')}${(m.quantity ?? 1) > 1 ? ` ×${m.quantity}` : ''}</div>`
+              : `<div class="kot-addons">${m.group ? `${escapeHtml(m.group)}: ` : ''}${escapeHtml(m.name ?? '')}${(m.quantity ?? 1) > 1 ? ` ×${m.quantity}` : ''}</div>`,
+          )
+          .join('');
         return `<div class="kot-item">${brandLine}${escapeHtml(nameLine)}${modifiersLine}${addonsLine}${notesLine}</div>`;
       }).join('');
       const w = window.open('', '_blank');
