@@ -34,6 +34,7 @@ import {
     normalizeIncludedBySize,
     normalizePriceTiers,
 } from './modifier-pricing';
+import { restrictDealChoiceItemsForConsumer } from './deal-consumer-shaping';
 import { getBranchClock, isWithinSchedule } from '../utils/branch-schedule';
 
 const MENU_ITEM_GALLERY_MAX = 12;
@@ -2419,6 +2420,11 @@ export class MenuService {
                   )
                 : items;
 
+        // The consumer app renders the deal exactly as returned, so pre-apply POS's in-deal
+        // restrictions (locked-size variants, no `hide_in_deals` cross-sell groups, no add-ons).
+        // POS ('pos') receives the full shape and restricts client-side, so it is unaffected.
+        const restrictForConsumer = channel === 'app';
+
         const slots = components.map((dc) => {
             const base = {
                 slot_index: dc.slotIndex,
@@ -2433,9 +2439,23 @@ export class MenuService {
                 mirror_match_size: !!dc.mirrorMatchSize,
                 mirror_match_category: !!dc.mirrorMatchCategory,
             };
+            // Shape a slot's choices for the consumer channel (no-op for POS). Uses this slot's
+            // size lock/whitelist so a 5-piece slot can't leak the 10-piece variant, etc.
+            const shape = (
+                items: BranchMenuItemShape[],
+            ): BranchMenuItemShape[] =>
+                restrictForConsumer
+                    ? restrictDealChoiceItemsForConsumer(
+                          items,
+                          base.slot_size_key,
+                          base.allowed_size_keys,
+                      )
+                    : items;
             if (dc.type === 'fixed' && dc.sourceMenuItemId != null) {
                 const slotItem = menuById.get(dc.sourceMenuItemId);
-                const choiceItems = filterChoices(slotItem ? [slotItem] : []);
+                const choiceItems = shape(
+                    filterChoices(slotItem ? [slotItem] : []),
+                );
                 return {
                     ...base,
                     source_menu_item_id: dc.sourceMenuItemId,
@@ -2443,8 +2463,10 @@ export class MenuService {
                 };
             }
             if (dc.type === 'choice_category' && dc.sourceCategoryId != null) {
-                const items = filterChoices(
-                    menuByCategoryId.get(dc.sourceCategoryId) ?? [],
+                const items = shape(
+                    filterChoices(
+                        menuByCategoryId.get(dc.sourceCategoryId) ?? [],
+                    ),
                 );
                 return { ...base, choice_items: items };
             }
@@ -2452,10 +2474,14 @@ export class MenuService {
                 dc.type === 'choice_list' &&
                 Array.isArray(dc.sourceMenuItemIds)
             ) {
-                const items = filterChoices(
-                    dc.sourceMenuItemIds
-                        .map((id) => menuById.get(id))
-                        .filter((x): x is NonNullable<typeof x> => x != null),
+                const items = shape(
+                    filterChoices(
+                        dc.sourceMenuItemIds
+                            .map((id) => menuById.get(id))
+                            .filter(
+                                (x): x is NonNullable<typeof x> => x != null,
+                            ),
+                    ),
                 );
                 return { ...base, choice_items: items };
             }

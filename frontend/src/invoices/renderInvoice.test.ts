@@ -107,12 +107,65 @@ describe('tabular meta — every template renders header details as a table', ()
     expect(render({ showPaymentMethod: false })).not.toContain('>Payment<');
   });
 
-  it('address and phone appear in the header, not the meta table', () => {
-    const html = render({});
-    expect(html).toContain('123 Food Street, Lahore');
-    expect(html).toContain('Ph: +92 300 1234567');
-    // header comes before the first item
-    expect(html.indexOf('123 Food Street')).toBeLessThan(html.indexOf('class="metatbl"') + 1 || html.length);
+  it('does NOT auto-print branch address/phone; header text drives that area', () => {
+    // pre-filled branch details must NOT appear by default
+    const bare = render({});
+    expect(bare).not.toContain('123 Food Street, Lahore');
+    expect(bare).not.toContain('Ph: +92 300 1234567');
+    // whatever the admin types in Header Text shows under the name
+    const withHeader = render({ headerText: 'Shop 5, Mall Road\nPh: 042-111-222' });
+    expect(withHeader).toContain('Shop 5, Mall Road');
+    expect(withHeader).toContain('042-111-222');
+  });
+
+  it('order note renders below the items, never in the top meta table', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const html = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+      expect(html, layout).toContain('Birthday'); // the order note is present…
+      // …and it appears AFTER the meta table, not inside it
+      expect(html.indexOf('Birthday'), layout).toBeGreaterThan(html.indexOf('class="metatbl"'));
+      expect(html, layout).not.toContain('<td class="mk">Note</td>');
+    }
+  });
+});
+
+describe('invoice number — shown beneath the order number on every template', () => {
+  it('renders the invoice number on all layouts', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const html = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+      expect(html, layout).toContain('014'); // order number
+      expect(html, layout).toContain('BR-1-10-20260709-0481'); // invoice number
+      // invoice number comes AFTER the order number (beneath it)
+      expect(html.indexOf('BR-1-10-20260709-0481'), layout).toBeGreaterThan(html.indexOf('014'));
+    }
+  });
+
+  it('honors the showInvoiceNumber toggle', () => {
+    const off = renderInvoiceHtml(richSampleInvoice(), 'bill_bordered', cfg({ showInvoiceNumber: false })).html;
+    expect(off).not.toContain('BR-1-10-20260709-0481');
+    expect(off).not.toContain('Invoice #'); // label absent too
+  });
+});
+
+describe('typography controls', () => {
+  it('font size scales the root px', () => {
+    const at100 = renderInvoiceHtml(sampleInvoice(), 'bill_bordered', cfg({ fontScalePct: 100 })).css;
+    const at150 = renderInvoiceHtml(sampleInvoice(), 'bill_bordered', cfg({ fontScalePct: 150 })).css;
+    expect(at100).toContain('font-size: 11px'); // base
+    expect(at150).toContain('font-size: 16.5px'); // 11 * 1.5
+  });
+
+  it('clamps font size to 50–200%', () => {
+    const css = renderInvoiceHtml(sampleInvoice(), 'bill_bordered', cfg({ fontScalePct: 999 })).css;
+    expect(css).toContain('font-size: 22px'); // 11 * 2.0 (clamped)
+  });
+
+  it('powered-by has its own size and weight', () => {
+    const css = renderInvoiceHtml(sampleInvoice(), 'thermal_classic', cfg({ poweredByFontPct: 120, poweredByBold: true })).css;
+    // thermal_classic base 12px * 1.2 = 14.4px, bold 700
+    expect(css).toContain('.inv-root .powered');
+    expect(css).toContain('14.4px');
+    expect(css).toContain('font-weight: 700');
   });
 });
 
