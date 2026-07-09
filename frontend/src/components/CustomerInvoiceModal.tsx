@@ -74,6 +74,7 @@ function singleToPrintVM(s: Record<string, unknown>): InvoiceVM {
       {
         order_id: s.order_id as number,
         order_number: s.order_number as string,
+        invoice_number: (s.invoice_number as string) ?? null,
         brand_name: brand?.name ?? null,
         brand_logo_url: brand?.logo_url ?? null,
         order_type: (s.order_type as string) ?? null,

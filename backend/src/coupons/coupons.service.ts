@@ -64,6 +64,24 @@ export class CouponsService {
             dto as never,
             allowedBrandIds,
         );
+        // A voucher's `code` embeds the coupon code. When the admin renames the
+        // code, follow it through to every already-issued voucher — otherwise the
+        // voucher (and anything that displays it) keeps the OLD code while POS
+        // redeems against the coupon's NEW `discounts.code`, so the two drift and
+        // the coupon looks like it "can't be found". Only touches mismatched rows.
+        if (dto.code !== undefined) {
+            await this.voucherRepo.query(
+                `UPDATE vouchers AS v
+                 SET code = d.code
+                 FROM discounts AS d
+                 WHERE d.id = v.offer_id
+                   AND v.offer_id = $1
+                   AND d.tenant_id = $2
+                   AND d.code IS NOT NULL AND d.code <> ''
+                   AND v.code IS DISTINCT FROM d.code`,
+                [id, tenantId],
+            );
+        }
         await this.syncVouchers({ id }, dto, tenantId);
         return updated;
     }
