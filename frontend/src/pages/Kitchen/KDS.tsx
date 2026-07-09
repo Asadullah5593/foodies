@@ -184,6 +184,7 @@ const KDS: React.FC = () => {
     <span>Placed</span> ${escapeHtml(placedStr)}
     ${data.delivery_address ? `<span>Delivery</span> ${escapeHtml(data.delivery_address)}` : ''}
   </div>
+  ${data.notes ? `<div class="kot-note" style="margin-bottom:10px;">Order note: ${escapeHtml(data.notes)}</div>` : ''}
   <div class="kot-section">Items</div>
   ${itemsHtml}
   <div class="kot-footer">Placed: ${escapeHtml(placedStr)}</div>
