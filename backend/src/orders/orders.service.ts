@@ -2474,19 +2474,52 @@ export class OrdersService {
                                     unit_price: Number(a.unitPrice),
                                     subtotal: Number(a.subtotal),
                                 })) ?? [],
-                            modifiers:
-                                (
-                                    oi as {
-                                        modifiers?: Array<{
-                                            nameSnapshot: string | null;
-                                            priceSnapshot: number | null;
-                                            modifier?: {
-                                                name?: string;
-                                                price?: number;
-                                            };
-                                        }>;
+                            modifiers: (() => {
+                                const mods =
+                                    (
+                                        oi as {
+                                            modifiers?: Array<{
+                                                nameSnapshot: string | null;
+                                                priceSnapshot: number | null;
+                                                modifier?: {
+                                                    id?: number;
+                                                    name?: string;
+                                                    price?: number;
+                                                    modifierGroup?: {
+                                                        name?: string;
+                                                        visibleWhenModifierIds?:
+                                                            | number[]
+                                                            | null;
+                                                    };
+                                                };
+                                            }>;
+                                        }
+                                    ).modifiers ?? [];
+                                const byId = new Map(
+                                    mods
+                                        .filter((x) => x.modifier?.id != null)
+                                        .map((x) => [x.modifier!.id!, x]),
+                                );
+                                const triggerNameOf = (
+                                    m: (typeof mods)[number],
+                                ): string | null => {
+                                    const vw =
+                                        m.modifier?.modifierGroup
+                                            ?.visibleWhenModifierIds;
+                                    if (!vw?.length) return null;
+                                    for (const id of vw) {
+                                        const t = byId.get(id);
+                                        if (t)
+                                            return (
+                                                t.nameSnapshot ??
+                                                t.modifier?.name ??
+                                                null
+                                            );
                                     }
-                                ).modifiers?.map((m) => ({
+                                    return null;
+                                };
+                                return mods.map((m) => ({
+                                    triggered_by: triggerNameOf(m),
                                     group:
                                         (
                                             m.modifier as
@@ -2515,7 +2548,8 @@ export class OrdersService {
                                                           | undefined
                                                   )?.price ?? 0,
                                               ),
-                                })) ?? [],
+                                }));
+                            })(),
                             category:
                                 (
                                     oi.menuItem as {
