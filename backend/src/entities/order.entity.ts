@@ -107,6 +107,48 @@ export class Order {
     @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
     discountAmount: number;
 
+    /**
+     * Per-stage split of discountAmount for invoice line-items (they sum to
+     * discountAmount): product_promotion, order discount, coupon, card offer.
+     * The pricing engine already computes these; persisting lets invoices show
+     * "Promotional discount / Coupon / Card discount" as separate lines.
+     */
+    @Column({
+        name: 'promo_discount_amount',
+        type: 'decimal',
+        precision: 12,
+        scale: 2,
+        default: 0,
+    })
+    promoDiscountAmount: number;
+
+    @Column({
+        name: 'order_discount_amount',
+        type: 'decimal',
+        precision: 12,
+        scale: 2,
+        default: 0,
+    })
+    orderDiscountAmount: number;
+
+    @Column({
+        name: 'coupon_discount_amount',
+        type: 'decimal',
+        precision: 12,
+        scale: 2,
+        default: 0,
+    })
+    couponDiscountAmount: number;
+
+    @Column({
+        name: 'card_discount_amount',
+        type: 'decimal',
+        precision: 12,
+        scale: 2,
+        default: 0,
+    })
+    cardDiscountAmount: number;
+
     @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
     taxAmount: number;
 

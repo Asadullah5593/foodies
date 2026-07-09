@@ -105,6 +105,21 @@ function effectiveTaxRate(o: {
     return cash ?? card; // split/unknown → cash (never under-states)
 }
 
+/**
+ * Method-of-payment line for the printed invoice: distinct methods of the
+ * order's completed tenders ("cash", "card", "cash + card" for split bills);
+ * null when nothing has been tendered yet.
+ */
+function invoicePaymentMethod(
+    payments?: Array<{ paymentMethod: string; status: string }> | null,
+): string | null {
+    const done = (payments ?? []).filter((p) => p.status === 'completed');
+    const methods = [
+        ...new Set(done.map((p) => p.paymentMethod).filter(Boolean)),
+    ];
+    return methods.length ? methods.join(' + ') : null;
+}
+
 /** Internal signal: a concurrent placement with the same idempotency key already
  * created this group, so createOrder should return it instead of a fresh order. */
 class IdempotentReplay extends Error {
@@ -2399,6 +2414,7 @@ export class OrdersService {
             relations: [
                 'brand',
                 'creator',
+                'payments',
                 'orderItems',
                 'orderItems.menuItem',
                 'orderItems.menuItem.category',
@@ -2431,6 +2447,7 @@ export class OrdersService {
                 customer_phone: o.customerPhone ?? null,
                 cashier_name:
                     (o.creator as { name?: string } | undefined)?.name ?? null,
+                payment_method: invoicePaymentMethod(o.payments),
                 subtotal: Number(o.subtotal),
                 discount_amount: Number(o.discountAmount),
                 promo_discount_amount: Number(o.promoDiscountAmount ?? 0),
@@ -2572,6 +2589,7 @@ export class OrdersService {
                 'branch',
                 'tenant',
                 'creator',
+                'payments',
                 'orderItems',
                 'orderItems.menuItem',
                 'orderItems.menuItem.category',
@@ -2585,10 +2603,11 @@ export class OrdersService {
             ],
         });
         if (!order) throw new NotFoundException('Order not found');
-        const invoiceTemplate = await this.invoiceTemplatesService.resolveActive(
-            order.tenantId,
-            order.brandId,
-        );
+        const invoiceTemplate =
+            await this.invoiceTemplatesService.resolveActive(
+                order.tenantId,
+                order.brandId,
+            );
         const orderWalletType = mapSourceToWalletType(order.source);
         const loyalty =
             order.customerPhone && orderWalletType != null
@@ -2622,6 +2641,7 @@ export class OrdersService {
             customer_phone: order.customerPhone ?? null,
             cashier_name:
                 (order.creator as { name?: string } | undefined)?.name ?? null,
+            payment_method: invoicePaymentMethod(order.payments),
             items:
                 [...(order.orderItems ?? [])]
                     .sort((a, b) => a.id - b.id)
@@ -2636,7 +2656,7 @@ export class OrdersService {
                             oi.nameSnapshot ??
                             (oi.menuItem as { name?: string } | null)?.name,
                         quantity: oi.quantity,
-                    notes: oi.notes ?? null,
+                        notes: oi.notes ?? null,
                         unit_price: Number(oi.unitPrice),
                         subtotal: Number(oi.subtotal),
                         deal_id: oi.dealId ?? null,
@@ -2755,7 +2775,8 @@ export class OrdersService {
             loyalty_points_remaining: Number(loyaltyBalance ?? 0),
             currency: order.tenant?.defaultCurrency ?? null,
             header: {
-                legal_name: order.tenant?.legalName ?? order.tenant?.name ?? null,
+                legal_name:
+                    order.tenant?.legalName ?? order.tenant?.name ?? null,
                 tenant_name: order.tenant?.name ?? null,
                 branch_name: order.branch?.name ?? null,
                 address: order.branch?.address ?? null,
@@ -2812,6 +2833,7 @@ export class OrdersService {
                 customer_name: o.customer_name,
                 customer_phone: o.customer_phone,
                 cashier_name: o.cashier_name,
+                payment_method: o.payment_method ?? null,
                 items: o.items,
                 subtotal: o.subtotal,
                 discount_amount: o.discount_amount,
@@ -3073,7 +3095,7 @@ export class OrdersService {
                                 ? Number(oi.priceSnapshot)
                                 : Number(oi.unitPrice),
                         quantity: oi.quantity,
-                    notes: oi.notes ?? null,
+                        notes: oi.notes ?? null,
                         unit_price: Number(oi.unitPrice),
                         subtotal: Number(oi.subtotal),
                         deal_id: oi.dealId ?? null,

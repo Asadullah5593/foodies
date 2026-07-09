@@ -28,6 +28,7 @@ export type MainInvoiceOrder = {
   order_id: number;
   order_number: string;
   brand_name?: string | null;
+  brand_logo_url?: string | null;
   items: MainInvoiceLine[];
   subtotal: number;
   discount_amount: number;
@@ -82,6 +83,7 @@ function singleToPrintVM(s: Record<string, unknown>): InvoiceVM {
         customer_name: (s.customer_name as string) ?? null,
         customer_phone: (s.customer_phone as string) ?? null,
         cashier_name: (s.cashier_name as string) ?? null,
+        payment_method: (s.payment_method as string) ?? null,
         items,
         subtotal: (s.subtotal as number) ?? 0,
         discount_amount: (s.discount_amount as number) ?? 0,
@@ -143,6 +145,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
       order_id: singleInvoice.order_id,
       order_number: singleInvoice.order_number,
       brand_name: singleInvoice.brand?.name ?? null,
+      brand_logo_url: singleInvoice.brand?.logo_url ?? null,
       items: (singleInvoice.items ?? []).map((i: MainInvoiceLine & { name?: string }) => ({
         name_snapshot: i.name ?? i.name_snapshot,
         quantity: i.quantity,
@@ -211,7 +214,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
         ? singleToPrintVM(singleInvoice as unknown as Record<string, unknown>)
         : null;
     if (!printData) return;
-    const layout: InvoiceLayout = printData.template?.layout ?? 'thermal_80mm';
+    const layout: InvoiceLayout = printData.template?.layout ?? 'bill_bordered';
     const { html, css } = renderInvoiceHtml(printData, layout, printData.template?.config ?? null);
     printContent(html, 'Customer invoice', css);
   };
@@ -234,11 +237,29 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
       ) : invoiceData ? (
         <div className="space-y-6">
           <div className="flex justify-center">
-            <img
-              src="/foodies-logo.png"
-              alt="Foodies"
-              className="w-20 h-20 object-contain"
-            />
+            {(() => {
+              // Single-brand invoice → that brand's logo; mixed-brand group (or
+              // no brand logo uploaded) → the Foodies umbrella logo.
+              const logos = [
+                ...new Set(
+                  (invoiceData.orders ?? [])
+                    .map((o: MainInvoiceOrder) => o.brand_logo_url)
+                    .filter(Boolean),
+                ),
+              ];
+              const src = logos.length === 1 ? (logos[0] as string) : '/foodies-logo.png';
+              return (
+                <img
+                  src={src}
+                  alt={invoiceData.orders?.[0]?.brand_name ?? 'Foodies'}
+                  className="w-20 h-20 object-contain"
+                  onError={(e) => {
+                    const img = e.target as HTMLImageElement;
+                    if (!img.src.endsWith('/foodies-logo.png')) img.src = '/foodies-logo.png';
+                  }}
+                />
+              );
+            })()}
           </div>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
             {(invoiceData.orders ?? []).map((o: MainInvoiceOrder) => (

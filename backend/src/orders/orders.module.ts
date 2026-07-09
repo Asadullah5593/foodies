@@ -31,6 +31,7 @@ import { RiderLocationEventsService } from './rider-location-events.service';
 import { RiderLocationRetentionService } from './rider-location-retention.service';
 import { DeliveryDispatchJob } from './delivery-dispatch.job';
 import { MenuModule } from '../menu/menu.module';
+import { InvoicesModule } from '../invoices/invoices.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { ShiftsModule } from '../shifts/shifts.module';
@@ -74,6 +75,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
         InventoryModule,
         RiderHrmModule,
         NotificationsModule,
+        InvoicesModule,
     ],
     controllers: [
         PosMenuController,

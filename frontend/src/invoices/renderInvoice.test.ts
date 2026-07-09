@@ -1,18 +1,27 @@
 import { describe, it, expect } from 'vitest';
-import { renderInvoiceHtml, sampleInvoice } from './renderInvoice';
-import { DEFAULT_INVOICE_TEMPLATE_CONFIG, InvoiceTemplateConfig } from './types';
+import { renderInvoiceHtml, sampleInvoice, richSampleInvoice } from './renderInvoice';
+import { DEFAULT_INVOICE_TEMPLATE_CONFIG, InvoiceTemplateConfig, InvoiceLayout } from './types';
 
 const cfg = (over: Partial<InvoiceTemplateConfig>) => ({
   ...DEFAULT_INVOICE_TEMPLATE_CONFIG,
   ...over,
 });
-const render = (over: Partial<InvoiceTemplateConfig>) =>
-  renderInvoiceHtml(sampleInvoice(), 'thermal_80mm', cfg(over)).html;
+// Default to a row-based layout so item/modifier assertions have sub-rows.
+const render = (over: Partial<InvoiceTemplateConfig>, layout: InvoiceLayout = 'thermal_classic') =>
+  renderInvoiceHtml(sampleInvoice(), layout, cfg(over)).html;
+
+const ALL_LAYOUTS: InvoiceLayout[] = [
+  'bill_bordered',
+  'receipt_logo',
+  'thermal_modern',
+  'thermal_classic',
+  'thermal_58mm',
+  'a4_invoice',
+];
 
 describe('renderInvoiceHtml — field toggles drive output', () => {
   it('shows/hides category', () => {
     expect(render({ showCategory: true })).toContain('Pizza');
-    // category chip absent when off (the word "Pizza" only appears as a category here)
     const off = render({ showCategory: false });
     expect(off).not.toContain('class="cat"');
   });
@@ -23,12 +32,10 @@ describe('renderInvoiceHtml — field toggles drive output', () => {
   });
 
   it('itemizes the split only when total is off (no double-count)', () => {
-    // total on + per-stage on → show combined only, NOT the per-stage lines
     const both = render({ showDiscountTotal: true, showPromoDiscount: true, showCouponDiscount: true });
     expect(both).toContain('Discount (SAVE10)');
     expect(both).not.toContain('Promotional discount');
     expect(both).not.toContain('Coupon discount');
-    // total off + per-stage on → itemize
     const itemized = render({ showDiscountTotal: false, showPromoDiscount: true, showCouponDiscount: true });
     expect(itemized).toContain('Promotional discount');
     expect(itemized).toContain('Coupon discount');
@@ -36,7 +43,6 @@ describe('renderInvoiceHtml — field toggles drive output', () => {
   });
 
   it('falls back to the combined line for older orders with no split', () => {
-    // Simulate a pre-migration order: combined discount present, split all zero.
     const data = sampleInvoice();
     const o = data.orders[0];
     o.promo_discount_amount = 0;
@@ -46,10 +52,9 @@ describe('renderInvoiceHtml — field toggles drive output', () => {
     o.discount_amount = 96;
     const html = renderInvoiceHtml(
       data,
-      'thermal_80mm',
+      'thermal_classic',
       cfg({ showDiscountTotal: false, showPromoDiscount: true, showCouponDiscount: true }),
     ).html;
-    // discount must not vanish — combined line is shown as a fallback
     expect(html).toContain('Discount (SAVE10)');
     expect(html).toContain('96.00');
   });
@@ -57,7 +62,7 @@ describe('renderInvoiceHtml — field toggles drive output', () => {
   it('escapes a malicious currency code', () => {
     const evil = renderInvoiceHtml(
       { ...sampleInvoice(), currency: '<img src=x onerror=alert(1)>' },
-      'thermal_80mm',
+      'thermal_classic',
       DEFAULT_INVOICE_TEMPLATE_CONFIG,
     ).html;
     expect(evil).not.toContain('<img src=x');
@@ -69,11 +74,6 @@ describe('renderInvoiceHtml — field toggles drive output', () => {
     expect(render({ showTax: true, showTaxRate: true })).toContain('(15%)');
   });
 
-  it('hides the logo when showLogo is off', () => {
-    expect(render({ showLogo: true, logoUrl: 'https://x/logo.png' })).toContain('logo.png');
-    expect(render({ showLogo: false, logoUrl: 'https://x/logo.png' })).not.toContain('logo.png');
-  });
-
   it('respects header and footer text', () => {
     const html = render({ headerText: 'NTN 1234567', footerText: 'No refunds' });
     expect(html).toContain('NTN 1234567');
@@ -83,10 +83,68 @@ describe('renderInvoiceHtml — field toggles drive output', () => {
   it('renders the tenant currency symbol', () => {
     const usd = renderInvoiceHtml(
       { ...sampleInvoice(), currency: 'USD' },
-      'thermal_80mm',
+      'thermal_classic',
       DEFAULT_INVOICE_TEMPLATE_CONFIG,
     ).html;
     expect(usd).toContain('$');
+  });
+});
+
+describe('tabular meta — every template renders header details as a table', () => {
+  it('emits a <table class="metatbl"> with label/value rows on all layouts', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const html = renderInvoiceHtml(sampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+      expect(html, layout).toContain('class="metatbl"');
+      expect(html, layout).toContain('class="mk"');
+      expect(html, layout).toContain('class="mv"');
+    }
+  });
+
+  it('shows/hides the payment method row', () => {
+    expect(render({ showPaymentMethod: true })).toContain('Payment');
+    // the sample pays by card
+    expect(render({ showPaymentMethod: true })).toContain('Card');
+    expect(render({ showPaymentMethod: false })).not.toContain('>Payment<');
+  });
+
+  it('address and phone appear in the header, not the meta table', () => {
+    const html = render({});
+    expect(html).toContain('123 Food Street, Lahore');
+    expect(html).toContain('Ph: +92 300 1234567');
+    // header comes before the first item
+    expect(html.indexOf('123 Food Street')).toBeLessThan(html.indexOf('class="metatbl"') + 1 || html.length);
+  });
+});
+
+describe('layout-specific chrome', () => {
+  it('bill_bordered: bordered items table + Grand Total', () => {
+    const { html, css } = renderInvoiceHtml(sampleInvoice(), 'bill_bordered', DEFAULT_INVOICE_TEMPLATE_CONFIG);
+    expect(html).toContain('Item Name');
+    expect(html).toContain('Grand Total');
+    expect(css).toContain('.inv-bill_bordered .itbl th');
+    expect(css).toContain('80mm');
+  });
+
+  it('receipt_logo: big Order # band + Product column; band replaces order no in the meta table', () => {
+    const { html } = renderInvoiceHtml(sampleInvoice(), 'receipt_logo', DEFAULT_INVOICE_TEMPLATE_CONFIG);
+    expect(html).toContain('Order # BR-1-000123');
+    expect(html).toContain('Product');
+    expect(html).toContain('class="orderband"');
+    // order number lives in the band, so the meta table must not repeat "Order #"
+    expect(html).not.toContain('<td class="mk">Order #</td>');
+  });
+
+  it('thermal_modern: uppercase section label + 80mm paper', () => {
+    const { html, css } = renderInvoiceHtml(sampleInvoice(), 'thermal_modern', DEFAULT_INVOICE_TEMPLATE_CONFIG);
+    expect(html).toContain('class="seclabel"');
+    expect(css).toContain('.inv-thermal_modern');
+    expect(css).toContain('80mm');
+  });
+
+  it('thermal_classic: monospace face + TOTAL in caps', () => {
+    const { html, css } = renderInvoiceHtml(sampleInvoice(), 'thermal_classic', DEFAULT_INVOICE_TEMPLATE_CONFIG);
+    expect(html).toContain('TOTAL');
+    expect(css).toContain("'Courier New'");
   });
 
   it('emits layout-specific paper CSS', () => {
@@ -98,8 +156,85 @@ describe('renderInvoiceHtml — field toggles drive output', () => {
     const data = sampleInvoice();
     data.orders = [data.orders[0], { ...data.orders[0], order_id: 2, brand_name: 'Wok & Go' }];
     data.gross_total = 1984;
-    const html = renderInvoiceHtml(data, 'thermal_80mm', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+    const html = renderInvoiceHtml(data, 'bill_bordered', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
     expect(html).toContain('Gross total');
+  });
+});
+
+describe('brand logo — every brand prints its own, Foodies is the fallback', () => {
+  it('falls back to the Foodies umbrella logo when the brand has none', () => {
+    for (const layout of ALL_LAYOUTS) {
+      expect(renderInvoiceHtml(sampleInvoice(), layout, null).html, layout).toContain('foodies-logo.png');
+    }
+  });
+
+  it("uses the order's own brand logo when present (no template override exists)", () => {
+    const data = sampleInvoice();
+    data.orders[0].brand_logo_url = 'https://cdn/brand-x.png';
+    const brand = renderInvoiceHtml(data, 'receipt_logo', null).html;
+    expect(brand).toContain('brand-x.png');
+    expect(brand).not.toContain('foodies-logo.png');
+  });
+
+  it('hides the logo entirely when showLogo is off', () => {
+    const data = sampleInvoice();
+    data.orders[0].brand_logo_url = 'https://cdn/brand-x.png';
+    const html = renderInvoiceHtml(data, 'receipt_logo', cfg({ showLogo: false })).html;
+    expect(html).not.toContain('brand-x.png');
+    expect(html).not.toContain('foodies-logo.png');
+  });
+
+  it('multi-brand groups: umbrella logo in the header, per-brand logos per section', () => {
+    const data = sampleInvoice();
+    data.orders = [
+      { ...data.orders[0], brand_logo_url: 'https://cdn/fireaway.png' },
+      { ...data.orders[0], order_id: 2, brand_name: 'Wok & Go', brand_logo_url: 'https://cdn/wokgo.png' },
+    ];
+    const html = renderInvoiceHtml(data, 'bill_bordered', null).html;
+    expect(html).toContain('foodies-logo.png'); // header umbrella
+    expect(html).toContain('fireaway.png'); // per-order brand blocks
+    expect(html).toContain('wokgo.png');
+    expect(html).toContain('class="brandlogo"');
+  });
+});
+
+describe('rich sample exercises every renderable field', () => {
+  it('renders variants, add-ons, modifiers, a deal, notes, discounts and loyalty', () => {
+    // itemize discounts so all four stages show (the seeded configs do this)
+    const config = cfg({
+      showDiscountTotal: false,
+      showPromoDiscount: true,
+      showOrderDiscount: true,
+      showCouponDiscount: true,
+      showCardDiscount: true,
+      showCashier: true,
+      showTaxRate: true,
+    });
+    const { html } = renderInvoiceHtml(richSampleInvoice(), 'thermal_modern', config);
+    expect(html).toContain('Large 13'); // variant (the " is HTML-escaped)
+    expect(html).toContain('Garlic Dip'); // add-on
+    expect(html).toContain('Grilled Chicken'); // modifier
+    expect(html).toContain('↳ Mint Margarita'); // conditional nested pick
+    expect(html).toContain('Family Feast Deal'); // deal group
+    expect(html).toContain('Large Pepperoni Pizza'); // deal component
+    expect(html).toContain('Well done, extra crispy'); // item note
+    expect(html).toContain('Birthday'); // order note
+    expect(html).toContain('Promotional discount'); // all four discount stages
+    expect(html).toContain('Order discount');
+    expect(html).toContain('Coupon discount');
+    expect(html).toContain('Card discount');
+    expect(html).toContain('Service charge');
+    expect(html).toContain('Points earned');
+    expect(html).toContain('Points redeemed');
+    expect(html).toContain('Cash + Card'); // payment method, title-cased
+  });
+
+  it('renders without error across every layout', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const { html } = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG);
+      expect(html, layout).toContain('Family Feast Deal');
+      expect(html, layout).toContain('Fireaway');
+    }
   });
 });
 
@@ -123,10 +258,9 @@ describe('conditional meal-drink nesting', () => {
         ],
       },
     ];
-    const { html } = renderInvoiceHtml(data, 'thermal_80mm', null);
+    const { html } = renderInvoiceHtml(data, 'thermal_modern', null);
     expect(html).toContain('↳ Raspberry Milkshake');
     expect(html).toContain('sub2');
-    // trigger renders before the nested child
     expect(html.indexOf('Add a 345ml Drink')).toBeLessThan(html.indexOf('↳ Raspberry Milkshake'));
   });
 
@@ -145,10 +279,9 @@ describe('conditional meal-drink nesting', () => {
         ],
       },
     ];
-    const { html } = renderInvoiceHtml(data, 'thermal_80mm', null);
+    const { html } = renderInvoiceHtml(data, 'thermal_modern', null);
     expect(html).toContain('Included');
     expect(html).toContain('↳ Sprite 345ml');
-    // orphan (trigger not on the line) falls back to a flat row, not dropped
     expect(html).toContain('Orphan');
     expect(html).not.toContain('↳ Orphan');
   });

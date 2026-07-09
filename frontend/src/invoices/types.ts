@@ -3,20 +3,44 @@
  * (backend/src/invoices/invoice-template-config.ts). Keep in sync.
  */
 
-export type InvoiceLayout = 'thermal_80mm' | 'thermal_58mm' | 'a4_invoice';
+export type InvoiceLayout =
+  | 'bill_bordered'
+  | 'receipt_logo'
+  | 'thermal_modern'
+  | 'thermal_classic'
+  | 'thermal_58mm'
+  | 'a4_invoice';
 
 export const LAYOUT_META: Record<
   InvoiceLayout,
   { label: string; widthMm: number; description: string }
 > = {
-  thermal_80mm: { label: 'Thermal 80mm', widthMm: 80, description: 'Standard receipt printer' },
-  thermal_58mm: { label: 'Thermal 58mm', widthMm: 58, description: 'Compact receipt printer' },
+  bill_bordered: {
+    label: 'Bordered Bill · 80mm',
+    widthMm: 80,
+    description: 'Dine-in bill: bordered Item/Qty/Rate/Amount table, tabular header',
+  },
+  receipt_logo: {
+    label: 'Logo Receipt · 80mm',
+    widthMm: 80,
+    description: 'Takeaway: big brand logo, large Order # band, thank-you footer',
+  },
+  thermal_modern: {
+    label: 'Modern Minimal · 80mm',
+    widthMm: 80,
+    description: 'Clean, airy, uppercase section labels — a boutique-café feel',
+  },
+  thermal_classic: {
+    label: 'Classic Mono · 80mm',
+    widthMm: 80,
+    description: 'Monospace, double/dashed rules — the traditional POS receipt',
+  },
+  thermal_58mm: { label: 'Compact · 58mm', widthMm: 58, description: 'Narrow 58mm thermal roll' },
   a4_invoice: { label: 'A4 Invoice', widthMm: 210, description: 'Full-page printed invoice' },
 };
 
 export interface InvoiceTemplateConfig {
   showLogo: boolean;
-  logoUrl: string | null;
   headerText: string | null;
   footerText: string | null;
   showPoweredBy: boolean;
@@ -33,7 +57,6 @@ export interface InvoiceTemplateConfig {
   showTaxRate: boolean;
   showServiceCharge: boolean;
   showDeliveryFee: boolean;
-  taxLabel: string | null;
 
   showDiscountTotal: boolean;
   showPromoDiscount: boolean;
@@ -52,11 +75,11 @@ export interface InvoiceTemplateConfig {
   showDateTime: boolean;
   showCashier: boolean;
   showCustomerInfo: boolean;
+  showPaymentMethod: boolean;
 }
 
 export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showLogo: true,
-  logoUrl: null,
   headerText: null,
   footerText: null,
   showPoweredBy: true,
@@ -73,7 +96,6 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showTaxRate: false,
   showServiceCharge: true,
   showDeliveryFee: true,
-  taxLabel: 'Tax',
 
   showDiscountTotal: true,
   showPromoDiscount: false,
@@ -92,6 +114,7 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showDateTime: true,
   showCashier: false,
   showCustomerInfo: true,
+  showPaymentMethod: true,
 };
 
 export function resolveInvoiceConfig(
@@ -154,6 +177,7 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
       { key: 'showDateTime', label: 'Show date / time' },
       { key: 'showCashier', label: 'Show cashier' },
       { key: 'showCustomerInfo', label: 'Show customer info' },
+      { key: 'showPaymentMethod', label: 'Show payment method' },
     ],
   },
   {
@@ -192,6 +216,7 @@ export type InvoiceOrderVM = {
   customer_name?: string | null;
   customer_phone?: string | null;
   cashier_name?: string | null;
+  payment_method?: string | null;
   items: InvoiceLineVM[];
   subtotal: number;
   discount_amount: number;

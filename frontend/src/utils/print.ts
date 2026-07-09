@@ -1,8 +1,11 @@
 /**
  * Opens a new window with the given HTML content and triggers the browser print dialog.
  * The window is closed after printing (or when the user cancels).
+ *
+ * `extraCss` appends template-specific styles (e.g. an invoice template's paper
+ * size / thermal width) after the base stylesheet.
  */
-export function printContent(html: string, title = 'Print'): void {
+export function printContent(html: string, title = 'Print', extraCss = ''): void {
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
     window.alert('Please allow pop-ups to print.');
@@ -34,6 +37,7 @@ export function printContent(html: string, title = 'Print'): void {
     .meta { color: #6b7280; font-size: 0.875rem; margin-bottom: 16px; }
     .section { margin-bottom: 24px; }
     @media print { body { padding: 0; } }
+    ${extraCss}
   </style>
 </head>
 <body>
