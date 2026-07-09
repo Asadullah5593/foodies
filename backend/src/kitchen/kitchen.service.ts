@@ -262,9 +262,36 @@ export class KitchenService {
                                     quantity: a.quantity ?? 1,
                                 }))
                                 .filter((a) => a.name) ?? [],
-                        modifiers:
-                            oi.modifiers
-                                ?.map((m) => ({
+                        modifiers: (() => {
+                            const mods = oi.modifiers ?? [];
+                            // Conditional chooser picks (meal drink) nest under the option
+                            // that made them visible — same key the invoice surfaces use.
+                            const byId = new Map(
+                                mods
+                                    .filter((x) => x.modifier?.id != null)
+                                    .map((x) => [x.modifier!.id, x]),
+                            );
+                            const triggerNameOf = (
+                                m: (typeof mods)[number],
+                            ): string | null => {
+                                const vw =
+                                    m.modifier?.modifierGroup
+                                        ?.visibleWhenModifierIds;
+                                if (!vw?.length) return null;
+                                for (const id of vw) {
+                                    const t = byId.get(id);
+                                    if (t)
+                                        return (
+                                            t.nameSnapshot ??
+                                            t.modifier?.name ??
+                                            null
+                                        );
+                                }
+                                return null;
+                            };
+                            return mods
+                                .map((m) => ({
+                                    triggered_by: triggerNameOf(m),
                                     name:
                                         m.nameSnapshot ??
                                         m.modifier?.name ??
@@ -273,7 +300,8 @@ export class KitchenService {
                                     group:
                                         m.modifier?.modifierGroup?.name ?? null,
                                 }))
-                                .filter((m) => m.name) ?? [],
+                                .filter((m) => m.name);
+                        })(),
                     };
                 }) ?? [],
         };
@@ -323,8 +351,12 @@ export class KitchenService {
                         modifiers?: Array<{
                             nameSnapshot?: string | null;
                             modifier?: {
+                                id?: number;
                                 name: string;
-                                modifierGroup?: { name?: string };
+                                modifierGroup?: {
+                                    name?: string;
+                                    visibleWhenModifierIds?: number[] | null;
+                                };
                             };
                             quantity?: number;
                         }>;
@@ -347,9 +379,34 @@ export class KitchenService {
                                     quantity: a.quantity ?? 1,
                                 }))
                                 .filter((a) => a.name) ?? [],
-                        modifiers:
-                            o.modifiers
-                                ?.map((m) => ({
+                        modifiers: (() => {
+                            const mods = o.modifiers ?? [];
+                            const byId = new Map(
+                                mods
+                                    .filter((x) => x.modifier?.id != null)
+                                    .map((x) => [x.modifier!.id!, x]),
+                            );
+                            const triggerNameOf = (
+                                m: (typeof mods)[number],
+                            ): string | null => {
+                                const vw =
+                                    m.modifier?.modifierGroup
+                                        ?.visibleWhenModifierIds;
+                                if (!vw?.length) return null;
+                                for (const id of vw) {
+                                    const t = byId.get(id);
+                                    if (t)
+                                        return (
+                                            t.nameSnapshot ??
+                                            t.modifier?.name ??
+                                            null
+                                        );
+                                }
+                                return null;
+                            };
+                            return mods
+                                .map((m) => ({
+                                    triggered_by: triggerNameOf(m),
                                     name:
                                         m.nameSnapshot ??
                                         m.modifier?.name ??
@@ -358,7 +415,8 @@ export class KitchenService {
                                     group:
                                         m.modifier?.modifierGroup?.name ?? null,
                                 }))
-                                .filter((m) => m.name) ?? [],
+                                .filter((m) => m.name);
+                        })(),
                     };
                 }) ?? [],
         };

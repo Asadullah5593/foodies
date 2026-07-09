@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { orderModifiersWithNesting } from '../../utils/modifierNesting';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -135,7 +136,9 @@ const KDS: React.FC = () => {
         const notesLine = i.notes ? `<div class="kot-note">Note: ${escapeHtml(i.notes)}</div>` : '';
         const addonsStr = (i.addons ?? []).map((a: any) => `${a.name} ×${a.quantity ?? 1}`).join(', ');
         const addonsLine = addonsStr ? `<div class="kot-addons">Add-ons: ${escapeHtml(addonsStr)}</div>` : '';
-        const modifiersStr = (i.modifiers ?? []).map((m: any) => `${m.name}${(m.quantity ?? 1) > 1 ? ` ×${m.quantity}` : ''}`).join(', ');
+        const modifiersStr = orderModifiersWithNesting((i.modifiers ?? []) as Array<{ name?: string; triggered_by?: string | null; quantity?: number }>)
+          .map(({ mod: m, nested }) => `${nested ? '↳ ' : ''}${m.name}${(m.quantity ?? 1) > 1 ? ` ×${m.quantity}` : ''}`)
+          .join(', ');
         const modifiersLine = modifiersStr ? `<div class="kot-addons">${escapeHtml(modifiersStr)}</div>` : '';
         return `<div class="kot-item">${brandLine}${escapeHtml(nameLine)}${modifiersLine}${addonsLine}${notesLine}</div>`;
       }).join('');
@@ -382,16 +385,16 @@ const KDS: React.FC = () => {
                         </p>
                         {item.modifiers?.length ? (
                           <ul className="mt-1 space-y-0.5">
-                            {item.modifiers.map((m, idx) => (
-                              <li key={idx} className="flex gap-1.5 text-sm text-gray-700 dark:text-gray-300">
-                                <span className="text-gray-400 dark:text-gray-500" aria-hidden>•</span>
+                            {orderModifiersWithNesting(item.modifiers).map(({ mod: m, nested }, idx) => (
+                              <li key={idx} className={`flex gap-1.5 text-sm text-gray-700 dark:text-gray-300${nested ? ' pl-4' : ''}`}>
+                                <span className="text-gray-400 dark:text-gray-500" aria-hidden>{nested ? '↳' : '•'}</span>
                                 <span>
-                                  {m.group ? <span className="text-gray-500 dark:text-gray-400">{m.group}: </span> : null}
+                                  {!nested && m.group ? <span className="text-gray-500 dark:text-gray-400">{m.group}: </span> : null}
                                   {m.name}
                                   {m.quantity > 1 ? ` ×${m.quantity}` : ''}
                                 </span>
                               </li>
-                            ))}
+                              ))}
                           </ul>
                         ) : null}
                         {item.addons?.length ? (

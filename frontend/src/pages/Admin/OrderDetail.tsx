@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { orderModifiersWithNesting } from '../../utils/modifierNesting';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -22,6 +23,7 @@ type OrderDetailItem = {
   unit_price: number;
   subtotal: number;
   notes?: string;
+  triggered_by?: string | null;
   variant_id?: number | null;
   variant_name?: string | null;
   deal_id?: number | null;
@@ -309,10 +311,10 @@ const OrderDetail: React.FC = () => {
                       <span>{formatCurrency(addonTotal(a))}</span>
                     </div>
                   ))}
-                  {(item.modifiers ?? []).map((m, i) => (
-                    <div key={`m-${i}`} className="flex justify-between items-center mt-1.5 pl-4 text-sm text-gray-600 dark:text-slate-400 border-b border-gray-100 dark:border-slate-600 pb-1">
-                      <span>{m.group ?? 'Modifier'}: {m.name ?? '—'}</span>
-                      <span>{formatCurrency(Number(m.unit_price))}</span>
+                  {orderModifiersWithNesting(item.modifiers ?? []).map(({ mod: m, nested }, i) => (
+                    <div key={`m-${i}`} className={`flex justify-between items-center mt-1.5 ${nested ? 'pl-8' : 'pl-4'} text-sm text-gray-600 dark:text-slate-400 border-b border-gray-100 dark:border-slate-600 pb-1`}>
+                      <span>{nested ? <>↳ {m.name ?? '—'}</> : <>{m.group ?? 'Modifier'}: {m.name ?? '—'}</>}</span>
+                      <span>{nested && !Number(m.unit_price) ? <span className="text-emerald-600">Included</span> : formatCurrency(Number(m.unit_price))}</span>
                     </div>
                   ))}
                   {hasExtras && (
