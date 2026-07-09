@@ -18,11 +18,13 @@ export type MainInvoiceLine = {
   deal_id?: number | null;
   deal_slot_index?: number | null;
   deal_name?: string | null;
+  notes?: string | null;
   addons?: Array<{ name?: string | null; quantity: number; unit_price: number; subtotal?: number }>;
   modifiers?: Array<{ name?: string | null; unit_price: number; group?: string | null; triggered_by?: string | null }>;
 };
 
 export type MainInvoiceOrder = {
+  notes?: string | null;
   order_id: number;
   order_number: string;
   brand_name?: string | null;
@@ -271,15 +273,24 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                                 </td>
                               </tr>
                               {group.lines.map((line, si) => (
-                                <tr key={`${gi}-${si}`} className="border-b border-gray-100">
-                                  <td className="py-1 text-gray-600 pl-4">
-                                    {line.name_snapshot ?? 'Item'}
-                                    {line.variant_name ? ` (${line.variant_name})` : ''} × {line.quantity}
-                                  </td>
-                                  <td className="py-1 text-right text-gray-500">
-                                    {Number(line.unit_price) === 0 ? '—' : formatCurrency(Number(line.subtotal))}
-                                  </td>
-                                </tr>
+                                <React.Fragment key={`${gi}-${si}`}>
+                                  <tr className="border-b border-gray-100">
+                                    <td className="py-1 text-gray-600 pl-4">
+                                      {line.name_snapshot ?? 'Item'}
+                                      {line.variant_name ? ` (${line.variant_name})` : ''} × {line.quantity}
+                                    </td>
+                                    <td className="py-1 text-right text-gray-500">
+                                      {Number(line.unit_price) === 0 ? '—' : formatCurrency(Number(line.subtotal))}
+                                    </td>
+                                  </tr>
+                                  {line.notes ? (
+                                    <tr className="border-b border-gray-100">
+                                      <td colSpan={2} className="py-1 pl-8 text-amber-700 italic">
+                                        Note: {line.notes}
+                                      </td>
+                                    </tr>
+                                  ) : null}
+                                </React.Fragment>
                               ))}
                             </>
                           ) : (
@@ -351,6 +362,13 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                                     });
                                     return rows;
                                   })()}
+                                  {line.notes ? (
+                                    <tr className="border-b border-gray-100">
+                                      <td colSpan={2} className="py-1 pl-8 text-amber-700 italic">
+                                        Note: {line.notes}
+                                      </td>
+                                    </tr>
+                                  ) : null}
                                   {hasExtras && (
                                     <tr className="border-b border-gray-100 last:border-0">
                                       <td className="py-1 text-gray-500 pl-4 italic">
@@ -371,6 +389,11 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                   </tbody>
                 </table>
                 <div className="mt-3 pt-3 border-t border-gray-200 space-y-1 text-sm">
+                {o.notes ? (
+                  <div className="mt-2 text-sm text-amber-700 italic border border-amber-200 bg-amber-50 rounded px-2 py-1">
+                    Order note: {o.notes}
+                  </div>
+                ) : null}
                   <div className="flex justify-between text-gray-600">
                     <span>Subtotal</span>
                     <span>{formatCurrency(Number(o.subtotal))}</span>

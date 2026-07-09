@@ -71,7 +71,11 @@ function itemsHtml(
         const sub = g.lines
           .map((l) => {
             const v = cfg.showVariant && l.variant_name ? ` (${esc(l.variant_name)})` : '';
-            return `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${Number(l.unit_price) === 0 ? '—' : money(l.subtotal)}</span></div>`;
+            const note =
+              cfg.showItemNotes && l.notes
+                ? `<div class="row sub sub2"><span class="l muted">Note: ${esc(l.notes)}</span><span class="r"></span></div>`
+                : '';
+            return `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${Number(l.unit_price) === 0 ? '—' : money(l.subtotal)}</span></div>${note}`;
           })
           .join('');
         return row(`<strong>${esc(name)}</strong>`, money(dealTotal)) + sub;
