@@ -49,6 +49,7 @@ type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   order_type?: string;
   order_group_id?: string | null;
   table_number?: string;
+  notes?: string;
   customer_name?: string;
   customer_phone?: string;
   delivery_address?: string;
@@ -168,6 +169,7 @@ const OrderDetail: React.FC = () => {
       <h1>Order #${escapeHtml(String(orderNum))}</h1>
       ${o.brand?.name ? `<p class="meta">${escapeHtml(o.brand.name)}</p>` : ''}
       <p class="meta">${escapeHtml(typeLabel)} · ${o.branch ? escapeHtml(o.branch.name) : ''} · ${o.placed_at ? new Date(o.placed_at).toLocaleString() : ''}</p>
+      ${o.notes ? `<div class="section"><p class="font-medium">Order note: ${escapeHtml(o.notes)}</p></div>` : ''}
       ${o.table_number || o.customer_name || o.customer_phone ? `<div class="section"><p class="font-medium">${o.table_number ? `Table: ${escapeHtml(o.table_number)}` : ''} ${o.customer_name ? ` · Customer: ${escapeHtml(o.customer_name)}` : ''} ${o.customer_phone ? ` · Phone: ${escapeHtml(o.customer_phone)}` : ''}</p></div>` : ''}
       <h2>Items</h2>
       <table><thead><tr><th>Item</th><th class="text-right">Amount</th></tr></thead><tbody>${itemsHtml}</tbody></table>
@@ -240,6 +242,11 @@ const OrderDetail: React.FC = () => {
           {o.creator && <span>Created by: {o.creator.name}</span>}
           {o.placed_at && <span>Placed: {new Date(o.placed_at).toLocaleString()}</span>}
         </div>
+        {o.notes && (
+          <div className="mt-3 text-sm font-medium text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/40 px-3 py-2 rounded-lg border border-amber-200 dark:border-amber-700">
+            Order note: {o.notes}
+          </div>
+        )}
         {(o.table_number || o.customer_name || o.customer_phone || o.delivery_address) && (
           <div className="rounded-lg bg-gray-50 dark:bg-slate-700/50 p-4 text-sm text-gray-700 dark:text-slate-300 space-y-1 mb-4">
             {o.table_number && <p><span className="font-medium text-gray-500 dark:text-slate-400">Table:</span> {o.table_number}</p>}

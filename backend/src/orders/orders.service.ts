@@ -2115,6 +2115,7 @@ export class OrdersService {
         return {
             id: order.id,
             order_number: order.orderNumber,
+            notes: order.notes ?? null,
             order_type: order.orderType,
             status: order.status,
             order_group_id: order.orderGroupId ?? null,
@@ -2772,6 +2773,7 @@ export class OrdersService {
                 brand_logo_url: o.brand_logo_url,
                 order_type: o.order_type,
                 table_number: o.table_number,
+                notes: o.notes ?? null,
                 placed_at: o.placed_at,
                 customer_name: o.customer_name,
                 customer_phone: o.customer_phone,
