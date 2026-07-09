@@ -111,6 +111,46 @@ fields as of this change.
 
 ---
 
+## 2.1 Deals — the item-detail `deal` object is pre-restricted for the app
+
+When `GET /public/consumer/menu/items/:id?branch_id=…` returns an item that is a
+deal, it includes a `deal` object with `slots[]`, each slot carrying
+`choice_items[]`. **The server pre-applies the same restrictions POS enforces**,
+so the app can render each slot's choices 1:1 without re-deriving deal rules. For
+the `app` channel the payload is shaped so that:
+
+1. **Variants are limited to the slot's size.** If a slot sets `slot_size_key`
+   (e.g. `"5"`, `"12"`, `"large"`) each choice item's `variants[]` contains only
+   that size; if it sets `allowed_size_keys` (e.g. a BOGO slot `["12","14"]`),
+   only those sizes appear. A choice item that has no variant at the slot size
+   (a non-size side sharing the slot) keeps its variants unchanged.
+2. **Cross-sell groups are removed.** Any `modifier_group` the admin flagged
+   `hide_in_deals` (e.g. "Add a drink", "Add a dip") is stripped — the deal's own
+   slots already cover those. Groups that remain are the real in-deal options
+   (base, flavour, dips-to-choose, etc.) and still carry `min_select`/`max_select`.
+3. **`addons` is always empty** for a deal choice item — a fixed-price deal never
+   charges à-la-carte add-ons.
+
+**What the app must still do (not server-enforceable):**
+
+- **Gate "Add to Cart"** on every required selection: a required slot
+  (`optional: false`) must be filled to its `quantity`, and every visible
+  modifier group with `min_select ≥ 1` must have at least `min_select` picked.
+- **Honour `min_select`/`max_select`/`included_quantity`/`allow_quantity`** per
+  group (show the "choose 2", counters, etc.).
+- **Honour per-size fields** (`price_by_size`, `min_select_by_size`,
+  `max_select_by_size`, modifier `available_for_sizes`) against the chosen size.
+- **Mirror slots (BOGO):** slots with `mirror_slot_index` +
+  `mirror_match_size` / `mirror_match_category` are resolved interactively — the
+  2nd pick must match the 1st slot's chosen size/category. These fields stay in
+  the payload for the app to enforce at selection time (same as POS).
+
+> The `pos` channel deliberately receives the **unrestricted** shape (POS filters
+> client-side); this restriction applies only to the consumer/`app` channel, so
+> POS behaviour is unchanged.
+
+---
+
 ## 3. Cart pricing (quote) — the authoritative "real / discounted / difference"
 
 `POST /public/consumer/orders/quote`  (optional token, send `x-client-platform`)
@@ -403,13 +443,16 @@ Each order in the payload now also carries the **discount breakdown** (they sum 
   "brand_logo_url": "https://…",   // ← per-brand logo
   "order_type": "dine_in", "table_number": "7", "placed_at": "…",
   "customer_name": "…", "customer_phone": "…", "cashier_name": "…",
-  "payment_method": "cash"         // ← distinct completed tenders, "cash + card" for split; null if untendered
+  "payment_method": "cash",        // ← distinct completed tenders, "cash + card" for split; null if untendered
+  "invoice_number": "BR-1-10-20260709-0481"  // ← permanent globally-unique ref; shown beneath order_number
 }
 ```
+
+`order_number` is the short daily call-out number ("014"); `invoice_number` is the order's permanent globally-unique reference (`BR-{brand}-{branch}-{date}-{seq}`) and is rendered directly beneath the order number on every template.
 
 Group/single invoice root now also returns:
 - `currency` — tenant currency code (format the symbol client-side).
 - `header` — `{ legal_name, tenant_name, branch_name, address, phone, email }`.
-- `template` — the **resolved active invoice template**: `{ id, layout, config: { …field toggles… } }`. `layout` is one of `"bill_bordered"` (dine-in bill, bordered Item/Qty/Rate/Amount table), `"receipt_logo"` (logo-forward counter receipt with a big Order # band), `"thermal_modern"` (clean minimal), `"thermal_classic"` (monospace), `"thermal_58mm"` (narrow roll) or `"a4_invoice"` (full page) — all but A4 are thermal-roll widths. Header details (order no, date, cashier, payment, customer) render as a two-column label/value table in every layout. The `config` booleans (e.g. `showCategory`, `showTax`, `showPromoDiscount`, `showPaymentMethod`, `showPoweredBy`) tell the client which fields to render; resolution is brand-default → tenant-default → built-in default, so `template` is always present. There is **no** `logoUrl` or `taxLabel` key — each order's own brand logo always prints (the platform logo is used only when a brand has none), and the tax line label is fixed. For a native renderer, mirror `frontend/src/invoices/renderInvoice.ts`.
+- `template` — the **resolved active invoice template**: `{ id, layout, config: { …field toggles… } }`. `layout` is one of `"bill_bordered"` (dine-in bill, bordered Item/Qty/Rate/Amount table), `"receipt_logo"` (logo-forward counter receipt with a big Order # band), `"thermal_modern"` (clean minimal), `"thermal_classic"` (monospace), `"thermal_58mm"` (narrow roll) or `"a4_invoice"` (full page) — all but A4 are thermal-roll widths. Header details (order no, date, cashier, payment, customer) render as a two-column label/value table in every layout. The `config` booleans (e.g. `showCategory`, `showTax`, `showPromoDiscount`, `showPaymentMethod`, `showInvoiceNumber`, `showPoweredBy`) tell the client which fields to render; resolution is brand-default → tenant-default → built-in default, so `template` is always present. `config` also has three numeric/style keys: `fontScalePct` (whole-receipt font scale, 50–200), `poweredByFontPct` (size of the "powered by" line, 50–200) and `poweredByBold` (boolean). There is **no** `logoUrl` or `taxLabel` key — each order's own brand logo always prints (the platform logo is used only when a brand has none) and the tax label is fixed. The business header shows only the logo, brand/business name and the admin's free-text `headerText` (branch address/phone are NOT auto-filled); the order note renders below the line items, never in the top meta block. For a native renderer, mirror `frontend/src/invoices/renderInvoice.ts`.
 
 Admin manage the templates via `GET/POST/PUT/DELETE /admin/invoice-templates` (+ `PUT /admin/invoice-templates/:id/activate`, `GET /admin/invoice-templates/active?brand_id=`). See `backend/src/invoices/invoice-template-config.ts` for the full config contract.
