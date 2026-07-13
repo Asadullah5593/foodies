@@ -214,6 +214,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
   const setCfg = (key: keyof InvoiceTemplateConfig, value: boolean | string | number | null) =>
     setForm((f) => ({ ...f, config: { ...f.config, [key]: value } }));
   const clampPct = (v: string) => Math.min(200, Math.max(50, Math.round(Number(v) || 100)));
+  const clampMm = (v: string) => Math.min(80, Math.max(0, Math.round(Number(v) || 0)));
 
   // A single field toggled → update it and flash its receipt line in the preview.
   const toggleField = (key: keyof InvoiceTemplateConfig, value: boolean) => {
@@ -313,6 +314,23 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           label: '“Powered by” bold',
           value: Boolean(form.config.poweredByBold),
           onChange: (v) => setCfg('poweredByBold', v),
+        },
+      ],
+    },
+    {
+      id: 'printing',
+      title: 'Printing',
+      icon: 'info',
+      desc: 'Thermal paper handling. If your printer cuts off the last line, increase the bottom feed until it clears the cutter.',
+      kind: 'fields',
+      fields: [
+        {
+          kind: 'number',
+          label: 'Bottom feed (cutter clearance)',
+          hint: 'blank paper fed after the last line so it clears the print-head-to-cutter/tear-bar gap (0 = off)',
+          suffix: 'mm  (0–80)',
+          value: form.config.bottomFeedMm ?? 22,
+          onChange: (v) => setCfg('bottomFeedMm', clampMm(v)),
         },
       ],
     },

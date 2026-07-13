@@ -650,6 +650,8 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
   const rootPx = Math.round(LAYOUT_BASE_PX[layout] * (clampPct(cfg.fontScalePct) / 100) * 100) / 100;
   const poweredPx = Math.round(rootPx * (clampPct(cfg.poweredByFontPct) / 100) * 100) / 100;
   const poweredWeight = cfg.poweredByBold ? 700 : 400;
+  // Trailing feed (mm) so the last line clears the head-to-cutter gap; see cutfeed.
+  const feedMm = Math.min(80, Math.max(0, Math.round(Number(cfg.bottomFeedMm ?? 22))));
   const base = `
     .inv-root { box-sizing: border-box; color: #000; background: #fff; margin: 0 auto; }
     .inv-root * { box-sizing: border-box; }
@@ -695,7 +697,7 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .itbl .ind2 { padding-left: 16px; display: inline-block; }
     .inv-root .itbl tr.noterow td { font-style: italic; color: #333; font-size: .88em; padding-left: 10px; }
     .inv-root .cutfeed { height: 0; }
-    @media print { .inv-root .cutfeed { display: block; height: 22mm; } }
+    @media print { .inv-root .cutfeed { display: block; height: ${feedMm}mm; } }
   `;
   if (layout === 'bill_bordered') {
     return `${base}
