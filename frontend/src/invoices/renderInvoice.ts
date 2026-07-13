@@ -624,8 +624,14 @@ export function renderInvoiceHtml(
   // Thermal receipts get a trailing "feed" spacer so the final line clears the
   // gap between the print head and the tear/cutter bar. Without it, printers
   // with a deeper gap (e.g. SPEED-X 300U) leave the last line stuck inside the
-  // mechanism. Print-only (see cutfeed CSS) so the on-screen preview is unaffected.
-  const feed = layout === 'a4_invoice' ? '' : '<div class="cutfeed" aria-hidden="true"></div>';
+  // mechanism. The spacer ends in a printed dashed cut-line: drivers that trim
+  // trailing BLANK paper before cutting (so a blank spacer has no effect) cannot
+  // trim ink, so the printed line forces the paper to actually feed. Print-only
+  // (see cutfeed CSS) so the on-screen preview is unaffected. 0mm = off.
+  const feed =
+    layout !== 'a4_invoice' && feedMmOf(cfg) > 0
+      ? '<div class="cutfeed" aria-hidden="true"><span class="cutline"></span></div>'
+      : '';
   const html = `<div class="inv-root inv-${layout}">${body}${feed}</div>`;
   return { html, css: cssFor(layout, cfg) };
 }
@@ -643,6 +649,10 @@ const LAYOUT_BASE_PX: Record<InvoiceLayout, number> = {
 const clampPct = (n: unknown, min = 50, max = 200): number =>
   Math.min(max, Math.max(min, Number(n) || 100));
 
+/** Resolved trailing-feed height (mm) for the cut-clearance spacer. 0 = off. */
+const feedMmOf = (cfg: InvoiceTemplateConfig): number =>
+  Math.min(80, Math.max(0, Math.round(Number(cfg.bottomFeedMm ?? 22))));
+
 function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
   const widthMm = LAYOUT_META[layout].widthMm;
   // Whole-receipt font scaling: everything else is sized in em, so scaling the
@@ -651,7 +661,7 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
   const poweredPx = Math.round(rootPx * (clampPct(cfg.poweredByFontPct) / 100) * 100) / 100;
   const poweredWeight = cfg.poweredByBold ? 700 : 400;
   // Trailing feed (mm) so the last line clears the head-to-cutter gap; see cutfeed.
-  const feedMm = Math.min(80, Math.max(0, Math.round(Number(cfg.bottomFeedMm ?? 22))));
+  const feedMm = feedMmOf(cfg);
   const base = `
     .inv-root { box-sizing: border-box; color: #000; background: #fff; margin: 0 auto; }
     .inv-root * { box-sizing: border-box; }
@@ -697,7 +707,13 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .itbl .ind2 { padding-left: 16px; display: inline-block; }
     .inv-root .itbl tr.noterow td { font-style: italic; color: #333; font-size: .88em; padding-left: 10px; }
     .inv-root .cutfeed { height: 0; }
-    @media print { .inv-root .cutfeed { display: block; height: ${feedMm}mm; } }
+    .inv-root .cutfeed .cutline { display: none; }
+    @media print {
+      .inv-root .cutfeed { display: block; position: relative; height: ${feedMm}mm; }
+      /* Printed ink at the very bottom of the feed zone: forces drivers that trim
+         trailing blank paper (SPEED-X etc.) to feed the full ${feedMm}mm before cutting. */
+      .inv-root .cutfeed .cutline { display: block; position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px dashed #000; }
+    }
   `;
   if (layout === 'bill_bordered') {
     return `${base}

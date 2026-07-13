@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { orderService } from '../services/api';
 import { formatCurrency } from '../utils/currency';
 import { printContent } from '../utils/print';
+import { getDeviceBottomFeedMm, setDeviceBottomFeedMm } from '../utils/printerSettings';
 import { renderInvoiceHtml } from '../invoices/renderInvoice';
 import { InvoiceVM, InvoiceLayout } from '../invoices/types';
 import Modal from './Modal';
@@ -125,6 +126,13 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
   const hasGroup = !!orderGroupId;
   const hasSingle = !!orderId && !orderGroupId;
 
+  // Per-terminal cutter-feed override (localStorage). Empty = use template default.
+  const [deviceFeed, setDeviceFeed] = React.useState<number | null>(() => getDeviceBottomFeedMm());
+  const updateDeviceFeed = (v: number | null) => {
+    setDeviceBottomFeedMm(v);
+    setDeviceFeed(v);
+  };
+
   const { data: mainInvoice, isLoading: loadingGroup, error: errorGroup } = useQuery({
     queryKey: ['order-group-main-invoice', orderGroupId],
     queryFn: () => orderService.getOrderGroupMainInvoice(orderGroupId!),
@@ -216,7 +224,11 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
         : null;
     if (!printData) return;
     const layout: InvoiceLayout = printData.template?.layout ?? 'bill_bordered';
-    const { html, css } = renderInvoiceHtml(printData, layout, printData.template?.config ?? null);
+    // This terminal's cutter-feed override (if set) wins over the template default.
+    const deviceFeed = getDeviceBottomFeedMm();
+    const baseCfg = printData.template?.config ?? null;
+    const cfg = deviceFeed != null ? { ...(baseCfg ?? {}), bottomFeedMm: deviceFeed } : baseCfg;
+    const { html, css } = renderInvoiceHtml(printData, layout, cfg);
     printContent(html, 'Customer invoice', css);
   };
 
@@ -460,13 +472,31 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
             <span className="text-lg font-semibold">{invoiceData.orders.length > 1 ? 'Gross total' : 'Total'}</span>
             <span className="text-2xl font-bold">{formatCurrency(Number(invoiceData.gross_total ?? 0))}</span>
           </div>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={handlePrint}>
-              Print
-            </Button>
-            <Button variant="outline" onClick={onClose}>
-              Close
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label
+              className="flex items-center gap-1.5 text-xs text-gray-500"
+              title="Blank paper fed after the last line so it clears this printer's cutter. Saved on THIS terminal only — leave empty to use the template's value. Raise it if the last line is cut off."
+            >
+              <span className="whitespace-nowrap">Cutter feed <span className="text-gray-400">(this device)</span></span>
+              <input
+                type="number"
+                min={0}
+                max={80}
+                value={deviceFeed ?? ''}
+                placeholder="template"
+                onChange={(e) => updateDeviceFeed(e.target.value === '' ? null : Number(e.target.value))}
+                className="w-20 rounded-md border border-gray-300 px-2 py-1 text-right text-gray-800 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500/30"
+              />
+              <span className="text-gray-400">mm</span>
+            </label>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={handlePrint}>
+                Print
+              </Button>
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
+            </div>
           </div>
         </div>
       ) : (
