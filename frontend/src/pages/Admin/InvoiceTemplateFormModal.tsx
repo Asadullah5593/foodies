@@ -404,7 +404,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div
-              className="flex h-[86vh] max-h-[840px] w-full max-w-[1180px] flex-col overflow-hidden rounded-[18px] bg-white shadow-2xl"
+              className="flex h-[92vh] max-h-[920px] w-full max-w-[1180px] flex-col overflow-hidden rounded-[18px] bg-white shadow-2xl"
               initial={{ opacity: 0, scale: 0.96, y: 18 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 18 }}
