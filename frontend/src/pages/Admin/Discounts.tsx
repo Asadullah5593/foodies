@@ -68,7 +68,7 @@ const Discounts: React.FC = () => {
   const { data: categories } = useQuery({
     queryKey: ['menuCategories'],
     queryFn: async () => {
-      const res = await apiClient.get<Option[]>('/admin/menu/categories');
+      const res = await apiClient.get<Array<Option & { brandId?: number }>>('/admin/menu/categories');
       return res.data;
     },
   });
@@ -283,8 +283,14 @@ const Discounts: React.FC = () => {
   const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map(
     (b) => ({ id: b.id, name: b.name }),
   );
+  // Category names repeat across brands (e.g. every brand has a "Deals").
+  // Suffix each with its brand so they are distinguishable in the picker.
+  const brandNameById = new Map((brands ?? []).map((b) => [b.id, b.name]));
   const categoryOptions: SearchableMultiSelectOption[] = (categories ?? []).map(
-    (c) => ({ id: c.id, name: c.name }),
+    (c) => {
+      const brandName = c.brandId != null ? brandNameById.get(c.brandId) : undefined;
+      return { id: c.id, name: brandName ? `${c.name} (${brandName})` : c.name };
+    },
   );
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
