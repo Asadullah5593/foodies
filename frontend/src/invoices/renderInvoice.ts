@@ -710,9 +710,16 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .cutfeed .cutline { display: none; }
     @media print {
       .inv-root .cutfeed { display: block; position: relative; height: ${feedMm}mm; }
-      /* Printed ink at the very bottom of the feed zone: forces drivers that trim
-         trailing blank paper (SPEED-X etc.) to feed the full ${feedMm}mm before cutting. */
-      .inv-root .cutfeed .cutline { display: block; position: absolute; left: 0; right: 0; bottom: 0; border-top: 1px dashed #000; }
+      /* Minimal ink at the very bottom of the feed zone: drivers that trim trailing
+         BLANK paper (SPEED-X etc.) can't trim ink, so they must feed the full
+         ${feedMm}mm. On tear-bar printers the last-printed ink never clears the bar
+         and leads the NEXT receipt — so instead of a full dashed line, print two
+         tiny ticks at the paper edges: same anti-trim effect, barely visible. */
+      .inv-root .cutfeed .cutline { display: block; position: absolute; left: 0; right: 0; bottom: 0; height: 0; }
+      .inv-root .cutfeed .cutline::before,
+      .inv-root .cutfeed .cutline::after { content: ''; position: absolute; bottom: 0; width: 4mm; height: 0.8mm; background: #000; }
+      .inv-root .cutfeed .cutline::before { left: 0; }
+      .inv-root .cutfeed .cutline::after { right: 0; }
     }
   `;
   if (layout === 'bill_bordered') {
