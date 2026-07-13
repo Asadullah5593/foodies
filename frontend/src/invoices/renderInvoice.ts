@@ -108,8 +108,9 @@ function groupItemsForReceipt(
   return result;
 }
 
-function row(left: string, right: string, cls = ''): string {
-  return `<div class="row ${cls}"><span class="l">${left}</span><span class="r">${right}</span></div>`;
+function row(left: string, right: string, cls = '', field = ''): string {
+  const attr = field ? ` data-field="${field}"` : '';
+  return `<div class="row ${cls}"${attr}><span class="l">${left}</span><span class="r">${right}</span></div>`;
 }
 
 /**
@@ -143,10 +144,10 @@ function itemsHtml(
         const name = g.lines.find((l) => l.deal_name)?.deal_name ?? 'Deal';
         const sub = g.lines
           .map((l) => {
-            const v = cfg.showVariant && l.variant_name ? ` (${esc(l.variant_name)})` : '';
+            const v = cfg.showVariant && l.variant_name ? `<span data-field="showVariant"> (${esc(l.variant_name)})</span>` : '';
             const note =
               cfg.showItemNotes && l.notes
-                ? `<div class="row sub sub2"><span class="l muted">Note: ${esc(l.notes)}</span><span class="r"></span></div>`
+                ? `<div class="row sub sub2" data-field="showItemNotes"><span class="l muted">Note: ${esc(l.notes)}</span><span class="r"></span></div>`
                 : '';
             return `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${Number(l.unit_price) === 0 ? '—' : money(l.subtotal)}</span></div>${note}`;
           })
@@ -155,12 +156,12 @@ function itemsHtml(
       }
       return g.lines
         .map((l) => {
-          const cat = cfg.showCategory && l.category ? `<span class="cat">${esc(l.category)}</span>` : '';
-          const v = cfg.showVariant && l.variant_name ? ` <span class="muted">(${esc(l.variant_name)})</span>` : '';
+          const cat = cfg.showCategory && l.category ? `<span class="cat" data-field="showCategory">${esc(l.category)}</span>` : '';
+          const v = cfg.showVariant && l.variant_name ? ` <span class="muted" data-field="showVariant">(${esc(l.variant_name)})</span>` : '';
           const base = Number(l.unit_price) * Number(l.quantity ?? 1);
           const head = row(
             `${cat}${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}`,
-            cfg.showUnitPrice ? money(base) : '',
+            cfg.showUnitPrice ? `<span data-field="showUnitPrice">${money(base)}</span>` : '',
           );
           const addons = cfg.showModifiers
             ? (l.addons ?? [])
@@ -169,6 +170,7 @@ function itemsHtml(
                     `<span class="sub-l">+ ${esc(a.name ?? 'Add-on')}${Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</span>`,
                     money(a.subtotal != null ? a.subtotal : Number(a.unit_price) * Number(a.quantity ?? 1)),
                     'sub',
+                    'showModifiers',
                   ),
                 )
                 .join('')
@@ -181,11 +183,13 @@ function itemsHtml(
                   `<span class="sub2-l">↳ ${esc(m.name ?? 'Modifier')}</span>`,
                   Number(m.unit_price) ? `${money(m.unit_price)}` : 'Included',
                   'sub sub2',
+                  'showModifiers',
                 )
               : row(
                   `<span class="sub-l">+ ${esc(m.group ? `${m.group}: ` : '')}${esc(m.name ?? 'Modifier')}</span>`,
                   Number(m.unit_price) ? money(m.unit_price) : '',
                   'sub',
+                  'showModifiers',
                 );
           const mods = cfg.showModifiers
             ? roots
@@ -196,7 +200,7 @@ function itemsHtml(
             : '';
           const notes =
             cfg.showItemNotes && l.notes
-              ? `<div class="row sub"><span class="l muted">Note: ${esc(l.notes)}</span><span class="r"></span></div>`
+              ? `<div class="row sub" data-field="showItemNotes"><span class="l muted">Note: ${esc(l.notes)}</span><span class="r"></span></div>`
               : '';
           return head + addons + mods + notes;
         })
@@ -224,10 +228,13 @@ function itemsTableHtml(
     rate: string,
     amount: string,
     cls = '',
+    field = '',
   ) =>
-    `<tr${cls ? ` class="${cls}"` : ''}><td class="ci">${name}</td><td class="cq">${qty}</td>${showRate ? `<td class="cr">${rate}</td>` : ''}<td class="ca">${amount}</td></tr>`;
+    `<tr${cls ? ` class="${cls}"` : ''}${field ? ` data-field="${field}"` : ''}><td class="ci">${name}</td><td class="cq">${qty}</td>${showRate ? `<td class="cr">${rate}</td>` : ''}<td class="ca">${amount}</td></tr>`;
   const noteRow = (text: string) =>
-    `<tr class="noterow"><td colspan="${cols}">Note: ${esc(text)}</td></tr>`;
+    `<tr class="noterow" data-field="showItemNotes"><td colspan="${cols}">Note: ${esc(text)}</td></tr>`;
+  const variantHtml = (name?: string | null) =>
+    cfg.showVariant && name ? `<span data-field="showVariant"> (${esc(name)})</span>` : '';
 
   const rows = groupItemsForReceipt(order.items ?? [])
     .map((g) => {
@@ -237,10 +244,9 @@ function itemsTableHtml(
         const head = cell(`<strong>${esc(name)}</strong>`, '', '', num(dealTotal), 'dealrow');
         const comps = g.lines
           .map((l) => {
-            const v = cfg.showVariant && l.variant_name ? ` (${esc(l.variant_name)})` : '';
             const free = Number(l.unit_price) === 0;
             const compRow = cell(
-              `<span class="ind">${esc(l.name_snapshot ?? 'Item')}${v}</span>`,
+              `<span class="ind">${esc(l.name_snapshot ?? 'Item')}${variantHtml(l.variant_name)}</span>`,
               String(l.quantity),
               free ? '—' : num(l.unit_price),
               free ? '—' : num(l.subtotal),
@@ -253,11 +259,10 @@ function itemsTableHtml(
       }
       return g.lines
         .map((l) => {
-          const cat = cfg.showCategory && l.category ? `<span class="cat">${esc(l.category)}</span>` : '';
-          const v = cfg.showVariant && l.variant_name ? ` (${esc(l.variant_name)})` : '';
+          const cat = cfg.showCategory && l.category ? `<span class="cat" data-field="showCategory">${esc(l.category)}</span>` : '';
           const base = Number(l.unit_price) * Number(l.quantity ?? 1);
           const head = cell(
-            `${cat}${esc(l.name_snapshot ?? 'Item')}${v}`,
+            `${cat}${esc(l.name_snapshot ?? 'Item')}${variantHtml(l.variant_name)}`,
             String(l.quantity),
             num(l.unit_price),
             num(base),
@@ -272,6 +277,8 @@ function itemsTableHtml(
                     qty !== 1 ? String(qty) : '',
                     num(a.unit_price),
                     num(amount),
+                    '',
+                    'showModifiers',
                   );
                 })
                 .join('')
@@ -286,6 +293,8 @@ function itemsTableHtml(
               '',
               '',
               Number(m.unit_price) ? num(m.unit_price) : nested ? 'Incl.' : '',
+              '',
+              'showModifiers',
             );
           const mods = cfg.showModifiers
             ? roots
@@ -312,24 +321,24 @@ function itemsTableHtml(
  */
 function metaTableHtml(order: InvoiceOrderVM, cfg: InvoiceTemplateConfig): string {
   const rows: string[] = [];
-  const add = (k: string, v: string) =>
-    rows.push(`<tr><td class="mk">${esc(k)}</td><td class="mv">${v}</td></tr>`);
-  if (cfg.showOrderNumber) add('Order #', esc(order.order_number));
-  if (cfg.showInvoiceNumber && order.invoice_number) add('Invoice #', esc(order.invoice_number));
-  if (cfg.showOrderType && order.order_type) add('Type', esc(titleCase(String(order.order_type))));
-  if (cfg.showTableNumber && order.table_number) add('Table', esc(order.table_number));
-  if (cfg.showDateTime && order.placed_at) add('Date', esc(fmtDateTime(order.placed_at)));
-  if (cfg.showCashier && order.cashier_name) add('Cashier', esc(order.cashier_name));
-  if (cfg.showPaymentMethod && order.payment_method) add('Payment', esc(titleCase(order.payment_method)));
+  const add = (k: string, v: string, field: string) =>
+    rows.push(`<tr data-field="${field}"><td class="mk">${esc(k)}</td><td class="mv">${v}</td></tr>`);
+  if (cfg.showOrderNumber) add('Order #', esc(order.order_number), 'showOrderNumber');
+  if (cfg.showInvoiceNumber && order.invoice_number) add('Invoice #', esc(order.invoice_number), 'showInvoiceNumber');
+  if (cfg.showOrderType && order.order_type) add('Type', esc(titleCase(String(order.order_type))), 'showOrderType');
+  if (cfg.showTableNumber && order.table_number) add('Table', esc(order.table_number), 'showTableNumber');
+  if (cfg.showDateTime && order.placed_at) add('Date', esc(fmtDateTime(order.placed_at)), 'showDateTime');
+  if (cfg.showCashier && order.cashier_name) add('Cashier', esc(order.cashier_name), 'showCashier');
+  if (cfg.showPaymentMethod && order.payment_method) add('Payment', esc(titleCase(order.payment_method)), 'showPaymentMethod');
   if (cfg.showCustomerInfo && (order.customer_name || order.customer_phone))
-    add('Customer', esc([order.customer_name, order.customer_phone].filter(Boolean).join(' · ')));
+    add('Customer', esc([order.customer_name, order.customer_phone].filter(Boolean).join(' · ')), 'showCustomerInfo');
   return rows.length ? `<table class="metatbl"><tbody>${rows.join('')}</tbody></table>` : '';
 }
 
 /** Order-level note, shown BELOW the items (never in the top meta block). */
 function orderNoteHtml(order: InvoiceOrderVM, cfg: InvoiceTemplateConfig): string {
   return cfg.showOrderNotes && order.notes
-    ? `<div class="onote">Note: ${esc(order.notes)}</div>`
+    ? `<div class="onote" data-field="showOrderNotes">Note: ${esc(order.notes)}</div>`
     : '';
 }
 
@@ -340,7 +349,7 @@ function totalsHtml(
   grandLabel = 'Total',
 ): string {
   const parts: string[] = [];
-  if (cfg.showSubtotal) parts.push(row('Subtotal', money(order.subtotal)));
+  if (cfg.showSubtotal) parts.push(row('Subtotal', money(order.subtotal), '', 'showSubtotal'));
 
   // Discounts: show EITHER the combined line OR the per-stage breakdown, never
   // both (avoids listing the same amount twice). Turn off "total discount" to
@@ -351,24 +360,24 @@ function totalsHtml(
     cfg.showDiscountName && order.discount_code
       ? `Discount (${esc(order.discount_code)})`
       : 'Discount';
-  const perStage: Array<[boolean, string, number | undefined]> = [
-    [cfg.showPromoDiscount, 'Promotional discount', order.promo_discount_amount],
-    [cfg.showOrderDiscount, 'Order discount', order.order_discount_amount],
-    [cfg.showCouponDiscount, 'Coupon discount', order.coupon_discount_amount],
-    [cfg.showCardDiscount, 'Card discount', order.card_discount_amount],
+  const perStage: Array<[boolean, string, number | undefined, string]> = [
+    [cfg.showPromoDiscount, 'Promotional discount', order.promo_discount_amount, 'showPromoDiscount'],
+    [cfg.showOrderDiscount, 'Order discount', order.order_discount_amount, 'showOrderDiscount'],
+    [cfg.showCouponDiscount, 'Coupon discount', order.coupon_discount_amount, 'showCouponDiscount'],
+    [cfg.showCardDiscount, 'Card discount', order.card_discount_amount, 'showCardDiscount'],
   ];
   const enabledStages = perStage.filter(([on]) => on);
   const shownStageTotal = enabledStages.reduce((s, [, , amt]) => s + Number(amt ?? 0), 0);
 
   if (cfg.showDiscountTotal || enabledStages.length === 0) {
     if (Number(order.discount_amount) > 0)
-      parts.push(row(combinedLabel, `-${money(order.discount_amount)}`, 'disc'));
+      parts.push(row(combinedLabel, `-${money(order.discount_amount)}`, 'disc', 'showDiscountTotal'));
   } else if (shownStageTotal > 0) {
-    for (const [, label, amt] of enabledStages)
-      if (Number(amt ?? 0) > 0) parts.push(row(label, `-${money(amt)}`, 'disc'));
+    for (const [, label, amt, field] of enabledStages)
+      if (Number(amt ?? 0) > 0) parts.push(row(label, `-${money(amt)}`, 'disc', field));
   } else if (Number(order.discount_amount) > 0) {
     // Itemized template, but this (older) order has no split → don't hide it.
-    parts.push(row(combinedLabel, `-${money(order.discount_amount)}`, 'disc'));
+    parts.push(row(combinedLabel, `-${money(order.discount_amount)}`, 'disc', 'showDiscountTotal'));
   }
 
   if (cfg.showTax) {
@@ -376,12 +385,12 @@ function totalsHtml(
       cfg.showTaxRate && order.tax_rate != null && Number(order.tax_rate) > 0
         ? ` (${(Number(order.tax_rate) * 100).toFixed(Number(order.tax_rate) * 100 % 1 === 0 ? 0 : 2)}%)`
         : '';
-    parts.push(row(`Tax${rate}`, money(order.tax_amount)));
+    parts.push(row(`Tax${rate}`, money(order.tax_amount), '', 'showTax'));
   }
   if (cfg.showServiceCharge && Number(order.service_charge) > 0)
-    parts.push(row('Service charge', money(order.service_charge)));
+    parts.push(row('Service charge', money(order.service_charge), '', 'showServiceCharge'));
   if (cfg.showDeliveryFee && Number(order.delivery_fee) > 0)
-    parts.push(row('Delivery fee', money(order.delivery_fee)));
+    parts.push(row('Delivery fee', money(order.delivery_fee), '', 'showDeliveryFee'));
 
   parts.push(
     row(`<strong>${grandLabel}</strong>`, `<strong>${money(order.total_amount)}</strong>`, 'grand'),
@@ -389,11 +398,11 @@ function totalsHtml(
 
   const loyalty: string[] = [];
   if (cfg.showLoyaltyEarned && Number(order.loyalty_points_earned ?? 0) > 0)
-    loyalty.push(row('Points earned', String(order.loyalty_points_earned ?? 0)));
+    loyalty.push(row('Points earned', String(order.loyalty_points_earned ?? 0), '', 'showLoyaltyEarned'));
   if (cfg.showLoyaltyRedeemed && Number(order.loyalty_points_redeemed ?? 0) > 0)
-    loyalty.push(row('Points redeemed', String(order.loyalty_points_redeemed ?? 0)));
+    loyalty.push(row('Points redeemed', String(order.loyalty_points_redeemed ?? 0), '', 'showLoyaltyRedeemed'));
   if (cfg.showLoyaltyBalance)
-    loyalty.push(row('Points balance', String(order.loyalty_points_remaining ?? 0)));
+    loyalty.push(row('Points balance', String(order.loyalty_points_remaining ?? 0), '', 'showLoyaltyBalance'));
 
   return `<div class="totals">${parts.join('')}</div>${loyalty.length ? `<div class="loyalty">${loyalty.join('')}</div>` : ''}`;
 }
@@ -415,7 +424,7 @@ function bizHeaderHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
   const title = (!multi && first?.brand_name) || legal;
   return `
     <div class="head">
-      ${logoUrl ? `<img class="logo" src="${esc(logoUrl)}" alt="" />` : ''}
+      ${logoUrl ? `<img class="logo" data-field="showLogo" src="${esc(logoUrl)}" alt="" />` : ''}
       <div class="biz">${esc(title)}</div>
       ${cfg.headerText ? `<div class="line note">${esc(cfg.headerText)}</div>` : ''}
     </div>`;
@@ -425,7 +434,7 @@ function footerHtml(cfg: InvoiceTemplateConfig): string {
   return `
     <div class="foot">
       ${cfg.footerText ? `<div class="line">${esc(cfg.footerText)}</div>` : ''}
-      ${cfg.showPoweredBy ? `<div class="powered">Powered by Rex Technologies</div>` : ''}
+      ${cfg.showPoweredBy ? `<div class="powered" data-field="showPoweredBy">Powered by Rex Technologies</div>` : ''}
     </div>`;
 }
 
@@ -481,11 +490,11 @@ function receiptLogoBody(
       if (cfg.showOrderType && o.order_type) typeBits.push(titleCase(String(o.order_type)));
       if (cfg.showTableNumber && o.table_number) typeBits.push(`Table ${o.table_number}`);
       const onumLine = cfg.showOrderNumber
-        ? `<div class="onum">Order # ${esc(o.order_number)}</div>`
+        ? `<div class="onum" data-field="showOrderNumber">Order # ${esc(o.order_number)}</div>`
         : '';
       const invLine =
         cfg.showInvoiceNumber && o.invoice_number
-          ? `<div class="oinv">Invoice # ${esc(o.invoice_number)}</div>`
+          ? `<div class="oinv" data-field="showInvoiceNumber">Invoice # ${esc(o.invoice_number)}</div>`
           : '';
       const typeLine = typeBits.length ? `<div class="otype">${esc(typeBits.join(' · '))}</div>` : '';
       const band =
