@@ -6,7 +6,8 @@ import { Discount } from '../../types';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
-import Modal from '../../components/Modal';
+import OfferModal, { offerInput, offerLabel } from '../../components/OfferModal';
+import SegToggle from '../../components/SegToggle';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import SearchableMultiSelect, {
@@ -85,8 +86,7 @@ const ProductPromotions: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = () => {
     if (form.application_scope_ids.length === 0) { toast.error('Select at least one product'); return; }
     if (!form.valid_from || !form.valid_until) { toast.error('Set the valid-from and valid-until dates'); return; }
     if (form.channels.length === 0) { toast.error('Select at least one channel (POS / app / web / kiosk)'); return; }
@@ -118,37 +118,60 @@ const ProductPromotions: React.FC = () => {
         <Button onClick={() => { setEditing(null); setForm({ ...emptyForm }); setShowForm(true); }}>Add Promotion</Button>
       </div>
 
-      <Modal isOpen={showForm} onClose={() => { setShowForm(false); setEditing(null); }} title={editing ? 'Edit Product Promotion' : 'Create Product Promotion'} size="xlarge">
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <OfferModal
+        open={showForm}
+        onClose={() => { setShowForm(false); setEditing(null); }}
+        title={editing ? 'Edit Product Promotion' : 'Create Product Promotion'}
+        subtitle="An automatic price cut on specific products"
+        width={1040}
+        icon={
+          <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10 2l7 4v8l-7 4-7-4V6z" /><path d="M3 6l7 4 7-4M10 10v8" />
+          </svg>
+        }
+        footer={
+          <>
+            <div className="flex items-center gap-2.5">
+              <SegToggle on={form.is_active} onChange={(v) => setForm({ ...form, is_active: v })} ariaLabel="Active" />
+              <span className="text-[13.5px] font-semibold text-gray-700">Active</span>
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => { setShowForm(false); setEditing(null); }} className="rounded-[11px] border-[1.5px] border-gray-300 bg-white px-5 py-[11px] text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={handleSubmit} disabled={createM.isPending || updateM.isPending} className="rounded-[11px] bg-red-600 px-6 py-[11px] text-sm font-bold text-white shadow-lg shadow-red-600/25 transition-colors hover:bg-red-700 active:scale-[0.97] disabled:opacity-60">{editing ? 'Update' : 'Create'}</button>
+            </div>
+          </>
+        }
+      >
+        <div className="flex-1 overflow-y-auto px-7 py-6">
+          <div className="grid grid-cols-1 gap-x-[30px] gap-y-5 lg:grid-cols-2">
             {/* Left: what & how much */}
-            <div className="space-y-4">
+            <div className="flex flex-col gap-5">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                <input type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
+                <label className={offerLabel}>Name <span className="text-red-500">*</span></label>
+                <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. 10% off wings" className={offerInput} />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <label className="block">
-                  <span className="text-sm text-gray-700">Type</span>
-                  <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'flat' | 'percentage' })} className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg">
+              <div className="grid grid-cols-2 gap-3.5">
+                <div>
+                  <label className={offerLabel}>Type</label>
+                  <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
                     <option value="percentage">Percentage</option>
-                    <option value="flat">Flat (Rs)</option>
+                    <option value="flat">Flat Amount</option>
                   </select>
-                </label>
-                <label className="block">
-                  <span className="text-sm text-gray-700">Value</span>
-                  <input type="number" min={0} value={form.value} onChange={(e) => setForm({ ...form, value: Number(e.target.value) })} className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </label>
+                </div>
+                <div>
+                  <label className={offerLabel}>Value</label>
+                  <input type="number" min={0} value={form.value} onChange={(e) => setForm({ ...form, value: Number(e.target.value) })} className={offerInput} />
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <label className="block">
-                  <span className="text-sm text-gray-700">Max discount (Rs)</span>
-                  <input type="number" min={0} value={form.max_discount_amount} onChange={(e) => setForm({ ...form, max_discount_amount: e.target.value === '' ? '' : Number(e.target.value) })} placeholder="none" className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </label>
-                <label className="block">
-                  <span className="text-sm text-gray-700">Priority</span>
-                  <input type="number" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) })} className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </label>
+              <div className="grid grid-cols-2 gap-3.5">
+                <div>
+                  <label className={offerLabel}>Max discount (Rs)</label>
+                  <input type="number" min={0} value={form.max_discount_amount} onChange={(e) => setForm({ ...form, max_discount_amount: e.target.value === '' ? '' : Number(e.target.value) })} placeholder="none" className={offerInput} />
+                </div>
+                <div>
+                  <label className={offerLabel}>Priority</label>
+                  <input type="number" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) })} className={offerInput} />
+                </div>
               </div>
               <div>
                 <SearchableMultiSelect
@@ -160,29 +183,27 @@ const ProductPromotions: React.FC = () => {
                   required
                   maxHeight="16rem"
                 />
-                <p className="text-xs text-gray-400 mt-1">Deals are excluded — they are price-locked and untouched by offers.</p>
+                <p className="mt-2 text-[12.5px] text-gray-500">Deals are excluded — they are price-locked and untouched by offers.</p>
               </div>
+            </div>
+
+            {/* Right: validity + channels */}
+            <div className="flex flex-col gap-5">
+              <div>
+                <div className="text-[13px] font-semibold text-gray-700">Valid at <span className="text-red-500">(required)</span></div>
+                <div className="mb-3 text-[12.5px] text-gray-400">When the promotion runs.</div>
+                <ValidityFields
+                  requireDates
+                  value={{ valid_from: form.valid_from, valid_until: form.valid_until, valid_time_start: form.valid_time_start, valid_time_end: form.valid_time_end, valid_days_of_week: form.valid_days_of_week }}
+                  onChange={(v) => setForm({ ...form, ...v })}
+                />
+              </div>
+              <div className="h-px bg-gray-100" />
               <OfferChannelsField value={form.channels} onChange={(channels) => setForm({ ...form, channels })} />
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /> Active</label>
-            </div>
-
-            {/* Right: validity (dates + time + days, same as discounts) */}
-            <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Valid at (required)</h3>
-              <ValidityFields
-                requireDates
-                value={{ valid_from: form.valid_from, valid_until: form.valid_until, valid_time_start: form.valid_time_start, valid_time_end: form.valid_time_end, valid_days_of_week: form.valid_days_of_week }}
-                onChange={(v) => setForm({ ...form, ...v })}
-              />
             </div>
           </div>
-
-          <div className="flex gap-2 justify-end border-t pt-4">
-            <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditing(null); }}>Cancel</Button>
-            <Button type="submit" isLoading={createM.isPending || updateM.isPending}>{editing ? 'Update' : 'Create'}</Button>
-          </div>
-        </form>
-      </Modal>
+        </div>
+      </OfferModal>
 
       <div className="w-full space-y-3">
         {list.length === 0 ? (

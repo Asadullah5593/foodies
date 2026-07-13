@@ -27,18 +27,39 @@ interface Props {
 const OfferChannelsField: React.FC<Props> = ({ value, onChange }) => {
   const toggle = (ch: string) =>
     onChange(value.includes(ch) ? value.filter((c) => c !== ch) : [...value, ch]);
+  const check = (
+    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3,8.5 6.5,12 13,4.5" />
+    </svg>
+  );
   return (
     <div>
-      <span className="block text-sm font-medium text-gray-700 mb-1">Applies on</span>
-      <div className="flex flex-wrap gap-x-4 gap-y-2">
-        {ALL_OFFER_CHANNELS.map((ch) => (
-          <label key={ch} className="flex items-center gap-2 text-sm text-gray-700">
-            <input type="checkbox" checked={value.includes(ch)} onChange={() => toggle(ch)} />
-            {CHANNEL_LABELS[ch]}
-          </label>
-        ))}
+      <span className="mb-2.5 block text-[13px] font-semibold text-gray-700">Applies on</span>
+      <div className="flex flex-wrap gap-2.5">
+        {ALL_OFFER_CHANNELS.map((ch) => {
+          const on = value.includes(ch);
+          return (
+            <button
+              key={ch}
+              type="button"
+              onClick={() => toggle(ch)}
+              className={`inline-flex items-center gap-2 rounded-full border-[1.5px] px-[15px] py-[9px] text-[13.5px] font-semibold transition-colors ${
+                on ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <span
+                className={`flex h-4 w-4 flex-none items-center justify-center rounded-[5px] border-[1.5px] ${
+                  on ? 'border-red-600 bg-red-600' : 'border-gray-300 bg-white'
+                }`}
+              >
+                {on && check}
+              </span>
+              {CHANNEL_LABELS[ch]}
+            </button>
+          );
+        })}
       </div>
-      <p className="text-xs text-gray-400 mt-1">
+      <p className="mt-2.5 text-[12.5px] text-gray-500">
         Untick a channel to hide the offer there (e.g. POS only, or app only). All ticked = everywhere.
       </p>
     </div>

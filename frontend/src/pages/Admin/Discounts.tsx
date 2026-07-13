@@ -8,7 +8,8 @@ import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
-import Modal from '../../components/Modal';
+import OfferModal, { offerInput, offerLabel } from '../../components/OfferModal';
+import SegToggle from '../../components/SegToggle';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { confirmDialog } from '../../utils/sweetAlert';
@@ -201,9 +202,7 @@ const Discounts: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
+  const handleSubmit = () => {
     if (
       (formData.application_scope === 'category' ||
         formData.application_scope === 'products') &&
@@ -306,143 +305,137 @@ const Discounts: React.FC = () => {
         </Button>
       </div>
 
-      <Modal
-        isOpen={showForm}
-        onClose={() => {
-          setShowForm(false);
-          setEditingDiscount(null);
-        }}
+      <OfferModal
+        open={showForm}
+        onClose={() => { setShowForm(false); setEditingDiscount(null); }}
         title={editingDiscount ? 'Edit Discount' : 'Create Discount'}
-        size="large"
+        subtitle="Applies automatically at checkout — no code needed"
+        width={960}
+        icon={
+          <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 9.5V4a1 1 0 0 1 1-1h5.5L17 10.5 10.5 17z" /><circle cx="7" cy="7" r="1.3" />
+          </svg>
+        }
+        footer={
+          <>
+            <div className="flex items-center gap-2.5">
+              <SegToggle on={formData.is_active} onChange={(v) => setFormData({ ...formData, is_active: v })} ariaLabel="Active" />
+              <span className="text-[13.5px] font-semibold text-gray-700">Active</span>
+            </div>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => { setShowForm(false); setEditingDiscount(null); }} className="rounded-[11px] border-[1.5px] border-gray-300 bg-white px-5 py-[11px] text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending} className="rounded-[11px] bg-red-600 px-6 py-[11px] text-sm font-bold text-white shadow-lg shadow-red-600/25 transition-colors hover:bg-red-700 active:scale-[0.97] disabled:opacity-60">{editingDiscount ? 'Update Discount' : 'Create Discount'}</button>
+            </div>
+          </>
+        }
       >
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-              <input
-                type="text"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-
+        <div className="flex-1 overflow-y-auto px-7 py-6">
+          <div className="mb-5">
+            <label className={offerLabel}>Name <span className="text-red-500">*</span></label>
+            <input type="text" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder="e.g. Weekend 10% off" className={offerInput} />
+            <p className="mt-2 text-[12.5px] text-gray-500">
+              Discounts here apply automatically (no code). For code / voucher offers use the <span className="font-semibold text-gray-700">Coupons</span> module.
+            </p>
           </div>
 
-          <p className="text-xs text-gray-500 -mt-2">
-            Discounts here apply automatically (no code). For code/voucher offers use the{' '}
-            <span className="font-medium">Coupons</span> module.
-          </p>
-
-          <div>
-            <div className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="requires_card"
-                checked={formData.requires_card}
-                onChange={(e) => setFormData({ ...formData, requires_card: e.target.checked })}
-                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-              />
-              <label htmlFor="requires_card" className="text-sm text-gray-700">
-                Requires a specific bank card — applies only when the whole bill is paid by one of the selected cards
-              </label>
+          {/* Requires specific bank card — card-style checkbox */}
+          <button
+            type="button"
+            onClick={() => setFormData({ ...formData, requires_card: !formData.requires_card })}
+            className={`mb-6 flex w-full items-start gap-3 rounded-xl border-[1.5px] px-3.5 py-3 text-left transition-colors ${
+              formData.requires_card ? 'border-red-600 bg-red-50' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
+            }`}
+          >
+            <span className={`mt-px flex h-5 w-5 flex-none items-center justify-center rounded-md border-[1.5px] ${formData.requires_card ? 'border-red-600 bg-red-600' : 'border-gray-300 bg-white'}`}>
+              {formData.requires_card && (
+                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round"><polyline points="3,8.5 6.5,12 13,4.5" /></svg>
+              )}
+            </span>
+            <span>
+              <span className="block text-sm font-semibold text-gray-800">Requires a specific bank card</span>
+              <span className="mt-0.5 block text-[12.5px] text-gray-400">Applies only when the whole bill is paid by one of the selected cards.</span>
+            </span>
+          </button>
+          {formData.requires_card && (
+            <div className="-mt-3 mb-6 flex flex-wrap gap-2">
+              {(bankCards ?? []).length === 0 ? (
+                <span className="text-[12.5px] text-gray-500">No bank cards yet — add them under Bank Cards first.</span>
+              ) : (
+                (bankCards ?? []).map((c) => {
+                  const selected = formData.eligible_bank_card_ids.includes(c.id);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          eligible_bank_card_ids: selected
+                            ? formData.eligible_bank_card_ids.filter((x) => x !== c.id)
+                            : [...formData.eligible_bank_card_ids, c.id],
+                        })
+                      }
+                      className={`rounded-full border-[1.5px] px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                        selected ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                      }`}
+                    >
+                      {c.bank ? `${c.bank} — ${c.name}` : c.name}
+                    </button>
+                  );
+                })
+              )}
             </div>
-            {formData.requires_card && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {(bankCards ?? []).length === 0 ? (
-                  <span className="text-xs text-gray-500">No bank cards yet — add them under Bank Cards first.</span>
-                ) : (
-                  (bankCards ?? []).map((c) => {
-                    const selected = formData.eligible_bank_card_ids.includes(c.id);
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() =>
-                          setFormData({
-                            ...formData,
-                            eligible_bank_card_ids: selected
-                              ? formData.eligible_bank_card_ids.filter((x) => x !== c.id)
-                              : [...formData.eligible_bank_card_ids, c.id],
-                          })
-                        }
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
-                          selected
-                            ? 'border-blue-500 bg-blue-50 text-blue-700'
-                            : 'border-gray-300 text-gray-600 hover:border-blue-400'
-                        }`}
-                      >
-                        {c.bank ? `${c.bank} — ${c.name}` : c.name}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            )}
-          </div>
+          )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="mb-5 grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Type *</label>
-              <select
-                value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value as 'flat' | 'percentage' | 'buy_x_get_y' })}
-                required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
+              <label className={offerLabel}>Type <span className="text-red-500">*</span></label>
+              <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as 'flat' | 'percentage' | 'buy_x_get_y' })} className={offerInput}>
                 <option value="flat">Flat Amount</option>
                 <option value="percentage">Percentage</option>
                 <option value="buy_x_get_y">Buy X Get Y (BOGO)</option>
               </select>
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                {formData.type === 'buy_x_get_y' ? 'Value (unused for BOGO)' : 'Value *'}
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.value}
-                onChange={(e) => setFormData({ ...formData, value: e.target.value })}
-                required={formData.type !== 'buy_x_get_y'}
-                disabled={formData.type === 'buy_x_get_y'}
-                placeholder={formData.type === 'percentage' ? '0-100' : '0.00'}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
-              />
+              <label className={offerLabel}>{formData.type === 'buy_x_get_y' ? 'Value (unused for BOGO)' : <>Value <span className="text-red-500">*</span></>}</label>
+              <div className="relative">
+                {formData.type !== 'buy_x_get_y' && (
+                  <span className="pointer-events-none absolute left-[13px] top-1/2 -translate-y-1/2 text-[13px] text-gray-400">{formData.type === 'percentage' ? '%' : 'Rs.'}</span>
+                )}
+                <input
+                  type="number" step="0.01" min="0"
+                  value={formData.value}
+                  onChange={(e) => setFormData({ ...formData, value: e.target.value })}
+                  disabled={formData.type === 'buy_x_get_y'}
+                  placeholder={formData.type === 'percentage' ? '0-100' : '0.00'}
+                  className={offerInput}
+                  style={formData.type !== 'buy_x_get_y' ? { paddingLeft: formData.type === 'percentage' ? 34 : 40 } : undefined}
+                />
+              </div>
             </div>
           </div>
 
           {formData.type === 'buy_x_get_y' && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-3">
+            <div className="mb-5 space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-3.5">
               <p className="text-xs text-amber-800">
-                Buy X get Y: for every <b>Buy qty</b> eligible items, the cheapest <b>Get qty</b> are discounted. Use “Applies to” below to scope to pizza categories/products.
+                Buy X get Y: for every <b>Buy qty</b> eligible items, the cheapest <b>Get qty</b> are discounted. Use “Apply to” below to scope to pizza categories.
               </p>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Buy qty</label>
-                  <input type="number" min="1" value={formData.buy_quantity}
-                    onChange={(e) => setFormData({ ...formData, buy_quantity: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg" />
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">Buy qty</label>
+                  <input type="number" min="1" value={formData.buy_quantity} onChange={(e) => setFormData({ ...formData, buy_quantity: e.target.value })} className={offerInput} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Get qty</label>
-                  <input type="number" min="1" value={formData.get_quantity}
-                    onChange={(e) => setFormData({ ...formData, get_quantity: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg" />
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">Get qty</label>
+                  <input type="number" min="1" value={formData.get_quantity} onChange={(e) => setFormData({ ...formData, get_quantity: e.target.value })} className={offerInput} />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Get % off</label>
-                  <input type="number" min="0" max="100" value={formData.get_discount_percent}
-                    onChange={(e) => setFormData({ ...formData, get_discount_percent: e.target.value })}
-                    className="w-full px-3 py-1.5 border border-gray-300 rounded-lg" />
+                  <label className="mb-1 block text-xs font-semibold text-gray-600">Get % off</label>
+                  <input type="number" min="0" max="100" value={formData.get_discount_percent} onChange={(e) => setFormData({ ...formData, get_discount_percent: e.target.value })} className={offerInput} />
                 </div>
               </div>
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={formData.bogo_match_same_group}
-                  onChange={(e) => setFormData({ ...formData, bogo_match_same_group: e.target.checked })} />
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={formData.bogo_match_same_group} onChange={(e) => setFormData({ ...formData, bogo_match_same_group: e.target.checked })} />
                 Pair only within the same category &amp; size (e.g. 2nd Large pizza of same category half price)
               </label>
             </div>
@@ -450,115 +443,68 @@ const Discounts: React.FC = () => {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Min Order Amount
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.min_order_amount}
-                onChange={(e) =>
-                  setFormData({ ...formData, min_order_amount: e.target.value })
-                }
-                placeholder="No minimum"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-0.5">
-                Discount applies only when order subtotal is at least this amount. Leave empty for no minimum.
-              </p>
+              <label className={offerLabel}>Min order amount</label>
+              <input type="number" step="0.01" min="0" value={formData.min_order_amount} onChange={(e) => setFormData({ ...formData, min_order_amount: e.target.value })} placeholder="No minimum" className={offerInput} />
+              <p className="mt-1.5 text-[12px] leading-snug text-gray-400">Applies only when subtotal is at least this. Empty = no minimum.</p>
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Max Discount Amount
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={formData.max_discount_amount}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    max_discount_amount: e.target.value,
-                  })
-                }
-                placeholder="No cap"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-xs text-gray-500 mt-0.5">
-                Caps how much can be taken off (e.g. 20% with max $10). Leave empty for no cap.
-              </p>
+              <label className={offerLabel}>Max discount amount</label>
+              <input type="number" step="0.01" min="0" value={formData.max_discount_amount} onChange={(e) => setFormData({ ...formData, max_discount_amount: e.target.value })} placeholder="No cap" className={offerInput} />
+              <p className="mt-1.5 text-[12px] leading-snug text-gray-400">Caps how much can be taken off. Empty = no cap.</p>
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Apply to
-            </label>
-            <div className="flex flex-wrap gap-4 mb-3">
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="application_scope"
-                  checked={formData.application_scope === 'whole_order'}
-                  onChange={() =>
-                    setFormData({
-                      ...formData,
-                      application_scope: 'whole_order',
-                      application_scope_ids: [],
-                    })
-                  }
-                />
-                <span>Whole order</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="application_scope"
-                  checked={formData.application_scope === 'category'}
-                  onChange={() =>
-                    setFormData({ ...formData, application_scope: 'category' })
-                  }
-                />
-                <span>Selected categories</span>
-              </label>
+          <div className="my-5 h-px bg-gray-100" />
+
+          {/* Apply to */}
+          <div className="mb-5">
+            <div className="mb-2.5 text-[13px] font-semibold text-gray-700">Apply to</div>
+            <div className="flex gap-2.5">
+              {([
+                ['whole_order', 'Whole order'],
+                ['category', 'Selected categories'],
+              ] as const).map(([scope, lbl]) => {
+                const on = formData.application_scope === scope;
+                return (
+                  <button
+                    key={scope}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, application_scope: scope, application_scope_ids: scope === 'whole_order' ? [] : formData.application_scope_ids })}
+                    className={`flex flex-1 items-center gap-2.5 rounded-xl border-[1.5px] px-3.5 py-3 text-left transition-colors ${on ? 'border-red-600 bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}
+                  >
+                    <span className={`flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full border-[1.5px] ${on ? 'border-red-600' : 'border-gray-300'}`}>
+                      {on && <span className="h-2 w-2 rounded-full bg-red-600" />}
+                    </span>
+                    <span className={`text-sm font-semibold ${on ? 'text-red-700' : 'text-gray-700'}`}>{lbl}</span>
+                  </button>
+                );
+              })}
             </div>
-            <p className="text-xs text-gray-500 mb-3">
-              To discount specific products, use the{' '}
-              <span className="font-medium">Product Promotions</span> module.
-            </p>
+            <p className="mt-2.5 text-[12.5px] text-gray-500">To discount specific products, use the <span className="font-semibold text-gray-700">Product Promotions</span> module.</p>
             {formData.application_scope === 'category' && (
-              <SearchableMultiSelect
-                options={categoryOptions}
-                selectedIds={formData.application_scope_ids}
-                onChange={(ids) =>
-                  setFormData({ ...formData, application_scope_ids: ids })
-                }
-                placeholder="Select categories..."
-                label="Categories"
-                required
-                maxHeight="14rem"
-              />
+              <div className="mt-3">
+                <SearchableMultiSelect
+                  options={categoryOptions}
+                  selectedIds={formData.application_scope_ids}
+                  onChange={(ids) => setFormData({ ...formData, application_scope_ids: ids })}
+                  placeholder="Select categories..."
+                  label="Categories"
+                  required
+                  maxHeight="14rem"
+                />
+              </div>
             )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Valid at
-            </label>
-            <p className="text-xs text-gray-500 mb-2">
-              Leave both empty for all branches &amp; brands. Or limit to
-              specific branches and/or brands.
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {/* Valid at (branches / brands) */}
+          <div className="mb-5">
+            <div className="text-[13px] font-semibold text-gray-700">Valid at</div>
+            <div className="mb-3 text-[12.5px] text-gray-400">Leave both empty for all branches &amp; brands. Or limit to specific ones.</div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <SearchableMultiSelect
                 options={branchOptions}
                 selectedIds={formData.eligibility_branch_ids}
-                onChange={(ids) =>
-                  setFormData({ ...formData, eligibility_branch_ids: ids })
-                }
+                onChange={(ids) => setFormData({ ...formData, eligibility_branch_ids: ids })}
                 placeholder="All branches"
                 label="Limit to branches (optional)"
                 getOptionLabel={(o) => (o.code ? `${o.name} (${o.code})` : o.name)}
@@ -566,60 +512,35 @@ const Discounts: React.FC = () => {
               <SearchableMultiSelect
                 options={brandOptions}
                 selectedIds={formData.eligibility_brand_ids}
-                onChange={(ids) =>
-                  setFormData({ ...formData, eligibility_brand_ids: ids })
-                }
+                onChange={(ids) => setFormData({ ...formData, eligibility_brand_ids: ids })}
                 placeholder="All brands"
                 label="Limit to brands (optional)"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          {/* Date + time + day window */}
+          <div className="mb-5 grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Valid From</label>
-              <input
-                type="date"
-                value={formData.valid_from}
-                onChange={(e) => setFormData({ ...formData, valid_from: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+              <label className={offerLabel}>Valid from</label>
+              <input type="date" value={formData.valid_from} onChange={(e) => setFormData({ ...formData, valid_from: e.target.value })} className={offerInput} />
             </div>
-
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Valid Until</label>
-              <input
-                type="date"
-                value={formData.valid_until}
-                onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+              <label className={offerLabel}>Valid until</label>
+              <input type="date" value={formData.valid_until} onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })} className={offerInput} />
+            </div>
+            <div>
+              <label className={offerLabel}>Valid time from</label>
+              <input type="time" value={formData.valid_time_start} onChange={(e) => setFormData({ ...formData, valid_time_start: e.target.value })} className={offerInput} />
+            </div>
+            <div>
+              <label className={offerLabel}>Valid time until</label>
+              <input type="time" value={formData.valid_time_end} onChange={(e) => setFormData({ ...formData, valid_time_end: e.target.value })} className={offerInput} />
             </div>
           </div>
 
-          {/* Recurring time-of-day + day-of-week window (branch timezone) — e.g. lunch deals Mon–Fri 12:00–16:00. */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Valid Time From</label>
-              <input
-                type="time"
-                value={formData.valid_time_start}
-                onChange={(e) => setFormData({ ...formData, valid_time_start: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Valid Time Until</label>
-              <input
-                type="time"
-                value={formData.valid_time_end}
-                onChange={(e) => setFormData({ ...formData, valid_time_end: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Valid Days (leave empty = every day)</label>
+          <div className="mb-5">
+            <label className="mb-2 block text-[13px] font-semibold text-gray-700">Valid days <span className="font-normal text-gray-400">— empty = every day</span></label>
             <div className="flex flex-wrap gap-2">
               {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => {
                 const on = formData.valid_days_of_week.includes(i);
@@ -635,7 +556,7 @@ const Discounts: React.FC = () => {
                           : [...formData.valid_days_of_week, i].sort((a, b) => a - b),
                       })
                     }
-                    className={`px-3 py-1.5 rounded-lg border text-sm ${on ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-300 hover:bg-gray-50'}`}
+                    className={`min-w-[52px] rounded-[10px] border-[1.5px] px-3 py-2.5 text-[13px] font-semibold transition-colors ${on ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}
                   >
                     {d}
                   </button>
@@ -644,41 +565,9 @@ const Discounts: React.FC = () => {
             </div>
           </div>
 
-          <OfferChannelsField
-            value={formData.channels}
-            onChange={(channels) => setFormData({ ...formData, channels })}
-          />
-
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="is_active"
-              checked={formData.is_active}
-              onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-            />
-            <label htmlFor="is_active" className="ml-2 text-sm text-gray-700">
-              Active
-            </label>
-          </div>
-
-          <div className="flex gap-2 justify-end">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setShowForm(false);
-                setEditingDiscount(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" isLoading={createMutation.isPending || updateMutation.isPending}>
-              {editingDiscount ? 'Update' : 'Create'} Discount
-            </Button>
-          </div>
-        </form>
-      </Modal>
+          <OfferChannelsField value={formData.channels} onChange={(channels) => setFormData({ ...formData, channels })} />
+        </div>
+      </OfferModal>
 
       <div className="w-full space-y-3">
         {discountList.length === 0 ? (

@@ -8,6 +8,8 @@ import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import OfferModal, { offerInput, offerLabel } from '../../components/OfferModal';
+import SegToggle from '../../components/SegToggle';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import SearchableMultiSelect, {
@@ -98,8 +100,9 @@ const Coupons: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const generateCode = () => setForm((f) => ({ ...f, code: 'SAVE' + Math.floor(100 + Math.random() * 900) }));
+
+  const handleSubmit = () => {
     if (form.audience === 'specific' && form.eligible_customer_ids.length === 0) {
       toast.error('Pick at least one customer for a "specific customers" coupon');
       return;
@@ -138,88 +141,133 @@ const Coupons: React.FC = () => {
       </div>
 
       {/* Create / edit */}
-      <Modal isOpen={showForm} onClose={() => { setShowForm(false); setEditing(null); }} title={editing ? 'Edit Coupon' : 'Create Coupon'} size="xlarge">
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Left: value + audience */}
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>
-                  <input type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Code</label>
-                  <input type="text" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="auto-generated" className="w-full px-4 py-2 border border-gray-300 rounded-lg font-mono" />
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-4">
-                <label className="block"><span className="text-sm text-gray-700">Type</span>
-                  <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'flat' | 'percentage' })} className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg">
-                    <option value="flat">Flat (Rs)</option><option value="percentage">Percentage</option>
-                  </select>
-                </label>
-                <label className="block"><span className="text-sm text-gray-700">Value</span>
-                  <input type="number" min={0} value={form.value} onChange={(e) => setForm({ ...form, value: Number(e.target.value) })} className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </label>
-                <label className="block"><span className="text-sm text-gray-700">Min order (Rs)</span>
-                  <input type="number" min={0} value={form.min_order_amount} onChange={(e) => setForm({ ...form, min_order_amount: e.target.value === '' ? '' : Number(e.target.value) })} placeholder="none" className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </label>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <label className="block"><span className="text-sm text-gray-700">Per-customer limit</span>
-                  <input type="number" min={1} value={form.per_customer_limit} onChange={(e) => setForm({ ...form, per_customer_limit: e.target.value === '' ? '' : Number(e.target.value) })} placeholder="unlimited" className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </label>
-                <label className="block"><span className="text-sm text-gray-700">Voucher valid (days after issue)</span>
-                  <input type="number" min={1} value={form.voucher_validity_days} onChange={(e) => setForm({ ...form, voucher_validity_days: e.target.value === '' ? '' : Number(e.target.value) })} placeholder="use coupon window" className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg" />
-                </label>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Who can use it</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['all', 'specific', 'new_customer'] as const).map((a) => (
-                    <button key={a} type="button" onClick={() => setForm({ ...form, audience: a })}
-                      className={`px-3 py-2 rounded-lg text-sm border ${form.audience === a ? 'border-foodies-primary bg-foodies-primary/10 text-foodies-primary font-medium' : 'border-gray-300 text-gray-600'}`}>
-                      {a === 'all' ? 'All customers' : a === 'specific' ? 'Specific' : 'New customers'}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[11px] text-gray-400 mt-1">{AUDIENCE_HELP[form.audience]}</p>
-                {form.audience === 'specific' && (
-                  <div className="mt-2">
-                    <SearchableMultiSelect
-                      options={custOptions}
-                      selectedIds={form.eligible_customer_ids}
-                      onChange={(ids) => setForm({ ...form, eligible_customer_ids: ids })}
-                      placeholder="Search customers by name / phone…"
-                      label={`Eligible customers * (${form.eligible_customer_ids.length} selected)`}
-                      required
-                      maxHeight="14rem"
-                    />
-                  </div>
-                )}
-              </div>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /> Active</label>
+      <OfferModal
+        open={showForm}
+        onClose={() => { setShowForm(false); setEditing(null); }}
+        title={editing ? 'Edit Coupon' : 'Create Coupon'}
+        subtitle="A code customers enter at checkout — vouchers are generated from the audience"
+        width={980}
+        icon={
+          <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M2.5 6a1.5 1.5 0 0 0 0 3v2.5h15V9a1.5 1.5 0 0 1 0-3V3.5h-15z" /><line x1="10" y1="4" x2="10" y2="15" strokeDasharray="1.5 2" />
+          </svg>
+        }
+        footer={
+          <>
+            <div className="flex items-center gap-2.5">
+              <SegToggle on={form.is_active} onChange={(v) => setForm({ ...form, is_active: v })} ariaLabel="Active" />
+              <span className="text-[13.5px] font-semibold text-gray-700">Active</span>
             </div>
-
-            {/* Right: validity (mandatory, same as discounts) */}
+            <div className="flex gap-3">
+              <button type="button" onClick={() => { setShowForm(false); setEditing(null); }} className="rounded-[11px] border-[1.5px] border-gray-300 bg-white px-5 py-[11px] text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>
+              <button type="button" onClick={handleSubmit} disabled={createM.isPending || updateM.isPending} className="rounded-[11px] bg-red-600 px-6 py-[11px] text-sm font-bold text-white shadow-lg shadow-red-600/25 transition-colors hover:bg-red-700 active:scale-[0.97] disabled:opacity-60">{editing ? 'Update' : 'Create'}</button>
+            </div>
+          </>
+        }
+      >
+        <div className="flex-1 overflow-y-auto px-7 py-6">
+          <div className="mb-5 grid grid-cols-2 gap-4">
             <div>
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Valid at (required)</h3>
-              <ValidityFields
-                requireDates
-                value={{ valid_from: form.valid_from, valid_until: form.valid_until, valid_time_start: form.valid_time_start, valid_time_end: form.valid_time_end, valid_days_of_week: form.valid_days_of_week }}
-                onChange={(v) => setForm({ ...form, ...v })}
-              />
+              <label className={offerLabel}>Name <span className="text-red-500">*</span></label>
+              <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Rs 100 off — all" className={offerInput} />
+            </div>
+            <div>
+              <label className={offerLabel}>Code</label>
+              <div className="flex gap-2">
+                <input type="text" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} placeholder="auto-generated" className={`${offerInput} font-mono tracking-wide`} />
+                <button type="button" onClick={generateCode} className="flex-none rounded-[10px] border-[1.5px] border-violet-200 bg-violet-50 px-3.5 text-[12.5px] font-bold text-violet-700 transition-colors hover:bg-violet-100">Generate</button>
+              </div>
             </div>
           </div>
 
-          <div className="flex gap-2 justify-end border-t pt-4">
-            <Button type="button" variant="outline" onClick={() => { setShowForm(false); setEditing(null); }}>Cancel</Button>
-            <Button type="submit" isLoading={createM.isPending || updateM.isPending}>{editing ? 'Update' : 'Create'}</Button>
+          <div className="mb-6 grid grid-cols-3 gap-4">
+            <div>
+              <label className={offerLabel}>Type</label>
+              <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
+                <option value="flat">Flat (Rs)</option><option value="percentage">Percentage</option>
+              </select>
+            </div>
+            <div>
+              <label className={offerLabel}>Value</label>
+              <input type="number" min={0} value={form.value} onChange={(e) => setForm({ ...form, value: Number(e.target.value) })} className={offerInput} />
+            </div>
+            <div>
+              <label className={offerLabel}>Min order (Rs)</label>
+              <input type="number" min={0} value={form.min_order_amount} onChange={(e) => setForm({ ...form, min_order_amount: e.target.value === '' ? '' : Number(e.target.value) })} placeholder="none" className={offerInput} />
+            </div>
           </div>
-        </form>
-      </Modal>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={offerLabel}>Per-customer limit</label>
+              <input type="number" min={1} value={form.per_customer_limit} onChange={(e) => setForm({ ...form, per_customer_limit: e.target.value === '' ? '' : Number(e.target.value) })} placeholder="unlimited" className={offerInput} />
+            </div>
+            <div>
+              <label className={offerLabel}>Voucher valid <span className="font-normal text-gray-400">— days after issue</span></label>
+              <input type="number" min={1} value={form.voucher_validity_days} onChange={(e) => setForm({ ...form, voucher_validity_days: e.target.value === '' ? '' : Number(e.target.value) })} placeholder="use coupon window" className={offerInput} />
+            </div>
+          </div>
+
+          <div className="my-5 h-px bg-gray-100" />
+
+          <div className="mb-5">
+            <div className="mb-2.5 text-[13px] font-semibold text-gray-700">Who can use it</div>
+            <div className="mb-2.5 grid grid-cols-3 gap-2.5">
+              {([
+                ['all', 'All customers'],
+                ['specific', 'Specific'],
+                ['new_customer', 'New customers'],
+              ] as const).map(([a, label]) => {
+                const on = form.audience === a;
+                return (
+                  <button key={a} type="button" onClick={() => setForm({ ...form, audience: a })}
+                    className={`flex flex-col items-center gap-1.5 rounded-xl border-[1.5px] px-2.5 py-3.5 transition-colors ${on ? 'border-red-600 bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                    <span className={`flex h-[30px] w-[30px] items-center justify-center rounded-lg ${on ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                      <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                        {a === 'all' ? (
+                          <><circle cx="6" cy="6.5" r="2.3" /><path d="M2 15c0-2.2 1.8-4 4-4s4 1.8 4 4" /><circle cx="12.5" cy="6.5" r="1.9" /><path d="M11 11.4c2 .2 3.5 1.9 3.5 3.6" /></>
+                        ) : a === 'specific' ? (
+                          <><circle cx="9" cy="6" r="2.6" /><path d="M3.5 15.5c0-3 2.5-5 5.5-5s5.5 2 5.5 5" /></>
+                        ) : (
+                          <><circle cx="9" cy="6" r="2.6" /><path d="M4 15.5c0-2.8 2.2-4.8 5-4.8" /><line x1="13" y1="11" x2="13" y2="15" /><line x1="11" y1="13" x2="15" y2="13" /></>
+                        )}
+                      </svg>
+                    </span>
+                    <span className={`text-[13.5px] font-semibold ${on ? 'text-red-700' : 'text-gray-700'}`}>{label}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex items-start gap-2.5 rounded-[11px] border border-blue-100 bg-blue-50 px-3.5 py-3">
+              <span className="mt-px flex h-[18px] w-[18px] flex-none items-center justify-center rounded-full bg-blue-500 text-xs font-bold text-white">i</span>
+              <div className="text-[12.5px] leading-relaxed text-slate-600">{AUDIENCE_HELP[form.audience]}</div>
+            </div>
+            {form.audience === 'specific' && (
+              <div className="mt-3">
+                <SearchableMultiSelect
+                  options={custOptions}
+                  selectedIds={form.eligible_customer_ids}
+                  onChange={(ids) => setForm({ ...form, eligible_customer_ids: ids })}
+                  placeholder="Search customers by name / phone…"
+                  label={`Eligible customers * (${form.eligible_customer_ids.length} selected)`}
+                  required
+                  maxHeight="14rem"
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="mb-1">
+            <div className="text-[13px] font-semibold text-gray-700">Valid at <span className="text-red-500">(required)</span></div>
+            <div className="mb-3 text-[12.5px] text-gray-400">The window the coupon can be redeemed in.</div>
+            <ValidityFields
+              requireDates
+              value={{ valid_from: form.valid_from, valid_until: form.valid_until, valid_time_start: form.valid_time_start, valid_time_end: form.valid_time_end, valid_days_of_week: form.valid_days_of_week }}
+              onChange={(v) => setForm({ ...form, ...v })}
+            />
+          </div>
+        </div>
+      </OfferModal>
 
       {/* Vouchers — auto-generated per the coupon's audience; read-only + QR */}
       <Modal isOpen={vouchersFor != null} onClose={() => setVouchersFor(null)} title={`Vouchers — ${vouchersFor?.name ?? ''}`} size="xlarge">
