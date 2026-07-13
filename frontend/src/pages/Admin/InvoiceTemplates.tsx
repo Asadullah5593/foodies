@@ -11,9 +11,9 @@ import { AccentedList, AccentedListRow } from '../../components/AccentedListRow'
 import { confirmDialog } from '../../utils/sweetAlert';
 import InvoicePreview from '../../invoices/InvoicePreview';
 import { richSampleInvoice } from '../../invoices/renderInvoice';
+import InvoiceTemplateFormModal from './InvoiceTemplateFormModal';
 import {
   DEFAULT_INVOICE_TEMPLATE_CONFIG,
-  INVOICE_TOGGLE_GROUPS,
   InvoiceLayout,
   InvoiceTemplateConfig,
   LAYOUT_META,
@@ -29,8 +29,6 @@ type TemplateRow = {
   is_default: boolean;
   config: InvoiceTemplateConfig;
 };
-
-const LAYOUTS = Object.keys(LAYOUT_META) as InvoiceLayout[];
 
 const emptyForm = () => ({
   id: null as number | null,
@@ -100,13 +98,7 @@ const InvoiceTemplates: React.FC = () => {
     setShowForm(true);
   };
 
-  const setCfg = (key: keyof InvoiceTemplateConfig, value: boolean | string | number | null) =>
-    setForm((f) => ({ ...f, config: { ...f.config, [key]: value } }));
-
-  const clampPct = (v: string) => Math.min(200, Math.max(50, Math.round(Number(v) || 100)));
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const submit = () => {
     if (!form.name.trim()) { toast.error('Name is required'); return; }
     const data = {
       name: form.name.trim(),
@@ -176,111 +168,16 @@ const InvoiceTemplates: React.FC = () => {
         </AccentedList>
       )}
 
-      <Modal isOpen={showForm} onClose={() => setShowForm(false)} title={form.id ? 'Edit Invoice Template' : 'New Invoice Template'} size="xlarge">
-        <form onSubmit={submit} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left: settings */}
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="text-sm text-gray-700 dark:text-slate-300">Name *</span>
-                <input type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-slate-800 dark:border-slate-600" />
-              </label>
-              <label className="block">
-                <span className="text-sm text-gray-700 dark:text-slate-300">Schema / layout</span>
-                <select value={form.layout} onChange={(e) => setForm({ ...form, layout: e.target.value as InvoiceLayout })}
-                  className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-slate-800 dark:border-slate-600">
-                  {LAYOUTS.map((l) => <option key={l} value={l}>{LAYOUT_META[l].label}</option>)}
-                </select>
-              </label>
-            </div>
-            <label className="block">
-              <span className="text-sm text-gray-700 dark:text-slate-300">Applies to</span>
-              <select value={form.brand_id ?? ''} onChange={(e) => setForm({ ...form, brand_id: e.target.value === '' ? null : Number(e.target.value) })}
-                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-slate-800 dark:border-slate-600">
-                <option value="">All brands (tenant default)</option>
-                {(brands ?? []).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-              </select>
-            </label>
-            <p className="text-xs text-gray-400">
-              Each brand's own logo prints on its receipt automatically — the Foodies logo is used only when a brand has none.
-            </p>
-
-            <label className="block">
-              <span className="text-sm text-gray-700 dark:text-slate-300">Header text (legal name / address / tax reg #)</span>
-              <textarea value={form.config.headerText ?? ''} onChange={(e) => setCfg('headerText', e.target.value || null)} rows={2}
-                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-slate-800 dark:border-slate-600" />
-            </label>
-            <label className="block">
-              <span className="text-sm text-gray-700 dark:text-slate-300">Footer text (thank-you / return policy)</span>
-              <textarea value={form.config.footerText ?? ''} onChange={(e) => setCfg('footerText', e.target.value || null)} rows={2}
-                className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-slate-800 dark:border-slate-600" />
-            </label>
-
-            <div>
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1.5">Typography</h4>
-              <div className="grid grid-cols-3 gap-3 items-end">
-                <label className="block">
-                  <span className="text-sm text-gray-700 dark:text-slate-300">Font size (%)</span>
-                  <input type="number" min={50} max={200} step={5} value={form.config.fontScalePct ?? 100}
-                    onChange={(e) => setCfg('fontScalePct', clampPct(e.target.value))}
-                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-slate-800 dark:border-slate-600" />
-                </label>
-                <label className="block">
-                  <span className="text-sm text-gray-700 dark:text-slate-300">“Powered by” size (%)</span>
-                  <input type="number" min={50} max={200} step={5} value={form.config.poweredByFontPct ?? 95}
-                    onChange={(e) => setCfg('poweredByFontPct', clampPct(e.target.value))}
-                    className="mt-1 w-full px-3 py-2 border border-gray-300 rounded-lg dark:bg-slate-800 dark:border-slate-600" />
-                </label>
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 pb-2.5">
-                  <input type="checkbox" checked={Boolean(form.config.poweredByBold)}
-                    onChange={(e) => setCfg('poweredByBold', e.target.checked)} />
-                  “Powered by” bold
-                </label>
-              </div>
-              <p className="text-xs text-gray-400 mt-1">Font size scales the whole receipt (50–200%). The “powered by” line has its own size &amp; weight so it stays readable.</p>
-            </div>
-
-            {INVOICE_TOGGLE_GROUPS.map((group) => (
-              <div key={group.title}>
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-1.5">{group.title}</h4>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
-                  {group.items.map((item) => (
-                    <label key={item.key} className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
-                      <input type="checkbox" checked={Boolean(form.config[item.key])}
-                        onChange={(e) => setCfg(item.key, e.target.checked)} />
-                      {item.label}
-                    </label>
-                  ))}
-                </div>
-                {group.title === 'Discounts' && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    Shows the combined total by default. Turn off “Show total discount” to itemize the promotional / coupon / card lines instead.
-                  </p>
-                )}
-              </div>
-            ))}
-
-            <div className="flex flex-wrap gap-4 border-t pt-3 dark:border-slate-700">
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} /> Active</label>
-              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_default} onChange={(e) => setForm({ ...form, is_default: e.target.checked })} /> Set as default for this scope</label>
-            </div>
-          </div>
-
-          {/* Right: live preview */}
-          <div>
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 mb-2">Live preview</h4>
-            <div className="sticky top-2">
-              <InvoicePreview data={richSampleInvoice()} layout={form.layout} config={form.config} />
-            </div>
-          </div>
-
-          <div className="lg:col-span-2 flex gap-2 justify-end border-t pt-4 dark:border-slate-700">
-            <Button type="button" variant="outline" onClick={() => setShowForm(false)}>Cancel</Button>
-            <Button type="submit" isLoading={createM.isPending || updateM.isPending}>{form.id ? 'Update' : 'Create'}</Button>
-          </div>
-        </form>
-      </Modal>
+      <InvoiceTemplateFormModal
+        open={showForm}
+        isEdit={form.id != null}
+        form={form}
+        setForm={setForm}
+        brands={brands ?? []}
+        saving={createM.isPending || updateM.isPending}
+        onClose={() => setShowForm(false)}
+        onSubmit={submit}
+      />
 
       <Modal
         isOpen={!!previewRow}

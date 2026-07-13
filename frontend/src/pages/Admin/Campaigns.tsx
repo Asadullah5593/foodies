@@ -8,6 +8,7 @@ import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
+import OfferModal, { offerInput, offerLabel } from '../../components/OfferModal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import SearchableSelect from '../../components/SearchableSelect';
@@ -185,60 +186,89 @@ const Campaigns: React.FC = () => {
       </Modal>
 
       {/* Banners editor */}
-      <Modal isOpen={itemsFor != null} onClose={() => setItemsFor(null)} title={`Banners — ${itemsFor?.name ?? ''}`} size="xlarge">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="space-y-3">
-            <h3 className="font-semibold text-gray-800">Add a banner</h3>
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['info', 'offer', 'deal'] as const).map((k) => (
+      <OfferModal
+        open={itemsFor != null}
+        onClose={() => setItemsFor(null)}
+        title={`Banners — ${itemsFor?.name ?? ''}`}
+        subtitle="In-app promotional banners for this campaign"
+        width={1040}
+        icon={
+          <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+            <rect x="2.5" y="4" width="15" height="12" rx="2" /><path d="M2.5 12l4-3.5 4 3 3-2.5 4 3" /><circle cx="7" cy="8" r="1.2" />
+          </svg>
+        }
+      >
+        <div className="flex min-h-0 flex-1">
+          {/* Left: add a banner */}
+          <div className="w-[480px] flex-none overflow-y-auto border-r border-gray-100 px-6 py-5">
+            <div className="mb-4 text-[15px] font-bold text-gray-800">Add a banner</div>
+
+            <label className={offerLabel}>Type</label>
+            <div className="mb-1.5 grid grid-cols-3 gap-2">
+              {(['info', 'offer', 'deal'] as const).map((k) => {
+                const on = itemForm.kind === k;
+                return (
                   <button key={k} type="button"
                     onClick={() => setItemForm({ ...emptyItem, kind: k, title: itemForm.title, subtitle: itemForm.subtitle, image_url: itemForm.image_url })}
-                    className={`px-3 py-2 rounded-lg text-sm border ${itemForm.kind === k ? 'border-foodies-primary bg-foodies-primary/10 text-foodies-primary font-medium' : 'border-gray-300 text-gray-600'}`}>
-                    {KIND_LABEL[k]}
+                    className={`flex flex-col items-center gap-1.5 rounded-xl border-[1.5px] px-2 py-3 transition-colors ${on ? 'border-red-600 bg-red-50' : 'border-gray-200 bg-white hover:bg-gray-50'}`}>
+                    <span className={`flex h-7 w-7 items-center justify-center rounded-lg ${on ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                      <svg width="16" height="16" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                        {k === 'info' ? (
+                          <><circle cx="9" cy="9" r="7" /><line x1="9" y1="8" x2="9" y2="13" /><circle cx="9" cy="5.5" r="0.6" fill="currentColor" stroke="none" /></>
+                        ) : k === 'offer' ? (
+                          <><path d="M3 8V4a1 1 0 0 1 1-1h4l7 7-5 5-7-7z" /><circle cx="6" cy="6" r="1.1" /></>
+                        ) : (
+                          <path d="M9 2l2 4 4.5.5-3.3 3 .9 4.5L9 12l-4 2 .9-4.5L2.5 6.5 7 6z" />
+                        )}
+                      </svg>
+                    </span>
+                    <span className={`text-[13px] font-semibold ${on ? 'text-red-700' : 'text-gray-700'}`}>{KIND_LABEL[k]}</span>
                   </button>
-                ))}
-              </div>
-              <p className="text-[11px] text-gray-400 mt-1">
-                {itemForm.kind === 'info' ? 'Just an image + text (no offer, no destination).'
-                  : itemForm.kind === 'offer' ? 'Advertise a discount / product promotion / coupon.'
-                  : 'Advertise an existing deal (price stays fixed).'}
-              </p>
+                );
+              })}
             </div>
+            <p className="mb-4 text-[12px] leading-relaxed text-gray-400">
+              {itemForm.kind === 'info' ? 'Just an image + text (no offer, no destination).'
+                : itemForm.kind === 'offer' ? 'Promotes a discount / product promotion / coupon; tapping opens the offer.'
+                : 'Promotes a combo deal; tapping opens the deal.'}
+            </p>
 
-            <div className="grid grid-cols-2 gap-2">
-              <input type="text" placeholder="Title" value={itemForm.title} onChange={(e) => setItemForm({ ...itemForm, title: e.target.value })} className="px-3 py-2 border border-gray-300 rounded-lg" />
-              <input type="text" placeholder="Subtitle" value={itemForm.subtitle} onChange={(e) => setItemForm({ ...itemForm, subtitle: e.target.value })} className="px-3 py-2 border border-gray-300 rounded-lg" />
+            <div className="mb-4 grid grid-cols-2 gap-3">
+              <div><label className={offerLabel}>Title</label><input type="text" placeholder="Title" value={itemForm.title} onChange={(e) => setItemForm({ ...itemForm, title: e.target.value })} className={offerInput} /></div>
+              <div><label className={offerLabel}>Subtitle</label><input type="text" placeholder="Subtitle" value={itemForm.subtitle} onChange={(e) => setItemForm({ ...itemForm, subtitle: e.target.value })} className={offerInput} /></div>
             </div>
 
             {itemForm.kind === 'offer' && (
-              <SearchableSelect
-                label="Offer to advertise *"
-                value={itemForm.offer_id === '' ? '' : String(itemForm.offer_id)}
-                onChange={(v) => pickOffer(v === '' ? '' : Number(v))}
-                options={offerOpts}
-                placeholder="Search an offer…"
-                searchPlaceholder="Search offers…"
-              />
+              <div className="mb-4">
+                <SearchableSelect
+                  label="Offer to advertise *"
+                  value={itemForm.offer_id === '' ? '' : String(itemForm.offer_id)}
+                  onChange={(v) => pickOffer(v === '' ? '' : Number(v))}
+                  options={offerOpts}
+                  placeholder="Search an offer…"
+                  searchPlaceholder="Search offers…"
+                />
+              </div>
             )}
             {itemForm.kind === 'deal' && (
-              <SearchableSelect
-                label="Deal to advertise *"
-                value={itemForm.deal_menu_item_id === '' ? '' : String(itemForm.deal_menu_item_id)}
-                onChange={(v) => pickDeal(v === '' ? '' : Number(v))}
-                options={dealOpts}
-                placeholder="Search a deal…"
-                searchPlaceholder="Search deals…"
-              />
+              <div className="mb-4">
+                <SearchableSelect
+                  label="Deal to advertise *"
+                  value={itemForm.deal_menu_item_id === '' ? '' : String(itemForm.deal_menu_item_id)}
+                  onChange={(v) => pickDeal(v === '' ? '' : Number(v))}
+                  options={dealOpts}
+                  placeholder="Search a deal…"
+                  searchPlaceholder="Search deals…"
+                />
+              </div>
             )}
 
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Tapping the banner opens</label>
-              <div className="grid grid-cols-2 gap-2 items-start">
+            <div className="mb-4">
+              <label className={offerLabel}>Tapping the banner opens</label>
+              <div className="grid grid-cols-2 items-start gap-2.5">
                 <select value={itemForm.destination_type}
                   onChange={(e) => setItemForm({ ...itemForm, destination_type: e.target.value, destination_id: '' })}
-                  className="px-3 py-2.5 border border-gray-300 rounded-lg">
+                  className={offerInput}>
                   {DEST_TYPES.map((d) => <option key={d} value={d}>{d === 'none' ? 'Nothing (view only)' : d}</option>)}
                 </select>
                 {itemForm.destination_type !== 'none' ? (
@@ -249,56 +279,72 @@ const Campaigns: React.FC = () => {
                     placeholder={`Pick a ${itemForm.destination_type}…`}
                     searchPlaceholder="Search…"
                   />
-                ) : <div className="text-xs text-gray-400 self-center">No navigation</div>}
+                ) : <div className="self-center text-[12.5px] text-gray-400">No navigation</div>}
               </div>
-              <p className="text-[11px] text-gray-400 mt-1">Auto-filled from the offer/deal above; change it here (by name, no IDs). A shareable deep link is generated automatically.</p>
+              <p className="mt-2 text-[12px] leading-relaxed text-gray-400">Auto-filled from the offer/deal above; change it here (by name, no IDs). A shareable deep link is generated automatically.</p>
             </div>
 
-            <div>
-              <label className="block text-xs font-medium text-gray-500 mb-1">Banner image</label>
-              <div className="flex items-center gap-3">
-                {itemForm.image_url && <img src={itemForm.image_url} alt="" className="h-16 w-28 object-cover rounded-lg border" />}
-                <input type="file" accept="image/*" id="item-image" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadItemImage(f); }} />
-                <Button type="button" variant="outline" size="small" isLoading={uploading} onClick={() => document.getElementById('item-image')?.click()}>{itemForm.image_url ? 'Change image' : 'Upload image'}</Button>
-              </div>
+            <div className="mb-5">
+              <label className={offerLabel}>Banner image</label>
+              <input type="file" accept="image/*" id="item-image" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadItemImage(f); }} />
+              <button type="button" onClick={() => document.getElementById('item-image')?.click()}
+                className="flex w-full flex-col items-center gap-2 rounded-xl border-[1.5px] border-dashed border-gray-300 bg-gray-50 px-5 py-5 transition-colors hover:border-red-500">
+                {itemForm.image_url ? (
+                  <img src={itemForm.image_url} alt="" className="h-16 w-full max-w-[220px] rounded-lg object-cover" />
+                ) : (
+                  <span className="flex h-9 w-9 items-center justify-center rounded-[9px] bg-gray-100 text-gray-400">
+                    <svg width="19" height="19" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"><path d="M10 13V4M10 4L6.5 7.5M10 4l3.5 3.5" /><path d="M3.5 12.5v3a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1v-3" /></svg>
+                  </span>
+                )}
+                <span className="text-center">
+                  <span className="block text-[13px] font-semibold text-gray-700">{uploading ? 'Uploading…' : itemForm.image_url ? 'Change image' : 'Upload image'}</span>
+                  <span className="mt-0.5 block text-[11.5px] text-gray-400">PNG or JPG · 3:1 recommended</span>
+                </span>
+              </button>
             </div>
 
-            <Button isLoading={addItemM.isPending} onClick={submitItem}>Add banner</Button>
+            <button type="button" onClick={submitItem} disabled={addItemM.isPending}
+              className="rounded-[11px] bg-red-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-red-600/25 transition-colors hover:bg-red-700 active:scale-[0.98] disabled:opacity-60">+ Add banner</button>
           </div>
 
-          <div>
-            <h3 className="font-semibold text-gray-800 mb-2">Banners in this campaign ({items?.length ?? 0})</h3>
-            <div className="max-h-[30rem] overflow-y-auto space-y-2 pr-1">
+          {/* Right: banner list */}
+          <div className="flex min-w-0 flex-1 flex-col bg-gray-50">
+            <div className="flex flex-none items-center gap-2.5 px-6 pb-3 pt-5">
+              <span className="text-[15px] font-bold text-gray-800">Banners in this campaign</span>
+              <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-[12.5px] font-bold text-red-600">{items?.length ?? 0}</span>
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 pb-5">
               {(items ?? []).map((it) => (
-                <div key={it.id} className="flex gap-3 items-center border border-gray-200 rounded-xl p-2">
+                <div key={it.id} className="flex gap-3.5 rounded-2xl border border-gray-200 bg-white p-3.5 shadow-sm">
                   {it.image_url
-                    ? <img src={it.image_url} alt="" className="h-14 w-20 object-cover rounded-lg shrink-0" />
-                    : <div className="h-14 w-20 rounded-lg bg-gray-100 flex items-center justify-center text-gray-300 text-xs shrink-0">no img</div>}
+                    ? <img src={it.image_url} alt="" className="h-16 w-24 flex-none rounded-[9px] object-cover" />
+                    : <div className="flex h-16 w-24 flex-none items-center justify-center rounded-[9px] bg-gradient-to-br from-slate-500 to-slate-700 text-[10px] font-bold uppercase tracking-wide text-white/80">Image</div>}
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${KIND_BADGE[it.kind]}`}>{KIND_LABEL[it.kind]}</span>
+                    <div className="flex items-center justify-between gap-2.5">
+                      <span className={`rounded-full px-2.5 py-[3px] text-[10.5px] font-bold uppercase tracking-wide ${KIND_BADGE[it.kind]}`}>{KIND_LABEL[it.kind]}</span>
+                      <button type="button" onClick={() => itemsFor && delItemM.mutate({ id: itemsFor.id, itemId: it.id })}
+                        className="rounded-lg border-none bg-red-50 px-3 py-1.5 text-[12.5px] font-semibold text-red-600 transition-colors hover:bg-red-100">Remove</button>
                     </div>
-                    <div className="text-sm font-medium text-gray-800 truncate">{it.title || '(untitled)'}</div>
-                    {it.subtitle && <div className="text-xs text-gray-500 truncate">{it.subtitle}</div>}
-                    {destLabel(it.destination_type, it.destination_id) && (
-                      <div className="text-[10px] text-gray-400">→ {destLabel(it.destination_type, it.destination_id)}</div>
-                    )}
+                    <div className="mt-1.5 truncate text-[14.5px] font-bold text-gray-800">{it.title || '(untitled)'}</div>
+                    {it.subtitle && <div className="truncate text-[12.5px] text-gray-400">{it.subtitle}</div>}
                     {it.deep_link_url && (
-                      <div className="flex items-center gap-1 mt-0.5">
-                        <span className="text-[10px] text-blue-500">🔗</span>
-                        <a href={it.deep_link_url} target="_blank" rel="noreferrer" className="text-[10px] text-blue-500 underline truncate max-w-[170px]">{it.deep_link_url}</a>
-                        <button type="button" onClick={() => { navigator.clipboard?.writeText(it.deep_link_url!); toast.success('Deep link copied'); }} className="text-[10px] text-gray-400 hover:text-gray-700">copy</button>
+                      <div className="mt-2 flex items-center gap-1.5">
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="#9AA1AD" strokeWidth={1.6} strokeLinecap="round"><path d="M6.5 9.5a3 3 0 0 0 4.2 0l2-2a3 3 0 0 0-4.2-4.2l-1 1" /><path d="M9.5 6.5a3 3 0 0 0-4.2 0l-2 2a3 3 0 0 0 4.2 4.2l1-1" /></svg>
+                        <a href={it.deep_link_url} target="_blank" rel="noreferrer" className="max-w-[210px] truncate text-[12px] text-blue-500 hover:underline">{it.deep_link_url}</a>
+                        <button type="button" onClick={() => { navigator.clipboard?.writeText(it.deep_link_url!); toast.success('Deep link copied'); }} className="flex-none text-[11.5px] font-semibold text-gray-400 hover:text-red-600">copy</button>
                       </div>
                     )}
+                    {!it.deep_link_url && destLabel(it.destination_type, it.destination_id) && (
+                      <div className="mt-1.5 text-[11px] text-gray-400">→ {destLabel(it.destination_type, it.destination_id)}</div>
+                    )}
                   </div>
-                  <Button size="small" variant="danger" onClick={() => itemsFor && delItemM.mutate({ id: itemsFor.id, itemId: it.id })}>Remove</Button>
                 </div>
               ))}
-              {(items?.length ?? 0) === 0 && <p className="px-3 py-10 text-center text-sm text-gray-400 border border-dashed border-gray-200 rounded-xl">No banners yet — add one on the left.</p>}
+              {(items?.length ?? 0) === 0 && <p className="rounded-xl border border-dashed border-gray-200 bg-white px-3 py-12 text-center text-sm text-gray-400">No banners yet — add one on the left.</p>}
             </div>
           </div>
         </div>
-      </Modal>
+      </OfferModal>
 
       {/* Report */}
       <Modal isOpen={reportFor != null} onClose={() => setReportFor(null)} title={`Report — ${reportFor?.name ?? ''}`} size="large">
