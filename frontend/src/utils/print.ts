@@ -36,7 +36,7 @@ export function printContent(html: string, title = 'Print', extraCss = ''): void
     .total-row { font-weight: 700; font-size: 1.1rem; }
     .meta { color: #6b7280; font-size: 0.875rem; margin-bottom: 16px; }
     .section { margin-bottom: 24px; }
-    @media print { body { padding: 0; } }
+    @media print { html, body { margin: 0; padding: 0; } }
     ${extraCss}
   </style>
 </head>
