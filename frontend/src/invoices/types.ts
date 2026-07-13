@@ -47,6 +47,9 @@ export interface InvoiceTemplateConfig {
   showPoweredBy: boolean;
   poweredByFontPct: number;
   poweredByBold: boolean;
+  /** Extra blank paper (mm) fed after the last line on thermal receipts so it
+   *  clears the print-head-to-cutter gap. 0–80, print-only, A4 ignores it. */
+  bottomFeedMm: number;
 
   showCategory: boolean;
   showVariant: boolean;
@@ -90,6 +93,7 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showPoweredBy: true,
   poweredByFontPct: 95,
   poweredByBold: false,
+  bottomFeedMm: 22,
 
   showCategory: false,
   showVariant: true,
