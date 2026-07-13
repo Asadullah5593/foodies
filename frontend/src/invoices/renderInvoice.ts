@@ -699,7 +699,7 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
       .inv-root.inv-bill_bordered .itbl th { font-weight: 700; }
       .inv-root.inv-bill_bordered .totals { width: 78%; margin-left: auto; }
       .inv-root.inv-bill_bordered .row.grand { font-size: 1.2em; }
-      @media print { @page { size: ${widthMm}mm auto; margin: 0; } }
+      @page { size: ${widthMm}mm auto; margin: 0; }
     `;
   }
   if (layout === 'receipt_logo') {
@@ -717,7 +717,7 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
       .inv-root.inv-receipt_logo .totals { border-top: 1px dashed #000; margin-top: 6px; padding-top: 4px; }
       .inv-root.inv-receipt_logo .row.grand { border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 4px 0; font-size: 1.2em; }
       .inv-root.inv-receipt_logo .foot { margin-top: 12px; }
-      @media print { @page { size: ${widthMm}mm auto; margin: 0; } }
+      @page { size: ${widthMm}mm auto; margin: 0; }
     `;
   }
   if (layout === 'thermal_modern') {
@@ -732,7 +732,7 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
       .inv-root.inv-thermal_modern .row .l { font-weight: 500; }
       .inv-root.inv-thermal_modern .row.grand { border-top: none; margin-top: 8px; padding-top: 4px; font-size: 1.25em; font-weight: 700; letter-spacing: .04em; }
       .inv-root.inv-thermal_modern .totals { margin-top: 8px; }
-      @media print { @page { size: ${widthMm}mm auto; margin: 0; } }
+      @page { size: ${widthMm}mm auto; margin: 0; }
     `;
   }
   if (layout === 'thermal_classic') {
@@ -745,21 +745,22 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
       .inv-root.inv-thermal_classic .items { border-top: 2px double #000; border-bottom: 2px double #000; padding: 5px 0; }
       .inv-root.inv-thermal_classic .row.grand { border-top: 1px dashed #000; font-weight: 700; text-transform: uppercase; }
       .inv-root.inv-thermal_classic .grandtotal { border-top: 2px double #000; }
-      @media print { @page { size: ${widthMm}mm auto; margin: 0; } }
+      @page { size: ${widthMm}mm auto; margin: 0; }
     `;
   }
   if (layout === 'thermal_58mm') {
     return `${base}
       .inv-root.inv-thermal_58mm { width: ${widthMm}mm; max-width: ${widthMm}mm; font-family: 'Courier New', ui-monospace, monospace; font-size: ${rootPx}px; padding: 6px; }
       .inv-root.inv-thermal_58mm .metatbl .mk { width: 42%; }
-      @media print { @page { size: ${widthMm}mm auto; margin: 0; } }
+      @page { size: ${widthMm}mm auto; margin: 0; }
     `;
   }
   return `${base}
     .inv-root.inv-a4_invoice { width: 190mm; max-width: 190mm; font-family: system-ui, -apple-system, sans-serif; font-size: ${rootPx}px; padding: 12mm; }
     .inv-root.inv-a4_invoice .items { border-color: #ccc; }
     .inv-root.inv-a4_invoice .row.grand { font-size: 1.15em; }
-    @media print { @page { size: A4; margin: 12mm; } .inv-root.inv-a4_invoice { padding: 0; width: auto; max-width: none; } }
+    @page { size: A4; margin: 12mm; }
+    @media print { .inv-root.inv-a4_invoice { padding: 0; width: auto; max-width: none; } }
   `;
 }
 
