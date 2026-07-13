@@ -621,7 +621,12 @@ export function renderInvoiceHtml(
           : layout === 'thermal_classic'
             ? classicMonoBody(data, cfg, money)
             : classicBody(data, cfg, money);
-  const html = `<div class="inv-root inv-${layout}">${body}</div>`;
+  // Thermal receipts get a trailing "feed" spacer so the final line clears the
+  // gap between the print head and the tear/cutter bar. Without it, printers
+  // with a deeper gap (e.g. SPEED-X 300U) leave the last line stuck inside the
+  // mechanism. Print-only (see cutfeed CSS) so the on-screen preview is unaffected.
+  const feed = layout === 'a4_invoice' ? '' : '<div class="cutfeed" aria-hidden="true"></div>';
+  const html = `<div class="inv-root inv-${layout}">${body}${feed}</div>`;
   return { html, css: cssFor(layout, cfg) };
 }
 
@@ -689,6 +694,8 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .itbl .ind { padding-left: 8px; display: inline-block; }
     .inv-root .itbl .ind2 { padding-left: 16px; display: inline-block; }
     .inv-root .itbl tr.noterow td { font-style: italic; color: #333; font-size: .88em; padding-left: 10px; }
+    .inv-root .cutfeed { height: 0; }
+    @media print { .inv-root .cutfeed { display: block; height: 22mm; } }
   `;
   if (layout === 'bill_bordered') {
     return `${base}
