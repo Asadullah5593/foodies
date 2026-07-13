@@ -38,6 +38,13 @@ export interface InvoiceTemplateConfig {
     poweredByFontPct: number;
     /** Bold the "powered by" line. */
     poweredByBold: boolean;
+    /**
+     * Extra blank paper (mm) fed after the last line on thermal receipts, so it
+     * clears the print-head-to-cutter/tear-bar gap. Printers with a deeper gap
+     * (e.g. SPEED-X 300U) need a larger value or the final line is cut off. 0–80,
+     * print-only. Ignored by the A4 layout.
+     */
+    bottomFeedMm: number;
 
     // Line items
     showCategory: boolean;
@@ -88,6 +95,7 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     showPoweredBy: true,
     poweredByFontPct: 95,
     poweredByBold: false,
+    bottomFeedMm: 22,
 
     showCategory: false,
     showVariant: true,
@@ -127,6 +135,7 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
 const NUMERIC_KEYS: Record<string, { min: number; max: number }> = {
     fontScalePct: { min: 50, max: 200 },
     poweredByFontPct: { min: 50, max: 200 },
+    bottomFeedMm: { min: 0, max: 80 },
 };
 
 /** Merge stored config over defaults; unknown/missing keys fall back to default. */
