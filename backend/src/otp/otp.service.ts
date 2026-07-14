@@ -244,6 +244,27 @@ export class OtpService {
     }
 
     /**
+     * Record that a phone number was proven by an EXTERNAL verifier (Firebase
+     * Phone Auth) rather than an in-house SMS code. Writes an already-used OTP
+     * row so `wasRecentlyVerified` — and therefore the unchanged register flow —
+     * treats the phone as verified regardless of which channel delivered the OTP.
+     */
+    async markPhoneVerified(phone: string, purpose: string): Promise<void> {
+        const normalized = this.normalizePhoneOrThrow(phone);
+        const now = new Date();
+        await this.repo.save(
+            this.repo.create({
+                phone: normalized,
+                // Sentinel: no in-house code was issued; proof came from Firebase.
+                code: 'FIREBASE',
+                purpose,
+                expiresAt: now,
+                usedAt: now,
+            }),
+        );
+    }
+
+    /**
      * True if a phone OTP for the given purpose was verified (marked used)
      * within `withinMs`. Lets register trust a just-completed verification.
      */

@@ -1,4 +1,11 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+    Injectable,
+    Logger,
+    OnModuleInit,
+    BadRequestException,
+    UnauthorizedException,
+    ServiceUnavailableException,
+} from '@nestjs/common';
 import { readFileSync } from 'fs';
 import * as admin from 'firebase-admin';
 import { normalizeFirebasePrivateKey } from './firebase-credentials.util';
@@ -109,6 +116,56 @@ export class FirebaseService implements OnModuleInit {
     get messaging(): admin.messaging.Messaging | null {
         if (!this.firebaseApp) return null;
         return admin.messaging(this.firebaseApp);
+    }
+
+    /**
+     * Verify a Firebase ID token that MUST come from Phone (SMS) sign-in and
+     * return the verified phone number (E.164, e.g. +923001234567) and Firebase
+     * uid. Used by the consumer phone-verification and password-reset flows so
+     * Firebase handles SMS dispatch/OTP entry while we only trust a signed,
+     * server-verified token — never a client "phone verified" claim.
+     *
+     * Rejects (401) tokens that are invalid/expired, from a different Firebase
+     * project, from any non-phone provider (Google, anonymous, email/password),
+     * or that carry no phone_number claim.
+     */
+    async verifyPhoneIdToken(
+        idToken: string,
+    ): Promise<{ phoneNumber: string; uid: string }> {
+        if (!this.firebaseApp) {
+            throw new ServiceUnavailableException(
+                'Firebase is not configured on this server',
+            );
+        }
+        const token = typeof idToken === 'string' ? idToken.trim() : '';
+        if (!token) {
+            throw new BadRequestException('id_token is required');
+        }
+        let decoded: admin.auth.DecodedIdToken;
+        try {
+            // checkRevoked=false: OTP tokens are short-lived and single-use here.
+            decoded = await admin.auth(this.firebaseApp).verifyIdToken(token);
+        } catch (err) {
+            this.logger.warn(
+                `Firebase ID token verification failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+            throw new UnauthorizedException('Invalid or expired token');
+        }
+        // Guard against tokens minted by any other sign-in method — only an SMS
+        // phone verification proves ownership of the number.
+        if (decoded.firebase?.sign_in_provider !== 'phone') {
+            throw new UnauthorizedException('Token is not from phone sign-in');
+        }
+        const phoneNumber =
+            typeof decoded.phone_number === 'string'
+                ? decoded.phone_number
+                : '';
+        if (!phoneNumber) {
+            throw new UnauthorizedException(
+                'Token has no verified phone number',
+            );
+        }
+        return { phoneNumber, uid: decoded.uid };
     }
 
     get firestore(): admin.firestore.Firestore | null {
