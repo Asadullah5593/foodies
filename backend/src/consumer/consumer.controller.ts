@@ -55,6 +55,7 @@ import { MAX_UPLOAD_FILE_BYTES } from '../upload/upload.constants';
 import { RatingsService } from '../ratings/ratings.service';
 import { BannersService } from '../banners/banners.service';
 import { PromotionsService } from '../promotions/promotions.service';
+import { FirebaseService } from '../firebase/firebase.service';
 
 type BranchWithBrands = Branch & {
     branchBrands: Array<{ brand: { tenantId: number } }>;
@@ -94,6 +95,7 @@ export class ConsumerController {
         private campaignsService: CampaignsService,
         @InjectRepository(Voucher) private voucherRepo: Repository<Voucher>,
         @InjectRepository(Discount) private discountRepo: Repository<Discount>,
+        private firebaseService: FirebaseService,
     ) {}
 
     /** Resolve tenant id from branch (for customer-scoped APIs). */
@@ -616,6 +618,11 @@ export class ConsumerController {
      * - `password_reset`: only sent when a consumer account exists, but the
      *   response is generic either way to avoid phone-number enumeration.
      */
+    // Both SMS-OTP endpoints below are disabled (Amazon SNS sandbox) and only
+    // throw; their async signatures and bodies are preserved so re-enabling is a
+    // pure uncomment. Lint would otherwise flag the now-awaitless async methods
+    // and the unused `dto` params.
+    /* eslint-disable @typescript-eslint/require-await, @typescript-eslint/no-unused-vars */
     @Post('auth/send-otp')
     @ApiOperation({ summary: 'Send an SMS OTP (phone verification or reset)' })
     @ApiBody({
@@ -633,6 +640,17 @@ export class ConsumerController {
         },
     })
     async sendOtp(@Body() dto: { phone: string; purpose: string }) {
+        // —— Amazon SNS SMS OTP DISABLED (SNS stuck in the SMS sandbox) ——
+        // Phone verification and password reset now run through Firebase Phone
+        // Auth on the client, verified server-side by:
+        //   • POST auth/firebase/verify-phone   (signup phone verification)
+        //   • POST auth/firebase/reset-password (password reset)
+        // The SNS implementation below is intentionally KEPT (not removed) as a
+        // fallback — to restore it, delete this throw and uncomment the body.
+        throw new BadRequestException(
+            'SMS OTP is disabled. Phone verification and password reset now use Firebase Phone Auth.',
+        );
+        /*
         const purpose =
             typeof dto?.purpose === 'string' ? dto.purpose.trim() : '';
         if (!PHONE_OTP_PURPOSES.includes(purpose as never)) {
@@ -668,6 +686,7 @@ export class ConsumerController {
                     ? 'If the number is registered, a code was sent'
                     : 'A verification code was sent',
         };
+        */
     }
 
     /**
@@ -705,6 +724,15 @@ export class ConsumerController {
             new_password?: string;
         },
     ) {
+        // —— Amazon SNS SMS OTP DISABLED (SNS stuck in the SMS sandbox) ——
+        // Superseded by Firebase Phone Auth (auth/firebase/verify-phone and
+        // auth/firebase/reset-password). The SNS verify implementation below is
+        // intentionally KEPT (not removed) as a fallback — to restore it, delete
+        // this throw and uncomment the body.
+        throw new BadRequestException(
+            'SMS OTP is disabled. Phone verification and password reset now use Firebase Phone Auth.',
+        );
+        /*
         const purpose =
             typeof dto?.purpose === 'string' ? dto.purpose.trim() : '';
         if (!PHONE_OTP_PURPOSES.includes(purpose as never)) {
@@ -738,6 +766,101 @@ export class ConsumerController {
             );
         }
         return { message: 'OTP verified successfully' };
+        */
+    }
+    /* eslint-enable @typescript-eslint/require-await, @typescript-eslint/no-unused-vars */
+
+    /**
+     * Firebase Phone Auth — signup phone verification.
+     *
+     * The app completes SMS OTP with Firebase on the client, then posts the
+     * resulting Firebase ID token here. We verify the token server-side (must be
+     * a phone sign-in from our Firebase project), normalize the verified E.164
+     * number to our stored `03XXXXXXXXX` form, and record it as verified so the
+     * unchanged `register` flow lets the signup through (within its 30-min
+     * window). Auth stays phone + password; Firebase is only the OTP channel.
+     */
+    @Post('auth/firebase/verify-phone')
+    @ApiOperation({
+        summary: 'Verify a phone number via a Firebase Phone Auth ID token',
+    })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            required: ['id_token'],
+            properties: {
+                id_token: {
+                    type: 'string',
+                    description:
+                        'Firebase ID token from client-side phone sign-in',
+                },
+            },
+        },
+    })
+    async firebaseVerifyPhone(@Body() dto: { id_token?: string }) {
+        const { phoneNumber } = await this.firebaseService.verifyPhoneIdToken(
+            dto?.id_token ?? '',
+        );
+        // Firebase returns E.164 (+92...); normalize to our stored 03... form so
+        // it matches numbers submitted to register and never duplicates.
+        const phone =
+            this.customersService.validateAndNormalizePhone(phoneNumber);
+        await this.otpService.markPhoneVerified(phone, 'phone_verification');
+        return { message: 'Phone verified successfully', phone };
+    }
+
+    /**
+     * Firebase Phone Auth — password reset.
+     *
+     * The app proves ownership of the phone via Firebase phone sign-in, then
+     * posts the ID token plus the new password. We verify the token, match the
+     * consumer by normalized phone (scoped to this deployment's tenant), and set
+     * the new password. No session is issued — the user logs in normally after.
+     */
+    @Post('auth/firebase/reset-password')
+    @ApiOperation({
+        summary: 'Reset password via a Firebase Phone Auth ID token',
+    })
+    @ApiBody({
+        schema: {
+            type: 'object',
+            required: ['id_token', 'new_password'],
+            properties: {
+                id_token: {
+                    type: 'string',
+                    description:
+                        'Firebase ID token from client-side phone sign-in',
+                },
+                new_password: { type: 'string' },
+            },
+        },
+    })
+    async firebaseResetPassword(
+        @Body() dto: { id_token?: string; new_password?: string },
+    ) {
+        const newPassword =
+            typeof dto?.new_password === 'string' ? dto.new_password : '';
+        // Validate the password before verifying the token so a bad request is
+        // cheap and no work is wasted.
+        if (!newPassword.trim()) {
+            throw new BadRequestException('new_password is required');
+        }
+        const { phoneNumber } = await this.firebaseService.verifyPhoneIdToken(
+            dto?.id_token ?? '',
+        );
+        const phone =
+            this.customersService.validateAndNormalizePhone(phoneNumber);
+        const customer = await this.customersService.findConsumerByPhone(
+            phone,
+            this.getTenantIdFromEnv(),
+        );
+        if (!customer) {
+            throw new NotFoundException(
+                'No account found for this phone number',
+            );
+        }
+        await this.customersService.setPassword(customer.id, newPassword);
+        return { message: 'Password reset successfully' };
     }
 
     /** Get current customer profile (requires customer JWT). */
