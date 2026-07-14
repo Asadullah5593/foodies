@@ -98,6 +98,9 @@ export class ImageOptimizeService {
                         fit: 'inside',
                         withoutEnlargement: true,
                     })
+                    // Variants are always JPEG (no alpha): flatten transparency
+                    // to white, not sharp's default black.
+                    .flatten({ background: '#ffffff' })
                     .jpeg({ quality: this.jpegQuality, mozjpeg: true })
                     .toBuffer(),
             ),
@@ -155,14 +158,28 @@ export class ImageOptimizeService {
             };
         }
 
-        const out = await sharp(buffer)
-            .rotate()
-            .resize({
-                width: maxWidth,
-                height: maxWidth,
-                fit: 'inside',
-                withoutEnlargement: true,
-            })
+        const resized = sharp(buffer).rotate().resize({
+            width: maxWidth,
+            height: maxWidth,
+            fit: 'inside',
+            withoutEnlargement: true,
+        });
+
+        // JPEG has no alpha channel — re-encoding a transparent logo to JPEG
+        // paints its background black. Keep transparency by emitting PNG when
+        // the source has alpha (brand logos etc.); JPEG otherwise (photos).
+        if (meta.hasAlpha) {
+            const out = await resized
+                .png({ compressionLevel: 9 })
+                .toBuffer();
+            return {
+                buffer: out,
+                contentType: 'image/png',
+                fileExtension: '.png',
+            };
+        }
+
+        const out = await resized
             .jpeg({ quality: this.jpegQuality, mozjpeg: true })
             .toBuffer();
 
