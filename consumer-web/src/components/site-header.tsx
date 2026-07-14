@@ -330,8 +330,8 @@ export function SiteHeader() {
                 Menu
               </Link>
               <NavDivider />
-              <Link href="/support.html" className="hover:text-red-600">
-                Support
+              <Link href="/brands" className="hover:text-red-600">
+                Brands
               </Link>
             </nav>
 
@@ -358,8 +358,8 @@ export function SiteHeader() {
           <Link href="/menu" className="hover:text-red-600" onClick={closeMobile}>
             Menu
           </Link>
-          <Link href="/support.html" className="hover:text-red-600" onClick={closeMobile}>
-            Support
+          <Link href="/brands" className="hover:text-red-600" onClick={closeMobile}>
+            Brands
           </Link>
         </nav>
       </div>

@@ -82,7 +82,10 @@ export function computeModifiersPrice(
     }
   }
 
-  const groupUnits = new Map<ModifierGroup, number[]>();
+  // Tag each unit with its slot (0 = first unit of that modifier, 1 = second, …) so the free
+  // allowance is allocated SLOT-BASED — matching the authoritative backend and POS: the first
+  // unit of each modifier is freed (cheapest-first within a slot) before any second unit.
+  const groupSlots = new Map<ModifierGroup, Array<{ price: number; slot: number }>>();
   for (const sel of selections) {
     const mod = modIndex.get(sel.modifier_id);
     const group = groupOf.get(sel.modifier_id);
@@ -90,23 +93,30 @@ export function computeModifiersPrice(
     const qty = Math.max(0, Math.floor(Number(sel.quantity ?? 1)) || 0);
     if (qty === 0) continue;
     const unit = resolveModifierUnitPrice(mod, sizeKey);
-    const arr = groupUnits.get(group) ?? [];
-    for (let i = 0; i < qty; i++) arr.push(unit);
-    groupUnits.set(group, arr);
+    const arr = groupSlots.get(group) ?? [];
+    for (let i = 0; i < qty; i++) arr.push({ price: unit, slot: i });
+    groupSlots.set(group, arr);
   }
 
   let total = 0;
-  for (const [group, units] of groupUnits) {
+  for (const [group, slotUnits] of groupSlots) {
     const free = resolveIncludedQuantity(group, sizeKey);
     const tiers = group.price_tiers;
     if (tiers && Object.keys(tiers).length > 0) {
-      total += resolveTierCharge(tiers, Math.max(0, units.length - free));
+      total += resolveTierCharge(tiers, Math.max(0, slotUnits.length - free));
       continue;
     }
-    const sorted = [...units].sort((a, b) => a - b);
-    for (let i = 0; i < sorted.length; i++) {
-      if (i < free) continue;
-      total += sorted[i];
+    // Free by (slot asc, then price asc): slot-0 units freed first, cheapest within a slot.
+    const sorted = [...slotUnits].sort((a, b) =>
+      a.slot !== b.slot ? a.slot - b.slot : a.price - b.price,
+    );
+    let freeLeft = free;
+    for (const u of sorted) {
+      if (freeLeft > 0) {
+        freeLeft--;
+        continue;
+      }
+      total += u.price;
     }
   }
   return round2(total);
