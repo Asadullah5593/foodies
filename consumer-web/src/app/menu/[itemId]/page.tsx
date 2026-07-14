@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import clsx from "clsx";
+import { DealConfigurator } from "@/components/deal-configurator";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { AppShell, Card } from "@/components/ui";
@@ -582,6 +583,9 @@ export default function MenuItemDetailPage() {
   const itemId = Number(parsedParam);
   const itemIdValid = Number.isFinite(itemId) && itemId > 0;
 
+  // Live total from the deal configurator (deal items only); null until it reports.
+  const [dealTotal, setDealTotal] = useState<number | null>(null);
+
   const [selectionByItemId, setSelectionByItemId] = useState<
     Record<
       number,
@@ -826,10 +830,43 @@ export default function MenuItemDetailPage() {
   ) => {
     if (!currentItem) return;
     const existing = selectionByItemId[currentItem.id] ?? defaultSelection;
-    setSelectionByItemId((prev) => ({
-      ...prev,
-      [currentItem.id]: { ...existing, ...next },
-    }));
+    let merged = { ...existing, ...next };
+    // A size change can hide size-restricted options and shrink a group's per-size cap
+    // (XL 3 toppings → Large 2). Re-clamp so the line never carries an over-cap / unavailable
+    // pick, dropping the most-recently-added units first — mirrors POS ItemConfigModal.
+    if (next.variantId !== undefined) {
+      const newSize = currentItem.variants?.find((v) => v.id === next.variantId)?.size_key ?? null;
+      const groups = currentItem.modifier_groups ?? [];
+      const modIndex = new Map(groups.flatMap((g) => (g.modifiers ?? []).map((m) => [m.id, m] as const)));
+      const qty: Record<number, number> = { ...(merged.modifierQty ?? {}) };
+      let ids = merged.modifierIds.filter((id) => {
+        const md = modIndex.get(id);
+        const ok = !md || isModAvailableForSize(md, newSize);
+        if (!ok) delete qty[id];
+        return ok;
+      });
+      for (const g of groups) {
+        const max = resolveMaxSelect(g, newSize);
+        if (max == null) continue;
+        const inGroup = new Set((g.modifiers ?? []).map((m) => m.id));
+        const qOf = (id: number) => Math.max(1, Math.floor(qty[id] ?? 1));
+        let units = ids.filter((id) => inGroup.has(id)).reduce((s, id) => s + qOf(id), 0);
+        for (let i = ids.length - 1; i >= 0 && units > max; i--) {
+          const id = ids[i]!;
+          if (!inGroup.has(id)) continue;
+          const drop = Math.min(qOf(id), units - max);
+          units -= drop;
+          const remain = qOf(id) - drop;
+          if (remain > 0) qty[id] = remain;
+          else {
+            delete qty[id];
+            ids = ids.filter((_, xi) => xi !== i);
+          }
+        }
+      }
+      merged = { ...merged, modifierIds: ids, modifierQty: qty };
+    }
+    setSelectionByItemId((prev) => ({ ...prev, [currentItem.id]: merged }));
   };
 
   const toggleModifier = (group: ModifierGroup, modifierId: number) => {
@@ -840,17 +877,15 @@ export default function MenuItemDetailPage() {
     const modsInGroup = new Set((group.modifiers ?? []).map((m) => m.id));
     const isSelected = selected.includes(modifierId);
     const maxSel = resolveMaxSelect(group, sizeKey) ?? 99;
-    const minSel = resolveMinSelect(group, sizeKey);
     const qOf = (id: number) => Math.max(1, Math.floor(qtyMap[id] ?? 1));
     const unitsIn = selected.filter((id) => modsInGroup.has(id)).reduce((s, id) => s + qOf(id), 0);
 
-    // Single-select: tapping swaps the chosen option (and only deselects when nothing is required).
+    // Single-select: tapping swaps the chosen option; re-tapping the chosen one deselects it
+    // (mirrors POS — the "Required" category status then guides re-selection).
     if (maxSel === 1) {
       if (isSelected) {
-        if (minSel === 0) {
-          delete qtyMap[modifierId];
-          updateSelection({ modifierIds: selected.filter((id) => id !== modifierId), modifierQty: qtyMap });
-        }
+        delete qtyMap[modifierId];
+        updateSelection({ modifierIds: selected.filter((id) => id !== modifierId), modifierQty: qtyMap });
         return;
       }
       for (const id of selected) if (modsInGroup.has(id)) delete qtyMap[id];
@@ -904,6 +939,18 @@ export default function MenuItemDetailPage() {
   };
 
   const hasVariants = variantsOrdered.length > 0;
+  // Deal composition (fixed items + choose-from-category / choice-list slots). Shown
+  // read-only — ordering happens in the app — so deal items look like POS, not empty.
+  const deal = currentItem?.deal ?? null;
+  const dealSlots = useMemo(
+    () => (deal?.slots ?? []).filter((s) => (s.choice_items?.length ?? 0) > 0),
+    [deal],
+  );
+  const hasDeal = dealSlots.length > 0;
+  // An item with nothing to configure (no sizes, modifier groups, add-ons or deal
+  // slots) would otherwise leave the details panel looking bare next to the tall
+  // product image — we fill that space with a short note and grow the panel on desktop.
+  const hasNoOptions = !hasVariants && categories.length === 0 && !hasDeal;
 
   if (!itemIdValid) {
     return (
@@ -998,7 +1045,13 @@ export default function MenuItemDetailPage() {
                   />
                 </motion.div>
 
-                <div className="min-w-0 self-start rounded-2xl border bg-white p-4 sm:p-5 lg:p-6" style={{ borderColor: COLORS.line }}>
+                <div
+                  className={clsx(
+                    "min-w-0 self-start rounded-2xl border bg-white p-4 sm:p-5 lg:p-6",
+                    hasNoOptions && "lg:flex lg:flex-col lg:self-stretch",
+                  )}
+                  style={{ borderColor: COLORS.line }}
+                >
                   <div className="flex items-center gap-3">
                     <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-full border border-red-200 bg-white sm:h-14 sm:w-14">
                       {selectedBrand?.logo_url ? (
@@ -1411,11 +1464,30 @@ export default function MenuItemDetailPage() {
                     </div>
                   ) : null}
 
+                  {hasDeal && deal ? (
+                    <DealConfigurator deal={deal} onTotalChange={setDealTotal} />
+                  ) : null}
+
+                  {hasNoOptions ? (
+                    <div className="mt-5 flex flex-col items-center justify-center rounded-xl border border-dashed border-neutral-200 bg-neutral-50/70 p-6 text-center sm:mt-6 lg:flex-1">
+                      <span className="grid h-12 w-12 place-items-center rounded-full bg-red-50 text-red-600">
+                        <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                          <circle cx="12" cy="12" r="9" />
+                          <path d="M8.5 12.4l2.4 2.4 4.6-5.1" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </span>
+                      <p className="mt-3 text-sm font-black text-[var(--foreground)]">No customization needed</p>
+                      <p className="mt-1 max-w-xs text-[13px] leading-relaxed text-[var(--muted)]">
+                        This item is served just the way it is — simply place your order in the app and enjoy.
+                      </p>
+                    </div>
+                  ) : null}
+
                   <div className="mt-5 flex flex-col gap-3 border-t border-neutral-200 pt-4 sm:mt-6 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <p className="text-[11px] font-bold uppercase tracking-wide text-[var(--muted)]">Total</p>
                       <p className="text-2xl font-black tabular-nums leading-tight text-red-600">
-                        Rs.{selectedPrice.toFixed(0)}
+                        Rs.{(hasDeal && dealTotal != null ? dealTotal : selectedPrice).toFixed(0)}
                       </p>
                     </div>
                     <div className="flex flex-col items-stretch gap-1.5 sm:items-end">

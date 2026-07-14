@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import type { CartAddon, CartModifier, MenuItem } from "@/lib/api/types";
 import { Button, Card, Input } from "@/components/ui";
@@ -92,17 +93,44 @@ export function ItemConfigModal({
   onClose,
   onConfirm,
   initialValue,
+  confirmLabel = "Add to cart",
+  showItemPrice = true,
+  lockedSizeKey,
+  allowedSizeKeys,
 }: {
   item: MenuItem | null;
   open: boolean;
   onClose: () => void;
   onConfirm: (value: ConfigValue) => void;
   initialValue?: Partial<ConfigValue>;
+  /** Footer primary button label (deal customization passes "Save options"). */
+  confirmLabel?: string;
+  /** Hide the standalone price/quantity — inside a deal the price shows on the deal page. */
+  showItemPrice?: boolean;
+  /** Lock the variant picker to one size (deal slot slot_size_key / forced mirror size). */
+  lockedSizeKey?: string;
+  /** Restrict the variant picker to these sizes (deal slot allowed_size_keys). */
+  allowedSizeKeys?: string[];
 }) {
   // Keep hook order stable even when `item` is null (parent passes null while closed).
   const itemResolved = (item ?? ({} as MenuItem)) as MenuItem;
 
-  const defaultVariantId = item?.variants?.find((v) => v.is_default === true || v.isDefault === true)?.id;
+  const defaultVariantId =
+    item?.variants?.find((v) => v.is_default === true || v.isDefault === true)?.id ??
+    item?.variants?.[0]?.id;
+  // Inside a size-locked / size-restricted deal slot, only the allowed sizes may be picked
+  // (mirrors POS DealConfigModal). A hard lock hides the picker and pins the size.
+  const allVariants = item?.variants ?? [];
+  const restrictedVariants = lockedSizeKey
+    ? allVariants.filter((v) => (v.size_key ?? null) === lockedSizeKey)
+    : allowedSizeKeys?.length
+      ? allVariants.filter((v) => v.size_key != null && allowedSizeKeys.includes(v.size_key))
+      : allVariants;
+  const visibleVariants =
+    (lockedSizeKey || allowedSizeKeys?.length) && restrictedVariants.length === 0
+      ? allVariants
+      : restrictedVariants;
+  const lockedDefaultVariantId = lockedSizeKey ? visibleVariants[0]?.id : undefined;
   const initialSection: "variant" | "modifiers" | "addons" | "notes" = item?.variants?.length
     ? "variant"
     : item?.modifier_groups?.length
@@ -113,11 +141,21 @@ export function ItemConfigModal({
 
   const [quantity, setQuantity] = useState<number>(Math.max(1, initialValue?.quantity ?? 1));
   const [variantId, setVariantId] = useState<number | undefined>(
-    initialValue?.variant_id ?? defaultVariantId,
+    lockedDefaultVariantId ?? initialValue?.variant_id ?? defaultVariantId,
   );
   const [notes, setNotes] = useState<string>(initialValue?.notes ?? "");
   const [addons, setAddons] = useState<CartAddon[]>(initialValue?.addons ?? []);
   const [modifiers, setModifiers] = useState<CartModifier[]>(initialValue?.modifiers ?? []);
+  // Lock background scroll while the modal is open so it stays put under the user's focus.
+  useEffect(() => {
+    if (!open) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [open]);
+
   const [openSection, setOpenSection] = useState<"variant" | "modifiers" | "addons" | "notes">(
     initialSection,
   );
@@ -174,7 +212,10 @@ export function ItemConfigModal({
     [modifiers, hiddenModifierIds],
   );
 
-  const sizeKey = useMemo(() => sizeKeyForVariant(selectedVariant), [selectedVariant]);
+  const sizeKey = useMemo(
+    () => lockedSizeKey ?? sizeKeyForVariant(selectedVariant),
+    [lockedSizeKey, selectedVariant],
+  );
 
   const heatModifierGroups = useMemo(
     () =>
@@ -352,7 +393,9 @@ export function ItemConfigModal({
       const selectedInGroup = cleanModifiers.filter((selected) =>
         (group.modifiers ?? []).some((mod) => mod.id === selected.modifier_id),
       );
-      const count = selectedInGroup.length;
+      // Gate on total UNITS (not distinct options), matching POS + backend: an allow_quantity
+      // "choose 2" group is satisfied by one option at quantity 2 (e.g. double chicken).
+      const count = selectedInGroup.reduce((s, m) => s + Math.max(1, Math.floor(m.quantity ?? 1)), 0);
       const minSelect = resolveMinSelect(group, sizeKey);
       const maxSelect = resolveMaxSelect(group, sizeKey);
       if (minSelect > count) {
@@ -379,11 +422,11 @@ export function ItemConfigModal({
   const canSubmit = (itemResolved.variants ?? []).length === 0 || Boolean(variantId);
   const variantRequired = (itemResolved.variants ?? []).length > 0;
 
-  return (
+  const modal = (
     <AnimatePresence>
       {open ? (
         <motion.div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -429,19 +472,21 @@ export function ItemConfigModal({
                   <div className="flex-1 overflow-y-auto p-5 sm:p-6">
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <h3 className="text-2xl font-black leading-tight text-white">{item.name}</h3>
+                        <h3 className="text-2xl font-black leading-tight text-[var(--foreground)]">{item.name}</h3>
                         <p className="mt-2 text-sm text-[var(--muted)]">
                           {item.description || "No description."}
                         </p>
                       </div>
 
                       <div className="flex flex-col items-end">
-                        <div className="rounded-full bg-red-600 px-4 py-2 text-sm font-extrabold text-white shadow-[0_0_0_1px_rgba(0,0,0,0.2)]">
-                          Rs. {perItemTotal.toFixed(2)}
-                        </div>
-                        <div className="mt-2 text-xs text-white/60">
+                        {showItemPrice ? (
+                          <div className="rounded-full bg-red-600 px-4 py-2 text-sm font-extrabold text-white shadow-[0_0_0_1px_rgba(0,0,0,0.2)]">
+                            Rs. {perItemTotal.toFixed(2)}
+                          </div>
+                        ) : null}
+                        <div className={showItemPrice ? "mt-2 text-xs text-[var(--muted)]" : "text-xs text-[var(--muted)]"}>
                           {variantRequired && !variantId ? (
-                            <span className="text-red-300">Variant required</span>
+                            <span className="text-red-600">Variant required</span>
                           ) : (
                             "Ready to customize"
                           )}
@@ -449,40 +494,42 @@ export function ItemConfigModal({
                       </div>
                     </div>
 
-                    <div className="mt-5 flex items-center justify-between gap-4 rounded-2xl border border-[var(--border-soft)] bg-[var(--surface-2)] p-4">
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/60">
-                          Quantity
-                        </p>
-                        <p className="mt-2 text-sm text-white/80">
-                          Total: Rs. {(perItemTotal * Math.max(1, quantity)).toFixed(2)}
-                        </p>
+                    {showItemPrice ? (
+                      <div className="mt-5 flex items-center justify-between gap-4 rounded-2xl border border-[var(--border-soft)] bg-[var(--surface-2)] p-4">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[var(--muted)]">
+                            Quantity
+                          </p>
+                          <p className="mt-2 text-sm text-[var(--foreground)]">
+                            Total: Rs. {(perItemTotal * Math.max(1, quantity)).toFixed(2)}
+                          </p>
+                        </div>
+                        <Input
+                          type="number"
+                          min={1}
+                          value={quantity}
+                          onChange={(e) => setQuantity(Number(e.target.value))}
+                          className="w-[120px]"
+                        />
                       </div>
-                      <Input
-                        type="number"
-                        min={1}
-                        value={quantity}
-                        onChange={(e) => setQuantity(Number(e.target.value))}
-                        className="w-[120px]"
-                      />
-                    </div>
+                    ) : null}
 
                     {/* Step 1: Variants */}
-                    {(item.variants ?? []).length > 0 ? (
+                    {visibleVariants.length > 1 ? (
                       <div
                         className={`mt-5 rounded-2xl border border-[var(--border-soft)] bg-[var(--surface-2)] p-4 ${
                           openSection === "variant" && validationError ? "ring-1 ring-red-500/60" : ""
                         }`}
                       >
                         <div className="flex items-center justify-between gap-3">
-                          <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/60">
+                          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[var(--muted)]">
                     Step {getStepNum("variant")}: Variants{" "}
-                    {variantId ? null : <span className="ml-2 text-red-300">(required)</span>}
+                    {variantId ? null : <span className="ml-2 text-red-600">(required)</span>}
                           </p>
                         </div>
 
                         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                          {(item.variants ?? []).map((v) => {
+                          {visibleVariants.map((v) => {
                             const active = variantId === v.id;
                             const mod = v.price_modifier;
                             return (
@@ -491,16 +538,50 @@ export function ItemConfigModal({
                                 type="button"
                                 onClick={() => {
                                   setValidationError(null);
+                                  // A size change can hide size-restricted options and shrink a
+                                  // group's per-size cap (XL 3 → Large 2). Prune + re-clamp the
+                                  // selection (drop most-recently-added first), mirroring POS.
+                                  const newSize = v.size_key ?? null;
+                                  const groups = itemResolved.modifier_groups ?? [];
+                                  const allMods = groups.flatMap((g) => g.modifiers ?? []);
+                                  let next = modifiers.filter((m) => {
+                                    const md = allMods.find((x) => x.id === m.modifier_id);
+                                    return (
+                                      !md ||
+                                      !md.available_for_sizes?.length ||
+                                      !newSize ||
+                                      md.available_for_sizes.includes(newSize)
+                                    );
+                                  });
+                                  for (const g of groups) {
+                                    const max = resolveMaxSelect(g, newSize);
+                                    if (max == null) continue;
+                                    const inGroup = (id: number) => (g.modifiers ?? []).some((mod) => mod.id === id);
+                                    let units = next
+                                      .filter((m) => inGroup(m.modifier_id))
+                                      .reduce((s, m) => s + Math.max(1, Math.floor(m.quantity ?? 1)), 0);
+                                    for (let i = next.length - 1; i >= 0 && units > max; i--) {
+                                      if (!inGroup(next[i]!.modifier_id)) continue;
+                                      const cur = Math.max(1, Math.floor(next[i]!.quantity ?? 1));
+                                      const drop = Math.min(cur, units - max);
+                                      units -= drop;
+                                      next =
+                                        cur - drop > 0
+                                          ? next.map((x, xi) => (xi === i ? { ...x, quantity: cur - drop } : x))
+                                          : next.filter((_, xi) => xi !== i);
+                                    }
+                                  }
+                                  setModifiers(next);
                                   setVariantId(v.id);
                                 }}
                                 className={`relative overflow-hidden rounded-xl border px-4 py-3 text-left transition ${
                                   active
                                     ? "border-red-500/70 bg-red-500/10"
-                                    : "border-[var(--border-soft)] bg-black/20 hover:bg-black/30"
+                                    : "border-[var(--border-soft)] bg-[var(--surface-2)] hover:bg-[var(--border-soft)]"
                                 }`}
                               >
-                                <div className="text-sm font-extrabold text-white">{v.name}</div>
-                                <div className={`mt-1 text-xs font-semibold ${mod >= 0 ? "text-emerald-300" : "text-amber-300"}`}>
+                                <div className="text-sm font-extrabold text-[var(--foreground)]">{v.name}</div>
+                                <div className={`mt-1 text-xs font-semibold ${mod >= 0 ? "text-emerald-600" : "text-amber-300"}`}>
                                   {mod >= 0 ? "+" : "-"}Rs. {Math.abs(mod).toFixed(2)}
                                 </div>
                               </button>
@@ -517,7 +598,7 @@ export function ItemConfigModal({
                           openSection === "modifiers" && validationError ? "ring-1 ring-red-500/60" : ""
                         }`}
                       >
-                          <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/60">
+                          <p className="text-xs font-bold uppercase tracking-[0.22em] text-[var(--muted)]">
                           Step {getStepNum("heat")}: Heat Level
                         </p>
 
@@ -530,16 +611,16 @@ export function ItemConfigModal({
                             return (
                               <div key={group.id}>
                                 <div className="flex items-center justify-between gap-3">
-                                  <p className="text-sm font-bold text-white/90">
+                                  <p className="text-sm font-bold text-[var(--foreground)]">
                                     {group.name}{" "}
                                     {required ? (
-                                      <span className="ml-2 text-xs font-bold text-red-300">(required)</span>
+                                      <span className="ml-2 text-[13px] font-bold text-red-600">(required)</span>
                                     ) : (
-                                      <span className="ml-2 text-xs font-bold text-white/50">(optional)</span>
+                                      <span className="ml-2 text-[13px] font-bold text-[var(--muted)]">(optional)</span>
                                     )}
                                   </p>
-                                  <p className="text-xs text-white/55">
-                                    Selected: {selectedInGroup.length}
+                                  <p className="text-[13px] text-[var(--muted)]">
+                                    Selected: {selectedInGroup.reduce((s, m) => s + Math.max(1, Math.floor(m.quantity ?? 1)), 0)}
                                   </p>
                                 </div>
 
@@ -552,17 +633,17 @@ export function ItemConfigModal({
                                         key={mod.id}
                                         type="button"
                                         onClick={() => changeModifier(mod.id, !active)}
-                                        className={`flex items-center justify-between rounded-lg border px-3 py-2 text-left transition ${
+                                        className={`flex select-none items-center justify-between rounded-lg border px-3 py-2 text-left transition ${
                                           active
                                             ? "border-red-500/70 bg-red-500/10"
-                                            : "border-[var(--border-soft)] bg-black/20 hover:bg-black/30"
+                                            : "border-[var(--border-soft)] bg-[var(--surface-2)] hover:bg-[var(--border-soft)]"
                                         }`}
                                       >
-                                        <span className="text-xs font-semibold text-white/90">
+                                        <span className="text-sm font-semibold text-[var(--foreground)]">
                                           {mod.name}
                                         </span>
                                         {unitPrice > 0 ? (
-                                          <span className="ml-2 text-[11px] font-extrabold text-emerald-300">
+                                          <span className="ml-2 text-[13px] font-extrabold text-emerald-600">
                                             +Rs. {unitPrice.toFixed(2)}
                                           </span>
                                         ) : null}
@@ -584,7 +665,7 @@ export function ItemConfigModal({
                           openSection === "modifiers" && validationError ? "ring-1 ring-red-500/60" : ""
                         }`}
                       >
-                        <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/60">
+                        <p className="text-xs font-bold uppercase tracking-[0.22em] text-[var(--muted)]">
                           Step {getStepNum("signature")}: Signature
                         </p>
 
@@ -605,29 +686,41 @@ export function ItemConfigModal({
                             };
                             const freeUnitsByMod = new Map<number, number>();
                             let freeRemaining = includedFree;
-                            for (const sel of [...selectedInGroup].sort((a, b) => priceOfMod(a.modifier_id) - priceOfMod(b.modifier_id))) {
-                              const q = Math.max(1, Math.floor(sel.quantity ?? 1));
-                              const f = Math.max(0, Math.min(freeRemaining, q));
-                              freeUnitsByMod.set(sel.modifier_id, f);
-                              freeRemaining -= f;
+                            // Slot-based free allocation (matches computeModifiersPrice + POS): free the
+                            // 1st unit of each modifier (cheapest-first) before any 2nd unit, so the
+                            // per-option labels agree with the total.
+                            const sortedByPrice = [...selectedInGroup].sort(
+                              (a, b) => priceOfMod(a.modifier_id) - priceOfMod(b.modifier_id),
+                            );
+                            const maxQty = selectedInGroup.reduce(
+                              (mx, s) => Math.max(mx, Math.max(1, Math.floor(s.quantity ?? 1))),
+                              0,
+                            );
+                            outer: for (let slot = 0; slot < maxQty; slot++) {
+                              for (const sel of sortedByPrice) {
+                                if (freeRemaining <= 0) break outer;
+                                if (Math.max(1, Math.floor(sel.quantity ?? 1)) <= slot) continue;
+                                freeUnitsByMod.set(sel.modifier_id, (freeUnitsByMod.get(sel.modifier_id) ?? 0) + 1);
+                                freeRemaining -= 1;
+                              }
                             }
                             return (
                               <div key={group.id}>
                                 <div className="flex items-center justify-between gap-3">
-                                  <p className="text-sm font-bold text-white/90">
+                                  <p className="text-sm font-bold text-[var(--foreground)]">
                                     {group.name}{" "}
                                     {required ? (
-                                      <span className="ml-2 text-xs font-bold text-red-300">(required)</span>
+                                      <span className="ml-2 text-[13px] font-bold text-red-600">(required)</span>
                                     ) : (
-                                      <span className="ml-2 text-xs font-bold text-white/50">(optional)</span>
+                                      <span className="ml-2 text-[13px] font-bold text-[var(--muted)]">(optional)</span>
                                     )}
                                   </p>
-                                  <p className="text-xs text-white/55">
-                                    Selected: {selectedInGroup.length}
+                                  <p className="text-[13px] text-[var(--muted)]">
+                                    Selected: {selectedInGroup.reduce((s, m) => s + Math.max(1, Math.floor(m.quantity ?? 1)), 0)}
                                   </p>
                                 </div>
                                 {includedFree > 0 ? (
-                                  <p className="mt-1 text-[11px] font-semibold text-emerald-300">
+                                  <p className="mt-1 text-[13px] font-semibold text-emerald-600">
                                     First {includedFree} free — extras charged at the price shown.
                                   </p>
                                 ) : null}
@@ -642,19 +735,23 @@ export function ItemConfigModal({
                                     const active = !!current;
                                     const unitPrice = resolveModifierUnitPrice(mod, sizeKey);
                                     const modQty = Math.max(1, Math.floor(current?.quantity ?? 1));
-                                    // Quantity stepper only where repeating is meaningful (priced,
-                                    // free-allowance, or a "choose N" group) — not free toggles
-                                    // like "Remove a filling" / "Add a Sauce".
+                                    // Quantity stepper (matching POS ItemConfigModal): repeating a unit
+                                    // is meaningful for a priced option, a first-N-free allowance, a
+                                    // required (min>0) group, or an explicit allow_quantity group. The
+                                    // max caps on TOTAL UNITS, so "2× Mozzarella" fills a choose-1–2 group.
                                     const canRepeat =
                                       active &&
-                                      (unitPrice > 0 || includedFree > 0 || resolveMinSelect(group, sizeKey) > 0 || !!group.allow_quantity);
+                                      (unitPrice > 0 ||
+                                        includedFree > 0 ||
+                                        resolveMinSelect(group, sizeKey) > 0 ||
+                                        !!group.allow_quantity);
                                     return (
                                       <div
                                         key={mod.id}
-                                        className={`flex flex-col gap-1 rounded-lg border px-3 py-2 transition ${
+                                        className={`flex select-none flex-col gap-1 rounded-lg border px-3 py-2 transition ${
                                           active
                                             ? "border-red-500/70 bg-red-500/10"
-                                            : "border-[var(--border-soft)] bg-black/20 hover:bg-black/30"
+                                            : "border-[var(--border-soft)] bg-[var(--surface-2)] hover:bg-[var(--border-soft)]"
                                         }`}
                                       >
                                         <button
@@ -662,22 +759,22 @@ export function ItemConfigModal({
                                           onClick={() => changeModifier(mod.id, !active)}
                                           className="flex items-center justify-between text-left"
                                         >
-                                          <span className="text-xs font-semibold text-white/90">{mod.name}</span>
+                                          <span className="text-sm font-semibold text-[var(--foreground)]">{mod.name}</span>
                                           {(() => {
                                             if (unitPrice <= 0) return null;
                                             const freeUnits = freeUnitsByMod.get(mod.id) ?? 0;
                                             if (active) {
                                               const charged = modQty - freeUnits;
                                               return charged <= 0 ? (
-                                                <span className="ml-2 text-[11px] font-extrabold text-emerald-300">Included</span>
+                                                <span className="ml-2 text-[13px] font-extrabold text-emerald-600">Included</span>
                                               ) : (
-                                                <span className="ml-2 text-[11px] font-extrabold text-emerald-300">+Rs. {(unitPrice * charged).toFixed(2)}</span>
+                                                <span className="ml-2 text-[13px] font-extrabold text-emerald-600">+Rs. {(unitPrice * charged).toFixed(2)}</span>
                                               );
                                             }
                                             return freeRemaining > 0 ? (
-                                              <span className="ml-2 text-[11px] font-extrabold text-emerald-300">Free</span>
+                                              <span className="ml-2 text-[13px] font-extrabold text-emerald-600">Free</span>
                                             ) : (
-                                              <span className="ml-2 text-[11px] font-extrabold text-emerald-300">+Rs. {unitPrice.toFixed(2)}</span>
+                                              <span className="ml-2 text-[13px] font-extrabold text-emerald-600">+Rs. {unitPrice.toFixed(2)}</span>
                                             );
                                           })()}
                                         </button>
@@ -687,18 +784,18 @@ export function ItemConfigModal({
                                               type="button"
                                               aria-label="Decrease quantity"
                                               onClick={() => setModifierQuantity(mod.id, modQty - 1)}
-                                              className="h-6 w-6 rounded-full border border-[var(--border-soft)] text-sm font-bold text-white/80 hover:bg-black/30"
+                                              className="h-6 w-6 rounded-full border border-[var(--border-soft)] text-sm font-bold text-[var(--foreground)] hover:bg-[var(--surface-2)]"
                                             >
                                               −
                                             </button>
-                                            <span className="min-w-[1.25rem] text-center text-xs font-bold tabular-nums text-white/90">
+                                            <span className="min-w-[1.25rem] text-center text-xs font-bold tabular-nums text-[var(--foreground)]">
                                               {modQty}
                                             </span>
                                             <button
                                               type="button"
                                               aria-label="Increase quantity"
                                               onClick={() => setModifierQuantity(mod.id, modQty + 1)}
-                                              className="h-6 w-6 rounded-full border border-[var(--border-soft)] text-sm font-bold text-white/80 hover:bg-black/30"
+                                              className="h-6 w-6 rounded-full border border-[var(--border-soft)] text-sm font-bold text-[var(--foreground)] hover:bg-[var(--surface-2)]"
                                             >
                                               +
                                             </button>
@@ -722,7 +819,7 @@ export function ItemConfigModal({
                           openSection === "addons" && validationError ? "ring-1 ring-red-500/60" : ""
                         }`}
                       >
-                        <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/60">
+                        <p className="text-xs font-bold uppercase tracking-[0.22em] text-[var(--muted)]">
                           Step {getStepNum("addons")}: Add-ons
                         </p>
 
@@ -733,11 +830,11 @@ export function ItemConfigModal({
                             return (
                               <div
                                 key={a.id}
-                                className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-soft)] bg-black/10 px-4 py-3"
+                                className="flex items-center justify-between gap-3 rounded-xl border border-[var(--border-soft)] bg-[var(--surface-2)] px-4 py-3"
                               >
                                 <div className="min-w-0">
-                                  <p className="truncate text-sm font-semibold text-white/90">{a.name}</p>
-                                  <p className="mt-1 text-xs font-semibold text-emerald-300">
+                                  <p className="truncate text-sm font-semibold text-[var(--foreground)]">{a.name}</p>
+                                  <p className="mt-1 text-xs font-semibold text-emerald-600">
                                     +Rs. {a.price.toFixed(2)} each
                                   </p>
                                 </div>
@@ -746,17 +843,17 @@ export function ItemConfigModal({
                                   <button
                                     type="button"
                                     onClick={() => setAddonQuantity(a.id, qty - 1)}
-                                    className="h-9 w-9 rounded-lg border border-white/10 bg-black/30 text-lg font-black text-white/90 transition hover:bg-black/50"
+                                    className="h-9 w-9 rounded-lg border border-[var(--border-soft)] bg-[var(--surface-2)] text-lg font-black text-[var(--foreground)] transition hover:bg-[var(--border-soft)]"
                                   >
                                     -
                                   </button>
-                                  <div className="h-9 min-w-[40px] rounded-lg border border-white/10 bg-black/20 text-center leading-9 text-sm font-extrabold text-white">
+                                  <div className="h-9 min-w-[40px] rounded-lg border border-[var(--border-soft)] bg-[var(--surface-2)] text-center leading-9 text-sm font-extrabold text-[var(--foreground)]">
                                     {qty}
                                   </div>
                                   <button
                                     type="button"
                                     onClick={() => setAddonQuantity(a.id, qty + 1)}
-                                    className="h-9 w-9 rounded-lg border border-white/10 bg-black/30 text-lg font-black text-white/90 transition hover:bg-black/50"
+                                    className="h-9 w-9 rounded-lg border border-[var(--border-soft)] bg-[var(--surface-2)] text-lg font-black text-[var(--foreground)] transition hover:bg-[var(--border-soft)]"
                                   >
                                     +
                                   </button>
@@ -774,27 +871,27 @@ export function ItemConfigModal({
                         openSection === "notes" && validationError ? "ring-1 ring-red-500/60" : ""
                       }`}
                     >
-                      <p className="text-xs font-bold uppercase tracking-[0.22em] text-white/60">
+                      <p className="text-xs font-bold uppercase tracking-[0.22em] text-[var(--muted)]">
                         Step {getStepNum("notes")}: Special Instructions (Optional)
                       </p>
                       <textarea
                         value={notes}
                         onChange={(e) => setNotes(e.target.value)}
                         rows={4}
-                        className="mt-3 w-full resize-none rounded-xl border border-[var(--border-soft)] bg-black/20 px-3 py-2 text-sm text-white/90 outline-none ring-red-500/40 placeholder:text-white/30 focus:ring-2"
+                        className="mt-3 w-full resize-none rounded-xl border border-[var(--border-soft)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--foreground)] outline-none ring-red-500/40 placeholder:text-[var(--muted)] focus:ring-2"
                         placeholder="Add any special instructions..."
                       />
                     </div>
 
                     {validationError ? (
-                      <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                      <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-700">
                         {validationError}
                       </div>
                     ) : null}
                   </div>
 
                   {/* Sticky footer actions */}
-                  <div className="border-t border-white/10 bg-[var(--surface-2)] p-4">
+                  <div className="border-t border-[var(--border-soft)] bg-[var(--surface-2)] p-4">
                     <div className="flex justify-end gap-3">
                       <Button variant="secondary" onClick={onClose} className="min-w-[120px]">
                         Cancel
@@ -804,7 +901,7 @@ export function ItemConfigModal({
                         disabled={!canSubmit}
                         className="min-w-[160px]"
                       >
-                        Add to cart
+                        {confirmLabel}
                       </Button>
                     </div>
                   </div>
@@ -816,4 +913,8 @@ export function ItemConfigModal({
       ) : null}
     </AnimatePresence>
   );
+
+  // Portal to <body> so a transformed ancestor (route-transition motion.div) can't trap the
+  // `position: fixed` overlay — otherwise it would centre in the page, not the viewport.
+  return typeof document === "undefined" ? null : createPortal(modal, document.body);
 }

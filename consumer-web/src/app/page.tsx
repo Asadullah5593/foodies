@@ -2,16 +2,18 @@
 
 import { motion } from "framer-motion";
 import Image from "next/image";
+import Link from "next/link";
 import { useMemo } from "react";
-import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
+import { BrandCard } from "@/components/brand-card";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { AppShell, Button, Card, Loader } from "@/components/ui";
 import { getTenantBrands } from "@/lib/api/consumer";
-import { toImageUrl } from "@/lib/api/client";
-import type { Brand } from "@/lib/api/types";
-import { useSessionStore } from "@/lib/store/session-store";
+import { useEnterBrand } from "@/lib/hooks/use-enter-brand";
+
+/** How many brands the homepage previews before offering "View all brands". */
+const HOME_BRAND_LIMIT = 8;
 
 const HOME_FEATURE_BLURBS: Array<{ icon: string; title: string; body: string; detail?: string }> = [
   {
@@ -32,8 +34,7 @@ const HOME_FEATURE_BLURBS: Array<{ icon: string; title: string; body: string; de
 ];
 
 export default function Home() {
-  const router = useRouter();
-  const setBrandId = useSessionStore((s) => s.setBrandId);
+  const enterBrand = useEnterBrand();
 
   const brandsQuery = useQuery({
     queryKey: ["tenant-brands"],
@@ -45,12 +46,8 @@ export default function Home() {
   });
 
   const brands = useMemo(() => brandsQuery.data ?? [], [brandsQuery.data]);
-  const topBrands = useMemo(() => brands.slice(0, 3), [brands]);
-
-  const enterBrand = (brand: Brand) => {
-    setBrandId(brand.id);
-    router.push("/menu");
-  };
+  const homeBrands = useMemo(() => brands.slice(0, HOME_BRAND_LIMIT), [brands]);
+  const hasMoreBrands = brands.length > HOME_BRAND_LIMIT;
 
   return (
     <AppShell>
@@ -233,84 +230,62 @@ export default function Home() {
             </div>
           ) : null}
 
-          {topBrands.length ? (
-            <div className="mt-6 grid gap-4 md:mt-10 md:grid-cols-3 md:gap-5">
-              {topBrands.map((b) => (
-                <div
-                  key={b.id}
-                  className="overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] shadow-sm"
-                >
-                  <div className="relative h-28 bg-[var(--surface-2)] md:h-44">
-                    <Image
-                      src="/Banner_02.jpg.jpeg"
-                      alt=""
-                      fill
-                      sizes="(max-width: 768px) 100vw, 33vw"
-                      className="object-cover opacity-90"
-                    />
-                  </div>
-                  <div className="relative -mt-8 px-4 pb-5 md:-mt-10 md:px-6 md:pb-6">
-                    <div className="relative mx-auto h-28 w-28 rounded-full border border-[var(--border-soft)] bg-white p-2 shadow-sm md:h-40 md:w-40 md:p-3">
-                      {b.logo_url ? (
-                        <Image
-                          src={toImageUrl(b.logo_url)}
-                          alt={b.name}
-                          fill
-                          unoptimized
-                          sizes="160px"
-                          className="object-contain p-1"
-                        />
-                      ) : (
-                        <span className="flex h-full items-center justify-center text-3xl font-black text-red-600">
-                          {(b.name || "?").slice(0, 1)}
-                        </span>
-                      )}
-                    </div>
-                    <h3 className="mt-3 text-center text-base font-black text-[var(--foreground)] md:mt-4 md:text-lg">
-                      {b.name}
-                    </h3>
-                    <button
-                      type="button"
-                      onClick={() => enterBrand(b)}
-                      className="mx-auto mt-4 flex items-center justify-center gap-2.5 text-sm font-black text-red-600 hover:underline"
-                    >
-                      View Menu
-                      <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        width="22"
-                        height="22"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.25"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        aria-hidden="true"
-                        className="shrink-0 text-red-600"
-                      >
-                        <path d="M5 12h14M13 6l6 6-6 6" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
+          {homeBrands.length ? (
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 md:mt-10 md:grid-cols-3 md:gap-5 lg:grid-cols-4">
+              {homeBrands.map((b) => (
+                <BrandCard key={b.id} brand={b} />
               ))}
             </div>
           ) : null}
 
           <div className="mt-6 flex items-center justify-center md:mt-8">
-            <div className="inline-flex w-full max-w-sm items-center justify-center gap-3 rounded-full border border-[var(--border-soft)] bg-[var(--surface)] px-5 py-2.5 text-xs font-black tracking-wide text-[var(--muted)] md:w-auto md:px-6 md:py-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--surface-2)] text-[var(--muted)] md:h-11 md:w-11">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
-                  <path
-                    d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinejoin="round"
-                  />
+            {hasMoreBrands ? (
+              <Link
+                href="/brands"
+                className="inline-flex w-full max-w-sm items-center justify-center gap-3 rounded-full bg-zinc-900 px-6 py-3 text-sm font-black uppercase tracking-wide text-white transition-colors hover:bg-zinc-800 md:w-auto md:px-8"
+              >
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-white/20 bg-white/10 md:h-11 md:w-11">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                View all {brands.length} brands
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.25"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                  className="shrink-0"
+                >
+                  <path d="M5 12h14M13 6l6 6-6 6" />
                 </svg>
-              </span>
-              More brands coming soon
-            </div>
+              </Link>
+            ) : (
+              <div className="inline-flex w-full max-w-sm items-center justify-center gap-3 rounded-full border border-[var(--border-soft)] bg-[var(--surface)] px-5 py-2.5 text-xs font-black tracking-wide text-[var(--muted)] md:w-auto md:px-6 md:py-3">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--surface-2)] text-[var(--muted)] md:h-11 md:w-11">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M4 4h7v7H4V4zm9 0h7v7h-7V4zM4 13h7v7H4v-7zm9 0h7v7h-7v-7z"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </span>
+                More brands coming soon
+              </div>
+            )}
           </div>
         </section>
 
@@ -372,8 +347,8 @@ export default function Home() {
                   <Button
                     type="button"
                     className="rounded-full bg-zinc-900 px-5 py-2.5 text-xs font-black text-white hover:bg-zinc-800 md:px-7 md:py-3 md:text-sm"
-                    onClick={() => (topBrands[0] ? enterBrand(topBrands[0]) : null)}
-                    disabled={!topBrands.length}
+                    onClick={() => (homeBrands[0] ? enterBrand(homeBrands[0]) : null)}
+                    disabled={!homeBrands.length}
                   >
                     Order Now →
                   </Button>
