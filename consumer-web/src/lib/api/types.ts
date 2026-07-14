@@ -74,6 +74,43 @@ export type Addon = {
   price: number;
 };
 
+/**
+ * A single slot of a deal (mirrors the POS DealSlot shape). `choice_items` are full MenuItems
+ * so each pick can be customized (variants/modifiers) exactly like an à-la-carte item.
+ */
+export type DealSlot = {
+  slot_index: number;
+  /** "fixed" | "choice_category" | "choice_list". */
+  type: string;
+  quantity: number;
+  /** Optional slot: add 0..quantity units; picking none is valid. */
+  optional?: boolean;
+  allow_customization?: boolean;
+  /** Lock this slot's chosen item to one variant size (e.g. "12" = All 12" pizzas). */
+  slot_size_key?: string | null;
+  /** Whitelist of variant sizeKeys allowed in this slot; null = any size. */
+  allowed_size_keys?: string[] | null;
+  /** This slot must mirror the referenced slot's pick (BOGO 2nd pizza); null = independent. */
+  mirror_slot_index?: number | null;
+  mirror_match_size?: boolean;
+  mirror_match_category?: boolean;
+  /** Per-item upgrade surcharge keyed by menu_item_id (e.g. {"42":100} = "+Rs100 upgrade"). */
+  slot_surcharges?: Record<string, number> | null;
+  source_menu_item_id?: number | null;
+  choice_items?: MenuItem[];
+};
+
+/** Deal composition (present only on deal items). Browse-only preview on web; ordering is app-only. */
+export type Deal = {
+  deal_menu_item_id: number;
+  name: string;
+  price: number;
+  /** "bogo" = dynamic (full + cheaper-at-percent); null/"fixed" = fixed bundle price. */
+  pricing_mode?: string | null;
+  bogo_get_percent?: number | null;
+  slots: DealSlot[];
+};
+
 export type MenuItem = {
   id: number;
   name: string;
@@ -86,9 +123,15 @@ export type MenuItem = {
   available_for_order_types?: string[] | null;
   /** From API: extra photos for product page gallery (ordered). */
   gallery_image_urls?: string[];
+  /** Catalog category id (used for deal BOGO pair-matching). */
+  category_id?: number | null;
+  /** Optional catalog label (e.g. "Signature"), used for deal BOGO pair-matching. */
+  label?: string | null;
   variants: Variant[];
   addons: Addon[];
   modifier_groups: ModifierGroup[];
+  /** Present only for deal items — the slot composition (interactive configurator). */
+  deal?: Deal | null;
 };
 
 /** Lightweight item returned by the tenant-wide menu search (header autocomplete). */

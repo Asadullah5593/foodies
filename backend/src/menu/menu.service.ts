@@ -1693,6 +1693,32 @@ export class MenuService {
         }
 
         const base = Number(item.basePrice ?? 0);
+
+        // A deal's slot composition (fixed items + choose-from-category / choice-list
+        // options) is only produced by the branch-scoped builder. The tenant/brand
+        // response otherwise omits it, so deal items look optionless on consumer web.
+        // Resolve any branch that carries this item and reuse that builder to attach
+        // the same read-only `deal` object the app already receives. This is additive
+        // (non-deal items get no `deal` field) and does not alter the branch endpoint.
+        let deal: Awaited<ReturnType<MenuService['getDealByMenuItemId']>> = null;
+        const dealComponentCount = await this.dealComponentRepo.count({
+            where: { menuItemId: item.id },
+        });
+        if (dealComponentCount > 0) {
+            const representativeBmi = await this.branchMenuItemRepo.findOne({
+                where: { menuItemId: item.id },
+                select: ['branchId'],
+            });
+            if (representativeBmi) {
+                deal = await this.getDealByMenuItemId(
+                    item.id,
+                    representativeBmi.branchId,
+                    undefined,
+                    'app',
+                );
+            }
+        }
+
         return {
             id: item.id,
             name: item.name,
@@ -1764,6 +1790,7 @@ export class MenuService {
                             })),
                     })),
             ),
+            ...(deal ? { deal } : {}),
         };
     }
 
