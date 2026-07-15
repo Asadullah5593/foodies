@@ -3272,6 +3272,8 @@ export class OrdersService {
             .leftJoinAndSelect('o.rider', 'rider')
             .leftJoinAndSelect('o.orderItems', 'oi')
             .leftJoinAndSelect('oi.menuItem', 'mi')
+            // Tenders power the admin list's Payment column (method + paid state).
+            .leftJoinAndSelect('o.payments', 'payments')
             .orderBy('o.createdAt', 'DESC')
             .take(50);
 
