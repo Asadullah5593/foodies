@@ -130,6 +130,19 @@ function splitModifiers(modList: NonNullable<InvoiceLineVM['modifiers']>) {
   return { roots, children };
 }
 
+/**
+ * What a modifier actually bills. The group's included allowance (first-N-free)
+ * makes free_quantity units free, so only (quantity - free_quantity) are charged
+ * — a topping picked 3× with 1 included bills 2 × unit_price. Fully-included
+ * picks bill 0, which prints as 0.00 rather than an empty cell.
+ */
+function modifierBilling(m: NonNullable<InvoiceLineVM['modifiers']>[number]) {
+  const qty = Math.max(1, Number(m.quantity ?? 1));
+  const free = Math.min(qty, Math.max(0, Number(m.free_quantity ?? 0)));
+  const unit = Number(m.unit_price ?? 0);
+  return { qty, free, unit, amount: (qty - free) * unit };
+}
+
 /** Flexible-rows item body (name × qty on the left, price on the right). */
 function itemsHtml(
   order: InvoiceOrderVM,
@@ -149,7 +162,8 @@ function itemsHtml(
               cfg.showItemNotes && l.notes
                 ? `<div class="row sub sub2" data-field="showItemNotes"><span class="l muted">Note: ${esc(l.notes)}</span><span class="r"></span></div>`
                 : '';
-            return `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${Number(l.unit_price) === 0 ? '—' : money(l.subtotal)}</span></div>${note}`;
+            // Components priced inside the bundle bill 0.00 rather than a dash.
+            return `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${money(l.subtotal)}</span></div>${note}`;
           })
           .join('');
         return row(`<strong>${esc(name)}</strong>`, money(dealTotal)) + sub;
@@ -177,20 +191,23 @@ function itemsHtml(
             : '';
           const modList = l.modifiers ?? [];
           const { roots, children } = splitModifiers(modList);
-          const modRow = (m: (typeof modList)[number], nested: boolean) =>
-            nested
+          const modRow = (m: (typeof modList)[number], nested: boolean) => {
+            const b = modifierBilling(m);
+            const qty = b.qty !== 1 ? ` × ${b.qty}` : '';
+            return nested
               ? row(
-                  `<span class="sub2-l">↳ ${esc(m.name ?? 'Modifier')}</span>`,
-                  Number(m.unit_price) ? `${money(m.unit_price)}` : 'Included',
+                  `<span class="sub2-l">↳ ${esc(m.name ?? 'Modifier')}${qty}</span>`,
+                  money(b.amount),
                   'sub sub2',
                   'showModifiers',
                 )
               : row(
-                  `<span class="sub-l">+ ${esc(m.group ? `${m.group}: ` : '')}${esc(m.name ?? 'Modifier')}</span>`,
-                  Number(m.unit_price) ? money(m.unit_price) : '',
+                  `<span class="sub-l">+ ${esc(m.group ? `${m.group}: ` : '')}${esc(m.name ?? 'Modifier')}${qty}</span>`,
+                  money(b.amount),
                   'sub',
                   'showModifiers',
                 );
+          };
           const mods = cfg.showModifiers
             ? roots
                 .map((m) =>
@@ -244,12 +261,12 @@ function itemsTableHtml(
         const head = cell(`<strong>${esc(name)}</strong>`, '', '', num(dealTotal), 'dealrow');
         const comps = g.lines
           .map((l) => {
-            const free = Number(l.unit_price) === 0;
+            // Components priced inside the bundle bill 0.00 rather than a dash.
             const compRow = cell(
               `<span class="ind">${esc(l.name_snapshot ?? 'Item')}${variantHtml(l.variant_name)}</span>`,
               String(l.quantity),
-              free ? '—' : num(l.unit_price),
-              free ? '—' : num(l.subtotal),
+              num(l.unit_price),
+              num(l.subtotal),
             );
             const note = cfg.showItemNotes && l.notes ? noteRow(l.notes) : '';
             return compRow + note;
@@ -285,17 +302,19 @@ function itemsTableHtml(
             : '';
           const modList = l.modifiers ?? [];
           const { roots, children } = splitModifiers(modList);
-          const modCell = (m: (typeof modList)[number], nested: boolean) =>
-            cell(
+          const modCell = (m: (typeof modList)[number], nested: boolean) => {
+            const b = modifierBilling(m);
+            return cell(
               nested
                 ? `<span class="ind2">↳ ${esc(m.name ?? 'Modifier')}</span>`
                 : `<span class="ind">+ ${esc(m.group ? `${m.group}: ` : '')}${esc(m.name ?? 'Modifier')}</span>`,
-              '',
-              '',
-              Number(m.unit_price) ? num(m.unit_price) : nested ? 'Incl.' : '',
+              String(b.qty),
+              num(b.unit),
+              num(b.amount),
               '',
               'showModifiers',
             );
+          };
           const mods = cfg.showModifiers
             ? roots
                 .map((m) =>
@@ -526,6 +545,34 @@ function receiptLogoBody(
 }
 
 /**
+ * "Bordered Logo Receipt" — Bordered Bill's top (normal centered logo, brand
+ * name, fully bordered meta box) over Logo Receipt's body (underlined
+ * Product | Qty | Rate | Total table and dash-framed totals). Logo Receipt's big
+ * centered Order # band is deliberately dropped: the bordered meta box already
+ * carries order no / invoice no / type / table, so the band would repeat them.
+ */
+function receiptBorderedLogoBody(
+  data: InvoiceVM,
+  cfg: InvoiceTemplateConfig,
+  money: (n: unknown) => string,
+): string {
+  const multi = (data.orders?.length ?? 0) > 1;
+  const ordersHtml = (data.orders ?? [])
+    .map(
+      (o) => `
+        <div class="order">
+          ${multi ? brandBlockHtml(o, cfg) : ''}
+          ${metaTableHtml(o, cfg)}
+          ${itemsTableHtml(o, cfg, { item: 'Product', qty: 'Qty', rate: 'Rate', amount: 'Total' })}
+          ${orderNoteHtml(o, cfg)}
+          ${totalsHtml(o, cfg, money, 'Grand Total')}
+        </div>`,
+    )
+    .join('<div class="rule"></div>');
+  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(cfg)}`;
+}
+
+/**
  * "Modern Minimal" — an original design: small centered logo, hairline rules,
  * uppercase letter-spaced section labels and airy borderless item rows. A clean,
  * boutique-café feel.
@@ -616,11 +663,13 @@ export function renderInvoiceHtml(
       ? billBorderedBody(data, cfg, money)
       : layout === 'receipt_logo'
         ? receiptLogoBody(data, cfg, money)
-        : layout === 'thermal_modern'
-          ? modernBody(data, cfg, money)
-          : layout === 'thermal_classic'
-            ? classicMonoBody(data, cfg, money)
-            : classicBody(data, cfg, money);
+        : layout === 'receipt_bordered_logo'
+          ? receiptBorderedLogoBody(data, cfg, money)
+          : layout === 'thermal_modern'
+            ? modernBody(data, cfg, money)
+            : layout === 'thermal_classic'
+              ? classicMonoBody(data, cfg, money)
+              : classicBody(data, cfg, money);
   // Thermal receipts get a trailing "feed" spacer so the final line clears the
   // gap between the print head and the tear/cutter bar. Without it, printers
   // with a deeper gap (e.g. SPEED-X 300U) leave the last line stuck inside the
@@ -640,6 +689,7 @@ export function renderInvoiceHtml(
 const LAYOUT_BASE_PX: Record<InvoiceLayout, number> = {
   bill_bordered: 11,
   receipt_logo: 11,
+  receipt_bordered_logo: 11,
   thermal_modern: 11,
   thermal_classic: 12,
   thermal_58mm: 10,
@@ -724,6 +774,22 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
       .inv-root.inv-bill_bordered .itbl th { font-weight: 700; }
       .inv-root.inv-bill_bordered .totals { width: 78%; margin-left: auto; }
       .inv-root.inv-bill_bordered .row.grand { font-size: 1.2em; }
+      @page { size: ${widthMm}mm auto; margin: 0; }
+    `;
+  }
+  if (layout === 'receipt_bordered_logo') {
+    // Bordered Bill's meta box over Logo Receipt's table/totals treatment. The
+    // logo and brand name keep the base sizes (Bordered Bill's top), so this
+    // skin deliberately omits receipt_logo's oversized .logo / .biz rules.
+    return `${base}
+      .inv-root.inv-receipt_bordered_logo { width: ${widthMm}mm; max-width: ${widthMm}mm; font-family: Arial, system-ui, sans-serif; font-size: ${rootPx}px; padding: 6px; }
+      .inv-root.inv-receipt_bordered_logo .metatbl { border: 1px solid #000; padding: 4px 6px; }
+      .inv-root.inv-receipt_bordered_logo .metatbl td { padding: 1px 4px; }
+      .inv-root.inv-receipt_bordered_logo .itbl th { border-bottom: 1px solid #000; font-weight: 700; }
+      .inv-root.inv-receipt_bordered_logo .itbl tbody tr td { border-bottom: 1px dotted #bbb; }
+      .inv-root.inv-receipt_bordered_logo .totals { border-top: 1px dashed #000; margin-top: 6px; padding-top: 4px; }
+      .inv-root.inv-receipt_bordered_logo .row.grand { border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 4px 0; font-size: 1.2em; }
+      .inv-root.inv-receipt_bordered_logo .foot { margin-top: 12px; }
       @page { size: ${widthMm}mm auto; margin: 0; }
     `;
   }
@@ -894,8 +960,9 @@ export function richSampleInvoice(): InvoiceVM {
             modifiers: [
               { group: 'Base', name: 'Classic Hand-Tossed', unit_price: 0 },
               { group: 'Sauce', name: 'Smoky BBQ', unit_price: 0 },
-              { group: 'Extra Toppings', name: 'Grilled Chicken', unit_price: 250 },
-              { group: 'Extra Toppings', name: 'Jalapeños', unit_price: 120 },
+              { group: 'Extra Toppings', name: 'Grilled Chicken', unit_price: 250, quantity: 1 },
+              // Picked twice with one included by the group allowance: bills 1 × 120.
+              { group: 'Extra Toppings', name: 'Jalapeños', unit_price: 120, quantity: 2, free_quantity: 1 },
               { group: 'Make it a Meal', name: 'Add a 345ml Drink', unit_price: 150 },
               {
                 group: 'Choose your Drink',

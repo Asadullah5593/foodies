@@ -6,6 +6,7 @@
 export type InvoiceLayout =
   | 'bill_bordered'
   | 'receipt_logo'
+  | 'receipt_bordered_logo'
   | 'thermal_modern'
   | 'thermal_classic'
   | 'thermal_58mm'
@@ -24,6 +25,11 @@ export const LAYOUT_META: Record<
     label: 'Logo Receipt · 80mm',
     widthMm: 80,
     description: 'Takeaway: big brand logo, large Order # band, thank-you footer',
+  },
+  receipt_bordered_logo: {
+    label: 'Bordered Logo Receipt · 80mm',
+    widthMm: 80,
+    description: "Bordered Bill's logo header and meta box, with Logo Receipt's item table and totals",
   },
   thermal_modern: {
     label: 'Modern Minimal · 80mm',
@@ -214,7 +220,19 @@ export type InvoiceLineVM = {
   deal_slot_index?: number | null;
   deal_name?: string | null;
   addons?: Array<{ name?: string | null; quantity: number; unit_price: number; subtotal?: number }>;
-  modifiers?: Array<{ name?: string | null; unit_price: number; group?: string | null; triggered_by?: string | null }>;
+  /**
+   * quantity/free_quantity mirror order_item_modifiers: the group's included
+   * allowance (first-N-free) is billed as (quantity - free_quantity) units.
+   * Both optional — older payloads omit them and fall back to a single unit.
+   */
+  modifiers?: Array<{
+    name?: string | null;
+    unit_price: number;
+    group?: string | null;
+    triggered_by?: string | null;
+    quantity?: number;
+    free_quantity?: number;
+  }>;
 };
 
 export type InvoiceOrderVM = {

@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { renderInvoiceHtml, sampleInvoice, richSampleInvoice } from './renderInvoice';
-import { DEFAULT_INVOICE_TEMPLATE_CONFIG, InvoiceTemplateConfig, InvoiceLayout } from './types';
+import {
+  DEFAULT_INVOICE_TEMPLATE_CONFIG,
+  InvoiceTemplateConfig,
+  InvoiceLayout,
+  InvoiceLineVM,
+} from './types';
 
 const cfg = (over: Partial<InvoiceTemplateConfig>) => ({
   ...DEFAULT_INVOICE_TEMPLATE_CONFIG,
@@ -13,6 +18,7 @@ const render = (over: Partial<InvoiceTemplateConfig>, layout: InvoiceLayout = 't
 const ALL_LAYOUTS: InvoiceLayout[] = [
   'bill_bordered',
   'receipt_logo',
+  'receipt_bordered_logo',
   'thermal_modern',
   'thermal_classic',
   'thermal_58mm',
@@ -317,7 +323,7 @@ describe('conditional meal-drink nesting', () => {
     expect(html.indexOf('Add a 345ml Drink')).toBeLessThan(html.indexOf('↳ Raspberry Milkshake'));
   });
 
-  it('shows Included for a free triggered pick and stays flat when trigger absent', () => {
+  it('prices a free triggered pick at zero and stays flat when trigger absent', () => {
     const data = sampleInvoice();
     data.orders[0].items = [
       {
@@ -333,9 +339,100 @@ describe('conditional meal-drink nesting', () => {
       },
     ];
     const { html } = renderInvoiceHtml(data, 'thermal_modern', null);
-    expect(html).toContain('Included');
+    // Free picks print 0.00 rather than the word "Included".
+    expect(html).not.toContain('Included');
+    expect(html).toContain('Rs. 0.00');
     expect(html).toContain('↳ Sprite 345ml');
     expect(html).toContain('Orphan');
     expect(html).not.toContain('↳ Orphan');
+  });
+});
+
+describe('free lines print zero, never a blank or a dash', () => {
+  const lineWith = (modifiers: NonNullable<InvoiceLineVM['modifiers']>) => {
+    const data = sampleInvoice();
+    data.orders[0].items = [
+      { name_snapshot: 'Hot Box', quantity: 1, unit_price: 999, subtotal: 999, modifiers },
+    ];
+    return data;
+  };
+
+  it('gives a free top-level modifier a zero Rate and Amount, not an empty cell', () => {
+    const data = lineWith([{ group: 'Base', name: 'Classic Hand-Tossed', unit_price: 0 }]);
+    const { html } = renderInvoiceHtml(data, 'bill_bordered', null);
+    const row = html.slice(html.indexOf('Classic Hand-Tossed'));
+    const cells = row.slice(0, row.indexOf('</tr>'));
+    // Qty 1, Rate 0.00, Amount 0.00 — every column populated.
+    expect(cells).toContain('<td class="cq">1</td>');
+    expect(cells).toContain('<td class="cr">0.00</td>');
+    expect(cells).toContain('<td class="ca">0.00</td>');
+  });
+
+  it('prices a deal component at zero instead of an em-dash', () => {
+    const { html } = renderInvoiceHtml(richSampleInvoice(), 'bill_bordered', null);
+    const deal = html.slice(html.indexOf('Large Pepperoni Pizza'));
+    const cells = deal.slice(0, deal.indexOf('</tr>'));
+    expect(cells).not.toContain('—');
+    expect(cells).toContain('0.00');
+  });
+
+  it('bills only the units beyond the group allowance (first-N-free)', () => {
+    // Picked 3×, 1 included by the group => 2 charged at 120 = 240.
+    const data = lineWith([
+      { group: 'Extra Toppings', name: 'Jalapeños', unit_price: 120, quantity: 3, free_quantity: 1 },
+    ]);
+    const { html } = renderInvoiceHtml(data, 'bill_bordered', null);
+    const row = html.slice(html.indexOf('Jalapeños'));
+    const cells = row.slice(0, row.indexOf('</tr>'));
+    expect(cells).toContain('<td class="cq">3</td>');
+    expect(cells).toContain('<td class="cr">120.00</td>');
+    expect(cells).toContain('<td class="ca">240.00</td>');
+  });
+
+  it('zeroes a modifier whose every unit is included by the allowance', () => {
+    const data = lineWith([
+      { group: 'Extra Toppings', name: 'Olives', unit_price: 120, quantity: 2, free_quantity: 2 },
+    ]);
+    const { html } = renderInvoiceHtml(data, 'bill_bordered', null);
+    const row = html.slice(html.indexOf('Olives'));
+    const cells = row.slice(0, row.indexOf('</tr>'));
+    expect(cells).toContain('<td class="ca">0.00</td>');
+  });
+
+  it('falls back to a single billed unit when the payload omits quantity', () => {
+    const data = lineWith([{ group: 'Extra Toppings', name: 'Feta', unit_price: 90 }]);
+    const { html } = renderInvoiceHtml(data, 'bill_bordered', null);
+    const row = html.slice(html.indexOf('Feta'));
+    const cells = row.slice(0, row.indexOf('</tr>'));
+    expect(cells).toContain('<td class="cq">1</td>');
+    expect(cells).toContain('<td class="ca">90.00</td>');
+  });
+});
+
+describe('Bordered Logo Receipt layout', () => {
+  it("uses Bordered Bill's meta box with Logo Receipt's table labels and totals", () => {
+    const { html, css } = renderInvoiceHtml(
+      richSampleInvoice(),
+      'receipt_bordered_logo',
+      DEFAULT_INVOICE_TEMPLATE_CONFIG,
+    );
+    // Logo Receipt's column labels, not Bordered Bill's "Item Name"/"Amount".
+    expect(html).toContain('Product');
+    expect(html).toContain('Total');
+    expect(html).not.toContain('Item Name');
+    // Bordered Bill's boxed meta block.
+    expect(css).toContain('.inv-root.inv-receipt_bordered_logo .metatbl { border: 1px solid #000');
+    // Logo Receipt's dash-framed grand total.
+    expect(css).toContain('.inv-root.inv-receipt_bordered_logo .row.grand { border-top: 1px dashed');
+  });
+
+  it("drops Logo Receipt's duplicate Order # band, since the meta box carries it", () => {
+    const { html } = renderInvoiceHtml(
+      richSampleInvoice(),
+      'receipt_bordered_logo',
+      DEFAULT_INVOICE_TEMPLATE_CONFIG,
+    );
+    expect(html).not.toContain('orderband');
+    expect(html).toContain('metatbl');
   });
 });
