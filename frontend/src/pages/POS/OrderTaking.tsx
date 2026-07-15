@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { MdClose, MdOutlineWarningAmber, MdOutlineSchedule, MdOutlineRestaurantMenu, MdOutlineStorefront } from 'react-icons/md';
 import { Link } from 'react-router-dom';
@@ -34,6 +34,7 @@ import type { OrderTypeOption, CartLine, DealComponentLine } from './components'
 import type { KioskFinalizeRequest } from '../../services/api/orderService';
 import { defaultVariantIdForItem } from './components/types';
 import { isMenuItemAvailableForOrderType } from '../../utils/menu-order-type';
+import { cartLineSupportsOrderType } from './orderTypeSupport';
 import { computeModifiersPrice, resolveMinSelect, resolveMaxSelect, sizeKeyForSelection } from '../../utils/modifierPricing';
 
 const OrderTaking: React.FC = () => {
@@ -205,17 +206,9 @@ const OrderTaking: React.FC = () => {
   const getBrandName = (brandId: number | null | undefined): string | null =>
     brandId != null ? (brands.find((b) => b.id === brandId)?.name ?? null) : null;
 
-  /** True when a cart line's item (or, for a deal line, its deal root) can be sold on `type`. */
   const orderTypeSupportsLine = React.useCallback(
-    (line: CartLine, type: OrderTypeOption): boolean => {
-      const channels =
-        line.dealId != null
-          ? rawMenu.find((m) => m.id === line.dealId)?.available_for_order_types ??
-            line.menuItem.available_for_order_types ??
-            null
-          : line.menuItem.available_for_order_types ?? null;
-      return isMenuItemAvailableForOrderType(channels, type);
-    },
+    (line: CartLine, type: OrderTypeOption): boolean =>
+      cartLineSupportsOrderType(line, type, rawMenu as MenuItem[]),
     [rawMenu],
   );
 
@@ -238,9 +231,16 @@ const OrderTaking: React.FC = () => {
   const confirmOrderTypeChange = () => {
     if (!pendingOrderTypeChange) return;
     const { next } = pendingOrderTypeChange;
-    setSelectedItems((prev) => prev.filter((l) => orderTypeSupportsLine(l, next)));
+    const kept = selectedItems.filter((l) => orderTypeSupportsLine(l, next));
+    setSelectedItems(kept);
     setOrderType(next);
     setPendingOrderTypeChange(null);
+    // Switching inside Checkout can empty the cart. Leaving the modal open would
+    // strand the cashier on a disabled Pay button, so send them back to the menu.
+    if (kept.length === 0 && showCheckoutModal) {
+      setShowCheckoutModal(false);
+      toast('Cart is empty — no items are available for the new order type.');
+    }
   };
 
   /**
@@ -309,6 +309,10 @@ const OrderTaking: React.FC = () => {
     queryKey: ['pos-quote', quotePayload],
     queryFn: () => orderService.getQuote(quotePayload!),
     enabled: quotePayload != null,
+    // The payload IS the key, so any cart/order-type edit re-prices. Hold the last
+    // quote while that lands: without it every total falls back to a raw sum with
+    // no tax or discount, which is visible as a wrong price inside Checkout.
+    placeholderData: keepPreviousData,
   });
 
   // Cash-vs-card preview: GST differs per tender (e.g. 16% cash / 5% card), so show the
@@ -1550,6 +1554,16 @@ const OrderTaking: React.FC = () => {
       </>
     );
 
+  const isSubmittingOrder = activeKioskCode
+    ? finalizeKioskMutation.isPending
+    : createOrderMutation.isPending;
+  /**
+   * A kiosk cart's order type was the customer's own choice, and handleFinalizeKiosk
+   * never sends a delivery address — so switching one to Delivery here would save an
+   * address-less delivery order. Keep the row read-only for kiosk carts.
+   */
+  const orderTypeLocked = activeKioskCode != null;
+
   return (
     <>
       <POSLayout
@@ -1630,11 +1644,42 @@ const OrderTaking: React.FC = () => {
             </div>
             <div className="mt-2">{renderTenderPreview()}</div>
             {effectiveOrderType != null && (
-              <div className="flex items-center justify-between text-sm text-foodies-textSecondary mt-2 pt-2 border-t border-foodies-border/60">
-                <span>Order type</span>
-                <span className="font-semibold text-foodies-textPrimary">
-                  {orderTypeOptions.find((o) => o.value === effectiveOrderType)?.label ?? effectiveOrderType}
-                </span>
+              <div className="mt-2 pt-2 border-t border-foodies-border/60">
+                <div className="flex items-center justify-between text-sm text-foodies-textSecondary">
+                  <span>Order type</span>
+                  {orderTypeLocked && (
+                    <span className="font-semibold text-foodies-textPrimary">
+                      {orderTypeOptions.find((o) => o.value === effectiveOrderType)?.label ?? effectiveOrderType}
+                    </span>
+                  )}
+                </div>
+                {/* Switching here runs the same guard as the main tab strip: lines the
+                    new channel can't fulfil raise the confirm modal below, and the
+                    quote re-prices off the changed payload. */}
+                {!orderTypeLocked && (
+                  <div role="radiogroup" aria-label="Order type" className="mt-2 flex gap-1 rounded-lg bg-foodies-bg dark:bg-slate-900 p-1">
+                    {orderTypeOptions.map((opt) => {
+                      const selected = opt.value === effectiveOrderType;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          disabled={isSubmittingOrder}
+                          onClick={() => handleOrderTypeChange(opt.value)}
+                          className={`flex-1 rounded-md px-3 py-2 text-sm transition-colors disabled:opacity-50 ${
+                            selected
+                              ? 'bg-foodies-primary/10 font-bold text-foodies-primary shadow-sm'
+                              : 'font-semibold text-foodies-textSecondary hover:text-foodies-textPrimary'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -1696,7 +1741,7 @@ const OrderTaking: React.FC = () => {
               bankCardId={bankCardId}
               onBankCardChange={setBankCardId}
               onCreateOrder={activeKioskCode ? handleFinalizeKiosk : handleCreateOrder}
-              isSubmitting={activeKioskCode ? finalizeKioskMutation.isPending : createOrderMutation.isPending}
+              isSubmitting={isSubmittingOrder}
               itemCount={selectedItems.length}
               lastOrderGroupId={lastOrderGroupId}
               onViewInvoice={() => setShowCustomerInvoiceModal(true)}
@@ -1742,7 +1787,10 @@ const OrderTaking: React.FC = () => {
         </div>
       </Modal>
 
-      {/* Order-type switch: warn about items the new channel can't fulfil */}
+      {/* Order-type switch: warn about items the new channel can't fulfil.
+          Must stay BELOW the Checkout modal: the order type is switchable from
+          inside Checkout, and Modal paints siblings at the same z-index, so a
+          confirm rendered earlier would open behind Checkout and soft-lock it. */}
       <Modal
         isOpen={pendingOrderTypeChange !== null}
         onClose={() => setPendingOrderTypeChange(null)}
