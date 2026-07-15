@@ -57,6 +57,8 @@ const BRAND_ADMIN_PERMISSIONS = [
     'kitchen:view',
     'kitchen:update',
     'back-kitchen:view',
+    'back-kitchen:branch-filter',
+    'foh:branch-filter',
     'users:manage',
     'branch-users:assign',
     'customers:manage',
