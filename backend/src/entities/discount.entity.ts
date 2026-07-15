@@ -81,15 +81,18 @@ export class Discount {
     eligibilityBrandIds: number[] | null;
 
     /**
-     * Card-linked discount (Pakistan bank offers, e.g. "HBL Premium Debit = 10% off"). When true,
-     * the discount only applies to the CARD-paid portion of the bill and only if the selected bank
-     * card is in eligibleBankCardIds. Reuses maxDiscountAmount / minOrderAmount / validDaysOfWeek /
-     * validTimeStart-End for the cap / min-spend / day-time semantics these campaigns need.
+     * Card-linked gate: the offer applies only when the whole bill is tendered on a
+     * card in eligibleBankCardIds.
+     *
+     * No stored discount sets this any more — bank card discounts are configured on
+     * the card itself (bank_cards) and reach the engine as a synthetic offer. The
+     * columns remain because that synthetic offer is what the engine gates on, and
+     * dropping them would break the shared Discount shape.
      */
     @Column({ name: 'requires_card', default: false })
     requiresCard: boolean;
 
-    /** Bank cards that unlock this discount (bank_cards ids); null/empty = none (never matches). */
+    /** Bank cards that unlock this offer (bank_cards ids); null/empty = none (never matches). */
     @Column('simple-json', { nullable: true, name: 'eligible_bank_card_ids' })
     eligibleBankCardIds: number[] | null;
 
@@ -131,8 +134,12 @@ export class Discount {
 
     /**
      * Offers store discriminator. 'discount' = order/category/brand/branch auto price cut;
-     * 'product_promotion' = per-product auto cut; 'coupon' = voucher-backed; 'card_offer' = bank
-     * card offer. The pricing engine reads this to route each row to its stacking group.
+     * 'product_promotion' = per-product auto cut; 'coupon' = voucher-backed.
+     * The pricing engine reads this to route each row to its stacking group.
+     *
+     * 'card_offer' is never persisted here any more — a card's discount lives on
+     * bank_cards and is adapted into that stage (see bank-card-offer.util.ts). The
+     * value stays in the union because the synthetic offer wears this type.
      */
     @Column({ name: 'offer_kind', type: 'varchar', default: 'discount' })
     offerKind: 'discount' | 'product_promotion' | 'coupon' | 'card_offer';

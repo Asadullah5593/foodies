@@ -37,6 +37,80 @@ export class BankCard {
     @Column({ name: 'bin_prefixes', type: 'simple-json', nullable: true })
     binPrefixes: string[] | null;
 
+    /** Brand-locked admin scoping; null = all brands. */
+    @Column({
+        name: 'eligibility_brand_ids',
+        type: 'simple-json',
+        nullable: true,
+    })
+    eligibilityBrandIds: number[] | null;
+
+    /** Order must be from one of these branches; null = any. */
+    @Column({
+        name: 'eligibility_branch_ids',
+        type: 'simple-json',
+        nullable: true,
+    })
+    eligibilityBranchIds: number[] | null;
+
+    // ---- The card's own discount ------------------------------------------
+    // Always whole-order, and only ever applied when the WHOLE bill is paid with
+    // this card. A null discountValue means the card carries no offer: still
+    // selectable at the till for tender/BIN, it just discounts nothing.
+
+    @Column({ name: 'discount_type', type: 'varchar', nullable: true })
+    discountType: 'flat' | 'percentage' | null;
+
+    @Column({
+        name: 'discount_value',
+        type: 'decimal',
+        precision: 10,
+        scale: 2,
+        nullable: true,
+    })
+    discountValue: number | null;
+
+    /** Minimum spend before the card offer applies; null = no minimum. */
+    @Column({
+        name: 'min_order_amount',
+        type: 'decimal',
+        precision: 10,
+        scale: 2,
+        nullable: true,
+    })
+    minOrderAmount: number | null;
+
+    /** Cap on a percentage offer; null = uncapped. */
+    @Column({
+        name: 'max_discount_amount',
+        type: 'decimal',
+        precision: 10,
+        scale: 2,
+        nullable: true,
+    })
+    maxDiscountAmount: number | null;
+
+    @Column({ name: 'valid_from', type: 'timestamp', nullable: true })
+    validFrom: Date | null;
+
+    @Column({ name: 'valid_until', type: 'timestamp', nullable: true })
+    validUntil: Date | null;
+
+    /** Recurring time-of-day window (branch timezone), HH:mm. */
+    @Column({ name: 'valid_time_start', type: 'time', nullable: true })
+    validTimeStart: string | null;
+
+    @Column({ name: 'valid_time_end', type: 'time', nullable: true })
+    validTimeEnd: string | null;
+
+    /** Recurring days: 0=Sun … 6=Sat; null = every day. */
+    @Column({
+        name: 'valid_days_of_week',
+        type: 'simple-json',
+        nullable: true,
+    })
+    validDaysOfWeek: number[] | null;
+
     @Column({ name: 'is_active', default: true })
     isActive: boolean;
 

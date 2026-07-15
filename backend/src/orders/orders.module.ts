@@ -13,6 +13,7 @@ import { Modifier } from '../entities/modifier.entity';
 import { User } from '../entities/user.entity';
 import { Tenant } from '../entities/tenant.entity';
 import { Discount } from '../entities/discount.entity';
+import { BankCard } from '../entities/bank-card.entity';
 import { PosMenuController } from './pos-menu.controller';
 import { PosOrdersController } from './pos-orders.controller';
 import { AdminOrdersController } from './admin-orders.controller';
@@ -59,6 +60,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
             User,
             Tenant,
             Discount,
+            BankCard,
             RiderOrderLocation,
             RiderOrderLocationSummary,
             RiderProfile,

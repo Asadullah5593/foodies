@@ -1,21 +1,59 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { MdCreditCard, MdEdit, MdDelete, MdAddCard, MdInfoOutline } from 'react-icons/md';
 import { adminService } from '../../services/api';
 import SegToggle from '../../components/SegToggle';
 import { offerInput, offerLabel } from '../../components/OfferModal';
+import SearchableMultiSelect, {
+  SearchableMultiSelectOption,
+} from '../../components/SearchableMultiSelect';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  BrandScoped,
+  BrandScopeBadge,
+  BrandScopeNotice,
+  canEdit,
+  removeDialog,
+  removeLabel,
+} from '../../components/OfferBrandScope';
+import apiClient from '../../utils/apiClient';
+import { confirmDialog } from '../../utils/sweetAlert';
+import ValidityFields, { emptyValidity } from '../../components/ValidityFields';
 
-type Card = {
+type Card = BrandScoped & {
   id: number;
   name: string;
   bank: string | null;
   network: string | null;
   bin_prefixes: string[] | null;
+  eligibility_brand_ids?: number[] | null;
+  discount_type?: 'flat' | 'percentage' | null;
+  discount_value?: number | null;
+  min_order_amount?: number | null;
+  max_discount_amount?: number | null;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  valid_time_start?: string | null;
+  valid_time_end?: string | null;
+  valid_days_of_week?: number[] | null;
+  has_offer?: boolean;
   is_active: boolean;
 };
 
-const emptyForm = { name: '', bank: '', network: '', bin: '', is_active: true };
+const emptyForm = {
+  name: '',
+  bank: '',
+  network: '',
+  bin: '',
+  eligibility_brand_ids: [] as number[],
+  discount_type: 'percentage' as 'flat' | 'percentage',
+  discount_value: '' as number | '',
+  min_order_amount: '' as number | '',
+  max_discount_amount: '' as number | '',
+  is_active: true,
+  ...emptyValidity,
+};
 
 const NETWORK_SUGGESTIONS = ['Visa', 'Mastercard', 'UnionPay', 'PayPak', 'American Express'];
 
@@ -38,11 +76,29 @@ const BankCards: React.FC = () => {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const { user } = useAuth();
+  const allowedBrandIds = user?.allowed_brand_ids ?? null;
 
   const { data: cards, isLoading } = useQuery({
     queryKey: ['bank-cards'],
     queryFn: () => adminService.getBankCards(false),
   });
+  const { data: brands } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => {
+      const res = await apiClient.get<Array<{ id: number; name: string }>>('/admin/brands');
+      return res.data;
+    },
+  });
+
+  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name }));
+  const brandNameById = useMemo(
+    () => new Map((brands ?? []).map((b) => [b.id, b.name])),
+    [brands],
+  );
+
+  // The validity block is meaningless until the card actually discounts something.
+  const hasOffer = form.discount_value !== '' && Number(form.discount_value) > 0;
 
   const reset = () => {
     setForm(emptyForm);
@@ -56,6 +112,19 @@ const BankCards: React.FC = () => {
         bank: form.bank.trim() || null,
         network: form.network.trim() || null,
         bin_prefixes: parseBins(form.bin).length ? parseBins(form.bin) : null,
+        eligibility_brand_ids: form.eligibility_brand_ids,
+        discount_type: form.discount_value === '' ? null : form.discount_type,
+        discount_value: form.discount_value === '' ? null : Number(form.discount_value),
+        min_order_amount: form.min_order_amount === '' ? null : Number(form.min_order_amount),
+        max_discount_amount:
+          form.max_discount_amount === '' || form.discount_type === 'flat'
+            ? null
+            : Number(form.max_discount_amount),
+        valid_from: form.valid_from || null,
+        valid_until: form.valid_until || null,
+        valid_time_start: form.valid_time_start || null,
+        valid_time_end: form.valid_time_end || null,
+        valid_days_of_week: form.valid_days_of_week,
         is_active: form.is_active,
       };
       return editingId != null
@@ -89,7 +158,17 @@ const BankCards: React.FC = () => {
       bank: c.bank ?? '',
       network: c.network ?? '',
       bin: (c.bin_prefixes ?? []).join(', '),
+      eligibility_brand_ids: c.eligibility_brand_ids ?? [],
+      discount_type: c.discount_type === 'flat' ? 'flat' : 'percentage',
+      discount_value: c.discount_value ?? '',
+      min_order_amount: c.min_order_amount ?? '',
+      max_discount_amount: c.max_discount_amount ?? '',
       is_active: c.is_active,
+      valid_from: c.valid_from ? c.valid_from.slice(0, 10) : '',
+      valid_until: c.valid_until ? c.valid_until.slice(0, 10) : '',
+      valid_time_start: c.valid_time_start ?? '',
+      valid_time_end: c.valid_time_end ?? '',
+      valid_days_of_week: c.valid_days_of_week ?? [],
     });
   };
 
@@ -112,8 +191,9 @@ const BankCards: React.FC = () => {
         <div>
           <h1 className="mb-1.5 text-2xl font-extrabold tracking-tight text-gray-800 sm:text-[28px]">Bank Cards</h1>
           <p className="max-w-[680px] text-[14.5px] leading-relaxed text-gray-500">
-            The cards you run offers on. Link one from a discount's{' '}
-            <span className="font-semibold text-gray-700">“requires specific card”</span> setting — it applies only when the whole bill is paid with that card.
+            Add a card, then set what a customer gets for paying with it. The discount applies only when the{' '}
+            <span className="font-semibold text-gray-700">whole bill</span> is paid with that card — a cash + card split earns nothing. See how each offer is performing under{' '}
+            <span className="font-semibold text-gray-700">Reports → Discounts</span>.
           </p>
         </div>
       </div>
@@ -156,10 +236,76 @@ const BankCards: React.FC = () => {
                 First 6–8 digits printed on the card. Used to auto-detect the card at checkout; the cashier can also just pick it from the list.
               </p>
             </div>
+            {allowedBrandIds == null && (
+              <div>
+                <SearchableMultiSelect
+                  options={brandOptions}
+                  selectedIds={form.eligibility_brand_ids}
+                  onChange={(ids) => setForm({ ...form, eligibility_brand_ids: ids })}
+                  placeholder="All brands"
+                  label="Brands"
+                  maxHeight="12rem"
+                />
+                <p className="mt-2 text-[12px] leading-snug text-gray-400">Leave empty to make this card available to all brands.</p>
+              </div>
+            )}
+            <div className="h-px bg-gray-100" />
+
+            <div>
+              <div className="text-[13px] font-semibold text-gray-700">Discount</div>
+              <p className="mb-3 mt-0.5 text-[12px] leading-snug text-gray-400">
+                What the customer gets for paying with this card. Leave the value empty for a card you only want to record at the till.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={offerLabel}>Type</label>
+                  <select value={form.discount_type} onChange={(e) => setForm({ ...form, discount_type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
+                    <option value="percentage">Percentage</option>
+                    <option value="flat">Flat Amount</option>
+                  </select>
+                </div>
+                <div>
+                  <label className={offerLabel}>Value</label>
+                  <input type="number" min={0} value={form.discount_value} onChange={(e) => setForm({ ...form, discount_value: e.target.value === '' ? '' : Number(e.target.value) })} className={offerInput} placeholder="none" />
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                <div>
+                  <label className={offerLabel}>Min order (Rs)</label>
+                  <input type="number" min={0} value={form.min_order_amount} onChange={(e) => setForm({ ...form, min_order_amount: e.target.value === '' ? '' : Number(e.target.value) })} className={offerInput} placeholder="none" />
+                </div>
+                <div>
+                  <label className={offerLabel}>Max discount (Rs)</label>
+                  <input type="number" min={0} value={form.max_discount_amount} onChange={(e) => setForm({ ...form, max_discount_amount: e.target.value === '' ? '' : Number(e.target.value) })} className={offerInput} placeholder="none" disabled={form.discount_type === 'flat'} />
+                </div>
+              </div>
+              <p className="mt-2 flex items-start gap-1.5 text-[12px] leading-snug text-gray-400">
+                <MdInfoOutline size={14} className="mt-px shrink-0" />
+                Only applies when the <span className="font-semibold text-gray-500">whole bill</span> is paid with this card.
+              </p>
+            </div>
+
+            {hasOffer && (
+              <div>
+                <div className="text-[13px] font-semibold text-gray-700">Valid when</div>
+                <p className="mb-3 mt-0.5 text-[12px] text-gray-400">Leave empty to run with no time limit.</p>
+                <ValidityFields
+                  value={{
+                    valid_from: form.valid_from,
+                    valid_until: form.valid_until,
+                    valid_time_start: form.valid_time_start,
+                    valid_time_end: form.valid_time_end,
+                    valid_days_of_week: form.valid_days_of_week,
+                  }}
+                  onChange={(v) => setForm({ ...form, ...v })}
+                />
+              </div>
+            )}
+
             <div className="flex items-center justify-between rounded-[11px] border border-gray-100 bg-gray-50 px-3.5 py-3">
               <div>
                 <div className="text-[13.5px] font-semibold text-gray-700">Active</div>
-                <div className="text-[12px] text-gray-400">Available to link on offers</div>
+                <div className="text-[12px] text-gray-400">Selectable at the till; its discount runs</div>
               </div>
               <SegToggle on={form.is_active} onChange={(v) => setForm({ ...form, is_active: v })} ariaLabel="Active" />
             </div>
@@ -197,17 +343,30 @@ const BankCards: React.FC = () => {
                     <div className="flex items-center gap-2.5">
                       <span className="text-[12px] font-extrabold uppercase tracking-[0.1em] text-white/80">{c.network || ''}</span>
                       <div className="flex gap-1.5">
-                        <button type="button" onClick={() => startEdit(c)} title="Edit" className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-white/[0.14] text-white transition-colors hover:bg-white/25">
-                          <MdEdit size={15} />
-                        </button>
-                        <button type="button" onClick={() => { if (confirm(`Remove "${c.name}"?`)) deleteMutation.mutate(c.id); }} title="Delete" className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-white/[0.14] text-red-200 transition-colors hover:bg-red-500/60">
-                          <MdDelete size={15} />
-                        </button>
+                        {canEdit(c.manage_scope) && (
+                          <button type="button" onClick={() => startEdit(c)} title="Edit" className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-white/[0.14] text-white transition-colors hover:bg-white/25">
+                            <MdEdit size={15} />
+                          </button>
+                        )}
+                        {c.manage_scope !== 'read_only' && (
+                          <button type="button" onClick={async () => { if (await confirmDialog(removeDialog(c.manage_scope, 'card', c.name))) deleteMutation.mutate(c.id); }} title={removeLabel(c.manage_scope)} className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-white/[0.14] text-red-200 transition-colors hover:bg-red-500/60">
+                            <MdDelete size={15} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
                   <div className="relative">
-                    <div className="mb-3.5 text-[19px] font-bold tracking-tight text-white">{c.name}</div>
+                    <div className="mb-3.5">
+                      <div className="flex flex-wrap items-center gap-2 text-[19px] font-bold tracking-tight text-white">
+                        {c.name}
+                        <BrandScopeBadge effectiveBrandIds={c.effective_brand_ids} brandNameById={brandNameById} allowedBrandIds={allowedBrandIds} />
+                      </div>
+                      {/* The shared notice is styled for light rows; lift it off the dark card face. */}
+                      <div className="[&>p]:mt-1 [&>p]:text-white/60">
+                        <BrandScopeNotice manageScope={c.manage_scope} noun="card" />
+                      </div>
+                    </div>
                     <div className="flex items-end justify-between gap-3">
                       <div>
                         <div className="mb-0.5 text-[9.5px] font-bold uppercase tracking-[0.14em] text-white/50">Bank</div>
@@ -241,6 +400,7 @@ const BankCards: React.FC = () => {
           )}
         </div>
       </div>
+
     </div>
   );
 };

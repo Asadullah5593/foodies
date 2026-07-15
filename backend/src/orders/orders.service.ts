@@ -18,6 +18,8 @@ import { Branch } from '../entities/branch.entity';
 import { Brand } from '../entities/brand.entity';
 import { Tenant } from '../entities/tenant.entity';
 import { Discount } from '../entities/discount.entity';
+import { BankCard } from '../entities/bank-card.entity';
+import { bankCardOffers } from './bank-card-offer.util';
 import {
     offerAllowedOnChannel,
     sourceToOfferChannel,
@@ -143,6 +145,7 @@ export class OrdersService {
         @InjectRepository(Branch) private branchRepo: Repository<Branch>,
         @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
         @InjectRepository(Discount) private discountRepo: Repository<Discount>,
+        @InjectRepository(BankCard) private bankCardRepo: Repository<BankCard>,
         @InjectRepository(User) private userRepo: Repository<User>,
         @InjectRepository(RiderAssignmentLedger)
         private riderAssignmentLedgerRepo: Repository<RiderAssignmentLedger>,
@@ -1807,6 +1810,10 @@ export class OrdersService {
                                 orderDiscountAmount: brandOrderDiscount,
                                 couponDiscountAmount: brandCouponDiscount,
                                 cardDiscountAmount: brandCardDiscount,
+                                // Kept even when the offer gave nothing, so take-up
+                                // can be measured against every order that could
+                                // have used the card.
+                                bankCardId,
                                 taxAmount: brandTax,
                                 taxRateCash: gstRates.cash,
                                 taxRateCard: gstRates.card,
@@ -5395,9 +5402,19 @@ export class OrdersService {
         const orderDiscounts = eligibleAuto.filter(
             (d) => kindOf(d) === 'discount',
         );
-        const cardOffers = eligibleAuto.filter(
-            (d) => kindOf(d) === 'card_offer',
-        );
+        // Card offers live on the bank cards themselves, not in `discounts`. They
+        // are adapted into the engine's shape and then run through the very same
+        // date/branch-time/eligibility gates as every other offer.
+        const cardOffers: Discount[] = [];
+        const activeCards = await this.bankCardRepo.find({
+            where: { tenantId, isActive: true },
+        });
+        for (const offer of bankCardOffers(activeCards)) {
+            if (!dateOk(offer)) continue;
+            if (!(await this.isDiscountValidForBranchTime(offer, branchId)))
+                continue;
+            cardOffers.push(offer);
+        }
 
         let coupon: Discount | null = null;
         if (couponCode?.trim()) {
@@ -5430,7 +5447,6 @@ export class OrdersService {
         };
         const stages: EngineStage[] = [];
         let discountChosen: Discount | null = null;
-        let cardChosen: Discount | null = null;
 
         if (productPromos.length > 0) {
             stages.push({
@@ -5487,16 +5503,13 @@ export class OrdersService {
                 compute: (running) => {
                     let bestAlloc: number[] | null = null;
                     let bestAmt = 0;
-                    let chosen: Discount | null = null;
                     for (const d of cardOffers) {
                         const r = this.evalOfferOnRunning(d, evalCtx, running);
                         if (r && r.amount > bestAmt) {
                             bestAmt = r.amount;
                             bestAlloc = r.alloc;
-                            chosen = d;
                         }
                     }
-                    cardChosen = chosen;
                     return bestAlloc ?? new Array<number>(n).fill(0);
                 },
             });
@@ -5505,10 +5518,13 @@ export class OrdersService {
         const result = runOfferEngine(engineLines, stages, settings);
         const combinedLineDiscount = result.lines.map((l) => l.totalDiscount);
         const promoUsed = result.byKind.product_promotion > 0;
+        // cardChosen is deliberately absent: a card offer's `id` is a bank_cards id,
+        // and orders.discount_id is FK-constrained to discounts(id) — writing one
+        // here would point at an unrelated discount that happens to share the id.
+        // The applied card amount is recorded in orders.card_discount_amount.
         const discountId =
             coupon?.id ??
             (discountChosen as Discount | null)?.id ??
-            (cardChosen as Discount | null)?.id ??
             (promoUsed && productPromos.length > 0
                 ? productPromos[0].id
                 : null);

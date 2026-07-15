@@ -25,7 +25,13 @@ export type PaymentPanelProps = {
   paymentCardAmount: string;
   onPaymentCashAmountChange: (v: string) => void;
   onPaymentCardAmountChange: (v: string) => void;
-  bankCards?: Array<{ id: number; name: string; bank: string | null }>;
+  bankCards?: Array<{
+    id: number;
+    name: string;
+    bank: string | null;
+    /** Whether this card discounts anything (bank card offers module). */
+    has_offer?: boolean;
+  }>;
   bankCardId?: number | null;
   onBankCardChange?: (id: number | null) => void;
   onCreateOrder: () => void;
@@ -180,10 +186,20 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
               {bankCards.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.bank ? `${c.bank} — ${c.name}` : c.name}
+                  {c.has_offer ? ' • offer' : ''}
                 </option>
               ))}
             </select>
           </div>
+        )}
+        {/* A bank's offer is funded on the whole bill going through its card, so a
+            split tender cancels it. Say so — the discount vanishing on its own
+            reads as a bug from behind the counter. */}
+        {paymentMode === 'multipay' && bankCards.some((c) => c.has_offer) && (
+          <p className="mt-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+            Card offers need the full bill paid on one card — a cash + card split
+            does not get them.
+          </p>
         )}
         {paymentMode === 'multipay' && (
           <div className="grid grid-cols-2 gap-2 mt-3">
