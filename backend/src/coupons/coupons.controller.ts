@@ -84,6 +84,7 @@ export class CouponsController {
             +id,
             user.tenantId,
             dto.customer_ids ?? [],
+            user.allowedBrandIds,
         );
     }
 
@@ -91,13 +92,17 @@ export class CouponsController {
     vouchers(@Param('id') id: string, @CurrentUser() user: User) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.listVouchers(+id, user.tenantId);
+        return this.service.listVouchers(
+            +id,
+            user.tenantId,
+            user.allowedBrandIds,
+        );
     }
 
     @Get(':id/report')
     report(@Param('id') id: string, @CurrentUser() user: User) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.report(+id, user.tenantId);
+        return this.service.report(+id, user.tenantId, user.allowedBrandIds);
     }
 }

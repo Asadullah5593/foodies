@@ -6,6 +6,7 @@ import { CampaignItem } from '../entities/campaign-item.entity';
 import { Discount } from '../entities/discount.entity';
 import { CouponRealization } from '../entities/coupon-realization.entity';
 import { Tenant } from '../entities/tenant.entity';
+import { Brand } from '../entities/brand.entity';
 import { CampaignsController } from './campaigns.controller';
 import { OfferSettingsController } from './offer-settings.controller';
 import { CampaignsService } from './campaigns.service';
@@ -19,6 +20,7 @@ import { CampaignsService } from './campaigns.service';
             Discount,
             CouponRealization,
             Tenant,
+            Brand,
         ]),
     ],
     controllers: [CampaignsController, OfferSettingsController],
