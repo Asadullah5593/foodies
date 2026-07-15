@@ -11,6 +11,7 @@ import { formatOrderType } from '../../utils/format';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
+import AssignRiderModal from '../../components/AssignRiderModal';
 import Card from '../../components/Card';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -37,13 +38,17 @@ type OrderRow = Order & {
 };
 
 function normalizeOrder(o: OrderRow): OrderRow {
-  const row = o as OrderRow & { riderId?: number; deliveryStatus?: string; deliveryFailedReason?: string };
+  const row = o as OrderRow & { riderId?: number; brandId?: number; deliveryStatus?: string; deliveryFailedReason?: string };
   return {
     ...o,
     order_number: o.order_number ?? o.orderNumber,
     total_amount: o.total_amount ?? o.totalAmount ?? 0,
     order_group_id: o.order_group_id ?? o.orderGroupId ?? null,
     order_type: o.order_type ?? o.orderType,
+    // /admin/orders returns raw entities (camelCase + nested brand), never brand_id.
+    // Without this the rider dropdown drops its brand filter and lists every rider.
+    brand_id: o.brand_id ?? row.brandId ?? o.brand?.id ?? null,
+    brand_name: o.brand_name ?? o.brand?.name ?? null,
     rider_id: o.rider_id ?? row.riderId ?? null,
     rider: o.rider ?? null,
     delivery_status: o.delivery_status ?? row.deliveryStatus ?? null,
@@ -104,6 +109,7 @@ const Orders: React.FC = () => {
   const [riderModalGroupId, setRiderModalGroupId] = useState<string | null>(null);
   const [riderModalIsChange, setRiderModalIsChange] = useState(false);
   const [riderModalBrandId, setRiderModalBrandId] = useState<number | null>(null);
+  const [riderModalBrandName, setRiderModalBrandName] = useState<string | null>(null);
   const [selectedRiderId, setSelectedRiderId] = useState<number | null>(null);
   const branchId = searchParams.get('branch_id') || '';
   const brandId = searchParams.get('brand_id') || '';
@@ -175,12 +181,13 @@ const Orders: React.FC = () => {
     },
   });
 
-  // Only riders linked to the order's brand are shown (backend enforces too).
-  const { data: riders, isLoading: ridersLoading } = useQuery({
-    queryKey: ['admin-riders', riderModalBrandId],
-    queryFn: () => adminService.getRiders(riderModalBrandId ?? undefined),
-    enabled: riderModalOrderId != null || riderModalGroupId != null,
-  });
+  const closeRiderModal = () => {
+    setRiderModalOrderId(null);
+    setRiderModalGroupId(null);
+    setRiderModalBrandId(null);
+    setRiderModalBrandName(null);
+    setSelectedRiderId(null);
+  };
 
   const { data: onDutyRiders } = useQuery({
     queryKey: ['rider-on-duty-banner'],
@@ -210,10 +217,7 @@ const Orders: React.FC = () => {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
-      setRiderModalOrderId(null);
-      setRiderModalGroupId(null);
-      setRiderModalBrandId(null);
-      setSelectedRiderId(null);
+      closeRiderModal();
       toast.success(variables.isGroup ? 'Rider assigned to group' : 'Rider assignment updated');
     },
     onError: (error: any) => {
@@ -450,9 +454,9 @@ const Orders: React.FC = () => {
                     {isGroup && gid && allDelivery && (
                       <>
                         {groupRider ? groupCanChangeRider && (
-                          <Button size="small" variant="edit" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(true); setRiderModalBrandId(groupOrders[0].brand_id ?? null); setSelectedRiderId(groupOrders[0].rider_id ?? null); }}>Change rider</Button>
+                          <Button size="small" variant="edit" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(true); setRiderModalBrandId(groupOrders[0].brand_id ?? null); setRiderModalBrandName(groupOrders[0].brand_name ?? groupOrders[0].brand?.name ?? null); setSelectedRiderId(groupOrders[0].rider_id ?? null); }}>Change rider</Button>
                         ) : (
-                          <Button size="small" variant="primary" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(false); setRiderModalBrandId(groupOrders[0].brand_id ?? null); setSelectedRiderId(null); }}>Assign rider to group</Button>
+                          <Button size="small" variant="primary" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(false); setRiderModalBrandId(groupOrders[0].brand_id ?? null); setRiderModalBrandName(groupOrders[0].brand_name ?? groupOrders[0].brand?.name ?? null); setSelectedRiderId(null); }}>Assign rider to group</Button>
                         )}
                         <Button size="small" variant="view" onClick={() => { setCustomerInvoiceGroupId(gid); setCustomerInvoiceOrderId(null); }}>Customer invoice</Button>
                       </>
@@ -477,7 +481,7 @@ const Orders: React.FC = () => {
                             <span className="text-xs text-gray-500 dark:text-slate-400">Rider: {order.rider.name}</span>
                           )}
                           {showPerOrderRiderButton && isDeliveryOrder(order) && (order.delivery_status === 'accepted' || order.delivery_status == null) && (
-                            <Button size="small" variant={order.rider_id ? 'edit' : 'primary'} onClick={() => { setRiderModalOrderId(order.id); setRiderModalGroupId(null); setRiderModalIsChange(!!order.rider_id); setRiderModalBrandId(order.brand_id ?? null); setSelectedRiderId(order.rider_id ?? null); }}>{order.rider_id ? 'Change rider' : 'Assign rider'}</Button>
+                            <Button size="small" variant={order.rider_id ? 'edit' : 'primary'} onClick={() => { setRiderModalOrderId(order.id); setRiderModalGroupId(null); setRiderModalIsChange(!!order.rider_id); setRiderModalBrandId(order.brand_id ?? null); setRiderModalBrandName(order.brand_name ?? order.brand?.name ?? null); setSelectedRiderId(order.rider_id ?? null); }}>{order.rider_id ? 'Change rider' : 'Assign rider'}</Button>
                           )}
                           {!order.rider_id && isDeliveryOrder(order) && (
                             <Button
@@ -547,80 +551,37 @@ const Orders: React.FC = () => {
         orderId={customerInvoiceOrderId}
       />
 
-      {(riderModalOrderId != null || riderModalGroupId != null) && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
-          <Card className="w-full max-w-md p-6 dark:bg-slate-800 dark:border-slate-700">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 mb-2">
-              {riderModalGroupId
-                ? (riderModalIsChange ? 'Change rider for group' : 'Assign rider to group')
-                : (riderModalIsChange ? 'Change rider' : 'Assign rider')}
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-slate-400 mb-4">
-              {riderModalGroupId
-                ? `Group ${riderModalGroupId.slice(0, 8)}… (all orders in this group)`
-                : `Order #${orders.find((o) => o.id === riderModalOrderId)?.order_number ?? riderModalOrderId}`}
-            </p>
-            {ridersLoading ? (
-              <p className="text-gray-500 dark:text-slate-400">Loading riders...</p>
-            ) : (
-              <select
-                value={selectedRiderId ?? ''}
-                onChange={(e) => setSelectedRiderId(e.target.value ? Number(e.target.value) : null)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 mb-4"
-              >
-                <option value="">Select a rider</option>
-                {(riders ?? []).map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                    {(r.rating_count ?? 0) > 0 && r.rating_average != null
-                      ? ` · ${r.rating_average.toFixed(1)}/5 (${r.rating_count})`
-                      : ''}
-                    {r.phone ? ` · ${r.phone}` : ''}
-                  </option>
-                ))}
-              </select>
-            )}
-            {riders != null && riders.length === 0 && !ridersLoading && (
-              <p className="text-amber-600 dark:text-amber-400 text-sm mb-4">
-                No riders are linked to this order's brand. Link a rider in Rider
-                HRM → Rider pool &amp; sharing (or the brand can request one from
-                Request riders).
-              </p>
-            )}
-            <div className="flex gap-2 justify-end">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setRiderModalOrderId(null);
-                  setRiderModalGroupId(null);
-                  setRiderModalBrandId(null);
-                  setSelectedRiderId(null);
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                disabled={selectedRiderId == null || assignRiderMutation.isPending}
-                isLoading={assignRiderMutation.isPending}
-                onClick={() => {
-                  if (selectedRiderId != null) {
-                    assignRiderMutation.mutate({
-                      orderId: riderModalOrderId ?? undefined,
-                      orderGroupId: riderModalGroupId ?? undefined,
-                      riderId: selectedRiderId,
-                      isChange: riderModalIsChange,
-                      isGroup: riderModalGroupId != null,
-                    });
-                  }
-                }}
-              >
-                {riderModalIsChange ? 'Change' : 'Assign'}
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
+      <AssignRiderModal
+        isOpen={riderModalOrderId != null || riderModalGroupId != null}
+        onClose={closeRiderModal}
+        title={
+          riderModalGroupId
+            ? (riderModalIsChange ? 'Change rider for group' : 'Assign rider to group')
+            : (riderModalIsChange ? 'Change rider' : 'Assign rider')
+        }
+        subject={
+          riderModalGroupId
+            ? `Group ${riderModalGroupId.slice(0, 8)}… (all orders in this group)`
+            : `Order #${orders.find((o) => o.id === riderModalOrderId)?.order_number ?? riderModalOrderId}`
+        }
+        confirmLabel={riderModalIsChange ? 'Change' : 'Assign'}
+        brandId={riderModalBrandId}
+        brandName={riderModalBrandName}
+        selectedRiderId={selectedRiderId}
+        onSelectRider={setSelectedRiderId}
+        isPending={assignRiderMutation.isPending}
+        onConfirm={() => {
+          if (selectedRiderId != null) {
+            assignRiderMutation.mutate({
+              orderId: riderModalOrderId ?? undefined,
+              orderGroupId: riderModalGroupId ?? undefined,
+              riderId: selectedRiderId,
+              isChange: riderModalIsChange,
+              isGroup: riderModalGroupId != null,
+            });
+          }
+        }}
+      />
     </div>
   );
 };

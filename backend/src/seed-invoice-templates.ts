@@ -76,6 +76,17 @@ const STARTER_TEMPLATES: Array<{
         preferredDefault: false,
     },
     {
+        name: 'Bordered Logo Receipt',
+        layout: 'receipt_bordered_logo',
+        config: {
+            ...ITEMIZED_DISCOUNTS,
+            showCashier: true,
+            showTaxRate: true,
+            footerText: 'Thank you for choosing us.\nSee you soon!',
+        },
+        preferredDefault: false,
+    },
+    {
         name: 'Modern Minimal',
         layout: 'thermal_modern',
         config: {
