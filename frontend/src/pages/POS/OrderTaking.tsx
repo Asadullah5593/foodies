@@ -1755,8 +1755,6 @@ const OrderTaking: React.FC = () => {
               onCreateOrder={activeKioskCode ? handleFinalizeKiosk : handleCreateOrder}
               isSubmitting={isSubmittingOrder}
               itemCount={selectedItems.length}
-              lastOrderGroupId={lastOrderGroupId}
-              onViewInvoice={() => setShowCustomerInvoiceModal(true)}
             />
             <div className="flex justify-end mt-3">
               <Button variant="outline" onClick={() => setShowCheckoutModal(false)}>
