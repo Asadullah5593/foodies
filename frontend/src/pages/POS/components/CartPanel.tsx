@@ -156,11 +156,30 @@ const CartPanel: React.FC<CartPanelProps> = ({
                   exit={{ opacity: 0, x: 20 }}
                   className="bg-foodies-surface dark:bg-slate-800 p-4 rounded-xl border border-foodies-border dark:border-slate-600 shadow-sm"
                 >
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-foodies-textPrimary dark:text-slate-100">
+                  {/* Only the title shares a row with Edit/×. Everything priced below runs
+                      the full card width, so every amount — options, add-ons and the
+                      discount split — lands on one right edge. */}
+                  <div className="mb-2">
+                    <div className="flex justify-between items-start gap-2">
+                      <h4 className="flex-1 font-semibold text-foodies-textPrimary dark:text-slate-100">
                         {isDeal ? (item.dealName ?? item.menuItem.name) : item.menuItem.name}
                       </h4>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {onConfigureItem && (
+                          <Button size="small" variant="outline" onClick={() => onConfigureItem(index)}>
+                            Edit
+                          </Button>
+                        )}
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={() => handleRemove(index)}
+                          className="min-w-[2rem]"
+                        >
+                          ×
+                        </Button>
+                      </div>
+                    </div>
                       {isDeal && item.components?.length ? (
                         // A deal is a fixed-price bundle — show the chosen components (names/sizes
                         // only), never per-component prices, so the deal total isn't second-guessed.
@@ -305,26 +324,6 @@ const CartPanel: React.FC<CartPanelProps> = ({
                       {!isDeal && item.notes && (
                         <p className="text-xs text-foodies-textSecondary italic">Note: {item.notes}</p>
                       )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {onConfigureItem && (
-                        <Button
-                          size="small"
-                          variant="outline"
-                          onClick={() => onConfigureItem(index)}
-                        >
-                          Edit
-                        </Button>
-                      )}
-                      <Button
-                        size="small"
-                        variant="danger"
-                        onClick={() => handleRemove(index)}
-                        className="min-w-[2rem]"
-                      >
-                        ×
-                      </Button>
-                    </div>
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -358,11 +357,16 @@ const CartPanel: React.FC<CartPanelProps> = ({
                           <div className="text-sm text-foodies-textSecondary line-through">{formatCurrency(originalAmount)}</div>
                           {/* Name each kind that cut this line. They stack, so there can be
                               several; fall back to the bare total if the quote predates the
-                              per-kind split. */}
+                              per-kind split. Label left, amount right — the rows fill the
+                              block, so the amounts line up in their own column. */}
                           {(lineBreakdownItem?.discounts ?? []).length > 0 ? (
                             (lineBreakdownItem?.discounts ?? []).map((d) => (
-                              <div key={d.kind} className="text-xs text-foodies-cta">
-                                {offerKindLabel(d.kind)} −{formatCurrency(d.amount)}
+                              <div
+                                key={d.kind}
+                                className="flex justify-between items-baseline gap-3 text-xs text-foodies-cta"
+                              >
+                                <span className="min-w-0 break-words text-left">{offerKindLabel(d.kind)}</span>
+                                <span className="shrink-0 whitespace-nowrap">−{formatCurrency(d.amount)}</span>
                               </div>
                             ))
                           ) : (
