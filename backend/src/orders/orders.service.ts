@@ -18,6 +18,8 @@ import { Branch } from '../entities/branch.entity';
 import { Brand } from '../entities/brand.entity';
 import { Tenant } from '../entities/tenant.entity';
 import { Discount } from '../entities/discount.entity';
+import { BankCard } from '../entities/bank-card.entity';
+import { bankCardOffers } from './bank-card-offer.util';
 import {
     offerAllowedOnChannel,
     sourceToOfferChannel,
@@ -143,6 +145,7 @@ export class OrdersService {
         @InjectRepository(Branch) private branchRepo: Repository<Branch>,
         @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
         @InjectRepository(Discount) private discountRepo: Repository<Discount>,
+        @InjectRepository(BankCard) private bankCardRepo: Repository<BankCard>,
         @InjectRepository(User) private userRepo: Repository<User>,
         @InjectRepository(RiderAssignmentLedger)
         private riderAssignmentLedgerRepo: Repository<RiderAssignmentLedger>,
@@ -1807,6 +1810,10 @@ export class OrdersService {
                                 orderDiscountAmount: brandOrderDiscount,
                                 couponDiscountAmount: brandCouponDiscount,
                                 cardDiscountAmount: brandCardDiscount,
+                                // Kept even when the offer gave nothing, so take-up
+                                // can be measured against every order that could
+                                // have used the card.
+                                bankCardId,
                                 taxAmount: brandTax,
                                 taxRateCash: gstRates.cash,
                                 taxRateCard: gstRates.card,
@@ -4342,6 +4349,16 @@ export class OrdersService {
                     (line.itemSubtotal - (combinedLineDiscount[i] ?? 0)) * 100,
                 ) / 100,
             is_deal: !!(line as { isDeal?: boolean }).isDeal,
+            // Which offer kinds cut this line, and by how much. Kinds stack
+            // (product_promotion → discount → coupon → card_offer), so this is a
+            // list, not a scalar: discount_amount is their sum.
+            discounts: (staged.lineBreakdown?.[i]?.discounts ?? [])
+                .filter((d) => d.amount > 0)
+                .map((d) => ({ kind: d.kind, amount: oround2(d.amount) })),
+            // The caller's item index this line came from. A deal expands into one
+            // line per component, so clients MUST match on this rather than on
+            // array position, or every line after a deal reads the wrong one.
+            source_index: line.sourceIndex ?? i,
         }));
 
         return {
@@ -4408,6 +4425,12 @@ export class OrdersService {
             deal_id?: number;
             deal_slot_index?: number;
             deal_unit_price?: number;
+            /**
+             * Index of the caller's ORIGINAL item this line came from. A deal
+             * expands 1 → N here, so callers cannot match results back by array
+             * position; they must match on this.
+             */
+            source_index?: number;
         }>
     > {
         const expanded: Array<{
@@ -4421,9 +4444,15 @@ export class OrdersService {
             deal_id?: number;
             deal_slot_index?: number;
             deal_unit_price?: number;
+            /**
+             * Index of the caller's ORIGINAL item this line came from. A deal
+             * expands 1 → N here, so callers cannot match results back by array
+             * position; they must match on this.
+             */
+            source_index?: number;
         }> = [];
         const branchClockCache = new Map<number, BranchClock>();
-        for (const line of items) {
+        for (const [sourceIndex, line] of items.entries()) {
             const raw = line as {
                 deal_menu_item_id?: number;
                 quantity?: number;
@@ -4717,6 +4746,7 @@ export class OrdersService {
                             deal_unit_price: bogoRound2(
                                 baseDealPrice + Number(slotSurcharge || 0),
                             ),
+                            source_index: sourceIndex,
                         });
                     });
                 }
@@ -4738,6 +4768,7 @@ export class OrdersService {
                     modifiers: normal.modifiers,
                     notes: normal.notes,
                     branch_id: normal.branch_id,
+                    source_index: sourceIndex,
                 });
             }
         }
@@ -4754,6 +4785,7 @@ export class OrdersService {
             addons?: { addon_id: number; quantity?: number }[];
             modifiers?: { modifier_id: number; quantity?: number }[];
             deal_unit_price?: number;
+            source_index?: number;
         }>,
         orderType: string,
     ): Promise<{
@@ -4767,6 +4799,8 @@ export class OrdersService {
             sizeKey?: string | null;
             isDeal?: boolean;
             unitCost?: number | null;
+            /** Caller's original item index; see expandDealItems (1 deal → N lines). */
+            sourceIndex?: number;
         }[];
         orderBrandId: number | null;
     }> {
@@ -4798,6 +4832,7 @@ export class OrdersService {
             sizeKey?: string | null;
             isDeal?: boolean;
             unitCost?: number | null;
+            sourceIndex?: number;
         }[] = [];
         const itemBrandIds = new Set<number>();
         let subtotal = 0;
@@ -4893,6 +4928,7 @@ export class OrdersService {
                 sizeKey: lineSizeKey,
                 isDeal: isDealPriceLine,
                 unitCost: isDealPriceLine ? null : lineUnitCost,
+                sourceIndex: line.source_index,
             });
         }
         const orderBrandId =
@@ -5366,9 +5402,19 @@ export class OrdersService {
         const orderDiscounts = eligibleAuto.filter(
             (d) => kindOf(d) === 'discount',
         );
-        const cardOffers = eligibleAuto.filter(
-            (d) => kindOf(d) === 'card_offer',
-        );
+        // Card offers live on the bank cards themselves, not in `discounts`. They
+        // are adapted into the engine's shape and then run through the very same
+        // date/branch-time/eligibility gates as every other offer.
+        const cardOffers: Discount[] = [];
+        const activeCards = await this.bankCardRepo.find({
+            where: { tenantId, isActive: true },
+        });
+        for (const offer of bankCardOffers(activeCards)) {
+            if (!dateOk(offer)) continue;
+            if (!(await this.isDiscountValidForBranchTime(offer, branchId)))
+                continue;
+            cardOffers.push(offer);
+        }
 
         let coupon: Discount | null = null;
         if (couponCode?.trim()) {
@@ -5401,7 +5447,6 @@ export class OrdersService {
         };
         const stages: EngineStage[] = [];
         let discountChosen: Discount | null = null;
-        let cardChosen: Discount | null = null;
 
         if (productPromos.length > 0) {
             stages.push({
@@ -5458,16 +5503,13 @@ export class OrdersService {
                 compute: (running) => {
                     let bestAlloc: number[] | null = null;
                     let bestAmt = 0;
-                    let chosen: Discount | null = null;
                     for (const d of cardOffers) {
                         const r = this.evalOfferOnRunning(d, evalCtx, running);
                         if (r && r.amount > bestAmt) {
                             bestAmt = r.amount;
                             bestAlloc = r.alloc;
-                            chosen = d;
                         }
                     }
-                    cardChosen = chosen;
                     return bestAlloc ?? new Array<number>(n).fill(0);
                 },
             });
@@ -5476,10 +5518,13 @@ export class OrdersService {
         const result = runOfferEngine(engineLines, stages, settings);
         const combinedLineDiscount = result.lines.map((l) => l.totalDiscount);
         const promoUsed = result.byKind.product_promotion > 0;
+        // cardChosen is deliberately absent: a card offer's `id` is a bank_cards id,
+        // and orders.discount_id is FK-constrained to discounts(id) — writing one
+        // here would point at an unrelated discount that happens to share the id.
+        // The applied card amount is recorded in orders.card_discount_amount.
         const discountId =
             coupon?.id ??
             (discountChosen as Discount | null)?.id ??
-            (cardChosen as Discount | null)?.id ??
             (promoUsed && productPromos.length > 0
                 ? productPromos[0].id
                 : null);

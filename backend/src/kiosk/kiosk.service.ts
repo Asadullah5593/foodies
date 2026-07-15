@@ -65,27 +65,34 @@ export class KioskService {
     }
 
     /**
-     * Reject items whose menu item has variants but no (valid) variant was
-     * chosen. The DB has no "variant required" flag — selection is enforced by
-     * the UI — so we guard the API here: a kiosk that has variants must send a
-     * variant_id for those lines, matching the cashier/web behaviour.
+     * Fills in a missing `variant_id` with the item's default size, and rejects
+     * only what is genuinely unusable.
+     *
+     * The kiosk used to demand an explicit variant on any sized item while POS and
+     * the consumer API required nothing — so a cart POS accepts was rejected here
+     * with no row written, which looks exactly like the order vanishing. POS picks
+     * the merchant's `is_default` variant in the same situation
+     * (`defaultVariantIdForItem`); this mirrors that rather than inventing a rule.
+     *
+     * A variant that does not belong to the item is still refused: that is a wrong
+     * answer, not a missing one. The resolved id is written back into the payload,
+     * so the stored cart is explicit and the counter sees the same size the kiosk
+     * was priced at.
      */
-    private async assertVariantSelections(
+    private async resolveVariantSelections(
         items: KioskOrderItemPayload[],
     ): Promise<void> {
-        const lines: { menuItemId: number; variantId?: number }[] = [];
+        /** Lines by reference, so the resolved variant can be written back. */
+        const lines: Array<{
+            menuItemId: number;
+            line: { variant_id?: number };
+        }> = [];
         for (const it of items ?? []) {
             if (it.deal_menu_item_id != null) {
                 for (const c of it.components ?? [])
-                    lines.push({
-                        menuItemId: c.menu_item_id,
-                        variantId: c.variant_id,
-                    });
+                    lines.push({ menuItemId: c.menu_item_id, line: c });
             } else if (it.menu_item_id != null) {
-                lines.push({
-                    menuItemId: it.menu_item_id,
-                    variantId: it.variant_id,
-                });
+                lines.push({ menuItemId: it.menu_item_id, line: it });
             }
         }
         const ids = [...new Set(lines.map((l) => l.menuItemId))];
@@ -94,27 +101,62 @@ export class KioskService {
         const variants = await this.variantRepo.find({
             where: { menuItemId: In(ids) },
         });
-        const byItem = new Map<number, Set<number>>();
+        const byItem = new Map<number, MenuVariant[]>();
         for (const v of variants) {
-            if (!byItem.has(v.menuItemId)) byItem.set(v.menuItemId, new Set());
-            byItem.get(v.menuItemId)!.add(v.id);
+            if (!byItem.has(v.menuItemId)) byItem.set(v.menuItemId, []);
+            byItem.get(v.menuItemId)!.push(v);
         }
-        for (const l of lines) {
-            const set = byItem.get(l.menuItemId);
-            if (set && set.size > 0) {
-                if (l.variantId == null)
+
+        for (const { menuItemId, line } of lines) {
+            const options = byItem.get(menuItemId);
+            // No sizes to choose from — nothing to resolve, nothing to reject.
+            if (!options || options.length === 0) continue;
+
+            if (line.variant_id != null) {
+                if (!options.some((v) => v.id === line.variant_id))
                     throw new BadRequestException(
-                        `menu_item ${l.menuItemId} requires a variant selection (variant_id)`,
+                        `variant_id ${line.variant_id} is not valid for menu_item ${menuItemId}`,
                     );
-                if (!set.has(l.variantId))
-                    throw new BadRequestException(
-                        `variant_id ${l.variantId} is not valid for menu_item ${l.menuItemId}`,
-                    );
+                continue;
             }
+
+            const fallback =
+                options.find((v) => v.isDefault) ??
+                [...options].sort(
+                    (a, b) =>
+                        (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || a.id - b.id,
+                )[0];
+            if (!fallback) {
+                throw new BadRequestException(
+                    `menu_item ${menuItemId} has no usable size to default to; send a variant_id`,
+                );
+            }
+            line.variant_id = fallback.id;
+            this.logger.warn(
+                `Kiosk sent no variant_id for menu_item ${menuItemId}; defaulted to variant ${fallback.id}` +
+                    `${fallback.isDefault ? '' : ' (no is_default set — used the first by sort order)'}`,
+            );
         }
     }
 
-    private quoteInput(payload: KioskOrderPayload) {
+    /**
+     * The tender the pricing engine sees is derived from the money actually being
+     * collected, never from a client-sent split. A card offer only survives if the
+     * cashier really is taking the whole bill on that card, so the kiosk cannot
+     * price a bank-funded discount the tender does not back.
+     */
+    private paymentSplitOf(payments: KioskPaymentInput[] | undefined) {
+        const sum = (method: 'cash' | 'card') =>
+            (payments ?? [])
+                .filter((p) => p?.method === method)
+                .reduce((s, p) => s + (Number(p.amount) || 0), 0);
+        return { cash_amount: sum('cash'), card_amount: sum('card') };
+    }
+
+    private quoteInput(
+        payload: KioskOrderPayload,
+        payments?: KioskPaymentInput[],
+    ) {
         return {
             branch_id: payload.branch_id,
             order_type: payload.order_type,
@@ -124,6 +166,10 @@ export class KioskService {
                 quantity: number;
             }[],
             discount_code: payload.discount_code,
+            // Only meaningful at finalize; at submit time there is no tender yet,
+            // so no card offer is priced and the kiosk shows the undiscounted total.
+            bank_card_id: payload.bank_card_id ?? null,
+            payment_split: payments ? this.paymentSplitOf(payments) : undefined,
         };
     }
 
@@ -146,7 +192,7 @@ export class KioskService {
         const tenantId = await this.getTenantIdFromBranch(payload.branch_id);
 
         // Items with variants must specify which one (the API has no UI to enforce it).
-        await this.assertVariantSelections(payload.items);
+        await this.resolveVariantSelections(payload.items);
 
         // Loyalty redemption is not honored for kiosk source — drop it defensively.
         const sanitized: KioskOrderPayload = {
@@ -278,6 +324,43 @@ export class KioskService {
     }
 
     /**
+     * Says why a code did not resolve, instead of one message covering five
+     * different causes. "Not found, already paid, or expired" left a cashier (and
+     * whoever they call) unable to tell a wrong-branch mistake from a cart the
+     * kiosk never actually saved.
+     *
+     * Same-tenant staff only, so naming the other branch leaks nothing. A cart
+     * belonging to a brand the cashier is locked out of stays deliberately vague.
+     */
+    private async explainMissing(
+        code: string,
+        branchId: number,
+        tenantId: number,
+    ): Promise<string> {
+        const anywhere = await this.kioskRepo.find({
+            where: { kioskCode: code, tenantId },
+            order: { id: 'DESC' },
+            take: 5,
+        });
+        if (anywhere.length === 0) {
+            return `No kiosk order #${code} was ever received. If the kiosk showed this code, its order never reached the server — check the kiosk app for a rejected submit.`;
+        }
+        const here = anywhere.filter((r) => r.branchId === branchId);
+        if (here.length === 0) {
+            const other = await this.branchRepo.findOne({
+                where: { id: anywhere[0].branchId },
+            });
+            return `Kiosk order #${code} belongs to ${other?.name ?? `branch ${anywhere[0].branchId}`}, not this branch. Switch the POS branch to load it.`;
+        }
+        const latest = here[0];
+        if (latest.status === 'finalized')
+            return `Kiosk order #${code} has already been paid.`;
+        if (latest.status === 'expired')
+            return `Kiosk order #${code} expired (carts are held for ${PENDING_TTL_HOURS} hours). Ring it up fresh.`;
+        return `Kiosk order #${code} is no longer pending (${latest.status}).`;
+    }
+
+    /**
      * Cashier looks up a pending kiosk cart by its code. Returns the stored cart
      * plus a freshly recomputed total so price changes are visible.
      */
@@ -291,10 +374,11 @@ export class KioskService {
         const row = await this.kioskRepo.findOne({
             where: { branchId, kioskCode: code, status: 'pending' },
         });
-        if (!row || row.tenantId !== tenantId)
+        if (!row || row.tenantId !== tenantId) {
             throw new NotFoundException(
-                'Kiosk order not found, already paid, or expired',
+                await this.explainMissing(code, branchId, tenantId),
             );
+        }
         this.assertCashierBrandAccess(row, allowedBrandIds);
 
         const submittedCount = row.payload.items?.length ?? 0;
@@ -412,19 +496,21 @@ export class KioskService {
             };
 
             // Same variant guard at finalize, in case the cart was edited.
-            await this.assertVariantSelections(dto.items);
+            await this.resolveVariantSelections(dto.items);
 
+            const validPayments = (payments ?? []).filter(
+                (p) => p && Number(p.amount) > 0,
+            );
             // Validate the cashier's collected amount BEFORE creating the order
             // (a post-create rejection could not roll back the committed order).
+            // Priced against the real tender, so a card offer is only granted when
+            // the whole bill is genuinely being taken on the chosen card.
             const quote = await this.ordersService.quote(
-                this.quoteInput(dto),
+                this.quoteInput(dto, validPayments),
                 tenantId,
                 'kiosk',
             );
             const expectedTotal = Number(quote.total_amount);
-            const validPayments = (payments ?? []).filter(
-                (p) => p && Number(p.amount) > 0,
-            );
             const paid = validPayments.reduce(
                 (s, p) => s + Number(p.amount),
                 0,
@@ -435,9 +521,15 @@ export class KioskService {
                 );
 
             // Create the real order. source='kiosk' attributes it to the kiosk
-            // even though a cashier (userId) placed it.
+            // even though a cashier (userId) placed it. It must be priced against
+            // the same tender the quote above used, or the order would re-price
+            // without the card offer and disagree with the amount collected.
             const created = await this.ordersService.createOrder(
-                dto as unknown as Parameters<OrdersService['createOrder']>[0],
+                {
+                    ...dto,
+                    bank_card_id: dto.bank_card_id ?? null,
+                    payment_split: this.paymentSplitOf(validPayments),
+                } as unknown as Parameters<OrdersService['createOrder']>[0],
                 tenantId,
                 userId,
                 'kiosk',

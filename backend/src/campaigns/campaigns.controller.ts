@@ -41,7 +41,11 @@ export class CampaignsController {
 
     @Post()
     store(@CurrentUser() user: User, @Body() dto: Record<string, unknown>) {
-        return this.service.create(this.tid(user), dto as never);
+        return this.service.create(
+            this.tid(user),
+            dto as never,
+            user.allowedBrandIds,
+        );
     }
 
     @Put(':id')
@@ -50,23 +54,32 @@ export class CampaignsController {
         @CurrentUser() user: User,
         @Body() dto: Record<string, unknown>,
     ) {
-        return this.service.update(+id, this.tid(user), dto);
+        return this.service.update(
+            +id,
+            this.tid(user),
+            dto,
+            user.allowedBrandIds,
+        );
     }
 
     @Delete(':id')
     destroy(@Param('id') id: string, @CurrentUser() user: User) {
-        return this.service.remove(+id, this.tid(user));
+        return this.service.remove(+id, this.tid(user), user.allowedBrandIds);
     }
 
     @Get(':id/report')
     report(@Param('id') id: string, @CurrentUser() user: User) {
-        return this.service.report(+id, this.tid(user));
+        return this.service.report(+id, this.tid(user), user.allowedBrandIds);
     }
 
     // ---- items ----
     @Get(':id/items')
     items(@Param('id') id: string, @CurrentUser() user: User) {
-        return this.service.listItems(+id, this.tid(user));
+        return this.service.listItems(
+            +id,
+            this.tid(user),
+            user.allowedBrandIds,
+        );
     }
 
     @Post(':id/items')
@@ -75,7 +88,12 @@ export class CampaignsController {
         @CurrentUser() user: User,
         @Body() dto: Record<string, unknown>,
     ) {
-        return this.service.createItem(+id, this.tid(user), dto as never);
+        return this.service.createItem(
+            +id,
+            this.tid(user),
+            dto as never,
+            user.allowedBrandIds,
+        );
     }
 
     @Put(':id/items/:itemId')
@@ -85,7 +103,13 @@ export class CampaignsController {
         @CurrentUser() user: User,
         @Body() dto: Record<string, unknown>,
     ) {
-        return this.service.updateItem(+id, +itemId, this.tid(user), dto);
+        return this.service.updateItem(
+            +id,
+            +itemId,
+            this.tid(user),
+            dto,
+            user.allowedBrandIds,
+        );
     }
 
     @Delete(':id/items/:itemId')
@@ -94,6 +118,11 @@ export class CampaignsController {
         @Param('itemId') itemId: string,
         @CurrentUser() user: User,
     ) {
-        return this.service.removeItem(+id, +itemId, this.tid(user));
+        return this.service.removeItem(
+            +id,
+            +itemId,
+            this.tid(user),
+            user.allowedBrandIds,
+        );
     }
 }

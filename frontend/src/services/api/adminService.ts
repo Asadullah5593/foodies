@@ -899,6 +899,17 @@ export const adminService = {
       bank: string | null;
       network: string | null;
       bin_prefixes: string[] | null;
+      /** The card's own discount; has_offer is false when it discounts nothing. */
+      discount_type: 'flat' | 'percentage' | null;
+      discount_value: number | null;
+      min_order_amount: number | null;
+      max_discount_amount: number | null;
+      valid_from: string | null;
+      valid_until: string | null;
+      valid_time_start: string | null;
+      valid_time_end: string | null;
+      valid_days_of_week: number[] | null;
+      has_offer: boolean;
       is_active: boolean;
     }>;
   },
@@ -907,6 +918,16 @@ export const adminService = {
     bank?: string | null;
     network?: string | null;
     bin_prefixes?: string[] | null;
+    eligibility_brand_ids?: number[] | null;
+    discount_type?: 'flat' | 'percentage' | null;
+    discount_value?: number | null;
+    min_order_amount?: number | null;
+    max_discount_amount?: number | null;
+    valid_from?: string | null;
+    valid_until?: string | null;
+    valid_time_start?: string | null;
+    valid_time_end?: string | null;
+    valid_days_of_week?: number[] | null;
     is_active?: boolean;
   }) => {
     const response = await apiClient.post('/admin/bank-cards', data);
@@ -919,6 +940,16 @@ export const adminService = {
       bank?: string | null;
       network?: string | null;
       bin_prefixes?: string[] | null;
+      eligibility_brand_ids?: number[] | null;
+      discount_type?: 'flat' | 'percentage' | null;
+      discount_value?: number | null;
+      min_order_amount?: number | null;
+      max_discount_amount?: number | null;
+      valid_from?: string | null;
+      valid_until?: string | null;
+      valid_time_start?: string | null;
+      valid_time_end?: string | null;
+      valid_days_of_week?: number[] | null;
       is_active?: boolean;
     },
   ) => {

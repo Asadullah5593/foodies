@@ -35,6 +35,7 @@ import { OrdersService } from '../orders/orders.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { CustomersService } from '../customers/customers.service';
 import { PaymentsService } from '../payments/payments.service';
+import { BankCardsService } from '../bank-cards/bank-cards.service';
 import { CustomerJwtAuthGuard } from '../auth/customer-jwt-auth.guard';
 import { OptionalCustomerJwtAuthGuard } from '../auth/optional-customer-jwt-auth.guard';
 import { OtpService } from '../otp/otp.service';
@@ -77,6 +78,7 @@ export class ConsumerController {
     constructor(
         private brandsService: BrandsService,
         private branchesService: BranchesService,
+        private bankCardsService: BankCardsService,
         private menuService: MenuService,
         private ordersService: OrdersService,
         private loyaltyService: LoyaltyService,
@@ -1046,6 +1048,57 @@ export class ConsumerController {
             loyalty_points_balance: updated.loyaltyPointsBalance,
             profile_image_url: updated.profileImageUrl ?? null,
         };
+    }
+
+    @Get('bank-cards')
+    @ApiOperation({
+        summary:
+            'Bank cards with a live offer at this branch. Only cards that discount something are listed.',
+    })
+    @ApiQuery({ name: 'branch_id', required: true, example: '1' })
+    @ApiQuery({
+        name: 'brand_id',
+        required: false,
+        description: 'Only cards whose offer covers this brand',
+    })
+    async bankCardOffers(
+        @Query('branch_id') branchIdParam: string,
+        @Query('brand_id') brandIdParam?: string,
+    ) {
+        const branchId = Number(branchIdParam);
+        if (!Number.isFinite(branchId) || branchId <= 0)
+            throw new BadRequestException('branch_id is required');
+        const tenantId = await this.getTenantIdFromBranch(branchId);
+        const brandId = Number(brandIdParam);
+        return this.bankCardsService.publicOffers(
+            tenantId,
+            Number.isFinite(brandId) && brandId > 0 ? brandId : null,
+        );
+    }
+
+    @Get('bank-cards/detect')
+    @ApiOperation({
+        summary:
+            'Identify which offer card a number belongs to, from its BIN. Send ONLY the first 6-8 digits — never a full card number.',
+    })
+    @ApiQuery({ name: 'branch_id', required: true, example: '1' })
+    @ApiQuery({ name: 'bin', required: true, example: '401234' })
+    @ApiQuery({ name: 'brand_id', required: false })
+    async detectBankCard(
+        @Query('branch_id') branchIdParam: string,
+        @Query('bin') bin: string,
+        @Query('brand_id') brandIdParam?: string,
+    ) {
+        const branchId = Number(branchIdParam);
+        if (!Number.isFinite(branchId) || branchId <= 0)
+            throw new BadRequestException('branch_id is required');
+        const tenantId = await this.getTenantIdFromBranch(branchId);
+        const brandId = Number(brandIdParam);
+        return this.bankCardsService.detectByBin(
+            tenantId,
+            bin,
+            Number.isFinite(brandId) && brandId > 0 ? brandId : null,
+        );
     }
 
     @Get('menu')

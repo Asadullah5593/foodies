@@ -1,4 +1,4 @@
-import { Controller, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Logger } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBody, ApiSecurity } from '@nestjs/swagger';
 import { KioskService } from './kiosk.service';
 import { KioskApiKeyGuard } from './kiosk-api-key.guard';
@@ -14,6 +14,8 @@ import { KioskOrderPayload } from '../entities/kiosk-order.entity';
 @Controller('public/kiosk')
 @UseGuards(KioskApiKeyGuard)
 export class PublicKioskController {
+    private readonly logger = new Logger(PublicKioskController.name);
+
     constructor(private readonly kioskService: KioskService) {}
 
     @Post('orders')
@@ -52,6 +54,20 @@ export class PublicKioskController {
         @Body()
         body: KioskOrderPayload & { idempotency_key?: string },
     ) {
-        return this.kioskService.submit(body, body.idempotency_key ?? null);
+        try {
+            return await this.kioskService.submit(
+                body,
+                body.idempotency_key ?? null,
+            );
+        } catch (e) {
+            // A rejected submit leaves no row, so without this a kiosk that shows
+            // the customer a code regardless is indistinguishable from one that
+            // never called at all — the cart simply never exists and the counter
+            // gets "no such order".
+            this.logger.warn(
+                `Kiosk submit REJECTED for branch ${body?.branch_id}: ${(e as Error).message}`,
+            );
+            throw e;
+        }
     }
 }

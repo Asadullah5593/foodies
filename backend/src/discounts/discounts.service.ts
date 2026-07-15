@@ -7,8 +7,20 @@ import {
     Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { Discount } from '../entities/discount.entity';
+import { MenuItem } from '../entities/menu-item.entity';
+import { MenuCategory } from '../entities/menu-category.entity';
+import { Brand } from '../entities/brand.entity';
+import {
+    EMPTY_SCOPE_LOOKUP,
+    ManageScope,
+    ScopeBrandLookup,
+    detachBrands,
+    effectiveBrandIds,
+    isVisibleToBrands,
+    manageScopeFor,
+} from './offer-brand-scope.util';
 
 /** Accept 'HH:mm' / 'HH:mm:ss' (Postgres time); empty/invalid → null. */
 function normalizeDiscountTime(
@@ -58,28 +70,105 @@ export class DiscountsService {
     constructor(
         @InjectRepository(Discount)
         private repo: Repository<Discount>,
+        @InjectRepository(MenuItem)
+        private menuItemRepo: Repository<MenuItem>,
+        @InjectRepository(MenuCategory)
+        private menuCategoryRepo: Repository<MenuCategory>,
+        @InjectRepository(Brand)
+        private brandRepo: Repository<Brand>,
     ) {}
 
     /**
-     * A brand-locked user may only manage discounts that are explicitly
-     * scoped (via eligibility_brand_ids) to a subset of their own brands.
-     * Tenant-wide discounts (null eligibility) belong to the owner.
+     * Resolve the brands behind every product/category referenced by these offers,
+     * in two queries regardless of how many offers there are. An offer scoped to
+     * Fireaway products is a Fireaway offer even when eligibility_brand_ids is null,
+     * and this is what lets findAll/assert see that.
+     */
+    private async loadScopeLookup(
+        offers: Discount[],
+    ): Promise<ScopeBrandLookup> {
+        const itemIds = new Set<number>();
+        const categoryIds = new Set<number>();
+        for (const d of offers) {
+            if (!Array.isArray(d.applicationScopeIds)) continue;
+            const sink =
+                d.applicationScope === 'products'
+                    ? itemIds
+                    : d.applicationScope === 'category'
+                      ? categoryIds
+                      : null;
+            if (!sink) continue;
+            for (const raw of d.applicationScopeIds) {
+                const n = Number(raw);
+                if (Number.isFinite(n)) sink.add(n);
+            }
+        }
+        if (!itemIds.size && !categoryIds.size) return EMPTY_SCOPE_LOOKUP;
+
+        const [items, categories] = await Promise.all([
+            itemIds.size
+                ? this.menuItemRepo.find({
+                      where: { id: In([...itemIds]) },
+                      select: { id: true, brandId: true },
+                  })
+                : Promise.resolve([]),
+            categoryIds.size
+                ? this.menuCategoryRepo.find({
+                      where: { id: In([...categoryIds]) },
+                      select: { id: true, brandId: true },
+                  })
+                : Promise.resolve([]),
+        ]);
+        return {
+            itemBrands: new Map(items.map((i) => [i.id, i.brandId])),
+            categoryBrands: new Map(categories.map((c) => [c.id, c.brandId])),
+        };
+    }
+
+    private async loadScopeLookupFor(d: Discount): Promise<ScopeBrandLookup> {
+        return this.loadScopeLookup([d]);
+    }
+
+    /** Brands owning the given products/categories; null for whole-order scope. */
+    private async deriveBrandsFromScope(
+        applicationScope: string | null | undefined,
+        applicationScopeIds: number[] | null | undefined,
+    ): Promise<number[] | null> {
+        const probe = {
+            applicationScope,
+            applicationScopeIds,
+        } as Discount;
+        const lookup = await this.loadScopeLookup([probe]);
+        return effectiveBrandIds(probe, lookup);
+    }
+
+    /** Every brand id in the tenant — needed to materialise "all brands except mine". */
+    private async tenantBrandIds(tenantId: number): Promise<number[]> {
+        const brands = await this.brandRepo.find({
+            where: { tenantId },
+            select: { id: true },
+        });
+        return brands.map((b) => b.id);
+    }
+
+    /**
+     * A brand-locked user may fully manage an offer only when every brand it
+     * serves is one of theirs. Offers shared with other brands (or with every
+     * brand) are detach-only and must go through `remove`, which opts their brand
+     * out instead of deleting the row out from under the other brands.
      */
     private assertDiscountManageable(
         d: Discount,
         allowedBrandIds: number[] | null | undefined,
+        lookup: ScopeBrandLookup = EMPTY_SCOPE_LOOKUP,
     ): void {
-        if (allowedBrandIds == null) return;
-        const ids = d.eligibilityBrandIds;
-        if (
-            !Array.isArray(ids) ||
-            ids.length === 0 ||
-            ids.some((id) => !allowedBrandIds.includes(Number(id)))
-        ) {
-            throw new ForbiddenException(
-                'You can only manage discounts that belong to your own brand',
-            );
-        }
+        const scope = manageScopeFor(d, allowedBrandIds, lookup);
+        if (scope === 'full') return;
+        throw new ForbiddenException(
+            scope === 'detach'
+                ? 'This offer also serves other brands. Remove your brand from it instead of editing it.'
+                : 'You can only manage discounts that belong to your own brand',
+        );
     }
 
     /** Validate / default eligibility_brand_ids for a brand-locked user. */
@@ -88,7 +177,12 @@ export class DiscountsService {
         allowedBrandIds: number[] | null | undefined,
     ): number[] | null {
         if (allowedBrandIds == null) {
-            return Array.isArray(requested) ? requested : null;
+            // Normalise [] to null: the admin forms always post the field, and an
+            // empty pick means "not specified", which must stay open for the
+            // product-scope derivation below rather than persist as [].
+            return Array.isArray(requested) && requested.length
+                ? requested
+                : null;
         }
         if (!Array.isArray(requested) || requested.length === 0) {
             return [...allowedBrandIds];
@@ -120,17 +214,17 @@ export class DiscountsService {
                           (d as { offerKind?: string }).offerKind ?? 'discount',
                       ),
                   );
-        const visible =
-            allowedBrandIds == null
-                ? kindFiltered
-                : kindFiltered.filter(
-                      (d) =>
-                          Array.isArray(d.eligibilityBrandIds) &&
-                          d.eligibilityBrandIds.some((id) =>
-                              allowedBrandIds.includes(Number(id)),
-                          ),
-                  );
-        return visible.map((d) => this.toResponse(d));
+        const lookup = await this.loadScopeLookup(kindFiltered);
+        const visible = kindFiltered.filter((d) =>
+            isVisibleToBrands(d, allowedBrandIds, lookup),
+        );
+        return visible.map((d) =>
+            this.toResponse(
+                d,
+                manageScopeFor(d, allowedBrandIds, lookup),
+                lookup,
+            ),
+        );
     }
 
     async findOne(id: number, tenantId: number | null) {
@@ -167,8 +261,6 @@ export class DiscountsService {
             get_quantity?: number | null;
             get_discount_percent?: number | null;
             bogo_match_same_group?: boolean;
-            requires_card?: boolean;
-            eligible_bank_card_ids?: number[] | null;
             offer_kind?: string;
             audience?: string | null;
             eligible_customer_ids?: number[] | null;
@@ -181,7 +273,7 @@ export class DiscountsService {
         tenantId: number,
         allowedBrandIds?: number[] | null,
     ) {
-        const eligibilityBrandIds = this.resolveEligibilityBrandIds(
+        let eligibilityBrandIds = this.resolveEligibilityBrandIds(
             dto.eligibility_brand_ids,
             allowedBrandIds,
         );
@@ -212,6 +304,16 @@ export class DiscountsService {
         ) {
             throw new BadRequestException(
                 `When applying to "${applicationScope === 'category' ? 'Selected categories' : 'Selected products'}", at least one must be selected.`,
+            );
+        }
+
+        // An owner who picks only Fireaway products has made a Fireaway offer whether
+        // or not they touched the brand selector. Pin that down at write time so the
+        // offer shows up for the brand it discounts instead of becoming owner-only.
+        if (eligibilityBrandIds == null) {
+            eligibilityBrandIds = await this.deriveBrandsFromScope(
+                applicationScope,
+                applicationScopeIds,
             );
         }
 
@@ -268,21 +370,17 @@ export class DiscountsService {
                             ? Number(dto.get_discount_percent)
                             : null,
                     bogoMatchSameGroup: dto.bogo_match_same_group ?? false,
-                    requiresCard: dto.requires_card ?? false,
-                    eligibleBankCardIds:
-                        dto.requires_card &&
-                        Array.isArray(dto.eligible_bank_card_ids)
-                            ? dto.eligible_bank_card_ids.map((id) => Number(id))
-                            : null,
+                    // Card-linked offers are not created here: a card's discount is
+                    // configured on the card itself (see BankCardsService).
+                    requiresCard: false,
+                    eligibleBankCardIds: null,
                     offerKind:
                         (dto.offer_kind as Discount['offerKind']) ??
                         (requiresCode
                             ? 'coupon'
-                            : dto.requires_card
-                              ? 'card_offer'
-                              : applicationScope === 'products'
-                                ? 'product_promotion'
-                                : 'discount'),
+                            : applicationScope === 'products'
+                              ? 'product_promotion'
+                              : 'discount'),
                     audience: (dto.audience as Discount['audience']) ?? null,
                     eligibleCustomerIds: Array.isArray(
                         dto.eligible_customer_ids,
@@ -300,10 +398,7 @@ export class DiscountsService {
                         dto.priority != null
                             ? Math.max(0, Math.floor(Number(dto.priority)))
                             : 0,
-                    funding:
-                        dto.funding === 'bank' || dto.requires_card
-                            ? 'bank'
-                            : 'merchant',
+                    funding: dto.funding === 'bank' ? 'bank' : 'merchant',
                 }),
             );
             return this.toResponse(discount);
@@ -361,8 +456,6 @@ export class DiscountsService {
             get_quantity?: number | null;
             get_discount_percent?: number | null;
             bogo_match_same_group?: boolean;
-            requires_card?: boolean;
-            eligible_bank_card_ids?: number[] | null;
             offer_kind?: string;
             audience?: string | null;
             eligible_customer_ids?: number[] | null;
@@ -376,7 +469,11 @@ export class DiscountsService {
     ) {
         const d = await this.repo.findOne({ where: { id, tenantId } });
         if (!d) throw new NotFoundException('Discount not found');
-        this.assertDiscountManageable(d, allowedBrandIds);
+        this.assertDiscountManageable(
+            d,
+            allowedBrandIds,
+            await this.loadScopeLookupFor(d),
+        );
         if (dto.name !== undefined) {
             const name = String(dto.name).trim();
             if (!name) throw new BadRequestException('Name cannot be empty.');
@@ -456,6 +553,14 @@ export class DiscountsService {
                         : undefined,
                     allowedBrandIds,
                 );
+            // Keep an unbranded product/category offer pinned to whatever brands its
+            // (possibly just-changed) selection now belongs to.
+            if (d.eligibilityBrandIds == null) {
+                d.eligibilityBrandIds = await this.deriveBrandsFromScope(
+                    d.applicationScope,
+                    d.applicationScopeIds,
+                );
+            }
             if (dto.is_active !== undefined) d.isActive = dto.is_active;
             if (dto.valid_from !== undefined)
                 d.validFrom = dto.valid_from ? new Date(dto.valid_from) : null;
@@ -482,14 +587,6 @@ export class DiscountsService {
                         : null;
             if (dto.bogo_match_same_group !== undefined)
                 d.bogoMatchSameGroup = dto.bogo_match_same_group;
-            if (dto.requires_card !== undefined)
-                d.requiresCard = dto.requires_card;
-            if (dto.eligible_bank_card_ids !== undefined)
-                d.eligibleBankCardIds = Array.isArray(
-                    dto.eligible_bank_card_ids,
-                )
-                    ? dto.eligible_bank_card_ids.map((id) => Number(id))
-                    : null;
             if (dto.offer_kind !== undefined)
                 d.offerKind = dto.offer_kind as Discount['offerKind'];
             if (dto.audience !== undefined)
@@ -538,6 +635,12 @@ export class DiscountsService {
         }
     }
 
+    /**
+     * Deleting an offer that also serves brands the caller does not own would kill
+     * it for those brands too, so a brand-locked caller only ever opts their own
+     * brands out; the row survives for everyone else. It is deleted outright only
+     * when the caller owns every brand on it (or is unrestricted).
+     */
     async remove(
         id: number,
         tenantId: number,
@@ -545,7 +648,38 @@ export class DiscountsService {
     ) {
         const d = await this.repo.findOne({ where: { id, tenantId } });
         if (!d) throw new NotFoundException('Discount not found');
-        this.assertDiscountManageable(d, allowedBrandIds);
+        const lookup = await this.loadScopeLookupFor(d);
+        const scope = manageScopeFor(d, allowedBrandIds, lookup);
+
+        if (scope === 'read_only') {
+            throw new ForbiddenException(
+                'You can only manage discounts that belong to your own brand',
+            );
+        }
+
+        if (scope === 'detach' && allowedBrandIds != null) {
+            const remaining = detachBrands(
+                d,
+                allowedBrandIds,
+                await this.tenantBrandIds(tenantId),
+                lookup,
+            );
+            // Nothing left to serve — [] would read back as "all brands" and
+            // resurrect the offer everywhere, so drop the row instead.
+            if (remaining.length === 0) {
+                await this.repo.remove(d);
+                return { message: 'Discount deleted successfully' };
+            }
+            d.eligibilityBrandIds = remaining;
+            await this.repo.save(d);
+            return {
+                message:
+                    'Your brand was removed from this offer. It stays active for the other brands it serves.',
+                detached: true,
+                eligibility_brand_ids: remaining,
+            };
+        }
+
         await this.repo.remove(d);
         return { message: 'Discount deleted successfully' };
     }
@@ -580,10 +714,22 @@ export class DiscountsService {
         return code;
     }
 
-    private toResponse(d: Discount) {
+    private toResponse(
+        d: Discount,
+        manageScope: ManageScope = 'full',
+        lookup: ScopeBrandLookup = EMPTY_SCOPE_LOOKUP,
+    ) {
         return {
             id: d.id,
             tenant_id: d.tenantId,
+            /**
+             * Brands this offer actually serves — derived from its products when
+             * eligibility_brand_ids is unset. null = every brand. The admin UI badges
+             * from this, not from eligibility_brand_ids.
+             */
+            effective_brand_ids: effectiveBrandIds(d, lookup),
+            /** 'full' | 'detach' | 'read_only' for the requesting user. */
+            manage_scope: manageScope,
             name: d.name,
             code: d.code,
             requires_code: d.requiresCode ?? true,
@@ -615,8 +761,6 @@ export class DiscountsService {
                     ? Number(d.getDiscountPercent)
                     : null,
             bogo_match_same_group: d.bogoMatchSameGroup ?? false,
-            requires_card: d.requiresCard ?? false,
-            eligible_bank_card_ids: d.eligibleBankCardIds ?? null,
             offer_kind: (d as { offerKind?: string }).offerKind ?? 'discount',
             audience: (d as { audience?: string | null }).audience ?? null,
             eligible_customer_ids:

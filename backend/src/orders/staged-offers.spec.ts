@@ -28,15 +28,41 @@ const mkOffer = (o: AnyOffer): AnyOffer => ({
   ...o,
 });
 
-function svcWith(autoOffers: AnyOffer[], coupon: AnyOffer | null): OrdersService {
+/** A bank card carrying its own offer — the only source of card discounts. */
+const mkCard = (c: AnyOffer): AnyOffer => ({
+  id: 7,
+  tenantId: 1,
+  name: 'HBL Premium',
+  isActive: true,
+  discountType: 'percentage',
+  discountValue: 10,
+  minOrderAmount: null,
+  maxDiscountAmount: null,
+  validFrom: null,
+  validUntil: null,
+  validTimeStart: null,
+  validTimeEnd: null,
+  validDaysOfWeek: null,
+  eligibilityBrandIds: null,
+  eligibilityBranchIds: null,
+  ...c,
+});
+
+function svcWith(
+  autoOffers: AnyOffer[],
+  coupon: AnyOffer | null,
+  bankCards: AnyOffer[] = [],
+): OrdersService {
   const svc = Object.create(OrdersService.prototype) as OrdersService & {
     discountRepo: unknown;
+    bankCardRepo: unknown;
     isDiscountValidForBranchTime: unknown;
   };
   svc.discountRepo = {
     find: async () => autoOffers,
     findOne: async () => coupon,
   };
+  svc.bankCardRepo = { find: async () => bankCards };
   svc.isDiscountValidForBranchTime = async () => true;
   return svc as OrdersService;
 }
@@ -64,15 +90,6 @@ describe('resolveStagedOffers (real orchestration)', () => {
           applicationScopeIds: [55],
         }),
         mkOffer({ id: 20, offerKind: 'discount', type: 'flat', value: 10 }),
-        mkOffer({
-          id: 40,
-          offerKind: 'card_offer',
-          type: 'percentage',
-          value: 10,
-          requiresCard: true,
-          eligibleBankCardIds: [7],
-          funding: 'bank',
-        }),
       ],
       mkOffer({
         id: 30,
@@ -82,6 +99,7 @@ describe('resolveStagedOffers (real orchestration)', () => {
         type: 'flat',
         value: 10,
       }),
+      [mkCard({ id: 7, discountType: 'percentage', discountValue: 10 })],
     );
 
     const r = await (
@@ -145,17 +163,9 @@ describe('resolveStagedOffers (real orchestration)', () => {
 
   it('card offer does not apply without full card payment', async () => {
     const svc = svcWith(
-      [
-        mkOffer({
-          id: 40,
-          offerKind: 'card_offer',
-          type: 'percentage',
-          value: 10,
-          requiresCard: true,
-          eligibleBankCardIds: [7],
-        }),
-      ],
+      [],
       null,
+      [mkCard({ id: 7, discountType: 'percentage', discountValue: 10 })],
     );
     const r = await (
       svc as unknown as {
@@ -174,5 +184,77 @@ describe('resolveStagedOffers (real orchestration)', () => {
       settings: resolveOfferSettings(null),
     });
     expect(r.totalDiscount).toBe(0);
+  });
+
+  it('ignores a leftover card_offer row in discounts — cards are the only source', async () => {
+    // Card offers moved onto bank_cards. A stale discounts row must not price
+    // anything, or a card discount could apply with no card configured to give it.
+    const svc = svcWith(
+      [
+        mkOffer({
+          id: 40,
+          offerKind: 'card_offer',
+          type: 'percentage',
+          value: 10,
+          requiresCard: true,
+          eligibleBankCardIds: [7],
+          funding: 'bank',
+        }),
+      ],
+      null,
+      [],
+    );
+    const r = await (
+      svc as unknown as {
+        resolveStagedOffers: (c: unknown) => Promise<{
+          totalDiscount: number;
+          cardDiscountAmount: number;
+        }>;
+      }
+    ).resolveStagedOffers({
+      tenantId: 1,
+      subtotal: 100,
+      source: 'pos',
+      branchId: 10,
+      orderBrandId: 2,
+      lineDetails: [lineA],
+      couponCode: null,
+      fullCardPayment: true,
+      bankCardId: 7,
+      settings: resolveOfferSettings(null),
+    });
+    expect(r.cardDiscountAmount).toBe(0);
+    expect(r.totalDiscount).toBe(0);
+  });
+
+  it('never reports a bank card id as the order discount_id', async () => {
+    // orders.discount_id is FK-constrained to discounts(id); a card offer's id is
+    // a bank_cards id and would point at an unrelated discount.
+    const svc = svcWith(
+      [],
+      null,
+      [mkCard({ id: 7, discountType: 'percentage', discountValue: 10 })],
+    );
+    const r = await (
+      svc as unknown as {
+        resolveStagedOffers: (c: unknown) => Promise<{
+          cardDiscountAmount: number;
+          discountId: number | null;
+        }>;
+      }
+    ).resolveStagedOffers({
+      tenantId: 1,
+      subtotal: 100,
+      source: 'pos',
+      branchId: 10,
+      orderBrandId: 2,
+      lineDetails: [lineA],
+      couponCode: null,
+      fullCardPayment: true,
+      bankCardId: 7,
+      settings: resolveOfferSettings(null),
+    });
+    expect(r.cardDiscountAmount).toBe(10);
+    expect(r.discountId).toBeNull();
   });
 });

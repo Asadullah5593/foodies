@@ -2,6 +2,7 @@ import {
     Injectable,
     NotFoundException,
     BadRequestException,
+    ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -36,6 +37,35 @@ export class CouponsService {
 
     findAll(tenantId: number | null, allowedBrandIds?: number[] | null) {
         return this.discounts.findAll(tenantId, allowedBrandIds, ['coupon']);
+    }
+
+    /**
+     * Guard for the voucher/report endpoints, which CRUD does not cover because it
+     * delegates to DiscountsService. Vouchers carry customer identity and reports
+     * aggregate every brand the coupon serves, so both need manage scope — a
+     * coupon shared across brands is the owner's to read.
+     */
+    private async assertCouponManageable(
+        couponId: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+    ): Promise<Discount> {
+        const coupon = await this.discountRepo.findOne({
+            where: { id: couponId, tenantId },
+        });
+        if (!coupon) throw new NotFoundException('Coupon not found');
+        if (allowedBrandIds == null) return coupon;
+        const brands = coupon.eligibilityBrandIds;
+        const mine =
+            Array.isArray(brands) && brands.length > 0
+                ? brands.filter((id) => allowedBrandIds.includes(Number(id)))
+                : [];
+        if (mine.length === 0 || mine.length !== (brands?.length ?? 0)) {
+            throw new ForbiddenException(
+                'You can only manage coupons that belong to your own brand',
+            );
+        }
+        return coupon;
     }
 
     async create(
@@ -200,7 +230,9 @@ export class CouponsService {
         couponId: number,
         tenantId: number,
         customerIds: number[],
+        allowedBrandIds?: number[] | null,
     ): Promise<{ issued: number; existing: number }> {
+        await this.assertCouponManageable(couponId, tenantId, allowedBrandIds);
         const coupon = await this.discountRepo.findOne({
             where: { id: couponId, tenantId },
         });
@@ -323,7 +355,12 @@ export class CouponsService {
         };
     }
 
-    async listVouchers(couponId: number, tenantId: number) {
+    async listVouchers(
+        couponId: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+    ) {
+        await this.assertCouponManageable(couponId, tenantId, allowedBrandIds);
         const rows = await this.voucherRepo.find({
             where: { offerId: couponId, tenantId },
             order: { grantedAt: 'DESC' },
@@ -353,7 +390,12 @@ export class CouponsService {
     }
 
     /** Usage report for a coupon (redemptions + value + merchant/bank split). */
-    async report(couponId: number, tenantId: number) {
+    async report(
+        couponId: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+    ) {
+        await this.assertCouponManageable(couponId, tenantId, allowedBrandIds);
         const rows = await this.realizationRepo.find({
             where: { offerId: couponId, tenantId },
             order: { createdAt: 'DESC' },

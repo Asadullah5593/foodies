@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RoleAccessModule } from '../auth/role-access.module';
 import { Order } from '../entities/order.entity';
+import { BankCard } from '../entities/bank-card.entity';
 import { OrderItem } from '../entities/order-item.entity';
 import { Shift } from '../entities/shift.entity';
 import { Payment } from '../entities/payment.entity';
@@ -30,6 +31,7 @@ import { ReportsService } from './reports.service';
             InventoryItem,
             InventoryItemBranchSetting,
             WastageEvent,
+            BankCard,
         ]),
     ],
     controllers: [ReportsController],

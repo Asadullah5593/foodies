@@ -39,6 +39,12 @@ export interface KioskOrderPayload {
     items: KioskOrderItemPayload[];
     notes?: string;
     discount_code?: string;
+    /**
+     * The bank card the customer is paying with, chosen by the cashier at
+     * finalize — never at kiosk-submit time, where the tender is still unknown.
+     * The tender split itself is derived from the collected payments, not sent.
+     */
+    bank_card_id?: number | null;
 }
 
 export type KioskOrderStatus =

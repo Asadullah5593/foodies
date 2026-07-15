@@ -17,6 +17,15 @@ import SearchableMultiSelect, {
 } from '../../components/SearchableMultiSelect';
 import ValidityFields, { emptyValidity } from '../../components/ValidityFields';
 import { confirmDialog } from '../../utils/sweetAlert';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  BrandScopeBadge,
+  BrandScopeNotice,
+  canEdit,
+  removeDialog,
+  removeLabel,
+} from '../../components/OfferBrandScope';
+import apiClient from '../../utils/apiClient';
 
 const emptyForm = {
   name: '',
@@ -26,6 +35,7 @@ const emptyForm = {
   min_order_amount: '' as number | '',
   audience: 'all' as 'all' | 'specific' | 'new_customer',
   eligible_customer_ids: [] as number[],
+  eligibility_brand_ids: [] as number[],
   per_customer_limit: 1 as number | '',
   voucher_validity_days: '' as number | '',
   is_active: true,
@@ -48,9 +58,18 @@ const Coupons: React.FC = () => {
   const [form, setForm] = useState({ ...emptyForm });
   const [vouchersFor, setVouchersFor] = useState<Discount | null>(null);
   const [reportFor, setReportFor] = useState<Discount | null>(null);
+  const { user } = useAuth();
+  const allowedBrandIds = user?.allowed_brand_ids ?? null;
 
   const { data: coupons, isLoading } = useQuery({ queryKey: ['coupons'], queryFn: adminService.getCoupons });
   const { data: customers } = useQuery({ queryKey: ['customers'], queryFn: adminService.getCustomers });
+  const { data: brands } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => {
+      const res = await apiClient.get<Array<{ id: number; name: string }>>('/admin/brands');
+      return res.data;
+    },
+  });
   const { data: vouchers } = useQuery<CouponVoucher[]>({
     queryKey: ['coupon-vouchers', vouchersFor?.id],
     queryFn: () => adminService.getCouponVouchers(vouchersFor!.id),
@@ -68,6 +87,11 @@ const Coupons: React.FC = () => {
     id: c.id,
     name: `${c.name || 'Customer'}${c.phone ? ` · ${c.phone}` : ''}`,
   }));
+  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name }));
+  const brandNameById = useMemo(
+    () => new Map((brands ?? []).map((b) => [b.id, b.name])),
+    [brands],
+  );
   const paginated = useMemo(() => list.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [list, page]);
   const vAudience = vouchersFor?.audience ?? 'all';
 
@@ -88,6 +112,7 @@ const Coupons: React.FC = () => {
       min_order_amount: c.min_order_amount ?? '',
       audience: (c.audience as 'all' | 'specific' | 'new_customer') ?? 'all',
       eligible_customer_ids: c.eligible_customer_ids ?? [],
+      eligibility_brand_ids: c.eligibility_brand_ids ?? [],
       per_customer_limit: c.per_customer_limit ?? '',
       voucher_validity_days: c.voucher_validity_days ?? '',
       is_active: c.is_active,
@@ -115,6 +140,7 @@ const Coupons: React.FC = () => {
       min_order_amount: form.min_order_amount === '' ? undefined : Number(form.min_order_amount),
       audience: form.audience,
       eligible_customer_ids: form.audience === 'specific' ? form.eligible_customer_ids : null,
+      eligibility_brand_ids: form.eligibility_brand_ids,
       per_customer_limit: form.per_customer_limit === '' ? null : Number(form.per_customer_limit),
       voucher_validity_days: form.voucher_validity_days === '' ? null : Number(form.voucher_validity_days),
       is_active: form.is_active,
@@ -256,6 +282,20 @@ const Coupons: React.FC = () => {
               </div>
             )}
           </div>
+
+          {allowedBrandIds == null && (
+            <div className="mb-5">
+              <SearchableMultiSelect
+                options={brandOptions}
+                selectedIds={form.eligibility_brand_ids}
+                onChange={(ids) => setForm({ ...form, eligibility_brand_ids: ids })}
+                placeholder="All brands"
+                label="Brands"
+                maxHeight="12rem"
+              />
+              <p className="mt-2 text-[12.5px] text-gray-500">Leave empty to apply to all brands.</p>
+            </div>
+          )}
 
           <div className="mb-1">
             <div className="text-[13px] font-semibold text-gray-700">Valid at <span className="text-red-500">(required)</span></div>
@@ -399,20 +439,44 @@ const Coupons: React.FC = () => {
                   title={c.name}
                   subtitle={
                     <>
-                      <p className="text-gray-500 text-xs">{c.type === 'flat' ? `Rs ${c.value} off` : `${c.value}% off`} · {c.audience ?? 'all'} · limit {c.per_customer_limit ?? '∞'}</p>
+                      <p className="text-gray-500 text-xs flex items-center gap-2 flex-wrap">
+                        <span>{c.type === 'flat' ? `Rs ${c.value} off` : `${c.value}% off`} · {c.audience ?? 'all'} · limit {c.per_customer_limit ?? '∞'}</span>
+                        <BrandScopeBadge
+                          effectiveBrandIds={c.effective_brand_ids}
+                          brandNameById={brandNameById}
+                          allowedBrandIds={allowedBrandIds}
+                        />
+                      </p>
                       {c.code && <p className="font-mono text-xs text-gray-400">{c.code}</p>}
+                      <BrandScopeNotice manageScope={c.manage_scope} noun="coupon" />
                     </>
                   }
                   statusLabel={c.is_active ? 'Active' : 'Inactive'}
                   statusVariant={c.is_active ? 'active' : 'inactive'}
                   animationIndex={i}
                   actions={
-                    <>
-                      <Button size="small" variant="outline" onClick={() => setVouchersFor(c)}>Vouchers</Button>
-                      <Button size="small" variant="outline" onClick={() => setReportFor(c)}>Report</Button>
-                      <Button size="small" variant="edit" onClick={() => handleEdit(c)}>Edit</Button>
-                      <Button size="small" variant="danger" onClick={async () => { if (await confirmDialog({ title: `Delete "${c.name}"?`, confirmText: 'Delete' })) deleteM.mutate(c.id); }}>Delete</Button>
-                    </>
+                    c.manage_scope === 'read_only' ? null : (
+                      <>
+                        {/* Vouchers carry customer identity and Report aggregates every
+                            brand's redemptions, so both follow Edit's gate. */}
+                        {canEdit(c.manage_scope) && (
+                          <>
+                            <Button size="small" variant="outline" onClick={() => setVouchersFor(c)}>Vouchers</Button>
+                            <Button size="small" variant="outline" onClick={() => setReportFor(c)}>Report</Button>
+                            <Button size="small" variant="edit" onClick={() => handleEdit(c)}>Edit</Button>
+                          </>
+                        )}
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={async () => {
+                            if (await confirmDialog(removeDialog(c.manage_scope, 'coupon', c.name))) deleteM.mutate(c.id);
+                          }}
+                        >
+                          {removeLabel(c.manage_scope)}
+                        </Button>
+                      </>
+                    )
                   }
                 />
               ))}
