@@ -17,6 +17,7 @@ import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
+import { ORDER_SOURCES, ORDER_SOURCE_LABEL, orderSourceLabel } from '../../utils/orderSources';
 
 type OrderRow = Order & {
   order_number?: string;
@@ -57,12 +58,9 @@ function normalizeOrder(o: OrderRow): OrderRow {
   };
 }
 
-function formatOrderSourceLabel(source: string | null | undefined): string {
-  if (source === 'consumer_app') return 'Consumer app';
-  if (source === 'pos') return 'POS';
-  if (!source) return '—';
-  return source.replace(/_/g, ' ');
-}
+// Labels live in utils/orderSources so the badge and the Source filter cannot
+// disagree (kiosk used to render lowercase here while POS/Consumer app did not).
+const formatOrderSourceLabel = orderSourceLabel;
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   placed: 'Placed',
@@ -115,6 +113,7 @@ const Orders: React.FC = () => {
   const brandId = searchParams.get('brand_id') || '';
   const status = searchParams.get('status') || '';
   const orderType = searchParams.get('order_type') || '';
+  const source = searchParams.get('source') || '';
   const defaultToday = localDateYYYYMMDD();
   const dateFrom = searchParams.get('date_from') || defaultToday;
   const dateTo = searchParams.get('date_to') || defaultToday;
@@ -124,6 +123,7 @@ const Orders: React.FC = () => {
     ...(brandId && { brand_id: +brandId }),
     ...(status && { status }),
     ...(orderType && { order_type: orderType }),
+    ...(source && { source }),
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo && { date_to: dateTo }),
   };
@@ -136,6 +136,7 @@ const Orders: React.FC = () => {
       if (params.brand_id) search.append('brand_id', String(params.brand_id));
       if (params.status) search.append('status', params.status);
       if (params.order_type) search.append('order_type', params.order_type);
+      if (params.source) search.append('source', params.source);
       if (params.date_from) search.append('date_from', params.date_from);
       if (params.date_to) search.append('date_to', params.date_to);
       const response = await apiClient.get<OrderRow[]>(`/admin/orders?${search.toString()}`);
@@ -326,6 +327,17 @@ const Orders: React.FC = () => {
               { value: 'delivery', label: 'Delivery' },
               { value: 'dine_in', label: 'Dine in' },
               { value: 'takeaway', label: 'Takeaway' },
+            ]}
+            placeholder="All"
+            minWidth="min-w-[130px]"
+          />
+          <SearchableSelect
+            label="Source"
+            value={source}
+            onChange={(v) => setFilter('source', v)}
+            options={[
+              { value: '', label: 'All' },
+              ...ORDER_SOURCES.map((s) => ({ value: s, label: ORDER_SOURCE_LABEL[s] })),
             ]}
             placeholder="All"
             minWidth="min-w-[130px]"

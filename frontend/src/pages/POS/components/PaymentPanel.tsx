@@ -37,8 +37,6 @@ export type PaymentPanelProps = {
   onCreateOrder: () => void;
   isSubmitting: boolean;
   itemCount: number;
-  lastOrderGroupId: string | null;
-  onViewInvoice: () => void;
 };
 
 const PaymentPanel: React.FC<PaymentPanelProps> = ({
@@ -56,8 +54,6 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
   onCreateOrder,
   isSubmitting,
   itemCount,
-  lastOrderGroupId,
-  onViewInvoice,
 }) => {
   const total = Number(quote?.total_amount ?? subtotal) || 0;
   const taxAmount = Number(quote?.tax_amount ?? 0);
@@ -250,15 +246,6 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
           Create Order
         </Button>
       </motion.div>
-      {lastOrderGroupId && (
-        <Button
-          variant="view"
-          className="w-full mt-2 rounded-xl"
-          onClick={onViewInvoice}
-        >
-          View customer invoice
-        </Button>
-      )}
     </div>
   );
 };
