@@ -60,8 +60,6 @@ export interface InvoiceTemplateConfig {
   showCategory: boolean;
   showVariant: boolean;
   showModifiers: boolean;
-  showItemNotes: boolean;
-  showOrderNotes: boolean;
   showUnitPrice: boolean;
 
   showSubtotal: boolean;
@@ -104,8 +102,6 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showCategory: false,
   showVariant: true,
   showModifiers: true,
-  showItemNotes: true,
-  showOrderNotes: true,
   showUnitPrice: true,
 
   showSubtotal: true,
@@ -152,8 +148,6 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
       { key: 'showCategory', label: 'Show category' },
       { key: 'showVariant', label: 'Show variant' },
       { key: 'showModifiers', label: 'Show modifiers / add-ons' },
-      { key: 'showItemNotes', label: 'Show item notes' },
-      { key: 'showOrderNotes', label: 'Show order note' },
       { key: 'showUnitPrice', label: 'Show unit price' },
     ],
   },

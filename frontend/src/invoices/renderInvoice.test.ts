@@ -124,13 +124,38 @@ describe('tabular meta — every template renders header details as a table', ()
     expect(withHeader).toContain('042-111-222');
   });
 
-  it('order note renders below the items, never in the top meta table', () => {
+  // Notes are kitchen instructions, not customer billing info: item, deal-component
+  // and order notes never reach a receipt, in preview or in print.
+  it('never renders notes of any kind', () => {
     for (const layout of ALL_LAYOUTS) {
       const html = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
-      expect(html, layout).toContain('Birthday'); // the order note is present…
-      // …and it appears AFTER the meta table, not inside it
-      expect(html.indexOf('Birthday'), layout).toBeGreaterThan(html.indexOf('class="metatbl"'));
-      expect(html, layout).not.toContain('<td class="mk">Note</td>');
+      expect(html, layout).not.toContain('Birthday'); // order note
+      expect(html, layout).not.toContain('Well done, extra crispy'); // item note
+      expect(html, layout).not.toContain('Diet, please'); // deal component note
+      expect(html, layout).not.toContain('Note:');
+    }
+  });
+
+  it('prints the customer name but never their phone number', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const html = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+      expect(html, layout).toContain('Ayesha Malik');
+      expect(html, layout).not.toContain('7654321');
+    }
+  });
+
+  it('drops the Customer row entirely when only a phone is on the order', () => {
+    const data = richSampleInvoice();
+    data.orders[0].customer_name = undefined;
+    const html = renderInvoiceHtml(data, 'bill_bordered', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+    expect(html).not.toContain('Customer');
+    expect(html).not.toContain('7654321');
+  });
+
+  it('shows no business or brand name at the top — the logo identifies the brand', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const html = renderInvoiceHtml(sampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+      expect(html, layout).not.toContain('class="biz"');
     }
   });
 });
@@ -258,7 +283,7 @@ describe('brand logo — every brand prints its own, Foodies is the fallback', (
 });
 
 describe('rich sample exercises every renderable field', () => {
-  it('renders variants, add-ons, modifiers, a deal, notes, discounts and loyalty', () => {
+  it('renders variants, add-ons, modifiers, a deal, discounts and loyalty', () => {
     // itemize discounts so all four stages show (the seeded configs do this)
     const config = cfg({
       showDiscountTotal: false,
@@ -276,8 +301,6 @@ describe('rich sample exercises every renderable field', () => {
     expect(html).toContain('↳ Mint Margarita'); // conditional nested pick
     expect(html).toContain('Family Feast Deal'); // deal group
     expect(html).toContain('Large Pepperoni Pizza'); // deal component
-    expect(html).toContain('Well done, extra crispy'); // item note
-    expect(html).toContain('Birthday'); // order note
     expect(html).toContain('Promotional discount'); // all four discount stages
     expect(html).toContain('Order discount');
     expect(html).toContain('Coupon discount');
@@ -292,7 +315,8 @@ describe('rich sample exercises every renderable field', () => {
     for (const layout of ALL_LAYOUTS) {
       const { html } = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG);
       expect(html, layout).toContain('Family Feast Deal');
-      expect(html, layout).toContain('Fireaway');
+      // The brand is identified by its logo — the name line is gone.
+      expect(html, layout).toContain('class="logo"');
     }
   });
 });

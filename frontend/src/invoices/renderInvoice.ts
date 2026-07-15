@@ -158,12 +158,8 @@ function itemsHtml(
         const sub = g.lines
           .map((l) => {
             const v = cfg.showVariant && l.variant_name ? `<span data-field="showVariant"> (${esc(l.variant_name)})</span>` : '';
-            const note =
-              cfg.showItemNotes && l.notes
-                ? `<div class="row sub sub2" data-field="showItemNotes"><span class="l muted">Note: ${esc(l.notes)}</span><span class="r"></span></div>`
-                : '';
             // Components priced inside the bundle bill 0.00 rather than a dash.
-            return `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${money(l.subtotal)}</span></div>${note}`;
+            return `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${money(l.subtotal)}</span></div>`;
           })
           .join('');
         return row(`<strong>${esc(name)}</strong>`, money(dealTotal)) + sub;
@@ -215,11 +211,7 @@ function itemsHtml(
                 )
                 .join('')
             : '';
-          const notes =
-            cfg.showItemNotes && l.notes
-              ? `<div class="row sub" data-field="showItemNotes"><span class="l muted">Note: ${esc(l.notes)}</span><span class="r"></span></div>`
-              : '';
-          return head + addons + mods + notes;
+          return head + addons + mods;
         })
         .join('');
     })
@@ -238,7 +230,6 @@ function itemsTableHtml(
   labels: { item: string; qty: string; rate: string; amount: string },
 ): string {
   const showRate = cfg.showUnitPrice;
-  const cols = showRate ? 4 : 3;
   const cell = (
     name: string,
     qty: string,
@@ -248,8 +239,6 @@ function itemsTableHtml(
     field = '',
   ) =>
     `<tr${cls ? ` class="${cls}"` : ''}${field ? ` data-field="${field}"` : ''}><td class="ci">${name}</td><td class="cq">${qty}</td>${showRate ? `<td class="cr">${rate}</td>` : ''}<td class="ca">${amount}</td></tr>`;
-  const noteRow = (text: string) =>
-    `<tr class="noterow" data-field="showItemNotes"><td colspan="${cols}">Note: ${esc(text)}</td></tr>`;
   const variantHtml = (name?: string | null) =>
     cfg.showVariant && name ? `<span data-field="showVariant"> (${esc(name)})</span>` : '';
 
@@ -262,14 +251,12 @@ function itemsTableHtml(
         const comps = g.lines
           .map((l) => {
             // Components priced inside the bundle bill 0.00 rather than a dash.
-            const compRow = cell(
+            return cell(
               `<span class="ind">${esc(l.name_snapshot ?? 'Item')}${variantHtml(l.variant_name)}</span>`,
               String(l.quantity),
               num(l.unit_price),
               num(l.subtotal),
             );
-            const note = cfg.showItemNotes && l.notes ? noteRow(l.notes) : '';
-            return compRow + note;
           })
           .join('');
         return head + comps;
@@ -322,8 +309,7 @@ function itemsTableHtml(
                 )
                 .join('')
             : '';
-          const note = cfg.showItemNotes && l.notes ? noteRow(l.notes) : '';
-          return head + addons + mods + note;
+          return head + addons + mods;
         })
         .join('');
     })
@@ -335,8 +321,7 @@ function itemsTableHtml(
 /**
  * Meta block as a two-column label / value table — order no, invoice no, type,
  * table, date, cashier, payment, customer. Shared by every template so the
- * header details read the same way everywhere. The order note is intentionally
- * NOT here — it renders below the items (see orderNoteHtml).
+ * header details read the same way everywhere.
  */
 function metaTableHtml(order: InvoiceOrderVM, cfg: InvoiceTemplateConfig): string {
   const rows: string[] = [];
@@ -349,16 +334,10 @@ function metaTableHtml(order: InvoiceOrderVM, cfg: InvoiceTemplateConfig): strin
   if (cfg.showDateTime && order.placed_at) add('Date', esc(fmtDateTime(order.placed_at)), 'showDateTime');
   if (cfg.showCashier && order.cashier_name) add('Cashier', esc(order.cashier_name), 'showCashier');
   if (cfg.showPaymentMethod && order.payment_method) add('Payment', esc(titleCase(order.payment_method)), 'showPaymentMethod');
-  if (cfg.showCustomerInfo && (order.customer_name || order.customer_phone))
-    add('Customer', esc([order.customer_name, order.customer_phone].filter(Boolean).join(' · ')), 'showCustomerInfo');
+  // Name only — a receipt never prints the customer's phone number.
+  if (cfg.showCustomerInfo && order.customer_name)
+    add('Customer', esc(order.customer_name), 'showCustomerInfo');
   return rows.length ? `<table class="metatbl"><tbody>${rows.join('')}</tbody></table>` : '';
-}
-
-/** Order-level note, shown BELOW the items (never in the top meta block). */
-function orderNoteHtml(order: InvoiceOrderVM, cfg: InvoiceTemplateConfig): string {
-  return cfg.showOrderNotes && order.notes
-    ? `<div class="onote" data-field="showOrderNotes">Note: ${esc(order.notes)}</div>`
-    : '';
 }
 
 function totalsHtml(
@@ -434,17 +413,17 @@ function totalsHtml(
  * brand receipt leads with THAT brand's name; a multi-brand group leads with
  * the business name and shows each brand per section.
  */
+/**
+ * Logo and header text only — the receipt carries no business/brand name line.
+ * The logo identifies the brand; put a name in the template's Header Text box if
+ * one is needed (e.g. legal name for tax wording).
+ */
 function bizHeaderHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
-  const header = data.header ?? {};
   const multi = (data.orders?.length ?? 0) > 1;
-  const first = data.orders?.[0];
-  const logoUrl = headerLogoUrl(cfg, first, multi);
-  const legal = header.legal_name || header.tenant_name || '';
-  const title = (!multi && first?.brand_name) || legal;
+  const logoUrl = headerLogoUrl(cfg, data.orders?.[0], multi);
   return `
     <div class="head">
       ${logoUrl ? `<img class="logo" data-field="showLogo" src="${esc(logoUrl)}" alt="" />` : ''}
-      <div class="biz">${esc(title)}</div>
       ${cfg.headerText ? `<div class="line note">${esc(cfg.headerText)}</div>` : ''}
     </div>`;
 }
@@ -482,7 +461,6 @@ function billBorderedBody(
           ${multi ? brandBlockHtml(o, cfg) : ''}
           ${metaTableHtml(o, cfg)}
           ${itemsTableHtml(o, cfg, { item: 'Item Name', qty: 'Qty', rate: 'Rate', amount: 'Amount' })}
-          ${orderNoteHtml(o, cfg)}
           ${totalsHtml(o, cfg, money, 'Grand Total')}
         </div>`,
     )
@@ -535,7 +513,6 @@ function receiptLogoBody(
           ${band}
           ${metaTableHtml(o, metaCfg)}
           ${itemsTableHtml(o, cfg, { item: 'Product', qty: 'Qty', rate: 'Rate', amount: 'Total' })}
-          ${orderNoteHtml(o, cfg)}
           ${totalsHtml(o, cfg, money, 'Grand Total')}
         </div>`;
     })
@@ -564,7 +541,6 @@ function receiptBorderedLogoBody(
           ${multi ? brandBlockHtml(o, cfg) : ''}
           ${metaTableHtml(o, cfg)}
           ${itemsTableHtml(o, cfg, { item: 'Product', qty: 'Qty', rate: 'Rate', amount: 'Total' })}
-          ${orderNoteHtml(o, cfg)}
           ${totalsHtml(o, cfg, money, 'Grand Total')}
         </div>`,
     )
@@ -591,7 +567,6 @@ function modernBody(
           ${metaTableHtml(o, cfg)}
           <div class="seclabel">Order</div>
           <div class="items">${itemsHtml(o, cfg, money)}</div>
-          ${orderNoteHtml(o, cfg)}
           ${totalsHtml(o, cfg, money)}
         </div>`,
     )
@@ -616,7 +591,6 @@ function classicMonoBody(
           ${multi ? brandBlockHtml(o, cfg) : ''}
           ${metaTableHtml(o, cfg)}
           <div class="items">${itemsHtml(o, cfg, money)}</div>
-          ${orderNoteHtml(o, cfg)}
           ${totalsHtml(o, cfg, money, 'TOTAL')}
         </div>`,
     )
@@ -638,7 +612,6 @@ function classicBody(
           ${multi ? brandBlockHtml(o, cfg) : ''}
           ${metaTableHtml(o, cfg)}
           <div class="items">${itemsHtml(o, cfg, money)}</div>
-          ${orderNoteHtml(o, cfg)}
           ${totalsHtml(o, cfg, money)}
         </div>`,
     )
@@ -752,7 +725,6 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .foot { text-align: center; margin-top: 10px; font-size: .8em; color: #333; }
     .inv-root .foot .line { white-space: pre-line; }
     .inv-root .powered { margin-top: 6px; color: #222; font-size: ${poweredPx}px; font-weight: ${poweredWeight}; }
-    .inv-root .onote { margin: 6px 0; font-style: italic; color: #222; font-size: .9em; }
     .inv-root .seclabel { text-transform: uppercase; letter-spacing: .12em; font-size: .72em; color: #555; margin: 8px 0 2px; }
     .inv-root .itbl { width: 100%; border-collapse: collapse; margin: 6px 0; }
     .inv-root .itbl th, .inv-root .itbl td { padding: 2px 3px; vertical-align: top; }
@@ -762,7 +734,6 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .itbl .ca { text-align: right; width: 54px; }
     .inv-root .itbl .ind { padding-left: 8px; display: inline-block; }
     .inv-root .itbl .ind2 { padding-left: 16px; display: inline-block; }
-    .inv-root .itbl tr.noterow td { font-style: italic; color: #333; font-size: .88em; padding-left: 10px; }
     .inv-root .cutfeed { height: 0; }
     .inv-root .cutfeed .cutline { display: none; }
     @media print {
@@ -793,7 +764,6 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
       .inv-root.inv-receipt_bordered_logo .metatbl { border: 1px solid #000; padding: 4px 6px; }
       .inv-root.inv-receipt_bordered_logo .metatbl td { padding: 1px 4px; }
       .inv-root.inv-receipt_bordered_logo .itbl th { border-bottom: 1px solid #000; font-weight: 700; }
-      .inv-root.inv-receipt_bordered_logo .itbl tbody tr td { border-bottom: 1px dotted #bbb; }
       .inv-root.inv-receipt_bordered_logo .totals { border-top: 1px dashed #000; margin-top: 6px; padding-top: 4px; }
       .inv-root.inv-receipt_bordered_logo .row.grand { border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 4px 0; font-size: 1.2em; }
       .inv-root.inv-receipt_bordered_logo .foot { margin-top: 12px; }
@@ -811,7 +781,6 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
       .inv-root.inv-receipt_logo .oinv { font-weight: 700; font-size: 1em; }
       .inv-root.inv-receipt_logo .otype { font-weight: 600; font-size: .95em; }
       .inv-root.inv-receipt_logo .itbl th { border-bottom: 1px solid #000; font-weight: 700; }
-      .inv-root.inv-receipt_logo .itbl tbody tr td { border-bottom: 1px dotted #bbb; }
       .inv-root.inv-receipt_logo .totals { border-top: 1px dashed #000; margin-top: 6px; padding-top: 4px; }
       .inv-root.inv-receipt_logo .row.grand { border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 4px 0; font-size: 1.2em; }
       .inv-root.inv-receipt_logo .foot { margin-top: 12px; }
