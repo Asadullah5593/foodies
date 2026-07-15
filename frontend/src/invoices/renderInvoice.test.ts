@@ -124,13 +124,38 @@ describe('tabular meta — every template renders header details as a table', ()
     expect(withHeader).toContain('042-111-222');
   });
 
-  it('order note renders below the items, never in the top meta table', () => {
+  // Notes are kitchen instructions, not customer billing info: item, deal-component
+  // and order notes never reach a receipt, in preview or in print.
+  it('never renders notes of any kind', () => {
     for (const layout of ALL_LAYOUTS) {
       const html = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
-      expect(html, layout).toContain('Birthday'); // the order note is present…
-      // …and it appears AFTER the meta table, not inside it
-      expect(html.indexOf('Birthday'), layout).toBeGreaterThan(html.indexOf('class="metatbl"'));
-      expect(html, layout).not.toContain('<td class="mk">Note</td>');
+      expect(html, layout).not.toContain('Birthday'); // order note
+      expect(html, layout).not.toContain('Well done, extra crispy'); // item note
+      expect(html, layout).not.toContain('Diet, please'); // deal component note
+      expect(html, layout).not.toContain('Note:');
+    }
+  });
+
+  it('prints the customer name but never their phone number', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const html = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+      expect(html, layout).toContain('Ayesha Malik');
+      expect(html, layout).not.toContain('7654321');
+    }
+  });
+
+  it('drops the Customer row entirely when only a phone is on the order', () => {
+    const data = richSampleInvoice();
+    data.orders[0].customer_name = undefined;
+    const html = renderInvoiceHtml(data, 'bill_bordered', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+    expect(html).not.toContain('Customer');
+    expect(html).not.toContain('7654321');
+  });
+
+  it('shows no business or brand name at the top — the logo identifies the brand', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const html = renderInvoiceHtml(sampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+      expect(html, layout).not.toContain('class="biz"');
     }
   });
 });
@@ -258,7 +283,7 @@ describe('brand logo — every brand prints its own, Foodies is the fallback', (
 });
 
 describe('rich sample exercises every renderable field', () => {
-  it('renders variants, add-ons, modifiers, a deal, notes, discounts and loyalty', () => {
+  it('renders variants, add-ons, modifiers, a deal, discounts and loyalty', () => {
     // itemize discounts so all four stages show (the seeded configs do this)
     const config = cfg({
       showDiscountTotal: false,
@@ -276,8 +301,6 @@ describe('rich sample exercises every renderable field', () => {
     expect(html).toContain('↳ Mint Margarita'); // conditional nested pick
     expect(html).toContain('Family Feast Deal'); // deal group
     expect(html).toContain('Large Pepperoni Pizza'); // deal component
-    expect(html).toContain('Well done, extra crispy'); // item note
-    expect(html).toContain('Birthday'); // order note
     expect(html).toContain('Promotional discount'); // all four discount stages
     expect(html).toContain('Order discount');
     expect(html).toContain('Coupon discount');
@@ -292,7 +315,8 @@ describe('rich sample exercises every renderable field', () => {
     for (const layout of ALL_LAYOUTS) {
       const { html } = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG);
       expect(html, layout).toContain('Family Feast Deal');
-      expect(html, layout).toContain('Fireaway');
+      // The brand is identified by its logo — the name line is gone.
+      expect(html, layout).toContain('class="logo"');
     }
   });
 });
@@ -407,6 +431,26 @@ describe('free lines print zero, never a blank or a dash', () => {
     expect(cells).toContain('<td class="cq">1</td>');
     expect(cells).toContain('<td class="ca">90.00</td>');
   });
+});
+
+describe('host print CSS cannot steal a table border', () => {
+  // utils/print.ts writes `th, td { border-bottom: 1px solid #f3f4f6 }` into the
+  // print popup. Under border-collapse a cell border outranks the table's own, so
+  // without a reset the boxed meta block lost its bottom edge to a near-white line
+  // that no thermal printer renders.
+  it.each(['bill_bordered', 'receipt_bordered_logo'] as const)(
+    'neutralises bare th/td styling for %s while keeping the box',
+    (layout) => {
+      const { css } = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG);
+      expect(css).toContain('.inv-root th, .inv-root td { border: 0; color: inherit; }');
+      // The reset must not disarm the layout's own bordered meta box.
+      expect(css).toContain(`.inv-root.inv-${layout} .metatbl { border: 1px solid #000`);
+      // The reset is in the shared base, so it precedes the layout's border rules.
+      expect(css.indexOf('.inv-root th, .inv-root td { border: 0')).toBeLessThan(
+        css.indexOf(`.inv-root.inv-${layout} .metatbl { border: 1px solid #000`),
+      );
+    },
+  );
 });
 
 describe('Bordered Logo Receipt layout', () => {
