@@ -305,7 +305,7 @@ const OrderTaking: React.FC = () => {
       }
     : null;
 
-  const { data: quote } = useQuery({
+  const { data: quoteData } = useQuery({
     queryKey: ['pos-quote', quotePayload],
     queryFn: () => orderService.getQuote(quotePayload!),
     enabled: quotePayload != null,
@@ -314,6 +314,14 @@ const OrderTaking: React.FC = () => {
     // no tax or discount, which is visible as a wrong price inside Checkout.
     placeholderData: keepPreviousData,
   });
+  /**
+   * There is no quote when there is nothing to quote. An empty cart nulls the
+   * payload, which DISABLES the query — and a disabled query never refetches, so
+   * keepPreviousData would otherwise serve the last cart's total forever (an empty
+   * cart still showing Rs. 949). Gate on the payload rather than on the query's
+   * own state so this cannot drift with react-query's placeholder semantics.
+   */
+  const quote = quotePayload != null ? quoteData : undefined;
 
   // Cash-vs-card preview: GST differs per tender (e.g. 16% cash / 5% card), so show the
   // customer both outcomes before a tender is picked. Derived from the current quote's
