@@ -31,11 +31,11 @@ export class DiscountsController {
             allowedBrandIds?: number[] | null;
         },
     ) {
-        // The "Discounts" surface owns order/category/brand/branch auto discounts
-        // and bank-card offers; product promotions and coupons have their own modules.
+        // The "Discounts" surface owns order/category/brand/branch auto discounts.
+        // Product promotions, coupons and bank card offers each have their own
+        // module — a card's discount lives on the card itself.
         return this.service.findAll(user.tenantId, user.allowedBrandIds, [
             'discount',
-            'card_offer',
         ]);
     }
 
@@ -73,8 +73,6 @@ export class DiscountsController {
             get_quantity?: number | null;
             get_discount_percent?: number | null;
             bogo_match_same_group?: boolean;
-            requires_card?: boolean;
-            eligible_bank_card_ids?: number[] | null;
         },
     ) {
         if (!user.tenantId)
@@ -117,8 +115,6 @@ export class DiscountsController {
             get_quantity?: number | null;
             get_discount_percent?: number | null;
             bogo_match_same_group?: boolean;
-            requires_card?: boolean;
-            eligible_bank_card_ids?: number[] | null;
         },
     ) {
         if (!user.tenantId)

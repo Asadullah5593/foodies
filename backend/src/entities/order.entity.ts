@@ -149,6 +149,15 @@ export class Order {
     })
     cardDiscountAmount: number;
 
+    /**
+     * The bank card the customer paid with, when one was selected. Recorded even
+     * if its offer gave nothing (below min spend, outside its window), so a card
+     * offer's take-up can be measured against every order that could have used it
+     * — cardDiscountAmount alone cannot tell you which card earned it.
+     */
+    @Column({ name: 'bank_card_id', type: 'int', nullable: true })
+    bankCardId: number | null;
+
     @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
     taxAmount: number;
 

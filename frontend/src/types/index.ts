@@ -404,6 +404,14 @@ export interface Discount {
   eligibility_branch_ids?: number[];
   /** Order must be from a branch of one of these brands (null = any) */
   eligibility_brand_ids?: number[];
+  /**
+   * Brands this offer actually serves, derived server-side from its products when
+   * eligibility_brand_ids is unset. null = every brand. Badge from this, not from
+   * eligibility_brand_ids.
+   */
+  effective_brand_ids?: number[] | null;
+  /** What the signed-in user may do with this offer. */
+  manage_scope?: 'full' | 'detach' | 'read_only';
   is_active: boolean;
   valid_from?: string;
   valid_until?: string;
@@ -418,9 +426,6 @@ export interface Discount {
   get_discount_percent?: number | null;
   /** Pair only within same category + variant size (e.g. 2nd Large pizza half price). */
   bogo_match_same_group?: boolean;
-  /** Card-linked: applies only when the whole bill is paid by one of eligible_bank_card_ids. */
-  requires_card?: boolean;
-  eligible_bank_card_ids?: number[] | null;
   /** Offer store discriminator. */
   offer_kind?: 'discount' | 'product_promotion' | 'coupon' | 'card_offer';
   /** Coupons: how the voucher reaches customers. */
@@ -484,6 +489,10 @@ export interface Campaign {
   valid_from?: string | null;
   valid_until?: string | null;
   eligibility_brand_ids?: number[];
+  /** Brands this campaign runs for; null = every brand. */
+  effective_brand_ids?: number[] | null;
+  /** What the signed-in user may do with this campaign. */
+  manage_scope?: 'full' | 'detach' | 'read_only';
   item_count?: number;
 }
 

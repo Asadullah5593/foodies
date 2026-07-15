@@ -4,12 +4,35 @@ import Button from '../../../components/Button';
 import { formatCurrency } from '../../../utils/currency';
 import { CartLine } from './types';
 import { computeModifiersPrice, resolveModifierUnitPrice, resolveIncludedQuantity, resolveTierCharge, sizeKeyForSelection } from '../../../utils/modifierPricing';
+import { OfferKind, offerKindLabel } from '../../../utils/offerKinds';
 
 export type QuoteLineBreakdown = {
   subtotal?: number;
   discount_amount?: number;
   after_discount?: number;
+  /** Per-kind split of discount_amount; kinds stack, so there may be several. */
+  discounts?: Array<{ kind: OfferKind; amount: number }>;
+  /** Cart index this quote line came from — a deal expands to one line per component. */
+  source_index?: number;
 };
+
+/**
+ * One choice row: label left, price hard right. Every row in a cart line uses this
+ * so the prices form a single column no matter how the label wraps.
+ */
+function optionRow(
+  key: React.Key,
+  label: React.ReactNode,
+  price: React.ReactNode,
+  className = '',
+): React.ReactNode {
+  return (
+    <li key={key} className={`flex justify-between items-baseline gap-2 ${className}`}>
+      <span className="min-w-0 break-words">{label}</span>
+      <span className="shrink-0 whitespace-nowrap">{price}</span>
+    </li>
+  );
+}
 
 export type CartPanelProps = {
   items: CartLine[];
@@ -36,6 +59,43 @@ const CartPanel: React.FC<CartPanelProps> = ({
     if (onRequestRemoveItem) onRequestRemoveItem(index);
     else onRemoveItem(index);
   };
+
+  /**
+   * Quote lines folded back onto cart lines by source_index. The backend expands a
+   * deal into one line per component, so line_breakdown is LONGER than the cart and
+   * indexing it by cart position reads a neighbour's money once any deal is present.
+   * Falls back to positional lookup for a quote from a backend that predates
+   * source_index (then a deal still misaligns, exactly as before — no worse).
+   */
+  const breakdownFor = React.useMemo(() => {
+    const byCartIndex = new Map<number, QuoteLineBreakdown>();
+    (lineBreakdown ?? []).forEach((line, i) => {
+      const key = line.source_index ?? i;
+      const prev = byCartIndex.get(key);
+      if (!prev) {
+        byCartIndex.set(key, { ...line });
+        return;
+      }
+      // Several quote lines map to one cart line (a deal's components): sum them
+      // so the cart shows the deal's whole money, not just its first component's.
+      const discounts = [...(prev.discounts ?? [])];
+      for (const d of line.discounts ?? []) {
+        const hit = discounts.find((x) => x.kind === d.kind);
+        if (hit) hit.amount = Math.round((hit.amount + d.amount) * 100) / 100;
+        else discounts.push({ ...d });
+      }
+      byCartIndex.set(key, {
+        subtotal: Math.round(((prev.subtotal ?? 0) + (line.subtotal ?? 0)) * 100) / 100,
+        discount_amount:
+          Math.round(((prev.discount_amount ?? 0) + (line.discount_amount ?? 0)) * 100) / 100,
+        after_discount:
+          Math.round(((prev.after_discount ?? 0) + (line.after_discount ?? 0)) * 100) / 100,
+        discounts,
+        source_index: key,
+      });
+    });
+    return byCartIndex;
+  }, [lineBreakdown]);
   return (
     <div className="min-h-[120px]">
       <h3 className="text-sm font-semibold text-foodies-textPrimary mb-2">Items ({items.length})</h3>
@@ -83,7 +143,7 @@ const CartPanel: React.FC<CartPanelProps> = ({
                     );
                     return (itemPrice + variantPrice + addonsPrice + modifiersPrice) * item.quantity;
                   })();
-              const lineBreakdownItem = lineBreakdown?.[index];
+              const lineBreakdownItem = breakdownFor.get(index);
               const originalAmount = lineBreakdownItem?.subtotal ?? itemTotal;
               const lineDiscount = lineBreakdownItem?.discount_amount ?? 0;
               const afterDiscount = lineBreakdownItem?.after_discount ?? itemTotal;
@@ -96,11 +156,30 @@ const CartPanel: React.FC<CartPanelProps> = ({
                   exit={{ opacity: 0, x: 20 }}
                   className="bg-foodies-surface dark:bg-slate-800 p-4 rounded-xl border border-foodies-border dark:border-slate-600 shadow-sm"
                 >
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-foodies-textPrimary dark:text-slate-100">
+                  {/* Only the title shares a row with Edit/×. Everything priced below runs
+                      the full card width, so every amount — options, add-ons and the
+                      discount split — lands on one right edge. */}
+                  <div className="mb-2">
+                    <div className="flex justify-between items-start gap-2">
+                      <h4 className="flex-1 font-semibold text-foodies-textPrimary dark:text-slate-100">
                         {isDeal ? (item.dealName ?? item.menuItem.name) : item.menuItem.name}
                       </h4>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {onConfigureItem && (
+                          <Button size="small" variant="outline" onClick={() => onConfigureItem(index)}>
+                            Edit
+                          </Button>
+                        )}
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={() => handleRemove(index)}
+                          className="min-w-[2rem]"
+                        >
+                          ×
+                        </Button>
+                      </div>
+                    </div>
                       {isDeal && item.components?.length ? (
                         // A deal is a fixed-price bundle — show the chosen components (names/sizes
                         // only), never per-component prices, so the deal total isn't second-guessed.
@@ -140,8 +219,11 @@ const CartPanel: React.FC<CartPanelProps> = ({
                         const basePrice = item.menuItem.price || item.menuItem.base_price || 0;
                         const totalVariantPrice = basePrice + Number(v?.price_modifier ?? 0);
                         return v ? (
-                          <p className="text-xs text-foodies-textSecondary">
-                            {v.name} <span className="text-foodies-cta font-medium">{formatCurrency(totalVariantPrice)}</span>
+                          <p className="text-xs text-foodies-textSecondary flex justify-between items-baseline gap-2">
+                            <span className="min-w-0 break-words">{v.name}</span>
+                            <span className="shrink-0 whitespace-nowrap text-foodies-cta font-medium">
+                              {formatCurrency(totalVariantPrice)}
+                            </span>
                           </p>
                         ) : null;
                       })()}
@@ -150,7 +232,9 @@ const CartPanel: React.FC<CartPanelProps> = ({
                           {item.addons.map(a => {
                             const addon = item.menuItem.addons?.find(ad => ad.id === a.addonId);
                             const p = addon ? Number(addon.price ?? 0) * a.quantity : 0;
-                            return addon ? <li key={a.addonId}>Add-on: {addon.name} ×{a.quantity} {formatCurrency(p)}</li> : null;
+                            return addon
+                              ? optionRow(a.addonId, `Add-on: ${addon.name} ×${a.quantity}`, formatCurrency(p))
+                              : null;
                           })}
                         </ul>
                       )}
@@ -176,7 +260,11 @@ const CartPanel: React.FC<CartPanelProps> = ({
                             const free = resolveIncludedQuantity(group, sizeKey);
                             const charged = Math.max(0, totalQty - free);
                             const cost = resolveTierCharge(group.price_tiers!, charged);
-                            lines.push(<li key={`tier-${group.id}`}>{names} {formatCurrency(cost)}</li>);
+                            // Tier groups are priced as a GROUP, so they stay collapsed to a
+                            // single row — the per-pick split would not be meaningful.
+                            lines.push(
+                              optionRow(`tier-${group.id}`, `${group.name}: ${names}`, formatCurrency(cost)),
+                            );
                           } else if (!hasTiers) {
                             // Slot-based free allocation: compute free units for this modifier
                             const groupSels = (item.modifiers ?? []).filter(s => groupOf.get(s.modifierId)?.id === group?.id);
@@ -202,27 +290,33 @@ const CartPanel: React.FC<CartPanelProps> = ({
                             const chargedUnits = Math.max(0, qty - freeUnits);
                             const unitPrice = resolveModifierUnitPrice(mod, sizeKey);
                             const p = unitPrice * chargedUnits;
-                            // Zero-price modifiers (e.g. crust/base choices) never show a price tag.
-                            const priceNode = unitPrice <= 0 ? null
-                              : freeUnits > 0 && chargedUnits === 0 ? <span className="text-emerald-600">Included</span>
-                              : freeUnits > 0 ? <>{formatCurrency(p)} <span className="text-emerald-600">({freeUnits} free)</span></>
-                              : formatCurrency(p);
+                            // Every choice carries a price, free ones included — a free pick
+                            // reads Rs. 0.00, matching the printed receipt. The "(N free)"
+                            // badge only makes sense when some units were actually charged.
+                            const priceNode =
+                              unitPrice > 0 && freeUnits > 0 && chargedUnits > 0 ? (
+                                <>{formatCurrency(p)} <span className="text-emerald-600">({freeUnits} free)</span></>
+                              ) : (
+                                formatCurrency(p)
+                              );
                             // Conditional chooser pick (e.g. meal drink) → nest under its trigger
                             // option so "+130 meal" and "+250 shake" read as one upgrade chain.
                             const vw = group?.visible_when_modifier_ids;
                             const triggerSel = vw?.length
                               ? (item.modifiers ?? []).find(s2 => vw.includes(s2.modifierId))
                               : undefined;
-                            if (triggerSel) {
-                              lines.push(
-                                <li key={sel.modifierId} className="pl-3">
-                                  ↳ {mod.name}{qty > 1 ? ` ×${qty}` : ''}{' '}
-                                  {unitPrice <= 0 ? <span className="text-emerald-600">Included</span> : priceNode}
-                                </li>
-                              );
-                            } else {
-                              lines.push(<li key={sel.modifierId}>{mod.name}{qty > 1 ? ` ×${qty}` : ''}{priceNode ? <> {priceNode}</> : null}</li>);
-                            }
+                            // Nested picks are already under their trigger, so they carry no
+                            // group prefix — same as the receipt.
+                            lines.push(
+                              optionRow(
+                                sel.modifierId,
+                                triggerSel
+                                  ? `↳ ${mod.name}${qty > 1 ? ` ×${qty}` : ''}`
+                                  : `${group?.name ? `${group.name}: ` : ''}${mod.name}${qty > 1 ? ` ×${qty}` : ''}`,
+                                priceNode,
+                                triggerSel ? 'pl-3' : '',
+                              ),
+                            );
                           }
                         }
                         return <ul className="text-xs text-foodies-textSecondary mt-0.5 space-y-0.5">{lines}</ul>;
@@ -230,26 +324,6 @@ const CartPanel: React.FC<CartPanelProps> = ({
                       {!isDeal && item.notes && (
                         <p className="text-xs text-foodies-textSecondary italic">Note: {item.notes}</p>
                       )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {onConfigureItem && (
-                        <Button
-                          size="small"
-                          variant="outline"
-                          onClick={() => onConfigureItem(index)}
-                        >
-                          Edit
-                        </Button>
-                      )}
-                      <Button
-                        size="small"
-                        variant="danger"
-                        onClick={() => handleRemove(index)}
-                        className="min-w-[2rem]"
-                      >
-                        ×
-                      </Button>
-                    </div>
                   </div>
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
@@ -281,7 +355,23 @@ const CartPanel: React.FC<CartPanelProps> = ({
                       {lineDiscount > 0 ? (
                         <>
                           <div className="text-sm text-foodies-textSecondary line-through">{formatCurrency(originalAmount)}</div>
-                          <div className="text-xs text-foodies-cta">−{formatCurrency(lineDiscount)}</div>
+                          {/* Name each kind that cut this line. They stack, so there can be
+                              several; fall back to the bare total if the quote predates the
+                              per-kind split. Label left, amount right — the rows fill the
+                              block, so the amounts line up in their own column. */}
+                          {(lineBreakdownItem?.discounts ?? []).length > 0 ? (
+                            (lineBreakdownItem?.discounts ?? []).map((d) => (
+                              <div
+                                key={d.kind}
+                                className="flex justify-between items-baseline gap-3 text-xs text-foodies-cta"
+                              >
+                                <span className="min-w-0 break-words text-left">{offerKindLabel(d.kind)}</span>
+                                <span className="shrink-0 whitespace-nowrap">−{formatCurrency(d.amount)}</span>
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-xs text-foodies-cta">−{formatCurrency(lineDiscount)}</div>
+                          )}
                           <div className="text-lg font-bold text-foodies-cta">{formatCurrency(afterDiscount)}</div>
                         </>
                       ) : (

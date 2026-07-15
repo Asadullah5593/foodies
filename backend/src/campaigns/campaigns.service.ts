@@ -10,6 +10,13 @@ import { Campaign } from '../entities/campaign.entity';
 import { CampaignItem } from '../entities/campaign-item.entity';
 import { Discount } from '../entities/discount.entity';
 import { CouponRealization } from '../entities/coupon-realization.entity';
+import { Brand } from '../entities/brand.entity';
+import {
+    ManageScope,
+    detachBrands,
+    isVisibleToBrands,
+    manageScopeFor,
+} from '../discounts/offer-brand-scope.util';
 
 function appBaseUrl(): string {
     const raw =
@@ -30,7 +37,60 @@ export class CampaignsService {
         private discountRepo: Repository<Discount>,
         @InjectRepository(CouponRealization)
         private realizationRepo: Repository<CouponRealization>,
+        @InjectRepository(Brand)
+        private brandRepo: Repository<Brand>,
     ) {}
+
+    // ---- Brand scoping -----------------------------------------------------
+
+    /** Campaigns carry no product scope, so eligibility_brand_ids is the whole story. */
+    private scopeOf(c: Campaign): { eligibilityBrandIds: number[] | null } {
+        return { eligibilityBrandIds: c.eligibilityBrandIds ?? null };
+    }
+
+    private async tenantBrandIds(tenantId: number): Promise<number[]> {
+        const brands = await this.brandRepo.find({
+            where: { tenantId },
+            select: { id: true },
+        });
+        return brands.map((b) => b.id);
+    }
+
+    /** Validate / default eligibility_brand_ids for a brand-locked user. */
+    private resolveEligibilityBrandIds(
+        requested: unknown,
+        allowedBrandIds: number[] | null | undefined,
+    ): number[] | null {
+        const ids = Array.isArray(requested)
+            ? (requested as unknown[]).map(Number).filter(Number.isFinite)
+            : null;
+        if (allowedBrandIds == null) return ids && ids.length ? ids : null;
+        if (!ids || ids.length === 0) return [...allowedBrandIds];
+        if (ids.some((id) => !allowedBrandIds.includes(id))) {
+            throw new ForbiddenException(
+                'You can only create campaigns for your own brand',
+            );
+        }
+        return ids;
+    }
+
+    /**
+     * A brand-locked user may change a campaign only when every brand it serves is
+     * one of theirs; a campaign shared with other brands (or with all brands) is
+     * theirs to opt out of, not to rewrite.
+     */
+    private assertCampaignManageable(
+        c: Campaign,
+        allowedBrandIds: number[] | null | undefined,
+    ): void {
+        const scope = manageScopeFor(this.scopeOf(c), allowedBrandIds);
+        if (scope === 'full') return;
+        throw new ForbiddenException(
+            scope === 'detach'
+                ? 'This campaign also runs for other brands. Remove your brand from it instead of editing it.'
+                : 'You can only manage campaigns that belong to your own brand',
+        );
+    }
 
     // ---- Campaigns ---------------------------------------------------------
 
@@ -40,18 +100,17 @@ export class CampaignsService {
             where: { tenantId },
             order: { sortOrder: 'ASC', createdAt: 'DESC' },
         });
-        const visible =
-            allowedBrandIds == null
-                ? list
-                : list.filter(
-                      (c) =>
-                          !Array.isArray(c.eligibilityBrandIds) ||
-                          c.eligibilityBrandIds.length === 0 ||
-                          c.eligibilityBrandIds.some((id) =>
-                              allowedBrandIds.includes(Number(id)),
-                          ),
-                  );
-        return Promise.all(visible.map((c) => this.campaignResponse(c)));
+        const visible = list.filter((c) =>
+            isVisibleToBrands(this.scopeOf(c), allowedBrandIds),
+        );
+        return Promise.all(
+            visible.map((c) =>
+                this.campaignResponse(
+                    c,
+                    manageScopeFor(this.scopeOf(c), allowedBrandIds),
+                ),
+            ),
+        );
     }
 
     async create(
@@ -66,6 +125,7 @@ export class CampaignsService {
             valid_until?: string | null;
             eligibility_brand_ids?: number[] | null;
         },
+        allowedBrandIds?: number[] | null,
     ) {
         const name = String(dto.name ?? '').trim();
         if (!name) throw new BadRequestException('Name is required.');
@@ -79,9 +139,10 @@ export class CampaignsService {
                 sortOrder: dto.sort_order ?? 0,
                 validFrom: dto.valid_from ? new Date(dto.valid_from) : null,
                 validUntil: dto.valid_until ? new Date(dto.valid_until) : null,
-                eligibilityBrandIds: Array.isArray(dto.eligibility_brand_ids)
-                    ? dto.eligibility_brand_ids.map(Number)
-                    : null,
+                eligibilityBrandIds: this.resolveEligibilityBrandIds(
+                    dto.eligibility_brand_ids,
+                    allowedBrandIds,
+                ),
             }),
         );
         return this.campaignResponse(c);
@@ -91,9 +152,11 @@ export class CampaignsService {
         id: number,
         tenantId: number,
         dto: Record<string, unknown>,
+        allowedBrandIds?: number[] | null,
     ) {
         const c = await this.campaignRepo.findOne({ where: { id, tenantId } });
         if (!c) throw new NotFoundException('Campaign not found');
+        this.assertCampaignManageable(c, allowedBrandIds);
         if (dto.name !== undefined) c.name = String(dto.name).trim();
         if (dto.description !== undefined)
             c.description = (dto.description as string | null) ?? null;
@@ -110,27 +173,78 @@ export class CampaignsService {
                 ? new Date(dto.valid_until as string)
                 : null;
         if (dto.eligibility_brand_ids !== undefined)
-            c.eligibilityBrandIds = Array.isArray(dto.eligibility_brand_ids)
-                ? (dto.eligibility_brand_ids as number[]).map(Number)
-                : null;
+            c.eligibilityBrandIds = this.resolveEligibilityBrandIds(
+                dto.eligibility_brand_ids,
+                allowedBrandIds,
+            );
         await this.campaignRepo.save(c);
         return this.campaignResponse(c);
     }
 
-    async remove(id: number, tenantId: number) {
+    /**
+     * Deleting a campaign that also runs for other brands would pull their
+     * advertising too, so a brand-locked caller only opts their own brands out.
+     */
+    async remove(
+        id: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+    ) {
         const c = await this.campaignRepo.findOne({ where: { id, tenantId } });
         if (!c) throw new NotFoundException('Campaign not found');
+        const scope = manageScopeFor(this.scopeOf(c), allowedBrandIds);
+
+        if (scope === 'read_only') {
+            throw new ForbiddenException(
+                'You can only manage campaigns that belong to your own brand',
+            );
+        }
+
+        if (scope === 'detach' && allowedBrandIds != null) {
+            const remaining = detachBrands(
+                this.scopeOf(c),
+                allowedBrandIds,
+                await this.tenantBrandIds(tenantId),
+            );
+            // Nothing left to serve — drop the row rather than persist [], which
+            // would read back as "all brands" and resurrect the campaign everywhere.
+            if (remaining.length > 0) {
+                c.eligibilityBrandIds = remaining;
+                await this.campaignRepo.save(c);
+                return {
+                    message:
+                        'Your brand was removed from this campaign. It keeps running for the other brands it serves.',
+                    detached: true,
+                    eligibility_brand_ids: remaining,
+                };
+            }
+        }
+
         await this.campaignRepo.remove(c);
         return { message: 'Campaign deleted' };
     }
 
     // ---- Items -------------------------------------------------------------
 
-    private async loadCampaign(campaignId: number, tenantId: number) {
+    /**
+     * Chokepoint for every item read/write. `requireManage` is set by the write
+     * paths so a brand admin cannot edit the items of a campaign that is not
+     * theirs — items inherit their campaign's brand scope.
+     */
+    private async loadCampaign(
+        campaignId: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+        requireManage = false,
+    ) {
         const c = await this.campaignRepo.findOne({
             where: { id: campaignId, tenantId },
         });
         if (!c) throw new NotFoundException('Campaign not found');
+        if (!isVisibleToBrands(this.scopeOf(c), allowedBrandIds)) {
+            throw new NotFoundException('Campaign not found');
+        }
+        if (requireManage) this.assertCampaignManageable(c, allowedBrandIds);
         return c;
     }
 
@@ -178,8 +292,14 @@ export class CampaignsService {
             destination_type?: string | null;
             destination_id?: number | null;
         },
+        allowedBrandIds?: number[] | null,
     ) {
-        const campaign = await this.loadCampaign(campaignId, tenantId);
+        const campaign = await this.loadCampaign(
+            campaignId,
+            tenantId,
+            allowedBrandIds,
+            true,
+        );
         const kind = dto.kind;
         if (!['offer', 'deal', 'info'].includes(kind))
             throw new BadRequestException('kind must be offer | deal | info');
@@ -237,8 +357,14 @@ export class CampaignsService {
         itemId: number,
         tenantId: number,
         dto: Record<string, unknown>,
+        allowedBrandIds?: number[] | null,
     ) {
-        const campaign = await this.loadCampaign(campaignId, tenantId);
+        const campaign = await this.loadCampaign(
+            campaignId,
+            tenantId,
+            allowedBrandIds,
+            true,
+        );
         const item = await this.itemRepo.findOne({
             where: { id: itemId, campaignId },
         });
@@ -281,8 +407,13 @@ export class CampaignsService {
         return this.itemResponse(item);
     }
 
-    async removeItem(campaignId: number, itemId: number, tenantId: number) {
-        await this.loadCampaign(campaignId, tenantId);
+    async removeItem(
+        campaignId: number,
+        itemId: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+    ) {
+        await this.loadCampaign(campaignId, tenantId, allowedBrandIds, true);
         const item = await this.itemRepo.findOne({
             where: { id: itemId, campaignId },
         });
@@ -291,8 +422,12 @@ export class CampaignsService {
         return { message: 'Item deleted' };
     }
 
-    async listItems(campaignId: number, tenantId: number) {
-        await this.loadCampaign(campaignId, tenantId);
+    async listItems(
+        campaignId: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+    ) {
+        await this.loadCampaign(campaignId, tenantId, allowedBrandIds, true);
         const items = await this.itemRepo.find({
             where: { campaignId },
             order: { sortOrder: 'ASC', id: 'ASC' },
@@ -354,8 +489,16 @@ export class CampaignsService {
 
     // ---- Report ------------------------------------------------------------
 
-    async report(campaignId: number, tenantId: number) {
-        await this.loadCampaign(campaignId, tenantId);
+    /**
+     * Requires manage scope, not just visibility: the figures aggregate every brand
+     * the campaign serves, so a shared campaign's report is the owner's to read.
+     */
+    async report(
+        campaignId: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+    ) {
+        await this.loadCampaign(campaignId, tenantId, allowedBrandIds, true);
         const items = await this.itemRepo.find({ where: { campaignId } });
         const offerIds = items
             .map((i) => i.offerId)
@@ -397,7 +540,10 @@ export class CampaignsService {
 
     // ---- Serializers -------------------------------------------------------
 
-    private async campaignResponse(c: Campaign) {
+    private async campaignResponse(
+        c: Campaign,
+        manageScope: ManageScope = 'full',
+    ) {
         const count = await this.itemRepo.count({
             where: { campaignId: c.id },
         });
@@ -412,6 +558,10 @@ export class CampaignsService {
             valid_from: c.validFrom?.toISOString() ?? null,
             valid_until: c.validUntil?.toISOString() ?? null,
             eligibility_brand_ids: c.eligibilityBrandIds ?? [],
+            /** null = every brand. The admin UI badges from this. */
+            effective_brand_ids: c.eligibilityBrandIds ?? null,
+            /** 'full' | 'detach' | 'read_only' for the requesting user. */
+            manage_scope: manageScope,
             item_count: count,
         };
     }

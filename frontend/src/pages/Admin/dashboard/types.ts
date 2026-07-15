@@ -28,6 +28,15 @@ export interface DashboardSummary {
     average_order_value: number;
     completion_rate: number; // 0..1
     total_discounts: number;
+    /** The split behind total_discounts; `card` is funded by the bank. */
+    discount_breakdown?: {
+      product_promotion: number;
+      discount: number;
+      coupon: number;
+      card: number;
+      merchant_funded: number;
+      bank_funded: number;
+    };
     total_tax: number;
     total_service_charge: number;
     total_delivery_fee: number;

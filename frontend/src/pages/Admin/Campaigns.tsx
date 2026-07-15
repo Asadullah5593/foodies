@@ -10,12 +10,24 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import OfferModal, { offerInput, offerLabel } from '../../components/OfferModal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { OFFER_KIND_LABEL } from '../../utils/offerKinds';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import SearchableSelect from '../../components/SearchableSelect';
+import SearchableMultiSelect, {
+  SearchableMultiSelectOption,
+} from '../../components/SearchableMultiSelect';
 import ValidityFields, { emptyValidity } from '../../components/ValidityFields';
 import { confirmDialog } from '../../utils/sweetAlert';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  BrandScopeBadge,
+  BrandScopeNotice,
+  canEdit,
+  removeDialog,
+  removeLabel,
+} from '../../components/OfferBrandScope';
 
-const emptyCampaign = { name: '', description: '', is_active: true, ...emptyValidity };
+const emptyCampaign = { name: '', description: '', is_active: true, eligibility_brand_ids: [] as number[], ...emptyValidity };
 const emptyItem = {
   kind: 'info' as 'info' | 'offer' | 'deal',
   title: '', subtitle: '', image_url: '',
@@ -27,7 +39,8 @@ const emptyItem = {
 };
 
 const DEST_TYPES = ['none', 'product', 'deal', 'category', 'brand', 'branch'];
-const KIND_LABEL: Record<string, string> = { offer: 'Offer', deal: 'Deal', info: 'Info banner', discount: 'Discount', product_promotion: 'Product promo', coupon: 'Coupon', card_offer: 'Card offer' };
+// Campaign-only kinds, plus the four offer kinds from their shared source.
+const KIND_LABEL: Record<string, string> = { offer: 'Offer', deal: 'Deal', info: 'Info banner', ...OFFER_KIND_LABEL };
 const KIND_BADGE: Record<string, string> = { offer: 'bg-purple-100 text-purple-700', deal: 'bg-amber-100 text-amber-700', info: 'bg-sky-100 text-sky-700' };
 
 type Opt = { value: string; label: string };
@@ -42,6 +55,8 @@ const Campaigns: React.FC = () => {
   const [reportFor, setReportFor] = useState<Campaign | null>(null);
   const [itemForm, setItemForm] = useState({ ...emptyItem });
   const [uploading, setUploading] = useState(false);
+  const { user } = useAuth();
+  const allowedBrandIds = user?.allowed_brand_ids ?? null;
 
   const { data: campaigns, isLoading } = useQuery({ queryKey: ['campaigns'], queryFn: adminService.getCampaigns });
   const { data: discounts } = useQuery({ queryKey: ['discounts'], queryFn: adminService.getDiscounts });
@@ -69,6 +84,8 @@ const Campaigns: React.FC = () => {
   const offerOpts: Opt[] = allOffers.map((o) => ({ value: String(o.id), label: `[${KIND_LABEL[o.offer_kind ?? 'discount'] ?? o.offer_kind}] ${o.name}` }));
   const destOptionsFor = (t: string): Opt[] =>
     t === 'product' ? productOpts : t === 'deal' ? dealOpts : t === 'category' ? categoryOpts : t === 'brand' ? brandOpts : t === 'branch' ? branchOpts : [];
+  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name }));
+  const brandNameById = useMemo(() => new Map((brands ?? []).map((b) => [b.id, b.name])), [brands]);
 
   const paginated = useMemo(() => list.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [list, page]);
 
@@ -108,6 +125,7 @@ const Campaigns: React.FC = () => {
     setEditing(c);
     setForm({
       name: c.name, description: c.description ?? '', is_active: c.is_active,
+      eligibility_brand_ids: c.eligibility_brand_ids ?? [],
       valid_from: c.valid_from ? c.valid_from.slice(0, 10) : '',
       valid_until: c.valid_until ? c.valid_until.slice(0, 10) : '',
       valid_time_start: '', valid_time_end: '', valid_days_of_week: [],
@@ -119,6 +137,7 @@ const Campaigns: React.FC = () => {
     e.preventDefault();
     const data: Partial<Campaign> = {
       name: form.name, description: form.description || null,
+      eligibility_brand_ids: form.eligibility_brand_ids,
       valid_from: form.valid_from || null, valid_until: form.valid_until || null, is_active: form.is_active,
     };
     if (editing) updateM.mutate({ id: editing.id, data }); else createM.mutate(data);
@@ -167,6 +186,19 @@ const Campaigns: React.FC = () => {
             <input type="text" required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
           <div><label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
             <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="w-full px-4 py-2 border border-gray-300 rounded-lg" /></div>
+          {allowedBrandIds == null && (
+            <div>
+              <SearchableMultiSelect
+                options={brandOptions}
+                selectedIds={form.eligibility_brand_ids}
+                onChange={(ids) => setForm({ ...form, eligibility_brand_ids: ids })}
+                placeholder="All brands"
+                label="Brands"
+                maxHeight="12rem"
+              />
+              <p className="mt-2 text-xs text-gray-500">Leave empty to run for all brands.</p>
+            </div>
+          )}
           <div>
             <h3 className="text-sm font-semibold text-gray-700 mb-2">Runs (required)</h3>
             <ValidityFields
@@ -373,16 +405,44 @@ const Campaigns: React.FC = () => {
                   accent={c.is_active ? 'active' : 'inactive'}
                   initial={c.name.charAt(0)}
                   title={c.name}
-                  subtitle={<p className="text-gray-500 text-xs">{c.item_count ?? 0} banner(s){c.description ? ` · ${c.description}` : ''}</p>}
+                  subtitle={
+                    <>
+                      <p className="text-gray-500 text-xs flex items-center gap-2 flex-wrap">
+                        <span>{c.item_count ?? 0} banner(s){c.description ? ` · ${c.description}` : ''}</span>
+                        <BrandScopeBadge
+                          effectiveBrandIds={c.effective_brand_ids}
+                          brandNameById={brandNameById}
+                          allowedBrandIds={allowedBrandIds}
+                        />
+                      </p>
+                      <BrandScopeNotice manageScope={c.manage_scope} noun="campaign" />
+                    </>
+                  }
                   statusLabel={c.is_active ? 'Active' : 'Inactive'}
                   statusVariant={c.is_active ? 'active' : 'inactive'}
                   animationIndex={i}
                   actions={
                     <>
-                      <Button size="small" variant="outline" onClick={() => { setItemsFor(c); setItemForm({ ...emptyItem }); }}>Banners</Button>
-                      <Button size="small" variant="outline" onClick={() => setReportFor(c)}>Report</Button>
-                      <Button size="small" variant="edit" onClick={() => handleEdit(c)}>Edit</Button>
-                      <Button size="small" variant="danger" onClick={async () => { if (await confirmDialog({ title: `Delete "${c.name}"?`, confirmText: 'Delete' })) deleteM.mutate(c.id); }}>Delete</Button>
+                      {canEdit(c.manage_scope) && (
+                        <>
+                          {/* Banners mutate shared content and Report aggregates every brand's
+                              value, so both follow Edit's gate rather than staying open. */}
+                          <Button size="small" variant="outline" onClick={() => { setItemsFor(c); setItemForm({ ...emptyItem }); }}>Banners</Button>
+                          <Button size="small" variant="outline" onClick={() => setReportFor(c)}>Report</Button>
+                          <Button size="small" variant="edit" onClick={() => handleEdit(c)}>Edit</Button>
+                        </>
+                      )}
+                      {c.manage_scope !== 'read_only' && (
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={async () => {
+                            if (await confirmDialog(removeDialog(c.manage_scope, 'campaign', c.name))) deleteM.mutate(c.id);
+                          }}
+                        >
+                          {removeLabel(c.manage_scope)}
+                        </Button>
+                      )}
                     </>
                   }
                 />

@@ -21,6 +21,14 @@ import OfferChannelsField, {
   channelsToForm,
   ALL_OFFER_CHANNELS,
 } from '../../components/OfferChannelsField';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  BrandScopeBadge,
+  BrandScopeNotice,
+  canEdit,
+  removeDialog,
+  removeLabel,
+} from '../../components/OfferBrandScope';
 
 interface Option {
   id: number;
@@ -33,6 +41,8 @@ const Discounts: React.FC = () => {
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
+  const { user } = useAuth();
+  const allowedBrandIds = user?.allowed_brand_ids ?? null;
   const [formData, setFormData] = useState({
     name: '',
     code: '',
@@ -56,8 +66,6 @@ const Discounts: React.FC = () => {
     get_quantity: '1',
     get_discount_percent: '50',
     bogo_match_same_group: true,
-    requires_card: false,
-    eligible_bank_card_ids: [] as number[],
   });
 
   const { data: discounts, isLoading } = useQuery({
@@ -83,13 +91,6 @@ const Discounts: React.FC = () => {
     queryKey: ['brands'],
     queryFn: async () => {
       const res = await apiClient.get<Option[]>('/admin/brands');
-      return res.data;
-    },
-  });
-  const { data: bankCards } = useQuery({
-    queryKey: ['bank-cards'],
-    queryFn: async () => {
-      const res = await apiClient.get<Array<{ id: number; name: string; bank: string | null }>>('/admin/bank-cards');
       return res.data;
     },
   });
@@ -163,8 +164,6 @@ const Discounts: React.FC = () => {
       get_quantity: '1',
       get_discount_percent: '50',
       bogo_match_same_group: true,
-      requires_card: false,
-      eligible_bank_card_ids: [],
     });
   };
 
@@ -196,8 +195,6 @@ const Discounts: React.FC = () => {
       get_quantity: (discount.get_quantity ?? 1).toString(),
       get_discount_percent: (discount.get_discount_percent ?? 50).toString(),
       bogo_match_same_group: discount.bogo_match_same_group ?? true,
-      requires_card: discount.requires_card ?? false,
-      eligible_bank_card_ids: discount.eligible_bank_card_ids ?? [],
     });
     setShowForm(true);
   };
@@ -263,8 +260,6 @@ const Discounts: React.FC = () => {
             bogo_match_same_group: formData.bogo_match_same_group,
           }
         : {}),
-      requires_card: formData.requires_card,
-      eligible_bank_card_ids: formData.requires_card ? formData.eligible_bank_card_ids : null,
     };
 
     if (editingDiscount) {
@@ -343,55 +338,6 @@ const Discounts: React.FC = () => {
               Discounts here apply automatically (no code). For code / voucher offers use the <span className="font-semibold text-gray-700">Coupons</span> module.
             </p>
           </div>
-
-          {/* Requires specific bank card — card-style checkbox */}
-          <button
-            type="button"
-            onClick={() => setFormData({ ...formData, requires_card: !formData.requires_card })}
-            className={`mb-6 flex w-full items-start gap-3 rounded-xl border-[1.5px] px-3.5 py-3 text-left transition-colors ${
-              formData.requires_card ? 'border-red-600 bg-red-50' : 'border-gray-200 bg-gray-50 hover:bg-gray-100'
-            }`}
-          >
-            <span className={`mt-px flex h-5 w-5 flex-none items-center justify-center rounded-md border-[1.5px] ${formData.requires_card ? 'border-red-600 bg-red-600' : 'border-gray-300 bg-white'}`}>
-              {formData.requires_card && (
-                <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round"><polyline points="3,8.5 6.5,12 13,4.5" /></svg>
-              )}
-            </span>
-            <span>
-              <span className="block text-sm font-semibold text-gray-800">Requires a specific bank card</span>
-              <span className="mt-0.5 block text-[12.5px] text-gray-400">Applies only when the whole bill is paid by one of the selected cards.</span>
-            </span>
-          </button>
-          {formData.requires_card && (
-            <div className="-mt-3 mb-6 flex flex-wrap gap-2">
-              {(bankCards ?? []).length === 0 ? (
-                <span className="text-[12.5px] text-gray-500">No bank cards yet — add them under Bank Cards first.</span>
-              ) : (
-                (bankCards ?? []).map((c) => {
-                  const selected = formData.eligible_bank_card_ids.includes(c.id);
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      onClick={() =>
-                        setFormData({
-                          ...formData,
-                          eligible_bank_card_ids: selected
-                            ? formData.eligible_bank_card_ids.filter((x) => x !== c.id)
-                            : [...formData.eligible_bank_card_ids, c.id],
-                        })
-                      }
-                      className={`rounded-full border-[1.5px] px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                        selected ? 'border-red-600 bg-red-50 text-red-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                      }`}
-                    >
-                      {c.bank ? `${c.bank} — ${c.name}` : c.name}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          )}
 
           <div className="mb-5 grid grid-cols-2 gap-4">
             <div>
@@ -505,7 +451,11 @@ const Discounts: React.FC = () => {
           {/* Valid at (branches / brands) */}
           <div className="mb-5">
             <div className="text-[13px] font-semibold text-gray-700">Valid at</div>
-            <div className="mb-3 text-[12.5px] text-gray-400">Leave both empty for all branches &amp; brands. Or limit to specific ones.</div>
+            <div className="mb-3 text-[12.5px] text-gray-400">
+              {allowedBrandIds == null
+                ? 'Leave both empty for all branches & brands. Or limit to specific ones.'
+                : 'Leave empty for all your branches. Or limit to specific ones.'}
+            </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <SearchableMultiSelect
                 options={branchOptions}
@@ -515,13 +465,15 @@ const Discounts: React.FC = () => {
                 label="Limit to branches (optional)"
                 getOptionLabel={(o) => (o.code ? `${o.name} (${o.code})` : o.name)}
               />
-              <SearchableMultiSelect
-                options={brandOptions}
-                selectedIds={formData.eligibility_brand_ids}
-                onChange={(ids) => setFormData({ ...formData, eligibility_brand_ids: ids })}
-                placeholder="All brands"
-                label="Limit to brands (optional)"
-              />
+              {allowedBrandIds == null && (
+                <SearchableMultiSelect
+                  options={brandOptions}
+                  selectedIds={formData.eligibility_brand_ids}
+                  onChange={(ids) => setFormData({ ...formData, eligibility_brand_ids: ids })}
+                  placeholder="All brands"
+                  label="Limit to brands (optional)"
+                />
+              )}
             </div>
           </div>
 
@@ -591,8 +543,16 @@ const Discounts: React.FC = () => {
                   title={discount.name}
                   subtitle={
                     <>
-                      <p>Type: <span className="font-medium">{discount.type === 'flat' ? 'Flat' : 'Percentage'}</span> · Value: <span className="font-medium">{discount.type === 'percentage' ? `${discount.value}%` : formatCurrency(discount.value)}</span></p>
+                      <p className="flex items-center gap-2 flex-wrap">
+                        <span>Type: <span className="font-medium">{discount.type === 'flat' ? 'Flat' : 'Percentage'}</span> · Value: <span className="font-medium">{discount.type === 'percentage' ? `${discount.value}%` : formatCurrency(discount.value)}</span></span>
+                        <BrandScopeBadge
+                          effectiveBrandIds={discount.effective_brand_ids}
+                          brandNameById={brandNameById}
+                          allowedBrandIds={allowedBrandIds}
+                        />
+                      </p>
                       {discount.min_order_amount && <p>Min order: {formatCurrency(discount.min_order_amount)}</p>}
+                      <BrandScopeNotice manageScope={discount.manage_scope} noun="discount" />
                     </>
                   }
                   statusLabel={discount.is_active ? 'Active' : 'Inactive'}
@@ -600,33 +560,37 @@ const Discounts: React.FC = () => {
                   animationIndex={i}
                   actions={
                     <>
-                      <Button size="small" variant="edit" onClick={() => handleEdit(discount)}>Edit</Button>
-                      <Button
-                        size="small"
-                        variant={discount.is_active ? 'outline' : 'primary'}
-                        isLoading={updateMutation.isPending}
-                        onClick={() => updateMutation.mutate({ id: discount.id, data: { is_active: !discount.is_active } })}
-                      >
-                        {discount.is_active ? 'Set inactive' : 'Set active'}
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="danger"
-                        onClick={() => {
-                          (async () => {
-                            const ok = await confirmDialog({
-                              title: `Delete discount "${discount.name}"?`,
-                              text: 'This action cannot be undone.',
-                              confirmText: 'Delete',
-                            });
-                            if (!ok) return;
-                            deleteMutation.mutate(discount.id);
-                          })();
-                        }}
-                        isLoading={deleteMutation.isPending}
-                      >
-                        Delete
-                      </Button>
+                      {canEdit(discount.manage_scope) && (
+                        <>
+                          <Button size="small" variant="edit" onClick={() => handleEdit(discount)}>Edit</Button>
+                          <Button
+                            size="small"
+                            variant={discount.is_active ? 'outline' : 'primary'}
+                            isLoading={updateMutation.isPending}
+                            onClick={() => updateMutation.mutate({ id: discount.id, data: { is_active: !discount.is_active } })}
+                          >
+                            {discount.is_active ? 'Set inactive' : 'Set active'}
+                          </Button>
+                        </>
+                      )}
+                      {discount.manage_scope !== 'read_only' && (
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={() => {
+                            (async () => {
+                              const ok = await confirmDialog(
+                                removeDialog(discount.manage_scope, 'discount', discount.name),
+                              );
+                              if (!ok) return;
+                              deleteMutation.mutate(discount.id);
+                            })();
+                          }}
+                          isLoading={deleteMutation.isPending}
+                        >
+                          {removeLabel(discount.manage_scope)}
+                        </Button>
+                      )}
                     </>
                   }
                 />

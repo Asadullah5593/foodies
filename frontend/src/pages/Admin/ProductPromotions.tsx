@@ -16,12 +16,22 @@ import SearchableMultiSelect, {
 import ValidityFields, { emptyValidity } from '../../components/ValidityFields';
 import OfferChannelsField, { channelsToApi, channelsToForm, ALL_OFFER_CHANNELS } from '../../components/OfferChannelsField';
 import { confirmDialog } from '../../utils/sweetAlert';
+import { useAuth } from '../../contexts/AuthContext';
+import {
+  BrandScopeBadge,
+  BrandScopeNotice,
+  canEdit,
+  removeDialog,
+  removeLabel,
+} from '../../components/OfferBrandScope';
+import apiClient from '../../utils/apiClient';
 
 const emptyForm = {
   name: '',
   type: 'percentage' as 'percentage' | 'flat',
   value: 10,
   application_scope_ids: [] as number[],
+  eligibility_brand_ids: [] as number[],
   max_discount_amount: '' as number | '',
   priority: 0,
   is_active: true,
@@ -35,10 +45,19 @@ const ProductPromotions: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Discount | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
+  const { user } = useAuth();
+  const allowedBrandIds = user?.allowed_brand_ids ?? null;
 
   const { data: promos, isLoading } = useQuery({ queryKey: ['product-promotions'], queryFn: adminService.getProductPromotions });
   const { data: menuItems } = useQuery({ queryKey: ['menu-items-all'], queryFn: () => adminService.getMenuItems() });
   const { data: deals } = useQuery({ queryKey: ['deals-all'], queryFn: () => adminService.getDeals() });
+  const { data: brands } = useQuery({
+    queryKey: ['brands'],
+    queryFn: async () => {
+      const res = await apiClient.get<Array<{ id: number; name: string }>>('/admin/brands');
+      return res.data;
+    },
+  });
 
   const list = promos ?? [];
   // Product promotions apply to regular sellable products only — exclude deal
@@ -49,6 +68,11 @@ const ProductPromotions: React.FC = () => {
   )
     .filter((m) => !dealIds.has(m.id) && !m.deal_only && !m.deal_pricing_mode)
     .map((m) => ({ id: m.id, name: m.name }));
+  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name }));
+  const brandNameById = useMemo(
+    () => new Map((brands ?? []).map((b) => [b.id, b.name])),
+    [brands],
+  );
   const paginated = useMemo(() => list.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [list, page]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['product-promotions'] });
@@ -73,6 +97,7 @@ const ProductPromotions: React.FC = () => {
       type: p.type === 'flat' ? 'flat' : 'percentage',
       value: p.value,
       application_scope_ids: p.application_scope_ids ?? [],
+      eligibility_brand_ids: p.eligibility_brand_ids ?? [],
       max_discount_amount: p.max_discount_amount ?? '',
       priority: p.priority ?? 0,
       is_active: p.is_active,
@@ -95,6 +120,9 @@ const ProductPromotions: React.FC = () => {
       type: form.type,
       value: Number(form.value),
       application_scope_ids: form.application_scope_ids,
+      // Left empty, the server pins the promo to whatever brands the chosen
+      // products belong to, so it never becomes an owner-only orphan.
+      eligibility_brand_ids: form.eligibility_brand_ids,
       max_discount_amount: form.max_discount_amount === '' ? undefined : Number(form.max_discount_amount),
       priority: Number(form.priority),
       is_active: form.is_active,
@@ -185,6 +213,21 @@ const ProductPromotions: React.FC = () => {
                 />
                 <p className="mt-2 text-[12.5px] text-gray-500">Deals are excluded — they are price-locked and untouched by offers.</p>
               </div>
+              {allowedBrandIds == null && (
+                <div>
+                  <SearchableMultiSelect
+                    options={brandOptions}
+                    selectedIds={form.eligibility_brand_ids}
+                    onChange={(ids) => setForm({ ...form, eligibility_brand_ids: ids })}
+                    placeholder="Auto (brands of the selected products)"
+                    label="Brands"
+                    maxHeight="12rem"
+                  />
+                  <p className="mt-2 text-[12.5px] text-gray-500">
+                    Leave empty to scope the promotion to whichever brands own the products above — those brands&apos; admins will then see and manage it.
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Right: validity + channels */}
@@ -217,15 +260,41 @@ const ProductPromotions: React.FC = () => {
                   accent={p.is_active ? 'active' : 'inactive'}
                   initial={p.name.charAt(0)}
                   title={p.name}
-                  subtitle={<p className="text-gray-500 text-xs">{p.type === 'flat' ? `Rs ${p.value} off` : `${p.value}% off`} · {p.application_scope_ids?.length ?? 0} product(s)</p>}
+                  subtitle={
+                    <>
+                      <p className="text-gray-500 text-xs flex items-center gap-2 flex-wrap">
+                        <span>{p.type === 'flat' ? `Rs ${p.value} off` : `${p.value}% off`} · {p.application_scope_ids?.length ?? 0} product(s)</span>
+                        <BrandScopeBadge
+                          effectiveBrandIds={p.effective_brand_ids}
+                          brandNameById={brandNameById}
+                          allowedBrandIds={allowedBrandIds}
+                        />
+                      </p>
+                      <BrandScopeNotice manageScope={p.manage_scope} noun="promotion" />
+                    </>
+                  }
                   statusLabel={p.is_active ? 'Active' : 'Inactive'}
                   statusVariant={p.is_active ? 'active' : 'inactive'}
                   animationIndex={i}
                   actions={
                     <>
-                      <Button size="small" variant="edit" onClick={() => handleEdit(p)}>Edit</Button>
-                      <Button size="small" variant={p.is_active ? 'outline' : 'primary'} onClick={() => updateM.mutate({ id: p.id, data: { is_active: !p.is_active } })}>{p.is_active ? 'Set inactive' : 'Set active'}</Button>
-                      <Button size="small" variant="danger" onClick={async () => { if (await confirmDialog({ title: `Delete "${p.name}"?`, confirmText: 'Delete' })) deleteM.mutate(p.id); }}>Delete</Button>
+                      {canEdit(p.manage_scope) && (
+                        <>
+                          <Button size="small" variant="edit" onClick={() => handleEdit(p)}>Edit</Button>
+                          <Button size="small" variant={p.is_active ? 'outline' : 'primary'} onClick={() => updateM.mutate({ id: p.id, data: { is_active: !p.is_active } })}>{p.is_active ? 'Set inactive' : 'Set active'}</Button>
+                        </>
+                      )}
+                      {p.manage_scope !== 'read_only' && (
+                        <Button
+                          size="small"
+                          variant="danger"
+                          onClick={async () => {
+                            if (await confirmDialog(removeDialog(p.manage_scope, 'promotion', p.name))) deleteM.mutate(p.id);
+                          }}
+                        >
+                          {removeLabel(p.manage_scope)}
+                        </Button>
+                      )}
                     </>
                   }
                 />

@@ -8,6 +8,31 @@ import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
 import { formatCurrency } from '../../utils/currency';
 
+/** GET /admin/reports/discounts — where the discounts went. */
+interface DiscountsReport {
+  total_discounts: number;
+  /** Out of the merchant's own margin. */
+  merchant_funded: number;
+  /** Funded by the bank, via a card offer. */
+  bank_funded: number;
+  by_type: {
+    product_promotion: number;
+    discount: number;
+    coupon: number;
+    card: number;
+  };
+  cards: Array<{
+    card_id: number;
+    card_name: string;
+    bank: string | null;
+    orders: number;
+    discounted_orders: number;
+    missed_orders: number;
+    total_discount: number;
+    total_revenue: number;
+  }>;
+}
+
 const Reports: React.FC = () => {
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null);
   const [selectedBrand, setSelectedBrand] = useState<number | null>(null);
@@ -59,6 +84,14 @@ const Reports: React.FC = () => {
       return response.data;
     },
     enabled: true,
+  });
+
+  const { data: discounts } = useQuery<DiscountsReport>({
+    queryKey: ['discountsReport', selectedBranch, selectedBrand, dateFrom, dateTo],
+    queryFn: async () => {
+      const response = await apiClient.get<DiscountsReport>(`/admin/reports/discounts?${reportParams()}`);
+      return response.data;
+    },
   });
 
   if (loadingSales || loadingTopItems) return <Loader fullScreen text="Loading reports..." />;
@@ -169,6 +202,83 @@ const Reports: React.FC = () => {
             {formatCurrency(Number(salesSummary?.total_discounts ?? 0))}
           </p>
         </Card>
+      </div>
+
+      <div className="mb-6">
+        <h2 className="text-xl font-semibold text-gray-800 mb-4">Discounts</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <Card>
+            <h3 className="text-sm font-medium text-gray-500 mb-2">Out of your margin</h3>
+            <p className="text-3xl font-bold text-rose-700">
+              {formatCurrency(discounts?.merchant_funded ?? 0)}
+            </p>
+            <p className="mt-1 text-xs text-gray-400">Product promotions, discounts and coupons</p>
+          </Card>
+          <Card>
+            <h3 className="text-sm font-medium text-gray-500 mb-2">Funded by the bank</h3>
+            <p className="text-3xl font-bold text-emerald-700">
+              {formatCurrency(discounts?.bank_funded ?? 0)}
+            </p>
+            <p className="mt-1 text-xs text-gray-400">Bank card offers</p>
+          </Card>
+        </div>
+        <Card className="mb-4">
+          <table className="w-full text-sm">
+            <tbody>
+              {([
+                ['Product promotions', discounts?.by_type.product_promotion],
+                ['Discounts', discounts?.by_type.discount],
+                ['Coupons', discounts?.by_type.coupon],
+                ['Bank card offers', discounts?.by_type.card],
+              ] as Array<[string, number | undefined]>).map(([label, value]) => (
+                <tr key={label} className="border-b border-gray-100 last:border-0">
+                  <td className="py-2 text-gray-600">{label}</td>
+                  <td className="py-2 text-right font-semibold text-gray-800">
+                    {formatCurrency(value ?? 0)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+        {discounts != null && discounts.cards.length > 0 && (
+          <Card>
+            <h3 className="mb-3 text-sm font-medium text-gray-500">By bank card</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
+                    <th className="py-2">Card</th>
+                    <th className="py-2 text-right">Orders</th>
+                    <th className="py-2 text-right">Got the discount</th>
+                    <th className="py-2 text-right">Discount given</th>
+                    <th className="py-2 text-right">Revenue</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {discounts.cards.map((c) => (
+                    <tr key={c.card_id} className="border-b border-gray-100 last:border-0">
+                      <td className="py-2 font-medium text-gray-800">
+                        {c.bank ? `${c.bank} — ${c.card_name}` : c.card_name}
+                      </td>
+                      <td className="py-2 text-right">{c.orders}</td>
+                      <td className="py-2 text-right">
+                        {c.discounted_orders}
+                        {c.missed_orders > 0 && (
+                          <span className="ml-1 text-xs text-amber-600" title="Paid with this card but earned nothing — below the minimum spend, or outside the offer's dates/times.">
+                            ({c.missed_orders} missed)
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 text-right font-semibold">{formatCurrency(c.total_discount)}</td>
+                      <td className="py-2 text-right">{formatCurrency(c.total_revenue)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
       </div>
 
       <div className="mb-6">

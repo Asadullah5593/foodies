@@ -13,6 +13,7 @@ import { LoyaltyModule } from '../loyalty/loyalty.module';
 import { CustomersModule } from '../customers/customers.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { AuthModule } from '../auth/auth.module';
+import { BankCardsModule } from '../bank-cards/bank-cards.module';
 import { OtpModule } from '../otp/otp.module';
 import { CartModule } from '../cart/cart.module';
 import { MailModule } from '../mail/mail.module';
@@ -43,6 +44,7 @@ import { PromotionsModule } from '../promotions/promotions.module';
         LoyaltyModule,
         CustomersModule,
         PaymentsModule,
+        BankCardsModule,
         AuthModule,
         OtpModule,
         CartModule,
