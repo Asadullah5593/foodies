@@ -1189,6 +1189,10 @@ const OrderTaking: React.FC = () => {
     const order: CreateOrderRequest = {
       branch_id: branchId,
       order_type: effectiveOrderType,
+      // The card the cashier is charging: without it a kiosk cart would finalize
+      // at full price even though the same order rung up here gets the card offer.
+      // The tender split is derived server-side from `payments`, not sent.
+      bank_card_id: paymentMode === 'card' ? bankCardId : null,
       table_number: effectiveOrderType === 'dine_in' ? tableNumber : undefined,
       customer_name: customerName.trim(),
       customer_phone: customerPhone.trim(),
