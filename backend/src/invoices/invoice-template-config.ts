@@ -52,8 +52,6 @@ export interface InvoiceTemplateConfig {
     showCategory: boolean;
     showVariant: boolean;
     showModifiers: boolean;
-    showItemNotes: boolean;
-    showOrderNotes: boolean;
     showUnitPrice: boolean;
 
     // Totals & charges
@@ -102,8 +100,6 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     showCategory: false,
     showVariant: true,
     showModifiers: true,
-    showItemNotes: true,
-    showOrderNotes: true,
     showUnitPrice: true,
 
     showSubtotal: true,
