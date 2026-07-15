@@ -9,6 +9,7 @@
 export type InvoiceLayout =
     | 'bill_bordered'
     | 'receipt_logo'
+    | 'receipt_bordered_logo'
     | 'thermal_modern'
     | 'thermal_classic'
     | 'thermal_58mm'
@@ -17,6 +18,7 @@ export type InvoiceLayout =
 export const INVOICE_LAYOUTS: InvoiceLayout[] = [
     'bill_bordered',
     'receipt_logo',
+    'receipt_bordered_logo',
     'thermal_modern',
     'thermal_classic',
     'thermal_58mm',

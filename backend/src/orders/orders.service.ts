@@ -2499,6 +2499,8 @@ export class OrdersService {
                                             modifiers?: Array<{
                                                 nameSnapshot: string | null;
                                                 priceSnapshot: number | null;
+                                                quantity?: number;
+                                                freeQuantity?: number;
                                                 modifier?: {
                                                     id?: number;
                                                     name?: string;
@@ -2566,6 +2568,10 @@ export class OrdersService {
                                                           | undefined
                                                   )?.price ?? 0,
                                               ),
+                                    // Receipts bill (quantity - free_quantity) units;
+                                    // free_quantity is the group's included allowance.
+                                    quantity: Number(m.quantity ?? 1),
+                                    free_quantity: Number(m.freeQuantity ?? 0),
                                 }));
                             })(),
                             category:
@@ -2682,6 +2688,8 @@ export class OrdersService {
                                         modifiers?: Array<{
                                             nameSnapshot: string | null;
                                             priceSnapshot: number | null;
+                                            quantity?: number;
+                                            freeQuantity?: number;
                                             modifier?: {
                                                 id?: number;
                                                 name?: string;
@@ -2753,6 +2761,10 @@ export class OrdersService {
                                                       | undefined
                                               )?.price ?? 0,
                                           ),
+                                // Receipts bill (quantity - free_quantity) units;
+                                // free_quantity is the group's included allowance.
+                                quantity: Number(m.quantity ?? 1),
+                                free_quantity: Number(m.freeQuantity ?? 0),
                             }));
                         })(),
                     })) ?? [],

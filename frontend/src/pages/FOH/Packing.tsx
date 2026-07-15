@@ -7,8 +7,8 @@ import { adminService } from '../../services/api/adminService';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
-import Modal from '../../components/Modal';
 import SearchableSelect from '../../components/SearchableSelect';
+import AssignRiderModal from '../../components/AssignRiderModal';
 import { formatOrderType } from '../../utils/format';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { groupOrderItems } from '../../utils/orderItemGrouping';
@@ -58,6 +58,7 @@ const FOHPacking: React.FC = () => {
   const [updatingOrderId, setUpdatingOrderId] = useState<number | null>(null);
   const [riderModalOrderId, setRiderModalOrderId] = useState<number | null>(null);
   const [riderModalBrandId, setRiderModalBrandId] = useState<number | null>(null);
+  const [riderModalBrandName, setRiderModalBrandName] = useState<string | null>(null);
   const [selectedRiderId, setSelectedRiderId] = useState<number | null>(null);
 
   const { data: branches } = useQuery({
@@ -114,20 +115,19 @@ const FOHPacking: React.FC = () => {
     },
   });
 
-  const { data: riders, isLoading: ridersLoading } = useQuery({
-    queryKey: ['foh-riders', riderModalBrandId],
-    queryFn: () => adminService.getRiders(riderModalBrandId ?? undefined),
-    enabled: riderModalOrderId != null,
-  });
+  const closeRiderModal = () => {
+    setRiderModalOrderId(null);
+    setRiderModalBrandId(null);
+    setRiderModalBrandName(null);
+    setSelectedRiderId(null);
+  };
 
   const assignRiderMutation = useMutation({
     mutationFn: ({ orderId, riderId }: { orderId: number; riderId: number }) =>
       adminService.assignRider(orderId, riderId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['foh-packing-orders'] });
-      setRiderModalOrderId(null);
-      setRiderModalBrandId(null);
-      setSelectedRiderId(null);
+      closeRiderModal();
       toast.success('Rider assigned');
     },
     onError: (error: any) => {
@@ -364,6 +364,7 @@ const FOHPacking: React.FC = () => {
                             onClick={() => {
                               setRiderModalOrderId(order.id);
                               setRiderModalBrandId(order.brand_id ?? null);
+                              setRiderModalBrandName(order.brand_name ?? null);
                               setSelectedRiderId(null);
                             }}
                           >
@@ -380,64 +381,23 @@ const FOHPacking: React.FC = () => {
         )}
       </div>
 
-      <Modal
+      <AssignRiderModal
         isOpen={riderModalOrderId != null}
-        onClose={() => { setRiderModalOrderId(null); setRiderModalBrandId(null); setSelectedRiderId(null); }}
-        title="Assign Rider"
-      >
-        <div className="space-y-4">
-          {ridersLoading ? (
-            <p className="text-sm text-gray-500">Loading riders...</p>
-          ) : !riders?.length ? (
-            <p className="text-sm text-gray-500">No riders available for this brand.</p>
-          ) : (
-            <div className="space-y-2 max-h-72 overflow-y-auto">
-              {riders.map((rider) => (
-                <label
-                  key={rider.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-                    selectedRiderId === rider.id
-                      ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                      : 'border-gray-200 dark:border-slate-600 hover:bg-gray-50 dark:hover:bg-slate-700'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="foh-rider"
-                    value={rider.id}
-                    checked={selectedRiderId === rider.id}
-                    onChange={() => setSelectedRiderId(rider.id)}
-                    className="h-4 w-4 text-blue-600 border-gray-300"
-                  />
-                  <div>
-                    <p className="font-medium text-gray-800 dark:text-slate-100">{rider.name}</p>
-                    {rider.phone && <p className="text-xs text-gray-500 dark:text-slate-400">{rider.phone}</p>}
-                    {rider.rating_average != null && (
-                      <p className="text-xs text-gray-500 dark:text-slate-400">Rating: {rider.rating_average.toFixed(1)} ({rider.rating_count} reviews)</p>
-                    )}
-                  </div>
-                </label>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => { setRiderModalOrderId(null); setRiderModalBrandId(null); setSelectedRiderId(null); }}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                if (riderModalOrderId && selectedRiderId) {
-                  assignRiderMutation.mutate({ orderId: riderModalOrderId, riderId: selectedRiderId });
-                }
-              }}
-              disabled={!selectedRiderId}
-              isLoading={assignRiderMutation.isPending}
-            >
-              Assign Rider
-            </Button>
-          </div>
-        </div>
-      </Modal>
+        onClose={closeRiderModal}
+        title="Assign rider"
+        subject={`Order #${orders?.find((o) => o.id === riderModalOrderId)?.order_number ?? riderModalOrderId}`}
+        confirmLabel="Assign"
+        brandId={riderModalBrandId}
+        brandName={riderModalBrandName}
+        selectedRiderId={selectedRiderId}
+        onSelectRider={setSelectedRiderId}
+        isPending={assignRiderMutation.isPending}
+        onConfirm={() => {
+          if (riderModalOrderId && selectedRiderId) {
+            assignRiderMutation.mutate({ orderId: riderModalOrderId, riderId: selectedRiderId });
+          }
+        }}
+      />
     </div>
   );
 };
