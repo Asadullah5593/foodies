@@ -10,6 +10,7 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import OfferModal, { offerInput, offerLabel } from '../../components/OfferModal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import { OFFER_KIND_LABEL } from '../../utils/offerKinds';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import SearchableSelect from '../../components/SearchableSelect';
 import ValidityFields, { emptyValidity } from '../../components/ValidityFields';
@@ -27,7 +28,8 @@ const emptyItem = {
 };
 
 const DEST_TYPES = ['none', 'product', 'deal', 'category', 'brand', 'branch'];
-const KIND_LABEL: Record<string, string> = { offer: 'Offer', deal: 'Deal', info: 'Info banner', discount: 'Discount', product_promotion: 'Product promo', coupon: 'Coupon', card_offer: 'Card offer' };
+// Campaign-only kinds, plus the four offer kinds from their shared source.
+const KIND_LABEL: Record<string, string> = { offer: 'Offer', deal: 'Deal', info: 'Info banner', ...OFFER_KIND_LABEL };
 const KIND_BADGE: Record<string, string> = { offer: 'bg-purple-100 text-purple-700', deal: 'bg-amber-100 text-amber-700', info: 'bg-sky-100 text-sky-700' };
 
 type Opt = { value: string; label: string };

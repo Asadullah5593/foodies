@@ -4342,6 +4342,16 @@ export class OrdersService {
                     (line.itemSubtotal - (combinedLineDiscount[i] ?? 0)) * 100,
                 ) / 100,
             is_deal: !!(line as { isDeal?: boolean }).isDeal,
+            // Which offer kinds cut this line, and by how much. Kinds stack
+            // (product_promotion → discount → coupon → card_offer), so this is a
+            // list, not a scalar: discount_amount is their sum.
+            discounts: (staged.lineBreakdown?.[i]?.discounts ?? [])
+                .filter((d) => d.amount > 0)
+                .map((d) => ({ kind: d.kind, amount: oround2(d.amount) })),
+            // The caller's item index this line came from. A deal expands into one
+            // line per component, so clients MUST match on this rather than on
+            // array position, or every line after a deal reads the wrong one.
+            source_index: line.sourceIndex ?? i,
         }));
 
         return {
@@ -4408,6 +4418,12 @@ export class OrdersService {
             deal_id?: number;
             deal_slot_index?: number;
             deal_unit_price?: number;
+            /**
+             * Index of the caller's ORIGINAL item this line came from. A deal
+             * expands 1 → N here, so callers cannot match results back by array
+             * position; they must match on this.
+             */
+            source_index?: number;
         }>
     > {
         const expanded: Array<{
@@ -4421,9 +4437,15 @@ export class OrdersService {
             deal_id?: number;
             deal_slot_index?: number;
             deal_unit_price?: number;
+            /**
+             * Index of the caller's ORIGINAL item this line came from. A deal
+             * expands 1 → N here, so callers cannot match results back by array
+             * position; they must match on this.
+             */
+            source_index?: number;
         }> = [];
         const branchClockCache = new Map<number, BranchClock>();
-        for (const line of items) {
+        for (const [sourceIndex, line] of items.entries()) {
             const raw = line as {
                 deal_menu_item_id?: number;
                 quantity?: number;
@@ -4717,6 +4739,7 @@ export class OrdersService {
                             deal_unit_price: bogoRound2(
                                 baseDealPrice + Number(slotSurcharge || 0),
                             ),
+                            source_index: sourceIndex,
                         });
                     });
                 }
@@ -4738,6 +4761,7 @@ export class OrdersService {
                     modifiers: normal.modifiers,
                     notes: normal.notes,
                     branch_id: normal.branch_id,
+                    source_index: sourceIndex,
                 });
             }
         }
@@ -4754,6 +4778,7 @@ export class OrdersService {
             addons?: { addon_id: number; quantity?: number }[];
             modifiers?: { modifier_id: number; quantity?: number }[];
             deal_unit_price?: number;
+            source_index?: number;
         }>,
         orderType: string,
     ): Promise<{
@@ -4767,6 +4792,8 @@ export class OrdersService {
             sizeKey?: string | null;
             isDeal?: boolean;
             unitCost?: number | null;
+            /** Caller's original item index; see expandDealItems (1 deal → N lines). */
+            sourceIndex?: number;
         }[];
         orderBrandId: number | null;
     }> {
@@ -4798,6 +4825,7 @@ export class OrdersService {
             sizeKey?: string | null;
             isDeal?: boolean;
             unitCost?: number | null;
+            sourceIndex?: number;
         }[] = [];
         const itemBrandIds = new Set<number>();
         let subtotal = 0;
@@ -4893,6 +4921,7 @@ export class OrdersService {
                 sizeKey: lineSizeKey,
                 isDeal: isDealPriceLine,
                 unitCost: isDealPriceLine ? null : lineUnitCost,
+                sourceIndex: line.source_index,
             });
         }
         const orderBrandId =

@@ -1,5 +1,6 @@
 import apiClient from '../../utils/apiClient';
 import { Order, CreateOrderResponse } from '../../types';
+import { OfferKind } from '../../utils/offerKinds';
 
 export interface CreateOrderRequest {
   branch_id: number;
@@ -53,6 +54,16 @@ export interface OrderQuoteLineBreakdown {
   subtotal: number;
   discount_amount: number;
   after_discount: number;
+  /**
+   * Which offer kinds cut this line and by how much; discount_amount is their
+   * sum. Kinds stack, so this is a list rather than a single kind.
+   */
+  discounts?: Array<{ kind: OfferKind; amount: number }>;
+  /**
+   * The request item index this line came from. A deal expands into one line per
+   * component, so match on this — never on array position.
+   */
+  source_index?: number;
 }
 
 export interface OrderQuoteResponse {
