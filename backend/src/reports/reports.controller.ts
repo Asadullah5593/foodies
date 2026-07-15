@@ -84,6 +84,28 @@ export class ReportsController {
         );
     }
 
+    /** Where the discounts went: split by offer type, and by card for bank-funded ones. */
+    @Get('discounts')
+    discounts(
+        @CurrentUser() user: ReportsUser,
+        @Query('branch_id') branchId: string,
+        @Query('brand_id') brandId: string,
+        @Query('date_from') dateFrom: string,
+        @Query('date_to') dateTo: string,
+    ) {
+        return this.service.discountsBreakdown(
+            user.tenantId,
+            {
+                branch_id: branchId ? +branchId : undefined,
+                brand_id: brandId ? +brandId : undefined,
+                date_from: dateFrom,
+                date_to: dateTo,
+            },
+            user.allowedBranchIds,
+            user.allowedBrandIds,
+        );
+    }
+
     @Get('dashboard-summary')
     dashboardSummary(
         @CurrentUser() user: ReportsUser,

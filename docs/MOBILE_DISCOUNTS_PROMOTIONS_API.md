@@ -225,6 +225,10 @@ Note: HTTP **422** = delivery address outside the branch radius.
   "items": [ { "menu_item_id": 5, "quantity": 2, "variant_id": 3, "addons": [{ "addon_id": 1, "quantity": 1 }] } ],
   "discount_code": "SAVE10",          // the applied voucher/coupon code
   "loyalty_points_to_redeem": 50,
+  // MUST match what you sent to /quote, or the order re-prices without the card
+  // offer and the customer is charged more than the screen promised.
+  "payment_split": { "cash_amount": 0, "card_amount": 2000 },
+  "bank_card_id": 4,
   "idempotency_key": "uuid-optional"  // send a UUID to dedupe double-taps
 }
 ```
@@ -393,7 +397,75 @@ For context on how offers get created (admin/POS web app; `Authorization: Bearer
 | **Campaign** | `POST /admin/campaigns` | umbrella |
 | **Campaign item (banner)** | `POST /admin/campaigns/:id/items` | `kind:'offer'\|'deal'\|'info'`; `deep_link_url` auto-generated |
 | **Campaign report** | `GET /admin/campaigns/:id/report` | merchant vs bank-funded split |
+| **Bank card + its offer** | `POST /admin/bank-cards` | the card owns its discount — see below |
 | **Offer settings** (stacking/caps) | `GET`/`PUT /admin/offer-settings` | tenant-wide engine knobs |
+
+### Bank card offers
+
+A bank card discount is **not** a discount row and is not created on the Discounts
+page. The card carries its own offer: `discount_type` (`flat`|`percentage`),
+`discount_value`, `min_order_amount`, `max_discount_amount`, plus the same
+`valid_from`/`valid_until`/`valid_time_start`/`valid_time_end`/`valid_days_of_week`
+window every other offer module has. A null `discount_value` means the card exists
+only for tender/BIN capture and discounts nothing (`has_offer: false` in responses).
+
+Card offers are always **whole-order** and always **bank-funded** (exempt from the
+merchant discount cap unless `capIncludesCardOffers` is on). They apply only when
+the **entire bill** is tendered on that card — `payment_split.card_amount > 0` with
+`cash_amount <= 0`, plus `bank_card_id` — so a cash+card split earns nothing.
+They stack last, after product promotions, discounts and coupons.
+
+#### Customer-facing card endpoints (no auth)
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /public/consumer/bank-cards?branch_id=1[&brand_id=2]` | Cards with a live offer. Only cards that discount something are listed; each carries its terms and `bin_prefixes`. |
+| `GET /public/consumer/bank-cards/detect?branch_id=1&bin=401234[&brand_id=2]` | Which offer card a number belongs to → `{ bin, matched, card }`. Longest matching BIN wins. |
+
+**Send only the first 6–8 digits to `/detect` — never a full card number.** The
+server truncates to 8 digits defensively, but a PAN must not leave the device.
+Neither endpoint exposes brand/branch targeting.
+
+Typical app flow: list the offers to advertise them → customer enters their card →
+send the BIN to `/detect` → pass the returned `card.id` as `bank_card_id` to
+`/quote` **and** to order placement, with `payment_split` showing the full bill on
+card.
+
+```jsonc
+// GET /public/consumer/bank-cards/detect?branch_id=1&bin=401234
+{
+  "bin": "401234",
+  "matched": true,
+  "card": {
+    "id": 5, "name": "Bank Al Habib", "bank": "BAHL", "network": "Mastercard",
+    "bin_prefixes": ["401234", "5321"],
+    "discount_type": "percentage", "discount_value": 25,
+    "min_order_amount": 100, "max_discount_amount": 1000,
+    "valid_from": "2026-07-15T00:00:00.000Z", "valid_until": "2026-07-16T00:00:00.000Z",
+    "valid_time_start": null, "valid_time_end": null, "valid_days_of_week": [0, 2, 3],
+    "requires_full_card_payment": true
+  }
+}
+```
+
+### Brand scoping on the admin surfaces
+
+Every offer surface above accepts `eligibility_brand_ids` (null/omitted = all brands) and returns
+two read-only fields the admin UI renders from:
+
+| Field | Meaning |
+|---|---|
+| `effective_brand_ids` | Brands the offer actually serves. When `eligibility_brand_ids` is unset, this is **derived from the brands owning `application_scope_ids`** — a promo on Fireaway products is a Fireaway offer. `null` = every brand. |
+| `manage_scope` | `'full'` (caller owns every brand it serves — edit/delete freely), `'detach'` (also serves other brands — `DELETE` only removes the caller's brand and the offer survives), `'read_only'` (another brand's offer). |
+
+Consequences for a brand-locked admin (`branch_users.brand_id` set):
+- Omitting `eligibility_brand_ids` on create stamps their own brands.
+- `DELETE` on a shared/all-brand offer **detaches** rather than deletes, responding
+  `{ "detached": true, "eligibility_brand_ids": [...] }`. The row is deleted only when their brand
+  was the last one on it.
+
+None of this affects consumer/app pricing — `eligibility_brand_ids` already meant "any brand" when
+null at quote time, and derivation only pins an offer to the brands it could already reach.
 
 Example — create a new-customer coupon then issue a voucher:
 ```jsonc

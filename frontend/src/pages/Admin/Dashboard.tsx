@@ -235,7 +235,19 @@ const Dashboard: React.FC = () => {
       {
         label: 'Discounts',
         value: formatCurrency(k?.total_discounts ?? 0),
+        // What it cost YOU: card offers are funded by the bank, so the headline
+        // number overstates the hit to margin on its own.
+        sublabel:
+          k?.discount_breakdown != null
+            ? `${formatCurrency(k.discount_breakdown.merchant_funded)} yours`
+            : undefined,
         accent: 'text-rose-600 dark:text-rose-400',
+      },
+      {
+        label: 'Bank-funded',
+        value: formatCurrency(k?.discount_breakdown?.bank_funded ?? 0),
+        sublabel: 'Card offers — paid by the bank',
+        accent: 'text-emerald-600 dark:text-emerald-400',
       },
       {
         label: 'Delivery fees',
