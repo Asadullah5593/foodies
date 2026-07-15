@@ -91,6 +91,8 @@ export class ReportsController {
         @Query('brand_id') brandId: string,
         @Query('date_from') dateFrom: string,
         @Query('date_to') dateTo: string,
+        @Query('time_from') timeFrom: string,
+        @Query('time_to') timeTo: string,
     ) {
         return this.service.dashboardSummary(
             user.tenantId,
@@ -99,6 +101,8 @@ export class ReportsController {
                 brand_id: brandId ? +brandId : undefined,
                 date_from: dateFrom,
                 date_to: dateTo,
+                time_from: timeFrom,
+                time_to: timeTo,
             },
             user.allowedBranchIds,
             user.allowedBrandIds,
@@ -113,6 +117,8 @@ export class ReportsController {
         @Query('limit') limit: string,
         @Query('date_from') dateFrom: string,
         @Query('date_to') dateTo: string,
+        @Query('time_from') timeFrom: string,
+        @Query('time_to') timeTo: string,
     ) {
         return this.service.recentOrders(
             user.tenantId,
@@ -122,6 +128,8 @@ export class ReportsController {
                 limit: limit ? +limit : 15,
                 date_from: dateFrom,
                 date_to: dateTo,
+                time_from: timeFrom,
+                time_to: timeTo,
             },
             user.allowedBranchIds,
             user.allowedBrandIds,

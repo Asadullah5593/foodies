@@ -25,18 +25,29 @@ import {
 import { defaultRange, matchPreset, presetRanges } from './dashboard/dateRanges';
 import type { DashboardSummary, RecentOrder, InventoryAlerts } from './dashboard/types';
 
+/** The whole-day bounds — sending these is identical to sending no time at all. */
+const DAY_START = '00:00';
+const DAY_END = '23:59';
+
 function buildReportParams(
   branchId: number | null,
   from: string,
   to: string,
   extra?: Record<string, string>,
   brandId?: number | null,
+  time?: { from: string; to: string } | null,
 ): string {
   const params = new URLSearchParams();
   if (branchId != null) params.append('branch_id', String(branchId));
   if (brandId != null) params.append('brand_id', String(brandId));
   params.append('date_from', from);
   params.append('date_to', to);
+  // Only send a clock when it narrows the window, so the default request (and its
+  // react-query key) stays exactly as it was.
+  if (time && (time.from !== DAY_START || time.to !== DAY_END)) {
+    params.append('time_from', time.from);
+    params.append('time_to', time.to);
+  }
   if (extra) for (const [k, v] of Object.entries(extra)) params.append(k, v);
   return params.toString();
 }
@@ -49,8 +60,17 @@ const Dashboard: React.FC = () => {
   const [brandId, setBrandId] = useState<number | null>(null);
   const [dateFrom, setDateFrom] = useState<string>(initial.from);
   const [dateTo, setDateTo] = useState<string>(initial.to);
+  // Time-of-day bounds on the range: From <date> <time> → To <date> <time>, one
+  // continuous window. Defaults span the whole day, so the dashboard opens
+  // behaving exactly as before.
+  const [timeFrom, setTimeFrom] = useState<string>(DAY_START);
+  const [timeTo, setTimeTo] = useState<string>(DAY_END);
+  const time = { from: timeFrom, to: timeTo };
+  const timeNarrowed = timeFrom !== DAY_START || timeTo !== DAY_END;
 
-  const activePreset = matchPreset(dateFrom, dateTo);
+  // A preset covers a WHOLE period, so a narrowed clock means no preset is active —
+  // otherwise "Today" stays lit while showing only the dinner service.
+  const activePreset = timeNarrowed ? null : matchPreset(dateFrom, dateTo);
 
   const { data: branches } = useQuery({
     queryKey: ['branches'],
@@ -71,9 +91,9 @@ const Dashboard: React.FC = () => {
   });
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['dashboardSummary', branchId, brandId, dateFrom, dateTo],
+    queryKey: ['dashboardSummary', branchId, brandId, dateFrom, dateTo, timeFrom, timeTo],
     queryFn: async () => {
-      const qs = buildReportParams(branchId, dateFrom, dateTo, undefined, brandId);
+      const qs = buildReportParams(branchId, dateFrom, dateTo, undefined, brandId, time);
       const response = await apiClient.get<DashboardSummary>(`/admin/reports/dashboard-summary?${qs}`);
       return response.data;
     },
@@ -81,9 +101,9 @@ const Dashboard: React.FC = () => {
   });
 
   const { data: recentOrders, isLoading: recentLoading } = useQuery({
-    queryKey: ['recentOrders', branchId, brandId, dateFrom, dateTo],
+    queryKey: ['recentOrders', branchId, brandId, dateFrom, dateTo, timeFrom, timeTo],
     queryFn: async () => {
-      const qs = buildReportParams(branchId, dateFrom, dateTo, { limit: '15' }, brandId);
+      const qs = buildReportParams(branchId, dateFrom, dateTo, { limit: '15' }, brandId, time);
       const response = await apiClient.get<RecentOrder[]>(`/admin/reports/recent-orders?${qs}`);
       return Array.isArray(response.data) ? response.data : [];
     },
@@ -222,6 +242,24 @@ const Dashboard: React.FC = () => {
         value: formatCurrency(k?.total_delivery_fee ?? 0),
         accent: 'text-sky-600 dark:text-sky-400',
       },
+      // Cost of goods needs a per-item cost, and nothing can set one yet: no recipe
+      // has lines and menu_items.cost_price has no write path in the app. So these
+      // read "—" like Avg rating above, rather than claiming a figure — Rs. 0.00
+      // cost would imply we measured it, and a profit of revenue-minus-nothing
+      // would assert a 100% margin. Give them real values with the COGS query once
+      // costs can be entered.
+      {
+        label: 'Cost',
+        value: '—',
+        sublabel: 'No cost data yet',
+        accent: 'text-orange-600 dark:text-orange-400',
+      },
+      {
+        label: 'Profit',
+        value: '—',
+        sublabel: 'Needs item costs',
+        accent: 'text-teal-600 dark:text-teal-400',
+      },
     ],
     [k, summary],
   );
@@ -255,6 +293,9 @@ const Dashboard: React.FC = () => {
               onClick={() => {
                 setDateFrom(p.from);
                 setDateTo(p.to);
+                // A preset means the WHOLE of that period, so it clears any clock.
+                setTimeFrom(DAY_START);
+                setTimeTo(DAY_END);
               }}
               className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
                 activePreset === p.key
@@ -295,22 +336,52 @@ const Dashboard: React.FC = () => {
           )}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">From</label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-foodies-cta"
-            />
+            <div className="flex items-center gap-1">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-foodies-cta"
+              />
+              <input
+                type="time"
+                aria-label="From time"
+                value={timeFrom}
+                onChange={(e) => setTimeFrom(e.target.value || DAY_START)}
+                className="px-2 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-foodies-cta"
+              />
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">To</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-foodies-cta"
-            />
+            <div className="flex items-center gap-1">
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-foodies-cta"
+              />
+              <input
+                type="time"
+                aria-label="To time"
+                value={timeTo}
+                onChange={(e) => setTimeTo(e.target.value || DAY_END)}
+                className="px-2 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-foodies-cta"
+              />
+            </div>
           </div>
+          {timeNarrowed && (
+            <button
+              type="button"
+              onClick={() => {
+                setTimeFrom(DAY_START);
+                setTimeTo(DAY_END);
+              }}
+              className="px-3 py-2 text-sm font-medium text-foodies-cta hover:underline"
+            >
+              Clear time
+            </button>
+          )}
         </div>
       </div>
 

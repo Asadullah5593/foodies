@@ -31,21 +31,59 @@ export class ReportsService {
         private wastageRepo: Repository<WastageEvent>,
     ) {}
 
+    /**
+     * Build the reporting window from a date (YYYY-MM-DD) plus an optional
+     * time-of-day (HH:mm), both read in the SERVER's local clock — which is the
+     * branch clock (all branches are Asia/Karachi).
+     *
+     * Reading the date locally matters: `new Date('2026-06-16')` is parsed as UTC
+     * midnight per spec, which in a UTC+5 branch is 05:00 local — so the old code
+     * silently dropped the first five hours of the opening day while ending the
+     * range at local 23:59. A window the user sets to 09:00 has to mean 09:00 to
+     * them, so both bounds are now built from local components.
+     */
     private resolveDayRange(filters: {
         date_from?: string;
         date_to?: string;
+        time_from?: string;
+        time_to?: string;
     }): { dateFrom: Date; dateTo: Date } {
-        const dateFrom = filters.date_from
-            ? new Date(filters.date_from)
-            : new Date(new Date().setHours(0, 0, 0, 0));
-        let dateTo: Date;
-        if (filters.date_to) {
-            dateTo = new Date(filters.date_to);
-            dateTo.setHours(23, 59, 59, 999);
-        } else {
-            dateTo = new Date();
-            dateTo.setHours(23, 59, 59, 999);
-        }
+        const atLocal = (
+            ymd: string | undefined,
+            hms: string | undefined,
+            fallback: () => Date,
+            endOfDay: boolean,
+        ): Date => {
+            const dayParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec((ymd ?? '').trim());
+            if (!dayParts) return fallback();
+            const [, y, m, d] = dayParts;
+            const timeParts = /^(\d{1,2}):(\d{2})$/.exec((hms ?? '').trim());
+            const hh = timeParts ? Math.min(23, +timeParts[1]) : endOfDay ? 23 : 0;
+            const mm = timeParts ? Math.min(59, +timeParts[2]) : endOfDay ? 59 : 0;
+            // Seconds belong to the BOUND, never to whether a time was supplied: a
+            // start of 18:00 must include 18:00:30, so it opens at :00; an end of
+            // 17:30 must too, so it closes at :59.999.
+            const ss = endOfDay ? 59 : 0;
+            const ms = endOfDay ? 999 : 0;
+            return new Date(+y, +m - 1, +d, hh, mm, ss, ms);
+        };
+
+        const dateFrom = atLocal(
+            filters.date_from,
+            filters.time_from,
+            () => new Date(new Date().setHours(0, 0, 0, 0)),
+            false,
+        );
+        const dateTo = atLocal(
+            filters.date_to,
+            filters.time_to,
+            () => {
+                const d = new Date();
+                d.setHours(23, 59, 59, 999);
+                return d;
+            },
+            true,
+        );
         return { dateFrom, dateTo };
     }
 
@@ -721,6 +759,9 @@ export class ReportsService {
             brand_id?: number;
             date_from?: string;
             date_to?: string;
+            /** 'HH:mm' in branch-local time; omitted = whole day. */
+            time_from?: string;
+            time_to?: string;
         },
         allowedBranchIds?: number[] | null,
         allowedBrandIds?: number[] | null,
@@ -1344,6 +1385,9 @@ export class ReportsService {
             brand_id?: number;
             date_from?: string;
             date_to?: string;
+            /** 'HH:mm' in branch-local time; omitted = whole day. */
+            time_from?: string;
+            time_to?: string;
             limit?: number;
         },
         allowedBranchIds?: number[] | null,
