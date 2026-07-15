@@ -724,6 +724,13 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .brandblk { text-align: center; margin: 8px 0 4px; }
     .inv-root .brandlogo { max-width: 64px; max-height: 48px; object-fit: contain; display: block; margin: 0 auto 2px; }
     .inv-root .brand { font-weight: 700; text-transform: uppercase; letter-spacing: .04em; margin: 2px 0; font-size: .9em; }
+    /* Host print stylesheets (utils/print.ts) style bare th/td for report tables.
+       Inside a receipt that bleeds in, and with border-collapse the damage is not
+       cosmetic: a cell's border-bottom outranks the table's own border (cell beats
+       table at equal width/style), so a boxed meta block lost its bottom edge to a
+       near-white line that no thermal printer renders. Reset here — the layout
+       blocks below are more specific and still draw their own borders. */
+    .inv-root th, .inv-root td { border: 0; color: inherit; }
     .inv-root .metatbl { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: .84em; }
     .inv-root .metatbl td { padding: 1px 0; vertical-align: top; }
     .inv-root .metatbl .mk { width: 38%; color: #333; padding-right: 8px; white-space: nowrap; }

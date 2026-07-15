@@ -409,6 +409,26 @@ describe('free lines print zero, never a blank or a dash', () => {
   });
 });
 
+describe('host print CSS cannot steal a table border', () => {
+  // utils/print.ts writes `th, td { border-bottom: 1px solid #f3f4f6 }` into the
+  // print popup. Under border-collapse a cell border outranks the table's own, so
+  // without a reset the boxed meta block lost its bottom edge to a near-white line
+  // that no thermal printer renders.
+  it.each(['bill_bordered', 'receipt_bordered_logo'] as const)(
+    'neutralises bare th/td styling for %s while keeping the box',
+    (layout) => {
+      const { css } = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG);
+      expect(css).toContain('.inv-root th, .inv-root td { border: 0; color: inherit; }');
+      // The reset must not disarm the layout's own bordered meta box.
+      expect(css).toContain(`.inv-root.inv-${layout} .metatbl { border: 1px solid #000`);
+      // The reset is in the shared base, so it precedes the layout's border rules.
+      expect(css.indexOf('.inv-root th, .inv-root td { border: 0')).toBeLessThan(
+        css.indexOf(`.inv-root.inv-${layout} .metatbl { border: 1px solid #000`),
+      );
+    },
+  );
+});
+
 describe('Bordered Logo Receipt layout', () => {
   it("uses Bordered Bill's meta box with Logo Receipt's table labels and totals", () => {
     const { html, css } = renderInvoiceHtml(
