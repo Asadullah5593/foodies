@@ -25,6 +25,10 @@ export const Permissions = {
     KITCHEN_VIEW: 'kitchen:view',
     KITCHEN_UPDATE: 'kitchen:update',
     BACK_KITCHEN_VIEW: 'back-kitchen:view',
+    // Show the branch selector on the kitchen/FOH screens (admins pick a
+    // branch; regular staff are pinned to their assigned branch).
+    BACK_KITCHEN_BRANCH_FILTER: 'back-kitchen:branch-filter',
+    FOH_BRANCH_FILTER: 'foh:branch-filter',
     // Module-level (one permission per admin module)
     BUSINESS_SETTINGS_ACCESS: 'business-settings:access',
     USERS_MANAGE: 'users:manage',

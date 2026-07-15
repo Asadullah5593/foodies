@@ -141,6 +141,18 @@ async function seed() {
             description: 'View and manage Back Kitchen (brand-specific orders)',
         },
         {
+            name: 'back-kitchen:branch-filter',
+            resource: 'back-kitchen',
+            action: 'branch-filter',
+            description: 'Show the branch filter on the Back Kitchen screen',
+        },
+        {
+            name: 'foh:branch-filter',
+            resource: 'foh',
+            action: 'branch-filter',
+            description: 'Show the branch filter on the FOH Packing screen',
+        },
+        {
             name: 'discounts:manage',
             resource: 'discounts',
             action: 'manage',
@@ -296,7 +308,7 @@ async function seed() {
         `INSERT INTO role_permissions (role_id, permission_id) SELECT ${managerRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'orders:create', 'orders:view', 'discounts:apply', 'branches:manage')`,
     );
     await dataSource.query(
-        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${branchManagerRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'orders:create', 'orders:view', 'discounts:apply', 'branch-menu:manage', 'reports:view')`,
+        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${branchManagerRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'orders:create', 'orders:view', 'discounts:apply', 'branch-menu:manage', 'reports:view', 'back-kitchen:branch-filter', 'foh:branch-filter')`,
     );
     await dataSource.query(
         `INSERT INTO role_permissions (role_id, permission_id) SELECT ${cashierRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'orders:create', 'orders:view', 'discounts:apply', 'shifts:manage')`,

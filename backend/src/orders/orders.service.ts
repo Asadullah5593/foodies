@@ -93,6 +93,7 @@ import {
     OfferStageKind,
 } from './offer-engine';
 import { resolveOfferSettings, OfferSettings } from './offer-settings';
+import { ORDER_SOURCES } from './order-sources';
 
 /** The tax rate (fraction, e.g. 0.15) to print, chosen by the tender the tax was based on. */
 function effectiveTaxRate(o: {
@@ -3233,6 +3234,8 @@ export class OrdersService {
             brand_id?: number;
             status?: string;
             order_type?: string;
+            /** Where the order was taken: pos | consumer_app | kiosk. */
+            source?: string;
             date_from?: string;
             date_to?: string;
             has_rider?: boolean;
@@ -3306,6 +3309,11 @@ export class OrdersService {
             qb.andWhere('o.orderType = :orderType', {
                 orderType: filters.order_type,
             });
+        }
+        // Whitelisted like order_type above: `source` is a free-text column, so an
+        // unknown value silently matches nothing rather than filtering.
+        if (filters.source && ORDER_SOURCES.includes(filters.source)) {
+            qb.andWhere('o.source = :source', { source: filters.source });
         }
         if (filters.date_from)
             qb.andWhere('date(o.placed_at) >= :dateFrom', {
