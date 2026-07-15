@@ -23,7 +23,7 @@ const KpiCard: React.FC<KpiCardProps> = ({
 }) => {
   if (loading) {
     return (
-      <Card>
+      <Card className="h-full">
         <div className="animate-pulse space-y-3">
           <div className="h-3 w-20 bg-gray-200 dark:bg-slate-700 rounded" />
           <div className="h-7 w-28 bg-gray-200 dark:bg-slate-700 rounded" />
@@ -41,8 +41,9 @@ const KpiCard: React.FC<KpiCardProps> = ({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.04 }}
+      className="h-full"
     >
-      <Card>
+      <Card className="h-full">
         <div className="flex items-start justify-between gap-2">
           <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-slate-400">
             {label}
@@ -61,9 +62,10 @@ const KpiCard: React.FC<KpiCardProps> = ({
           )}
         </div>
         <p className={`mt-2 text-2xl font-bold ${accent}`}>{value}</p>
-        {sublabel && (
-          <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">{sublabel}</p>
-        )}
+        {/* Falls back to an nbsp — a plain space would collapse and lose the line */}
+        <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
+          {sublabel ?? ' '}
+        </p>
       </Card>
     </motion.div>
   );
