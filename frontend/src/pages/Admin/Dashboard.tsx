@@ -23,7 +23,7 @@ import {
   InventoryAlertsPanel,
 } from './dashboard/panels';
 import { defaultRange, matchPreset, presetRanges } from './dashboard/dateRanges';
-import type { DashboardSummary, RecentOrder, InventoryAlerts } from './dashboard/types';
+import type { DashboardSummary, OrderSeriesResponse, RecentOrder, InventoryAlerts } from './dashboard/types';
 
 /** The whole-day bounds — sending these is identical to sending no time at all. */
 const DAY_START = '00:00';
@@ -82,7 +82,7 @@ const Dashboard: React.FC = () => {
 
   // Owner sees all brands and can drill into one; brand-locked users get
   // only their own brand back from the server.
-  const { data: brands } = useQuery({
+  const { data: brands, isLoading: brandsLoading } = useQuery({
     queryKey: ['brands'],
     queryFn: async () => {
       const response = await apiClient.get<Array<{ id: number; name: string }>>('/admin/brands');
@@ -95,6 +95,21 @@ const Dashboard: React.FC = () => {
     queryFn: async () => {
       const qs = buildReportParams(branchId, dateFrom, dateTo, undefined, brandId, time);
       const response = await apiClient.get<DashboardSummary>(`/admin/reports/dashboard-summary?${qs}`);
+      return response.data;
+    },
+    enabled: !!user,
+  });
+
+  // Revenue & orders trend has its own brand filter (same semantics as Top
+  // items below) and its own endpoint: per-order points plus uncapped
+  // count/revenue totals for the headline figures.
+  const [trendBrandId, setTrendBrandId] = useState<number | null>(null);
+  const effectiveTrendBrand = trendBrandId ?? brandId;
+  const { data: orderSeries, isLoading: orderSeriesLoading } = useQuery({
+    queryKey: ['orderSeries', branchId, effectiveTrendBrand, dateFrom, dateTo, timeFrom, timeTo],
+    queryFn: async () => {
+      const qs = buildReportParams(branchId, dateFrom, dateTo, undefined, effectiveTrendBrand, time);
+      const response = await apiClient.get<OrderSeriesResponse>(`/admin/reports/order-series?${qs}`);
       return response.data;
     },
     enabled: !!user,
@@ -470,11 +485,44 @@ const Dashboard: React.FC = () => {
       <div className="mb-6">
         <ChartCard
           title="Revenue & orders trend"
-          subtitle="Order-wise: every order in the range as its own point (newest 200)."
-          loading={summaryLoading}
-          isEmpty={!summaryLoading && (summary?.order_series?.length ?? 0) === 0}
+          subtitle="Order-wise: every order as its own point, one line per brand (newest 200 plotted); totals cover the whole range."
+          right={
+            <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1">
+              {orderSeries && (
+                <>
+                  <div className="text-right">
+                    <div className="text-[11px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Orders</div>
+                    <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">
+                      {orderSeries.order_count.toLocaleString('en-US')}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[11px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Revenue (completed)</div>
+                    <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">
+                      {formatCurrency(orderSeries.completed_revenue)}
+                    </div>
+                  </div>
+                </>
+              )}
+              <select
+                value={trendBrandId ?? ''}
+                onChange={(e) => setTrendBrandId(e.target.value ? Number(e.target.value) : null)}
+                aria-label="Revenue & orders trend brand"
+                className="rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-gray-700 dark:text-slate-200"
+              >
+                <option value="">
+                  {brandId ? `${brands?.find((b) => b.id === brandId)?.name ?? 'Brand'} (dashboard filter)` : 'All brands'}
+                </option>
+                {(brands ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+          }
+          loading={orderSeriesLoading || brandsLoading}
+          isEmpty={!orderSeriesLoading && !brandsLoading && (orderSeries?.orders?.length ?? 0) === 0}
         >
-          {summary && <OrderSeriesChart data={summary.order_series ?? []} theme={theme} />}
+          {orderSeries && !brandsLoading && <OrderSeriesChart data={orderSeries.orders} theme={theme} brands={brands} />}
         </ChartCard>
       </div>
 

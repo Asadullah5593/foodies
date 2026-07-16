@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Area,
+  Line,
   ComposedChart,
   BarChart,
   Bar,
@@ -23,7 +24,7 @@ import {
   axisColor,
   gridColor,
 } from '../../../utils/chartColors';
-import type { DashboardSummary } from './types';
+import type { DashboardSummary, OrderSeriesResponse } from './types';
 
 type Theme = 'light' | 'dark';
 
@@ -68,62 +69,112 @@ const shortOrderTime = (iso: string) => {
 
 /**
  * Order-wise trend: every order in the range is its own point (amount), in
- * time sequence. The tooltip names the exact order; dots make single orders
- * visible even when the range is quiet.
+ * time sequence. When the range mixes brands, each brand becomes its own line
+ * (an order belongs to exactly one brand); a single-brand range keeps the
+ * classic filled area. The tooltip names the exact order; dots make single
+ * orders visible even when the range is quiet.
  */
 export const OrderSeriesChart: React.FC<{
-  data: DashboardSummary['order_series'];
+  data: OrderSeriesResponse['orders'];
   theme: Theme;
-}> = ({ data, theme }) => (
-  <Measured height={280}>
-    {(w, h) => (
-      <ComposedChart width={w} height={h} data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-        <defs>
-          <linearGradient id="revGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="5%" stopColor={REVENUE_COLOR} stopOpacity={0.35} />
-            <stop offset="95%" stopColor={REVENUE_COLOR} stopOpacity={0} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke={gridColor(theme)} vertical={false} />
-        <XAxis
-          dataKey="placed_at"
-          tickFormatter={shortOrderTime}
-          tick={{ fontSize: 11, fill: axisColor(theme) }}
-          stroke={axisColor(theme)}
-          minTickGap={32}
-        />
-        <YAxis
-          tick={{ fontSize: 11, fill: axisColor(theme) }}
-          stroke={axisColor(theme)}
-          tickFormatter={compactCurrency}
-          width={48}
-        />
-        <Tooltip
-          contentStyle={tooltipStyle(theme)}
-          formatter={(value) => formatCurrency(Number(value))}
-          labelFormatter={(label, payload) => {
-            const row = payload?.[0]?.payload as
-              | DashboardSummary['order_series'][number]
-              | undefined;
-            const when = shortOrderTime(String(label));
-            if (!row) return when;
-            return `#${row.order_number} · ${when} · ${prettify(row.order_type)} · ${row.status}`;
-          }}
-        />
-        <Legend wrapperStyle={{ fontSize: 12 }} />
-        <Area
-          type="monotone"
-          dataKey="total_amount"
-          name="Order amount"
-          stroke={REVENUE_COLOR}
-          strokeWidth={2}
-          fill="url(#revGradient)"
-          dot={{ r: 2, stroke: REVENUE_COLOR, fill: REVENUE_COLOR }}
-        />
-      </ComposedChart>
-    )}
-  </Measured>
-);
+  /** Tenant brand list — each brand's line color is keyed to its position here, so hues stay stable across filters. */
+  brands?: Array<{ id: number; name: string }>;
+}> = ({ data, theme, brands }) => {
+  const brandIds = Array.from(new Set(data.map((d) => d.brand_id)));
+  const multiBrand = brandIds.length > 1;
+  // Per-series value keys: each row carries its amount under its own brand's
+  // key, so recharts draws one connectNulls line per brand.
+  const rows = multiBrand
+    ? data.map((d) => ({ ...d, [`brand_${d.brand_id ?? 'none'}`]: d.total_amount }))
+    : data;
+  const series = brandIds
+    .map((id, i) => {
+      const idx = id == null ? -1 : (brands ?? []).findIndex((b) => b.id === id);
+      return {
+        key: `brand_${id ?? 'none'}`,
+        name:
+          id == null
+            ? 'No brand'
+            : (brands ?? []).find((b) => b.id === id)?.name ??
+              data.find((d) => d.brand_id === id)?.brand_name ??
+              `Brand ${id}`,
+        // Color keyed to the brand's position in the tenant list; a brand
+        // missing from it (deleted since the order) still gets a distinct
+        // palette hue by series position. Gray marks only the no-brand bucket.
+        color:
+          id == null
+            ? '#94A3B8'
+            : CHART_COLORS[(idx >= 0 ? idx : i) % CHART_COLORS.length],
+        sort: idx >= 0 ? idx : Number.MAX_SAFE_INTEGER,
+      };
+    })
+    .sort((a, b) => a.sort - b.sort);
+  return (
+    <Measured height={280}>
+      {(w, h) => (
+        <ComposedChart width={w} height={h} data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id="revGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="5%" stopColor={REVENUE_COLOR} stopOpacity={0.35} />
+              <stop offset="95%" stopColor={REVENUE_COLOR} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <CartesianGrid strokeDasharray="3 3" stroke={gridColor(theme)} vertical={false} />
+          <XAxis
+            dataKey="placed_at"
+            tickFormatter={shortOrderTime}
+            tick={{ fontSize: 11, fill: axisColor(theme) }}
+            stroke={axisColor(theme)}
+            minTickGap={32}
+          />
+          <YAxis
+            tick={{ fontSize: 11, fill: axisColor(theme) }}
+            stroke={axisColor(theme)}
+            tickFormatter={compactCurrency}
+            width={48}
+          />
+          <Tooltip
+            contentStyle={tooltipStyle(theme)}
+            formatter={(value) => formatCurrency(Number(value))}
+            labelFormatter={(label, payload) => {
+              const row = payload?.[0]?.payload as
+                | OrderSeriesResponse['orders'][number]
+                | undefined;
+              const when = shortOrderTime(String(label));
+              if (!row) return when;
+              return `#${row.order_number} · ${when} · ${prettify(row.order_type)} · ${row.status}`;
+            }}
+          />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
+          {multiBrand ? (
+            series.map((s) => (
+              <Line
+                key={s.key}
+                type="monotone"
+                dataKey={s.key}
+                name={s.name}
+                stroke={s.color}
+                strokeWidth={2}
+                connectNulls
+                dot={{ r: 2, stroke: s.color, fill: s.color }}
+              />
+            ))
+          ) : (
+            <Area
+              type="monotone"
+              dataKey="total_amount"
+              name="Order amount"
+              stroke={REVENUE_COLOR}
+              strokeWidth={2}
+              fill="url(#revGradient)"
+              dot={{ r: 2, stroke: REVENUE_COLOR, fill: REVENUE_COLOR }}
+            />
+          )}
+        </ComposedChart>
+      )}
+    </Measured>
+  );
+};
 
 const STATUS_ORDER = ['placed', 'accepted', 'preparing', 'ready', 'completed', 'cancelled'];
 

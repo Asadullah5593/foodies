@@ -703,6 +703,113 @@ export class ReportsService {
         return qb.getRawMany();
     }
 
+    /**
+     * Order-wise trend feed: every order in the window as its own chart point
+     * (newest `limit` fetched, served oldest→newest), plus UNCAPPED totals
+     * covering the whole selection, not just the plotted tail. order_count is
+     * all-status (matching the Total-orders KPI); completed_revenue is
+     * completed-only (matching the Revenue KPI), so the headline figures
+     * agree with the KPI tiles beside them.
+     */
+    async orderSeries(
+        tenantId: number | null,
+        filters: {
+            branch_id?: number;
+            brand_id?: number;
+            limit?: number;
+            date_from?: string;
+            date_to?: string;
+            time_from?: string;
+            time_to?: string;
+        },
+        allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
+    ) {
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0 &&
+            filters.branch_id != null &&
+            !allowedBranchIds.includes(filters.branch_id)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this branch',
+            );
+        }
+        this.assertBrandAccess(allowedBrandIds, filters.brand_id);
+        const limit = Math.min(1000, Math.max(1, filters.limit ?? 200));
+        const { dateFrom, dateTo } = this.resolveDayRange(filters);
+        const scoped = () =>
+            this.applyOrderScope(
+                this.orderRepo
+                    .createQueryBuilder('o')
+                    .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                        dateFrom,
+                        dateTo,
+                    }),
+                'o',
+                tenantId,
+                allowedBranchIds,
+                filters.branch_id,
+                allowedBrandIds,
+                filters.brand_id,
+            );
+        const [totals, rows] = await Promise.all([
+            scoped()
+                .select('COUNT(*)', 'order_count')
+                .addSelect(
+                    "COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.totalAmount ELSE 0 END), 0)",
+                    'completed_revenue',
+                )
+                .getRawOne<{
+                    order_count: string;
+                    completed_revenue: string;
+                }>(),
+            scoped()
+                .leftJoin('o.brand', 'brand')
+                .select('o.id', 'id')
+                .addSelect('o.orderNumber', 'order_number')
+                .addSelect('o.placedAt', 'placed_at')
+                .addSelect('o.totalAmount', 'total_amount')
+                .addSelect('o.status', 'status')
+                .addSelect('o.orderType', 'order_type')
+                .addSelect('o.brandId', 'brand_id')
+                .addSelect('brand.name', 'brand_name')
+                .orderBy('o.placedAt', 'DESC')
+                .addOrderBy('o.id', 'DESC')
+                .limit(limit)
+                .getRawMany<{
+                    id: number;
+                    order_number: string;
+                    placed_at: Date;
+                    total_amount: string;
+                    status: string;
+                    order_type: string;
+                    brand_id: number | null;
+                    brand_name: string | null;
+                }>(),
+        ]);
+        return {
+            order_count: Number(totals?.order_count ?? 0),
+            completed_revenue: Number(totals?.completed_revenue ?? 0),
+            orders: rows
+                .slice()
+                .reverse()
+                .map((r) => ({
+                    order_number: r.order_number,
+                    placed_at:
+                        r.placed_at instanceof Date
+                            ? r.placed_at.toISOString()
+                            : String(r.placed_at),
+                    total_amount: Number(r.total_amount),
+                    status: r.status,
+                    order_type: r.order_type,
+                    brand_id: r.brand_id == null ? null : Number(r.brand_id),
+                    brand_name: r.brand_name ?? null,
+                })),
+        };
+    }
+
     async shiftSummary(
         tenantId: number | null,
         filters: {
@@ -1101,34 +1208,6 @@ export class ReportsService {
             completed_orders: string;
         }>();
 
-        // 6b. Per-order series ("order wise"): every order in the range as its
-        // own chart point. Newest 200 fetched, served oldest→newest for the
-        // time axis; the cap keeps wide ranges renderable.
-        const orderSeriesP = scope(
-            this.orderRepo
-                .createQueryBuilder('o')
-                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
-                    dateFrom,
-                    dateTo,
-                })
-                .select('o.id', 'id')
-                .addSelect('o.orderNumber', 'order_number')
-                .addSelect('o.placedAt', 'placed_at')
-                .addSelect('o.totalAmount', 'total_amount')
-                .addSelect('o.status', 'status')
-                .addSelect('o.orderType', 'order_type')
-                .orderBy('o.placedAt', 'DESC')
-                .addOrderBy('o.id', 'DESC')
-                .limit(200),
-        ).getRawMany<{
-            id: number;
-            order_number: string;
-            placed_at: Date;
-            total_amount: string;
-            status: string;
-            order_type: string;
-        }>();
-
         // 7. Top items (completed orders, by quantity)
         const topItemsP = this.applyOrderScope(
             this.orderItemRepo
@@ -1346,7 +1425,6 @@ export class ReportsService {
             ordersBySourceRaw,
             paymentsByMethodRaw,
             timeSeriesRaw,
-            orderSeriesRaw,
             topItemsRaw,
             deliveryByStatusRaw,
             presence,
@@ -1366,7 +1444,6 @@ export class ReportsService {
             ordersBySourceP,
             paymentsByMethodP,
             timeSeriesP,
-            orderSeriesP,
             topItemsP,
             deliveryByStatusP,
             presenceP,
@@ -1527,20 +1604,6 @@ export class ReportsService {
                 count: Number(r.count),
             })),
             time_series,
-            // Chronological per-order points for the "order wise" trend chart.
-            order_series: orderSeriesRaw
-                .slice()
-                .reverse()
-                .map((r) => ({
-                    order_number: r.order_number,
-                    placed_at:
-                        r.placed_at instanceof Date
-                            ? r.placed_at.toISOString()
-                            : String(r.placed_at),
-                    total_amount: Number(r.total_amount),
-                    status: r.status,
-                    order_type: r.order_type,
-                })),
             top_items: topItemsRaw.map((r) => ({
                 menu_item_id: r.menu_item_id,
                 name: r.name,
