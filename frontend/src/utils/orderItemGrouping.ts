@@ -1,6 +1,6 @@
 /**
  * Shared grouping for order line items, so the customer invoice, admin order
- * view, kitchen display (KDS) and FOH packing all show the SAME hierarchy:
+ * view, back kitchen (KDS) and FOH packing all show the SAME hierarchy:
  * deal components are grouped under the deal's name; standalone items each
  * stand on their own. Within a deal, lines are ordered by their slot index.
  *

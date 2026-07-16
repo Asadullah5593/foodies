@@ -73,9 +73,9 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/procurement/grns': ['procurement:grn:post'],
   '/admin/recipes': ['recipes:manage', 'costing:view'],
   '/pos/orders': ['orders:create'],
-  '/kitchen': ['kitchen:view', 'kitchen:update'],
+  '/kitchen': ['customer-display:view', 'customer-display:update'],
   '/kitchen/back': ['back-kitchen:view'],
-  '/foh/packing': ['kitchen:view', 'kitchen:update'],
+  '/foh/packing': ['customer-display:view', 'customer-display:update'],
 };
 
 export type UserForAccess = {

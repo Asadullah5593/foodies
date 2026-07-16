@@ -103,7 +103,7 @@ import ProcurementGRNs from './pages/Admin/Procurement/ProcurementGRNs';
 import RecipesManage from './pages/Admin/Recipes/RecipesManage';
 import RecipesCosting from './pages/Admin/Recipes/RecipesCosting';
 import OrderTaking from './pages/POS/OrderTaking';
-import KitchenDisplay from './pages/Kitchen/KitchenDisplay';
+import CustomerDisplay from './pages/CustomerDisplay/CustomerDisplay';
 import KDS from './pages/Kitchen/KDS';
 import FOHPacking from './pages/FOH/Packing';
 import RiderLayout from './pages/Rider/RiderLayout';
@@ -1162,7 +1162,7 @@ const AppRoutes: React.FC = () => {
         path="/kitchen"
         element={
           <ProtectedRoute>
-            <AdminOnlyRoute><KitchenDisplay /></AdminOnlyRoute>
+            <AdminOnlyRoute><CustomerDisplay /></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />

@@ -97,7 +97,7 @@ const NAV_LINKS = [
   { path: '/admin/menu-items', label: 'Menu Items', icon: MdOutlineRestaurantMenu },
 ];
 
-const KitchenDisplay: React.FC = () => {
+const CustomerDisplay: React.FC = () => {
   const [searchParams] = useSearchParams();
   const branchFromUrl = searchParams.get('branch_id') ?? '';
   const [branchId, setBranchId] = useState<string>(branchFromUrl);
@@ -116,7 +116,7 @@ const KitchenDisplay: React.FC = () => {
   });
 
   const { data: orders = [], isLoading } = useQuery({
-    queryKey: ['kitchen-display-orders', branchId, dateFrom, dateTo, showCompleted],
+    queryKey: ['customer-display-orders', branchId, dateFrom, dateTo, showCompleted],
     queryFn: async () => {
       if (!branchId) return [];
       const params = new URLSearchParams({ branch_id: branchId });
@@ -378,4 +378,4 @@ const KitchenDisplay: React.FC = () => {
   );
 };
 
-export default KitchenDisplay;
+export default CustomerDisplay;

@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
  * dynamically on every check, because our screens scroll differently:
  * - Inside <Layout> (e.g. FOH Packing) an inner `<main class="overflow-auto">`
  *   scrolls and the window never does.
- * - Full-screen pages (e.g. Kitchen Display) have `min-h-screen` roots whose
+ * - Full-screen pages (e.g. Customer Display) have `min-h-screen` roots whose
  *   overflow-auto <main> grows instead of scrolling, so the WINDOW scrolls.
  * A static "nearest overflow-auto ancestor" would pick the wrong element in
  * the second case — hence: nearest ancestor that is scrollable AND currently

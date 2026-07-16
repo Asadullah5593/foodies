@@ -13,7 +13,7 @@ export interface User {
   role?: string | null;
   /** Role id for forms */
   role_id?: number | null;
-  /** Permission names for RBAC (e.g. orders:view, kitchen:view) */
+  /** Permission names for RBAC (e.g. orders:view, customer-display:view) */
   permissions?: string[];
   /** Brand lock: null = all brands; number[] = user only sees/sells these brands */
   allowed_brand_ids?: number[] | null;

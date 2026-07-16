@@ -74,7 +74,7 @@ describe('ScrollToTopButton', () => {
   });
 
   it('ignores overflow-auto ancestors that are NOT actually overflowing (window scrolls instead)', async () => {
-    // Mimic Kitchen Display: a min-h-screen page whose overflow-auto <main>
+    // Mimic Customer Display: a min-h-screen page whose overflow-auto <main>
     // grows with content and never overflows — the window scrolls.
     const winScroll = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
     const { container } = render(

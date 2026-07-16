@@ -123,16 +123,18 @@ async function seed() {
                 'Assign/unassign users to branches (tenant/super admin only)',
         },
         {
-            name: 'kitchen:view',
-            resource: 'kitchen',
+            name: 'customer-display:view',
+            resource: 'customer-display',
             action: 'view',
-            description: 'View kitchen orders',
+            description:
+                'View the Customer Display (live order board) and kitchen order feeds',
         },
         {
-            name: 'kitchen:update',
-            resource: 'kitchen',
+            name: 'customer-display:update',
+            resource: 'customer-display',
             action: 'update',
-            description: 'Update kitchen order status',
+            description:
+                'Update order status from the Customer Display / FOH screens',
         },
         {
             name: 'back-kitchen:view',
