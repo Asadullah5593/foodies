@@ -33,6 +33,15 @@ interface Props {
 
 const LAYOUTS = Object.keys(LAYOUT_META) as InvoiceLayout[];
 
+/** Font-weight choices for the typography overrides. 600 mirrors the info-box value column. */
+const WEIGHT_OPTIONS = [
+  { value: '400', label: 'Normal (400)' },
+  { value: '500', label: 'Medium (500)' },
+  { value: '600', label: 'Semi-bold (600) — matches values' },
+  { value: '700', label: 'Bold (700)' },
+  { value: '800', label: 'Extra-bold (800)' },
+];
+
 /* ---------------------------------------------------------------- icons -- */
 
 type IconName = 'doc' | 'type' | 'list' | 'calc' | 'tag' | 'star' | 'info' | 'badge';
@@ -287,12 +296,6 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           value: form.config.footerText ?? '',
           onChange: (v) => setCfg('footerText', v || null),
         },
-        {
-          kind: 'toggle',
-          label: 'Footer bold',
-          value: Boolean(form.config.footerBold),
-          onChange: (v) => setCfg('footerBold', v),
-        },
       ],
     },
     {
@@ -320,7 +323,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
       id: 'typography',
       title: 'Typography',
       icon: 'type',
-      desc: 'Font size scales the whole receipt. The “powered by” line keeps its own size so it stays readable.',
+      desc: 'Font size scales the whole receipt. Info-box headings, footer and loyalty lines default to exactly the info-box value column (semi-bold, same size) — adjust their weight/size here.',
       kind: 'fields',
       fields: [
         {
@@ -342,6 +345,51 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           label: '“Powered by” bold',
           value: Boolean(form.config.poweredByBold),
           onChange: (v) => setCfg('poweredByBold', v),
+        },
+        {
+          kind: 'select',
+          label: 'Info-box headings weight',
+          hint: 'defaults to the values column (600)',
+          value: String(form.config.metaLabelsFontWeight ?? 600),
+          options: WEIGHT_OPTIONS,
+          onChange: (v) => setCfg('metaLabelsFontWeight', Number(v)),
+        },
+        {
+          kind: 'number',
+          label: 'Info-box headings size',
+          suffix: '%  (100 = same as values)',
+          value: form.config.metaLabelsFontPct ?? 100,
+          onChange: (v) => setCfg('metaLabelsFontPct', clampPct(v)),
+        },
+        {
+          kind: 'select',
+          label: 'Footer weight',
+          hint: 'defaults to the info-box values (600)',
+          value: String(form.config.footerFontWeight ?? 600),
+          options: WEIGHT_OPTIONS,
+          onChange: (v) => setCfg('footerFontWeight', Number(v)),
+        },
+        {
+          kind: 'number',
+          label: 'Footer size',
+          suffix: '%  (100 = same as info-box values)',
+          value: form.config.footerFontPct ?? 100,
+          onChange: (v) => setCfg('footerFontPct', clampPct(v)),
+        },
+        {
+          kind: 'select',
+          label: 'Loyalty / points weight',
+          hint: 'defaults to the info-box values (600)',
+          value: String(form.config.loyaltyFontWeight ?? 600),
+          options: WEIGHT_OPTIONS,
+          onChange: (v) => setCfg('loyaltyFontWeight', Number(v)),
+        },
+        {
+          kind: 'number',
+          label: 'Loyalty / points size',
+          suffix: '%  (100 = same as info-box values)',
+          value: form.config.loyaltyFontPct ?? 100,
+          onChange: (v) => setCfg('loyaltyFontPct', clampPct(v)),
         },
       ],
     },

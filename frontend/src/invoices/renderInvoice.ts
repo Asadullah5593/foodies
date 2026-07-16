@@ -756,16 +756,27 @@ const feedMmOf = (cfg: InvoiceTemplateConfig): number =>
   Math.min(80, Math.max(0, Math.round(Number(cfg.bottomFeedMm ?? 22))));
 
 function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
-  // Bold toggles append AFTER the layout skin so they beat any layout rule
-  // (e.g. thermal_modern resets the meta labels back to weight 400).
-  const boldOverrides = [
-    cfg.metaLabelsBold ? '.inv-root .metatbl .mk { font-weight: 700; }' : '',
+  // Typography overrides append AFTER the layout skin so they beat any layout
+  // rule (e.g. thermal_modern resets the meta labels back to weight 400).
+  //
+  // Info-box headings, footer and loyalty lines default to EXACTLY the
+  // info-box value column (weight 600, same size, full black) so both sides
+  // of the box print identically; the weight/size settings adjust from there.
+  // Sizes are emitted in px (relative ems compound — .foot .line would
+  // otherwise multiply .82em × .8em) and already include fontScalePct.
+  const rootPx = Math.round(LAYOUT_BASE_PX[layout] * (clampPct(cfg.fontScalePct) / 100) * 100) / 100;
+  const metaValuePx = rootPx * 0.84; // .metatbl is .84em of the root
+  const px = (pct: unknown) => Math.round(metaValuePx * (clampPct(pct) / 100) * 100) / 100;
+  const weight = (w: unknown) => Math.min(900, Math.max(100, Math.round(Number(w) || 600)));
+  const overrides = [
+    `.inv-root .metatbl .mk { color: #000; font-weight: ${weight(cfg.metaLabelsFontWeight)}; font-size: ${px(cfg.metaLabelsFontPct)}px; }`,
+    `.inv-root .foot .line { color: #000; font-weight: ${weight(cfg.footerFontWeight)}; font-size: ${px(cfg.footerFontPct)}px; }`,
+    `.inv-root .loyalty { color: #000; font-weight: ${weight(cfg.loyaltyFontWeight)}; font-size: ${px(cfg.loyaltyFontPct)}px; }`,
     cfg.discountLabelsBold ? '.inv-root .row.disc .l { font-weight: 700; }' : '',
-    cfg.footerBold ? '.inv-root .foot .line { font-weight: 700; }' : '',
   ]
     .filter(Boolean)
     .join('\n    ');
-  return `${layoutCss(layout, cfg)}\n    ${boldOverrides}`;
+  return `${layoutCss(layout, cfg)}\n    ${overrides}`;
 }
 
 function layoutCss(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {

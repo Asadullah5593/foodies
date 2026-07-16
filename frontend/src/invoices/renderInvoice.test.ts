@@ -481,29 +481,38 @@ describe('Bordered Logo Receipt layout', () => {
   });
 });
 
-describe('bold toggles (info-box headings, discount headings, footer)', () => {
+describe('info-box / footer / loyalty typography', () => {
   const cssOf = (over: Partial<InvoiceTemplateConfig>, layout: InvoiceLayout = 'thermal_modern') =>
     renderInvoiceHtml(sampleInvoice(), layout, cfg(over)).css;
 
-  it('metaLabelsBold bolds the info-box headings and beats the layout skin', () => {
-    const on = cssOf({ metaLabelsBold: true });
-    expect(on).toContain('.inv-root .metatbl .mk { font-weight: 700; }');
+  it('headings default to EXACTLY the value column: weight 600, same size, full black', () => {
+    const css = cssOf({});
+    // thermal_modern root is 11px → info-box (.84em) is 9.24px for values and headings alike.
+    expect(css).toContain('.inv-root .metatbl .mk { color: #000; font-weight: 600; font-size: 9.24px; }');
+    expect(css).toContain('.inv-root .foot .line { color: #000; font-weight: 600; font-size: 9.24px; }');
+    expect(css).toContain('.inv-root .loyalty { color: #000; font-weight: 600; font-size: 9.24px; }');
     // Appended AFTER thermal_modern's own ".mk { … font-weight: 400 }" reset so it wins.
-    expect(on.indexOf('.inv-root .metatbl .mk { font-weight: 700; }')).toBeGreaterThan(
-      on.indexOf('.inv-root.inv-thermal_modern .metatbl .mk'),
+    expect(css.indexOf('.inv-root .metatbl .mk { color: #000;')).toBeGreaterThan(
+      css.indexOf('.inv-root.inv-thermal_modern .metatbl .mk'),
     );
-    expect(cssOf({ metaLabelsBold: false })).not.toContain('.metatbl .mk { font-weight: 700; }');
+  });
+
+  it('manual weight and size adjust from the matched default', () => {
+    const css = cssOf({ metaLabelsFontWeight: 400, metaLabelsFontPct: 150, footerFontWeight: 800 });
+    expect(css).toContain('.inv-root .metatbl .mk { color: #000; font-weight: 400; font-size: 13.86px; }');
+    expect(css).toContain('.inv-root .foot .line { color: #000; font-weight: 800; font-size: 9.24px; }');
+  });
+
+  it('typography sizes ride the whole-receipt font scale', () => {
+    // 200% scale → root 22px → info box 18.48px.
+    expect(cssOf({ fontScalePct: 200 })).toContain(
+      '.inv-root .metatbl .mk { color: #000; font-weight: 600; font-size: 18.48px; }',
+    );
   });
 
   it('discountLabelsBold bolds the discount-line headings', () => {
     expect(cssOf({ discountLabelsBold: true })).toContain('.inv-root .row.disc .l { font-weight: 700; }');
     expect(cssOf({ discountLabelsBold: false })).not.toContain('.row.disc .l { font-weight: 700; }');
-  });
-
-  it('footerBold bolds the footer text line only', () => {
-    const on = cssOf({ footerBold: true, footerText: 'Thank you!' });
-    expect(on).toContain('.inv-root .foot .line { font-weight: 700; }');
-    expect(cssOf({ footerBold: false })).not.toContain('.foot .line { font-weight: 700; }');
   });
 });
 
