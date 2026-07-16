@@ -100,10 +100,20 @@ export interface InvoiceTemplateConfig {
   showCashier: boolean;
   showCustomerInfo: boolean;
   showPaymentMethod: boolean;
-  /** Bold the info-box headings (Order #, Type, Table, Date, Customer …). */
-  metaLabelsBold: boolean;
-  /** Bold the footer text line. */
-  footerBold: boolean;
+  /**
+   * Info-box heading (Order #, Type, Table …) typography. Defaults match the
+   * value column exactly (weight 600, same size), so both columns print
+   * identically unless overridden.
+   */
+  metaLabelsFontWeight: number;
+  /** Heading size, percent of the info-box value size (100 = identical). */
+  metaLabelsFontPct: number;
+  /** Footer text typography; defaults match the info-box value column. */
+  footerFontWeight: number;
+  footerFontPct: number;
+  /** Loyalty / points lines typography; defaults match the info-box value column. */
+  loyaltyFontWeight: number;
+  loyaltyFontPct: number;
 }
 
 export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
@@ -149,8 +159,12 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showCashier: false,
   showCustomerInfo: true,
   showPaymentMethod: true,
-  metaLabelsBold: false,
-  footerBold: false,
+  metaLabelsFontWeight: 600,
+  metaLabelsFontPct: 100,
+  footerFontWeight: 600,
+  footerFontPct: 100,
+  loyaltyFontWeight: 600,
+  loyaltyFontPct: 100,
 };
 
 export function resolveInvoiceConfig(
@@ -215,7 +229,6 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
       { key: 'showCashier', label: 'Show cashier' },
       { key: 'showCustomerInfo', label: 'Show customer info' },
       { key: 'showPaymentMethod', label: 'Show payment method' },
-      { key: 'metaLabelsBold', label: 'Bold info-box headings' },
     ],
   },
   {
