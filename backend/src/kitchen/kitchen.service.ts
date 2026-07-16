@@ -206,6 +206,12 @@ export class KitchenService {
         return this.getOrder(id, branchId);
     }
 
+    /**
+     * Back-kitchen print payload: the SAME invoice view-model the customer
+     * invoice uses, assembled by OrdersService with the tenant's active
+     * invoice template attached (Invoice Templates module). This method only
+     * adds kitchen-side scoping (branch match + brand lock) on top.
+     */
     async getKotPayload(
         id: number,
         branchId: number,
@@ -213,98 +219,12 @@ export class KitchenService {
     ) {
         const order = await this.orderRepo.findOne({
             where: { id, branchId },
-            relations: [
-                'orderItems',
-                'orderItems.menuItem',
-                'orderItems.menuItem.brand',
-                'orderItems.variant',
-                'orderItems.addons',
-                'orderItems.addons.addon',
-                'orderItems.modifiers',
-                'orderItems.modifiers.modifier',
-                'orderItems.modifiers.modifier.modifierGroup',
-                'orderItems.dealMenuItem',
-            ],
         });
         if (!order) throw new NotFoundException('Order not found');
         this.assertBrandAccess(order, allowedBrandIds);
-        type OI = (typeof order.orderItems)[0] & {
-            menuItem?: { name: string; brand?: { name: string } };
-        };
-        const sortedItems = [...(order.orderItems ?? [])].sort(
-            (a, b) => a.id - b.id,
-        );
-        return {
-            order_number: order.orderNumber,
-            source: order.source,
-            order_type: order.orderType,
-            table_number: order.tableNumber,
-            notes: order.notes ?? null,
-            customer_name: order.customerName,
-            delivery_address: order.deliveryAddress,
-            placed_at: order.placedAt?.toISOString() ?? null,
-            items:
-                sortedItems.map((oi) => {
-                    const mi = (oi as OI).menuItem;
-                    return {
-                        name: oi.nameSnapshot ?? oi.menuItem?.name,
-                        deal_id: oi.dealId ?? null,
-                        deal_slot_index: oi.dealSlotIndex ?? null,
-                        deal_name: oi.dealMenuItem?.name ?? null,
-                        quantity: oi.quantity,
-                        notes: oi.notes,
-                        variant_name: oi.variant?.name ?? null,
-                        brand_name: mi?.brand?.name ?? null,
-                        addons:
-                            oi.addons
-                                ?.map((a) => ({
-                                    name: a.addon?.name ?? '',
-                                    quantity: a.quantity ?? 1,
-                                }))
-                                .filter((a) => a.name) ?? [],
-                        modifiers: (() => {
-                            const mods = oi.modifiers ?? [];
-                            // Conditional chooser picks (meal drink) nest under the option
-                            // that made them visible — same key the invoice surfaces use.
-                            const byId = new Map(
-                                mods
-                                    .filter((x) => x.modifier?.id != null)
-                                    .map((x) => [x.modifier!.id, x]),
-                            );
-                            const triggerNameOf = (
-                                m: (typeof mods)[number],
-                            ): string | null => {
-                                const vw =
-                                    m.modifier?.modifierGroup
-                                        ?.visibleWhenModifierIds;
-                                if (!vw?.length) return null;
-                                for (const id of vw) {
-                                    const t = byId.get(id);
-                                    if (t)
-                                        return (
-                                            t.nameSnapshot ??
-                                            t.modifier?.name ??
-                                            null
-                                        );
-                                }
-                                return null;
-                            };
-                            return mods
-                                .map((m) => ({
-                                    triggered_by: triggerNameOf(m),
-                                    name:
-                                        m.nameSnapshot ??
-                                        m.modifier?.name ??
-                                        '',
-                                    quantity: m.quantity ?? 1,
-                                    group:
-                                        m.modifier?.modifierGroup?.name ?? null,
-                                }))
-                                .filter((m) => m.name);
-                        })(),
-                    };
-                }) ?? [],
-        };
+        // 'kitchen' resolves the kitchen-default template (falls back to the
+        // customer default when none is set).
+        return this.ordersService.getOrderInvoice(id, 'kitchen');
     }
 
     private toKitchenOrder(order: Order) {
@@ -384,7 +304,7 @@ export class KitchenService {
                             const byId = new Map(
                                 mods
                                     .filter((x) => x.modifier?.id != null)
-                                    .map((x) => [x.modifier!.id!, x]),
+                                    .map((x) => [x.modifier.id, x]),
                             );
                             const triggerNameOf = (
                                 m: (typeof mods)[number],

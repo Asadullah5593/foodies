@@ -21,6 +21,7 @@ const BusinessSettings: React.FC = () => {
     gst_rate_cash: '', // GST % for cash tender
     gst_rate_card: '', // GST % for card/digital tender (blank = same as cash)
     loyalty_enabled: false,
+    auto_print_invoices: false,
   });
 
   const { data: settings, isLoading } = useQuery({
@@ -38,6 +39,7 @@ const BusinessSettings: React.FC = () => {
         gst_rate_cash: settings.gst_rate_cash != null ? String(Number(settings.gst_rate_cash) * 100) : '',
         gst_rate_card: settings.gst_rate_card != null ? String(Number(settings.gst_rate_card) * 100) : '',
         loyalty_enabled: settings.loyalty_enabled ?? false,
+        auto_print_invoices: settings.auto_print_invoices ?? false,
       });
     }
   }, [settings]);
@@ -51,6 +53,7 @@ const BusinessSettings: React.FC = () => {
         gst_rate_cash: data.gst_rate_cash.trim() !== '' ? Number(data.gst_rate_cash) / 100 : null,
         gst_rate_card: data.gst_rate_card.trim() !== '' ? Number(data.gst_rate_card) / 100 : null,
         loyalty_enabled: data.loyalty_enabled,
+        auto_print_invoices: data.auto_print_invoices,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['business-settings'] });
@@ -176,6 +179,29 @@ const BusinessSettings: React.FC = () => {
                       Loyalty Settings
                     </Link>
                     .
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-4">
+              <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-600 pb-2">Printing</h2>
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="auto_print_invoices"
+                  checked={formData.auto_print_invoices}
+                  onChange={(e) => setFormData({ ...formData, auto_print_invoices: e.target.checked })}
+                  className="mt-1 h-4 w-4 rounded border-gray-300 dark:border-slate-600 text-red-600 focus:ring-red-500/50 dark:bg-slate-800 dark:checked:bg-red-600"
+                />
+                <div>
+                  <label htmlFor="auto_print_invoices" className="text-sm font-medium text-gray-700 dark:text-slate-300 cursor-pointer">
+                    Auto-print invoices when an order is placed
+                  </label>
+                  <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">
+                    The POS terminal prints the customer invoice and the kitchen invoice (KOT) as soon as an order is
+                    placed. Each uses its own default template from Invoice Templates. The browser must allow pop-ups
+                    on the terminal for printing to start automatically.
                   </p>
                 </div>
               </div>

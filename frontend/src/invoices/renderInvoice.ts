@@ -134,7 +134,7 @@ function splitModifiers(modList: NonNullable<InvoiceLineVM['modifiers']>) {
  * What a modifier actually bills. The group's included allowance (first-N-free)
  * makes free_quantity units free, so only (quantity - free_quantity) are charged
  * — a topping picked 3× with 1 included bills 2 × unit_price. Fully-included
- * picks bill 0, which prints as 0.00 rather than an empty cell.
+ * picks bill 0, printed per the template's zeroAmountDisplay setting.
  */
 function modifierBilling(m: NonNullable<InvoiceLineVM['modifiers']>[number]) {
   const qty = Math.max(1, Number(m.quantity ?? 1));
@@ -143,23 +143,80 @@ function modifierBilling(m: NonNullable<InvoiceLineVM['modifiers']>[number]) {
   return { qty, free, unit, amount: (qty - free) * unit };
 }
 
+/**
+ * The amount cell for modifier / add-on / deal-component lines. Zero amounts
+ * follow the template's zeroAmountDisplay: "0.00", "Included", or empty.
+ */
+function makeZeroAwareMoney(cfg: InvoiceTemplateConfig, money: (n: unknown) => string) {
+  return (n: unknown): string => {
+    if (Number(n ?? 0) !== 0) return money(n);
+    if (cfg.zeroAmountDisplay === 'included') return 'Included';
+    if (cfg.zeroAmountDisplay === 'blank') return '';
+    return money(0);
+  };
+}
+
+/** Same as makeZeroAwareMoney but for plain-number table cells (no currency symbol). */
+function makeZeroAwareNum(cfg: InvoiceTemplateConfig) {
+  return (n: unknown): string => {
+    if (Number(n ?? 0) !== 0) return num(n);
+    if (cfg.zeroAmountDisplay === 'included') return 'Included';
+    if (cfg.zeroAmountDisplay === 'blank') return '';
+    return num(0);
+  };
+}
+
+/**
+ * Rate cells: a zero unit price prints 0.00 only in 'zero' mode and hides in
+ * 'included'/'blank' (the amount cell carries the word — repeating it in the
+ * rate column would read twice). Non-zero rates always print: a modifier free
+ * by allowance keeps its real rate next to an "Included" amount.
+ */
+function makeZeroAwareRate(cfg: InvoiceTemplateConfig) {
+  return (unit: unknown): string => {
+    if (Number(unit ?? 0) !== 0) return num(unit);
+    return cfg.zeroAmountDisplay === 'zero' ? num(0) : '';
+  };
+}
+
+/** An add-on's billed amount (explicit subtotal wins over unit × qty). */
+function addonAmount(a: NonNullable<InvoiceLineVM['addons']>[number]): number {
+  return a.subtotal != null ? Number(a.subtotal) : Number(a.unit_price) * Number(a.quantity ?? 1);
+}
+
+/**
+ * Free/paid separation: free = lines that bill nothing — zero-total standalone
+ * lines (BOGO freebies, 100%-off items) AND zero-priced deal components. Deal
+ * grouping is stripped from the free lines so they list flat under the "Free
+ * items" heading; the deal keeps its priced header with the paid items. The
+ * showFreeItems toggle decides whether the free lines print at all.
+ */
+function splitFreeLines(items: InvoiceLineVM[]): { paid: InvoiceLineVM[]; free: InvoiceLineVM[] } {
+  const paid: InvoiceLineVM[] = [];
+  const free: InvoiceLineVM[] = [];
+  for (const l of items ?? []) {
+    if (Number(l.subtotal) === 0) free.push({ ...l, deal_id: null, deal_slot_index: null, deal_name: null });
+    else paid.push(l);
+  }
+  return { paid, free };
+}
+
 /** Flexible-rows item body (name × qty on the left, price on the right). */
 function itemsHtml(
   order: InvoiceOrderVM,
   cfg: InvoiceTemplateConfig,
   money: (n: unknown) => string,
 ): string {
-  const groups = groupItemsForReceipt(order.items ?? []);
-  return groups
-    .map((g) => {
+  const zeroMoney = makeZeroAwareMoney(cfg, money);
+  const renderGroup = (g: { dealId: number | null; lines: InvoiceLineVM[] }): string => {
       if (g.dealId != null && g.lines.length > 0) {
         const dealTotal = g.lines.reduce((s, l) => s + Number(l.subtotal), 0);
         const name = g.lines.find((l) => l.deal_name)?.deal_name ?? 'Deal';
         const sub = g.lines
           .map((l) => {
             const v = cfg.showVariant && l.variant_name ? `<span data-field="showVariant"> (${esc(l.variant_name)})</span>` : '';
-            // Components priced inside the bundle bill 0.00 rather than a dash.
-            return `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${money(l.subtotal)}</span></div>`;
+            // Zero-priced bundle components follow zeroAmountDisplay.
+            return `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${zeroMoney(l.subtotal)}</span></div>`;
           })
           .join('');
         return row(`<strong>${esc(name)}</strong>`, money(dealTotal)) + sub;
@@ -171,21 +228,26 @@ function itemsHtml(
           const base = Number(l.unit_price) * Number(l.quantity ?? 1);
           const head = row(
             `${cat}${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}`,
-            cfg.showUnitPrice ? `<span data-field="showUnitPrice">${money(base)}</span>` : '',
+            cfg.showUnitPrice ? `<span data-field="showUnitPrice">${zeroMoney(base)}</span>` : '',
           );
+          // Zero-billing add-ons/modifiers are "free lines" too: hidden entirely
+          // when free items are off (paid ones always print).
           const addons = cfg.showModifiers
             ? (l.addons ?? [])
+                .filter((a) => cfg.showFreeItems || addonAmount(a) !== 0)
                 .map((a) =>
                   row(
                     `<span class="sub-l">+ ${esc(a.name ?? 'Add-on')}${Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</span>`,
-                    money(a.subtotal != null ? a.subtotal : Number(a.unit_price) * Number(a.quantity ?? 1)),
+                    zeroMoney(addonAmount(a)),
                     'sub',
                     'showModifiers',
                   ),
                 )
                 .join('')
             : '';
-          const modList = l.modifiers ?? [];
+          const modList = (l.modifiers ?? []).filter(
+            (m) => cfg.showFreeItems || modifierBilling(m).amount !== 0,
+          );
           const { roots, children } = splitModifiers(modList);
           const modRow = (m: (typeof modList)[number], nested: boolean) => {
             const b = modifierBilling(m);
@@ -193,13 +255,13 @@ function itemsHtml(
             return nested
               ? row(
                   `<span class="sub2-l">↳ ${esc(m.name ?? 'Modifier')}${qty}</span>`,
-                  money(b.amount),
+                  zeroMoney(b.amount),
                   'sub sub2',
                   'showModifiers',
                 )
               : row(
                   `<span class="sub-l">+ ${esc(m.group ? `${m.group}: ` : '')}${esc(m.name ?? 'Modifier')}${qty}</span>`,
-                  money(b.amount),
+                  zeroMoney(b.amount),
                   'sub',
                   'showModifiers',
                 );
@@ -214,8 +276,14 @@ function itemsHtml(
           return head + addons + mods;
         })
         .join('');
-    })
-    .join('');
+  };
+  const { paid, free } = splitFreeLines(order.items ?? []);
+  const paidHtml = groupItemsForReceipt(paid).map(renderGroup).join('');
+  const freeHtml =
+    cfg.showFreeItems && free.length
+      ? `<div class="seclabel freelabel" data-field="showFreeItems">Free items</div>${groupItemsForReceipt(free).map(renderGroup).join('')}`
+      : '';
+  return paidHtml + freeHtml;
 }
 
 /**
@@ -230,6 +298,8 @@ function itemsTableHtml(
   labels: { item: string; qty: string; rate: string; amount: string },
 ): string {
   const showRate = cfg.showUnitPrice;
+  const zeroNum = makeZeroAwareNum(cfg);
+  const zeroRate = makeZeroAwareRate(cfg);
   const cell = (
     name: string,
     qty: string,
@@ -242,20 +312,19 @@ function itemsTableHtml(
   const variantHtml = (name?: string | null) =>
     cfg.showVariant && name ? `<span data-field="showVariant"> (${esc(name)})</span>` : '';
 
-  const rows = groupItemsForReceipt(order.items ?? [])
-    .map((g) => {
+  const renderGroup = (g: { dealId: number | null; lines: InvoiceLineVM[] }): string => {
       if (g.dealId != null && g.lines.length > 0) {
         const dealTotal = g.lines.reduce((s, l) => s + Number(l.subtotal), 0);
         const name = g.lines.find((l) => l.deal_name)?.deal_name ?? 'Deal';
         const head = cell(`<strong>${esc(name)}</strong>`, '', '', num(dealTotal), 'dealrow');
         const comps = g.lines
           .map((l) => {
-            // Components priced inside the bundle bill 0.00 rather than a dash.
+            // Zero-priced bundle components follow zeroAmountDisplay.
             return cell(
               `<span class="ind">${esc(l.name_snapshot ?? 'Item')}${variantHtml(l.variant_name)}</span>`,
               String(l.quantity),
-              num(l.unit_price),
-              num(l.subtotal),
+              zeroRate(l.unit_price),
+              zeroNum(l.subtotal),
             );
           })
           .join('');
@@ -268,26 +337,30 @@ function itemsTableHtml(
           const head = cell(
             `${cat}${esc(l.name_snapshot ?? 'Item')}${variantHtml(l.variant_name)}`,
             String(l.quantity),
-            num(l.unit_price),
-            num(base),
+            zeroRate(l.unit_price),
+            zeroNum(base),
           );
+          // Zero-billing add-ons/modifiers are "free lines" too: hidden entirely
+          // when free items are off (paid ones always print).
           const addons = cfg.showModifiers
             ? (l.addons ?? [])
+                .filter((a) => cfg.showFreeItems || addonAmount(a) !== 0)
                 .map((a) => {
                   const qty = Number(a.quantity ?? 1);
-                  const amount = a.subtotal != null ? a.subtotal : Number(a.unit_price) * qty;
                   return cell(
                     `<span class="ind">+ ${esc(a.name ?? 'Add-on')}</span>`,
                     qty !== 1 ? String(qty) : '',
-                    num(a.unit_price),
-                    num(amount),
+                    zeroRate(a.unit_price),
+                    zeroNum(addonAmount(a)),
                     '',
                     'showModifiers',
                   );
                 })
                 .join('')
             : '';
-          const modList = l.modifiers ?? [];
+          const modList = (l.modifiers ?? []).filter(
+            (m) => cfg.showFreeItems || modifierBilling(m).amount !== 0,
+          );
           const { roots, children } = splitModifiers(modList);
           const modCell = (m: (typeof modList)[number], nested: boolean) => {
             const b = modifierBilling(m);
@@ -296,8 +369,8 @@ function itemsTableHtml(
                 ? `<span class="ind2">↳ ${esc(m.name ?? 'Modifier')}</span>`
                 : `<span class="ind">+ ${esc(m.group ? `${m.group}: ` : '')}${esc(m.name ?? 'Modifier')}</span>`,
               String(b.qty),
-              num(b.unit),
-              num(b.amount),
+              zeroRate(b.unit),
+              zeroNum(b.amount),
               '',
               'showModifiers',
             );
@@ -312,8 +385,14 @@ function itemsTableHtml(
           return head + addons + mods;
         })
         .join('');
-    })
-    .join('');
+  };
+  const { paid, free } = splitFreeLines(order.items ?? []);
+  const colCount = showRate ? 4 : 3;
+  const rows =
+    groupItemsForReceipt(paid).map(renderGroup).join('') +
+    (cfg.showFreeItems && free.length
+      ? `<tr class="freehead" data-field="showFreeItems"><td colspan="${colCount}">Free items</td></tr>${groupItemsForReceipt(free).map(renderGroup).join('')}`
+      : '');
 
   return `<table class="itbl"><thead><tr><th class="ci">${esc(labels.item)}</th><th class="cq">${esc(labels.qty)}</th>${showRate ? `<th class="cr">${esc(labels.rate)}</th>` : ''}<th class="ca">${esc(labels.amount)}</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
@@ -677,6 +756,19 @@ const feedMmOf = (cfg: InvoiceTemplateConfig): number =>
   Math.min(80, Math.max(0, Math.round(Number(cfg.bottomFeedMm ?? 22))));
 
 function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
+  // Bold toggles append AFTER the layout skin so they beat any layout rule
+  // (e.g. thermal_modern resets the meta labels back to weight 400).
+  const boldOverrides = [
+    cfg.metaLabelsBold ? '.inv-root .metatbl .mk { font-weight: 700; }' : '',
+    cfg.discountLabelsBold ? '.inv-root .row.disc .l { font-weight: 700; }' : '',
+    cfg.footerBold ? '.inv-root .foot .line { font-weight: 700; }' : '',
+  ]
+    .filter(Boolean)
+    .join('\n    ');
+  return `${layoutCss(layout, cfg)}\n    ${boldOverrides}`;
+}
+
+function layoutCss(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
   const widthMm = LAYOUT_META[layout].widthMm;
   // Whole-receipt font scaling: everything else is sized in em, so scaling the
   // root px cascades. Powered-by gets its own size + weight for readability.
@@ -726,6 +818,8 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .foot .line { white-space: pre-line; }
     .inv-root .powered { margin-top: 6px; color: #222; font-size: ${poweredPx}px; font-weight: ${poweredWeight}; }
     .inv-root .seclabel { text-transform: uppercase; letter-spacing: .12em; font-size: .72em; color: #555; margin: 8px 0 2px; }
+    .inv-root .freelabel { margin-top: 8px; padding-top: 4px; border-top: 1px dashed #999; font-weight: 700; }
+    .inv-root .itbl .freehead td { font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: .78em; color: #555; padding-top: 6px; }
     .inv-root .itbl { width: 100%; border-collapse: collapse; margin: 6px 0; }
     .inv-root .itbl th, .inv-root .itbl td { padding: 2px 3px; vertical-align: top; }
     .inv-root .itbl .ci { text-align: left; }

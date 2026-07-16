@@ -27,6 +27,7 @@ type TemplateRow = {
   layout: InvoiceLayout;
   is_active: boolean;
   is_default: boolean;
+  is_default_kitchen: boolean;
   config: InvoiceTemplateConfig;
 };
 
@@ -37,6 +38,7 @@ const emptyForm = () => ({
   brand_id: null as number | null,
   is_active: true,
   is_default: false,
+  is_default_kitchen: false,
   config: { ...DEFAULT_INVOICE_TEMPLATE_CONFIG },
 });
 
@@ -74,8 +76,12 @@ const InvoiceTemplates: React.FC = () => {
     onError: onErr,
   });
   const activateM = useMutation({
-    mutationFn: adminService.activateInvoiceTemplate,
-    onSuccess: () => { invalidate(); toast.success('Set as default'); },
+    mutationFn: ({ id, purpose }: { id: number; purpose: 'customer' | 'kitchen' }) =>
+      adminService.activateInvoiceTemplate(id, purpose),
+    onSuccess: (_d, { purpose }) => {
+      invalidate();
+      toast.success(purpose === 'kitchen' ? 'Set as kitchen invoice default' : 'Set as customer invoice default');
+    },
     onError: onErr,
   });
   const deleteM = useMutation({
@@ -85,6 +91,22 @@ const InvoiceTemplates: React.FC = () => {
   });
 
   const openCreate = () => { setForm(emptyForm()); setShowForm(true); };
+  /** Prefill the create form from an existing template: every setting and the
+   *  schema carry over; the name is editable before saving (and later via edit).
+   *  Default markers reset — a copy never steals the original's default slot. */
+  const openDuplicate = (t: TemplateRow) => {
+    setForm({
+      id: null,
+      name: `${t.name} (copy)`,
+      layout: t.layout,
+      brand_id: t.brand_id ?? null,
+      is_active: t.is_active,
+      is_default: false,
+      is_default_kitchen: false,
+      config: resolveInvoiceConfig(t.config),
+    });
+    setShowForm(true);
+  };
   const openEdit = (t: TemplateRow) => {
     setForm({
       id: t.id,
@@ -93,6 +115,7 @@ const InvoiceTemplates: React.FC = () => {
       brand_id: t.brand_id ?? null,
       is_active: t.is_active,
       is_default: t.is_default,
+      is_default_kitchen: t.is_default_kitchen,
       config: resolveInvoiceConfig(t.config),
     });
     setShowForm(true);
@@ -106,6 +129,7 @@ const InvoiceTemplates: React.FC = () => {
       brand_id: form.brand_id,
       is_active: form.is_active,
       is_default: form.is_default,
+      is_default_kitchen: form.is_default_kitchen,
       config: form.config,
     };
     if (form.id) updateM.mutate({ id: form.id, data });
@@ -124,7 +148,8 @@ const InvoiceTemplates: React.FC = () => {
         <div>
           <h1 className="text-3xl font-bold text-gray-800 dark:text-slate-100">Invoice Templates</h1>
           <p className="text-sm text-gray-500 dark:text-slate-400">
-            Selectable invoice/receipt schemas with per-field toggles. The default for each scope prints at checkout.
+            Selectable invoice/receipt schemas with per-field toggles. Customer and kitchen (KOT) prints each
+            have their own default per scope — kitchen falls back to the customer default until one is set.
           </p>
         </div>
         <Button onClick={openCreate}>New Template</Button>
@@ -144,7 +169,10 @@ const InvoiceTemplates: React.FC = () => {
                 <p className="text-gray-500 text-xs flex items-center gap-2">
                   <span>{LAYOUT_META[t.layout]?.label ?? t.layout} · {brandName(t.brand_id)}</span>
                   {t.is_default && (
-                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">DEFAULT</span>
+                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">CUSTOMER DEFAULT</span>
+                  )}
+                  {t.is_default_kitchen && (
+                    <span className="rounded bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-700">KITCHEN DEFAULT</span>
                   )}
                 </p>
               }
@@ -155,8 +183,12 @@ const InvoiceTemplates: React.FC = () => {
                 <>
                   <Button size="small" variant="outline" onClick={() => setPreviewRow(t)}>Preview</Button>
                   <Button size="small" variant="edit" onClick={() => openEdit(t)}>Edit</Button>
+                  <Button size="small" variant="outline" onClick={() => openDuplicate(t)}>Duplicate</Button>
                   {!t.is_default && (
-                    <Button size="small" variant="primary" onClick={() => activateM.mutate(t.id)}>Set default</Button>
+                    <Button size="small" variant="primary" onClick={() => activateM.mutate({ id: t.id, purpose: 'customer' })}>Set customer default</Button>
+                  )}
+                  {!t.is_default_kitchen && (
+                    <Button size="small" variant="outline" onClick={() => activateM.mutate({ id: t.id, purpose: 'kitchen' })}>Set kitchen default</Button>
                   )}
                   <Button size="small" variant="danger" onClick={async () => {
                     if (await confirmDialog({ title: `Delete "${t.name}"?`, confirmText: 'Delete' })) deleteM.mutate(t.id);

@@ -437,8 +437,11 @@ export const adminService = {
     const r = await apiClient.put(`/admin/invoice-templates/${id}`, data);
     return r.data;
   },
-  activateInvoiceTemplate: async (id: number): Promise<any> => {
-    const r = await apiClient.put(`/admin/invoice-templates/${id}/activate`, {});
+  activateInvoiceTemplate: async (
+    id: number,
+    purpose: 'customer' | 'kitchen' = 'customer',
+  ): Promise<any> => {
+    const r = await apiClient.put(`/admin/invoice-templates/${id}/activate?purpose=${purpose}`, {});
     return r.data;
   },
   deleteInvoiceTemplate: async (id: number): Promise<void> => {
@@ -973,6 +976,7 @@ export const adminService = {
     gst_rate_cash?: number | null;
     gst_rate_card?: number | null;
     loyalty_enabled?: boolean;
+    auto_print_invoices?: boolean;
   }) => {
     const response = await apiClient.put('/admin/business-settings', data);
     return response.data;
