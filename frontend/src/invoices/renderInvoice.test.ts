@@ -480,3 +480,162 @@ describe('Bordered Logo Receipt layout', () => {
     expect(html).toContain('metatbl');
   });
 });
+
+describe('bold toggles (info-box headings, discount headings, footer)', () => {
+  const cssOf = (over: Partial<InvoiceTemplateConfig>, layout: InvoiceLayout = 'thermal_modern') =>
+    renderInvoiceHtml(sampleInvoice(), layout, cfg(over)).css;
+
+  it('metaLabelsBold bolds the info-box headings and beats the layout skin', () => {
+    const on = cssOf({ metaLabelsBold: true });
+    expect(on).toContain('.inv-root .metatbl .mk { font-weight: 700; }');
+    // Appended AFTER thermal_modern's own ".mk { … font-weight: 400 }" reset so it wins.
+    expect(on.indexOf('.inv-root .metatbl .mk { font-weight: 700; }')).toBeGreaterThan(
+      on.indexOf('.inv-root.inv-thermal_modern .metatbl .mk'),
+    );
+    expect(cssOf({ metaLabelsBold: false })).not.toContain('.metatbl .mk { font-weight: 700; }');
+  });
+
+  it('discountLabelsBold bolds the discount-line headings', () => {
+    expect(cssOf({ discountLabelsBold: true })).toContain('.inv-root .row.disc .l { font-weight: 700; }');
+    expect(cssOf({ discountLabelsBold: false })).not.toContain('.row.disc .l { font-weight: 700; }');
+  });
+
+  it('footerBold bolds the footer text line only', () => {
+    const on = cssOf({ footerBold: true, footerText: 'Thank you!' });
+    expect(on).toContain('.inv-root .foot .line { font-weight: 700; }');
+    expect(cssOf({ footerBold: false })).not.toContain('.foot .line { font-weight: 700; }');
+  });
+});
+
+describe('zeroAmountDisplay — 0 / Included / empty for zero-billing lines', () => {
+  // sampleInvoice has a zero-priced modifier (Pesto Base); richSampleInvoice
+  // adds zero-priced deal components (Garlic Bread etc.).
+  it("'zero' keeps printing 0.00 (default, unchanged behavior)", () => {
+    const html = render({ zeroAmountDisplay: 'zero' });
+    expect(html).toContain('Pesto Base');
+    expect(html).toContain('Rs. 0.00');
+    expect(html).not.toContain('Included');
+  });
+
+  it("'included' prints the word Included on row layouts", () => {
+    const html = render({ zeroAmountDisplay: 'included' });
+    expect(html).toContain('Included');
+    expect(html).not.toContain('Rs. 0.00');
+  });
+
+  it("'blank' leaves the amount empty", () => {
+    const html = render({ zeroAmountDisplay: 'blank' });
+    expect(html).not.toContain('Rs. 0.00');
+    expect(html).not.toContain('Included');
+  });
+
+  it('applies to zero-priced deal components in table layouts', () => {
+    const html = renderInvoiceHtml(
+      richSampleInvoice(),
+      'bill_bordered',
+      cfg({ zeroAmountDisplay: 'included' }),
+    ).html;
+    // Component amount cells read Included; the priced deal header keeps its number.
+    expect(html).toContain('<td class="ca">Included</td>');
+    expect(html).toContain('2999.00');
+  });
+
+  it('rate cells of zero-priced lines hide in included/blank modes and print in 0.00 mode', () => {
+    const table = (over: Partial<InvoiceTemplateConfig>) =>
+      renderInvoiceHtml(richSampleInvoice(), 'bill_bordered', cfg(over)).html;
+    // Zero-priced modifiers (Classic Hand-Tossed) put 0.00 in the rate column…
+    expect(table({ zeroAmountDisplay: 'zero' })).toContain('<td class="cr">0.00</td>');
+    // …but the rate hides when zero amounts are Included/blank.
+    expect(table({ zeroAmountDisplay: 'included' })).not.toContain('<td class="cr">0.00</td>');
+    expect(table({ zeroAmountDisplay: 'blank' })).not.toContain('<td class="cr">0.00</td>');
+    expect(table({ zeroAmountDisplay: 'blank' })).toContain('<td class="cr"></td>');
+    // A REAL rate survives next to an Included amount: Jalapeños ×2 with 1 free
+    // keeps rate 120.00, and the fully-allowance-covered case keeps its rate too.
+    expect(table({ zeroAmountDisplay: 'included' })).toContain('<td class="cr">120.00</td>');
+  });
+
+  it('does not touch paid modifier amounts', () => {
+    const html = renderInvoiceHtml(
+      richSampleInvoice(),
+      'thermal_classic',
+      cfg({ zeroAmountDisplay: 'blank' }),
+    ).html;
+    // Grilled Chicken bills 250 and must still print.
+    expect(html).toContain('Rs. 250.00');
+  });
+});
+
+describe('showFreeItems — zero-priced lines print in a Free items section, or not at all', () => {
+  it('prints free lines under a Free items heading by default (on)', () => {
+    const html = renderInvoiceHtml(richSampleInvoice(), 'thermal_classic', cfg({})).html;
+    expect(html).toContain('Free items');
+    // Free deal components list flat in the free section…
+    const freeAt = html.indexOf('Free items');
+    expect(html.indexOf('Garlic Bread')).toBeGreaterThan(freeAt);
+    expect(html.indexOf('1.5L Soft Drink')).toBeGreaterThan(freeAt);
+    // …while paid lines stay above it.
+    expect(html.indexOf('Peri Peri Wings')).toBeLessThan(freeAt);
+    expect(html.indexOf('Family Feast Deal')).toBeLessThan(freeAt);
+  });
+
+  it('off = zero-value lines are omitted from the receipt entirely', () => {
+    const html = renderInvoiceHtml(
+      richSampleInvoice(),
+      'thermal_classic',
+      cfg({ showFreeItems: false }),
+    ).html;
+    expect(html).not.toContain('Free items');
+    expect(html).not.toContain('Garlic Bread');
+    expect(html).not.toContain('1.5L Soft Drink');
+    // Zero-billing modifiers are free lines too — hidden with the same toggle.
+    expect(html).not.toContain('Classic Hand-Tossed');
+    expect(html).not.toContain('Smoky BBQ');
+    // The deal's priced header, paid items and paid modifiers still print —
+    // including Jalapeños, which bills 1 unit despite its included allowance.
+    expect(html).toContain('Family Feast Deal');
+    expect(html).toContain('Peri Peri Wings');
+    expect(html).toContain('Grilled Chicken');
+    expect(html).toContain('Jalapeños');
+    expect(html).toContain('Mint Margarita');
+  });
+
+  it('off hides zero-billing modifiers in table layouts too', () => {
+    const html = renderInvoiceHtml(
+      richSampleInvoice(),
+      'bill_bordered',
+      cfg({ showFreeItems: false }),
+    ).html;
+    expect(html).not.toContain('Classic Hand-Tossed');
+    expect(html).toContain('Grilled Chicken');
+  });
+
+  it('off omits them from table layouts too', () => {
+    const html = renderInvoiceHtml(
+      richSampleInvoice(),
+      'bill_bordered',
+      cfg({ showFreeItems: false }),
+    ).html;
+    expect(html).not.toContain('class="freehead"');
+    expect(html).not.toContain('Garlic Bread');
+    expect(html).toContain('Family Feast Deal');
+  });
+
+  it('renders the Free items header row in table layouts when on', () => {
+    const html = renderInvoiceHtml(
+      richSampleInvoice(),
+      'bill_bordered',
+      cfg({ showFreeItems: true }),
+    ).html;
+    expect(html).toContain('class="freehead"');
+    expect(html).toContain('Free items');
+  });
+
+  it('shows no Free items section when every line is paid', () => {
+    const html = renderInvoiceHtml(
+      sampleInvoice(),
+      'thermal_classic',
+      cfg({ showFreeItems: true }),
+    ).html;
+    expect(html).not.toContain('Free items');
+  });
+});

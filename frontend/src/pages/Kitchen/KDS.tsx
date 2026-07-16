@@ -10,18 +10,17 @@ import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
+import { singleToPrintVM } from '../../components/CustomerInvoiceModal';
+import { renderInvoiceHtml } from '../../invoices/renderInvoice';
+import { InvoiceVM, InvoiceLayout } from '../../invoices/types';
+import { printContent } from '../../utils/print';
+import { getDeviceBottomFeedMm } from '../../utils/printerSettings';
 import { formatOrderType } from '../../utils/format';
 import { groupOrderItems } from '../../utils/orderItemGrouping';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
-}
-
-function escapeHtml(s: string): string {
-  const div = document.createElement('div');
-  div.textContent = s;
-  return div.innerHTML;
 }
 
 interface KitchenOrder {
@@ -184,75 +183,23 @@ const KDS: React.FC = () => {
     },
   });
 
+  /**
+   * PRINT via the Invoice Templates module: the KOT endpoint returns the same
+   * invoice view-model as the customer invoice (tenant's active template
+   * included), and the same config-driven renderer produces the printout.
+   */
   const handlePrintKot = async (orderId: number) => {
     try {
       const response = await apiClient.get(`/kitchen/orders/${orderId}/kot?branch_id=${branchId}`);
-      const data = response.data ?? {};
-      const orderTypeLabel = formatOrderType(data.order_type);
-      const placedStr = data.placed_at ? new Date(data.placed_at).toLocaleString() : '—';
-      const itemsHtml = (data.items ?? []).map((i: any) => {
-        const brandLine = i.brand_name ? `<div class="kot-brand">${escapeHtml(i.brand_name)}</div>` : '';
-        const nameLine = `${i.quantity}× ${(i.name ?? '').trim()}${i.variant_name ? ` — ${i.variant_name}` : ''}`;
-        const notesLine = i.notes ? `<div class="kot-note">Note: ${escapeHtml(i.notes)}</div>` : '';
-        const addonsStr = (i.addons ?? []).map((a: any) => `${a.name} ×${a.quantity ?? 1}`).join(', ');
-        const addonsLine = addonsStr ? `<div class="kot-addons">Add-ons: ${escapeHtml(addonsStr)}</div>` : '';
-        const modifiersLine = orderModifiersWithNesting(
-          (i.modifiers ?? []) as Array<{ name?: string; group?: string | null; triggered_by?: string | null; quantity?: number }>,
-        )
-          .map(({ mod: m, nested }) =>
-            nested
-              ? `<div class="kot-addons" style="padding-left:14px;">↳ ${escapeHtml(m.name ?? '')}${(m.quantity ?? 1) > 1 ? ` ×${m.quantity}` : ''}</div>`
-              : `<div class="kot-addons">${m.group ? `${escapeHtml(m.group)}: ` : ''}${escapeHtml(m.name ?? '')}${(m.quantity ?? 1) > 1 ? ` ×${m.quantity}` : ''}</div>`,
-          )
-          .join('');
-        return `<div class="kot-item">${brandLine}${escapeHtml(nameLine)}${modifiersLine}${addonsLine}${notesLine}</div>`;
-      }).join('');
-      const w = window.open('', '_blank');
-      if (w) {
-        w.document.write(`
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>KOT ${escapeHtml(data.order_number ?? String(orderId))}</title>
-  <style>
-    * { box-sizing: border-box; }
-    body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 0; padding: 20px 24px; font-size: 15px; line-height: 1.4; color: #111; }
-    @media print { body { padding: 16px; } }
-    .kot-header { border-bottom: 3px solid #111; padding-bottom: 10px; margin-bottom: 14px; }
-    .kot-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #444; margin: 0 0 4px 0; }
-    .kot-order-num { font-size: 22px; font-weight: 700; margin: 0; }
-    .kot-meta { display: flex; flex-wrap: wrap; gap: 12px 20px; margin-bottom: 14px; padding: 10px 0; border-bottom: 1px solid #ddd; font-size: 14px; }
-    .kot-meta span { font-weight: 600; color: #333; }
-    .kot-section { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: #555; margin: 12px 0 8px 0; }
-    .kot-item { margin: 10px 0; padding: 6px 0; border-bottom: 1px solid #eee; font-size: 15px; font-weight: 600; }
-    .kot-brand { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #4338ca; margin-bottom: 2px; font-weight: 600; }
-    .kot-addons { font-size: 13px; font-weight: 400; color: #444; margin-top: 2px; margin-left: 8px; }
-    .kot-note { font-size: 13px; margin-top: 4px; margin-left: 8px; padding: 4px 8px; background: #fef3c7; border-left: 3px solid #d97706; color: #92400e; }
-    .kot-footer { margin-top: 16px; padding-top: 10px; border-top: 1px solid #ddd; font-size: 13px; color: #666; }
-  </style>
-</head>
-<body>
-  <div class="kot-header">
-    <p class="kot-title">Kitchen Order Ticket</p>
-    <h1 class="kot-order-num">#${escapeHtml(data.order_number ?? String(orderId))}</h1>
-  </div>
-  <div class="kot-meta">
-    <span>Type</span> ${escapeHtml(orderTypeLabel)}
-    ${data.table_number ? `<span>Table</span> ${escapeHtml(data.table_number)}` : ''}
-    ${data.customer_name ? `<span>Customer</span> ${escapeHtml(data.customer_name)}` : ''}
-    <span>Placed</span> ${escapeHtml(placedStr)}
-    ${data.delivery_address ? `<span>Delivery</span> ${escapeHtml(data.delivery_address)}` : ''}
-  </div>
-  ${data.notes ? `<div class="kot-note" style="margin-bottom:10px;">Order note: ${escapeHtml(data.notes)}</div>` : ''}
-  <div class="kot-section">Items</div>
-  ${itemsHtml}
-  <div class="kot-footer">Placed: ${escapeHtml(placedStr)}</div>
-</body>
-</html>`);
-        w.document.close();
-        w.print();
-      }
+      const data = (response.data ?? {}) as Record<string, unknown>;
+      const printData: InvoiceVM = singleToPrintVM(data);
+      const layout: InvoiceLayout = printData.template?.layout ?? 'bill_bordered';
+      // This terminal's cutter-feed override (if set) wins over the template default.
+      const deviceFeed = getDeviceBottomFeedMm();
+      const baseCfg = printData.template?.config ?? null;
+      const cfg = deviceFeed != null ? { ...(baseCfg ?? {}), bottomFeedMm: deviceFeed } : baseCfg;
+      const { html, css } = renderInvoiceHtml(printData, layout, cfg);
+      printContent(html, `KOT ${(data.order_number as string) ?? String(orderId)}`, css);
     } catch (e) {
       toast.error('Failed to load KOT');
     }

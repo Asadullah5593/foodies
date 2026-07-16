@@ -119,8 +119,13 @@ export const orderService = {
     return response.data;
   },
 
-  getOrderInvoice: async (orderId: number): Promise<any> => {
-    const response = await apiClient.get(`/pos/orders/${orderId}/invoice`);
+  getOrderInvoice: async (
+    orderId: number,
+    purpose: 'customer' | 'kitchen' = 'customer',
+  ): Promise<any> => {
+    const response = await apiClient.get(
+      `/pos/orders/${orderId}/invoice${purpose === 'kitchen' ? '?purpose=kitchen' : ''}`,
+    );
     return response.data;
   },
 

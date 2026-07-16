@@ -1,5 +1,6 @@
 import React from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
 import { orderService } from '../services/api';
 import { formatCurrency } from '../utils/currency';
 import { printContent } from '../utils/print';
@@ -47,10 +48,13 @@ export type MainInvoiceData = {
   orders: MainInvoiceOrder[];
   gross_total: number;
   loyalty_points_remaining?: number;
+  /** Tenant business setting: auto-print customer + kitchen invoices on order placement. */
+  auto_print_invoices?: boolean;
 };
 
-/** Normalize the single-order invoice payload into the group-shaped view model (print only). */
-function singleToPrintVM(s: Record<string, unknown>): InvoiceVM {
+/** Normalize the single-order invoice payload into the group-shaped view model (print only).
+ *  Also used by the Back Kitchen KOT print, which receives the same payload shape. */
+export function singleToPrintVM(s: Record<string, unknown>): InvoiceVM {
   const items = ((s.items as Array<Record<string, unknown>>) ?? []).map((i) => ({
     name_snapshot: (i.name as string) ?? (i.name_snapshot as string),
     quantity: i.quantity as number,
@@ -115,6 +119,13 @@ interface CustomerInvoiceModalProps {
   orderGroupId: string | null;
   /** When set and orderGroupId is null, show single-order invoice (e.g. for orders without a group). */
   orderId?: number | null;
+  /**
+   * Set by surfaces that open this modal right after PLACING an order (POS /
+   * kiosk finalize). When the tenant's auto-print business setting is on, the
+   * customer and kitchen invoices print as soon as the invoice loads. Viewers
+   * of past orders (admin orders list) omit it.
+   */
+  autoPrintOnOpen?: boolean;
 }
 
 const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
@@ -122,6 +133,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
   onClose,
   orderGroupId,
   orderId,
+  autoPrintOnOpen = false,
 }) => {
   const hasGroup = !!orderGroupId;
   const hasSingle = !!orderId && !orderGroupId;
@@ -231,6 +243,49 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
     const { html, css } = renderInvoiceHtml(printData, layout, cfg);
     printContent(html, 'Customer invoice', css);
   };
+
+  /**
+   * Kitchen (KOT) print: refetch each order with purpose=kitchen so the
+   * kitchen-default template applies (it may differ from the customer one
+   * this modal already holds), then render through the same engine. Group
+   * invoices print one kitchen ticket per order.
+   */
+  const handlePrintKot = async () => {
+    const orderIds = (invoiceData?.orders ?? []).map((o) => o.order_id);
+    if (!orderIds.length) return;
+    for (const oid of orderIds) {
+      try {
+        const data = (await orderService.getOrderInvoice(oid, 'kitchen')) as Record<string, unknown>;
+        const printData = singleToPrintVM(data);
+        const layout: InvoiceLayout = printData.template?.layout ?? 'bill_bordered';
+        const deviceFeed = getDeviceBottomFeedMm();
+        const baseCfg = printData.template?.config ?? null;
+        const cfg = deviceFeed != null ? { ...(baseCfg ?? {}), bottomFeedMm: deviceFeed } : baseCfg;
+        const { html, css } = renderInvoiceHtml(printData, layout, cfg);
+        printContent(html, `KOT ${(data.order_number as string) ?? String(oid)}`, css);
+      } catch {
+        toast.error('Failed to print kitchen invoice');
+      }
+    }
+  };
+
+  // Auto-print on order placement: fire once per order group, only when the
+  // opener flags placement AND the tenant setting (carried on the invoice
+  // payload) is on.
+  const autoPrintEnabled = Boolean(
+    (mainInvoice as MainInvoiceData | undefined)?.auto_print_invoices ??
+      (singleInvoice as { auto_print_invoices?: boolean } | undefined)?.auto_print_invoices,
+  );
+  const autoPrintedFor = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (!isOpen || !autoPrintOnOpen || !autoPrintEnabled || !invoiceData) return;
+    const key = invoiceData.order_group_id;
+    if (autoPrintedFor.current === key) return;
+    autoPrintedFor.current = key;
+    handlePrint();
+    void handlePrintKot();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, autoPrintOnOpen, autoPrintEnabled, invoiceData]);
 
   return (
     <Modal
@@ -492,6 +547,9 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
             <div className="flex gap-2">
               <Button variant="outline" onClick={handlePrint}>
                 Print
+              </Button>
+              <Button variant="outline" onClick={() => void handlePrintKot()}>
+                Print KOT
               </Button>
               <Button variant="outline" onClick={onClose}>
                 Close

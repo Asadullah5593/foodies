@@ -4,6 +4,7 @@ import {
     Post,
     Body,
     Param,
+    Query,
     UseGuards,
     ForbiddenException,
     NotFoundException,
@@ -142,8 +143,14 @@ export class PosOrdersController {
     }
 
     @Get(':id/invoice')
-    getOrderInvoice(@Param('id') id: string) {
-        return this.ordersService.getOrderInvoice(+id);
+    getOrderInvoice(
+        @Param('id') id: string,
+        @Query('purpose') purpose?: string,
+    ) {
+        return this.ordersService.getOrderInvoice(
+            +id,
+            purpose === 'kitchen' ? 'kitchen' : 'customer',
+        );
     }
 
     @Post(':id/pay')

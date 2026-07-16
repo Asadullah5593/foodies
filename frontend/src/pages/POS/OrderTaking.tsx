@@ -1635,6 +1635,7 @@ const OrderTaking: React.FC = () => {
         isOpen={showCustomerInvoiceModal}
         onClose={() => setShowCustomerInvoiceModal(false)}
         orderGroupId={lastOrderGroupId}
+        autoPrintOnOpen
       />
 
       {/* Checkout modal (customer, discounts/loyalty, payment) */}

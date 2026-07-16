@@ -63,6 +63,10 @@ export class Tenant {
     @Column({ default: false })
     loyaltyEnabled: boolean;
 
+    /** Auto-print the customer + kitchen invoices when an order is placed (POS/kiosk terminals). */
+    @Column({ default: false })
+    autoPrintInvoices: boolean;
+
     @Column({ default: 'active' })
     status: string;
 

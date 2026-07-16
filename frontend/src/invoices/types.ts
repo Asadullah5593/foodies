@@ -61,6 +61,17 @@ export interface InvoiceTemplateConfig {
   showVariant: boolean;
   showModifiers: boolean;
   showUnitPrice: boolean;
+  /**
+   * How a zero amount prints on modifier / add-on / deal-component lines:
+   * 'zero' → "0.00", 'included' → the word "Included", 'blank' → empty cell.
+   */
+  zeroAmountDisplay: 'zero' | 'included' | 'blank';
+  /**
+   * Whether zero-total lines (freebies, deal components) print at all. On →
+   * they list under a "Free items" section after the paid items; off → they
+   * are omitted from the receipt entirely.
+   */
+  showFreeItems: boolean;
 
   showSubtotal: boolean;
   showTax: boolean;
@@ -74,6 +85,8 @@ export interface InvoiceTemplateConfig {
   showCouponDiscount: boolean;
   showCardDiscount: boolean;
   showDiscountName: boolean;
+  /** Bold the discount-line headings in the totals block. */
+  discountLabelsBold: boolean;
 
   showLoyaltyEarned: boolean;
   showLoyaltyRedeemed: boolean;
@@ -87,6 +100,10 @@ export interface InvoiceTemplateConfig {
   showCashier: boolean;
   showCustomerInfo: boolean;
   showPaymentMethod: boolean;
+  /** Bold the info-box headings (Order #, Type, Table, Date, Customer …). */
+  metaLabelsBold: boolean;
+  /** Bold the footer text line. */
+  footerBold: boolean;
 }
 
 export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
@@ -103,6 +120,8 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showVariant: true,
   showModifiers: true,
   showUnitPrice: true,
+  zeroAmountDisplay: 'zero',
+  showFreeItems: true,
 
   showSubtotal: true,
   showTax: true,
@@ -116,6 +135,7 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showCouponDiscount: false,
   showCardDiscount: false,
   showDiscountName: true,
+  discountLabelsBold: false,
 
   showLoyaltyEarned: true,
   showLoyaltyRedeemed: true,
@@ -129,6 +149,8 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showCashier: false,
   showCustomerInfo: true,
   showPaymentMethod: true,
+  metaLabelsBold: false,
+  footerBold: false,
 };
 
 export function resolveInvoiceConfig(
@@ -149,6 +171,7 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
       { key: 'showVariant', label: 'Show variant' },
       { key: 'showModifiers', label: 'Show modifiers / add-ons' },
       { key: 'showUnitPrice', label: 'Show unit price' },
+      { key: 'showFreeItems', label: 'Show free items (zero-priced lines)' },
     ],
   },
   {
@@ -170,6 +193,7 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
       { key: 'showCouponDiscount', label: 'Show coupon discount' },
       { key: 'showCardDiscount', label: 'Show card / bank discount' },
       { key: 'showDiscountName', label: 'Show discount / coupon code' },
+      { key: 'discountLabelsBold', label: 'Bold discount headings' },
     ],
   },
   {
@@ -191,6 +215,7 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
       { key: 'showCashier', label: 'Show cashier' },
       { key: 'showCustomerInfo', label: 'Show customer info' },
       { key: 'showPaymentMethod', label: 'Show payment method' },
+      { key: 'metaLabelsBold', label: 'Bold info-box headings' },
     ],
   },
   {

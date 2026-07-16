@@ -37,9 +37,13 @@ export class InvoiceTemplate {
     @Column({ name: 'is_active', default: true })
     isActive: boolean;
 
-    /** The template auto-selected for its scope when nothing is chosen explicitly. */
+    /** The customer-invoice default for its scope. */
     @Column({ name: 'is_default', default: false })
     isDefault: boolean;
+
+    /** The kitchen-invoice (KOT) default for its scope; a template can be both. */
+    @Column({ name: 'is_default_kitchen', default: false })
+    isDefaultKitchen: boolean;
 
     /** Per-field toggles; merged over defaults on read. */
     @Column('simple-json', { nullable: true })

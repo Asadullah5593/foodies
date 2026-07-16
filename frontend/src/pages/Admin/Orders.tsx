@@ -8,18 +8,15 @@ import { Order, Branch } from '../../types';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import { formatOrderType } from '../../utils/format';
-import Button from '../../components/Button';
-import ClearFiltersButton from '../../components/ClearFiltersButton';
-import SearchableSelect from '../../components/SearchableSelect';
 import AssignRiderModal from '../../components/AssignRiderModal';
-import Card from '../../components/Card';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
-import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { ORDER_SOURCES, ORDER_SOURCE_LABEL, orderSourceLabel } from '../../utils/orderSources';
 
-type OrderRow = Order & {
+type OrderPayment = { paymentMethod?: string; payment_method?: string; status?: string; amount?: number | string };
+
+type OrderRow = Omit<Order, 'payments' | 'creator'> & {
   order_number?: string;
   orderNumber?: string;
   total_amount?: number;
@@ -36,10 +33,20 @@ type OrderRow = Order & {
   rider?: { id: number; name: string } | null;
   delivery_status?: string | null;
   delivery_failed_reason?: string | null;
+  customer_name?: string | null;
+  table_number?: string | null;
+  placed_at?: string | null;
+  creator?: { id: number; name?: string | null } | null;
+  orderItems?: unknown[];
+  items_count?: number;
+  payments?: OrderPayment[] | null;
 };
 
 function normalizeOrder(o: OrderRow): OrderRow {
-  const row = o as OrderRow & { riderId?: number; brandId?: number; deliveryStatus?: string; deliveryFailedReason?: string };
+  const row = o as OrderRow & {
+    riderId?: number; brandId?: number; deliveryStatus?: string; deliveryFailedReason?: string;
+    customerName?: string | null; tableNumber?: string | null; placedAt?: string; createdAt?: string;
+  };
   return {
     ...o,
     order_number: o.order_number ?? o.orderNumber,
@@ -55,12 +62,13 @@ function normalizeOrder(o: OrderRow): OrderRow {
     delivery_status: o.delivery_status ?? row.deliveryStatus ?? null,
     delivery_failed_reason: o.delivery_failed_reason ?? row.deliveryFailedReason ?? null,
     source: o.source ?? 'pos',
+    customer_name: o.customer_name ?? row.customerName ?? null,
+    table_number: o.table_number ?? row.tableNumber ?? null,
+    placed_at: o.placed_at ?? row.placedAt ?? row.createdAt ?? null,
+    items_count: o.items_count ?? (Array.isArray(o.orderItems) ? o.orderItems.length : 0),
+    payments: o.payments ?? null,
   };
 }
-
-// Labels live in utils/orderSources so the badge and the Source filter cannot
-// disagree (kiosk used to render lowercase here while POS/Consumer app did not).
-const formatOrderSourceLabel = orderSourceLabel;
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   placed: 'Placed',
@@ -79,7 +87,57 @@ const DELIVERY_STATUS_LABELS: Record<string, string> = {
   delivery_failed: 'Failed',
 };
 
+/* ------------------------------------------------------------------ meta -- */
+
+const STATUS_META: Record<string, { bg: string; color: string; dot: string }> = {
+  placed: { bg: 'bg-gray-100 dark:bg-slate-700', color: 'text-gray-600 dark:text-slate-300', dot: 'bg-gray-400' },
+  accepted: { bg: 'bg-blue-50 dark:bg-blue-900/40', color: 'text-blue-600 dark:text-blue-300', dot: 'bg-blue-500' },
+  preparing: { bg: 'bg-amber-50 dark:bg-amber-900/40', color: 'text-amber-700 dark:text-amber-300', dot: 'bg-amber-500' },
+  ready: { bg: 'bg-emerald-50 dark:bg-emerald-900/40', color: 'text-emerald-600 dark:text-emerald-300', dot: 'bg-emerald-500' },
+  completed: { bg: 'bg-gray-100 dark:bg-slate-700', color: 'text-gray-500 dark:text-slate-400', dot: 'bg-gray-300' },
+  cancelled: { bg: 'bg-red-50 dark:bg-red-900/40', color: 'text-red-600 dark:text-red-300', dot: 'bg-red-600' },
+};
+
+const DELIVERY_META: Record<string, { bg: string; color: string }> = {
+  assigned: { bg: 'bg-blue-50 dark:bg-blue-900/40', color: 'text-blue-600 dark:text-blue-300' },
+  accepted: { bg: 'bg-blue-50 dark:bg-blue-900/40', color: 'text-blue-600 dark:text-blue-300' },
+  picked_up: { bg: 'bg-amber-50 dark:bg-amber-900/40', color: 'text-amber-700 dark:text-amber-300' },
+  delivered: { bg: 'bg-emerald-50 dark:bg-emerald-900/40', color: 'text-emerald-600 dark:text-emerald-300' },
+  delivery_failed: { bg: 'bg-red-50 dark:bg-red-900/40', color: 'text-red-600 dark:text-red-300' },
+};
+
+const TYPE_META: Record<string, { bg: string; color: string; short: string; icon: React.ReactNode }> = {
+  delivery: {
+    bg: 'bg-blue-50 dark:bg-blue-900/40', color: 'text-blue-600 dark:text-blue-300', short: 'DEL',
+    icon: (
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="4" cy="11.5" r="2" /><circle cx="12" cy="11.5" r="2" /><path d="M4 11.5l3-5.5h2.5l2 5.5M7 6l-1-2H4.3" />
+      </svg>
+    ),
+  },
+  dine_in: {
+    bg: 'bg-violet-50 dark:bg-violet-900/40', color: 'text-violet-600 dark:text-violet-300', short: 'DINE',
+    icon: (
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 2v4a1.5 1.5 0 0 0 3 0V2M5.5 6v8" /><path d="M11 2c-1 0-1.6 1.6-1.6 3.4S10 8.4 11 8.4V14" />
+      </svg>
+    ),
+  },
+  takeaway: {
+    bg: 'bg-orange-50 dark:bg-orange-900/40', color: 'text-orange-700 dark:text-orange-300', short: 'T/A',
+    icon: (
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M4 5.5h8l-.7 8.2a.8.8 0 0 1-.8.8H5.5a.8.8 0 0 1-.8-.8z" /><path d="M6 5.5V4.2a2 2 0 0 1 4 0v1.3" />
+      </svg>
+    ),
+  },
+};
+
+const PAYMENT_METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', other: 'Other', online: 'Online' };
+
 const ORDERS_PAGE_SIZE = DEFAULT_PAGE_SIZE;
+
+/* --------------------------------------------------------------- helpers -- */
 
 function localDateYYYYMMDD(): string {
   const d = new Date();
@@ -97,10 +155,72 @@ function isDeliveryOrder(o: OrderRow): boolean {
   return getOrderType(o) === 'delivery';
 }
 
+/** Delivery order still needing a rider while the kitchen is actively working it. */
+function needsRider(o: OrderRow): boolean {
+  return (
+    isDeliveryOrder(o) &&
+    o.rider_id == null &&
+    ['placed', 'accepted', 'preparing', 'ready'].includes(String(o.status ?? ''))
+  );
+}
+
+function placedTimeText(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function ageMinutes(iso: string | null | undefined): number | null {
+  if (!iso) return null;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return null;
+  return Math.max(0, Math.floor((Date.now() - t) / 60000));
+}
+
+function ageText(m: number | null): string {
+  if (m == null) return '';
+  if (m >= 60) return `${Math.floor(m / 60)}h ${m % 60}m ago`;
+  return `${m}m ago`;
+}
+
+/** Distinct completed tender methods ("Cash + Card" for a split bill), '—' before any tender. */
+function paymentMethodText(o: OrderRow): string {
+  const done = (o.payments ?? []).filter((p) => (p.status ?? '') === 'completed');
+  const methods = [...new Set(done.map((p) => p.paymentMethod ?? p.payment_method).filter(Boolean))] as string[];
+  if (!methods.length) return '—';
+  return methods.map((m) => PAYMENT_METHOD_LABEL[m] ?? m).join(' + ');
+}
+
+function paymentState(o: OrderRow): 'paid' | 'partial' | 'unpaid' {
+  const done = (o.payments ?? []).filter((p) => (p.status ?? '') === 'completed');
+  const paid = done.reduce((s, p) => s + Number(p.amount ?? 0), 0);
+  const total = Number(o.total_amount ?? 0);
+  if (paid <= 0) return 'unpaid';
+  return paid + 0.01 >= total ? 'paid' : 'partial';
+}
+
+function customerText(o: OrderRow): string {
+  if (o.customer_name?.trim()) return o.customer_name;
+  if (o.table_number) return `Table ${o.table_number}`;
+  return 'Walk-in';
+}
+
+function createdByText(o: OrderRow): string {
+  if (o.creator?.name) return o.creator.name;
+  return orderSourceLabel(o.source);
+}
+
+const cellHead =
+  'text-[10px] font-bold uppercase tracking-[.05em] text-gray-400 dark:text-slate-500';
+
+/* ------------------------------------------------------------------ page -- */
+
 const Orders: React.FC = () => {
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const [ordersPage, setOrdersPage] = useState(1);
+  const [search, setSearch] = useState('');
   const [customerInvoiceGroupId, setCustomerInvoiceGroupId] = useState<string | null>(null);
   const [customerInvoiceOrderId, setCustomerInvoiceOrderId] = useState<number | null>(null);
   const [riderModalOrderId, setRiderModalOrderId] = useState<number | null>(null);
@@ -118,30 +238,47 @@ const Orders: React.FC = () => {
   const dateFrom = searchParams.get('date_from') || defaultToday;
   const dateTo = searchParams.get('date_to') || defaultToday;
 
-  const params = {
+  // 'needs_rider' is a client-side view (it is not an order status), so it is
+  // never sent to the server.
+  const statusForServer = status && status !== 'needs_rider' ? status : '';
+
+  const baseParams = {
     ...(branchId && { branch_id: +branchId }),
     ...(brandId && { brand_id: +brandId }),
-    ...(status && { status }),
     ...(orderType && { order_type: orderType }),
     ...(source && { source }),
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo && { date_to: dateTo }),
   };
 
-  const { data: ordersRaw, isLoading } = useQuery({
-    queryKey: ['admin-orders', params],
-    queryFn: async () => {
-      const search = new URLSearchParams();
-      if (params.branch_id) search.append('branch_id', String(params.branch_id));
-      if (params.brand_id) search.append('brand_id', String(params.brand_id));
-      if (params.status) search.append('status', params.status);
-      if (params.order_type) search.append('order_type', params.order_type);
-      if (params.source) search.append('source', params.source);
-      if (params.date_from) search.append('date_from', params.date_from);
-      if (params.date_to) search.append('date_to', params.date_to);
-      const response = await apiClient.get<OrderRow[]>(`/admin/orders?${search.toString()}`);
-      return (response.data ?? []).map(normalizeOrder);
-    },
+  const fetchOrders = async (withStatus: string): Promise<OrderRow[]> => {
+    const search = new URLSearchParams();
+    if (baseParams.branch_id) search.append('branch_id', String(baseParams.branch_id));
+    if (baseParams.brand_id) search.append('brand_id', String(baseParams.brand_id));
+    if (withStatus) search.append('status', withStatus);
+    if (baseParams.order_type) search.append('order_type', baseParams.order_type);
+    if (baseParams.source) search.append('source', baseParams.source);
+    if (baseParams.date_from) search.append('date_from', baseParams.date_from);
+    if (baseParams.date_to) search.append('date_to', baseParams.date_to);
+    const response = await apiClient.get<OrderRow[]>(`/admin/orders?${search.toString()}`);
+    return (response.data ?? []).map(normalizeOrder);
+  };
+
+  // Base query (no status filter): feeds the status-tile counts, and the table
+  // whenever no status tile/select is active.
+  const { data: baseOrdersRaw, isLoading } = useQuery({
+    queryKey: ['admin-orders', baseParams],
+    queryFn: () => fetchOrders(''),
+    refetchInterval: ORDER_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: true,
+  });
+
+  // Status-filtered query: same semantics as before the redesign (the server
+  // applies the status filter inside its 50-row window).
+  const { data: statusOrdersRaw, isLoading: isLoadingStatus } = useQuery({
+    queryKey: ['admin-orders', { ...baseParams, status: statusForServer }],
+    queryFn: () => fetchOrders(statusForServer),
+    enabled: !!statusForServer,
     refetchInterval: ORDER_POLL_INTERVAL_MS,
     refetchIntervalInBackground: true,
   });
@@ -161,6 +298,13 @@ const Orders: React.FC = () => {
       const response = await apiClient.get<{ id: number; name: string }[]>('/admin/brands');
       return response.data;
     },
+  });
+
+  const { data: onDutyRiders } = useQuery({
+    queryKey: ['rider-on-duty-banner'],
+    queryFn: () => adminService.getOnDutyRiders(),
+    refetchInterval: ORDER_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: true,
   });
 
   const updateStatusMutation = useMutation({
@@ -189,13 +333,6 @@ const Orders: React.FC = () => {
     setRiderModalBrandName(null);
     setSelectedRiderId(null);
   };
-
-  const { data: onDutyRiders } = useQuery({
-    queryKey: ['rider-on-duty-banner'],
-    queryFn: () => adminService.getOnDutyRiders(),
-    refetchInterval: ORDER_POLL_INTERVAL_MS,
-    refetchIntervalInBackground: true,
-  });
 
   const assignRiderMutation = useMutation({
     mutationFn: async (params: {
@@ -244,313 +381,507 @@ const Orders: React.FC = () => {
     setSearchParams(p);
   };
 
-  const orders = ordersRaw ?? [];
+  const baseOrders = useMemo(() => baseOrdersRaw ?? [], [baseOrdersRaw]);
+  const orders = useMemo(() => {
+    if (statusForServer) return statusOrdersRaw ?? [];
+    if (status === 'needs_rider') return baseOrders.filter(needsRider);
+    return baseOrders;
+  }, [statusForServer, statusOrdersRaw, status, baseOrders]);
 
-  const groupedByOrderGroup = useMemo(() => {
-    const map = new Map<string | null, OrderRow[]>();
+  /* Status tiles — counted over the base (status-unfiltered) dataset so every
+     tile keeps a live count no matter which one is selected. */
+  const tiles = useMemo(() => {
+    const count = (f: (o: OrderRow) => boolean) => baseOrders.filter(f).length;
+    return [
+      { key: '', label: 'All', dot: 'bg-gray-300', n: baseOrders.length },
+      { key: 'placed', label: 'Placed', dot: 'bg-gray-400', n: count((o) => o.status === 'placed') },
+      { key: 'accepted', label: 'Accepted', dot: 'bg-blue-500', n: count((o) => o.status === 'accepted') },
+      { key: 'preparing', label: 'Preparing', dot: 'bg-amber-500', n: count((o) => o.status === 'preparing') },
+      { key: 'ready', label: 'Ready', dot: 'bg-emerald-500', n: count((o) => o.status === 'ready') },
+      { key: 'completed', label: 'Completed', dot: 'bg-gray-300', n: count((o) => o.status === 'completed') },
+      { key: 'cancelled', label: 'Cancelled', dot: 'bg-red-600', n: count((o) => o.status === 'cancelled') },
+      { key: 'needs_rider', label: 'Needs rider', dot: 'bg-red-600', n: count(needsRider), alert: true },
+    ];
+  }, [baseOrders]);
+
+  /* Group split web orders (shared order_group_id) exactly like before. */
+  const displayGroups = useMemo(() => {
+    const map = new Map<string, OrderRow[]>();
     for (const o of orders) {
       const gid = o.order_group_id ?? null;
-      if (!map.has(gid)) map.set(gid, []);
-      map.get(gid)!.push(o);
+      // Ungrouped orders each form their own "group" so keys stay unique.
+      const key = gid ?? `single-${o.id}`;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(o);
     }
-    for (const arr of map.values()) {
-      arr.sort((a, b) => (b.id ?? 0) - (a.id ?? 0));
-    }
-    return map;
+    const result: { orderGroupId: string | null; orders: OrderRow[] }[] = [];
+    map.forEach((orderList, key) => {
+      orderList.sort((a, b) => (b.id ?? 0) - (a.id ?? 0));
+      result.push({ orderGroupId: key.startsWith('single-') ? null : key, orders: orderList });
+    });
+    result.sort((a, b) => (b.orders[0]?.id ?? 0) - (a.orders[0]?.id ?? 0));
+    return result;
   }, [orders]);
 
-  const displayGroups = useMemo(() => {
-    const result: { orderGroupId: string | null; orders: OrderRow[] }[] = [];
-    groupedByOrderGroup.forEach((orderList, gid) => {
-      result.push({ orderGroupId: gid, orders: orderList });
-    });
-    result.sort((a, b) => {
-      const aFirst = a.orders[0];
-      const bFirst = b.orders[0];
-      const aId = aFirst?.id ?? 0;
-      const bId = bFirst?.id ?? 0;
-      return bId - aId;
-    });
-    return result;
-  }, [groupedByOrderGroup]);
+  const searchedGroups = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return displayGroups;
+    const match = (o: OrderRow) =>
+      [o.order_number, o.brand?.name, o.brand_name, customerText(o), o.rider?.name, o.creator?.name]
+        .some((v) => String(v ?? '').toLowerCase().includes(q));
+    return displayGroups.filter((g) => g.orders.some(match));
+  }, [displayGroups, search]);
 
-  const paginatedDisplayGroups = useMemo(() => {
+  const paginatedGroups = useMemo(() => {
     const start = (ordersPage - 1) * ORDERS_PAGE_SIZE;
-    return displayGroups.slice(start, start + ORDERS_PAGE_SIZE);
-  }, [displayGroups, ordersPage]);
+    return searchedGroups.slice(start, start + ORDERS_PAGE_SIZE);
+  }, [searchedGroups, ordersPage]);
+
+  const visibleOrders = useMemo(() => searchedGroups.flatMap((g) => g.orders), [searchedGroups]);
+  const visibleTotal = visibleOrders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
 
   useEffect(() => {
     setOrdersPage(1);
-  }, [branchId, status, orderType, dateFrom, dateTo]);
+  }, [branchId, brandId, status, orderType, source, dateFrom, dateTo, search]);
 
   const isSubmitting = assignRiderMutation.isPending || updateStatusMutation.isPending;
-  if (isLoading || isSubmitting) {
+  if (isLoading || (statusForServer && isLoadingStatus) || isSubmitting) {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading orders...'} />;
   }
 
+  const selectCls =
+    'rounded-[10px] border-[1.5px] border-gray-200 bg-white px-3 py-[9px] text-[13px] text-gray-700 outline-none cursor-pointer focus:border-red-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100';
+
+  const openRiderModal = (opts: {
+    orderId?: number | null; groupId?: string | null; isChange: boolean;
+    brandId: number | null; brandName: string | null; riderId: number | null;
+  }) => {
+    setRiderModalOrderId(opts.orderId ?? null);
+    setRiderModalGroupId(opts.groupId ?? null);
+    setRiderModalIsChange(opts.isChange);
+    setRiderModalBrandId(opts.brandId);
+    setRiderModalBrandName(opts.brandName);
+    setSelectedRiderId(opts.riderId);
+  };
+
+  const openInvoice = (o: OrderRow) => {
+    if (o.order_group_id) {
+      setCustomerInvoiceGroupId(o.order_group_id);
+      setCustomerInvoiceOrderId(null);
+    } else {
+      setCustomerInvoiceOrderId(o.id);
+      setCustomerInvoiceGroupId(null);
+    }
+  };
+
+  /* ------------------------------------------------------------- row ----- */
+
+  const renderRow = (o: OrderRow, opts: { showPerOrderRiderButton: boolean }) => {
+    const type = getOrderType(o);
+    const tm = TYPE_META[type] ?? TYPE_META.takeaway;
+    const sm = STATUS_META[o.status ?? 'placed'] ?? STATUS_META.placed;
+    const rowNeeds = needsRider(o);
+    const age = ageMinutes(o.placed_at);
+    const overdue = rowNeeds && (age ?? 0) > 15;
+    const payState = paymentState(o);
+    const dm = o.delivery_status ? DELIVERY_META[o.delivery_status] : null;
+    const canAssign =
+      opts.showPerOrderRiderButton &&
+      isDeliveryOrder(o) &&
+      (o.delivery_status === 'accepted' || o.delivery_status == null);
+
+    return (
+      <div
+        key={o.id}
+        className={`grid min-w-[1240px] grid-cols-[88px_150px_1.1fr_58px_84px_100px_112px_128px_100px_1fr_150px] items-center gap-2.5 border-b border-l-[3px] border-b-gray-100 py-2.5 pl-4 pr-5 dark:border-b-slate-700 ${
+          rowNeeds ? 'border-l-red-600 bg-red-50/30 dark:bg-red-900/10' : 'border-l-transparent bg-white dark:bg-slate-800'
+        }`}
+      >
+        {/* Type */}
+        <span
+          title={formatOrderType(type)}
+          className={`inline-flex items-center gap-1 justify-self-start rounded-md px-1.5 py-[3px] text-[10px] font-extrabold uppercase ${tm.bg} ${tm.color}`}
+        >
+          {tm.icon}{tm.short}
+        </span>
+        {/* Order */}
+        <div className="min-w-0">
+          <Link to={`/admin/orders/${o.id}`} className="text-[13px] font-extrabold text-gray-800 hover:text-red-600 dark:text-slate-100">
+            #{o.order_number}
+          </Link>
+          <div className="truncate text-[11px] text-gray-400 dark:text-slate-500">{o.brand?.name ?? o.brand_name ?? '—'}</div>
+        </div>
+        {/* Customer */}
+        <div className="min-w-0">
+          <div className="truncate text-[12.5px] font-semibold text-gray-800 dark:text-slate-100">{customerText(o)}</div>
+          <div className="truncate text-[11px] text-gray-400 dark:text-slate-500">by {createdByText(o)}</div>
+        </div>
+        {/* Items */}
+        <div className="text-center">
+          <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-[7px] bg-gray-100 px-1.5 text-xs font-extrabold tabular-nums text-gray-700 dark:bg-slate-700 dark:text-slate-200">
+            {o.items_count ?? 0}
+          </span>
+        </div>
+        {/* Placed */}
+        <div>
+          <div className="text-[11.5px] text-gray-700 dark:text-slate-300">{placedTimeText(o.placed_at)}</div>
+          <div className={`text-[10.5px] font-bold ${overdue ? 'text-red-600' : 'text-gray-400 dark:text-slate-500'}`}>{ageText(age)}</div>
+        </div>
+        {/* Total */}
+        <div className="text-right text-[12.5px] font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
+          {formatCurrency(Number(o.total_amount ?? 0))}
+        </div>
+        {/* Payment */}
+        <div>
+          <div className="text-[12px] font-semibold text-gray-700 dark:text-slate-200">{paymentMethodText(o)}</div>
+          <div className={`mt-0.5 text-[10.5px] font-bold ${
+            payState === 'paid' ? 'text-emerald-600' : payState === 'partial' ? 'text-amber-600' : 'text-amber-700 dark:text-amber-400'
+          }`}>
+            {payState === 'paid' ? 'Paid' : payState === 'partial' ? 'Partial' : 'Unpaid'}
+          </div>
+        </div>
+        {/* Kitchen status (pill wraps an invisible select — same mutation as before) */}
+        <div>
+          <span className={`relative inline-flex cursor-pointer items-center gap-1.5 rounded-full px-2 py-[5px] text-[11.5px] font-bold ${sm.bg} ${sm.color}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${sm.dot}`} />
+            {ORDER_STATUS_LABELS[o.status ?? ''] ?? o.status}
+            <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="opacity-70">
+              <path d="M3 4.5l3 3 3-3" />
+            </svg>
+            <select
+              value={o.status}
+              onChange={(e) => updateStatusMutation.mutate({ id: o.id, status: e.target.value })}
+              className="absolute inset-0 w-full cursor-pointer opacity-0"
+              aria-label={`Kitchen status for order #${o.order_number}`}
+            >
+              {Object.entries(ORDER_STATUS_LABELS).map(([v, l]) => (
+                <option key={v} value={v}>{l}</option>
+              ))}
+            </select>
+          </span>
+        </div>
+        {/* Delivery */}
+        <div>
+          {isDeliveryOrder(o) ? (
+            <span
+              title={o.delivery_status === 'delivery_failed' ? (o.delivery_failed_reason ?? undefined) : undefined}
+              className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold ${
+                dm ? `${dm.bg} ${dm.color}` : 'bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-400'
+              }`}
+            >
+              {o.delivery_status ? (DELIVERY_STATUS_LABELS[o.delivery_status] ?? o.delivery_status) : 'No rider'}
+            </span>
+          ) : (
+            <span className="text-[11px] text-gray-300 dark:text-slate-600">—</span>
+          )}
+        </div>
+        {/* Rider */}
+        <div className={`truncate text-xs font-semibold ${
+          o.rider ? 'text-gray-700 dark:text-slate-200' : isDeliveryOrder(o) ? 'text-red-600' : 'text-gray-300 dark:text-slate-600'
+        }`}>
+          {o.rider?.name ?? (isDeliveryOrder(o) ? 'Unassigned' : '—')}
+        </div>
+        {/* Actions */}
+        <div className="flex items-center justify-end gap-1.5">
+          {canAssign && (
+            <button
+              title={o.rider_id ? 'Change rider' : 'Assign rider'}
+              onClick={() => openRiderModal({
+                orderId: o.id, groupId: null, isChange: !!o.rider_id,
+                brandId: o.brand_id ?? null, brandName: o.brand_name ?? o.brand?.name ?? null,
+                riderId: o.rider_id ?? null,
+              })}
+              className={`flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg ${
+                o.rider_id
+                  ? 'border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                  : 'bg-red-600 text-white shadow-sm hover:bg-red-700'
+              }`}
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="6" cy="5" r="2.3" /><path d="M2 13c0-2.2 1.8-3.6 4-3.6" /><path d="M11.5 8v4M9.5 10h4" />
+              </svg>
+            </button>
+          )}
+          {!o.rider_id && isDeliveryOrder(o) && (
+            <button
+              title="Retry auto-assign"
+              disabled={retryAutoAssignMutation.isPending}
+              onClick={() => retryAutoAssignMutation.mutate(o.id)}
+              className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300"
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 3v3h-3M3 13v-3h3" /><path d="M12 6a4.2 4.2 0 0 0-7.5-1M4 10a4.2 4.2 0 0 0 7.5 1" />
+              </svg>
+            </button>
+          )}
+          <button
+            title="Customer invoice"
+            onClick={() => openInvoice(o)}
+            className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 2h6l2 2v10l-2-1-2 1-2-1-2 1z" /><path d="M5.5 6h5M5.5 9h5" />
+            </svg>
+          </button>
+          <Link
+            to={`/admin/orders/${o.id}`}
+            title="View order"
+            className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" /><circle cx="8" cy="8" r="2" />
+            </svg>
+          </Link>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Orders</h1>
+    <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
+      {/* Header */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-baseline gap-3">
+          <h1 className="text-2xl font-extrabold tracking-tight text-gray-800 dark:text-slate-100 sm:text-3xl">Orders</h1>
+          <span className="text-[13px] text-gray-400 dark:text-slate-500">
+            {visibleOrders.length} {visibleOrders.length === 1 ? 'order' : 'orders'} · {dateFrom === dateTo ? dateFrom : `${dateFrom} → ${dateTo}`}
+          </span>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <span
+            title="Delivery orders get a rider automatically when the kitchen status moves to Preparing"
+            className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-[7px] text-[12.5px] font-semibold text-emerald-600 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
+          >
+            <span className="h-[7px] w-[7px] rounded-full bg-emerald-500" />
+            Auto-assign on
+          </span>
+          <button
+            title="Refresh"
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['admin-orders'] })}
+            className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+          >
+            <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M15 4v4h-4M3 14v-4h4" /><path d="M14 8a5 5 0 0 0-9-2M4 10a5 5 0 0 0 9 2" />
+            </svg>
+          </button>
+        </div>
       </div>
 
-      <Card className="mb-6 p-4 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap gap-4 items-end">
-          <SearchableSelect
-            label="Branch"
-            value={branchId}
-            onChange={(v) => setFilter('branch_id', v)}
-            options={[
-              { value: '', label: 'All' },
-              ...(branches ?? []).map((b) => ({ value: String(b.id), label: b.name })),
-            ]}
-            placeholder="All"
-            minWidth="min-w-[140px]"
-          />
-          <SearchableSelect
-            label="Brand"
-            value={brandId}
-            onChange={(v) => setFilter('brand_id', v)}
-            options={[
-              { value: '', label: 'All' },
-              ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name })),
-            ]}
-            placeholder="All"
-            minWidth="min-w-[140px]"
-          />
-          <SearchableSelect
-            label="Order type"
-            value={orderType}
-            onChange={(v) => setFilter('order_type', v)}
-            options={[
-              { value: '', label: 'All' },
-              { value: 'delivery', label: 'Delivery' },
-              { value: 'dine_in', label: 'Dine in' },
-              { value: 'takeaway', label: 'Takeaway' },
-            ]}
-            placeholder="All"
-            minWidth="min-w-[130px]"
-          />
-          <SearchableSelect
-            label="Source"
-            value={source}
-            onChange={(v) => setFilter('source', v)}
-            options={[
-              { value: '', label: 'All' },
-              ...ORDER_SOURCES.map((s) => ({ value: s, label: ORDER_SOURCE_LABEL[s] })),
-            ]}
-            placeholder="All"
-            minWidth="min-w-[130px]"
-          />
-          <SearchableSelect
-            label="Status"
-            value={status}
-            onChange={(v) => setFilter('status', v)}
-            options={[
-              { value: '', label: 'All' },
-              { value: 'placed', label: 'Placed' },
-              { value: 'accepted', label: 'Accepted' },
-              { value: 'preparing', label: 'Preparing' },
-              { value: 'ready', label: 'Ready' },
-              { value: 'completed', label: 'Completed' },
-              { value: 'cancelled', label: 'Cancelled' },
-            ]}
-            placeholder="All"
-            minWidth="min-w-[120px]"
-          />
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Date from</label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setFilter('date_from', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Date to</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setFilter('date_to', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <ClearFiltersButton
-            onClick={() => {
-              const t = localDateYYYYMMDD();
-              setSearchParams({ date_from: t, date_to: t });
-            }}
-          />
-        </div>
-      </Card>
-
-      <Card className="mb-6 p-4 border-blue-200 dark:border-slate-700 dark:bg-slate-800">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-gray-800 dark:text-slate-100">
-              Automatic Rider Assignment
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-slate-300 mt-1">
-              Delivery orders get a rider automatically when the kitchen status moves to <strong>Preparing</strong> from Placed or Accepted (Admin or KDS). Riders need an HR profile, check-in, fresh heartbeat/location, and the branch needs coordinates plus delivery radius.
-            </p>
-            <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">
-              Riders currently on duty: <span className="font-semibold text-gray-800 dark:text-slate-100">{onDutyRiders?.length ?? 0}</span>
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link to="/admin/rider-hrm">
-              <Button size="small" variant="outline">Open Rider HRM</Button>
-            </Link>
-            <Link to="/admin/branches">
-              <Button size="small" variant="outline">Configure Branch Radius</Button>
-            </Link>
+      {/* Rider banner */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-9 w-9 flex-none items-center justify-center rounded-[10px] bg-blue-50 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="4" cy="11.5" r="2" /><circle cx="12" cy="11.5" r="2" /><path d="M4 11.5l3-5.5h2.5l2 5.5M7 6l-1-2H4.3" />
+            </svg>
+          </span>
+          <div className="min-w-0">
+            <div className="text-[13.5px] font-bold text-gray-800 dark:text-slate-100">
+              Automatic rider assignment
+              <span className="ml-2 text-[12px] font-semibold text-gray-400 dark:text-slate-500">
+                {onDutyRiders?.length ?? 0} rider{(onDutyRiders?.length ?? 0) === 1 ? '' : 's'} on duty
+              </span>
+            </div>
+            <div className="truncate text-[12px] text-gray-500 dark:text-slate-400" title="Riders need an HR profile, check-in, fresh heartbeat/location, and the branch needs coordinates plus delivery radius.">
+              Delivery orders get a rider automatically when the kitchen moves to <strong>Preparing</strong>. Riders need an HR profile, check-in, a fresh heartbeat, and a branch delivery radius.
+            </div>
           </div>
         </div>
-      </Card>
+        <div className="flex flex-none gap-2">
+          <Link to="/admin/rider-hrm" className="rounded-[9px] border border-gray-200 bg-white px-3 py-[7px] text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
+            Open Rider HRM
+          </Link>
+          <Link to="/admin/branches" className="rounded-[9px] border border-gray-200 bg-white px-3 py-[7px] text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
+            Configure Branch Radius
+          </Link>
+        </div>
+      </div>
 
-      <div className="w-full space-y-3">
-        {displayGroups.length === 0 ? (
-          <Card className="dark:bg-slate-800 dark:border-slate-700">
-            <p className="text-center text-gray-500 dark:text-slate-400 py-12">No orders found.</p>
-          </Card>
-        ) : (
-          <>
-            <AccentedList>
-              {paginatedDisplayGroups.map(({ orderGroupId: gid, orders: groupOrders }, i) => {
-                const isGroup = gid && groupOrders.length > 1;
+      {/* Filters row */}
+      <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-[14px] border border-gray-200 bg-white px-3.5 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+        <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-[10px] border-[1.5px] border-gray-100 bg-gray-50 px-3 dark:border-slate-600 dark:bg-slate-700">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="text-gray-400">
+            <circle cx="7" cy="7" r="4.5" /><line x1="10.5" y1="10.5" x2="14" y2="14" />
+          </svg>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search order #, brand, customer, rider…"
+            className="flex-1 border-none bg-transparent py-[9px] text-[13.5px] text-gray-800 outline-none dark:text-slate-100"
+          />
+        </div>
+        <select value={branchId} onChange={(e) => setFilter('branch_id', e.target.value)} className={selectCls} aria-label="Branch">
+          <option value="">All branches</option>
+          {(branches ?? []).map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
+        </select>
+        <select value={brandId} onChange={(e) => setFilter('brand_id', e.target.value)} className={selectCls} aria-label="Brand">
+          <option value="">All brands</option>
+          {(brands ?? []).map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
+        </select>
+        <select value={orderType} onChange={(e) => setFilter('order_type', e.target.value)} className={selectCls} aria-label="Order type">
+          <option value="">All types</option>
+          <option value="delivery">Delivery</option>
+          <option value="dine_in">Dine in</option>
+          <option value="takeaway">Takeaway</option>
+        </select>
+        <select value={source} onChange={(e) => setFilter('source', e.target.value)} className={selectCls} aria-label="Source">
+          <option value="">All sources</option>
+          {ORDER_SOURCES.map((s) => <option key={s} value={s}>{ORDER_SOURCE_LABEL[s]}</option>)}
+        </select>
+        <select
+          value={status === 'needs_rider' ? '' : status}
+          onChange={(e) => setFilter('status', e.target.value)}
+          className={selectCls}
+          aria-label="Status"
+        >
+          <option value="">All statuses</option>
+          {Object.entries(ORDER_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+        <input type="date" value={dateFrom} onChange={(e) => setFilter('date_from', e.target.value)} className={selectCls} aria-label="Date from" />
+        <input type="date" value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />
+        <button
+          onClick={() => {
+            const t = localDateYYYYMMDD();
+            setSearch('');
+            setSearchParams({ date_from: t, date_to: t });
+          }}
+          className="whitespace-nowrap rounded-[10px] bg-red-50 px-3.5 py-[9px] text-[12.5px] font-bold text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300"
+        >
+          Clear
+        </button>
+      </div>
+
+      {/* Status tiles */}
+      <div className="mb-5 flex flex-wrap gap-2">
+        {tiles.map((t) => {
+          const active = status === t.key || (t.key === '' && status === '');
+          const isAlert = 'alert' in t && t.alert;
+          return (
+            <button
+              key={t.key || 'all'}
+              onClick={() => setFilter('status', t.key)}
+              className={`flex items-center gap-2.5 rounded-xl border-[1.5px] px-3.5 py-[10px] transition-colors ${
+                active
+                  ? isAlert
+                    ? 'border-red-600 bg-red-50 dark:bg-red-900/30'
+                    : 'border-gray-400 bg-gray-100 dark:border-slate-400 dark:bg-slate-700'
+                  : isAlert
+                    ? 'border-red-200 bg-red-50/40 hover:border-red-300 dark:border-red-900 dark:bg-red-900/10'
+                    : 'border-gray-200 bg-white hover:border-gray-300 dark:border-slate-600 dark:bg-slate-800'
+              }`}
+            >
+              <span className={`h-[9px] w-[9px] flex-none rounded-full ${t.dot}`} />
+              <span className={`text-[13px] font-semibold ${isAlert ? 'text-red-700 dark:text-red-300' : active ? 'text-gray-800 dark:text-slate-100' : 'text-gray-500 dark:text-slate-400'}`}>
+                {t.label}
+              </span>
+              <span className={`text-[13px] font-extrabold tabular-nums ${isAlert ? 'text-red-600' : 'text-gray-800 dark:text-slate-100'}`}>{t.n}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Table */}
+      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
+        <div className="overflow-x-auto">
+          <div className="min-w-[1240px]">
+            {/* Head */}
+            <div className="grid grid-cols-[88px_150px_1.1fr_58px_84px_100px_112px_128px_100px_1fr_150px] gap-2.5 border-b border-gray-100 bg-gray-50/80 px-5 py-2.5 dark:border-slate-700 dark:bg-slate-900/40">
+              <span className={cellHead}>Type</span>
+              <span className={cellHead}>Order</span>
+              <span className={cellHead}>Customer</span>
+              <span className={`${cellHead} text-center`}>Items</span>
+              <span className={cellHead}>Placed</span>
+              <span className={`${cellHead} text-right`}>Total</span>
+              <span className={cellHead}>Payment</span>
+              <span className={cellHead}>Kitchen</span>
+              <span className={cellHead}>Delivery</span>
+              <span className={cellHead}>Rider</span>
+              <span className={`${cellHead} text-right`}>Actions</span>
+            </div>
+
+            {paginatedGroups.length === 0 ? (
+              <p className="py-14 text-center text-gray-500 dark:text-slate-400">No orders found.</p>
+            ) : (
+              paginatedGroups.map(({ orderGroupId: gid, orders: groupOrders }) => {
+                const isGroup = !!gid && groupOrders.length > 1;
+                if (!isGroup) {
+                  return renderRow(groupOrders[0], { showPerOrderRiderButton: true });
+                }
                 const groupTotal = groupOrders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
-                const first = groupOrders[0];
-                const branchName = first?.branch?.name ?? '—';
-                const sourceSet = new Set(groupOrders.map((o) => o.source ?? 'pos'));
-                const sourceLabel = sourceSet.size === 1 ? formatOrderSourceLabel(first?.source) : 'Mixed';
-                const statusSet = new Set(groupOrders.map((o) => o.status));
-                const orderStatusLabel = statusSet.size === 1
-                  ? (ORDER_STATUS_LABELS[first?.status ?? ''] ?? first?.status ?? '—')
-                  : 'Mixed';
-                const deliveryStatusSet = new Set(groupOrders.map((o) => o.delivery_status ?? '—'));
-                const deliveryStatusLabel = deliveryStatusSet.size === 1
-                  ? (groupOrders[0].delivery_status
-                      ? (DELIVERY_STATUS_LABELS[groupOrders[0].delivery_status] ?? groupOrders[0].delivery_status)
-                      : '—')
-                  : 'Mixed';
                 const allDelivery = groupOrders.every((o) => isDeliveryOrder(o));
-                const allSameRider = isGroup && groupOrders.length > 0 && groupOrders.every((o) => o.rider_id != null && o.rider_id === groupOrders[0].rider_id);
+                const allSameRider = groupOrders.every((o) => o.rider_id != null && o.rider_id === groupOrders[0].rider_id);
                 const groupRider = allSameRider && groupOrders[0].rider ? groupOrders[0].rider : null;
-                const groupCanChangeRider = allDelivery && isGroup && groupRider != null && groupOrders.every((o) => o.delivery_status === 'accepted');
-                const showPerOrderRiderButton = !(isGroup && groupRider);
-                const isDone = orderStatusLabel === 'Completed' || orderStatusLabel === 'Cancelled';
-                const title = isGroup ? `Order #${first?.order_number} +${groupOrders.length - 1} more` : `#${first?.order_number}`;
-                const subtitle = (
-                  <>
-                    <p>{branchName} · {formatOrderType(first?.order_type ?? first?.orderType)}</p>
-                    {isGroup && groupRider && <p>Rider: {groupRider.name}</p>}
-                    <p className="font-semibold text-gray-900 dark:text-slate-100">{formatCurrency(isGroup ? groupTotal : Number(first?.total_amount ?? 0))}</p>
-                  </>
-                );
-                const actions = (
-                  <>
-                    <span
-                      className={[
-                        'hidden sm:inline-flex px-2 py-0.5 rounded text-xs font-medium self-center',
-                        sourceLabel === 'POS'
-                          ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200'
-                          : sourceLabel === 'Consumer app'
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200'
-                            : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100',
-                      ].join(' ')}
-                      title="Order source"
-                    >
-                      {sourceLabel}
-                    </span>
-                    {isGroup && gid && allDelivery && (
-                      <>
-                        {groupRider ? groupCanChangeRider && (
-                          <Button size="small" variant="edit" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(true); setRiderModalBrandId(groupOrders[0].brand_id ?? null); setRiderModalBrandName(groupOrders[0].brand_name ?? groupOrders[0].brand?.name ?? null); setSelectedRiderId(groupOrders[0].rider_id ?? null); }}>Change rider</Button>
-                        ) : (
-                          <Button size="small" variant="primary" onClick={() => { setRiderModalGroupId(gid); setRiderModalOrderId(null); setRiderModalIsChange(false); setRiderModalBrandId(groupOrders[0].brand_id ?? null); setRiderModalBrandName(groupOrders[0].brand_name ?? groupOrders[0].brand?.name ?? null); setSelectedRiderId(null); }}>Assign rider to group</Button>
-                        )}
-                        <Button size="small" variant="view" onClick={() => { setCustomerInvoiceGroupId(gid); setCustomerInvoiceOrderId(null); }}>Customer invoice</Button>
-                      </>
-                    )}
-                    {isGroup && gid && !allDelivery && (
-                      <Button size="small" variant="view" onClick={() => { setCustomerInvoiceGroupId(gid); setCustomerInvoiceOrderId(null); }}>Customer invoice</Button>
-                    )}
-                  </>
-                );
-                const footer = (
-                  <ul className="divide-y divide-gray-100 dark:divide-slate-600">
-                    {groupOrders.map((order) => (
-                      <li key={order.id} className="px-4 sm:px-6 py-3 flex flex-wrap items-center justify-between gap-3 hover:bg-gray-50/50 dark:hover:bg-slate-600/30 transition-colors">
-                        <div className="flex items-center gap-3">
-                          <Link to={`/admin/orders/${order.id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline">
-                            #{order.order_number} {order.brand?.name ? `· ${order.brand.name}` : ''}
-                          </Link>
-                          <span className="text-sm text-gray-500 dark:text-slate-400">{formatCurrency(Number(order.total_amount ?? 0))}</span>
-                        </div>
-                        <div className="flex flex-wrap gap-3 items-center">
-                          {showPerOrderRiderButton && isDeliveryOrder(order) && order.rider_id != null && order.rider && (
-                            <span className="text-xs text-gray-500 dark:text-slate-400">Rider: {order.rider.name}</span>
-                          )}
-                          {showPerOrderRiderButton && isDeliveryOrder(order) && (order.delivery_status === 'accepted' || order.delivery_status == null) && (
-                            <Button size="small" variant={order.rider_id ? 'edit' : 'primary'} onClick={() => { setRiderModalOrderId(order.id); setRiderModalGroupId(null); setRiderModalIsChange(!!order.rider_id); setRiderModalBrandId(order.brand_id ?? null); setRiderModalBrandName(order.brand_name ?? order.brand?.name ?? null); setSelectedRiderId(order.rider_id ?? null); }}>{order.rider_id ? 'Change rider' : 'Assign rider'}</Button>
-                          )}
-                          {!order.rider_id && isDeliveryOrder(order) && (
-                            <Button
-                              size="small"
-                              variant="outline"
-                              isLoading={retryAutoAssignMutation.isPending}
-                              onClick={() => retryAutoAssignMutation.mutate(order.id)}
-                            >
-                              Retry auto-assign
-                            </Button>
-                          )}
-                          <span className="flex items-center gap-1.5 text-sm">
-                            <span className="text-gray-500 dark:text-slate-400 font-medium">Order:</span>
-                            <select value={order.status} onChange={(e) => updateStatusMutation.mutate({ id: order.id, status: e.target.value })} className="px-3 py-1.5 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
-                              <option value="placed">Placed</option>
-                              <option value="accepted">Accepted</option>
-                              <option value="preparing">Preparing</option>
-                              <option value="ready">Ready</option>
-                              <option value="completed">Completed</option>
-                              <option value="cancelled">Cancelled</option>
-                            </select>
-                          </span>
-                          {isDeliveryOrder(order) && (
-                          <span className="flex items-center gap-1.5 text-sm">
-                            <span className="text-gray-500 dark:text-slate-400 font-medium">Delivery:</span>
-                            <span className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-600 text-xs font-medium">
-                              {order.delivery_status ? (DELIVERY_STATUS_LABELS[order.delivery_status] ?? order.delivery_status) : '—'}
-                            </span>
-                          </span>
-                          )}
-                          <Link to={`/admin/orders/${order.id}`}><Button size="small" variant="view">View</Button></Link>
-                          <Button size="small" variant="view" onClick={() => { if (order.order_group_id) { setCustomerInvoiceGroupId(order.order_group_id); setCustomerInvoiceOrderId(null); } else { setCustomerInvoiceOrderId(order.id); setCustomerInvoiceGroupId(null); } }}>Customer invoice</Button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                );
+                const groupCanChangeRider = allDelivery && groupRider != null && groupOrders.every((o) => o.delivery_status === 'accepted');
+                const first = groupOrders[0];
                 return (
-                  <AccentedListRow
-                    key={gid ?? `single-${first?.id}`}
-                    accent={isDone ? 'inactive' : 'active'}
-                    initial={(first?.order_number ?? '#').charAt(0)}
-                    title={title}
-                    subtitle={subtitle}
-                    orderStatusLabel={orderStatusLabel}
-                    deliveryStatusLabel={deliveryStatusLabel ?? undefined}
-                    statusVariant={isDone ? 'inactive' : 'active'}
-                    animationIndex={i}
-                    actions={actions}
-                    footer={footer}
-                  />
+                  <div key={gid}>
+                    {/* Group band: one web checkout split into per-brand orders */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-l-[3px] border-b-gray-100 border-l-violet-500 bg-violet-50/50 py-2 pl-4 pr-5 dark:border-b-slate-700 dark:bg-violet-900/10">
+                      <div className="flex items-center gap-2 text-[12px]">
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="text-violet-500">
+                          <path d="M6.5 9.5a3 3 0 0 0 4.2 0l2.4-2.4a3 3 0 1 0-4.2-4.2l-1 1" /><path d="M9.5 6.5a3 3 0 0 0-4.2 0L2.9 8.9a3 3 0 1 0 4.2 4.2l1-1" />
+                        </svg>
+                        <span className="font-bold text-violet-700 dark:text-violet-300">
+                          Group · {groupOrders.length} orders
+                        </span>
+                        <span className="text-gray-400">·</span>
+                        <span className="font-extrabold tabular-nums text-gray-800 dark:text-slate-100">{formatCurrency(groupTotal)}</span>
+                        {groupRider && <span className="text-gray-500 dark:text-slate-400">· Rider: {groupRider.name}</span>}
+                      </div>
+                      <div className="flex gap-1.5">
+                        {allDelivery && !groupRider && (
+                          <button
+                            onClick={() => openRiderModal({
+                              orderId: null, groupId: gid, isChange: false,
+                              brandId: first.brand_id ?? null, brandName: first.brand_name ?? first.brand?.name ?? null, riderId: null,
+                            })}
+                            className="rounded-lg bg-red-600 px-2.5 py-[5px] text-[11.5px] font-bold text-white hover:bg-red-700"
+                          >
+                            Assign rider to group
+                          </button>
+                        )}
+                        {groupCanChangeRider && (
+                          <button
+                            onClick={() => openRiderModal({
+                              orderId: null, groupId: gid, isChange: true,
+                              brandId: first.brand_id ?? null, brandName: first.brand_name ?? first.brand?.name ?? null,
+                              riderId: first.rider_id ?? null,
+                            })}
+                            className="rounded-lg border border-gray-200 bg-white px-2.5 py-[5px] text-[11.5px] font-bold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                          >
+                            Change rider
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setCustomerInvoiceGroupId(gid); setCustomerInvoiceOrderId(null); }}
+                          className="rounded-lg border border-gray-200 bg-white px-2.5 py-[5px] text-[11.5px] font-bold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+                        >
+                          Group invoice
+                        </button>
+                      </div>
+                    </div>
+                    {groupOrders.map((o) => renderRow(o, { showPerOrderRiderButton: !groupRider }))}
+                  </div>
                 );
-              })}
-            </AccentedList>
-            <PaginationBar totalCount={displayGroups.length} page={ordersPage} pageSize={ORDERS_PAGE_SIZE} onPageChange={setOrdersPage} itemLabel="orders" />
-          </>
-        )}
+              })
+            )}
+
+            {/* Footer */}
+            <div className="flex items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/80 px-5 py-3 dark:border-slate-700 dark:bg-slate-900/40">
+              <span className="text-[12.5px] font-bold text-gray-500 dark:text-slate-400">
+                {visibleOrders.length} {visibleOrders.length === 1 ? 'order' : 'orders'}
+              </span>
+              <span className="text-[13px] text-gray-400 dark:text-slate-500">
+                Total value
+                <span className="ml-2 text-[15px] font-black tabular-nums text-gray-800 dark:text-slate-100">{formatCurrency(visibleTotal)}</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3">
+        <PaginationBar totalCount={searchedGroups.length} page={ordersPage} pageSize={ORDERS_PAGE_SIZE} onPageChange={setOrdersPage} itemLabel="orders" />
       </div>
 
       <CustomerInvoiceModal

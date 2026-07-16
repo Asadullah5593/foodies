@@ -55,6 +55,7 @@ export class TenantsService {
             gst_rate_cash?: number | null;
             gst_rate_card?: number | null;
             loyalty_enabled?: boolean;
+            auto_print_invoices?: boolean;
         },
     ) {
         const tenant = await this.repo.findOne({ where: { id: tenantId } });
@@ -176,6 +177,7 @@ export class TenantsService {
             gst_rate_cash?: number | null;
             gst_rate_card?: number | null;
             loyalty_enabled?: boolean;
+            auto_print_invoices?: boolean;
         },
     ) {
         const tenant = await this.repo.findOne({ where: { id } });
@@ -202,6 +204,8 @@ export class TenantsService {
         tenant.defaultServiceCharge = 0;
         if (dto.loyalty_enabled !== undefined)
             tenant.loyaltyEnabled = dto.loyalty_enabled;
+        if (dto.auto_print_invoices !== undefined)
+            tenant.autoPrintInvoices = dto.auto_print_invoices;
         await this.repo.save(tenant);
         return this.toResponse(tenant);
     }
@@ -327,6 +331,7 @@ export class TenantsService {
             gst_rate_card: t.gstRateCard != null ? Number(t.gstRateCard) : null,
             default_service_charge: 0,
             loyalty_enabled: t.loyaltyEnabled,
+            auto_print_invoices: t.autoPrintInvoices,
             loyalty_settings: t.loyaltySettings ?? null,
             settings: t.settings ?? [],
             created_at: t.createdAt?.toISOString() ?? null,
@@ -345,6 +350,7 @@ export class TenantsService {
             default_timezone: t.defaultTimezone,
             default_service_charge: 0,
             loyalty_enabled: t.loyaltyEnabled,
+            auto_print_invoices: t.autoPrintInvoices,
             loyalty_settings: t.loyaltySettings ?? null,
             settings: t.settings ?? [],
             created_at: t.createdAt?.toISOString() ?? null,

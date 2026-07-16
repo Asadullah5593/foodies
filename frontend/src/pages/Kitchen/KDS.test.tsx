@@ -20,6 +20,9 @@ vi.mock('../../services/api', () => ({
 vi.mock('react-hot-toast', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
+vi.mock('../../utils/print', () => ({
+  printContent: vi.fn(),
+}));
 
 const authState = vi.hoisted(() => ({
   user: { is_super_admin: true } as {
@@ -32,6 +35,7 @@ vi.mock('../../contexts/AuthContext', () => ({
 }));
 
 import KDS from './KDS';
+import { printContent } from '../../utils/print';
 
 const order = (id: number, status: string) => ({
   id,
@@ -75,7 +79,9 @@ describe('Back Kitchen ready-order visibility', () => {
 
   it('counts the hidden ready orders on the toggle and reveals them in a bottom section', async () => {
     renderKds();
-    const toggle = await screen.findByRole('button', { name: 'Show Ready (1)' });
+    // Generous timeout: the count appears only after branches → orders load,
+    // which can exceed the 1s default when the whole suite runs in parallel.
+    const toggle = await screen.findByRole('button', { name: 'Show Ready (1)' }, { timeout: 5000 });
     fireEvent.click(toggle);
     expect(await screen.findByText('#A-2')).toBeInTheDocument();
     expect(screen.getByText(/Ready — moved to FOH Packing \(1\)/)).toBeInTheDocument();
@@ -109,6 +115,40 @@ describe('Back Kitchen ready-order visibility', () => {
       expect.stringContaining('moved to the FOH Packing screen'),
       expect.objectContaining({ duration: 4500 }),
     );
+  });
+});
+
+describe('Back Kitchen KOT print', () => {
+  it('prints through the invoice-template renderer using the template returned by the KOT endpoint', async () => {
+    const invoiceVM = {
+      order_id: 1,
+      order_number: 'A-1',
+      subtotal: 500,
+      total_amount: 500,
+      items: [{ name: 'Pizza', quantity: 1, unit_price: 500, subtotal: 500 }],
+      template: {
+        id: 9,
+        layout: 'thermal_classic',
+        config: { showLogo: false, footerText: 'KOT footer' },
+      },
+    };
+    get.mockImplementation(async (url: string) => {
+      if (url.startsWith('/admin/branches')) return { data: [{ id: 7, name: 'Emporium' }] };
+      if (url.includes('/kot')) return { data: invoiceVM };
+      if (url.startsWith('/kitchen/orders')) return { data: kitchenOrders };
+      return { data: [] };
+    });
+    renderKds();
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Print KOT' }))[0]);
+    await waitFor(() => expect(printContent).toHaveBeenCalled());
+    const [html, title, css] = vi.mocked(printContent).mock.calls[0];
+    expect(get).toHaveBeenCalledWith(expect.stringContaining('/kitchen/orders/1/kot?branch_id=7'));
+    expect(title).toBe('KOT A-1');
+    expect(html).toContain('A-1');
+    expect(html).toContain('Pizza');
+    expect(html).toContain('KOT footer');
+    // The template's layout drives the print CSS (thermal width, not A4).
+    expect(css).toContain('80mm');
   });
 });
 
