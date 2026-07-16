@@ -60,6 +60,14 @@ export interface DashboardSummary {
     completed_revenue: number;
     completed_orders: number;
   }>;
+  /** Per-order points ("order wise"), oldest→newest, capped to the newest 200 of the range. */
+  order_series: Array<{
+    order_number: string;
+    placed_at: string;
+    total_amount: number;
+    status: string;
+    order_type: string;
+  }>;
   top_items: Array<{
     menu_item_id: number;
     name: string;

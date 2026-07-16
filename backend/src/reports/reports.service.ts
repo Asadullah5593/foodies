@@ -55,12 +55,22 @@ export class ReportsService {
             fallback: () => Date,
             endOfDay: boolean,
         ): Date => {
-            const dayParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec((ymd ?? '').trim());
+            const dayParts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(
+                (ymd ?? '').trim(),
+            );
             if (!dayParts) return fallback();
             const [, y, m, d] = dayParts;
             const timeParts = /^(\d{1,2}):(\d{2})$/.exec((hms ?? '').trim());
-            const hh = timeParts ? Math.min(23, +timeParts[1]) : endOfDay ? 23 : 0;
-            const mm = timeParts ? Math.min(59, +timeParts[2]) : endOfDay ? 59 : 0;
+            const hh = timeParts
+                ? Math.min(23, +timeParts[1])
+                : endOfDay
+                  ? 23
+                  : 0;
+            const mm = timeParts
+                ? Math.min(59, +timeParts[2])
+                : endOfDay
+                  ? 59
+                  : 0;
             // Seconds belong to the BOUND, never to whether a time was supplied: a
             // start of 18:00 must include 18:00:30, so it opens at :00; an end of
             // 17:30 must too, so it closes at :59.999.
@@ -1091,6 +1101,34 @@ export class ReportsService {
             completed_orders: string;
         }>();
 
+        // 6b. Per-order series ("order wise"): every order in the range as its
+        // own chart point. Newest 200 fetched, served oldest→newest for the
+        // time axis; the cap keeps wide ranges renderable.
+        const orderSeriesP = scope(
+            this.orderRepo
+                .createQueryBuilder('o')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('o.id', 'id')
+                .addSelect('o.orderNumber', 'order_number')
+                .addSelect('o.placedAt', 'placed_at')
+                .addSelect('o.totalAmount', 'total_amount')
+                .addSelect('o.status', 'status')
+                .addSelect('o.orderType', 'order_type')
+                .orderBy('o.placedAt', 'DESC')
+                .addOrderBy('o.id', 'DESC')
+                .limit(200),
+        ).getRawMany<{
+            id: number;
+            order_number: string;
+            placed_at: Date;
+            total_amount: string;
+            status: string;
+            order_type: string;
+        }>();
+
         // 7. Top items (completed orders, by quantity)
         const topItemsP = this.applyOrderScope(
             this.orderItemRepo
@@ -1308,6 +1346,7 @@ export class ReportsService {
             ordersBySourceRaw,
             paymentsByMethodRaw,
             timeSeriesRaw,
+            orderSeriesRaw,
             topItemsRaw,
             deliveryByStatusRaw,
             presence,
@@ -1327,6 +1366,7 @@ export class ReportsService {
             ordersBySourceP,
             paymentsByMethodP,
             timeSeriesP,
+            orderSeriesP,
             topItemsP,
             deliveryByStatusP,
             presenceP,
@@ -1487,6 +1527,20 @@ export class ReportsService {
                 count: Number(r.count),
             })),
             time_series,
+            // Chronological per-order points for the "order wise" trend chart.
+            order_series: orderSeriesRaw
+                .slice()
+                .reverse()
+                .map((r) => ({
+                    order_number: r.order_number,
+                    placed_at:
+                        r.placed_at instanceof Date
+                            ? r.placed_at.toISOString()
+                            : String(r.placed_at),
+                    total_amount: Number(r.total_amount),
+                    status: r.status,
+                    order_type: r.order_type,
+                })),
             top_items: topItemsRaw.map((r) => ({
                 menu_item_id: r.menu_item_id,
                 name: r.name,

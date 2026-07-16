@@ -9,7 +9,7 @@ import { formatCurrency } from '../../utils/currency';
 import KpiCard from './dashboard/KpiCard';
 import ChartCard from './dashboard/ChartCard';
 import {
-  RevenueTrendChart,
+  OrderSeriesChart,
   OrdersByStatusChart,
   OrderTypeDonut,
   SourceSplitDonut,
@@ -96,6 +96,27 @@ const Dashboard: React.FC = () => {
       const qs = buildReportParams(branchId, dateFrom, dateTo, undefined, brandId, time);
       const response = await apiClient.get<DashboardSummary>(`/admin/reports/dashboard-summary?${qs}`);
       return response.data;
+    },
+    enabled: !!user,
+  });
+
+  // Top items has its own brand filter: '' follows the dashboard's brand
+  // filter, an explicit pick re-scopes just this chart.
+  const [topItemsBrandId, setTopItemsBrandId] = useState<number | null>(null);
+  const effectiveTopItemsBrand = topItemsBrandId ?? brandId;
+  const { data: topItems, isLoading: topItemsLoading } = useQuery({
+    queryKey: ['topItems', branchId, effectiveTopItemsBrand, dateFrom, dateTo, timeFrom, timeTo],
+    queryFn: async () => {
+      const qs = buildReportParams(branchId, dateFrom, dateTo, { limit: '10' }, effectiveTopItemsBrand, time);
+      const response = await apiClient.get<
+        Array<{ menu_item_id: number; name: string; quantity: string | number; total_revenue: string | number }>
+      >(`/admin/reports/top-items?${qs}`);
+      return (response.data ?? []).map((r) => ({
+        menu_item_id: r.menu_item_id,
+        name: r.name,
+        quantity: Number(r.quantity),
+        total_revenue: Number(r.total_revenue),
+      }));
     },
     enabled: !!user,
   });
@@ -190,7 +211,6 @@ const Dashboard: React.FC = () => {
   }, [breakdownMode, summary]);
 
   const k = summary?.kpis;
-  const hasOrders = (summary?.kpis.total_orders ?? 0) > 0;
 
   const kpiCards = useMemo(
     () => [
@@ -450,11 +470,11 @@ const Dashboard: React.FC = () => {
       <div className="mb-6">
         <ChartCard
           title="Revenue & orders trend"
-          subtitle="Daily revenue (area) and order count (line) for the selected range."
+          subtitle="Order-wise: every order in the range as its own point (newest 200)."
           loading={summaryLoading}
-          isEmpty={!summaryLoading && !hasOrders}
+          isEmpty={!summaryLoading && (summary?.order_series?.length ?? 0) === 0}
         >
-          {summary && <RevenueTrendChart data={summary.time_series} theme={theme} />}
+          {summary && <OrderSeriesChart data={summary.order_series ?? []} theme={theme} />}
         </ChartCard>
       </div>
 
@@ -471,10 +491,25 @@ const Dashboard: React.FC = () => {
         <ChartCard
           title="Top items"
           subtitle="Best sellers by quantity (completed orders)."
-          loading={summaryLoading}
-          isEmpty={!summaryLoading && (summary?.top_items.length ?? 0) === 0}
+          right={
+            <select
+              value={topItemsBrandId ?? ''}
+              onChange={(e) => setTopItemsBrandId(e.target.value ? Number(e.target.value) : null)}
+              aria-label="Top items brand"
+              className="rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-gray-700 dark:text-slate-200"
+            >
+              <option value="">
+                {brandId ? `${brands?.find((b) => b.id === brandId)?.name ?? 'Brand'} (dashboard filter)` : 'All brands'}
+              </option>
+              {(brands ?? []).map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          }
+          loading={topItemsLoading}
+          isEmpty={!topItemsLoading && (topItems?.length ?? 0) === 0}
         >
-          {summary && <TopItemsChart data={summary.top_items} theme={theme} />}
+          {topItems && <TopItemsChart data={topItems} theme={theme} />}
         </ChartCard>
       </div>
 

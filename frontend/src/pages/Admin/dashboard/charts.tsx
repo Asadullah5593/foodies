@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Area,
-  Line,
   ComposedChart,
   BarChart,
   Bar,
@@ -18,7 +17,6 @@ import { formatCurrency } from '../../../utils/currency';
 import {
   CHART_COLORS,
   REVENUE_COLOR,
-  ORDERS_COLOR,
   STATUS_COLORS,
   colorFor,
   tooltipStyle,
@@ -31,7 +29,6 @@ type Theme = 'light' | 'dark';
 
 const compactCurrency = (n: number) =>
   n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
-const shortDay = (d: string) => (d ? d.slice(5) : d); // MM-DD
 const prettify = (s: string) => s.replace(/_/g, ' ');
 
 /**
@@ -61,9 +58,21 @@ const Measured: React.FC<{
   );
 };
 
-/** Revenue (area, left axis) + orders (line, right axis) over time. */
-export const RevenueTrendChart: React.FC<{
-  data: DashboardSummary['time_series'];
+/** "MM-DD HH:mm" tick for per-order timestamps. */
+const shortOrderTime = (iso: string) => {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/**
+ * Order-wise trend: every order in the range is its own point (amount), in
+ * time sequence. The tooltip names the exact order; dots make single orders
+ * visible even when the range is quiet.
+ */
+export const OrderSeriesChart: React.FC<{
+  data: DashboardSummary['order_series'];
   theme: Theme;
 }> = ({ data, theme }) => (
   <Measured height={280}>
@@ -77,51 +86,39 @@ export const RevenueTrendChart: React.FC<{
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={gridColor(theme)} vertical={false} />
         <XAxis
-          dataKey="day"
-          tickFormatter={shortDay}
+          dataKey="placed_at"
+          tickFormatter={shortOrderTime}
           tick={{ fontSize: 11, fill: axisColor(theme) }}
           stroke={axisColor(theme)}
-          minTickGap={24}
+          minTickGap={32}
         />
         <YAxis
-          yAxisId="left"
           tick={{ fontSize: 11, fill: axisColor(theme) }}
           stroke={axisColor(theme)}
           tickFormatter={compactCurrency}
           width={48}
         />
-        <YAxis
-          yAxisId="right"
-          orientation="right"
-          tick={{ fontSize: 11, fill: axisColor(theme) }}
-          stroke={axisColor(theme)}
-          allowDecimals={false}
-          width={32}
-        />
         <Tooltip
           contentStyle={tooltipStyle(theme)}
-          formatter={(value, name) =>
-            name === 'Revenue' ? formatCurrency(Number(value)) : (value as number)
-          }
+          formatter={(value) => formatCurrency(Number(value))}
+          labelFormatter={(label, payload) => {
+            const row = payload?.[0]?.payload as
+              | DashboardSummary['order_series'][number]
+              | undefined;
+            const when = shortOrderTime(String(label));
+            if (!row) return when;
+            return `#${row.order_number} · ${when} · ${prettify(row.order_type)} · ${row.status}`;
+          }}
         />
         <Legend wrapperStyle={{ fontSize: 12 }} />
         <Area
-          yAxisId="left"
           type="monotone"
-          dataKey="revenue"
-          name="Revenue"
+          dataKey="total_amount"
+          name="Order amount"
           stroke={REVENUE_COLOR}
           strokeWidth={2}
           fill="url(#revGradient)"
-        />
-        <Line
-          yAxisId="right"
-          type="monotone"
-          dataKey="orders"
-          name="Orders"
-          stroke={ORDERS_COLOR}
-          strokeWidth={2}
-          dot={false}
+          dot={{ r: 2, stroke: REVENUE_COLOR, fill: REVENUE_COLOR }}
         />
       </ComposedChart>
     )}
