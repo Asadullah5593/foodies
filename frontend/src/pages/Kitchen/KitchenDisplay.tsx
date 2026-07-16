@@ -16,6 +16,7 @@ import {
 import apiClient from '../../utils/apiClient';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
+import ScrollToTopButton from '../../components/ScrollToTopButton';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 
 interface KitchenOrderItem {
@@ -370,6 +371,7 @@ const KitchenDisplay: React.FC = () => {
             </section>
           </div>
         )}
+        <ScrollToTopButton />
         </div>
       </main>
     </div>

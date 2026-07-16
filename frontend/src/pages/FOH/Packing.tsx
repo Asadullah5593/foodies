@@ -11,6 +11,7 @@ import Card from '../../components/Card';
 import Button from '../../components/Button';
 import SearchableSelect from '../../components/SearchableSelect';
 import AssignRiderModal from '../../components/AssignRiderModal';
+import ScrollToTopButton from '../../components/ScrollToTopButton';
 import { formatOrderType } from '../../utils/format';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { groupOrderItems } from '../../utils/orderItemGrouping';
@@ -486,6 +487,8 @@ const FOHPacking: React.FC = () => {
           }
         }}
       />
+
+      <ScrollToTopButton />
     </div>
   );
 };

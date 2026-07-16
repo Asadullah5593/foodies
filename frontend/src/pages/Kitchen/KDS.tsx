@@ -17,6 +17,7 @@ import { printContent } from '../../utils/print';
 import { getDeviceBottomFeedMm } from '../../utils/printerSettings';
 import { formatOrderType } from '../../utils/format';
 import { groupOrderItems } from '../../utils/orderItemGrouping';
+import ScrollToTopButton from '../../components/ScrollToTopButton';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 
 function todayIsoDate(): string {
@@ -533,6 +534,8 @@ const KDS: React.FC = () => {
           </>
         )}
       </div>
+
+      <ScrollToTopButton />
     </div>
   );
 };
