@@ -33,7 +33,15 @@ export class ShiftsController {
         @Query('branch_id') branchId: string,
         @Query('brand_id') brandId: string,
         @Query('status') status: string,
+        @Query('opened_from') openedFrom?: string,
+        @Query('opened_to') openedTo?: string,
     ) {
+        // ISO instants (the client converts its local calendar range), so the
+        // window is timezone-exact; invalid values are ignored.
+        const from = openedFrom ? new Date(openedFrom) : null;
+        const to = openedTo ? new Date(openedTo) : null;
+        const validRange =
+            from && to && !isNaN(from.getTime()) && !isNaN(to.getTime());
         return this.service.findAll(
             branchId ? +branchId : undefined,
             status,
@@ -41,6 +49,8 @@ export class ShiftsController {
             user.allowedBranchIds,
             user.allowedBrandIds,
             brandId ? +brandId : undefined,
+            validRange ? from : null,
+            validRange ? to : null,
         );
     }
 

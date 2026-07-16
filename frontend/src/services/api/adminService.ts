@@ -528,11 +528,21 @@ export const adminService = {
   },
 
   // Shifts (opened per brand per branch)
-  getShifts: async (branchId?: number, status?: string, brandId?: number): Promise<Shift[]> => {
+  getShifts: async (
+    branchId?: number,
+    status?: string,
+    brandId?: number,
+    /** ISO instants bounding opened_at server-side (open shifts always return). */
+    openedRange?: { from: string; to: string },
+  ): Promise<Shift[]> => {
     const params = new URLSearchParams();
     if (branchId) params.append('branch_id', branchId.toString());
     if (brandId) params.append('brand_id', brandId.toString());
     if (status) params.append('status', status);
+    if (openedRange) {
+      params.append('opened_from', openedRange.from);
+      params.append('opened_to', openedRange.to);
+    }
     const query = params.toString();
     const response = await apiClient.get(`/admin/shifts${query ? '?' + query : ''}`);
     return response.data;
