@@ -79,8 +79,9 @@ export interface InvoiceTemplateConfig {
     showCouponDiscount: boolean;
     showCardDiscount: boolean;
     showDiscountName: boolean;
-    /** Bold the discount-line headings in the totals block. */
-    discountLabelsBold: boolean;
+    /** Discount-line typography; defaults match the info-box value column (black, weight 600, same size). */
+    discountFontWeight: number;
+    discountFontPct: number;
 
     // Loyalty
     showLoyaltyEarned: boolean;
@@ -143,7 +144,8 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     showCouponDiscount: false,
     showCardDiscount: false,
     showDiscountName: true,
-    discountLabelsBold: false,
+    discountFontWeight: 600,
+    discountFontPct: 100,
 
     showLoyaltyEarned: true,
     showLoyaltyRedeemed: true,
@@ -170,6 +172,8 @@ const NUMERIC_KEYS: Record<string, { min: number; max: number }> = {
     fontScalePct: { min: 50, max: 200 },
     poweredByFontPct: { min: 50, max: 200 },
     bottomFeedMm: { min: 0, max: 80 },
+    discountFontWeight: { min: 100, max: 900 },
+    discountFontPct: { min: 50, max: 200 },
     metaLabelsFontWeight: { min: 100, max: 900 },
     metaLabelsFontPct: { min: 50, max: 200 },
     footerFontWeight: { min: 100, max: 900 },

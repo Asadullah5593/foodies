@@ -85,8 +85,9 @@ export interface InvoiceTemplateConfig {
   showCouponDiscount: boolean;
   showCardDiscount: boolean;
   showDiscountName: boolean;
-  /** Bold the discount-line headings in the totals block. */
-  discountLabelsBold: boolean;
+  /** Discount-line typography; defaults match the info-box value column (black, weight 600, same size). */
+  discountFontWeight: number;
+  discountFontPct: number;
 
   showLoyaltyEarned: boolean;
   showLoyaltyRedeemed: boolean;
@@ -145,7 +146,8 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showCouponDiscount: false,
   showCardDiscount: false,
   showDiscountName: true,
-  discountLabelsBold: false,
+  discountFontWeight: 600,
+  discountFontPct: 100,
 
   showLoyaltyEarned: true,
   showLoyaltyRedeemed: true,
@@ -207,7 +209,6 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
       { key: 'showCouponDiscount', label: 'Show coupon discount' },
       { key: 'showCardDiscount', label: 'Show card / bank discount' },
       { key: 'showDiscountName', label: 'Show discount / coupon code' },
-      { key: 'discountLabelsBold', label: 'Bold discount headings' },
     ],
   },
   {

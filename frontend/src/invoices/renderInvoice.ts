@@ -759,11 +759,12 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
   // Typography overrides append AFTER the layout skin so they beat any layout
   // rule (e.g. thermal_modern resets the meta labels back to weight 400).
   //
-  // Info-box headings, footer and loyalty lines default to EXACTLY the
-  // info-box value column (weight 600, same size, full black) so both sides
-  // of the box print identically; the weight/size settings adjust from there.
-  // Sizes are emitted in px (relative ems compound — .foot .line would
-  // otherwise multiply .82em × .8em) and already include fontScalePct.
+  // Info-box headings, footer, loyalty and discount lines default to EXACTLY
+  // the info-box value column (weight 600, same size, full black) so they read
+  // uniformly; the weight/size settings adjust each from there. Discounts also
+  // drop the green accent here. Sizes are emitted in px (relative ems compound
+  // — .foot .line would otherwise multiply .82em × .8em) and already include
+  // fontScalePct.
   const rootPx = Math.round(LAYOUT_BASE_PX[layout] * (clampPct(cfg.fontScalePct) / 100) * 100) / 100;
   const metaValuePx = rootPx * 0.84; // .metatbl is .84em of the root
   const px = (pct: unknown) => Math.round(metaValuePx * (clampPct(pct) / 100) * 100) / 100;
@@ -772,10 +773,8 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     `.inv-root .metatbl .mk { color: #000; font-weight: ${weight(cfg.metaLabelsFontWeight)}; font-size: ${px(cfg.metaLabelsFontPct)}px; }`,
     `.inv-root .foot .line { color: #000; font-weight: ${weight(cfg.footerFontWeight)}; font-size: ${px(cfg.footerFontPct)}px; }`,
     `.inv-root .loyalty { color: #000; font-weight: ${weight(cfg.loyaltyFontWeight)}; font-size: ${px(cfg.loyaltyFontPct)}px; }`,
-    cfg.discountLabelsBold ? '.inv-root .row.disc .l { font-weight: 700; }' : '',
-  ]
-    .filter(Boolean)
-    .join('\n    ');
+    `.inv-root .row.disc, .inv-root .row.disc .l, .inv-root .row.disc .r { color: #000; font-weight: ${weight(cfg.discountFontWeight)}; font-size: ${px(cfg.discountFontPct)}px; }`,
+  ].join('\n    ');
   return `${layoutCss(layout, cfg)}\n    ${overrides}`;
 }
 
@@ -820,7 +819,7 @@ function layoutCss(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .muted { color: #666; }
     .inv-root .items { border-top: 1px dashed #999; border-bottom: 1px dashed #999; padding: 6px 0; margin: 6px 0; }
     .inv-root .totals { margin-top: 4px; }
-    .inv-root .row.disc { color: #067647; }
+    .inv-root .row.disc { color: #000; }
     .inv-root .row.grand { border-top: 1px solid #000; margin-top: 4px; padding-top: 4px; font-size: 1.05em; }
     .inv-root .loyalty { margin-top: 4px; font-size: .85em; color: #333; }
     .inv-root .rule { border-top: 1px dashed #999; margin: 8px 0; }

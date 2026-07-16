@@ -497,10 +497,22 @@ describe('info-box / footer / loyalty typography', () => {
     );
   });
 
+  it('discount lines default to black, matching the info-box value column (no green)', () => {
+    const css = cssOf({});
+    expect(css).toContain(
+      '.inv-root .row.disc, .inv-root .row.disc .l, .inv-root .row.disc .r { color: #000; font-weight: 600; font-size: 9.24px; }',
+    );
+    // The old green accent is gone entirely.
+    expect(css).not.toContain('#067647');
+  });
+
   it('manual weight and size adjust from the matched default', () => {
-    const css = cssOf({ metaLabelsFontWeight: 400, metaLabelsFontPct: 150, footerFontWeight: 800 });
+    const css = cssOf({ metaLabelsFontWeight: 400, metaLabelsFontPct: 150, footerFontWeight: 800, discountFontWeight: 700 });
     expect(css).toContain('.inv-root .metatbl .mk { color: #000; font-weight: 400; font-size: 13.86px; }');
     expect(css).toContain('.inv-root .foot .line { color: #000; font-weight: 800; font-size: 9.24px; }');
+    expect(css).toContain(
+      '.inv-root .row.disc, .inv-root .row.disc .l, .inv-root .row.disc .r { color: #000; font-weight: 700; font-size: 9.24px; }',
+    );
   });
 
   it('typography sizes ride the whole-receipt font scale', () => {
@@ -508,11 +520,6 @@ describe('info-box / footer / loyalty typography', () => {
     expect(cssOf({ fontScalePct: 200 })).toContain(
       '.inv-root .metatbl .mk { color: #000; font-weight: 600; font-size: 18.48px; }',
     );
-  });
-
-  it('discountLabelsBold bolds the discount-line headings', () => {
-    expect(cssOf({ discountLabelsBold: true })).toContain('.inv-root .row.disc .l { font-weight: 700; }');
-    expect(cssOf({ discountLabelsBold: false })).not.toContain('.row.disc .l { font-weight: 700; }');
   });
 });
 
