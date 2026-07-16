@@ -16,6 +16,7 @@ export type InvoiceTemplateFormState = {
   brand_id: number | null;
   is_active: boolean;
   is_default: boolean;
+  is_default_kitchen: boolean;
   config: InvoiceTemplateConfig;
 };
 
@@ -285,6 +286,33 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           placeholder: 'Thank you for your order!',
           value: form.config.footerText ?? '',
           onChange: (v) => setCfg('footerText', v || null),
+        },
+        {
+          kind: 'toggle',
+          label: 'Footer bold',
+          value: Boolean(form.config.footerBold),
+          onChange: (v) => setCfg('footerBold', v),
+        },
+      ],
+    },
+    {
+      id: 'amounts',
+      title: 'Zero amounts',
+      icon: 'calc',
+      desc: 'How a zero amount prints wherever a line bills nothing — free items, modifiers, add-ons and deal components. Rates of 0 hide too (except in the 0.00 mode); a real rate stays next to an "Included" amount.',
+      kind: 'fields',
+      fields: [
+        {
+          kind: 'select',
+          label: 'Zero amount display',
+          hint: 'applies wherever a line bills nothing',
+          value: form.config.zeroAmountDisplay ?? 'zero',
+          options: [
+            { value: 'zero', label: 'Show 0.00' },
+            { value: 'included', label: 'Show “Included”' },
+            { value: 'blank', label: 'Leave empty' },
+          ],
+          onChange: (v) => setCfg('zeroAmountDisplay', v),
         },
       ],
     },
@@ -592,24 +620,32 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
                       ariaLabel="Active"
                     />
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setForm((f) => ({ ...f, is_default: !f.is_default }))}
-                    className="flex items-center gap-2"
-                  >
-                    <span
-                      className={`flex h-[19px] w-[19px] flex-none items-center justify-center rounded-md border-[1.5px] ${
-                        form.is_default ? 'border-red-600 bg-red-600' : 'border-gray-300 bg-white'
-                      }`}
+                  {(
+                    [
+                      { key: 'is_default' as const, label: 'Customer invoice default' },
+                      { key: 'is_default_kitchen' as const, label: 'Kitchen invoice default' },
+                    ]
+                  ).map(({ key, label }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, [key]: !f[key] }))}
+                      className="flex items-center gap-2"
                     >
-                      {form.is_default && (
-                        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
-                          <polyline points="3,8.5 6.5,12 13,4.5" />
-                        </svg>
-                      )}
-                    </span>
-                    <span className="text-[13.5px] text-gray-700">Set as default for this scope</span>
-                  </button>
+                      <span
+                        className={`flex h-[19px] w-[19px] flex-none items-center justify-center rounded-md border-[1.5px] ${
+                          form[key] ? 'border-red-600 bg-red-600' : 'border-gray-300 bg-white'
+                        }`}
+                      >
+                        {form[key] && (
+                          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth={2.6} strokeLinecap="round" strokeLinejoin="round">
+                            <polyline points="3,8.5 6.5,12 13,4.5" />
+                          </svg>
+                        )}
+                      </span>
+                      <span className="text-[13.5px] text-gray-700">{label}</span>
+                    </button>
+                  ))}
                 </div>
                 <div className="flex gap-3">
                   <button

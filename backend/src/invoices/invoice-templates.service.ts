@@ -21,8 +21,20 @@ export interface InvoiceTemplateDto {
     brand_id?: number | null;
     is_active?: boolean;
     is_default?: boolean;
+    is_default_kitchen?: boolean;
     config?: unknown;
 }
+
+/** Which print a template default applies to. */
+export type InvoiceTemplatePurpose = 'customer' | 'kitchen';
+
+const DEFAULT_COLUMN: Record<
+    InvoiceTemplatePurpose,
+    'isDefault' | 'isDefaultKitchen'
+> = {
+    customer: 'isDefault',
+    kitchen: 'isDefaultKitchen',
+};
 
 @Injectable()
 export class InvoiceTemplatesService {
@@ -58,14 +70,12 @@ export class InvoiceTemplatesService {
             layout: t.layout,
             is_active: t.isActive,
             is_default: t.isDefault,
+            is_default_kitchen: t.isDefaultKitchen,
             config: resolveInvoiceTemplateConfig(t.config),
         };
     }
 
-    async findAll(
-        tenantId: number | null,
-        allowedBrandIds?: number[] | null,
-    ) {
+    async findAll(tenantId: number | null, allowedBrandIds?: number[] | null) {
         if (tenantId == null) return [];
         const rows = await this.repo.find({
             where: { tenantId },
@@ -104,17 +114,27 @@ export class InvoiceTemplatesService {
         if (!name) throw new BadRequestException('Name is required.');
         const brandId = this.resolveBrandId(dto.brand_id, allowedBrandIds);
         const isDefault = dto.is_default ?? false;
+        const isDefaultKitchen = dto.is_default_kitchen ?? false;
         const saved = await this.repo.manager.transaction(async (m) => {
+            const r = m.getRepository(InvoiceTemplate);
             if (isDefault)
-                await this.clearDefault(m.getRepository(InvoiceTemplate), tenantId, brandId);
-            return m.getRepository(InvoiceTemplate).save(
-                m.getRepository(InvoiceTemplate).create({
+                await this.clearDefault(r, tenantId, brandId, 'isDefault');
+            if (isDefaultKitchen)
+                await this.clearDefault(
+                    r,
+                    tenantId,
+                    brandId,
+                    'isDefaultKitchen',
+                );
+            return r.save(
+                r.create({
                     tenantId,
                     brandId,
                     name,
                     layout: this.normalizeLayout(dto.layout),
                     isActive: dto.is_active ?? true,
                     isDefault,
+                    isDefaultKitchen,
                     config: sanitizeInvoiceTemplateConfig(dto.config),
                 }),
             );
@@ -136,7 +156,8 @@ export class InvoiceTemplatesService {
             if (!name) throw new BadRequestException('Name cannot be empty.');
             t.name = name;
         }
-        if (dto.layout !== undefined) t.layout = this.normalizeLayout(dto.layout);
+        if (dto.layout !== undefined)
+            t.layout = this.normalizeLayout(dto.layout);
         if (dto.brand_id !== undefined)
             t.brandId = this.resolveBrandId(dto.brand_id, allowedBrandIds);
         if (dto.is_active !== undefined) t.isActive = dto.is_active;
@@ -149,19 +170,40 @@ export class InvoiceTemplatesService {
         }
         if (dto.is_default === true) t.isDefault = true;
         else if (dto.is_default === false) t.isDefault = false;
+        if (dto.is_default_kitchen === true) t.isDefaultKitchen = true;
+        else if (dto.is_default_kitchen === false) t.isDefaultKitchen = false;
         const saved = await this.repo.manager.transaction(async (m) => {
             const r = m.getRepository(InvoiceTemplate);
-            // Whenever this row is (or stays) the default, clear any other default
+            // Whenever this row is (or stays) a default, clear any other default
             // in its CURRENT scope — covers both toggling default on and moving an
             // already-default template to a different brand scope (else the partial
             // unique index would 500).
-            if (t.isDefault) await this.clearDefault(r, tenantId, t.brandId, t.id);
+            if (t.isDefault)
+                await this.clearDefault(
+                    r,
+                    tenantId,
+                    t.brandId,
+                    'isDefault',
+                    t.id,
+                );
+            if (t.isDefaultKitchen)
+                await this.clearDefault(
+                    r,
+                    tenantId,
+                    t.brandId,
+                    'isDefaultKitchen',
+                    t.id,
+                );
             return r.save(t);
         });
         return this.toResponse(saved);
     }
 
-    async remove(id: number, tenantId: number, allowedBrandIds?: number[] | null) {
+    async remove(
+        id: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+    ) {
         const t = await this.repo.findOne({ where: { id, tenantId } });
         if (!t) throw new NotFoundException('Invoice template not found');
         this.assertManageable(t, allowedBrandIds);
@@ -169,16 +211,22 @@ export class InvoiceTemplatesService {
         return { success: true };
     }
 
-    /** Make one template the default for its scope, clearing any prior default. */
-    async activate(id: number, tenantId: number, allowedBrandIds?: number[] | null) {
+    /** Make one template the default for its scope and purpose, clearing any prior default. */
+    async activate(
+        id: number,
+        tenantId: number,
+        allowedBrandIds?: number[] | null,
+        purpose: InvoiceTemplatePurpose = 'customer',
+    ) {
         const t = await this.repo.findOne({ where: { id, tenantId } });
         if (!t) throw new NotFoundException('Invoice template not found');
         this.assertManageable(t, allowedBrandIds);
+        const column = DEFAULT_COLUMN[purpose];
         const saved = await this.repo.manager.transaction(async (m) => {
             const r = m.getRepository(InvoiceTemplate);
-            await this.clearDefault(r, tenantId, t.brandId);
+            await this.clearDefault(r, tenantId, t.brandId, column);
             t.isActive = true;
-            t.isDefault = true;
+            t[column] = true;
             return r.save(t);
         });
         return this.toResponse(saved);
@@ -186,14 +234,21 @@ export class InvoiceTemplatesService {
 
     /**
      * The active template config for an order: brand default → tenant default →
-     * built-in default. Returns { layout, config } always (never throws) so the
-     * invoice always renders.
+     * built-in default, per purpose. The kitchen purpose falls back to the
+     * customer chain when no kitchen default is set anywhere, so kitchen
+     * printing matches the customer invoice until one is chosen. Returns
+     * { layout, config } always (never throws) so the invoice always renders.
      */
     async resolveActive(
         tenantId: number | null,
         brandId: number | null,
         allowedBrandIds?: number[] | null,
-    ): Promise<{ id: number | null; layout: InvoiceLayout; config: InvoiceTemplateConfig }> {
+        purpose: InvoiceTemplatePurpose = 'customer',
+    ): Promise<{
+        id: number | null;
+        layout: InvoiceLayout;
+        config: InvoiceTemplateConfig;
+    }> {
         // A brand-locked caller may only preview a brand they own.
         if (
             allowedBrandIds != null &&
@@ -210,22 +265,33 @@ export class InvoiceTemplatesService {
             config: resolveInvoiceTemplateConfig(null),
         };
         if (tenantId == null) return fallback;
-        let chosen: InvoiceTemplate | null = null;
-        if (brandId != null) {
-            chosen = await this.repo.findOne({
-                where: { tenantId, brandId, isDefault: true, isActive: true },
-            });
-        }
-        if (!chosen) {
-            chosen = await this.repo.findOne({
+        const findDefault = async (
+            column: 'isDefault' | 'isDefaultKitchen',
+        ): Promise<InvoiceTemplate | null> => {
+            if (brandId != null) {
+                const scoped = await this.repo.findOne({
+                    where: {
+                        tenantId,
+                        brandId,
+                        [column]: true,
+                        isActive: true,
+                    },
+                });
+                if (scoped) return scoped;
+            }
+            return this.repo.findOne({
                 where: {
                     tenantId,
                     brandId: IsNull(),
-                    isDefault: true,
+                    [column]: true,
                     isActive: true,
                 },
             });
-        }
+        };
+        let chosen: InvoiceTemplate | null = null;
+        if (purpose === 'kitchen')
+            chosen = await findDefault('isDefaultKitchen');
+        if (!chosen) chosen = await findDefault('isDefault');
         if (!chosen) return fallback;
         return {
             id: chosen.id,
@@ -238,17 +304,23 @@ export class InvoiceTemplatesService {
         repo: Repository<InvoiceTemplate>,
         tenantId: number,
         brandId: number | null,
+        column: 'isDefault' | 'isDefaultKitchen',
         exceptId?: number,
     ) {
+        const dbColumn =
+            column === 'isDefault' ? 'is_default' : 'is_default_kitchen';
         const qb = repo
             .createQueryBuilder()
             .update(InvoiceTemplate)
-            .set({ isDefault: false })
+            .set({ [column]: false })
             .where('tenant_id = :tenantId', { tenantId })
-            .andWhere('is_default = true')
-            .andWhere(brandId == null ? 'brand_id IS NULL' : 'brand_id = :brandId', {
-                brandId,
-            });
+            .andWhere(`${dbColumn} = true`)
+            .andWhere(
+                brandId == null ? 'brand_id IS NULL' : 'brand_id = :brandId',
+                {
+                    brandId,
+                },
+            );
         if (exceptId != null) qb.andWhere('id != :exceptId', { exceptId });
         await qb.execute();
     }
