@@ -98,10 +98,20 @@ export interface InvoiceTemplateConfig {
     showCustomerInfo: boolean;
     /** Method of payment (cash / card / split) — shown when the order has recorded tenders. */
     showPaymentMethod: boolean;
-    /** Bold the info-box headings (Order #, Type, Table, Date, Customer …). */
-    metaLabelsBold: boolean;
-    /** Bold the footer text line. */
-    footerBold: boolean;
+    /**
+     * Info-box heading (Order #, Type, Table …) typography. Defaults match the
+     * value column exactly (weight 600, same size), so both columns print
+     * identically unless overridden.
+     */
+    metaLabelsFontWeight: number;
+    /** Heading size, percent of the info-box value size (100 = identical). */
+    metaLabelsFontPct: number;
+    /** Footer text typography; defaults match the info-box value column. */
+    footerFontWeight: number;
+    footerFontPct: number;
+    /** Loyalty / points lines typography; defaults match the info-box value column. */
+    loyaltyFontWeight: number;
+    loyaltyFontPct: number;
 }
 
 export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
@@ -147,8 +157,12 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     showCashier: false,
     showCustomerInfo: true,
     showPaymentMethod: true,
-    metaLabelsBold: false,
-    footerBold: false,
+    metaLabelsFontWeight: 600,
+    metaLabelsFontPct: 100,
+    footerFontWeight: 600,
+    footerFontPct: 100,
+    loyaltyFontWeight: 600,
+    loyaltyFontPct: 100,
 };
 
 /** Numeric config keys and their clamp ranges (percent). */
@@ -156,6 +170,12 @@ const NUMERIC_KEYS: Record<string, { min: number; max: number }> = {
     fontScalePct: { min: 50, max: 200 },
     poweredByFontPct: { min: 50, max: 200 },
     bottomFeedMm: { min: 0, max: 80 },
+    metaLabelsFontWeight: { min: 100, max: 900 },
+    metaLabelsFontPct: { min: 50, max: 200 },
+    footerFontWeight: { min: 100, max: 900 },
+    footerFontPct: { min: 50, max: 200 },
+    loyaltyFontWeight: { min: 100, max: 900 },
+    loyaltyFontPct: { min: 50, max: 200 },
 };
 
 /** Enum config keys and their allowed values (anything else is dropped). */
