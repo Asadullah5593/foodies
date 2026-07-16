@@ -20,6 +20,7 @@ import {
 import apiClient from '../../utils/apiClient';
 import { confirmDialog } from '../../utils/sweetAlert';
 import ValidityFields, { emptyValidity } from '../../components/ValidityFields';
+import BankCardBinLookup from '../../components/BankCardBinLookup';
 
 type Card = BrandScoped & {
   id: number;
@@ -196,6 +197,12 @@ const BankCards: React.FC = () => {
             <span className="font-semibold text-gray-700">Reports → Discounts</span>.
           </p>
         </div>
+      </div>
+
+      {/* BIN lookup: with hundreds of cards, answer "does THIS card have a
+          discount?" from the first digits of the customer's card. */}
+      <div className="mb-6">
+        <BankCardBinLookup />
       </div>
 
       <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[380px_1fr]">

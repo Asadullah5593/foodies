@@ -1753,6 +1753,7 @@ const OrderTaking: React.FC = () => {
               bankCards={bankCards ?? []}
               bankCardId={bankCardId}
               onBankCardChange={setBankCardId}
+              branchId={branchId}
               onCreateOrder={activeKioskCode ? handleFinalizeKiosk : handleCreateOrder}
               isSubmitting={isSubmittingOrder}
               itemCount={selectedItems.length}

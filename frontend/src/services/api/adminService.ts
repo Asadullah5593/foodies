@@ -916,6 +916,35 @@ export const adminService = {
       is_active: boolean;
     }>;
   },
+  /** BIN lookup: does the card starting with these digits carry a discount? */
+  lookupBankCardBin: async (bin: string, branchId?: number | null) => {
+    const response = await apiClient.get('/admin/bank-cards/lookup', {
+      params: { bin, ...(branchId != null ? { branch_id: branchId } : {}) },
+    });
+    return response.data as {
+      bin: string;
+      matches: Array<{
+        id: number;
+        name: string;
+        bank: string | null;
+        network: string | null;
+        matched_prefix: string;
+        has_offer: boolean;
+        is_active: boolean;
+        discount_type: 'flat' | 'percentage' | null;
+        discount_value: number | null;
+        min_order_amount: number | null;
+        max_discount_amount: number | null;
+        valid_from: string | null;
+        valid_until: string | null;
+        valid_time_start: string | null;
+        valid_time_end: string | null;
+        valid_days_of_week: number[] | null;
+        /** true = applies now; false = no/expired/outside window; null = has a schedule but no branch clock to judge it. */
+        available_now: boolean | null;
+      }>;
+    };
+  },
   createBankCard: async (data: {
     name: string;
     bank?: string | null;
