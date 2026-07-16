@@ -2596,7 +2596,10 @@ export class OrdersService {
     }
 
     /** Per-brand invoice: brand, category, item breakdown for one order. */
-    async getOrderInvoice(orderId: number) {
+    async getOrderInvoice(
+        orderId: number,
+        purpose: 'customer' | 'kitchen' = 'customer',
+    ) {
         const order = await this.orderRepo.findOne({
             where: { id: orderId },
             relations: [
@@ -2622,6 +2625,8 @@ export class OrdersService {
             await this.invoiceTemplatesService.resolveActive(
                 order.tenantId,
                 order.brandId,
+                null,
+                purpose,
             );
         const orderWalletType = mapSourceToWalletType(order.source);
         const loyalty =
@@ -2796,6 +2801,9 @@ export class OrdersService {
             loyalty_points_redeemed: order.loyaltyPointsRedeemed ?? 0,
             loyalty_points_remaining: Number(loyaltyBalance ?? 0),
             currency: order.tenant?.defaultCurrency ?? null,
+            // Tenant business setting: terminals auto-print customer + kitchen
+            // invoices when the order is placed.
+            auto_print_invoices: order.tenant?.autoPrintInvoices ?? false,
             header: {
                 legal_name:
                     order.tenant?.legalName ?? order.tenant?.name ?? null,
@@ -2893,6 +2901,9 @@ export class OrdersService {
                 email: firstOrder?.branch?.email ?? null,
             },
             template,
+            // Tenant business setting: terminals auto-print customer + kitchen
+            // invoices when the order is placed.
+            auto_print_invoices: firstOrder?.tenant?.autoPrintInvoices ?? false,
         };
     }
 

@@ -41,6 +41,7 @@ export class BusinessSettingsController {
             gst_rate_cash?: number | null;
             gst_rate_card?: number | null;
             loyalty_enabled?: boolean;
+            auto_print_invoices?: boolean;
         },
     ) {
         if (user.tenantId == null) {
