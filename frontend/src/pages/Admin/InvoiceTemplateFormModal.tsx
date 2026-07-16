@@ -323,7 +323,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
       id: 'typography',
       title: 'Typography',
       icon: 'type',
-      desc: 'Font size scales the whole receipt. Info-box headings, footer and loyalty lines default to exactly the info-box value column (semi-bold, same size) — adjust their weight/size here.',
+      desc: 'Font size scales the whole receipt. Info-box headings, footer, loyalty and discount lines default to exactly the info-box value column (black, semi-bold, same size) — adjust their weight/size here.',
       kind: 'fields',
       fields: [
         {
@@ -390,6 +390,21 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           suffix: '%  (100 = same as info-box values)',
           value: form.config.loyaltyFontPct ?? 100,
           onChange: (v) => setCfg('loyaltyFontPct', clampPct(v)),
+        },
+        {
+          kind: 'select',
+          label: 'Discount lines weight',
+          hint: 'printed black; defaults to the info-box values (600)',
+          value: String(form.config.discountFontWeight ?? 600),
+          options: WEIGHT_OPTIONS,
+          onChange: (v) => setCfg('discountFontWeight', Number(v)),
+        },
+        {
+          kind: 'number',
+          label: 'Discount lines size',
+          suffix: '%  (100 = same as info-box values)',
+          value: form.config.discountFontPct ?? 100,
+          onChange: (v) => setCfg('discountFontPct', clampPct(v)),
         },
       ],
     },
