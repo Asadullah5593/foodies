@@ -110,7 +110,7 @@ const TYPE_META: Record<string, { bg: string; color: string; short: string; icon
   delivery: {
     bg: 'bg-blue-50 dark:bg-blue-900/40', color: 'text-blue-600 dark:text-blue-300', short: 'DEL',
     icon: (
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
         <circle cx="4" cy="11.5" r="2" /><circle cx="12" cy="11.5" r="2" /><path d="M4 11.5l3-5.5h2.5l2 5.5M7 6l-1-2H4.3" />
       </svg>
     ),
@@ -118,7 +118,7 @@ const TYPE_META: Record<string, { bg: string; color: string; short: string; icon
   dine_in: {
     bg: 'bg-violet-50 dark:bg-violet-900/40', color: 'text-violet-600 dark:text-violet-300', short: 'DINE',
     icon: (
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 2v4a1.5 1.5 0 0 0 3 0V2M5.5 6v8" /><path d="M11 2c-1 0-1.6 1.6-1.6 3.4S10 8.4 11 8.4V14" />
       </svg>
     ),
@@ -126,7 +126,7 @@ const TYPE_META: Record<string, { bg: string; color: string; short: string; icon
   takeaway: {
     bg: 'bg-orange-50 dark:bg-orange-900/40', color: 'text-orange-700 dark:text-orange-300', short: 'T/A',
     icon: (
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
         <path d="M4 5.5h8l-.7 8.2a.8.8 0 0 1-.8.8H5.5a.8.8 0 0 1-.8-.8z" /><path d="M6 5.5V4.2a2 2 0 0 1 4 0v1.3" />
       </svg>
     ),
@@ -212,7 +212,17 @@ function createdByText(o: OrderRow): string {
 }
 
 const cellHead =
-  'text-[10px] font-bold uppercase tracking-[.05em] text-gray-400 dark:text-slate-500';
+  'text-[11.5px] font-bold uppercase tracking-[.05em] text-gray-400 dark:text-slate-500';
+
+/** Shared 13-column grid for the table head and rows (leading serial #). */
+const gridCols =
+  'grid-cols-[40px_88px_150px_minmax(180px,1.3fr)_96px_56px_90px_104px_108px_128px_100px_minmax(115px,1fr)_160px]';
+
+const SOURCE_BADGE: Record<string, string> = {
+  pos: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200',
+  consumer_app: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200',
+  kiosk: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100',
+};
 
 /* ------------------------------------------------------------------ page -- */
 
@@ -229,6 +239,11 @@ const Orders: React.FC = () => {
   const [riderModalBrandId, setRiderModalBrandId] = useState<number | null>(null);
   const [riderModalBrandName, setRiderModalBrandName] = useState<string | null>(null);
   const [selectedRiderId, setSelectedRiderId] = useState<number | null>(null);
+  // Custom kitchen-status dropdown (fixed-position popover so the table's
+  // overflow container can't clip it).
+  const [statusMenu, setStatusMenu] = useState<{
+    orderId: number; orderNumber?: string; current: string; x: number; y: number; openUp: boolean;
+  } | null>(null);
   const branchId = searchParams.get('branch_id') || '';
   const brandId = searchParams.get('brand_id') || '';
   const status = searchParams.get('status') || '';
@@ -444,13 +459,37 @@ const Orders: React.FC = () => {
     setOrdersPage(1);
   }, [branchId, brandId, status, orderType, source, dateFrom, dateTo, search]);
 
+  // The status popover is position:fixed — dismiss it whenever the page moves
+  // or ESC is pressed, so it can never drift away from its pill.
+  useEffect(() => {
+    if (!statusMenu) return;
+    const close = () => setStatusMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [statusMenu]);
+
+  /** Serial number of each order within the current filtered view (continuous across pages). */
+  const serialByOrderId = useMemo(() => {
+    const m = new Map<number, number>();
+    let i = 0;
+    for (const g of searchedGroups) for (const o of g.orders) m.set(o.id, ++i);
+    return m;
+  }, [searchedGroups]);
+
   const isSubmitting = assignRiderMutation.isPending || updateStatusMutation.isPending;
   if (isLoading || (statusForServer && isLoadingStatus) || isSubmitting) {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading orders...'} />;
   }
 
   const selectCls =
-    'rounded-[10px] border-[1.5px] border-gray-200 bg-white px-3 py-[9px] text-[13px] text-gray-700 outline-none cursor-pointer focus:border-red-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100';
+    'min-w-0 flex-1 sm:flex-none rounded-[10px] border-[1.5px] border-gray-200 bg-white px-3.5 py-3 text-[15px] text-gray-700 outline-none cursor-pointer focus:border-red-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100';
 
   const openRiderModal = (opts: {
     orderId?: number | null; groupId?: string | null; isChange: boolean;
@@ -474,193 +513,377 @@ const Orders: React.FC = () => {
     }
   };
 
+  /* ---------------------------------------------------- shared pieces ----- */
+
+  /** Kitchen-status pill; opens the custom popover. Used by grid rows and cards. */
+  const statusPillFor = (o: OrderRow) => {
+    const sm = STATUS_META[o.status ?? 'placed'] ?? STATUS_META.placed;
+    return (
+      <button
+        type="button"
+        aria-label={`Kitchen status for order #${o.order_number}`}
+        onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const menuHeight = 6 * 42 + 18;
+          const openUp = rect.bottom + menuHeight > window.innerHeight;
+          setStatusMenu({
+            orderId: o.id,
+            orderNumber: o.order_number,
+            current: String(o.status ?? 'placed'),
+            x: rect.left,
+            y: openUp ? rect.top - 6 : rect.bottom + 6,
+            openUp,
+          });
+        }}
+        className={`inline-flex cursor-pointer items-center gap-2 rounded-full px-3 py-1.5 text-[13px] font-bold transition-shadow hover:shadow-md ${sm.bg} ${sm.color}`}
+      >
+        <span className={`h-2 w-2 rounded-full ${sm.dot}`} />
+        {ORDER_STATUS_LABELS[o.status ?? ''] ?? o.status}
+        <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="opacity-70">
+          <path d="M3 4.5l3 3 3-3" />
+        </svg>
+      </button>
+    );
+  };
+
+  /** Per-order icon actions (assign/change rider, retry, invoice, view). */
+  const actionsFor = (o: OrderRow, canAssign: boolean) => (
+    <>
+      {canAssign && (
+        <button
+          title={o.rider_id ? 'Change rider' : 'Assign rider'}
+          onClick={() => openRiderModal({
+            orderId: o.id, groupId: null, isChange: !!o.rider_id,
+            brandId: o.brand_id ?? null, brandName: o.brand_name ?? o.brand?.name ?? null,
+            riderId: o.rider_id ?? null,
+          })}
+          className={`flex h-9 w-9 flex-none items-center justify-center rounded-lg ${
+            o.rider_id
+              ? 'border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300'
+              : 'bg-red-600 text-white shadow-sm hover:bg-red-700'
+          }`}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="6" cy="5" r="2.3" /><path d="M2 13c0-2.2 1.8-3.6 4-3.6" /><path d="M11.5 8v4M9.5 10h4" />
+          </svg>
+        </button>
+      )}
+      {!o.rider_id && isDeliveryOrder(o) && (
+        <button
+          title="Retry auto-assign"
+          disabled={retryAutoAssignMutation.isPending}
+          onClick={() => retryAutoAssignMutation.mutate(o.id)}
+          className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M13 3v3h-3M3 13v-3h3" /><path d="M12 6a4.2 4.2 0 0 0-7.5-1M4 10a4.2 4.2 0 0 0 7.5 1" />
+          </svg>
+        </button>
+      )}
+      <button
+        title="Customer invoice"
+        onClick={() => openInvoice(o)}
+        className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 2h6l2 2v10l-2-1-2 1-2-1-2 1z" /><path d="M5.5 6h5M5.5 9h5" />
+        </svg>
+      </button>
+      <Link
+        to={`/admin/orders/${o.id}`}
+        title="View order"
+        className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300"
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" /><circle cx="8" cy="8" r="2" />
+        </svg>
+      </Link>
+    </>
+  );
+
+  const canAssignFor = (o: OrderRow, showPerOrderRiderButton: boolean) =>
+    showPerOrderRiderButton &&
+    isDeliveryOrder(o) &&
+    (o.delivery_status === 'accepted' || o.delivery_status == null);
+
   /* ------------------------------------------------------------- row ----- */
 
   const renderRow = (o: OrderRow, opts: { showPerOrderRiderButton: boolean }) => {
     const type = getOrderType(o);
     const tm = TYPE_META[type] ?? TYPE_META.takeaway;
-    const sm = STATUS_META[o.status ?? 'placed'] ?? STATUS_META.placed;
     const rowNeeds = needsRider(o);
     const age = ageMinutes(o.placed_at);
     const overdue = rowNeeds && (age ?? 0) > 15;
     const payState = paymentState(o);
     const dm = o.delivery_status ? DELIVERY_META[o.delivery_status] : null;
-    const canAssign =
-      opts.showPerOrderRiderButton &&
-      isDeliveryOrder(o) &&
-      (o.delivery_status === 'accepted' || o.delivery_status == null);
+    const canAssign = canAssignFor(o, opts.showPerOrderRiderButton);
 
     return (
       <div
         key={o.id}
-        className={`grid min-w-[1240px] grid-cols-[88px_150px_1.1fr_58px_84px_100px_112px_128px_100px_1fr_150px] items-center gap-2.5 border-b border-l-[3px] border-b-gray-100 py-2.5 pl-4 pr-5 dark:border-b-slate-700 ${
+        className={`grid min-w-[1600px] ${gridCols} items-center gap-3 border-b border-l-[3px] border-b-gray-100 py-3.5 pl-4 pr-5 dark:border-b-slate-700 ${
           rowNeeds ? 'border-l-red-600 bg-red-50/30 dark:bg-red-900/10' : 'border-l-transparent bg-white dark:bg-slate-800'
         }`}
       >
+        {/* Serial */}
+        <span className="text-[13px] font-bold tabular-nums text-gray-400 dark:text-slate-500">
+          {serialByOrderId.get(o.id) ?? '—'}
+        </span>
         {/* Type */}
         <span
           title={formatOrderType(type)}
-          className={`inline-flex items-center gap-1 justify-self-start rounded-md px-1.5 py-[3px] text-[10px] font-extrabold uppercase ${tm.bg} ${tm.color}`}
+          className={`inline-flex items-center gap-1.5 justify-self-start rounded-md px-2 py-1 text-[11px] font-extrabold uppercase ${tm.bg} ${tm.color}`}
         >
           {tm.icon}{tm.short}
         </span>
         {/* Order */}
         <div className="min-w-0">
-          <Link to={`/admin/orders/${o.id}`} className="text-[13px] font-extrabold text-gray-800 hover:text-red-600 dark:text-slate-100">
+          <Link to={`/admin/orders/${o.id}`} className="text-[15px] font-extrabold text-gray-800 hover:text-red-600 dark:text-slate-100">
             #{o.order_number}
           </Link>
-          <div className="truncate text-[11px] text-gray-400 dark:text-slate-500">{o.brand?.name ?? o.brand_name ?? '—'}</div>
+          <div className="truncate text-[12.5px] text-gray-400 dark:text-slate-500">{o.brand?.name ?? o.brand_name ?? '—'}</div>
         </div>
         {/* Customer */}
         <div className="min-w-0">
-          <div className="truncate text-[12.5px] font-semibold text-gray-800 dark:text-slate-100">{customerText(o)}</div>
-          <div className="truncate text-[11px] text-gray-400 dark:text-slate-500">by {createdByText(o)}</div>
+          <div className="truncate text-[14px] font-semibold text-gray-800 dark:text-slate-100">{customerText(o)}</div>
+          <div className="truncate text-[12.5px] text-gray-400 dark:text-slate-500">by {createdByText(o)}</div>
+        </div>
+        {/* Source */}
+        <div>
+          <span className={`inline-flex items-center rounded-md px-2.5 py-1 text-[12px] font-bold ${
+            SOURCE_BADGE[String(o.source ?? '')] ?? 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-200'
+          }`}>
+            {orderSourceLabel(o.source)}
+          </span>
         </div>
         {/* Items */}
         <div className="text-center">
-          <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-[7px] bg-gray-100 px-1.5 text-xs font-extrabold tabular-nums text-gray-700 dark:bg-slate-700 dark:text-slate-200">
+          <span className="inline-flex h-7 min-w-[28px] items-center justify-center rounded-lg bg-gray-100 px-2 text-[13.5px] font-extrabold tabular-nums text-gray-700 dark:bg-slate-700 dark:text-slate-200">
             {o.items_count ?? 0}
           </span>
         </div>
         {/* Placed */}
         <div>
-          <div className="text-[11.5px] text-gray-700 dark:text-slate-300">{placedTimeText(o.placed_at)}</div>
-          <div className={`text-[10.5px] font-bold ${overdue ? 'text-red-600' : 'text-gray-400 dark:text-slate-500'}`}>{ageText(age)}</div>
+          <div className="text-[13px] text-gray-700 dark:text-slate-300">{placedTimeText(o.placed_at)}</div>
+          <div className={`text-[11.5px] font-bold ${overdue ? 'text-red-600' : 'text-gray-400 dark:text-slate-500'}`}>{ageText(age)}</div>
         </div>
         {/* Total */}
-        <div className="text-right text-[12.5px] font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
+        <div className="text-right text-[14.5px] font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
           {formatCurrency(Number(o.total_amount ?? 0))}
         </div>
         {/* Payment */}
         <div>
-          <div className="text-[12px] font-semibold text-gray-700 dark:text-slate-200">{paymentMethodText(o)}</div>
-          <div className={`mt-0.5 text-[10.5px] font-bold ${
+          <div className="text-[13.5px] font-semibold text-gray-700 dark:text-slate-200">{paymentMethodText(o)}</div>
+          <div className={`mt-0.5 text-[11.5px] font-bold ${
             payState === 'paid' ? 'text-emerald-600' : payState === 'partial' ? 'text-amber-600' : 'text-amber-700 dark:text-amber-400'
           }`}>
             {payState === 'paid' ? 'Paid' : payState === 'partial' ? 'Partial' : 'Unpaid'}
           </div>
         </div>
-        {/* Kitchen status (pill wraps an invisible select — same mutation as before) */}
-        <div>
-          <span className={`relative inline-flex cursor-pointer items-center gap-1.5 rounded-full px-2 py-[5px] text-[11.5px] font-bold ${sm.bg} ${sm.color}`}>
-            <span className={`h-1.5 w-1.5 rounded-full ${sm.dot}`} />
-            {ORDER_STATUS_LABELS[o.status ?? ''] ?? o.status}
-            <svg width="9" height="9" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="opacity-70">
-              <path d="M3 4.5l3 3 3-3" />
-            </svg>
-            <select
-              value={o.status}
-              onChange={(e) => updateStatusMutation.mutate({ id: o.id, status: e.target.value })}
-              className="absolute inset-0 w-full cursor-pointer opacity-0"
-              aria-label={`Kitchen status for order #${o.order_number}`}
-            >
-              {Object.entries(ORDER_STATUS_LABELS).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
-              ))}
-            </select>
-          </span>
-        </div>
+        {/* Kitchen status — opens the custom popover menu */}
+        <div>{statusPillFor(o)}</div>
         {/* Delivery */}
         <div>
           {isDeliveryOrder(o) ? (
             <span
               title={o.delivery_status === 'delivery_failed' ? (o.delivery_failed_reason ?? undefined) : undefined}
-              className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-semibold ${
+              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[12.5px] font-semibold ${
                 dm ? `${dm.bg} ${dm.color}` : 'bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-400'
               }`}
             >
               {o.delivery_status ? (DELIVERY_STATUS_LABELS[o.delivery_status] ?? o.delivery_status) : 'No rider'}
             </span>
           ) : (
-            <span className="text-[11px] text-gray-300 dark:text-slate-600">—</span>
+            <span className="text-[12.5px] text-gray-300 dark:text-slate-600">—</span>
           )}
         </div>
         {/* Rider */}
-        <div className={`truncate text-xs font-semibold ${
+        <div className={`truncate text-[13.5px] font-semibold ${
           o.rider ? 'text-gray-700 dark:text-slate-200' : isDeliveryOrder(o) ? 'text-red-600' : 'text-gray-300 dark:text-slate-600'
         }`}>
           {o.rider?.name ?? (isDeliveryOrder(o) ? 'Unassigned' : '—')}
         </div>
         {/* Actions */}
         <div className="flex items-center justify-end gap-1.5">
-          {canAssign && (
-            <button
-              title={o.rider_id ? 'Change rider' : 'Assign rider'}
-              onClick={() => openRiderModal({
-                orderId: o.id, groupId: null, isChange: !!o.rider_id,
-                brandId: o.brand_id ?? null, brandName: o.brand_name ?? o.brand?.name ?? null,
-                riderId: o.rider_id ?? null,
-              })}
-              className={`flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg ${
-                o.rider_id
-                  ? 'border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                  : 'bg-red-600 text-white shadow-sm hover:bg-red-700'
-              }`}
-            >
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="6" cy="5" r="2.3" /><path d="M2 13c0-2.2 1.8-3.6 4-3.6" /><path d="M11.5 8v4M9.5 10h4" />
-              </svg>
-            </button>
-          )}
-          {!o.rider_id && isDeliveryOrder(o) && (
-            <button
-              title="Retry auto-assign"
-              disabled={retryAutoAssignMutation.isPending}
-              onClick={() => retryAutoAssignMutation.mutate(o.id)}
-              className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 disabled:opacity-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300"
-            >
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
-                <path d="M13 3v3h-3M3 13v-3h3" /><path d="M12 6a4.2 4.2 0 0 0-7.5-1M4 10a4.2 4.2 0 0 0 7.5 1" />
-              </svg>
-            </button>
-          )}
-          <button
-            title="Customer invoice"
-            onClick={() => openInvoice(o)}
-            className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300"
-          >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 2h6l2 2v10l-2-1-2 1-2-1-2 1z" /><path d="M5.5 6h5M5.5 9h5" />
-            </svg>
-          </button>
-          <Link
-            to={`/admin/orders/${o.id}`}
-            title="View order"
-            className="flex h-[30px] w-[30px] flex-none items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300"
-          >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" /><circle cx="8" cy="8" r="2" />
-            </svg>
-          </Link>
+          {actionsFor(o, canAssign)}
         </div>
       </div>
     );
   };
 
+  /* ------------------------------------------------ card (below xl) ------ */
+
+  const renderCard = (o: OrderRow, opts: { showPerOrderRiderButton: boolean }) => {
+    const type = getOrderType(o);
+    const tm = TYPE_META[type] ?? TYPE_META.takeaway;
+    const rowNeeds = needsRider(o);
+    const age = ageMinutes(o.placed_at);
+    const overdue = rowNeeds && (age ?? 0) > 15;
+    const payState = paymentState(o);
+    const dm = o.delivery_status ? DELIVERY_META[o.delivery_status] : null;
+    const canAssign = canAssignFor(o, opts.showPerOrderRiderButton);
+
+    return (
+      <div
+        key={o.id}
+        className={`rounded-xl border border-l-4 p-3.5 ${
+          rowNeeds
+            ? 'border-gray-200 border-l-red-600 bg-red-50/30 dark:border-slate-700 dark:bg-red-900/10'
+            : 'border-gray-200 border-l-gray-200 bg-white dark:border-slate-700 dark:border-l-slate-600 dark:bg-slate-800'
+        }`}
+      >
+        {/* top: serial + type + order · total */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="text-[13px] font-bold tabular-nums text-gray-400 dark:text-slate-500">
+              {serialByOrderId.get(o.id) ?? '—'}
+            </span>
+            <span
+              title={formatOrderType(type)}
+              className={`inline-flex flex-none items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-extrabold uppercase ${tm.bg} ${tm.color}`}
+            >
+              {tm.icon}{tm.short}
+            </span>
+            <Link to={`/admin/orders/${o.id}`} className="truncate text-[15px] font-extrabold text-gray-800 hover:text-red-600 dark:text-slate-100">
+              #{o.order_number}
+            </Link>
+            <span className="truncate text-[12.5px] text-gray-400 dark:text-slate-500">· {o.brand?.name ?? o.brand_name ?? '—'}</span>
+          </div>
+          <span className="flex-none text-[15px] font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
+            {formatCurrency(Number(o.total_amount ?? 0))}
+          </span>
+        </div>
+        {/* customer + source */}
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <span className="text-[14px] font-semibold text-gray-800 dark:text-slate-100">{customerText(o)}</span>
+            <span className="ml-1.5 text-[12.5px] text-gray-400 dark:text-slate-500">by {createdByText(o)}</span>
+          </div>
+          <span className={`inline-flex flex-none items-center rounded-md px-2.5 py-1 text-[12px] font-bold ${
+            SOURCE_BADGE[String(o.source ?? '')] ?? 'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-200'
+          }`}>
+            {orderSourceLabel(o.source)}
+          </span>
+        </div>
+        {/* meta line */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-gray-500 dark:text-slate-400">
+          <span>{placedTimeText(o.placed_at)}</span>
+          <span className={`font-bold ${overdue ? 'text-red-600' : 'text-gray-400 dark:text-slate-500'}`}>{ageText(age)}</span>
+          <span>· {o.items_count ?? 0} item{(o.items_count ?? 0) === 1 ? '' : 's'}</span>
+          <span>· {paymentMethodText(o)}</span>
+          <span className={`font-bold ${
+            payState === 'paid' ? 'text-emerald-600' : payState === 'partial' ? 'text-amber-600' : 'text-amber-700 dark:text-amber-400'
+          }`}>
+            {payState === 'paid' ? 'Paid' : payState === 'partial' ? 'Partial' : 'Unpaid'}
+          </span>
+        </div>
+        {/* status + delivery + rider */}
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
+          {statusPillFor(o)}
+          {isDeliveryOrder(o) && (
+            <span
+              title={o.delivery_status === 'delivery_failed' ? (o.delivery_failed_reason ?? undefined) : undefined}
+              className={`inline-flex items-center rounded-full px-2.5 py-1 text-[12.5px] font-semibold ${
+                dm ? `${dm.bg} ${dm.color}` : 'bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-400'
+              }`}
+            >
+              {o.delivery_status ? (DELIVERY_STATUS_LABELS[o.delivery_status] ?? o.delivery_status) : 'No rider'}
+            </span>
+          )}
+          {isDeliveryOrder(o) && (
+            <span className={`text-[13px] font-semibold ${o.rider ? 'text-gray-600 dark:text-slate-300' : 'text-red-600'}`}>
+              {o.rider?.name ?? 'Unassigned'}
+            </span>
+          )}
+          <span className="ml-auto flex items-center gap-1.5">{actionsFor(o, canAssign)}</span>
+        </div>
+      </div>
+    );
+  };
+
+  /* -------------------------------------------------- group helpers ----- */
+
+  const groupMetaFor = (groupOrders: OrderRow[]) => {
+    const groupTotal = groupOrders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
+    const allDelivery = groupOrders.every((o) => isDeliveryOrder(o));
+    const allSameRider = groupOrders.every((o) => o.rider_id != null && o.rider_id === groupOrders[0].rider_id);
+    const groupRider = allSameRider && groupOrders[0].rider ? groupOrders[0].rider : null;
+    const groupCanChangeRider = allDelivery && groupRider != null && groupOrders.every((o) => o.delivery_status === 'accepted');
+    return { groupTotal, allDelivery, groupRider, groupCanChangeRider, first: groupOrders[0] };
+  };
+
+  /** Band content for a split web checkout (label + total + group actions). */
+  const groupBandContent = (gid: string, groupOrders: OrderRow[], g: ReturnType<typeof groupMetaFor>) => (
+    <>
+      <div className="flex flex-wrap items-center gap-2 text-[13.5px]">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="text-violet-500">
+          <path d="M6.5 9.5a3 3 0 0 0 4.2 0l2.4-2.4a3 3 0 1 0-4.2-4.2l-1 1" /><path d="M9.5 6.5a3 3 0 0 0-4.2 0L2.9 8.9a3 3 0 1 0 4.2 4.2l1-1" />
+        </svg>
+        <span className="font-bold text-violet-700 dark:text-violet-300">
+          Group · {groupOrders.length} orders
+        </span>
+        <span className="text-gray-400">·</span>
+        <span className="font-extrabold tabular-nums text-gray-800 dark:text-slate-100">{formatCurrency(g.groupTotal)}</span>
+        {g.groupRider && <span className="text-gray-500 dark:text-slate-400">· Rider: {g.groupRider.name}</span>}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {g.allDelivery && !g.groupRider && (
+          <button
+            onClick={() => openRiderModal({
+              orderId: null, groupId: gid, isChange: false,
+              brandId: g.first.brand_id ?? null, brandName: g.first.brand_name ?? g.first.brand?.name ?? null, riderId: null,
+            })}
+            className="rounded-lg bg-red-600 px-3 py-1.5 text-[13px] font-bold text-white hover:bg-red-700"
+          >
+            Assign rider to group
+          </button>
+        )}
+        {g.groupCanChangeRider && (
+          <button
+            onClick={() => openRiderModal({
+              orderId: null, groupId: gid, isChange: true,
+              brandId: g.first.brand_id ?? null, brandName: g.first.brand_name ?? g.first.brand?.name ?? null,
+              riderId: g.first.rider_id ?? null,
+            })}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[13px] font-bold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+          >
+            Change rider
+          </button>
+        )}
+        <button
+          onClick={() => { setCustomerInvoiceGroupId(gid); setCustomerInvoiceOrderId(null); }}
+          className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[13px] font-bold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
+        >
+          Group invoice
+        </button>
+      </div>
+    </>
+  );
+
   return (
-    <div className="w-full px-4 py-6 sm:px-6 lg:px-8">
+    <div className="w-full min-w-0 px-4 py-6 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-extrabold tracking-tight text-gray-800 dark:text-slate-100 sm:text-3xl">Orders</h1>
-          <span className="text-[13px] text-gray-400 dark:text-slate-500">
+          <span className="text-[15px] text-gray-400 dark:text-slate-500">
             {visibleOrders.length} {visibleOrders.length === 1 ? 'order' : 'orders'} · {dateFrom === dateTo ? dateFrom : `${dateFrom} → ${dateTo}`}
           </span>
         </div>
         <div className="flex items-center gap-2.5">
           <span
             title="Delivery orders get a rider automatically when the kitchen status moves to Preparing"
-            className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-[7px] text-[12.5px] font-semibold text-emerald-600 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
+            className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-[14.5px] font-semibold text-emerald-600 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
           >
-            <span className="h-[7px] w-[7px] rounded-full bg-emerald-500" />
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
             Auto-assign on
           </span>
           <button
             title="Refresh"
             onClick={() => queryClient.invalidateQueries({ queryKey: ['admin-orders'] })}
-            className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+            className="flex h-[42px] w-[42px] items-center justify-center rounded-[10px] border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
           >
-            <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
               <path d="M15 4v4h-4M3 14v-4h4" /><path d="M14 8a5 5 0 0 0-9-2M4 10a5 5 0 0 0 9 2" />
             </svg>
           </button>
@@ -670,28 +893,28 @@ const Orders: React.FC = () => {
       {/* Rider banner */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 flex-none items-center justify-center rounded-[10px] bg-blue-50 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+          <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
+            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
               <circle cx="4" cy="11.5" r="2" /><circle cx="12" cy="11.5" r="2" /><path d="M4 11.5l3-5.5h2.5l2 5.5M7 6l-1-2H4.3" />
             </svg>
           </span>
           <div className="min-w-0">
-            <div className="text-[13.5px] font-bold text-gray-800 dark:text-slate-100">
+            <div className="text-[16px] font-bold text-gray-800 dark:text-slate-100">
               Automatic rider assignment
-              <span className="ml-2 text-[12px] font-semibold text-gray-400 dark:text-slate-500">
+              <span className="ml-2 text-[14px] font-semibold text-gray-400 dark:text-slate-500">
                 {onDutyRiders?.length ?? 0} rider{(onDutyRiders?.length ?? 0) === 1 ? '' : 's'} on duty
               </span>
             </div>
-            <div className="truncate text-[12px] text-gray-500 dark:text-slate-400" title="Riders need an HR profile, check-in, fresh heartbeat/location, and the branch needs coordinates plus delivery radius.">
+            <div className="truncate text-[14px] text-gray-500 dark:text-slate-400" title="Riders need an HR profile, check-in, fresh heartbeat/location, and the branch needs coordinates plus delivery radius.">
               Delivery orders get a rider automatically when the kitchen moves to <strong>Preparing</strong>. Riders need an HR profile, check-in, a fresh heartbeat, and a branch delivery radius.
             </div>
           </div>
         </div>
         <div className="flex flex-none gap-2">
-          <Link to="/admin/rider-hrm" className="rounded-[9px] border border-gray-200 bg-white px-3 py-[7px] text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
+          <Link to="/admin/rider-hrm" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
             Open Rider HRM
           </Link>
-          <Link to="/admin/branches" className="rounded-[9px] border border-gray-200 bg-white px-3 py-[7px] text-[12px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
+          <Link to="/admin/branches" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
             Configure Branch Radius
           </Link>
         </div>
@@ -699,7 +922,7 @@ const Orders: React.FC = () => {
 
       {/* Filters row */}
       <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-[14px] border border-gray-200 bg-white px-3.5 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-[10px] border-[1.5px] border-gray-100 bg-gray-50 px-3 dark:border-slate-600 dark:bg-slate-700">
+        <div className="flex basis-full items-center gap-2 rounded-[10px] border-[1.5px] border-gray-100 bg-gray-50 px-3 dark:border-slate-600 dark:bg-slate-700 lg:min-w-[200px] lg:flex-1 lg:basis-0">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="text-gray-400">
             <circle cx="7" cy="7" r="4.5" /><line x1="10.5" y1="10.5" x2="14" y2="14" />
           </svg>
@@ -707,7 +930,7 @@ const Orders: React.FC = () => {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search order #, brand, customer, rider…"
-            className="flex-1 border-none bg-transparent py-[9px] text-[13.5px] text-gray-800 outline-none dark:text-slate-100"
+            className="flex-1 border-none bg-transparent py-3 text-[15px] text-gray-800 outline-none dark:text-slate-100"
           />
         </div>
         <select value={branchId} onChange={(e) => setFilter('branch_id', e.target.value)} className={selectCls} aria-label="Branch">
@@ -728,15 +951,6 @@ const Orders: React.FC = () => {
           <option value="">All sources</option>
           {ORDER_SOURCES.map((s) => <option key={s} value={s}>{ORDER_SOURCE_LABEL[s]}</option>)}
         </select>
-        <select
-          value={status === 'needs_rider' ? '' : status}
-          onChange={(e) => setFilter('status', e.target.value)}
-          className={selectCls}
-          aria-label="Status"
-        >
-          <option value="">All statuses</option>
-          {Object.entries(ORDER_STATUS_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
         <input type="date" value={dateFrom} onChange={(e) => setFilter('date_from', e.target.value)} className={selectCls} aria-label="Date from" />
         <input type="date" value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />
         <button
@@ -745,7 +959,7 @@ const Orders: React.FC = () => {
             setSearch('');
             setSearchParams({ date_from: t, date_to: t });
           }}
-          className="whitespace-nowrap rounded-[10px] bg-red-50 px-3.5 py-[9px] text-[12.5px] font-bold text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300"
+          className="whitespace-nowrap rounded-[10px] bg-red-50 px-4 py-3 text-[14.5px] font-bold text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300"
         >
           Clear
         </button>
@@ -760,7 +974,7 @@ const Orders: React.FC = () => {
             <button
               key={t.key || 'all'}
               onClick={() => setFilter('status', t.key)}
-              className={`flex items-center gap-2.5 rounded-xl border-[1.5px] px-3.5 py-[10px] transition-colors ${
+              className={`flex items-center gap-2.5 rounded-xl border-[1.5px] px-4 py-3 transition-colors ${
                 active
                   ? isAlert
                     ? 'border-red-600 bg-red-50 dark:bg-red-900/30'
@@ -770,119 +984,153 @@ const Orders: React.FC = () => {
                     : 'border-gray-200 bg-white hover:border-gray-300 dark:border-slate-600 dark:bg-slate-800'
               }`}
             >
-              <span className={`h-[9px] w-[9px] flex-none rounded-full ${t.dot}`} />
-              <span className={`text-[13px] font-semibold ${isAlert ? 'text-red-700 dark:text-red-300' : active ? 'text-gray-800 dark:text-slate-100' : 'text-gray-500 dark:text-slate-400'}`}>
+              <span className={`h-2.5 w-2.5 flex-none rounded-full ${t.dot}`} />
+              <span className={`text-[14.5px] font-semibold ${isAlert ? 'text-red-700 dark:text-red-300' : active ? 'text-gray-800 dark:text-slate-100' : 'text-gray-500 dark:text-slate-400'}`}>
                 {t.label}
               </span>
-              <span className={`text-[13px] font-extrabold tabular-nums ${isAlert ? 'text-red-600' : 'text-gray-800 dark:text-slate-100'}`}>{t.n}</span>
+              <span className={`text-[15px] font-extrabold tabular-nums ${isAlert ? 'text-red-600' : 'text-gray-800 dark:text-slate-100'}`}>{t.n}</span>
             </button>
           );
         })}
       </div>
 
-      {/* Table */}
+      {/* Table: data grid on xl+, stacked cards below */}
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
-        <div className="overflow-x-auto">
-          <div className="min-w-[1240px]">
-            {/* Head */}
-            <div className="grid grid-cols-[88px_150px_1.1fr_58px_84px_100px_112px_128px_100px_1fr_150px] gap-2.5 border-b border-gray-100 bg-gray-50/80 px-5 py-2.5 dark:border-slate-700 dark:bg-slate-900/40">
-              <span className={cellHead}>Type</span>
-              <span className={cellHead}>Order</span>
-              <span className={cellHead}>Customer</span>
-              <span className={`${cellHead} text-center`}>Items</span>
-              <span className={cellHead}>Placed</span>
-              <span className={`${cellHead} text-right`}>Total</span>
-              <span className={cellHead}>Payment</span>
-              <span className={cellHead}>Kitchen</span>
-              <span className={cellHead}>Delivery</span>
-              <span className={cellHead}>Rider</span>
-              <span className={`${cellHead} text-right`}>Actions</span>
-            </div>
+        {/* >=xl: data grid — scrolls inside this card, never the page */}
+        <div className="hidden xl:block">
+          <div className="overflow-x-auto">
+            <div className="min-w-[1600px]">
+              {/* Head */}
+              <div className={`grid ${gridCols} gap-3 border-b border-l-[3px] border-b-gray-100 border-l-transparent bg-gray-50/80 py-3 pl-4 pr-5 dark:border-b-slate-700 dark:bg-slate-900/40`}>
+                <span className={cellHead}>#</span>
+                <span className={cellHead}>Type</span>
+                <span className={cellHead}>Order</span>
+                <span className={cellHead}>Customer</span>
+                <span className={cellHead}>Source</span>
+                <span className={`${cellHead} text-center`}>Items</span>
+                <span className={cellHead}>Placed</span>
+                <span className={`${cellHead} text-right`}>Total</span>
+                <span className={cellHead}>Payment</span>
+                <span className={cellHead}>Kitchen</span>
+                <span className={cellHead}>Delivery</span>
+                <span className={cellHead}>Rider</span>
+                <span className={`${cellHead} text-right`}>Actions</span>
+              </div>
 
-            {paginatedGroups.length === 0 ? (
-              <p className="py-14 text-center text-gray-500 dark:text-slate-400">No orders found.</p>
-            ) : (
-              paginatedGroups.map(({ orderGroupId: gid, orders: groupOrders }) => {
-                const isGroup = !!gid && groupOrders.length > 1;
-                if (!isGroup) {
-                  return renderRow(groupOrders[0], { showPerOrderRiderButton: true });
-                }
-                const groupTotal = groupOrders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
-                const allDelivery = groupOrders.every((o) => isDeliveryOrder(o));
-                const allSameRider = groupOrders.every((o) => o.rider_id != null && o.rider_id === groupOrders[0].rider_id);
-                const groupRider = allSameRider && groupOrders[0].rider ? groupOrders[0].rider : null;
-                const groupCanChangeRider = allDelivery && groupRider != null && groupOrders.every((o) => o.delivery_status === 'accepted');
-                const first = groupOrders[0];
-                return (
-                  <div key={gid}>
-                    {/* Group band: one web checkout split into per-brand orders */}
-                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-l-[3px] border-b-gray-100 border-l-violet-500 bg-violet-50/50 py-2 pl-4 pr-5 dark:border-b-slate-700 dark:bg-violet-900/10">
-                      <div className="flex items-center gap-2 text-[12px]">
-                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" className="text-violet-500">
-                          <path d="M6.5 9.5a3 3 0 0 0 4.2 0l2.4-2.4a3 3 0 1 0-4.2-4.2l-1 1" /><path d="M9.5 6.5a3 3 0 0 0-4.2 0L2.9 8.9a3 3 0 1 0 4.2 4.2l1-1" />
-                        </svg>
-                        <span className="font-bold text-violet-700 dark:text-violet-300">
-                          Group · {groupOrders.length} orders
-                        </span>
-                        <span className="text-gray-400">·</span>
-                        <span className="font-extrabold tabular-nums text-gray-800 dark:text-slate-100">{formatCurrency(groupTotal)}</span>
-                        {groupRider && <span className="text-gray-500 dark:text-slate-400">· Rider: {groupRider.name}</span>}
+              {paginatedGroups.length === 0 ? (
+                <p className="py-14 text-center text-gray-500 dark:text-slate-400">No orders found.</p>
+              ) : (
+                paginatedGroups.map(({ orderGroupId: gid, orders: groupOrders }) => {
+                  const isGroup = !!gid && groupOrders.length > 1;
+                  if (!isGroup) {
+                    return renderRow(groupOrders[0], { showPerOrderRiderButton: true });
+                  }
+                  const g = groupMetaFor(groupOrders);
+                  return (
+                    <div key={gid}>
+                      {/* Group band: one web checkout split into per-brand orders */}
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-l-[3px] border-b-gray-100 border-l-violet-500 bg-violet-50/50 py-2.5 pl-4 pr-5 dark:border-b-slate-700 dark:bg-violet-900/10">
+                        {groupBandContent(gid!, groupOrders, g)}
                       </div>
-                      <div className="flex gap-1.5">
-                        {allDelivery && !groupRider && (
-                          <button
-                            onClick={() => openRiderModal({
-                              orderId: null, groupId: gid, isChange: false,
-                              brandId: first.brand_id ?? null, brandName: first.brand_name ?? first.brand?.name ?? null, riderId: null,
-                            })}
-                            className="rounded-lg bg-red-600 px-2.5 py-[5px] text-[11.5px] font-bold text-white hover:bg-red-700"
-                          >
-                            Assign rider to group
-                          </button>
-                        )}
-                        {groupCanChangeRider && (
-                          <button
-                            onClick={() => openRiderModal({
-                              orderId: null, groupId: gid, isChange: true,
-                              brandId: first.brand_id ?? null, brandName: first.brand_name ?? first.brand?.name ?? null,
-                              riderId: first.rider_id ?? null,
-                            })}
-                            className="rounded-lg border border-gray-200 bg-white px-2.5 py-[5px] text-[11.5px] font-bold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
-                          >
-                            Change rider
-                          </button>
-                        )}
-                        <button
-                          onClick={() => { setCustomerInvoiceGroupId(gid); setCustomerInvoiceOrderId(null); }}
-                          className="rounded-lg border border-gray-200 bg-white px-2.5 py-[5px] text-[11.5px] font-bold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
-                        >
-                          Group invoice
-                        </button>
-                      </div>
+                      {groupOrders.map((o) => renderRow(o, { showPerOrderRiderButton: !g.groupRider }))}
                     </div>
-                    {groupOrders.map((o) => renderRow(o, { showPerOrderRiderButton: !groupRider }))}
-                  </div>
-                );
-              })
-            )}
-
-            {/* Footer */}
-            <div className="flex items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/80 px-5 py-3 dark:border-slate-700 dark:bg-slate-900/40">
-              <span className="text-[12.5px] font-bold text-gray-500 dark:text-slate-400">
-                {visibleOrders.length} {visibleOrders.length === 1 ? 'order' : 'orders'}
-              </span>
-              <span className="text-[13px] text-gray-400 dark:text-slate-500">
-                Total value
-                <span className="ml-2 text-[15px] font-black tabular-nums text-gray-800 dark:text-slate-100">{formatCurrency(visibleTotal)}</span>
-              </span>
+                  );
+                })
+              )}
             </div>
           </div>
+        </div>
+
+        {/* <xl: order cards */}
+        <div className="xl:hidden">
+          {paginatedGroups.length === 0 ? (
+            <p className="py-14 text-center text-gray-500 dark:text-slate-400">No orders found.</p>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-2">
+              {paginatedGroups.map(({ orderGroupId: gid, orders: groupOrders }) => {
+                const isGroup = !!gid && groupOrders.length > 1;
+                if (!isGroup) {
+                  return renderCard(groupOrders[0], { showPerOrderRiderButton: true });
+                }
+                const g = groupMetaFor(groupOrders);
+                return (
+                  <div key={gid} className="rounded-xl border border-violet-200 bg-violet-50/40 p-2.5 dark:border-violet-900 dark:bg-violet-900/10 md:col-span-2">
+                    <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 px-1">
+                      {groupBandContent(gid!, groupOrders, g)}
+                    </div>
+                    <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+                      {groupOrders.map((o) => renderCard(o, { showPerOrderRiderButton: !g.groupRider }))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Footer (both layouts) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/80 px-5 py-3 dark:border-slate-700 dark:bg-slate-900/40">
+          <span className="text-[14px] font-bold text-gray-500 dark:text-slate-400">
+            {visibleOrders.length} {visibleOrders.length === 1 ? 'order' : 'orders'}
+          </span>
+          <span className="text-[14px] text-gray-400 dark:text-slate-500">
+            Total value
+            <span className="ml-2 text-[17px] font-black tabular-nums text-gray-800 dark:text-slate-100">{formatCurrency(visibleTotal)}</span>
+          </span>
         </div>
       </div>
 
       <div className="mt-3">
         <PaginationBar totalCount={searchedGroups.length} page={ordersPage} pageSize={ORDERS_PAGE_SIZE} onPageChange={setOrdersPage} itemLabel="orders" />
       </div>
+
+      {/* Kitchen-status popover */}
+      {statusMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setStatusMenu(null)} />
+          <div
+            role="menu"
+            aria-label={`Change status for order #${statusMenu.orderNumber}`}
+            className="fixed z-50 w-[190px] overflow-hidden rounded-xl border border-gray-100 bg-white p-1.5 shadow-[0_18px_44px_rgba(15,23,42,.18)] dark:border-slate-600 dark:bg-slate-800"
+            style={{
+              left: statusMenu.x,
+              top: statusMenu.openUp ? undefined : statusMenu.y,
+              bottom: statusMenu.openUp ? window.innerHeight - statusMenu.y : undefined,
+            }}
+          >
+            <div className="px-2.5 pb-1 pt-1.5 text-[10.5px] font-bold uppercase tracking-[.08em] text-gray-400 dark:text-slate-500">
+              Kitchen status
+            </div>
+            {Object.entries(ORDER_STATUS_LABELS).map(([value, label]) => {
+              const m = STATUS_META[value] ?? STATUS_META.placed;
+              const isCurrent = statusMenu.current === value;
+              return (
+                <button
+                  key={value}
+                  role="menuitem"
+                  onClick={() => {
+                    setStatusMenu(null);
+                    if (!isCurrent) updateStatusMutation.mutate({ id: statusMenu.orderId, status: value });
+                  }}
+                  className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13.5px] font-semibold transition-colors ${
+                    isCurrent
+                      ? `${m.bg} ${m.color}`
+                      : 'text-gray-700 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  <span className={`h-2 w-2 flex-none rounded-full ${m.dot}`} />
+                  <span className="flex-1">{label}</span>
+                  {isCurrent && (
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 8.5l3.5 3.5L13 5" />
+                    </svg>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       <CustomerInvoiceModal
         isOpen={!!customerInvoiceGroupId || !!customerInvoiceOrderId}
