@@ -3,8 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { orderService } from '../services/api';
 import { formatCurrency } from '../utils/currency';
-import { printContent } from '../utils/print';
+import { printDocument } from '../utils/printRouter';
 import { getDeviceBottomFeedMm, setDeviceBottomFeedMm } from '../utils/printerSettings';
+import { LAYOUT_META } from '../invoices/types';
+import DevicePrinterSettings from './DevicePrinterSettings';
 import { renderInvoiceHtml } from '../invoices/renderInvoice';
 import { InvoiceVM, InvoiceLayout } from '../invoices/types';
 import Modal from './Modal';
@@ -241,7 +243,13 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
     const baseCfg = printData.template?.config ?? null;
     const cfg = deviceFeed != null ? { ...(baseCfg ?? {}), bottomFeedMm: deviceFeed } : baseCfg;
     const { html, css } = renderInvoiceHtml(printData, layout, cfg);
-    printContent(html, 'Customer invoice', css);
+    void printDocument({
+      html,
+      css,
+      title: 'Customer invoice',
+      purpose: 'customer',
+      widthMm: LAYOUT_META[layout]?.widthMm,
+    });
   };
 
   /**
@@ -262,7 +270,13 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
         const baseCfg = printData.template?.config ?? null;
         const cfg = deviceFeed != null ? { ...(baseCfg ?? {}), bottomFeedMm: deviceFeed } : baseCfg;
         const { html, css } = renderInvoiceHtml(printData, layout, cfg);
-        printContent(html, `KOT ${(data.order_number as string) ?? String(oid)}`, css);
+        await printDocument({
+          html,
+          css,
+          title: `KOT ${(data.order_number as string) ?? String(oid)}`,
+          purpose: 'kitchen',
+          widthMm: LAYOUT_META[layout]?.widthMm,
+        });
       } catch {
         toast.error('Failed to print kitchen invoice');
       }
@@ -528,6 +542,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
             <span className="text-2xl font-bold">{formatCurrency(Number(invoiceData.gross_total ?? 0))}</span>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <label
               className="flex items-center gap-1.5 text-xs text-gray-500"
               title="Blank paper fed after the last line so it clears this printer's cutter. Saved on THIS terminal only — leave empty to use the template's value. Raise it if the last line is cut off."
@@ -544,6 +559,8 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
               />
               <span className="text-gray-400">mm</span>
             </label>
+            <DevicePrinterSettings />
+            </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={handlePrint}>
                 Print
