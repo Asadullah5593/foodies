@@ -136,7 +136,7 @@ describe('tabular meta — every template renders header details as a table', ()
     }
   });
 
-  it('prints the customer name but never their phone number', () => {
+  it('prints a dine-in customer by name only — they are at the table', () => {
     for (const layout of ALL_LAYOUTS) {
       const html = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
       expect(html, layout).toContain('Ayesha Malik');
@@ -144,11 +144,50 @@ describe('tabular meta — every template renders header details as a table', ()
     }
   });
 
-  it('drops the Customer row entirely when only a phone is on the order', () => {
+  it('drops the Customer row entirely when a dine-in order has only a phone', () => {
     const data = richSampleInvoice();
     data.orders[0].customer_name = undefined;
     const html = renderInvoiceHtml(data, 'bill_bordered', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
     expect(html).not.toContain('Customer');
+    expect(html).not.toContain('7654321');
+  });
+
+  // Takeaway and delivery orders may have to be called about, so the phone goes
+  // beside the name on those receipts (and only those).
+  for (const type of ['takeaway', 'delivery'] as const) {
+    it(`prints the phone beside the name on a ${type} receipt, on every template`, () => {
+      for (const layout of ALL_LAYOUTS) {
+        const data = richSampleInvoice();
+        data.orders[0].order_type = type;
+        const html = renderInvoiceHtml(data, layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+        expect(html, layout).toContain('Ayesha Malik · +92 301 7654321');
+      }
+    });
+  }
+
+  it('prints the phone alone on a takeaway order taken without a name', () => {
+    const data = richSampleInvoice();
+    data.orders[0].order_type = 'takeaway';
+    data.orders[0].customer_name = undefined;
+    const html = renderInvoiceHtml(data, 'bill_bordered', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+    expect(html).toContain('Customer');
+    expect(html).toContain('+92 301 7654321');
+  });
+
+  it('keeps a takeaway receipt name-only when no phone was taken', () => {
+    const data = richSampleInvoice();
+    data.orders[0].order_type = 'takeaway';
+    data.orders[0].customer_phone = undefined;
+    const html = renderInvoiceHtml(data, 'bill_bordered', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+    expect(html).toContain('Ayesha Malik');
+    expect(html).not.toContain('·');
+  });
+
+  it('honours showCustomerInfo: a delivery phone is hidden with the customer row', () => {
+    const data = richSampleInvoice();
+    data.orders[0].order_type = 'delivery';
+    const html = renderInvoiceHtml(data, 'bill_bordered', cfg({ showCustomerInfo: false })).html;
+    expect(html).not.toContain('Ayesha Malik');
     expect(html).not.toContain('7654321');
   });
 
