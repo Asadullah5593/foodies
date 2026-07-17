@@ -73,6 +73,8 @@ export class BranchUsersController {
                 user_id: number;
                 role_id: number;
                 brand_id?: number | null;
+                /** Required for the rider role when the user has no phone yet. */
+                phone?: string | null;
             }[];
         },
     ) {
@@ -118,6 +120,8 @@ export class BranchUsersController {
             branch_ids: number[];
             role_id: number;
             brand_id?: number | null;
+            /** Required for the rider role when the user has no phone yet. */
+            phone?: string | null;
         },
     ) {
         if (

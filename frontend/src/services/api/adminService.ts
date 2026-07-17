@@ -317,7 +317,7 @@ export const adminService = {
 
   assignBranchUsersWithRoles: async (
     branchId: number,
-    assignments: { user_id: number; role_id: number; brand_id?: number | null }[],
+    assignments: { user_id: number; role_id: number; brand_id?: number | null; phone?: string | null }[],
   ): Promise<User[]> => {
     const response = await apiClient.post(`/admin/branches/${branchId}/users`, { assignments });
     return response.data.users;
@@ -332,6 +332,8 @@ export const adminService = {
     branch_ids: number[];
     role_id: number;
     brand_id?: number | null;
+    /** Required for the rider role when the user has no phone yet. */
+    phone?: string | null;
   }): Promise<{ message: string; assigned_count: number }> => {
     const response = await apiClient.post('/admin/branches/bulk-assign', payload);
     return response.data;
