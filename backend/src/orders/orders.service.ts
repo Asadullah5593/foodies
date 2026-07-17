@@ -3916,6 +3916,7 @@ export class OrdersService {
         const order = await this.orderRepo.findOne({
             where: { id: orderId, riderId: riderUserId },
             relations: [
+                'rider',
                 'branch',
                 'brand',
                 'orderItems',
@@ -3953,6 +3954,16 @@ export class OrdersService {
                     : null,
             placed_at: order.placedAt?.toISOString() ?? null,
             total_amount: Number(order.totalAmount),
+            // The rider this order is assigned to — always the caller, since the
+            // lookup above is scoped to them. Mirrors the `rider` block the admin
+            // order payload already exposes, plus the phone dispatch reaches them on.
+            rider: order.rider
+                ? {
+                      id: order.rider.id,
+                      name: order.rider.name,
+                      phone: order.rider.phone ?? null,
+                  }
+                : null,
             branch: order.branch
                 ? {
                       id: order.branch.id,

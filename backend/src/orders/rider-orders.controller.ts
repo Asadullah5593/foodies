@@ -110,6 +110,15 @@ export class RiderOrdersController {
                 branch_longitude: { type: 'number', nullable: true },
                 placed_at: { type: 'string', nullable: true },
                 total_amount: { type: 'number' },
+                rider: {
+                    type: 'object',
+                    nullable: true,
+                    properties: {
+                        id: { type: 'number' },
+                        name: { type: 'string' },
+                        phone: { type: 'string', nullable: true },
+                    },
+                },
                 branch: {
                     type: 'object',
                     nullable: true,
@@ -158,7 +167,7 @@ export class RiderOrdersController {
     @ApiOperation({
         summary: 'Update delivery status for an order assigned to this rider',
         description:
-            'Only orders where `rider_id` matches the authenticated rider may be updated. When setting `delivery_failed`, `delivery_failed_reason` is required.',
+            'Only orders where `rider_id` matches the authenticated rider may be updated. When setting `delivery_failed`, `delivery_failed_reason` is required. Responds with the updated order — the same payload as `GET /rider/orders/{id}`, including the assigned `rider` (id, name, phone).',
     })
     @ApiParam({ name: 'id', example: 100, description: 'Order ID' })
     @ApiBody({
