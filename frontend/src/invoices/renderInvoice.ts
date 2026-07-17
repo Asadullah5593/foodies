@@ -415,9 +415,18 @@ function metaTableHtml(order: InvoiceOrderVM, cfg: InvoiceTemplateConfig): strin
   if (cfg.showDateTime && order.placed_at) add('Date', esc(fmtDateTime(order.placed_at)), 'showDateTime');
   if (cfg.showCashier && order.cashier_name) add('Cashier', esc(order.cashier_name), 'showCashier');
   if (cfg.showPaymentMethod && order.payment_method) add('Payment', esc(titleCase(order.payment_method)), 'showPaymentMethod');
-  // Name only — a receipt never prints the customer's phone number.
-  if (cfg.showCustomerInfo && order.customer_name)
-    add('Customer', esc(order.customer_name), 'showCustomerInfo');
+  // A dine-in customer is at the table, so their receipt stays name-only. A
+  // takeaway or delivery order may have to be called about, so those carry the
+  // phone beside the name — the format receipts used before phones were dropped
+  // from every type. Still gated by showCustomerInfo like the name itself.
+  const withPhone =
+    (order.order_type === 'takeaway' || order.order_type === 'delivery') &&
+    !!order.customer_phone;
+  const customerLine = withPhone
+    ? [order.customer_name, order.customer_phone].filter(Boolean).join(' · ')
+    : (order.customer_name ?? '');
+  if (cfg.showCustomerInfo && customerLine)
+    add('Customer', esc(customerLine), 'showCustomerInfo');
   return rows.length ? `<table class="metatbl"><tbody>${rows.join('')}</tbody></table>` : '';
 }
 
