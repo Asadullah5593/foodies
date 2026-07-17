@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BankCard } from '../entities/bank-card.entity';
 import { Brand } from '../entities/brand.entity';
+import { Branch } from '../entities/branch.entity';
 import {
     ManageScope,
     detachBrands,
@@ -18,6 +19,9 @@ import {
     normalizeOfferDays,
     normalizeOfferTime,
 } from '../discounts/offer-validity.util';
+import { normalizeBin, matchCardsByBin } from './bin-lookup.util';
+import { cardHasOffer } from '../orders/bank-card-offer.util';
+import { getBranchClock, isWithinSchedule } from '../utils/branch-schedule';
 
 type BankCardDto = {
     name?: string;
@@ -50,7 +54,92 @@ export class BankCardsService {
         private readonly repo: Repository<BankCard>,
         @InjectRepository(Brand)
         private readonly brandRepo: Repository<Brand>,
+        @InjectRepository(Branch)
+        private readonly branchRepo: Repository<Branch>,
     ) {}
+
+    /**
+     * BIN lookup for the till: "does the customer's card carry a discount?"
+     * Matches the entered digits against active cards' bin_prefixes and reports
+     * each match's offer with an availability verdict:
+     *   true  — discount applies right now
+     *   false — no offer, card out of its date window, or outside its schedule
+     *   null  — has a time/day schedule but no branch_id was given to evaluate
+     *           it against (the constraints are returned for display instead).
+     */
+    async lookupByBin(
+        tenantId: number | null,
+        binRaw: string | null | undefined,
+        allowedBrandIds?: number[] | null,
+        branchId?: number | null,
+    ) {
+        if (tenantId == null)
+            throw new ForbiddenException('Bank cards are managed per tenant');
+        const bin = normalizeBin(binRaw);
+        if (bin.length < 4) {
+            throw new BadRequestException(
+                'Enter at least the first 4 digits of the card number.',
+            );
+        }
+        const cards = await this.repo.find({
+            where: { tenantId, isActive: true },
+            order: { name: 'ASC' },
+        });
+        const visible = cards.filter((c) =>
+            isVisibleToBrands(this.scopeOf(c), allowedBrandIds),
+        );
+        // Branch clock (branch timezone) for time-of-day / day-of-week windows.
+        // Only the timezone is read (nothing branch-scoped is returned), so no
+        // tenant filter is needed — Branch has no direct tenant column anyway.
+        const branch = branchId
+            ? await this.branchRepo.findOne({
+                  where: { id: branchId },
+                  select: ['id', 'timezone'],
+              })
+            : null;
+        const now = new Date();
+        const matches = matchCardsByBin(bin, visible).map(
+            ({ card, matchedPrefix }) => {
+                const hasOffer = cardHasOffer(card);
+                const dateOk =
+                    (!card.validFrom || now >= card.validFrom) &&
+                    (!card.validUntil || now <= card.validUntil);
+                const hasSchedule =
+                    card.validTimeStart != null ||
+                    card.validTimeEnd != null ||
+                    (Array.isArray(card.validDaysOfWeek) &&
+                        card.validDaysOfWeek.length > 0);
+                const scheduleOk: boolean | null = !hasSchedule
+                    ? true
+                    : branch
+                      ? isWithinSchedule(
+                            {
+                                timeStart: card.validTimeStart,
+                                timeEnd: card.validTimeEnd,
+                                daysOfWeek: card.validDaysOfWeek,
+                            },
+                            getBranchClock(branch.timezone),
+                        )
+                      : null;
+                const availableNow: boolean | null =
+                    !hasOffer || !dateOk
+                        ? false
+                        : scheduleOk == null
+                          ? null
+                          : scheduleOk;
+                return {
+                    ...this.toResponse(
+                        card,
+                        manageScopeFor(this.scopeOf(card), allowedBrandIds),
+                    ),
+                    matched_prefix: matchedPrefix,
+                    /** true / false / null — see lookupByBin doc. */
+                    available_now: availableNow,
+                };
+            },
+        );
+        return { bin, matches };
+    }
 
     private toResponse(c: BankCard, manageScope: ManageScope = 'full') {
         return {

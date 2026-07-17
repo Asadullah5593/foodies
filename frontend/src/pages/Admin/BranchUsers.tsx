@@ -30,6 +30,7 @@ const BranchUsers: React.FC = () => {
   const [roleByUserId, setRoleByUserId] = useState<Record<number, number>>({});
   // Brand lock per user: 0 / missing = all brands (no lock)
   const [brandByUserId, setBrandByUserId] = useState<Record<number, number>>({});
+  const [phoneByUserId, setPhoneByUserId] = useState<Record<number, string>>({});
   const [page, setPage] = useState(1);
   // Free-text search on the listing
   const [search, setSearch] = useState('');
@@ -42,6 +43,7 @@ const BranchUsers: React.FC = () => {
   const [mbBranchIds, setMbBranchIds] = useState<number[]>([]);
   const [mbRoleId, setMbRoleId] = useState('');
   const [mbBrandId, setMbBrandId] = useState('0');
+  const [mbPhone, setMbPhone] = useState('');
 
   // Fetch branches
   const { data: branches } = useQuery({
@@ -120,7 +122,6 @@ const BranchUsers: React.FC = () => {
   React.useEffect(() => setPage(1), [selectedBranch, debouncedSearch]);
 
   const defaultRoleId = roles?.[0]?.id ?? 0;
-
   // Pre-fill the modal's selection from the chosen branch's existing assignments.
   // Already-assigned users start checked, with their saved role + brand-lock.
   const applyBranchPreselection = (branchId: number | null) => {
@@ -128,6 +129,7 @@ const BranchUsers: React.FC = () => {
       setSelectedUserIds([]);
       setRoleByUserId({});
       setBrandByUserId({});
+      setPhoneByUserId({});
       return;
     }
     const existing = (branchUsers as BranchUserRow[]).filter((u) => u.branch_id === branchId);
@@ -173,6 +175,32 @@ const BranchUsers: React.FC = () => {
     [selectedUserIds, branchAssignedByUserId, roleByUserId, brandByUserId, defaultRoleId],
   );
 
+  // Riders get called by dispatch, so the rider role is the point where a phone
+  // stops being optional — it is asked for here and saved onto the user.
+  const riderRoleId = roles?.find((r) => r.slug === 'rider')?.id ?? null;
+  const isRiderRole = (roleId: number) => riderRoleId != null && roleId === riderRoleId;
+  const phoneOf = (userId: number) =>
+    phoneByUserId[userId] ?? (allUsers ?? []).find((u) => u.id === userId)?.phone ?? '';
+  // The column only appears once a rider is actually in play, so nothing changes
+  // for branches that have no riders.
+  const showPhoneColumn = React.useMemo(
+    () =>
+      riderRoleId != null &&
+      selectedUserIds.some((id) => isRiderRole(roleByUserId[id] ?? defaultRoleId)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedUserIds, roleByUserId, defaultRoleId, riderRoleId],
+  );
+
+  /** Rider rows still missing a number — they block the save. */
+  const ridersMissingPhone = React.useMemo(
+    () =>
+      effectiveUserIds.filter(
+        (id) => isRiderRole(roleByUserId[id] ?? defaultRoleId) && !phoneOf(id).trim(),
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [effectiveUserIds, roleByUserId, phoneByUserId, allUsers, defaultRoleId, riderRoleId],
+  );
+
   // Users shown in the modal table, narrowed by the modal search box.
   const modalUsers = React.useMemo(() => {
     const q = modalUserSearch.trim().toLowerCase();
@@ -184,7 +212,7 @@ const BranchUsers: React.FC = () => {
   }, [allUsers, modalUserSearch]);
 
   const assignMutation = useMutation({
-    mutationFn: ({ branchId, assignments }: { branchId: number; assignments: { user_id: number; role_id: number; brand_id?: number | null }[] }) =>
+    mutationFn: ({ branchId, assignments }: { branchId: number; assignments: { user_id: number; role_id: number; brand_id?: number | null; phone?: string | null }[] }) =>
       adminService.assignBranchUsersWithRoles(branchId, assignments),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['branchUsers'] });
@@ -192,6 +220,7 @@ const BranchUsers: React.FC = () => {
       setSelectedUserIds([]);
       setRoleByUserId({});
       setBrandByUserId({});
+      setPhoneByUserId({});
       toast.success('Users assigned successfully!');
     },
     onError: (error: any) => {
@@ -220,6 +249,7 @@ const BranchUsers: React.FC = () => {
       setMbBranchIds([]);
       setMbRoleId('');
       setMbBrandId('0');
+      setMbPhone('');
       toast.success(result.message);
     },
     onError: (error: any) => {
@@ -245,9 +275,15 @@ const BranchUsers: React.FC = () => {
     );
   }, [mbUserId, branchUsers]);
 
+  const mbIsRider = !!mbRoleId && isRiderRole(parseInt(mbRoleId, 10));
+  const mbPhoneValue = mbUserId
+    ? (mbPhone || (allUsers ?? []).find((u) => u.id === parseInt(mbUserId, 10))?.phone || '')
+    : mbPhone;
+
   const handleBulkAssign = () => {
     if (!mbUserId) { toast.error('Select a user'); return; }
     if (!mbRoleId) { toast.error('Select a role'); return; }
+    if (mbIsRider && !mbPhoneValue.trim()) { toast.error('A phone number is required for riders'); return; }
     const newBranches = mbBranchIds.filter((id) => !mbUserAlreadyAssignedBranchIds.has(id));
     if (newBranches.length === 0) { toast.error('Select at least one branch not already assigned'); return; }
     bulkAssignMutation.mutate({
@@ -255,6 +291,7 @@ const BranchUsers: React.FC = () => {
       branch_ids: newBranches,
       role_id: parseInt(mbRoleId, 10),
       brand_id: mbBrandId && mbBrandId !== '0' ? parseInt(mbBrandId, 10) : null,
+      ...(mbIsRider ? { phone: mbPhoneValue.trim() } : {}),
     });
   };
 
@@ -289,11 +326,24 @@ const BranchUsers: React.FC = () => {
       toast.error('Please select at least one user');
       return;
     }
-    const assignments = effectiveUserIds.map((user_id) => ({
-      user_id,
-      role_id: roleByUserId[user_id] ?? defaultRoleId,
-      brand_id: brandByUserId[user_id] || null,
-    }));
+    if (ridersMissingPhone.length > 0) {
+      const names = ridersMissingPhone
+        .map((id) => (allUsers ?? []).find((u) => u.id === id)?.name ?? `User ${id}`)
+        .join(', ');
+      toast.error(`A phone number is required for riders: ${names}`);
+      return;
+    }
+    const assignments = effectiveUserIds.map((user_id) => {
+      const role_id = roleByUserId[user_id] ?? defaultRoleId;
+      return {
+        user_id,
+        role_id,
+        brand_id: brandByUserId[user_id] || null,
+        // Only riders carry a phone: it is saved to the user, and sending it
+        // for other roles would overwrite their number from this screen.
+        ...(isRiderRole(role_id) ? { phone: phoneOf(user_id).trim() } : {}),
+      };
+    });
     assignMutation.mutate({ branchId: assignBranchId, assignments });
   };
 
@@ -357,6 +407,7 @@ const BranchUsers: React.FC = () => {
           setSelectedUserIds([]);
           setRoleByUserId({});
           setBrandByUserId({});
+          setPhoneByUserId({});
           setModalUserSearch('');
         }}
         title="Assign Users to Branch"
@@ -407,6 +458,7 @@ const BranchUsers: React.FC = () => {
                     {assignBranchBrands.length > 1 && (
                       <th className="text-left p-2">Brand</th>
                     )}
+                    {showPhoneColumn && <th className="text-left p-2">Phone (riders)</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -460,6 +512,29 @@ const BranchUsers: React.FC = () => {
                               </option>
                             ))}
                           </select>
+                        </td>
+                      )}
+                      {showPhoneColumn && (
+                        <td className="p-2">
+                          {isRiderRole(roleByUserId[user.id] ?? defaultRoleId) &&
+                          selectedUserIds.includes(user.id) ? (
+                            <input
+                              type="tel"
+                              value={phoneOf(user.id)}
+                              onChange={(e) =>
+                                setPhoneByUserId((prev) => ({ ...prev, [user.id]: e.target.value }))
+                              }
+                              placeholder="Required for riders"
+                              aria-label={`Phone for ${user.name}`}
+                              className={`w-40 px-2 py-1 border rounded focus:ring-2 focus:ring-blue-500 ${
+                                phoneOf(user.id).trim()
+                                  ? 'border-gray-300'
+                                  : 'border-red-400 bg-red-50 placeholder-red-400'
+                              }`}
+                            />
+                          ) : (
+                            <span className="text-gray-400">—</span>
+                          )}
                         </td>
                       )}
                     </tr>
@@ -546,6 +621,22 @@ const BranchUsers: React.FC = () => {
               </select>
             </div>
           </div>
+
+          {mbIsRider && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Phone *</label>
+              <input
+                type="tel"
+                value={mbPhoneValue}
+                onChange={(e) => setMbPhone(e.target.value)}
+                placeholder="Required for riders"
+                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                  mbPhoneValue.trim() ? 'border-gray-300' : 'border-red-400 bg-red-50 placeholder-red-400'
+                }`}
+              />
+              <p className="mt-1 text-xs text-gray-500">Dispatch calls riders on this number. Saved to the user.</p>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Branches *</label>

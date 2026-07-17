@@ -1,5 +1,4 @@
 import React from 'react';
-import Card from '../../../components/Card';
 
 interface ChartCardProps {
   title: string;
@@ -25,17 +24,19 @@ const ChartCard: React.FC<ChartCardProps> = ({
   children,
 }) => {
   return (
-    <Card className={`p-0 overflow-hidden flex flex-col ${className}`}>
-      <div className="flex items-start justify-between gap-3 p-4 border-b border-gray-100 dark:border-slate-700">
+    <div
+      className={`flex flex-col rounded-2xl border border-gray-200 bg-white px-[22px] py-5 shadow-[0_6px_18px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-800 ${className}`}
+    >
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-base font-semibold text-gray-800 dark:text-slate-100">{title}</h3>
+          <h3 className="text-[15.5px] font-bold text-gray-800 dark:text-slate-100">{title}</h3>
           {subtitle && (
-            <p className="text-xs text-gray-500 dark:text-slate-400">{subtitle}</p>
+            <p className="mt-0.5 text-[12.5px] text-gray-500 dark:text-slate-400">{subtitle}</p>
           )}
         </div>
         {right}
       </div>
-      <div className={`p-4 flex-1 ${bodyClassName}`}>
+      <div className={`mt-4 flex-1 ${bodyClassName}`}>
         {loading ? (
           <div className="animate-pulse space-y-3">
             <div className="h-4 w-1/3 bg-gray-200 dark:bg-slate-700 rounded" />
@@ -49,7 +50,7 @@ const ChartCard: React.FC<ChartCardProps> = ({
           children
         )}
       </div>
-    </Card>
+    </div>
   );
 };
 

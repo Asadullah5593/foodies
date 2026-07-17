@@ -2,7 +2,7 @@
 
 > **Version:** 1.0
 > **Last Updated:** June 2026
-> **Platforms:** Web Browser — Admin Panel · POS · Kitchen Display · Packing · Rider App
+> **Platforms:** Web Browser — Admin Panel · POS · Back Kitchen · Packing · Rider App
 
 *A step-by-step guide for everyday use of your Point-of-Sale system. It is written for the people who use the system every day — cashiers, kitchen staff, packers, delivery riders, and managers. It explains what each screen does and how to get your daily work done. No technical knowledge is needed.*
 
@@ -40,7 +40,7 @@ The system has different screens for different jobs. You'll only see the screens
 | Role | Main Screen | What they do |
 |---|---|---|
 | **Cashier** | POS / Order Taking | Take customer orders, apply discounts, collect payment |
-| **Kitchen staff** | Kitchen Display (KDS) | See incoming orders, cook them, mark them ready |
+| **Kitchen staff** | Back Kitchen (KDS) | See incoming orders, cook them, mark them ready |
 | **Packing staff** | FOH Packing | Pack ready orders and hand them over |
 | **Delivery rider** | Rider app | Pick up and deliver orders, update delivery status |
 | **Manager / Admin** | Admin Panel | Set up the menu, prices, staff, view reports |
@@ -153,7 +153,7 @@ Just fix the highlighted field and try again.
 
 ## 4. The Kitchen Screen (KDS)
 
-The **Kitchen Display** (Back Kitchen) shows orders as they come in, so cooks always know what to make next.
+The **Back Kitchen** screen shows orders as they come in, so cooks always know what to make next.
 
 ### What You See
 

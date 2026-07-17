@@ -458,7 +458,7 @@ const OrderTaking: React.FC = () => {
         toast.success(`${orders.length} orders created. Group: ${groupId.slice(0, 8)}… | Gross total: ${formatCurrency(grossTotal)}`);
       }
       queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['kitchen-display-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['customer-display-orders'] });
       queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
       setShowCheckoutModal(false);
       setDrawerOpen(false);
@@ -496,7 +496,7 @@ const OrderTaking: React.FC = () => {
       }
       toast.success(`Kiosk order #${data?.kiosk_code ?? activeKioskCode ?? ''} placed. Total: ${formatCurrency(grossTotal)}`);
       queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['kitchen-display-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['customer-display-orders'] });
       queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
       setShowCheckoutModal(false);
       setDrawerOpen(false);
@@ -1753,6 +1753,7 @@ const OrderTaking: React.FC = () => {
               bankCards={bankCards ?? []}
               bankCardId={bankCardId}
               onBankCardChange={setBankCardId}
+              branchId={branchId}
               onCreateOrder={activeKioskCode ? handleFinalizeKiosk : handleCreateOrder}
               isSubmitting={isSubmittingOrder}
               itemCount={selectedItems.length}

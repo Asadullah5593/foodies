@@ -5,7 +5,7 @@ import {
     ForbiddenException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import { Shift } from '../entities/shift.entity';
 import { Order } from '../entities/order.entity';
 import { Payment } from '../entities/payment.entity';
@@ -29,6 +29,8 @@ export class ShiftsService {
         allowedBranchIds?: number[] | null,
         allowedBrandIds?: number[] | null,
         brandId?: number,
+        openedFrom?: Date | null,
+        openedTo?: Date | null,
     ) {
         if (
             allowedBranchIds != null &&
@@ -82,13 +84,29 @@ export class ShiftsService {
         if (branchId) qb.andWhere('s.branchId = :branchId', { branchId });
         if (brandId) qb.andWhere('s.brandId = :brandId', { brandId });
         if (status) qb.andWhere('s.status = :status', { status });
+        // Range pruning: only shifts OPENED inside the window — but open shifts
+        // are always returned regardless, so a drawer still running from before
+        // the window (e.g. last night) can never be filtered out of sight.
+        if (openedFrom && openedTo) {
+            qb.andWhere(
+                new Brackets((w) =>
+                    w
+                        .where('s.openedAt BETWEEN :openedFrom AND :openedTo', {
+                            openedFrom,
+                            openedTo,
+                        })
+                        .orWhere("s.status = 'open'"),
+                ),
+            );
+        }
         const list = await qb.getMany();
-        const collected = await Promise.all(
-            list.map((s) => this.getCollectedAmounts(s)),
-        );
-        return list.map((s, i) => ({
+        const collected = await this.getCollectedAmountsBatch(list);
+        return list.map((s) => ({
             ...this.toResponse(s),
-            ...collected[i],
+            ...(collected.get(s.id) ?? {
+                cash_collected: 0,
+                card_collected: 0,
+            }),
         }));
     }
 
@@ -272,6 +290,53 @@ export class ShiftsService {
     /**
      * Sum cash and card collected from payments for completed orders in this shift's branch and time window.
      */
+    /**
+     * Collected amounts for MANY shifts in one grouped query — replaces the
+     * per-shift N+1 that findAll used to run. Matching rule is identical to
+     * getCollectedAmounts: completed orders of the shift's branch (and brand,
+     * when set) whose completion falls inside the shift's open window.
+     */
+    private async getCollectedAmountsBatch(
+        shifts: Shift[],
+    ): Promise<
+        Map<number, { cash_collected: number; card_collected: number }>
+    > {
+        const out = new Map<
+            number,
+            { cash_collected: number; card_collected: number }
+        >();
+        for (const s of shifts)
+            out.set(s.id, { cash_collected: 0, card_collected: 0 });
+        if (shifts.length === 0) return out;
+        const rows = await this.paymentRepo
+            .createQueryBuilder('p')
+            .innerJoin(Order, 'o', 'o.id = p.orderId')
+            .innerJoin(
+                Shift,
+                's',
+                's.branchId = o.branchId' +
+                    ' AND o.completedAt >= s.openedAt' +
+                    ' AND (s.closedAt IS NULL OR o.completedAt <= s.closedAt)' +
+                    ' AND (s.brandId IS NULL OR o.brandId = s.brandId)',
+            )
+            .where('s.id IN (:...ids)', { ids: shifts.map((s) => s.id) })
+            .andWhere("o.status = 'completed'")
+            .select('s.id', 'shift_id')
+            .addSelect('p.paymentMethod', 'method')
+            .addSelect('SUM(p.amount)', 'total')
+            .groupBy('s.id')
+            .addGroupBy('p.paymentMethod')
+            .getRawMany<{ shift_id: number; method: string; total: string }>();
+        for (const row of rows) {
+            const entry = out.get(Number(row.shift_id));
+            if (!entry) continue;
+            const tot = parseFloat(row.total ?? '0') || 0;
+            if (row.method === 'cash') entry.cash_collected = tot;
+            else if (row.method === 'card') entry.card_collected = tot;
+        }
+        return out;
+    }
+
     async getCollectedAmounts(shift: Shift): Promise<{
         cash_collected: number;
         card_collected: number;

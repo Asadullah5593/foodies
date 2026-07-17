@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import Button from '../../../components/Button';
+import BankCardBinLookup from '../../../components/BankCardBinLookup';
 import { formatCurrency } from '../../../utils/currency';
 
 export type PaymentPanelProps = {
@@ -34,6 +35,8 @@ export type PaymentPanelProps = {
   }>;
   bankCardId?: number | null;
   onBankCardChange?: (id: number | null) => void;
+  /** Branch for BIN-lookup time windows (branch timezone). */
+  branchId?: number | null;
   onCreateOrder: () => void;
   isSubmitting: boolean;
   itemCount: number;
@@ -51,6 +54,7 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
   bankCards = [],
   bankCardId = null,
   onBankCardChange,
+  branchId = null,
   onCreateOrder,
   isSubmitting,
   itemCount,
@@ -186,6 +190,17 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
                 </option>
               ))}
             </select>
+          </div>
+        )}
+        {/* "Does the customer's card have a discount?" — check by BIN without
+            scrolling a hundred-card list. Result only; the cashier still picks
+            the card above to actually apply the offer. */}
+        {(paymentMode === 'card' || paymentMode === 'multipay') && (
+          <div className="mt-3">
+            <label className="block text-xs font-medium text-foodies-textSecondary dark:text-slate-400 mb-1">
+              Check card for discount (BIN)
+            </label>
+            <BankCardBinLookup branchId={branchId} compact />
           </div>
         )}
         {/* A bank's offer is funded on the whole bill going through its card, so a

@@ -58,6 +58,25 @@ export class BankCardsController {
         );
     }
 
+    /**
+     * BIN lookup (POS + admin): does the card starting with these digits carry
+     * a discount? `branch_id` (optional) evaluates time-of-day/day windows in
+     * that branch's timezone.
+     */
+    @Get('lookup')
+    lookup(
+        @CurrentUser() user: CardUser,
+        @Query('bin') bin: string,
+        @Query('branch_id') branchId?: string,
+    ) {
+        return this.service.lookupByBin(
+            user.tenantId,
+            bin,
+            user.allowedBrandIds,
+            branchId && Number.isFinite(+branchId) ? +branchId : null,
+        );
+    }
+
     @Post()
     store(@CurrentUser() user: CardUser, @Body() body: CardBody) {
         if (user.tenantId == null)

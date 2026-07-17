@@ -16,6 +16,26 @@ export const CHART_COLORS = [
 export const REVENUE_COLOR = '#DC2626';
 export const ORDERS_COLOR = '#2563EB';
 
+/** Orders with no brand (legacy food-court rows) — grey, never a palette hue. */
+export const NO_BRAND_COLOR = '#94A3B8';
+
+/**
+ * A brand's colour, keyed to its position in the tenant's brand list so the
+ * hue follows the brand and not its rank: it stays the same whichever filter
+ * is applied, and on every chart that shows brands. `fallbackIndex` colours a
+ * brand missing from the list (e.g. deleted since the order) by its position
+ * in the caller's own series.
+ */
+export function brandColor(
+  brandId: number | null | undefined,
+  brands?: Array<{ id: number }> | null,
+  fallbackIndex = 0,
+): string {
+  if (brandId == null) return NO_BRAND_COLOR;
+  const idx = (brands ?? []).findIndex((b) => b.id === brandId);
+  return CHART_COLORS[(idx >= 0 ? idx : fallbackIndex) % CHART_COLORS.length];
+}
+
 /** Colors for known order statuses (falls back to palette by index). */
 export const STATUS_COLORS: Record<string, string> = {
   placed: '#6366F1',

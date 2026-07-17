@@ -84,6 +84,34 @@ export class ReportsController {
         );
     }
 
+    /** Order-wise trend: per-order points (capped) + uncapped totals (all-status count, completed-only revenue). */
+    @Get('order-series')
+    orderSeries(
+        @CurrentUser() user: ReportsUser,
+        @Query('branch_id') branchId: string,
+        @Query('brand_id') brandId: string,
+        @Query('limit') limit: string,
+        @Query('date_from') dateFrom: string,
+        @Query('date_to') dateTo: string,
+        @Query('time_from') timeFrom: string,
+        @Query('time_to') timeTo: string,
+    ) {
+        return this.service.orderSeries(
+            user.tenantId,
+            {
+                branch_id: branchId ? +branchId : undefined,
+                brand_id: brandId ? +brandId : undefined,
+                limit: limit ? +limit : 200,
+                date_from: dateFrom,
+                date_to: dateTo,
+                time_from: timeFrom,
+                time_to: timeTo,
+            },
+            user.allowedBranchIds,
+            user.allowedBrandIds,
+        );
+    }
+
     /** Where the discounts went: split by offer type, and by card for bank-funded ones. */
     @Get('discounts')
     discounts(

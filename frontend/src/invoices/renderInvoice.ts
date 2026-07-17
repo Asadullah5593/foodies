@@ -167,15 +167,17 @@ function makeZeroAwareNum(cfg: InvoiceTemplateConfig) {
 }
 
 /**
- * Rate cells: a zero unit price prints 0.00 only in 'zero' mode and hides in
- * 'included'/'blank' (the amount cell carries the word — repeating it in the
- * rate column would read twice). Non-zero rates always print: a modifier free
- * by allowance keeps its real rate next to an "Included" amount.
+ * Rate cells follow whether the LINE BILLS ZERO (not whether the unit price is
+ * zero), so the rate tracks the amount cell. A line that bills something always
+ * shows its real rate; a line that bills nothing shows the rate only in 'zero'
+ * mode and hides it in 'included'/'blank'. This hides the rate of a topping
+ * that is free by the group's included allowance (real unit price, zero amount)
+ * — the kitchen line then reads as name + qty only.
  */
 function makeZeroAwareRate(cfg: InvoiceTemplateConfig) {
-  return (unit: unknown): string => {
-    if (Number(unit ?? 0) !== 0) return num(unit);
-    return cfg.zeroAmountDisplay === 'zero' ? num(0) : '';
+  return (unit: unknown, amount: unknown): string => {
+    if (Number(amount ?? 0) !== 0) return num(unit);
+    return cfg.zeroAmountDisplay === 'zero' ? num(unit) : '';
   };
 }
 
@@ -323,7 +325,7 @@ function itemsTableHtml(
             return cell(
               `<span class="ind">${esc(l.name_snapshot ?? 'Item')}${variantHtml(l.variant_name)}</span>`,
               String(l.quantity),
-              zeroRate(l.unit_price),
+              zeroRate(l.unit_price, l.subtotal),
               zeroNum(l.subtotal),
             );
           })
@@ -337,7 +339,7 @@ function itemsTableHtml(
           const head = cell(
             `${cat}${esc(l.name_snapshot ?? 'Item')}${variantHtml(l.variant_name)}`,
             String(l.quantity),
-            zeroRate(l.unit_price),
+            zeroRate(l.unit_price, base),
             zeroNum(base),
           );
           // Zero-billing add-ons/modifiers are "free lines" too: hidden entirely
@@ -350,7 +352,7 @@ function itemsTableHtml(
                   return cell(
                     `<span class="ind">+ ${esc(a.name ?? 'Add-on')}</span>`,
                     qty !== 1 ? String(qty) : '',
-                    zeroRate(a.unit_price),
+                    zeroRate(a.unit_price, addonAmount(a)),
                     zeroNum(addonAmount(a)),
                     '',
                     'showModifiers',
@@ -369,7 +371,7 @@ function itemsTableHtml(
                 ? `<span class="ind2">↳ ${esc(m.name ?? 'Modifier')}</span>`
                 : `<span class="ind">+ ${esc(m.group ? `${m.group}: ` : '')}${esc(m.name ?? 'Modifier')}</span>`,
               String(b.qty),
-              zeroRate(b.unit),
+              zeroRate(b.unit, b.amount),
               zeroNum(b.amount),
               '',
               'showModifiers',
