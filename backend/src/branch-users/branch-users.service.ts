@@ -81,6 +81,64 @@ export class BranchUsersService {
         }
     }
 
+    /** The role ids in `roleIds` that are the rider role. */
+    private async riderRoleIdsAmong(roleIds: number[]): Promise<Set<number>> {
+        if (roleIds.length === 0) return new Set();
+        const rows: Array<{ id: number }> = await this.dataSource.query(
+            `SELECT id FROM roles WHERE slug = 'rider' AND id = ANY($1::int[])`,
+            [roleIds],
+        );
+        return new Set(rows.map((r) => Number(r.id)));
+    }
+
+    /**
+     * A phone is optional on a user until they are made a rider: dispatch has
+     * to reach them, and staff sign in by email so the number is contact data,
+     * never a credential. Assigning the rider role is therefore the point that
+     * demands one — take the number supplied with the assignment, else the one
+     * already on file, and refuse the assignment if there is neither. A
+     * supplied number is written back to the user, so the assignment screen
+     * doubles as the place to correct a stale one.
+     */
+    private async requireRiderPhones(
+        assignments: Array<{
+            userId: number;
+            roleId: number;
+            phone?: string | null;
+        }>,
+    ): Promise<void> {
+        const riderRoleIds = await this.riderRoleIdsAmong([
+            ...new Set(assignments.map((a) => a.roleId)),
+        ]);
+        const riders = assignments.filter((a) =>
+            riderRoleIds.has(Number(a.roleId)),
+        );
+        if (riders.length === 0) return;
+        const users = await this.userRepo.find({
+            where: { id: In(riders.map((r) => r.userId)) },
+        });
+        const byId = new Map(users.map((u) => [u.id, u]));
+        // Check every rider before writing any of them, so a batch that fails
+        // leaves no half-applied phone behind.
+        const pending: Array<[number, string]> = [];
+        for (const rider of riders) {
+            const user = byId.get(rider.userId);
+            if (!user)
+                throw new NotFoundException(`User ${rider.userId} not found`);
+            const supplied = (rider.phone ?? '').trim();
+            if (!supplied && !(user.phone ?? '').trim()) {
+                throw new BadRequestException(
+                    `A phone number is required to make ${user.name} a rider`,
+                );
+            }
+            if (supplied && supplied !== user.phone)
+                pending.push([user.id, supplied]);
+        }
+        for (const [userId, phone] of pending) {
+            await this.userRepo.update(userId, { phone });
+        }
+    }
+
     private async getDefaultCashierRoleId(): Promise<number> {
         const cashier = await this.roleRepo.findOne({
             where: { slug: 'cashier' },
@@ -259,6 +317,9 @@ export class BranchUsersService {
             await this.branchUserRepo.delete({ branchId });
         }
         const users = await this.userRepo.find({ where: { id: In(userIds) } });
+        await this.requireRiderPhones(
+            users.map((u) => ({ userId: u.id, roleId: resolvedRoleId })),
+        );
         for (const u of users) {
             await this.branchUserRepo.save(
                 this.branchUserRepo.create({
@@ -293,6 +354,8 @@ export class BranchUsersService {
             role_id: number;
             /** Lock this user to a single brand at the branch (null/omitted = all brands). */
             brand_id?: number | null;
+            /** Required when role_id is the rider role and the user has no phone on file; saved to the user. */
+            phone?: string | null;
         }[],
         allowedBrandIds?: number[] | null,
     ) {
@@ -325,6 +388,13 @@ export class BranchUsersService {
                 ...new Set(assignments.map((a) => a.role_id)),
             ]);
         }
+        await this.requireRiderPhones(
+            assignments.map((a) => ({
+                userId: a.user_id,
+                roleId: a.role_id,
+                phone: a.phone,
+            })),
+        );
         const resolveBrandId = (
             brandId: number | null | undefined,
         ): number | null =>
@@ -383,6 +453,7 @@ export class BranchUsersService {
             branch_ids: number[];
             role_id: number;
             brand_id?: number | null;
+            phone?: string | null;
         },
         allowedBrandIds?: number[] | null,
     ): Promise<{ message: string; assigned_count: number }> {
@@ -395,6 +466,7 @@ export class BranchUsersService {
             user_id: dto.user_id,
             role_id: dto.role_id,
             brand_id: dto.brand_id ?? null,
+            phone: dto.phone ?? null,
         };
         for (const branchId of dto.branch_ids) {
             await this.assignUsersWithRoles(

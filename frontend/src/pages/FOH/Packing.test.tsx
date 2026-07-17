@@ -98,13 +98,13 @@ describe('FOH Packing queue', () => {
 
 describe('FOH branch filter permission', () => {
   it('shows the branch filter to users with foh:branch-filter', async () => {
-    authState.user = { permissions: ['kitchen:view', 'foh:branch-filter'] };
+    authState.user = { permissions: ['customer-display:view', 'foh:branch-filter'] };
     renderPacking();
     expect(await screen.findByText('Branch')).toBeInTheDocument();
   });
 
   it('hides the branch filter from regular FOH staff', async () => {
-    authState.user = { permissions: ['kitchen:view', 'kitchen:update'] };
+    authState.user = { permissions: ['customer-display:view', 'customer-display:update'] };
     renderPacking();
     expect(await screen.findByText('Order #A-2')).toBeInTheDocument();
     expect(screen.queryByText('Branch')).not.toBeInTheDocument();

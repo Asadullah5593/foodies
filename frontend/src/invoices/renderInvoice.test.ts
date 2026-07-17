@@ -565,9 +565,36 @@ describe('zeroAmountDisplay — 0 / Included / empty for zero-billing lines', ()
     expect(table({ zeroAmountDisplay: 'included' })).not.toContain('<td class="cr">0.00</td>');
     expect(table({ zeroAmountDisplay: 'blank' })).not.toContain('<td class="cr">0.00</td>');
     expect(table({ zeroAmountDisplay: 'blank' })).toContain('<td class="cr"></td>');
-    // A REAL rate survives next to an Included amount: Jalapeños ×2 with 1 free
-    // keeps rate 120.00, and the fully-allowance-covered case keeps its rate too.
+    // A line that BILLS something keeps its rate: Jalapeños ×2 with 1 free bills
+    // 120, so 120.00 prints even in Included mode.
     expect(table({ zeroAmountDisplay: 'included' })).toContain('<td class="cr">120.00</td>');
+  });
+
+  it('hides the rate too when a line bills zero by allowance (real unit price, zero amount)', () => {
+    // A topping with a real 149 unit price, fully covered by the group's
+    // included allowance (qty 1, free 1) → bills 0. Mirrors the KOT toppings.
+    const data = sampleInvoice();
+    data.orders[0].items = [
+      {
+        name_snapshot: 'Build Your Own Pizza',
+        category: 'Pizza',
+        quantity: 1,
+        unit_price: 1449,
+        subtotal: 1449,
+        modifiers: [
+          { group: 'Meat', name: 'Beef Pepperoni', unit_price: 149, quantity: 1, free_quantity: 1 },
+        ],
+      },
+    ];
+    const table = (over: Partial<InvoiceTemplateConfig>) =>
+      renderInvoiceHtml(data, 'bill_bordered', cfg(over)).html;
+    // 'zero' keeps the informative rate (149.00) next to a 0.00 amount.
+    expect(table({ zeroAmountDisplay: 'zero' })).toContain('<td class="cr">149.00</td>');
+    // 'blank'/'included' hide the rate too — the kitchen line is name + qty only.
+    const blank = table({ zeroAmountDisplay: 'blank' });
+    expect(blank).toContain('Beef Pepperoni');
+    expect(blank).not.toContain('<td class="cr">149.00</td>');
+    expect(table({ zeroAmountDisplay: 'included' })).not.toContain('<td class="cr">149.00</td>');
   });
 
   it('does not touch paid modifier amounts', () => {

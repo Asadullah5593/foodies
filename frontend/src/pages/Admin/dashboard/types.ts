@@ -87,6 +87,27 @@ export interface DashboardSummary {
   };
 }
 
+/**
+ * GET /admin/reports/order-series — the "Revenue & orders trend" feed.
+ * `orders` is per-order points ("order wise"), oldest→newest, capped to the
+ * newest 200 of the range. The totals are UNCAPPED over the whole selection:
+ * order_count is all-status (matches the Total-orders KPI), completed_revenue
+ * is completed-only (matches the Revenue KPI).
+ */
+export interface OrderSeriesResponse {
+  order_count: number;
+  completed_revenue: number;
+  orders: Array<{
+    order_number: string;
+    placed_at: string;
+    total_amount: number;
+    status: string;
+    order_type: string;
+    brand_id: number | null;
+    brand_name: string | null;
+  }>;
+}
+
 export interface RecentOrder {
   id: number;
   order_number: string;

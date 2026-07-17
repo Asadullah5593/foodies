@@ -217,6 +217,9 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
     },
     {
         prefix: '/kitchen',
-        permissionNames: [Permissions.KITCHEN_VIEW, Permissions.KITCHEN_UPDATE],
+        permissionNames: [
+            Permissions.CUSTOMER_DISPLAY_VIEW,
+            Permissions.CUSTOMER_DISPLAY_UPDATE,
+        ],
     },
 ];

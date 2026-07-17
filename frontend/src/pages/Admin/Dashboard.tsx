@@ -6,10 +6,11 @@ import { useTheme } from '../../contexts/ThemeContext';
 import apiClient from '../../utils/apiClient';
 import SearchableSelect from '../../components/SearchableSelect';
 import { formatCurrency } from '../../utils/currency';
+import { brandColor, CHART_COLORS } from '../../utils/chartColors';
 import KpiCard from './dashboard/KpiCard';
 import ChartCard from './dashboard/ChartCard';
 import {
-  RevenueTrendChart,
+  OrderSeriesChart,
   OrdersByStatusChart,
   OrderTypeDonut,
   SourceSplitDonut,
@@ -23,7 +24,14 @@ import {
   InventoryAlertsPanel,
 } from './dashboard/panels';
 import { defaultRange, matchPreset, presetRanges } from './dashboard/dateRanges';
-import type { DashboardSummary, RecentOrder, InventoryAlerts } from './dashboard/types';
+import type { DashboardSummary, OrderSeriesResponse, RecentOrder, InventoryAlerts } from './dashboard/types';
+
+const BREAKDOWN_HEAD =
+  'py-2.5 text-[11px] font-bold uppercase tracking-[0.05em] text-gray-400 dark:text-slate-500';
+const FILTER_LABEL =
+  'mb-1.5 block text-[11px] font-bold uppercase tracking-[0.05em] text-gray-400 dark:text-slate-500';
+const FILTER_INPUT =
+  'rounded-[10px] border-[1.5px] border-gray-200 bg-white px-2.5 py-2 text-[12.5px] text-gray-700 outline-none transition-colors focus:border-foodies-cta dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200';
 
 /** The whole-day bounds — sending these is identical to sending no time at all. */
 const DAY_START = '00:00';
@@ -82,7 +90,7 @@ const Dashboard: React.FC = () => {
 
   // Owner sees all brands and can drill into one; brand-locked users get
   // only their own brand back from the server.
-  const { data: brands } = useQuery({
+  const { data: brands, isLoading: brandsLoading } = useQuery({
     queryKey: ['brands'],
     queryFn: async () => {
       const response = await apiClient.get<Array<{ id: number; name: string }>>('/admin/brands');
@@ -100,10 +108,46 @@ const Dashboard: React.FC = () => {
     enabled: !!user,
   });
 
+  // Revenue & orders trend has its own brand filter (same semantics as Top
+  // items below) and its own endpoint: per-order points plus uncapped
+  // count/revenue totals for the headline figures.
+  const [trendBrandId, setTrendBrandId] = useState<number | null>(null);
+  const effectiveTrendBrand = trendBrandId ?? brandId;
+  const { data: orderSeries, isLoading: orderSeriesLoading } = useQuery({
+    queryKey: ['orderSeries', branchId, effectiveTrendBrand, dateFrom, dateTo, timeFrom, timeTo],
+    queryFn: async () => {
+      const qs = buildReportParams(branchId, dateFrom, dateTo, undefined, effectiveTrendBrand, time);
+      const response = await apiClient.get<OrderSeriesResponse>(`/admin/reports/order-series?${qs}`);
+      return response.data;
+    },
+    enabled: !!user,
+  });
+
+  // Top items has its own brand filter: '' follows the dashboard's brand
+  // filter, an explicit pick re-scopes just this chart.
+  const [topItemsBrandId, setTopItemsBrandId] = useState<number | null>(null);
+  const effectiveTopItemsBrand = topItemsBrandId ?? brandId;
+  const { data: topItems, isLoading: topItemsLoading } = useQuery({
+    queryKey: ['topItems', branchId, effectiveTopItemsBrand, dateFrom, dateTo, timeFrom, timeTo],
+    queryFn: async () => {
+      const qs = buildReportParams(branchId, dateFrom, dateTo, { limit: '10' }, effectiveTopItemsBrand, time);
+      const response = await apiClient.get<
+        Array<{ menu_item_id: number; name: string; quantity: string | number; total_revenue: string | number }>
+      >(`/admin/reports/top-items?${qs}`);
+      return (response.data ?? []).map((r) => ({
+        menu_item_id: r.menu_item_id,
+        name: r.name,
+        quantity: Number(r.quantity),
+        total_revenue: Number(r.total_revenue),
+      }));
+    },
+    enabled: !!user,
+  });
+
   const { data: recentOrders, isLoading: recentLoading } = useQuery({
     queryKey: ['recentOrders', branchId, brandId, dateFrom, dateTo, timeFrom, timeTo],
     queryFn: async () => {
-      const qs = buildReportParams(branchId, dateFrom, dateTo, { limit: '15' }, brandId, time);
+      const qs = buildReportParams(branchId, dateFrom, dateTo, { limit: '5' }, brandId, time);
       const response = await apiClient.get<RecentOrder[]>(`/admin/reports/recent-orders?${qs}`);
       return Array.isArray(response.data) ? response.data : [];
     },
@@ -172,25 +216,27 @@ const Dashboard: React.FC = () => {
 
   const breakdownRows = useMemo(() => {
     if (breakdownMode === 'branch') {
-      return (summary?.sales_by_branch ?? []).map((r) => ({
+      return (summary?.sales_by_branch ?? []).map((r, i) => ({
         id: r.branch_id,
         name: r.branch_name,
         orders: r.orders,
         completed: r.completed_orders,
         revenue: r.revenue,
+        color: CHART_COLORS[i % CHART_COLORS.length],
       }));
     }
-    return (summary?.sales_by_brand ?? []).map((r) => ({
+    // Same hue the brand wears on the trend chart, so the two read as one view.
+    return (summary?.sales_by_brand ?? []).map((r, i) => ({
       id: r.brand_id,
       name: r.brand_name,
       orders: r.orders,
       completed: r.completed_orders,
       revenue: r.revenue,
+      color: brandColor(r.brand_id, brands, i),
     }));
-  }, [breakdownMode, summary]);
+  }, [breakdownMode, summary, brands]);
 
   const k = summary?.kpis;
-  const hasOrders = (summary?.kpis.total_orders ?? 0) > 0;
 
   const kpiCards = useMemo(
     () => [
@@ -277,15 +323,15 @@ const Dashboard: React.FC = () => {
   );
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="w-full px-4 py-6 sm:px-6 lg:px-10">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-6"
+        className="mb-[22px]"
       >
-        <h1 className="text-3xl font-bold text-gray-800 dark:text-slate-100">{dashboardTitle}</h1>
-        <p className="text-base text-gray-600 dark:text-slate-400">
-          Welcome back, <span className="font-semibold text-foodies-cta">{user?.name}</span>!
+        <h1 className="text-2xl font-extrabold tracking-tight text-gray-800 dark:text-slate-100 sm:text-[26px]">{dashboardTitle}</h1>
+        <p className="mt-1.5 text-[13.5px] text-gray-500 dark:text-slate-400">
+          Welcome back, <span className="font-bold text-foodies-cta">{user?.name}</span>!
           {isBrandSpecific && (
             <span className="ml-1">
               {multiBranch
@@ -296,9 +342,9 @@ const Dashboard: React.FC = () => {
         </p>
       </motion.div>
 
-      {/* Filters */}
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-2">
+      {/* Filters — quick presets over an exact range (date + time-of-day). */}
+      <div className="mb-[22px] rounded-[14px] border border-gray-200 bg-white px-[18px] py-4 shadow-[0_6px_18px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-800">
+        <div className="mb-3.5 flex flex-wrap items-center gap-2">
           {presetRanges().map((p) => (
             <button
               key={p.key}
@@ -309,79 +355,15 @@ const Dashboard: React.FC = () => {
                 setTimeFrom(DAY_START);
                 setTimeTo(DAY_END);
               }}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium transition-colors ${
+              className={`rounded-full border-[1.5px] px-4 py-2 text-[13px] font-bold transition-colors ${
                 activePreset === p.key
-                  ? 'bg-foodies-cta text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-slate-700 dark:text-slate-200 dark:hover:bg-slate-600'
+                  ? 'border-foodies-cta bg-foodies-cta text-white'
+                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
               }`}
             >
               {p.label}
             </button>
           ))}
-        </div>
-        <div className="flex flex-wrap items-end gap-3">
-          {showBranchFilter && (
-            <SearchableSelect
-              label="Branch"
-              value={branchId ? String(branchId) : ''}
-              onChange={(v) => setBranchId(v ? Number(v) : null)}
-              options={[
-                { value: '', label: 'All branches' },
-                ...relevantBranches.map((b) => ({ value: String(b.id), label: `${b.name} (${b.code})` })),
-              ]}
-              placeholder="All branches"
-              minWidth="min-w-[200px]"
-            />
-          )}
-          {showBrandFilter && (
-            <SearchableSelect
-              label="Brand"
-              value={brandId ? String(brandId) : ''}
-              onChange={(v) => setBrandId(v ? Number(v) : null)}
-              options={[
-                { value: '', label: 'All brands' },
-                ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name })),
-              ]}
-              placeholder="All brands"
-              minWidth="min-w-[180px]"
-            />
-          )}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">From</label>
-            <div className="flex items-center gap-1">
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-foodies-cta"
-              />
-              <input
-                type="time"
-                aria-label="From time"
-                value={timeFrom}
-                onChange={(e) => setTimeFrom(e.target.value || DAY_START)}
-                className="px-2 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-foodies-cta"
-              />
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">To</label>
-            <div className="flex items-center gap-1">
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="px-3 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-foodies-cta"
-              />
-              <input
-                type="time"
-                aria-label="To time"
-                value={timeTo}
-                onChange={(e) => setTimeTo(e.target.value || DAY_END)}
-                className="px-2 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-foodies-cta"
-              />
-            </div>
-          </div>
           {timeNarrowed && (
             <button
               type="button"
@@ -389,16 +371,84 @@ const Dashboard: React.FC = () => {
                 setTimeFrom(DAY_START);
                 setTimeTo(DAY_END);
               }}
-              className="px-3 py-2 text-sm font-medium text-foodies-cta hover:underline"
+              className="ml-auto text-[12.5px] font-semibold text-foodies-cta hover:underline"
             >
               Clear time
             </button>
           )}
         </div>
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1.3fr_1.3fr]">
+          {showBranchFilter && (
+            <div>
+              <label className={FILTER_LABEL}>Branch</label>
+              <SearchableSelect
+                value={branchId ? String(branchId) : ''}
+                onChange={(v) => setBranchId(v ? Number(v) : null)}
+                options={[
+                  { value: '', label: 'All branches' },
+                  ...relevantBranches.map((b) => ({ value: String(b.id), label: `${b.name} (${b.code})` })),
+                ]}
+                placeholder="All branches"
+                minWidth="w-full"
+              />
+            </div>
+          )}
+          {showBrandFilter && (
+            <div>
+              <label className={FILTER_LABEL}>Brand</label>
+              <SearchableSelect
+                value={brandId ? String(brandId) : ''}
+                onChange={(v) => setBrandId(v ? Number(v) : null)}
+                options={[
+                  { value: '', label: 'All brands' },
+                  ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name })),
+                ]}
+                placeholder="All brands"
+                minWidth="w-full"
+              />
+            </div>
+          )}
+          <div>
+            <label className={FILTER_LABEL}>From</label>
+            <div className="flex gap-1.5">
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className={`${FILTER_INPUT} flex-1`}
+              />
+              <input
+                type="time"
+                aria-label="From time"
+                value={timeFrom}
+                onChange={(e) => setTimeFrom(e.target.value || DAY_START)}
+                className={`${FILTER_INPUT} w-[90px]`}
+              />
+            </div>
+          </div>
+          <div>
+            <label className={FILTER_LABEL}>To</label>
+            <div className="flex gap-1.5">
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className={`${FILTER_INPUT} flex-1`}
+              />
+              <input
+                type="time"
+                aria-label="To time"
+                value={timeTo}
+                onChange={(e) => setTimeTo(e.target.value || DAY_END)}
+                className={`${FILTER_INPUT} w-[90px]`}
+              />
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* KPI row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="mb-5 grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-4">
         {kpiCards.map((card, i) => (
           <KpiCard key={card.label} index={i} loading={summaryLoading} {...card} />
         ))}
@@ -407,7 +457,7 @@ const Dashboard: React.FC = () => {
       {/* Sales breakdown — by brand for owner/admin, by branch for a brand-specific
           dashboard with multiple branches (hidden when only one branch). */}
       {breakdownMode !== 'none' && (
-        <div className="mb-6">
+        <div className="mb-5">
           <ChartCard
             title={breakdownMode === 'branch' ? 'Sales by branch' : 'Sales by brand'}
             subtitle={
@@ -419,22 +469,28 @@ const Dashboard: React.FC = () => {
             isEmpty={!summaryLoading && breakdownRows.length === 0}
           >
             {breakdownRows.length > 0 && (
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs text-gray-500 dark:text-slate-400">
-                  <tr>
-                    <th className="py-2 font-medium">{breakdownMode === 'branch' ? 'Branch' : 'Brand'}</th>
-                    <th className="py-2 font-medium text-right">Orders</th>
-                    <th className="py-2 font-medium text-right">Completed</th>
-                    <th className="py-2 font-medium text-right">Revenue</th>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-100 dark:border-slate-700">
+                    <th className={`${BREAKDOWN_HEAD} text-left`}>{breakdownMode === 'branch' ? 'Branch' : 'Brand'}</th>
+                    <th className={`${BREAKDOWN_HEAD} text-right`}>Orders</th>
+                    <th className={`${BREAKDOWN_HEAD} text-right`}>Completed</th>
+                    <th className={`${BREAKDOWN_HEAD} text-right`}>Revenue</th>
                   </tr>
                 </thead>
                 <tbody>
                   {breakdownRows.map((row) => (
-                    <tr key={row.id} className="border-t border-gray-100 dark:border-slate-700">
-                      <td className="py-2 text-gray-800 dark:text-slate-100">{row.name}</td>
-                      <td className="py-2 text-right text-gray-600 dark:text-slate-300">{row.orders}</td>
-                      <td className="py-2 text-right text-gray-600 dark:text-slate-300">{row.completed}</td>
-                      <td className="py-2 text-right font-medium text-gray-800 dark:text-slate-100">
+                    <tr key={row.id} className="border-b border-gray-50 last:border-0 dark:border-slate-700/50">
+                      <td className="py-3 text-sm font-bold text-gray-800 dark:text-slate-100">
+                        <span className="flex items-center gap-2.5">
+                          {/* Same hue as this brand's line on the trend chart. */}
+                          <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: row.color }} />
+                          {row.name}
+                        </span>
+                      </td>
+                      <td className="py-3 text-right text-[13.5px] tabular-nums text-gray-600 dark:text-slate-300">{row.orders}</td>
+                      <td className="py-3 text-right text-[13.5px] tabular-nums text-gray-600 dark:text-slate-300">{row.completed}</td>
+                      <td className="py-3 text-right text-sm font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
                         {formatCurrency(row.revenue)}
                       </td>
                     </tr>
@@ -447,19 +503,52 @@ const Dashboard: React.FC = () => {
       )}
 
       {/* Revenue trend (full width) */}
-      <div className="mb-6">
+      <div className="mb-5">
         <ChartCard
           title="Revenue & orders trend"
-          subtitle="Daily revenue (area) and order count (line) for the selected range."
-          loading={summaryLoading}
-          isEmpty={!summaryLoading && !hasOrders}
+          subtitle="Order-wise: every order as its own point, one line per brand (newest 200 plotted); totals cover the whole range. Click a line or a brand below to focus it."
+          right={
+            <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1">
+              {orderSeries && (
+                <>
+                  <div className="text-right">
+                    <div className="text-[11px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Orders</div>
+                    <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">
+                      {orderSeries.order_count.toLocaleString('en-US')}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[11px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Revenue (completed)</div>
+                    <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">
+                      {formatCurrency(orderSeries.completed_revenue)}
+                    </div>
+                  </div>
+                </>
+              )}
+              <select
+                value={trendBrandId ?? ''}
+                onChange={(e) => setTrendBrandId(e.target.value ? Number(e.target.value) : null)}
+                aria-label="Revenue & orders trend brand"
+                className="rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-gray-700 dark:text-slate-200"
+              >
+                <option value="">
+                  {brandId ? `${brands?.find((b) => b.id === brandId)?.name ?? 'Brand'} (dashboard filter)` : 'All brands'}
+                </option>
+                {(brands ?? []).map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+          }
+          loading={orderSeriesLoading || brandsLoading}
+          isEmpty={!orderSeriesLoading && !brandsLoading && (orderSeries?.orders?.length ?? 0) === 0}
         >
-          {summary && <RevenueTrendChart data={summary.time_series} theme={theme} />}
+          {orderSeries && !brandsLoading && <OrderSeriesChart data={orderSeries.orders} theme={theme} brands={brands} />}
         </ChartCard>
       </div>
 
       {/* Breakdown charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      <div className="mb-5 grid grid-cols-1 gap-[18px] lg:grid-cols-2">
         <ChartCard
           title="Orders by status"
           subtitle="Pipeline across the selected range."
@@ -471,14 +560,29 @@ const Dashboard: React.FC = () => {
         <ChartCard
           title="Top items"
           subtitle="Best sellers by quantity (completed orders)."
-          loading={summaryLoading}
-          isEmpty={!summaryLoading && (summary?.top_items.length ?? 0) === 0}
+          right={
+            <select
+              value={topItemsBrandId ?? ''}
+              onChange={(e) => setTopItemsBrandId(e.target.value ? Number(e.target.value) : null)}
+              aria-label="Top items brand"
+              className="rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-gray-700 dark:text-slate-200"
+            >
+              <option value="">
+                {brandId ? `${brands?.find((b) => b.id === brandId)?.name ?? 'Brand'} (dashboard filter)` : 'All brands'}
+              </option>
+              {(brands ?? []).map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+          }
+          loading={topItemsLoading}
+          isEmpty={!topItemsLoading && (topItems?.length ?? 0) === 0}
         >
-          {summary && <TopItemsChart data={summary.top_items} theme={theme} />}
+          {topItems && <TopItemsChart data={topItems} theme={theme} />}
         </ChartCard>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+      <div className="mb-5 grid grid-cols-1 gap-[18px] lg:grid-cols-3">
         <ChartCard
           title="Order type"
           subtitle="Delivery / pickup / dine-in."
@@ -506,20 +610,20 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Operational panels */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+      <div className="mb-5 grid grid-cols-1 gap-[18px] lg:grid-cols-3 xl:grid-cols-[1fr_1fr_1.3fr]">
         <ChartCard title="Delivery operations" subtitle="Live riders + delivery status." loading={summaryLoading}>
           {summary && <DeliveryStatusPanel delivery={summary.delivery} />}
         </ChartCard>
         <ChartCard title="Ratings & feedback" subtitle="Brand & rider stars, recent comments." loading={summaryLoading}>
           {summary && <RatingsPanel ratings={summary.ratings} />}
         </ChartCard>
-        <ChartCard title="Recent orders" subtitle="Latest 15 in range." loading={recentLoading}>
+        <ChartCard title="Recent orders" subtitle="Latest 5 in range." loading={recentLoading}>
           {recentOrders && <RecentOrdersPanel orders={recentOrders} />}
         </ChartCard>
       </div>
 
       {/* Inventory (secondary) */}
-      <div className="mb-6">
+      <div>
         <ChartCard title="Inventory alerts" subtitle="Low stock vs reorder point and recent wastage." loading={inventoryLoading}>
           {inventory && <InventoryAlertsPanel data={inventory} />}
         </ChartCard>

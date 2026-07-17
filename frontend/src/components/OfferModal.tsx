@@ -14,6 +14,8 @@ interface Props {
   icon: React.ReactNode;
   /** Max width in px (matches the mockups: ~960–1040). */
   width?: number;
+  /** Size to the content (capped at 92vh) instead of the fixed editor height. */
+  autoHeight?: boolean;
   /** Footer content (e.g. Active toggle + Cancel/Save). Omit for editor-style modals. */
   footer?: React.ReactNode;
   children: React.ReactNode;
@@ -24,7 +26,7 @@ interface Props {
  * gradient top bar, an icon header + close button, a flex body region the
  * caller fills (and scrolls), and an optional sticky footer.
  */
-const OfferModal: React.FC<Props> = ({ open, onClose, title, subtitle, icon, width = 980, footer, children }) => {
+const OfferModal: React.FC<Props> = ({ open, onClose, title, subtitle, icon, width = 980, autoHeight, footer, children }) => {
   useEffect(() => {
     if (!open) return;
     document.body.style.overflow = 'hidden';
@@ -51,7 +53,7 @@ const OfferModal: React.FC<Props> = ({ open, onClose, title, subtitle, icon, wid
           />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <motion.div
-              className="flex h-[88vh] max-h-[760px] w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-2xl"
+              className={`flex w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-2xl ${autoHeight ? 'max-h-[92vh]' : 'h-[88vh] max-h-[760px]'}`}
               style={{ maxWidth: width }}
               initial={{ opacity: 0, scale: 0.96, y: 18 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}

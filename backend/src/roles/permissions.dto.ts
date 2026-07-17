@@ -21,9 +21,11 @@ export const Permissions = {
     // Branch-level
     BRANCH_MENU_MANAGE: 'branch-menu:manage',
     BRANCH_USERS_ASSIGN: 'branch-users:assign',
-    // Kitchen (Kitchen Display = main KDS; Back Kitchen = brand-specific back kitchen)
-    KITCHEN_VIEW: 'kitchen:view',
-    KITCHEN_UPDATE: 'kitchen:update',
+    // Customer Display + FOH Packing + the kitchen order APIs share this pair
+    // (renamed from kitchen:view/update — there is no "Kitchen Display" module);
+    // Back Kitchen = the brand-specific cooks’ screen.
+    CUSTOMER_DISPLAY_VIEW: 'customer-display:view',
+    CUSTOMER_DISPLAY_UPDATE: 'customer-display:update',
     BACK_KITCHEN_VIEW: 'back-kitchen:view',
     // Show the branch selector on the kitchen/FOH screens (admins pick a
     // branch; regular staff are pinned to their assigned branch).
