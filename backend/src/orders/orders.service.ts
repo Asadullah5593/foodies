@@ -5612,7 +5612,7 @@ export class OrdersService {
         // Resolve a customer id from phone when only a phone is known.
         let cid = customerId;
         if (cid == null && customerPhone) {
-            const rows = await this.dataSource.query(
+            const rows: Array<{ id: number }> = await this.dataSource.query(
                 `SELECT id FROM customers WHERE tenant_id = $1 AND phone = $2 LIMIT 1`,
                 [tenantId, customerPhone],
             );
@@ -5632,7 +5632,7 @@ export class OrdersService {
             )
                 ok = true;
             if (!ok && cid != null) {
-                const v = await this.dataSource.query(
+                const v: unknown[] = await this.dataSource.query(
                     `SELECT 1 FROM vouchers WHERE offer_id = $1 AND customer_id = $2 AND status = 'active' LIMIT 1`,
                     [coupon.id, cid],
                 );
@@ -5645,14 +5645,14 @@ export class OrdersService {
             if (cid == null && !customerPhone) return false; // identity required
             const clause =
                 cid != null ? 'customer_id = $2' : 'customer_phone = $2';
-            const rows = await this.dataSource.query(
+            const rows: Array<{ n: number }> = await this.dataSource.query(
                 `SELECT count(*)::int AS n FROM coupon_realizations WHERE offer_id = $1 AND ${clause} AND reversed_at IS NULL`,
                 [coupon.id, cid ?? customerPhone],
             );
             if (Number(rows[0]?.n ?? 0) >= perLimit) return false;
         }
         if (globalLimit != null) {
-            const rows = await this.dataSource.query(
+            const rows: Array<{ n: number }> = await this.dataSource.query(
                 `SELECT count(*)::int AS n FROM coupon_realizations WHERE offer_id = $1 AND reversed_at IS NULL`,
                 [coupon.id],
             );
@@ -5701,7 +5701,7 @@ export class OrdersService {
                     customerId != null
                         ? 'customer_id = $2'
                         : 'customer_phone = $2';
-                const rows = await manager.query(
+                const rows: Array<{ n: number }> = await manager.query(
                     `SELECT count(*)::int AS n FROM coupon_realizations WHERE offer_id = $1 AND ${clause} AND reversed_at IS NULL`,
                     [offer.id, customerId ?? customerPhone],
                 );
@@ -5711,7 +5711,7 @@ export class OrdersService {
                     );
             }
             if (globalLimit != null) {
-                const rows = await manager.query(
+                const rows: Array<{ n: number }> = await manager.query(
                     `SELECT count(*)::int AS n FROM coupon_realizations WHERE offer_id = $1 AND reversed_at IS NULL`,
                     [offer.id],
                 );
@@ -5722,7 +5722,7 @@ export class OrdersService {
             }
             let voucherId: number | null = null;
             if (customerId != null) {
-                const v = await manager.query(
+                const v: Array<{ id: number }> = await manager.query(
                     `SELECT id FROM vouchers WHERE offer_id = $1 AND customer_id = $2 LIMIT 1`,
                     [offer.id, customerId],
                 );
@@ -5762,13 +5762,18 @@ export class OrdersService {
         reason: string,
     ): Promise<void> {
         await this.dataSource.transaction(async (manager) => {
-            const rows = await manager.query(
-                `UPDATE coupon_realizations
+            // An UPDATE hands back `[rows, rowCount]`, not the rows themselves,
+            // so the RETURNING rows have to be unwrapped — iterating the tuple
+            // reads `.voucher_id` off an array and a number, matches neither,
+            // and silently strands every voucher on 'exhausted'.
+            const [rows]: [Array<{ voucher_id: number | null }>, number] =
+                await manager.query(
+                    `UPDATE coupon_realizations
                  SET reversed_at = now(), reversal_reason = $2
                  WHERE order_id = $1 AND reversed_at IS NULL
                  RETURNING voucher_id`,
-                [orderId, reason],
-            );
+                    [orderId, reason],
+                );
             for (const r of rows) {
                 if (r.voucher_id != null) {
                     await manager.query(
