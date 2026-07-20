@@ -6,6 +6,7 @@ import { OfferSettings as Settings } from '../../types';
 import Loader from '../../components/Loader';
 import SegToggle from '../../components/SegToggle';
 import { offerInput } from '../../components/OfferModal';
+import { useHasPermission } from '../../hooks/useHasPermission';
 
 type ToggleDef = { key: keyof Settings; label: string; help: string };
 
@@ -35,6 +36,7 @@ const GROUPS: { title: string; icon: React.ReactNode; rules: ToggleDef[] }[] = [
 
 const OfferSettings: React.FC = () => {
   const queryClient = useQueryClient();
+  const canEdit = useHasPermission('offer-settings:edit');
   const { data, isLoading } = useQuery({ queryKey: ['offer-settings'], queryFn: adminService.getOfferSettings });
   const [form, setForm] = useState<Settings>({});
 
@@ -53,7 +55,7 @@ const OfferSettings: React.FC = () => {
 
   if (isLoading) return <Loader fullScreen text="Loading offer settings..." />;
 
-  const saveBtn = (
+  const saveBtn = !canEdit ? null : (
     <button
       onClick={() => save.mutate(form)}
       disabled={save.isPending}

@@ -25,6 +25,7 @@ import {
   removeDialog,
   removeLabel,
 } from '../../components/OfferBrandScope';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import apiClient from '../../utils/apiClient';
 
 const emptyForm = {
@@ -52,6 +53,9 @@ type Cust = { id: number; name?: string | null; phone?: string | null };
 
 const Coupons: React.FC = () => {
   const queryClient = useQueryClient();
+  const canCreatePerm = useHasPermission('coupons:create');
+  const canEditPerm = useHasPermission('coupons:edit');
+  const canDeletePerm = useHasPermission('coupons:delete');
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Discount | null>(null);
@@ -163,7 +167,7 @@ const Coupons: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-800">Coupons</h1>
           <p className="text-sm text-gray-500">A coupon is the offer &amp; its code. Its <span className="font-medium">vouchers</span> (the customer's physical form, with a QR) are generated automatically from the audience — view them on the Vouchers screen.</p>
         </div>
-        <Button onClick={() => { setEditing(null); setForm({ ...emptyForm }); setShowForm(true); }}>Add Coupon</Button>
+        {canCreatePerm && <Button onClick={() => { setEditing(null); setForm({ ...emptyForm }); setShowForm(true); }}>Add Coupon</Button>}
       </div>
 
       {/* Create / edit */}
@@ -459,14 +463,14 @@ const Coupons: React.FC = () => {
                       <>
                         {/* Vouchers carry customer identity and Report aggregates every
                             brand's redemptions, so both follow Edit's gate. */}
-                        {canEdit(c.manage_scope) && (
+                        {canEditPerm && canEdit(c.manage_scope) && (
                           <>
                             <Button size="small" variant="outline" onClick={() => setVouchersFor(c)}>Vouchers</Button>
                             <Button size="small" variant="outline" onClick={() => setReportFor(c)}>Report</Button>
                             <Button size="small" variant="edit" onClick={() => handleEdit(c)}>Edit</Button>
                           </>
                         )}
-                        <Button
+                        {canDeletePerm && <Button
                           size="small"
                           variant="danger"
                           onClick={async () => {
@@ -474,7 +478,7 @@ const Coupons: React.FC = () => {
                           }}
                         >
                           {removeLabel(c.manage_scope)}
-                        </Button>
+                        </Button>}
                       </>
                     )
                   }

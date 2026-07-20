@@ -19,6 +19,9 @@ import type {
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 type User = {
     id: number;
@@ -29,7 +32,7 @@ type User = {
 @ApiTags('Admin – Invoice Templates')
 @ApiBearerAuth()
 @Controller('admin/invoice-templates')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class InvoiceTemplatesController {
     constructor(private service: InvoiceTemplatesService) {}
 
@@ -69,6 +72,7 @@ export class InvoiceTemplatesController {
     }
 
     @Post()
+    @RequirePermission(Permissions.INVOICE_TEMPLATES_CREATE)
     store(@CurrentUser() user: User, @Body() dto: InvoiceTemplateDto) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
@@ -76,6 +80,7 @@ export class InvoiceTemplatesController {
     }
 
     @Put(':id')
+    @RequirePermission(Permissions.INVOICE_TEMPLATES_EDIT)
     update(
         @Param('id') id: string,
         @CurrentUser() user: User,
@@ -92,6 +97,7 @@ export class InvoiceTemplatesController {
     }
 
     @Put(':id/activate')
+    @RequirePermission(Permissions.INVOICE_TEMPLATES_SET_DEFAULT)
     activate(
         @Param('id') id: string,
         @CurrentUser() user: User,
@@ -108,6 +114,7 @@ export class InvoiceTemplatesController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.INVOICE_TEMPLATES_DELETE)
     destroy(@Param('id') id: string, @CurrentUser() user: User) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');

@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
 import { useAuth } from '../../contexts/AuthContext';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import { User, Tenant, Brand } from '../../types';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
@@ -39,6 +40,9 @@ const Users: React.FC = () => {
   // asked which brand the new user belongs to.
   const isBrandLocked = Array.isArray(user?.allowed_brand_ids);
   const needsBrandChoice = !isSuperAdmin && !isBrandLocked;
+  const canCreate = useHasPermission('users:create');
+  const canEdit = useHasPermission('users:edit');
+  const canDelete = useHasPermission('users:delete');
   const queryClient = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -207,7 +211,7 @@ const Users: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Users</h1>
-        <Button variant="primary" onClick={() => setShowCreate(true)}>Add User</Button>
+        {canCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>Add User</Button>}
       </div>
 
       <Card className="mb-6 p-4 dark:bg-slate-800 dark:border-slate-700">
@@ -469,8 +473,8 @@ const Users: React.FC = () => {
                       <span className="text-xs text-gray-400 dark:text-slate-500">Your account</span>
                     ) : (
                       <>
-                        <Button size="small" variant="edit" onClick={() => openEdit(u)}>Edit</Button>
-                        <Button
+                        {canEdit && <Button size="small" variant="edit" onClick={() => openEdit(u)}>Edit</Button>}
+                        {canDelete && <Button
                           size="small"
                           variant="danger"
                           onClick={() => {
@@ -487,7 +491,7 @@ const Users: React.FC = () => {
                           isLoading={deleteMutation.isPending}
                         >
                           Delete
-                        </Button>
+                        </Button>}
                       </>
                     )
                   }

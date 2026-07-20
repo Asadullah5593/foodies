@@ -17,6 +17,7 @@ import {
   removeDialog,
   removeLabel,
 } from '../../components/OfferBrandScope';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import apiClient from '../../utils/apiClient';
 import { confirmDialog } from '../../utils/sweetAlert';
 import ValidityFields, { emptyValidity } from '../../components/ValidityFields';
@@ -82,6 +83,9 @@ const discountText = (c: Card): string => {
 /** Manage the tenant's bank cards used by card-linked discounts (e.g. "HBL Premium Debit"). */
 const BankCards: React.FC = () => {
   const queryClient = useQueryClient();
+  const canCreatePerm = useHasPermission('bank-cards:create');
+  const canEditPerm = useHasPermission('bank-cards:edit');
+  const canDeletePerm = useHasPermission('bank-cards:delete');
   const [form, setForm] = useState(emptyForm);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -215,13 +219,13 @@ const BankCards: React.FC = () => {
             <span className="font-semibold text-gray-700">Reports → Discounts</span>.
           </p>
         </div>
-        <button
+        {canCreatePerm && <button
           type="button"
           onClick={openAdd}
           className="inline-flex flex-none items-center gap-2 rounded-[11px] bg-red-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-red-600/25 transition-colors hover:bg-red-700 active:scale-[0.98]"
         >
           <span className="text-lg leading-none">+</span>Add a card
-        </button>
+        </button>}
       </div>
 
       {/* BIN lookup: with hundreds of cards, answer "does THIS card have a
@@ -252,12 +256,12 @@ const BankCards: React.FC = () => {
                 <div className="flex items-center gap-2.5">
                   <span className="text-[12px] font-extrabold uppercase tracking-[0.1em] text-white/80">{c.network || ''}</span>
                   <div className="flex gap-1.5">
-                    {canEdit(c.manage_scope) && (
+                    {canEditPerm && canEdit(c.manage_scope) && (
                       <button type="button" onClick={() => startEdit(c)} title="Edit" className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-white/[0.14] text-white transition-colors hover:bg-white/25">
                         <MdEdit size={15} />
                       </button>
                     )}
-                    {c.manage_scope !== 'read_only' && (
+                    {canDeletePerm && c.manage_scope !== 'read_only' && (
                       <button type="button" onClick={async () => { if (await confirmDialog(removeDialog(c.manage_scope, 'card', c.name))) deleteMutation.mutate(c.id); }} title={removeLabel(c.manage_scope)} className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-white/[0.14] text-red-200 transition-colors hover:bg-red-500/60">
                         <MdDelete size={15} />
                       </button>
@@ -302,14 +306,14 @@ const BankCards: React.FC = () => {
           ))}
 
           {/* Add-another tile */}
-          <button
+          {canCreatePerm && <button
             type="button"
             onClick={openAdd}
             className="flex min-h-[186px] flex-col items-center justify-center gap-2.5 rounded-2xl border-[1.5px] border-dashed border-gray-300 bg-gray-50 text-gray-400 transition-colors hover:border-red-500 hover:text-red-600"
           >
             <span className="flex h-[38px] w-[38px] items-center justify-center rounded-full border-[1.5px] border-current bg-white text-[22px] font-light leading-none">+</span>
             <span className="text-[13.5px] font-semibold">Add another card</span>
-          </button>
+          </button>}
         </div>
       )}
 

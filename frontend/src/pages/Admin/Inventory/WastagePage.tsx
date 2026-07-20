@@ -7,6 +7,7 @@ import Loader from '../../../components/Loader';
 import SearchableSelect from '../../../components/SearchableSelect';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
+import { useHasPermission } from '../../../hooks/useHasPermission';
 
 const card = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl';
 const field = 'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400';
@@ -17,6 +18,7 @@ const prettyReason = (r: string) => { const m = REASONS.find((x) => x.value === 
 
 const WastagePage: React.FC = () => {
   const qc = useQueryClient();
+  const canRecord = useHasPermission('inventory:waste');
   const [branchId, setBranchId] = useState<number | null>(null);
   const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 6); return toDateInput(d); });
   const [to, setTo] = useState(() => toDateInput(new Date()));
@@ -78,7 +80,7 @@ const WastagePage: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-red-500 pointer-events-none" /><select value={activeBranchId ?? ''} onChange={(e) => setBranchId(Number(e.target.value))} className="appearance-none pl-7 pr-9 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-slate-900 dark:text-slate-100 min-w-[200px]">{branches.map((b: any) => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}</select></div>
-          <button onClick={() => { setF({ item: '', qty: '', uom: '', reason: 'spoilage', notes: '' }); setOpen(true); }} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm"><LuPlus className="w-4 h-4" /> Record wastage</button>
+          {canRecord && <button onClick={() => { setF({ item: '', qty: '', uom: '', reason: 'spoilage', notes: '' }); setOpen(true); }} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm"><LuPlus className="w-4 h-4" /> Record wastage</button>}
         </div>
       </div>
 

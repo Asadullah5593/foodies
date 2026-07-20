@@ -44,6 +44,8 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         permissionNames: [
             Permissions.MENU_MANAGE,
             Permissions.BRANCH_MENU_MANAGE,
+            Permissions.MENU_VIEW,
+            Permissions.CATEGORIES_VIEW,
         ],
     },
     {
@@ -51,6 +53,7 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         permissionNames: [
             Permissions.MENU_MANAGE,
             Permissions.BRANCH_MENU_MANAGE,
+            Permissions.MENU_VIEW,
         ],
     },
     {
@@ -67,6 +70,8 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         permissionNames: [
             Permissions.MENU_MANAGE,
             Permissions.BRANCH_MENU_MANAGE,
+            Permissions.MENU_VIEW,
+            Permissions.VARIANTS_VIEW,
         ],
     },
     {
@@ -74,6 +79,8 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         permissionNames: [
             Permissions.MENU_MANAGE,
             Permissions.BRANCH_MENU_MANAGE,
+            Permissions.MENU_VIEW,
+            Permissions.ADDONS_VIEW,
         ],
     },
     {

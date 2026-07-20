@@ -9,15 +9,19 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { RiderHrmService } from './rider-hrm.service';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – Rider HRM – Attendance')
 @ApiBearerAuth()
 @Controller('admin/rider-hrm')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class RiderAttendanceAdminController {
     constructor(private readonly riderHrmService: RiderHrmService) {}
 
     @Post('attendance/check-in')
+    @RequirePermission(Permissions.RIDER_ATTENDANCE_MANAGE)
     checkIn(
         @Body()
         body: {
@@ -44,6 +48,7 @@ export class RiderAttendanceAdminController {
     }
 
     @Post('attendance/check-out')
+    @RequirePermission(Permissions.RIDER_ATTENDANCE_MANAGE)
     checkOut(@Body() body: { rider_user_id: number; notes?: string }) {
         if (
             body?.rider_user_id == null ||

@@ -14,6 +14,9 @@ import { CampaignsService } from './campaigns.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 type User = {
     id: number;
@@ -24,7 +27,7 @@ type User = {
 @ApiTags('Admin – Campaigns')
 @ApiBearerAuth()
 @Controller('admin/campaigns')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class CampaignsController {
     constructor(private service: CampaignsService) {}
 
@@ -40,6 +43,7 @@ export class CampaignsController {
     }
 
     @Post()
+    @RequirePermission(Permissions.CAMPAIGNS_CREATE)
     store(@CurrentUser() user: User, @Body() dto: Record<string, unknown>) {
         return this.service.create(
             this.tid(user),
@@ -49,6 +53,7 @@ export class CampaignsController {
     }
 
     @Put(':id')
+    @RequirePermission(Permissions.CAMPAIGNS_EDIT)
     update(
         @Param('id') id: string,
         @CurrentUser() user: User,
@@ -63,6 +68,7 @@ export class CampaignsController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.CAMPAIGNS_DELETE)
     destroy(@Param('id') id: string, @CurrentUser() user: User) {
         return this.service.remove(+id, this.tid(user), user.allowedBrandIds);
     }
@@ -83,6 +89,7 @@ export class CampaignsController {
     }
 
     @Post(':id/items')
+    @RequirePermission(Permissions.CAMPAIGNS_EDIT)
     addItem(
         @Param('id') id: string,
         @CurrentUser() user: User,
@@ -97,6 +104,7 @@ export class CampaignsController {
     }
 
     @Put(':id/items/:itemId')
+    @RequirePermission(Permissions.CAMPAIGNS_EDIT)
     editItem(
         @Param('id') id: string,
         @Param('itemId') itemId: string,
@@ -113,6 +121,7 @@ export class CampaignsController {
     }
 
     @Delete(':id/items/:itemId')
+    @RequirePermission(Permissions.CAMPAIGNS_EDIT)
     deleteItem(
         @Param('id') id: string,
         @Param('itemId') itemId: string,

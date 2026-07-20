@@ -14,11 +14,14 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RolesService } from './roles.service';
+import { RequirePermission } from './require-permission.decorator';
+import { RequirePermissionGuard } from './require-permission.guard';
+import { Permissions } from './permissions.dto';
 
 @ApiTags('Admin – Roles & Permissions')
 @ApiBearerAuth()
 @Controller('admin/roles')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class RolesController {
     constructor(private rolesService: RolesService) {}
 
@@ -99,6 +102,7 @@ export class RolesController {
     }
 
     @Post()
+    @RequirePermission(Permissions.ROLES_CREATE)
     @ApiOperation({ summary: 'Create a new role (tenant users only)' })
     createRole(
         @CurrentUser() user: { id: number; tenantId: number | null },
@@ -110,6 +114,7 @@ export class RolesController {
     }
 
     @Put(':id')
+    @RequirePermission(Permissions.ROLES_EDIT)
     @ApiOperation({
         summary:
             'Update role and/or assign permissions (Super Admin role is read-only)',
@@ -126,6 +131,7 @@ export class RolesController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.ROLES_DELETE)
     @ApiOperation({
         summary: 'Delete a role (Super Admin role cannot be deleted)',
     })

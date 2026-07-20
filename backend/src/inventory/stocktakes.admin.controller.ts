@@ -3,12 +3,15 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { InventoryService } from './inventory.service';
 
 @ApiTags('Admin – Inventory – Stocktakes & Alerts')
 @ApiBearerAuth()
 @Controller('admin/inventory/branches/:branchId')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class StocktakesAdminController {
     constructor(private inventoryService: InventoryService) {}
 
@@ -55,6 +58,7 @@ export class StocktakesAdminController {
     }
 
     @Post('stocktakes')
+    @RequirePermission(Permissions.INVENTORY_STOCKTAKE)
     async createStocktake(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -77,6 +81,7 @@ export class StocktakesAdminController {
     }
 
     @Post('stocktakes/:stocktakeId/lines')
+    @RequirePermission(Permissions.INVENTORY_STOCKTAKE)
     async upsertLine(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -108,6 +113,7 @@ export class StocktakesAdminController {
     }
 
     @Post('stocktakes/:stocktakeId/submit')
+    @RequirePermission(Permissions.INVENTORY_STOCKTAKE)
     async submit(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -127,6 +133,7 @@ export class StocktakesAdminController {
     }
 
     @Post('stocktakes/:stocktakeId/close')
+    @RequirePermission(Permissions.INVENTORY_STOCKTAKE)
     async close(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -146,6 +153,7 @@ export class StocktakesAdminController {
     }
 
     @Post('weekly-usage')
+    @RequirePermission(Permissions.INVENTORY_STOCKTAKE)
     async weeklyUsage(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },

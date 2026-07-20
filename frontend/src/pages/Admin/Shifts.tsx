@@ -8,6 +8,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Loader from '../../components/Loader';
 import { printContent } from '../../utils/print';
 import Button from '../../components/Button';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import SearchableSelect from '../../components/SearchableSelect';
 import Modal from '../../components/Modal';
 
@@ -220,7 +221,10 @@ const Shifts: React.FC = () => {
 
   // Shifts are opened by brand staff only; owner / GM (no brand lock) can
   // view and close shifts but never open them.
-  const canOpenShift = user?.allowed_brand_ids != null;
+  // Opening a shift needs both the brand-lock (only brand staff open) and the permission.
+  const hasShiftsOpen = useHasPermission('shifts:open');
+  const canOpenShift = user?.allowed_brand_ids != null && hasShiftsOpen;
+  const canCloseShift = useHasPermission('shifts:close');
 
   // When there is only one branch/brand to choose from, pre-select it and show
   // it read-only — no point making the user pick the only option.
@@ -693,7 +697,7 @@ const Shifts: React.FC = () => {
                   >
                     View
                   </button>
-                  {open && (
+                  {open && canCloseShift && (
                     <button
                       type="button"
                       onClick={() => startClose(s)}

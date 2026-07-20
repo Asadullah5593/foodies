@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
 import Button from '../../../components/Button';
+import { useHasPermission } from '../../../hooks/useHasPermission';
 import { adminService } from '../../../services/api/adminService';
 import { RiderPayrollRun } from '../../../types';
 import { formatCurrency } from '../../../utils/currency';
@@ -11,6 +12,8 @@ import { inputClass, labelClass, useBranches } from './shared';
 
 const RiderPayroll: React.FC = () => {
   const queryClient = useQueryClient();
+  const canRun = useHasPermission('rider-payroll:run');
+  const canReverse = useHasPermission('rider-payroll:reverse');
 
   const [payrollForm, setPayrollForm] = useState({
     from: '',
@@ -121,14 +124,14 @@ const RiderPayroll: React.FC = () => {
           </div>
         </div>
         <div className="mt-4 flex justify-end">
-          <Button
+          {canRun && <Button
             variant="primary"
             isLoading={runPayrollMutation.isPending}
             disabled={!payrollForm.from || !payrollForm.to}
             onClick={() => runPayrollMutation.mutate()}
           >
             Run payroll
-          </Button>
+          </Button>}
         </div>
         <div className="mt-6 border-t border-gray-200 dark:border-slate-700 pt-4 space-y-3">
           {(payrollRuns ?? []).length === 0 ? (
@@ -154,7 +157,7 @@ const RiderPayroll: React.FC = () => {
                     <span className={`text-xs font-medium ${run.status === 'finalized' ? 'text-emerald-600 dark:text-emerald-400' : run.status === 'reversed' ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-slate-400'}`}>
                       {run.status}
                     </span>
-                    {run.status === 'finalized' && (
+                    {run.status === 'finalized' && canReverse && (
                       <Button
                         size="small"
                         variant="outline"

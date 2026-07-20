@@ -198,7 +198,12 @@ const KDS: React.FC = () => {
       // This terminal's cutter-feed override (if set) wins over the template default.
       const deviceFeed = getDeviceBottomFeedMm();
       const baseCfg = printData.template?.config ?? null;
-      const cfg = deviceFeed != null ? { ...(baseCfg ?? {}), bottomFeedMm: deviceFeed } : baseCfg;
+      // Kitchen tickets never carry the FBR fiscal block — customer-receipt chrome only.
+      const cfg = {
+        ...(baseCfg ?? {}),
+        ...(deviceFeed != null ? { bottomFeedMm: deviceFeed } : {}),
+        showFbrInvoice: false,
+      };
       const { html, css } = renderInvoiceHtml(printData, layout, cfg);
       printContent(html, `KOT ${(data.order_number as string) ?? String(orderId)}`, css);
     } catch (e) {

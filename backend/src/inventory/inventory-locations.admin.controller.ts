@@ -3,12 +3,15 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { InventoryService } from './inventory.service';
 
 @ApiTags('Admin – Inventory – Locations')
 @ApiBearerAuth()
 @Controller('admin/inventory/branches/:branchId/locations')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class InventoryLocationsAdminController {
     constructor(private inventoryService: InventoryService) {}
 
@@ -26,6 +29,7 @@ export class InventoryLocationsAdminController {
     }
 
     @Post()
+    @RequirePermission(Permissions.INVENTORY_ADJUST)
     async create(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },

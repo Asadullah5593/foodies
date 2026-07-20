@@ -273,6 +273,15 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
   );
   const canApprovePR = hasPoManagePermission && hasPrApprovePermission;
   const canAccessPOModule = hasPoManagePermission;
+  const hasPrCreatePermission = Boolean(
+    user?.is_super_admin || user?.permissions?.includes('procurement:pr:create'),
+  );
+  const hasGrnPostPermission = Boolean(
+    user?.is_super_admin || user?.permissions?.includes('procurement:grn:post'),
+  );
+  const hasGrnReversePermission = Boolean(
+    user?.is_super_admin || user?.permissions?.includes('procurement:grn:reverse'),
+  );
 
   useEffect(() => {
     if (!canAccessPOModule && tab === 'pos') {
@@ -1316,7 +1325,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               title="Purchase Requisitions"
               desc="Request stock from a vendor. Once approved, a requisition becomes a purchase order."
               action={
-                <button
+                hasPrCreatePermission && <button
                   onClick={openCreatePRModal}
                   className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm"
                 >
@@ -1509,7 +1518,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               title="Goods Receipt Notes"
               desc="Record what physically arrives against a PO. Posting a GRN adds the received stock to inventory."
               action={
-                <button
+                hasGrnPostPermission && <button
                   onClick={() => {
                     setGrnForm({ grn_id: '', grn_number: '', purchase_order_id: '', notes: '', lines: [] });
                     setIsCreateGRNOpen(true);
@@ -1593,13 +1602,13 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                         <div><StatusPill meta={meta} /></div>
                         <div className="flex gap-1.5 justify-end flex-wrap">
                           <button onClick={() => setSelectedGRN(g)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">View</button>
-                          {isDraft && (
+                          {isDraft && hasGrnPostPermission && (
                             <>
                               <button onClick={() => openEditGRNModal(g)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Edit</button>
                               <button onClick={() => setConfirmPostGrnId(Number(g.id))} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[12px] font-bold">Post</button>
                             </>
                           )}
-                          {isPosted && (
+                          {isPosted && hasGrnReversePermission && (
                             <button onClick={() => setConfirmReverseGrnId(Number(g.id))} className="px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-[12px] font-bold">Reverse</button>
                           )}
                         </div>

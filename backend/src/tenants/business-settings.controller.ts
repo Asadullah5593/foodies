@@ -11,11 +11,14 @@ import { TenantsService } from './tenants.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – Business Settings')
 @ApiBearerAuth()
 @Controller('admin/business-settings')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class BusinessSettingsController {
     constructor(private service: TenantsService) {}
 
@@ -32,6 +35,7 @@ export class BusinessSettingsController {
 
     /** Tenant users update their own business details. Currency (PKR) and timezone are fixed and not exposed. */
     @Put()
+    @RequirePermission(Permissions.BUSINESS_SETTINGS_EDIT)
     update(
         @CurrentUser() user: { id: number; tenantId: number | null },
         @Body()

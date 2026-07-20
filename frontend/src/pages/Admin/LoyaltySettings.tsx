@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { adminService } from '../../services/api';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import Card from '../../components/Card';
 import SearchableSelect from '../../components/SearchableSelect';
 
@@ -26,6 +27,7 @@ type LoyaltySettingsData = {
 
 const LoyaltySettings: React.FC = () => {
   const { user } = useAuth();
+  const canEdit = useHasPermission('loyalty:edit');
   const queryClient = useQueryClient();
   const tenantId = user?.tenant_id ?? null;
 
@@ -239,7 +241,7 @@ const LoyaltySettings: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <Button
+              {canEdit && <Button
                 variant="primary"
                 onClick={() => updateMutation.mutate(form)}
                 disabled={updateMutation.isPending}
@@ -247,7 +249,7 @@ const LoyaltySettings: React.FC = () => {
                 className="ml-auto"
               >
                 Update settings
-              </Button>
+              </Button>}
             </div>
           </section>
         </div>

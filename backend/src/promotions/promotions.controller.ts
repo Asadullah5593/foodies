@@ -14,11 +14,14 @@ import { PromotionsService } from './promotions.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – Promotions')
 @ApiBearerAuth()
 @Controller('admin/promotions')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class PromotionsController {
     constructor(private service: PromotionsService) {}
 
@@ -30,6 +33,7 @@ export class PromotionsController {
     }
 
     @Post()
+    @RequirePermission(Permissions.PROMOTIONS_CREATE)
     store(
         @CurrentUser() user: { tenantId: number | null },
         @Body()
@@ -54,6 +58,7 @@ export class PromotionsController {
     }
 
     @Put(':id')
+    @RequirePermission(Permissions.PROMOTIONS_EDIT)
     update(
         @Param('id') id: string,
         @CurrentUser() user: { tenantId: number | null },
@@ -74,6 +79,7 @@ export class PromotionsController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.PROMOTIONS_DELETE)
     destroy(
         @Param('id') id: string,
         @CurrentUser() user: { tenantId: number | null },
@@ -94,6 +100,7 @@ export class PromotionsController {
     }
 
     @Post(':id/assign')
+    @RequirePermission(Permissions.PROMOTIONS_EDIT)
     assign(
         @Param('id') id: string,
         @CurrentUser() user: { tenantId: number | null },

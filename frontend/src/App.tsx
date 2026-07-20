@@ -68,6 +68,7 @@ import Coupons from './pages/Admin/Coupons';
 import Campaigns from './pages/Admin/Campaigns';
 import OfferSettings from './pages/Admin/OfferSettings';
 import Roles from './pages/Admin/Roles';
+import RoleForm from './pages/Admin/RoleForm';
 import Shifts from './pages/Admin/Shifts';
 import Reports from './pages/Admin/Reports';
 import Orders from './pages/Admin/Orders';
@@ -1049,6 +1050,22 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><Roles /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/roles/new"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><RoleForm /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/roles/:id/edit"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><RoleForm /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />

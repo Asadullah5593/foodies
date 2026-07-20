@@ -14,11 +14,14 @@ import { BannersService } from './banners.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – CMS Banners')
 @ApiBearerAuth()
 @Controller('admin/banners')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class BannersController {
     constructor(private service: BannersService) {}
 
@@ -30,6 +33,7 @@ export class BannersController {
     }
 
     @Post()
+    @RequirePermission(Permissions.BANNERS_CREATE)
     store(
         @CurrentUser() user: { tenantId: number | null },
         @Body()
@@ -50,6 +54,7 @@ export class BannersController {
     }
 
     @Put(':id')
+    @RequirePermission(Permissions.BANNERS_EDIT)
     update(
         @Param('id') id: string,
         @CurrentUser() user: { tenantId: number | null },
@@ -71,6 +76,7 @@ export class BannersController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.BANNERS_DELETE)
     destroy(
         @Param('id') id: string,
         @CurrentUser() user: { tenantId: number | null },

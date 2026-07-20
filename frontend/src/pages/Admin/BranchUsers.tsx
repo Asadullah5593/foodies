@@ -6,6 +6,7 @@ import { adminService } from '../../services/api/adminService';
 import { Branch, Brand, User } from '../../types';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
@@ -23,6 +24,8 @@ interface RoleOption {
 
 const BranchUsers: React.FC = () => {
   const queryClient = useQueryClient();
+  const canAssign = useHasPermission('branch-users:assign');
+  const canRemove = useHasPermission('branch-users:remove');
   const [showForm, setShowForm] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null);
   const [assignBranchId, setAssignBranchId] = useState<number | null>(null);
@@ -357,10 +360,10 @@ const BranchUsers: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Branch Users</h1>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => { setMbUserId(''); setMbBranchIds([]); setMbRoleId(String(defaultRoleId)); setMbBrandId('0'); setShowMultiBranchForm(true); }}>
+          {canAssign && <Button variant="outline" onClick={() => { setMbUserId(''); setMbBranchIds([]); setMbRoleId(String(defaultRoleId)); setMbBrandId('0'); setShowMultiBranchForm(true); }}>
             Assign to Branches
-          </Button>
-          <Button variant="primary" onClick={openAssignModal}>Assign Users</Button>
+          </Button>}
+          {canAssign && <Button variant="primary" onClick={openAssignModal}>Assign Users</Button>}
         </div>
       </div>
 
@@ -727,6 +730,7 @@ const BranchUsers: React.FC = () => {
                 }
                 animationIndex={i}
                 actions={
+                  canRemove ? (
                   <Button
                     size="small"
                     variant="danger"
@@ -747,6 +751,7 @@ const BranchUsers: React.FC = () => {
                   >
                     Remove
                   </Button>
+                  ) : undefined
                 }
               />
             ))}

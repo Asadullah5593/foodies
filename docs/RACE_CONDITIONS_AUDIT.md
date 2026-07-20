@@ -145,7 +145,7 @@ Almost every finding below is an instance of one of these. Fixing the *pattern* 
 
 | # | Area | Severity | Status |
 |---|---|---|---|
-| A1 | Order number/id `COUNT+1` collision → 500 | High | ⚠️ |
+| A1 | Order number/id collision (now random `FDS` ref + `MAX+1` day number, retry converges) | High | ✅ |
 | A2 | `createOrder` not transactional → partial multi-brand groups | High | ✅ |
 | A3 | `createOrder` no idempotency key → duplicate orders on retry/double-tap | High | ✅ |
 | A4 | 86'd item never re-checked at order time → sold-out items ordered | High | 🔶 |
@@ -223,13 +223,17 @@ Almost every finding below is an instance of one of these. Fixing the *pattern* 
 
 ## A. Order placement & pricing
 
-### A1 — Order number/`order_id` sequence collision `COUNT+1` ⚠️ High
-`generateOrderIdentifiers` builds the daily per-(branch,brand) sequence with `getCount()+1`, no lock,
-not in a transaction. Two concurrent placements read the same count → same `005`. `UQ_orders_order_id`
-/ `UQ_orders_branch_brand_day_number` block the duplicate *persisting*, but there is **no retry**, so the
-loser's whole `createOrder` throws a **500** (order lost). Window widens at the local/UTC midnight
-boundary (count is over the UTC-date prefix; unique index keys on `date(placed_at)` in server-local tz).
-`orders.service.ts:5007-5029`, save at `:1640`.
+### A1 — Order number/`order_id` sequence collision ✅ High
+*(Resolved 2026-07.)* `order_id` is now a crypto-random `FDS-XXXXXXXX` reference — no counter, so no
+sequence to collide (a random clash is ~1 in 2.8 trillion and the retry redraws). The daily call-out
+`order_number` is now `MAX(order_number)+1` over `(branch, brand, date(placed_at))`: a max always
+lands on a free number, so stray or legacy rows can no longer wedge the counter the way a `COUNT+1`
+could. The timestamp the counter buckets on is the same value written to `placed_at` (threaded from
+`generateOrderIdentifiers` to the save), so the counter's day and `UQ_orders_branch_brand_day_number`'s
+day cannot disagree across midnight. Residual race: two *concurrent* placements draw the same max —
+still no lock/transaction — but the unique index blocks the loser and the save-site retry re-reads the
+max after the winner's commit, so it converges (bounded at 5 attempts). The retry now only fires for
+the two identifier constraints; other unique violations surface immediately.
 
 ### A2 — `createOrder` performs multi-row/multi-order writes with no wrapping transaction ✅ High
 Each `orderRepo.save` / `orderItemRepo.save` autocommits independently. A mixed-brand consumer cart

@@ -74,12 +74,191 @@ export const Permissions = {
     RECIPES_MANAGE: 'recipes:manage',
     COSTING_VIEW: 'costing:view',
 
-    // CMS – Banners & Promotions
+    // Campaigns, CMS – Banners & Promotions
+    CAMPAIGNS_MANAGE: 'campaigns:manage',
     CMS_MANAGE: 'cms:manage',
     PROMOTIONS_MANAGE: 'promotions:manage',
 
     // Notifications (configure which roles receive which alerts)
     NOTIFICATIONS_MANAGE: 'notifications:manage',
+
+    /* ─────────────────────────────────────────────────────────────────
+     * Granular per-action permissions (view/create/edit/delete + specials).
+     * Each is IMPLIED by its module's legacy umbrella (see
+     * permission-implications.ts) so existing roles keep full access;
+     * assign them individually for finer-grained roles.
+     * ───────────────────────────────────────────────────────────────── */
+
+    // — Menu content (umbrella: menu:manage) —
+    MENU_VIEW: 'menu:view',
+    MENU_CREATE: 'menu:create',
+    MENU_EDIT: 'menu:edit',
+    MENU_DELETE: 'menu:delete',
+    CATEGORIES_VIEW: 'categories:view',
+    CATEGORIES_CREATE: 'categories:create',
+    CATEGORIES_EDIT: 'categories:edit',
+    CATEGORIES_DELETE: 'categories:delete',
+    VARIANTS_VIEW: 'variants:view',
+    VARIANTS_CREATE: 'variants:create',
+    VARIANTS_EDIT: 'variants:edit',
+    VARIANTS_DELETE: 'variants:delete',
+    ADDONS_VIEW: 'addons:view',
+    ADDONS_CREATE: 'addons:create',
+    ADDONS_EDIT: 'addons:edit',
+    ADDONS_DELETE: 'addons:delete',
+    MODIFIERS_VIEW: 'modifiers:view',
+    MODIFIERS_CREATE: 'modifiers:create',
+    MODIFIERS_EDIT: 'modifiers:edit',
+    MODIFIERS_DELETE: 'modifiers:delete',
+
+    // — Brands & branches (umbrella: branches:manage) —
+    BRANDS_VIEW: 'brands:view',
+    BRANDS_CREATE: 'brands:create',
+    BRANDS_EDIT: 'brands:edit',
+    BRANDS_DELETE: 'brands:delete',
+    BRANDS_TOGGLE_OPEN: 'brands:toggle-open',
+    BRANCHES_VIEW: 'branches:view',
+    BRANCHES_CREATE: 'branches:create',
+    BRANCHES_EDIT: 'branches:edit',
+    BRANCHES_DELETE: 'branches:delete',
+
+    // — Branch menu overrides (umbrella: branch-menu:manage) —
+    BRANCH_MENU_VIEW: 'branch-menu:view',
+    BRANCH_MENU_EDIT: 'branch-menu:edit',
+    BRANCH_MENU_LINK: 'branch-menu:link',
+
+    // — Branch users (umbrella: branch-users:assign) —
+    BRANCH_USERS_VIEW: 'branch-users:view',
+    BRANCH_USERS_REMOVE: 'branch-users:remove',
+
+    // — Users (umbrella: users:manage) —
+    USERS_VIEW: 'users:view',
+    USERS_CREATE: 'users:create',
+    USERS_EDIT: 'users:edit',
+    USERS_DELETE: 'users:delete',
+
+    // — Roles (umbrella: roles:manage) —
+    ROLES_VIEW: 'roles:view',
+    ROLES_CREATE: 'roles:create',
+    ROLES_EDIT: 'roles:edit',
+    ROLES_DELETE: 'roles:delete',
+
+    // — Shifts (umbrella: shifts:manage) —
+    SHIFTS_VIEW: 'shifts:view',
+    SHIFTS_OPEN: 'shifts:open',
+    SHIFTS_CLOSE: 'shifts:close',
+
+    // — Business settings (umbrella: business-settings:access) —
+    BUSINESS_SETTINGS_EDIT: 'business-settings:edit',
+
+    // — Invoice templates (umbrella: business-settings:access) —
+    INVOICE_TEMPLATES_VIEW: 'invoice-templates:view',
+    INVOICE_TEMPLATES_CREATE: 'invoice-templates:create',
+    INVOICE_TEMPLATES_EDIT: 'invoice-templates:edit',
+    INVOICE_TEMPLATES_DELETE: 'invoice-templates:delete',
+    INVOICE_TEMPLATES_SET_DEFAULT: 'invoice-templates:set-default',
+
+    // — Discounts (umbrella: discounts:manage) —
+    DISCOUNTS_VIEW: 'discounts:view',
+    DISCOUNTS_CREATE: 'discounts:create',
+    DISCOUNTS_EDIT: 'discounts:edit',
+    DISCOUNTS_DELETE: 'discounts:delete',
+
+    // — Product promotions (umbrella: discounts:manage) —
+    PRODUCT_PROMOTIONS_VIEW: 'product-promotions:view',
+    PRODUCT_PROMOTIONS_CREATE: 'product-promotions:create',
+    PRODUCT_PROMOTIONS_EDIT: 'product-promotions:edit',
+    PRODUCT_PROMOTIONS_DELETE: 'product-promotions:delete',
+
+    // — Coupons (umbrella: discounts:manage) —
+    COUPONS_VIEW: 'coupons:view',
+    COUPONS_CREATE: 'coupons:create',
+    COUPONS_EDIT: 'coupons:edit',
+    COUPONS_DELETE: 'coupons:delete',
+
+    // — Bank cards (umbrella: discounts:manage) —
+    BANK_CARDS_VIEW: 'bank-cards:view',
+    BANK_CARDS_CREATE: 'bank-cards:create',
+    BANK_CARDS_EDIT: 'bank-cards:edit',
+    BANK_CARDS_DELETE: 'bank-cards:delete',
+
+    // — Campaigns (umbrella: campaigns:manage) —
+    CAMPAIGNS_VIEW: 'campaigns:view',
+    CAMPAIGNS_CREATE: 'campaigns:create',
+    CAMPAIGNS_EDIT: 'campaigns:edit',
+    CAMPAIGNS_DELETE: 'campaigns:delete',
+
+    // — Banners (umbrella: cms:manage) —
+    BANNERS_VIEW: 'banners:view',
+    BANNERS_CREATE: 'banners:create',
+    BANNERS_EDIT: 'banners:edit',
+    BANNERS_DELETE: 'banners:delete',
+
+    // — Targeted promotions (umbrella: promotions:manage) —
+    PROMOTIONS_VIEW: 'promotions:view',
+    PROMOTIONS_CREATE: 'promotions:create',
+    PROMOTIONS_EDIT: 'promotions:edit',
+    PROMOTIONS_DELETE: 'promotions:delete',
+
+    // — Offer settings (umbrella: campaigns:manage) —
+    OFFER_SETTINGS_EDIT: 'offer-settings:edit',
+
+    // — Loyalty (umbrella: loyalty:manage) —
+    LOYALTY_VIEW: 'loyalty:view',
+    LOYALTY_EDIT: 'loyalty:edit',
+
+    // — Orders (granular admin actions; backfilled from orders:view) —
+    ORDERS_UPDATE_STATUS: 'orders:update-status',
+    ORDERS_ASSIGN_RIDER: 'orders:assign-rider',
+
+    // — Delivery tiers (umbrella: deliveries:manage) —
+    DELIVERY_TIERS_VIEW: 'delivery-tiers:view',
+    DELIVERY_TIERS_EDIT: 'delivery-tiers:edit',
+
+    // — Customers (umbrella: customers:manage) —
+    CUSTOMERS_VIEW: 'customers:view',
+    CUSTOMERS_CREATE: 'customers:create',
+    CUSTOMERS_EDIT: 'customers:edit',
+    CUSTOMERS_DELETE: 'customers:delete',
+
+    // — Inventory master data (backfilled from inventory:view) —
+    INVENTORY_ITEMS_VIEW: 'inventory-items:view',
+    INVENTORY_ITEMS_CREATE: 'inventory-items:create',
+    INVENTORY_ITEMS_EDIT: 'inventory-items:edit',
+    INVENTORY_ITEMS_DELETE: 'inventory-items:delete',
+    UOMS_VIEW: 'uoms:view',
+    UOMS_CREATE: 'uoms:create',
+    UOMS_EDIT: 'uoms:edit',
+    UOMS_DELETE: 'uoms:delete',
+    VENDORS_VIEW: 'vendors:view',
+    VENDORS_CREATE: 'vendors:create',
+    VENDORS_EDIT: 'vendors:edit',
+    VENDORS_DELETE: 'vendors:delete',
+
+    // — Procurement (extends existing granular perms) —
+    PROCUREMENT_GRN_REVERSE: 'procurement:grn:reverse',
+
+    // — Recipes (umbrella: recipes:manage) —
+    RECIPES_VIEW: 'recipes:view',
+    RECIPES_CREATE: 'recipes:create',
+    RECIPES_EDIT: 'recipes:edit',
+    RECIPES_DELETE: 'recipes:delete',
+    RECIPES_ACTIVATE: 'recipes:activate',
+
+    // — Rider HRM (backfilled from shifts:manage / deliveries) —
+    RIDER_HRM_VIEW: 'rider-hrm:view',
+    RIDER_PROFILES_EDIT: 'rider-profiles:edit',
+    RIDER_PAYROLL_RUN: 'rider-payroll:run',
+    RIDER_PAYROLL_REVERSE: 'rider-payroll:reverse',
+    RIDER_COMP_PLANS_VIEW: 'rider-comp-plans:view',
+    RIDER_COMP_PLANS_CREATE: 'rider-comp-plans:create',
+    RIDER_COMP_PLANS_EDIT: 'rider-comp-plans:edit',
+    RIDER_COMP_PLANS_ACTIVATE: 'rider-comp-plans:activate',
+    RIDER_ATTENDANCE_MANAGE: 'rider-attendance:manage',
+
+    // — Notifications (umbrella: notifications:manage) —
+    NOTIFICATIONS_VIEW: 'notifications:view',
+    NOTIFICATIONS_EDIT: 'notifications:edit',
 } as const;
 
 export type PermissionName = (typeof Permissions)[keyof typeof Permissions];

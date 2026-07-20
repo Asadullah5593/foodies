@@ -6,6 +6,7 @@ import { adminService } from '../../services/api/adminService';
 import { Promotion, CustomerPromotion } from '../../types';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -29,6 +30,9 @@ const emptyForm = {
 
 const Promotions: React.FC = () => {
   const queryClient = useQueryClient();
+  const canCreate = useHasPermission('promotions:create');
+  const canEdit = useHasPermission('promotions:edit');
+  const canDelete = useHasPermission('promotions:delete');
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingPromotion, setEditingPromotion] = useState<Promotion | null>(null);
@@ -241,9 +245,9 @@ const Promotions: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Promotions</h1>
-        <Button onClick={() => { setEditingPromotion(null); setFormData({ ...emptyForm }); setShowForm(true); }}>
+        {canCreate && <Button onClick={() => { setEditingPromotion(null); setFormData({ ...emptyForm }); setShowForm(true); }}>
           Add Promotion
-        </Button>
+        </Button>}
       </div>
 
       {/* Create / Edit Modal */}
@@ -631,21 +635,21 @@ const Promotions: React.FC = () => {
                   animationIndex={i}
                   actions={
                     <>
-                      {promo.eligibility_type === 'manual' && (
+                      {canEdit && promo.eligibility_type === 'manual' && (
                         <Button size="small" variant="outline" onClick={() => setAssignmentsPromotion(promo)}>
                           Assignments
                         </Button>
                       )}
-                      <Button size="small" variant="edit" onClick={() => handleEdit(promo)}>Edit</Button>
-                      <Button
+                      {canEdit && <Button size="small" variant="edit" onClick={() => handleEdit(promo)}>Edit</Button>}
+                      {canEdit && <Button
                         size="small"
                         variant={promo.is_active ? 'outline' : 'primary'}
                         isLoading={updateMutation.isPending}
                         onClick={() => updateMutation.mutate({ id: promo.id, data: { is_active: !promo.is_active } })}
                       >
                         {promo.is_active ? 'Set inactive' : 'Set active'}
-                      </Button>
-                      <Button
+                      </Button>}
+                      {canDelete && <Button
                         size="small"
                         variant="danger"
                         isLoading={deleteMutation.isPending}
@@ -662,7 +666,7 @@ const Promotions: React.FC = () => {
                         }}
                       >
                         Delete
-                      </Button>
+                      </Button>}
                     </>
                   }
                 />

@@ -37,9 +37,11 @@ export class Order {
     branchId: number;
 
     /**
-     * Permanent, globally-unique tracking reference shared with the customer.
-     * Format: `BR-{brandId}-{branchId}-{YYYYMMDD}-{seq}` (e.g. `BR-23-10-20260617-001`).
-     * Null on orders created before migration ShortOrderNumber (legacy rows).
+     * Permanent, globally-unique tracking / invoice reference shared with the
+     * customer. Format: `FDS-XXXXXXXX` — 8 crypto-random uppercase
+     * alphanumeric chars (e.g. `FDS-A7K2M9QX`), never reused.
+     * Legacy rows keep the old `BR-{brandId}-{branchId}-{YYYYMMDD}-{seq}`
+     * format; rows from before migration ShortOrderNumber are null.
      * Unique index: `UQ_orders_order_id`.
      */
     @Column({ type: 'varchar', nullable: true })
@@ -209,6 +211,20 @@ export class Order {
 
     @Column({ type: 'varchar', nullable: true })
     discountCode: string | null;
+
+    /**
+     * FBR fiscal invoice number printed on the receipt. Source tells whether it
+     * is genuine or reused: 'fbr' = FBR returned it for THIS order; 'fallback'
+     * = the branch's most recent real number, reused because FBR was disabled
+     * or unreachable at placement (sales never block on FBR). A successful
+     * background retry overwrites a fallback with the real number.
+     */
+    @Column({ type: 'varchar', nullable: true })
+    fbrInvoiceNumber: string | null;
+
+    /** 'fbr' | 'fallback' — how fbrInvoiceNumber was obtained. */
+    @Column({ type: 'varchar', length: 8, nullable: true })
+    fbrNumberSource: string | null;
 
     @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
     placedAt: Date;

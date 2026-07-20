@@ -13,12 +13,15 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { RecipesService } from './recipes.service';
 
 @ApiTags('Admin – Recipes')
 @ApiBearerAuth()
 @Controller('admin/recipes')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class RecipesAdminController {
     constructor(private recipesService: RecipesService) {}
 
@@ -39,6 +42,7 @@ export class RecipesAdminController {
     }
 
     @Post()
+    @RequirePermission(Permissions.RECIPES_CREATE)
     async create(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -56,6 +60,7 @@ export class RecipesAdminController {
     }
 
     @Post(':id/lines')
+    @RequirePermission(Permissions.RECIPES_EDIT)
     async addLine(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -74,6 +79,7 @@ export class RecipesAdminController {
     }
 
     @Patch(':id/lines/:lineId')
+    @RequirePermission(Permissions.RECIPES_EDIT)
     async updateLine(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -97,6 +103,7 @@ export class RecipesAdminController {
     }
 
     @Delete(':id/lines/:lineId')
+    @RequirePermission(Permissions.RECIPES_EDIT)
     async deleteLine(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -108,6 +115,7 @@ export class RecipesAdminController {
     }
 
     @Post(':id/activate')
+    @RequirePermission(Permissions.RECIPES_ACTIVATE)
     async activate(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -118,6 +126,7 @@ export class RecipesAdminController {
     }
 
     @Post(':id/compute-cost')
+    @RequirePermission(Permissions.RECIPES_VIEW, Permissions.COSTING_VIEW)
     async computeCost(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },

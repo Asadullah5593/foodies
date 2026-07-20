@@ -172,7 +172,16 @@ export class BranchesService {
                     'Branch does not belong to your tenant',
                 );
         }
-        return this.toResponse(branch);
+        // FBR settings ride ONLY on this admin read — toResponse is shared with
+        // consumer-facing lookups and must never expose the FBR token.
+        return {
+            ...this.toResponse(branch),
+            fbr_enabled: branch.fbrEnabled,
+            fbr_pos_id: branch.fbrPosId,
+            fbr_token: branch.fbrToken,
+            fbr_environment: branch.fbrEnvironment,
+            fbr_pct_code: branch.fbrPctCode,
+        };
     }
 
     async findOne(id: number) {
@@ -383,6 +392,11 @@ export class BranchesService {
             delivery_radius_km?: number;
             is_active?: boolean;
             status?: string;
+            fbr_enabled?: boolean;
+            fbr_pos_id?: string | null;
+            fbr_token?: string | null;
+            fbr_environment?: string;
+            fbr_pct_code?: string | null;
         },
     ) {
         const branch = await this.repo.findOne({
@@ -463,6 +477,11 @@ export class BranchesService {
             status?: string;
             latitude?: number | null;
             longitude?: number | null;
+            fbr_enabled?: boolean;
+            fbr_pos_id?: string | null;
+            fbr_token?: string | null;
+            fbr_environment?: string;
+            fbr_pct_code?: string | null;
         },
     ) {
         const branch = await this.repo.findOne({ where: { id } });
@@ -502,6 +521,28 @@ export class BranchesService {
         branch.status = branch.isActive ? 'active' : 'inactive';
         if (dto.latitude !== undefined) branch.latitude = dto.latitude;
         if (dto.longitude !== undefined) branch.longitude = dto.longitude;
+        // FBR settings. Disabling keeps the saved credentials (Skechers
+        // behavior) so re-enabling needs no re-entry; enabling requires them.
+        if (dto.fbr_pos_id !== undefined)
+            branch.fbrPosId = dto.fbr_pos_id?.trim() || null;
+        if (dto.fbr_token !== undefined)
+            branch.fbrToken = dto.fbr_token?.trim() || null;
+        if (dto.fbr_pct_code !== undefined)
+            branch.fbrPctCode = dto.fbr_pct_code?.trim() || null;
+        if (dto.fbr_environment !== undefined) {
+            if (!['sandbox', 'live'].includes(dto.fbr_environment)) {
+                throw new BadRequestException(
+                    'FBR environment must be "sandbox" or "live"',
+                );
+            }
+            branch.fbrEnvironment = dto.fbr_environment;
+        }
+        if (dto.fbr_enabled !== undefined) branch.fbrEnabled = dto.fbr_enabled;
+        if (branch.fbrEnabled && (!branch.fbrPosId || !branch.fbrToken)) {
+            throw new BadRequestException(
+                'FBR POS ID and token are required to enable FBR for this branch',
+            );
+        }
         await this.repo.save(branch);
         const updated = await this.repo.findOne({
             where: { id },

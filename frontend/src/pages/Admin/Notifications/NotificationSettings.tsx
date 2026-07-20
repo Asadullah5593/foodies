@@ -15,6 +15,7 @@ import {
 } from 'react-icons/md';
 import type { IconType } from 'react-icons';
 import apiClient from '../../../utils/apiClient';
+import { useHasPermission } from '../../../hooks/useHasPermission';
 import {
   notificationsService,
   type NotificationEventCatalogItem,
@@ -126,6 +127,7 @@ const RoleChip: React.FC<{
 
 const NotificationSettings: React.FC = () => {
   const qc = useQueryClient();
+  const canEdit = useHasPermission('notifications:edit');
 
   const settingsQ = useQuery({
     queryKey: ['notification-settings'],
@@ -427,14 +429,14 @@ const NotificationSettings: React.FC = () => {
             >
               Discard
             </button>
-            <button
+            {canEdit && <button
               type="button"
               onClick={() => saveM.mutate()}
               disabled={saveM.isPending}
               className="rounded-lg bg-red-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
             >
               {saveM.isPending ? 'Saving…' : 'Save all changes'}
-            </button>
+            </button>}
           </div>
         </div>
       )}
@@ -475,6 +477,7 @@ const EventCard: React.FC<{
   onCreateOverride,
   onDeleteOverride,
 }) => {
+  const canEdit = useHasPermission('notifications:edit');
   const [adding, setAdding] = useState(false);
   const [branchSel, setBranchSel] = useState<number | ''>('');
   const [brandSel, setBrandSel] = useState<number | ''>('');
@@ -716,7 +719,7 @@ const EventCard: React.FC<{
               Cancel
             </button>
           </div>
-        ) : (
+        ) : canEdit ? (
           <button
             type="button"
             onClick={() => setAdding(true)}
@@ -724,7 +727,7 @@ const EventCard: React.FC<{
           >
             <MdAdd className="h-4 w-4" /> Add branch or brand override
           </button>
-        )}
+        ) : null}
       </div>
     </div>
   );

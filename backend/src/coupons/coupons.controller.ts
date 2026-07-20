@@ -15,6 +15,9 @@ import { CouponsService } from './coupons.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 type User = {
     id: number;
@@ -25,7 +28,7 @@ type User = {
 @ApiTags('Admin – Coupons')
 @ApiBearerAuth()
 @Controller('admin/coupons')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class CouponsController {
     constructor(private service: CouponsService) {}
 
@@ -43,6 +46,7 @@ export class CouponsController {
     }
 
     @Post()
+    @RequirePermission(Permissions.COUPONS_CREATE)
     store(@CurrentUser() user: User, @Body() dto: Record<string, unknown>) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
@@ -50,6 +54,7 @@ export class CouponsController {
     }
 
     @Put(':id')
+    @RequirePermission(Permissions.COUPONS_EDIT)
     update(
         @Param('id') id: string,
         @CurrentUser() user: User,
@@ -66,6 +71,7 @@ export class CouponsController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.COUPONS_DELETE)
     destroy(@Param('id') id: string, @CurrentUser() user: User) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
@@ -73,6 +79,7 @@ export class CouponsController {
     }
 
     @Post(':id/issue-vouchers')
+    @RequirePermission(Permissions.COUPONS_EDIT)
     issue(
         @Param('id') id: string,
         @CurrentUser() user: User,

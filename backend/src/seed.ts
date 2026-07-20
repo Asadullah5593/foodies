@@ -325,6 +325,58 @@ async function seed() {
         `INSERT INTO role_permissions (role_id, permission_id) SELECT ${generalManagerRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'all-branches:access', 'orders:create', 'orders:view', 'discounts:apply', 'branch-menu:manage', 'reports:view', 'shifts:manage')`,
     );
 
+    // —— Granular action permissions: mirror the additive backfill from the
+    // GranularActionPermissions migration so a fresh seed matches a migrated DB.
+    // Umbrella-implied granular perms (menu:manage → menu:create, etc.) are NOT
+    // seeded — they resolve at runtime via permission-implications.ts. Only the
+    // no-umbrella cases (legacy view/action perms) are backfilled here. Assumes
+    // migrations have populated the catalog (they run on app boot). ——
+    const granularBackfill: Record<string, string[]> = {
+        'orders:update-status': ['orders:view'],
+        'orders:assign-rider': [
+            'orders:view',
+            'deliveries:view',
+            'deliveries:manage',
+        ],
+        'inventory-items:view': ['inventory:view', 'inventory:view:brand'],
+        'inventory-items:create': ['inventory:view'],
+        'inventory-items:edit': ['inventory:view'],
+        'inventory-items:delete': ['inventory:view'],
+        'uoms:view': ['inventory:view'],
+        'uoms:create': ['inventory:view'],
+        'uoms:edit': ['inventory:view'],
+        'uoms:delete': ['inventory:view'],
+        'vendors:view': ['inventory:view'],
+        'vendors:create': ['inventory:view'],
+        'vendors:edit': ['inventory:view'],
+        'vendors:delete': ['inventory:view'],
+        'procurement:grn:reverse': ['procurement:grn:post'],
+        'rider-hrm:view': ['deliveries:view', 'shifts:manage'],
+        'rider-profiles:edit': ['deliveries:view', 'shifts:manage'],
+        'rider-payroll:run': ['deliveries:view', 'shifts:manage'],
+        'rider-payroll:reverse': ['deliveries:view', 'shifts:manage'],
+        'rider-comp-plans:view': ['deliveries:view', 'shifts:manage'],
+        'rider-comp-plans:create': ['deliveries:view', 'shifts:manage'],
+        'rider-comp-plans:edit': ['deliveries:view', 'shifts:manage'],
+        'rider-comp-plans:activate': ['deliveries:view', 'shifts:manage'],
+        'rider-attendance:manage': ['deliveries:view', 'shifts:manage'],
+    };
+    for (const [newPerm, legacyPerms] of Object.entries(granularBackfill)) {
+        await dataSource.query(
+            `INSERT INTO role_permissions (role_id, permission_id)
+             SELECT DISTINCT rp.role_id, np.id
+             FROM role_permissions rp
+             INNER JOIN permissions lp ON lp.id = rp.permission_id AND lp.name = ANY($2)
+             CROSS JOIN permissions np
+             WHERE np.name = $1
+             AND NOT EXISTS (
+                 SELECT 1 FROM role_permissions rp2
+                 WHERE rp2.role_id = rp.role_id AND rp2.permission_id = np.id
+             )`,
+            [newPerm, legacyPerms],
+        );
+    }
+
     // —— Super admin: no tenant_users row → tenantId null → sees all tenants/brands/branches ——
     await userRepo.save(
         userRepo.create({

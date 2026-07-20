@@ -19,10 +19,14 @@ import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { confirmDialog } from '../../utils/sweetAlert';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
+import { useHasPermission } from '../../hooks/useHasPermission';
 
 const MenuAddons: React.FC = () => {
   const { user } = useAuth();
   const isSuperAdmin = user?.is_super_admin ?? false;
+  const canCreate = useHasPermission('addons:create');
+  const canEdit = useHasPermission('addons:edit');
+  const canDelete = useHasPermission('addons:delete');
   const queryClient = useQueryClient();
   const [searchParams] = useSearchParams();
   const [showForm, setShowForm] = useState(false);
@@ -161,7 +165,7 @@ const MenuAddons: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Menu Addons</h1>
-        <Button
+        {canCreate && <Button
           onClick={() => {
             setEditingAddon(null);
             setFormData({ brand_id: '', name: '', price: '', is_active: true });
@@ -169,7 +173,7 @@ const MenuAddons: React.FC = () => {
           }}
         >
           Add Addon
-        </Button>
+        </Button>}
       </div>
 
       <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
@@ -358,16 +362,16 @@ const MenuAddons: React.FC = () => {
                     animationIndex={i}
                     actions={
                       <>
-                        <Button size="small" variant="edit" onClick={() => handleEdit(addon)}>Edit</Button>
-                        <Button
+                        {canEdit && <Button size="small" variant="edit" onClick={() => handleEdit(addon)}>Edit</Button>}
+                        {canEdit && <Button
                           size="small"
                           variant={isActive ? 'outline' : 'primary'}
                           isLoading={updateMutation.isPending}
                           onClick={() => updateMutation.mutate({ id: addon.id, data: { is_active: !isActive } })}
                         >
                           {isActive ? 'Set inactive' : 'Set active'}
-                        </Button>
-                        <Button
+                        </Button>}
+                        {canDelete && <Button
                           size="small"
                           variant="danger"
                           onClick={() => {
@@ -384,7 +388,7 @@ const MenuAddons: React.FC = () => {
                           isLoading={deleteMutation.isPending}
                         >
                           Delete
-                        </Button>
+                        </Button>}
                       </>
                     }
                   />

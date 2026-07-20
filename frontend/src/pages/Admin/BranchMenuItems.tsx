@@ -7,6 +7,7 @@ import { BranchMenuItem, Branch, MenuItem } from '../../types';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
@@ -18,6 +19,7 @@ import { confirmDialog } from '../../utils/sweetAlert';
 
 const BranchMenuItems: React.FC = () => {
   const queryClient = useQueryClient();
+  const canEdit = useHasPermission('branch-menu:edit');
   const [showForm, setShowForm] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null);
   const [search, setSearch] = useState('');
@@ -167,9 +169,9 @@ const BranchMenuItems: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Branch Menu Items</h1>
-        <Button onClick={() => setShowForm(true)}>
+        {canEdit && <Button onClick={() => setShowForm(true)}>
           Add Branch Menu Item
-        </Button>
+        </Button>}
       </div>
 
       <Card className="mb-4 p-4">
@@ -317,8 +319,8 @@ const BranchMenuItems: React.FC = () => {
                   animationIndex={i}
                   actions={
                     <>
-                      <Button size="small" variant="edit" onClick={() => { const newPrice = prompt('Enter new price override (leave empty to use base price):'); if (newPrice !== null) { const trimmed = newPrice.trim(); const value = trimmed === '' ? null : Number.isFinite(parseFloat(trimmed)) ? parseFloat(trimmed) : undefined; if (value !== undefined && value !== null) updateMutation.mutate({ id: item.id, data: { price_override: value } }); else if (trimmed !== '') toast.error('Enter a valid number or leave empty to use base price'); } }} isLoading={updateMutation.isPending}>Edit Price</Button>
-                      <Button
+                      {canEdit && <Button size="small" variant="edit" onClick={() => { const newPrice = prompt('Enter new price override (leave empty to use base price):'); if (newPrice !== null) { const trimmed = newPrice.trim(); const value = trimmed === '' ? null : Number.isFinite(parseFloat(trimmed)) ? parseFloat(trimmed) : undefined; if (value !== undefined && value !== null) updateMutation.mutate({ id: item.id, data: { price_override: value } }); else if (trimmed !== '') toast.error('Enter a valid number or leave empty to use base price'); } }} isLoading={updateMutation.isPending}>Edit Price</Button>}
+                      {canEdit && <Button
                         size="small"
                         variant="danger"
                         onClick={() => {
@@ -335,7 +337,7 @@ const BranchMenuItems: React.FC = () => {
                         isLoading={deleteMutation.isPending}
                       >
                         Delete
-                      </Button>
+                      </Button>}
                     </>
                   }
                 />

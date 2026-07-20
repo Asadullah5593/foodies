@@ -14,6 +14,9 @@ import { DiscountsService } from './discounts.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 type User = {
     id: number;
@@ -48,7 +51,7 @@ type PromoBody = {
 @ApiTags('Admin – Product Promotions')
 @ApiBearerAuth()
 @Controller('admin/product-promotions')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class ProductPromotionsController {
     constructor(private service: DiscountsService) {}
 
@@ -60,6 +63,7 @@ export class ProductPromotionsController {
     }
 
     @Post()
+    @RequirePermission(Permissions.PRODUCT_PROMOTIONS_CREATE)
     store(@CurrentUser() user: User, @Body() dto: PromoBody) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
@@ -77,6 +81,7 @@ export class ProductPromotionsController {
     }
 
     @Put(':id')
+    @RequirePermission(Permissions.PRODUCT_PROMOTIONS_EDIT)
     update(
         @Param('id') id: string,
         @CurrentUser() user: User,
@@ -93,6 +98,7 @@ export class ProductPromotionsController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.PRODUCT_PROMOTIONS_DELETE)
     destroy(@Param('id') id: string, @CurrentUser() user: User) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
