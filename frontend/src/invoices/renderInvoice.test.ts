@@ -879,6 +879,28 @@ describe('FBR fiscal block — number line, logo left, QR right, below the app Q
     expect(html.slice(qrIdx, qrIdx + 300)).toContain('<svg');
   });
 
+  it('prints the invoice-number line BELOW the logo + QR row, not above', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const html = renderInvoiceHtml(withFbr(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+      // The logo/QR row (fbr-row) comes first; the "FBR Invoice #" head after it.
+      expect(html.indexOf('class="fbr-row"'), layout).toBeLessThan(html.indexOf('class="fbr-head"'));
+      expect(html.indexOf('class="fbr-logo"'), layout).toBeLessThan(html.indexOf('FBR Invoice #'));
+      expect(html.indexOf('class="fbr-qr"'), layout).toBeLessThan(html.indexOf('FBR Invoice #'));
+    }
+  });
+
+  it('uses the bundled PRA logo by default and a custom logo when configured', () => {
+    const def = renderInvoiceHtml(withFbr(), 'thermal_classic', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+    expect(def).toContain('/PRA.jpg'); // default tax-authority mark
+    const custom = renderInvoiceHtml(
+      withFbr(),
+      'thermal_classic',
+      cfg({ fbrLogoUrl: 'https://cdn.example.com/my-logo.png' }),
+    ).html;
+    expect(custom).toContain('https://cdn.example.com/my-logo.png');
+    expect(custom).not.toContain('/PRA.jpg');
+  });
+
   it('rich sample previews the FBR block so the designer toggle is visible', () => {
     const html = renderInvoiceHtml(richSampleInvoice(), 'thermal_classic', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
     expect(html).toContain('class="fbrblock"');

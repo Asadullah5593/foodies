@@ -18,17 +18,19 @@ export function fbrQrSvg(value: string): string {
 }
 
 /**
- * PLACEHOLDER for the official FBR "POS Invoicing" logo — the client supplies
- * the real artwork. To swap it in: convert the provided file to a data URI
- * (SVG preferred, else PNG ≥200px wide for thermal print) and replace this
- * constant. Nothing else references the artwork.
+ * Default tax-authority logo for the FBR block: the PRA (Punjab Revenue
+ * Authority) mark bundled at public/PRA.jpg. Returned as an ABSOLUTE URL so it
+ * loads inside the print popup (which has no base URL — relative paths fail
+ * there, same reason the app QR is inlined and brand logos use absolute URLs).
+ * A template may override this via config.fbrLogoUrl.
  */
-export const FBR_LOGO_SRC =
-  'data:image/svg+xml;utf8,' +
-  encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 56">` +
-      `<rect x="1" y="1" width="118" height="54" rx="6" fill="none" stroke="#000" stroke-width="2"/>` +
-      `<text x="60" y="24" text-anchor="middle" font-family="Arial, sans-serif" font-size="17" font-weight="bold" fill="#000">FBR</text>` +
-      `<text x="60" y="42" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#000">POS Invoicing</text>` +
-    `</svg>`,
-  );
+export function defaultFbrLogoUrl(): string {
+  const origin = typeof window !== 'undefined' ? (window.location?.origin ?? '') : '';
+  return `${origin}/PRA.jpg`;
+}
+
+/** The logo the FBR block should print: the template's own, else the default. */
+export function fbrLogoSrc(customUrl?: string | null): string {
+  const trimmed = customUrl?.trim();
+  return trimmed ? trimmed : defaultFbrLogoUrl();
+}

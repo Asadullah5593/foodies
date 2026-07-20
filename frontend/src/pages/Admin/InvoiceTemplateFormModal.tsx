@@ -1,5 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'react-hot-toast';
+import apiClient from '../../utils/apiClient';
 import LiveInvoicePreview from '../../invoices/LiveInvoicePreview';
 import { richSampleInvoice } from '../../invoices/renderInvoice';
 import {
@@ -169,7 +171,8 @@ type FieldDef =
   | { kind: 'select'; label: string; hint?: string; value: string; options: Array<{ value: string; label: string }>; onChange: (v: string) => void }
   | { kind: 'textarea'; label: string; hint?: string; placeholder?: string; value: string; onChange: (v: string) => void }
   | { kind: 'number'; label: string; hint?: string; suffix?: string; value: number; onChange: (v: string) => void }
-  | { kind: 'toggle'; label: string; hint?: string; value: boolean; onChange: (v: boolean) => void };
+  | { kind: 'toggle'; label: string; hint?: string; value: boolean; onChange: (v: boolean) => void }
+  | { kind: 'image'; label: string; hint?: string; value: string; defaultHint?: string; onChange: (v: string) => void };
 
 type Section =
   | { id: string; title: string; icon: IconName; desc: string; kind: 'fields'; fields: FieldDef[] }
@@ -203,6 +206,39 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
   const [activeId, setActiveId] = useState('details');
   // Signal for the live preview to flash the receipt line a toggle affects.
   const [flash, setFlash] = useState<{ key: string; nonce: number }>({ key: '', nonce: 0 });
+  // FBR-logo upload: hidden file input + in-flight flag.
+  const fbrLogoInputRef = useRef<HTMLInputElement>(null);
+  const [fbrLogoUploading, setFbrLogoUploading] = useState(false);
+
+  const uploadFbrLogo = async (
+    file: File,
+    onChange: (v: string) => void,
+  ): Promise<void> => {
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please choose an image file.');
+      return;
+    }
+    setFbrLogoUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      // 'misc' is an S3-IAM-permitted prefix (dedicated 'invoice-logos' would
+      // need the media-uploader IAM policy widened first).
+      fd.append('folder', 'misc');
+      const { data } = await apiClient.post<{ url: string }>('/admin/upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      onChange(data.url);
+      toast.success('Logo uploaded.');
+    } catch (e: unknown) {
+      toast.error(
+        (e as { response?: { data?: { message?: string } } })?.response?.data?.message ||
+          'Failed to upload logo.',
+      );
+    } finally {
+      setFbrLogoUploading(false);
+    }
+  };
 
   useEffect(() => {
     if (open) setActiveId('details');
@@ -303,6 +339,14 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           placeholder: 'Scan to download the Foodies app',
           value: form.config.appQrText ?? '',
           onChange: (v) => setCfg('appQrText', v || null),
+        },
+        {
+          kind: 'image',
+          label: 'FBR invoice logo',
+          hint: 'shown on the FBR fiscal block — turn “Show FBR invoice # + QR” on under Branding',
+          defaultHint: 'Default: PRA logo',
+          value: form.config.fbrLogoUrl ?? '',
+          onChange: (v) => setCfg('fbrLogoUrl', v || null),
         },
       ],
     },
@@ -502,6 +546,55 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
         {fld.kind === 'toggle' && (
           <div className="max-w-[280px]">
             <ToggleRow label={fld.label} on={fld.value} onChange={fld.onChange} />
+          </div>
+        )}
+        {fld.kind === 'image' && (
+          <div className="flex items-center gap-3">
+            <div className="flex h-14 w-14 flex-none items-center justify-center overflow-hidden rounded-[10px] border border-gray-200 bg-gray-50">
+              {fld.value ? (
+                <img src={fld.value} alt="" className="max-h-full max-w-full object-contain" />
+              ) : (
+                <span className="px-1 text-center text-[9px] leading-tight text-gray-400">
+                  {fld.defaultHint ?? 'Default'}
+                </span>
+              )}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={fbrLogoUploading}
+                  onClick={() => fbrLogoInputRef.current?.click()}
+                  className="rounded-[8px] border-[1.5px] border-gray-200 px-3 py-1.5 text-[12.5px] font-semibold text-gray-700 transition-colors hover:border-red-500 hover:text-red-600 disabled:opacity-60"
+                >
+                  {fbrLogoUploading ? 'Uploading…' : fld.value ? 'Replace logo' : 'Upload logo'}
+                </button>
+                {fld.value && (
+                  <button
+                    type="button"
+                    disabled={fbrLogoUploading}
+                    onClick={() => fld.onChange('')}
+                    className="rounded-[8px] px-2 py-1.5 text-[12.5px] font-semibold text-gray-500 transition-colors hover:text-red-600 disabled:opacity-60"
+                  >
+                    Use default
+                  </button>
+                )}
+              </div>
+              <span className="text-[11.5px] text-gray-400">
+                {fld.value ? 'Custom logo in use.' : (fld.defaultHint ?? 'The default logo is used.')}
+              </span>
+            </div>
+            <input
+              ref={fbrLogoInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadFbrLogo(file, fld.onChange);
+                e.target.value = '';
+              }}
+            />
           </div>
         )}
       </div>

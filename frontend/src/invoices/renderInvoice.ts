@@ -8,7 +8,7 @@ import {
   LAYOUT_META,
 } from './types';
 import { APP_QR_SVG } from './appQr';
-import { FBR_LOGO_SRC, fbrQrSvg } from './fbr';
+import { fbrLogoSrc, fbrQrSvg } from './fbr';
 
 function esc(s: unknown): string {
   return String(s ?? '')
@@ -562,22 +562,23 @@ function footerHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
       <div class="qr-img">${APP_QR_SVG}</div>
     </div>`
     : '';
-  // FBR fiscalization block, directly below the app-QR row: the fiscal number,
-  // then the FBR logo bottom-left (under the app-QR prompt text) and the
-  // verification QR bottom-right (under the app QR). The QR encodes the FBR
-  // invoice number for the Tax Asaan app. Orders without a number (FBR never
-  // active for the branch) print nothing. POS/app/kiosk groups are single-order,
-  // so the first order carrying a number is THE order.
+  // FBR fiscalization block, directly below the app-QR row: the tax-authority
+  // logo bottom-left (under the app-QR prompt text) and the verification QR
+  // bottom-right (under the app QR), then the "FBR Invoice #" line BENEATH that
+  // row. The QR encodes the FBR invoice number for the Tax Asaan app. Orders
+  // without a number (FBR never active for the branch) print nothing. POS/app/
+  // kiosk groups are single-order, so the first order carrying a number is THE
+  // order. The logo is the template's own (config.fbrLogoUrl) or the default.
   const fbrNumber = (data.orders ?? []).find((o) => o.fbr_invoice_number)?.fbr_invoice_number;
   const fbrBlock =
     cfg.showFbrInvoice && fbrNumber
       ? `
     <div class="fbrblock" data-field="showFbrInvoice">
-      <div class="fbr-head">FBR Invoice # <span class="fbr-num">${esc(fbrNumber)}</span></div>
       <div class="fbr-row">
-        <img class="fbr-logo" src="${FBR_LOGO_SRC}" alt="FBR POS Invoicing" />
+        <img class="fbr-logo" src="${esc(fbrLogoSrc(cfg.fbrLogoUrl))}" alt="Tax authority" />
         <div class="fbr-qr">${fbrQrSvg(fbrNumber)}</div>
       </div>
+      <div class="fbr-head">FBR Invoice # <span class="fbr-num">${esc(fbrNumber)}</span></div>
     </div>`
       : '';
   return `${qrBlock}${fbrBlock}
@@ -906,15 +907,16 @@ function layoutCss(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .qrblock .qr-text { text-align: left; flex: 1 1 auto; }
     .inv-root .qrblock .qr-img { flex: 0 0 auto; }
     .inv-root .qrblock .qr-img svg { display: block; width: 20mm; height: 20mm; }
-    /* FBR fiscalization: number line, then logo (left, under the app-QR text)
-       and verification QR (right, under the app QR). */
+    /* FBR fiscalization: logo (left, under the app-QR text) and verification QR
+       (right, under the app QR) on one row, with the number line BELOW them. */
     .inv-root .fbrblock { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #999; }
-    .inv-root .fbrblock .fbr-head { text-align: center; font-weight: 700; }
-    .inv-root .fbrblock .fbr-num { font-weight: 700; white-space: nowrap; }
-    .inv-root .fbrblock .fbr-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 4px; }
-    .inv-root .fbrblock .fbr-logo { flex: 0 0 auto; width: 22mm; max-height: 12mm; object-fit: contain; display: block; }
+    .inv-root .fbrblock .fbr-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    /* Logo sized to match the QR box (20mm square); object-fit keeps its aspect ratio. */
+    .inv-root .fbrblock .fbr-logo { flex: 0 0 auto; width: 20mm; height: 20mm; object-fit: contain; display: block; }
     .inv-root .fbrblock .fbr-qr { flex: 0 0 auto; }
     .inv-root .fbrblock .fbr-qr svg { display: block; width: 20mm; height: 20mm; }
+    .inv-root .fbrblock .fbr-head { text-align: center; font-weight: 700; margin-top: 6px; }
+    .inv-root .fbrblock .fbr-num { font-weight: 700; white-space: nowrap; }
     .inv-root .powered { margin-top: 6px; color: #222; font-size: ${poweredPx}px; font-weight: ${poweredWeight}; }
     .inv-root .seclabel { text-transform: uppercase; letter-spacing: .12em; font-size: .72em; color: #555; margin: 8px 0 2px; }
     .inv-root .freelabel { margin-top: 8px; padding-top: 4px; border-top: 1px dashed #999; font-weight: 700; }

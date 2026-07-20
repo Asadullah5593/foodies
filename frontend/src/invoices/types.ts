@@ -54,12 +54,18 @@ export interface InvoiceTemplateConfig {
   /** Text shown to the left of the app-download QR (empty = QR only). */
   appQrText: string | null;
   /**
-   * FBR fiscalization block below the app-QR row: the "FBR Invoice #" line,
-   * the FBR logo (left) and the verification QR (right). Only prints when the
-   * order actually carries an FBR number, so leaving this on is harmless for
-   * branches without FBR.
+   * FBR fiscalization block below the app-QR row: the tax-authority logo (left)
+   * and the verification QR (right), then the "FBR Invoice #" line beneath
+   * them. Only prints when the order actually carries an FBR number, so leaving
+   * this on is harmless for branches without FBR.
    */
   showFbrInvoice: boolean;
+  /**
+   * Custom logo for the FBR block (absolute image URL). Empty/null → the
+   * bundled default (public/PRA.jpg). Lets an admin swap the tax-authority mark
+   * per template without a code change.
+   */
+  fbrLogoUrl: string | null;
   fontScalePct: number;
   showPoweredBy: boolean;
   poweredByFontPct: number;
@@ -143,6 +149,7 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showAppQr: false,
   appQrText: 'Scan to download the Foodies app',
   showFbrInvoice: true,
+  fbrLogoUrl: null,
   fontScalePct: 100,
   showPoweredBy: true,
   poweredByFontPct: 95,
