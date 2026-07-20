@@ -32,6 +32,23 @@ export interface InvoiceTemplateConfig {
     headerText: string | null;
     /** Free text at the bottom (thank-you note, return policy). */
     footerText: string | null;
+    /** Show the app-download QR (+ its text) above the footer. */
+    showAppQr: boolean;
+    /** Text shown to the left of the app-download QR (empty = QR only). */
+    appQrText: string | null;
+    /**
+     * FBR fiscalization block below the app-QR row: the tax-authority logo
+     * (left) and the verification QR (right), then the "FBR Invoice #" line
+     * beneath them. Only prints when the order carries an FBR number, so it is
+     * harmless without FBR.
+     */
+    showFbrInvoice: boolean;
+    /**
+     * Custom logo for the FBR block (absolute image URL). Empty/null → the
+     * bundled default (frontend public/PRA.jpg). Lets an admin swap the
+     * tax-authority mark per template without a code change.
+     */
+    fbrLogoUrl: string | null;
     /** Overall receipt font size, percent of the template's base (50–200). */
     fontScalePct: number;
     /** "Powered by Rex Technologies" line at the very end. */
@@ -52,6 +69,12 @@ export interface InvoiceTemplateConfig {
     showCategory: boolean;
     showVariant: boolean;
     showModifiers: boolean;
+    /** The modifier group name prefix, e.g. "Base: " on "Base: Classic Hand-Tossed". */
+    showModifierGroup: boolean;
+    /** The leading "+ " on add-on and modifier lines. */
+    showModifierPlus: boolean;
+    /** Per-item notes (kitchen instructions) printed under the item. */
+    showLineNotes: boolean;
     showUnitPrice: boolean;
     /**
      * How a zero amount prints on modifier / add-on / deal-component lines:
@@ -97,6 +120,8 @@ export interface InvoiceTemplateConfig {
     showDateTime: boolean;
     showCashier: boolean;
     showCustomerInfo: boolean;
+    /** The order-level note (e.g. "Birthday — add candles") printed in the header block. */
+    showOrderNotes: boolean;
     /** Method of payment (cash / card / split) — shown when the order has recorded tenders. */
     showPaymentMethod: boolean;
     /**
@@ -119,6 +144,10 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     showLogo: true,
     headerText: null,
     footerText: null,
+    showAppQr: false,
+    appQrText: 'Scan to download the Foodies app',
+    showFbrInvoice: true,
+    fbrLogoUrl: null,
     fontScalePct: 100,
     showPoweredBy: true,
     poweredByFontPct: 95,
@@ -128,6 +157,9 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     showCategory: false,
     showVariant: true,
     showModifiers: true,
+    showModifierGroup: true,
+    showModifierPlus: true,
+    showLineNotes: false,
     showUnitPrice: true,
     zeroAmountDisplay: 'zero',
     showFreeItems: true,
@@ -158,6 +190,7 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     showDateTime: true,
     showCashier: false,
     showCustomerInfo: true,
+    showOrderNotes: false,
     showPaymentMethod: true,
     metaLabelsFontWeight: 600,
     metaLabelsFontPct: 100,
@@ -216,7 +249,10 @@ export function sanitizeInvoiceTemplateConfig(
         )
             out[key] = val;
         else if (
-            (key === 'headerText' || key === 'footerText') &&
+            (key === 'headerText' ||
+                key === 'footerText' ||
+                key === 'appQrText' ||
+                key === 'fbrLogoUrl') &&
             (typeof val === 'string' || val === null)
         )
             out[key] = val === '' ? null : val;

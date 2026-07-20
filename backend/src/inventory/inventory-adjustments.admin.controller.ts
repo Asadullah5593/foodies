@@ -14,13 +14,16 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { InventoryService } from './inventory.service';
 import { InventoryAdjustmentService } from './inventory-adjustment.service';
 
 @ApiTags('Admin – Inventory Adjustments')
 @ApiBearerAuth()
 @Controller('admin/inventory/adjustments')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class InventoryAdjustmentsAdminController {
     constructor(
         private inventoryService: InventoryService,
@@ -45,6 +48,7 @@ export class InventoryAdjustmentsAdminController {
     }
 
     @Post()
+    @RequirePermission(Permissions.INVENTORY_ADJUST)
     createAdjustment(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -70,6 +74,7 @@ export class InventoryAdjustmentsAdminController {
     }
 
     @Post(':id/post')
+    @RequirePermission(Permissions.INVENTORY_ADJUST)
     postAdjustment(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -79,6 +84,7 @@ export class InventoryAdjustmentsAdminController {
     }
 
     @Patch(':id')
+    @RequirePermission(Permissions.INVENTORY_ADJUST)
     updateDraftAdjustment(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -103,6 +109,7 @@ export class InventoryAdjustmentsAdminController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.INVENTORY_ADJUST)
     deleteDraftAdjustment(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },

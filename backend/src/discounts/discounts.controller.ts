@@ -14,11 +14,14 @@ import { DiscountsService } from './discounts.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – Discounts')
 @ApiBearerAuth()
 @Controller('admin/discounts')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class DiscountsController {
     constructor(private service: DiscountsService) {}
 
@@ -40,6 +43,7 @@ export class DiscountsController {
     }
 
     @Post()
+    @RequirePermission(Permissions.DISCOUNTS_CREATE)
     store(
         @CurrentUser()
         user: {
@@ -81,6 +85,7 @@ export class DiscountsController {
     }
 
     @Put(':id')
+    @RequirePermission(Permissions.DISCOUNTS_EDIT)
     update(
         @Param('id') id: string,
         @CurrentUser()
@@ -128,6 +133,7 @@ export class DiscountsController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.DISCOUNTS_DELETE)
     destroy(
         @Param('id') id: string,
         @CurrentUser()

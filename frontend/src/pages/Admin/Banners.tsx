@@ -6,6 +6,7 @@ import { adminService } from '../../services/api/adminService';
 import { Banner } from '../../types';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -21,6 +22,9 @@ const emptyForm = {
 
 const Banners: React.FC = () => {
   const queryClient = useQueryClient();
+  const canCreate = useHasPermission('banners:create');
+  const canEdit = useHasPermission('banners:edit');
+  const canDelete = useHasPermission('banners:delete');
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingBanner, setEditingBanner] = useState<Banner | null>(null);
@@ -133,9 +137,9 @@ const Banners: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">CMS Banners</h1>
-        <Button onClick={() => { setEditingBanner(null); setFormData({ ...emptyForm }); setShowForm(true); }}>
+        {canCreate && <Button onClick={() => { setEditingBanner(null); setFormData({ ...emptyForm }); setShowForm(true); }}>
           Add Banner
-        </Button>
+        </Button>}
       </div>
 
       <Modal
@@ -250,16 +254,16 @@ const Banners: React.FC = () => {
                   animationIndex={i}
                   actions={
                     <>
-                      <Button size="small" variant="edit" onClick={() => handleEdit(banner)}>Edit</Button>
-                      <Button
+                      {canEdit && <Button size="small" variant="edit" onClick={() => handleEdit(banner)}>Edit</Button>}
+                      {canEdit && <Button
                         size="small"
                         variant={banner.is_active ? 'outline' : 'primary'}
                         isLoading={updateMutation.isPending}
                         onClick={() => updateMutation.mutate({ id: banner.id, data: { is_active: !banner.is_active } })}
                       >
                         {banner.is_active ? 'Set inactive' : 'Set active'}
-                      </Button>
-                      <Button
+                      </Button>}
+                      {canDelete && <Button
                         size="small"
                         variant="danger"
                         isLoading={deleteMutation.isPending}
@@ -276,7 +280,7 @@ const Banners: React.FC = () => {
                         }}
                       >
                         Delete
-                      </Button>
+                      </Button>}
                     </>
                   }
                 />

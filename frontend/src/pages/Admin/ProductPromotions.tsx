@@ -24,6 +24,7 @@ import {
   removeDialog,
   removeLabel,
 } from '../../components/OfferBrandScope';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import apiClient from '../../utils/apiClient';
 
 const emptyForm = {
@@ -41,6 +42,9 @@ const emptyForm = {
 
 const ProductPromotions: React.FC = () => {
   const queryClient = useQueryClient();
+  const canCreatePerm = useHasPermission('product-promotions:create');
+  const canEditPerm = useHasPermission('product-promotions:edit');
+  const canDeletePerm = useHasPermission('product-promotions:delete');
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Discount | null>(null);
@@ -143,7 +147,7 @@ const ProductPromotions: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Product Promotions</h1>
-        <Button onClick={() => { setEditing(null); setForm({ ...emptyForm }); setShowForm(true); }}>Add Promotion</Button>
+        {canCreatePerm && <Button onClick={() => { setEditing(null); setForm({ ...emptyForm }); setShowForm(true); }}>Add Promotion</Button>}
       </div>
 
       <OfferModal
@@ -278,13 +282,13 @@ const ProductPromotions: React.FC = () => {
                   animationIndex={i}
                   actions={
                     <>
-                      {canEdit(p.manage_scope) && (
+                      {canEditPerm && canEdit(p.manage_scope) && (
                         <>
                           <Button size="small" variant="edit" onClick={() => handleEdit(p)}>Edit</Button>
                           <Button size="small" variant={p.is_active ? 'outline' : 'primary'} onClick={() => updateM.mutate({ id: p.id, data: { is_active: !p.is_active } })}>{p.is_active ? 'Set inactive' : 'Set active'}</Button>
                         </>
                       )}
-                      {p.manage_scope !== 'read_only' && (
+                      {canDeletePerm && p.manage_scope !== 'read_only' && (
                         <Button
                           size="small"
                           variant="danger"

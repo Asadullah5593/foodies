@@ -15,6 +15,7 @@ import SearchableSelect from '../../../components/SearchableSelect';
 import apiClient from '../../../utils/apiClient';
 import { recipesService } from '../../../services/api/recipesService';
 import { inventoryService } from '../../../services/api/inventoryService';
+import { useHasPermission } from '../../../hooks/useHasPermission';
 
 export type RecipesTabKey = 'manage' | 'costing';
 type TargetType = 'dish' | 'addon' | 'modifier';
@@ -27,6 +28,9 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
   showTabs = true,
 }) => {
   const queryClient = useQueryClient();
+  const canCreate = useHasPermission('recipes:create');
+  const canEditRecipe = useHasPermission('recipes:edit');
+  const canActivate = useHasPermission('recipes:activate');
   const [tab, setTab] = useState<RecipesTabKey>(initialTab);
 
   const [targetType, setTargetType] = useState<TargetType>('dish');
@@ -288,7 +292,7 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
                   <LuSoup className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600" />
                   <div className="mt-2 font-medium text-slate-700 dark:text-slate-200">No recipe yet</div>
                   <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">Create one to start listing its ingredients.</p>
-                  <button onClick={() => startRecipeM.mutate()} disabled={startRecipeM.isPending} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Create recipe</button>
+                  {canCreate && <button onClick={() => startRecipeM.mutate()} disabled={startRecipeM.isPending} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-medium disabled:opacity-50">Create recipe</button>}
                 </div>
               ) : (
                 <div className="space-y-4">
@@ -364,7 +368,7 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
                       </div>
                     </div>
                   ) : (
-                    <button onClick={() => editLiveM.mutate()} disabled={editLiveM.isPending} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">Edit ingredients</button>
+                    canEditRecipe && <button onClick={() => editLiveM.mutate()} disabled={editLiveM.isPending} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">Edit ingredients</button>
                   )}
                 </div>
               )}
@@ -374,7 +378,7 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
           {/* Footer: activate + totals */}
           {targetReady && (liveRecipe || draftRecipe) && (
             <div className="grid grid-cols-1 lg:grid-cols-[1fr_280px] gap-4">
-              {editing ? (
+              {editing && canActivate ? (
                 <button onClick={() => activateM.mutate()} disabled={shownLines.length === 0 || activateM.isPending}
                   className="flex items-center gap-3 rounded-xl border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 px-4 py-3 text-left hover:bg-green-100 dark:hover:bg-green-900/30 disabled:opacity-50">
                   <LuLock className="w-5 h-5 text-green-700 dark:text-green-300" />

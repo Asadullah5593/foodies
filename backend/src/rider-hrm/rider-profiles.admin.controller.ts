@@ -10,16 +10,20 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { RiderHrmService } from './rider-hrm.service';
 
 @ApiTags('Admin – Rider HRM – Profiles')
 @ApiBearerAuth()
 @Controller('admin/rider-hrm')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class RiderProfilesAdminController {
     constructor(private readonly riderHrmService: RiderHrmService) {}
 
     @Post('profiles')
+    @RequirePermission(Permissions.RIDER_PROFILES_EDIT)
     upsertProfile(
         @CurrentUser()
         user: { tenantId: number | null; allowedBrandIds?: number[] | null },

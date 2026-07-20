@@ -11,6 +11,7 @@ import { formatOrderType } from '../../utils/format';
 import { printContent } from '../../utils/print';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import Button from '../../components/Button';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import Card from '../../components/Card';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
 import { groupOrderItems } from '../../utils/orderItemGrouping';
@@ -93,6 +94,7 @@ function formatOrderSourceLabel(source: string | null | undefined): string {
 const OrderDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const canUpdateStatus = useHasPermission('orders:update-status');
   const queryClient = useQueryClient();
   const [showCustomerInvoice, setShowCustomerInvoice] = useState(false);
 
@@ -264,7 +266,7 @@ const OrderDetail: React.FC = () => {
             {o.delivery_address && <p><span className="font-medium text-gray-500 dark:text-slate-400">Delivery:</span> {o.delivery_address}</p>}
           </div>
         )}
-        <div className="flex items-center gap-3">
+        {canUpdateStatus && <div className="flex items-center gap-3">
           <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Update status</label>
           <select
             value={o.status}
@@ -278,7 +280,7 @@ const OrderDetail: React.FC = () => {
             <option value="completed">Completed</option>
             <option value="cancelled">Cancelled</option>
           </select>
-        </div>
+        </div>}
       </Card>
 
       <Card className="p-6 mb-6 border border-gray-200 dark:border-slate-700 dark:bg-slate-800 shadow-sm">

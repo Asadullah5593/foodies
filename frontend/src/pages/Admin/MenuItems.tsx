@@ -18,6 +18,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { confirmDialog } from '../../utils/sweetAlert';
+import { useHasPermission } from '../../hooks/useHasPermission';
 
 interface MenuItemAddon {
   id: number;
@@ -107,6 +108,10 @@ function buildOrderChannelsPayload(
 
 const MenuItems: React.FC = () => {
   const queryClient = useQueryClient();
+  const canCreate = useHasPermission('menu:create');
+  const canEdit = useHasPermission('menu:edit');
+  const canDelete = useHasPermission('menu:delete');
+  const canCreateCategory = useHasPermission('categories:create');
   const [showForm, setShowForm] = useState(false);
   const [showCategoryForm, setShowCategoryForm] = useState(false);
   const [manageAddonsItem, setManageAddonsItem] = useState<MenuItem | null>(null);
@@ -621,8 +626,8 @@ const MenuItems: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Menu Items</h1>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setShowCategoryForm(true)}>+ New Category</Button>
-          <Button variant="primary" onClick={() => setShowForm(!showForm)}>{showForm ? 'Cancel' : 'Add Menu Item'}</Button>
+          {canCreateCategory && <Button variant="secondary" onClick={() => setShowCategoryForm(true)}>+ New Category</Button>}
+          {canCreate && <Button variant="primary" onClick={() => setShowForm(!showForm)}>{showForm ? 'Cancel' : 'Add Menu Item'}</Button>}
         </div>
       </div>
 
@@ -1221,14 +1226,14 @@ const MenuItems: React.FC = () => {
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="block text-sm font-medium text-gray-700">Category *</label>
-              <Button
+              {canCreateCategory && <Button
                 type="button"
                 size="small"
                 variant="secondary"
                 onClick={() => { setShowForm(false); setShowCategoryForm(true); }}
               >
                 + New Category
-              </Button>
+              </Button>}
             </div>
             <select
               value={formData.category_id}
@@ -1581,17 +1586,17 @@ const MenuItems: React.FC = () => {
                     animationIndex={i}
                     actions={
                       <>
-                        <Button size="small" variant="edit" onClick={() => setEditingItem(item)}>Edit</Button>
-                        <Button
+                        {canEdit && <Button size="small" variant="edit" onClick={() => setEditingItem(item)}>Edit</Button>}
+                        {canEdit && <Button
                           size="small"
                           variant={item.is_active ? 'outline' : 'primary'}
                           isLoading={toggleActiveMutation.isPending}
                           onClick={() => toggleActiveMutation.mutate({ id: item.id, is_active: !item.is_active })}
                         >
                           {item.is_active ? 'Set inactive' : 'Set active'}
-                        </Button>
-                        <Button size="small" variant="secondary" onClick={() => setManageAddonsItem(item)}>Manage addons</Button>
-                        <Button
+                        </Button>}
+                        {canEdit && <Button size="small" variant="secondary" onClick={() => setManageAddonsItem(item)}>Manage addons</Button>}
+                        {canDelete && <Button
                           size="small"
                           variant="danger"
                           onClick={() => {
@@ -1608,7 +1613,7 @@ const MenuItems: React.FC = () => {
                           isLoading={deleteMutation.isPending}
                         >
                           Delete
-                        </Button>
+                        </Button>}
                       </>
                     }
                   />

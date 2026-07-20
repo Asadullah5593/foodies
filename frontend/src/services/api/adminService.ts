@@ -1023,6 +1023,29 @@ export const adminService = {
     return response.data;
   },
 
+  // FBR fiscalization: per-branch overview + the "all branches at once" toggle
+  getFbrStatus: async (): Promise<{
+    total_branches: number;
+    enabled_branches: number;
+    branches: Array<{
+      id: number;
+      name: string;
+      fbr_enabled: boolean;
+      fbr_environment: string;
+      has_credentials: boolean;
+    }>;
+  }> => {
+    const response = await apiClient.get('/admin/fbr/status');
+    return response.data;
+  },
+
+  fbrBulkToggle: async (
+    enabled: boolean,
+  ): Promise<{ updated: number; skipped_missing_credentials: number; enabled: boolean }> => {
+    const response = await apiClient.post('/admin/fbr/bulk-toggle', { enabled });
+    return response.data;
+  },
+
   // Brands (for the per-brand loyalty selector)
   getBrands: async (): Promise<
     Array<{ id: number; name: string; loyalty_enabled?: boolean }>

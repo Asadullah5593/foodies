@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
 import Button from '../../../components/Button';
+import { useHasPermission } from '../../../hooks/useHasPermission';
 import Loader from '../../../components/Loader';
 import SearchableMultiSelect from '../../../components/SearchableMultiSelect';
 import apiClient from '../../../utils/apiClient';
@@ -15,6 +16,7 @@ type BrandOption = { id: number; name: string };
 
 const RiderPoolSharing: React.FC = () => {
   const queryClient = useQueryClient();
+  const canManage = useHasPermission('rider-sharing:manage');
   const { user } = useAuth();
   const isOwnerGM =
     user?.tenant_id != null &&
@@ -153,7 +155,7 @@ const RiderPoolSharing: React.FC = () => {
                     {req.note ? ` · "${req.note}"` : ''}
                   </p>
                 </div>
-                <div className="flex gap-2">
+                {canManage && <div className="flex gap-2">
                   <Button
                     variant="primary"
                     isLoading={approveMutation.isPending}
@@ -172,7 +174,7 @@ const RiderPoolSharing: React.FC = () => {
                   >
                     Decline
                   </Button>
-                </div>
+                </div>}
               </div>
             ))}
           </div>
@@ -223,9 +225,9 @@ const RiderPoolSharing: React.FC = () => {
                   )}
                 </div>
               </div>
-              <Button variant="secondary" onClick={() => openManage(rider)}>
+              {canManage && <Button variant="secondary" onClick={() => openManage(rider)}>
                 Manage brands
-              </Button>
+              </Button>}
             </div>
           ))}
           {(riders ?? []).length === 0 && (

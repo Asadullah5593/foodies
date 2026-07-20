@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
 import Button from '../../../components/Button';
+import { useHasPermission } from '../../../hooks/useHasPermission';
 import Loader from '../../../components/Loader';
 import { adminService } from '../../../services/api/adminService';
 import { RiderProfile } from '../../../types';
@@ -12,6 +13,7 @@ import { inputClass, labelClass, useRiders } from './shared';
 
 const RiderProfiles: React.FC = () => {
   const queryClient = useQueryClient();
+  const canEdit = useHasPermission('rider-profiles:edit');
 
   const [profileForm, setProfileForm] = useState({
     user_id: '',
@@ -211,7 +213,7 @@ const RiderProfiles: React.FC = () => {
             HRM profile active
           </label>
         </div>
-        <div className="mt-4 flex justify-end">
+        {canEdit && <div className="mt-4 flex justify-end">
           <Button
             variant="primary"
             isLoading={upsertProfileMutation.isPending}
@@ -220,7 +222,7 @@ const RiderProfiles: React.FC = () => {
           >
             Save rider profile
           </Button>
-        </div>
+        </div>}
         <div className="mt-6 border-t border-gray-200 dark:border-slate-700 pt-4 space-y-3">
           {(profiles ?? []).length === 0 ? (
             <p className="text-sm text-gray-500 dark:text-slate-400">

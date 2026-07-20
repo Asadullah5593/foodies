@@ -7,6 +7,7 @@ import { Brand, MenuItem } from '../../types';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import Card from '../../components/Card';
 import { adminService } from '../../services/api/adminService';
 import { useAuth } from '../../contexts/AuthContext';
@@ -34,6 +35,11 @@ const emptyForm = {
   supports_delivery: false,
   delivery_radius_km: '10',
   is_active: true,
+  fbr_enabled: false,
+  fbr_pos_id: '',
+  fbr_token: '',
+  fbr_environment: 'sandbox',
+  fbr_pct_code: '',
 };
 
 /** Common timezones; the branch's own time gates time-restricted items/deals (e.g. lunch offers). */
@@ -59,6 +65,8 @@ const BranchEdit: React.FC = () => {
   const queryClient = useQueryClient();
   const isNew = id === 'new';
   const branchId = isNew ? null : parseInt(id ?? '', 10);
+  const canSave = useHasPermission(isNew ? 'branches:create' : 'branches:edit');
+  const canToggleOpen = useHasPermission('brands:toggle-open');
 
   const [formData, setFormData] = useState<FormData>(emptyForm);
   const [linkedMenuItemIds, setLinkedMenuItemIds] = useState<number[]>([]);
@@ -118,6 +126,21 @@ const BranchEdit: React.FC = () => {
     onError: (e: any) => toast.error(e.response?.data?.message || 'Failed to update'),
   });
 
+  // Posts a dummy invoice to FBR with the branch's SAVED credentials.
+  const testFbrConnection = useMutation({
+    mutationFn: async () => {
+      const res = await apiClient.post<{ success: boolean; msg: string }>(
+        `/admin/fbr/branches/${branchId}/test-connection`,
+      );
+      return res.data;
+    },
+    onSuccess: (data) => {
+      if (data.success) toast.success(data.msg);
+      else toast.error(data.msg);
+    },
+    onError: (e: any) => toast.error(e.response?.data?.message || 'FBR connection test failed'),
+  });
+
   useEffect(() => {
     if (branch) {
       setFormData({
@@ -137,6 +160,11 @@ const BranchEdit: React.FC = () => {
         supports_delivery: branch.supports_delivery ?? false,
         delivery_radius_km: branch.delivery_radius_km != null ? String(branch.delivery_radius_km) : '10',
         is_active: branch.is_active ?? true,
+        fbr_enabled: branch.fbr_enabled ?? false,
+        fbr_pos_id: branch.fbr_pos_id || '',
+        fbr_token: branch.fbr_token || '',
+        fbr_environment: branch.fbr_environment || 'sandbox',
+        fbr_pct_code: branch.fbr_pct_code || '',
       });
     } else if (isNew) {
       setFormData(emptyForm);
@@ -284,6 +312,11 @@ const BranchEdit: React.FC = () => {
         supports_delivery: data.supports_delivery,
         delivery_radius_km: data.delivery_radius_km ? +data.delivery_radius_km : 10,
         is_active: data.is_active,
+        fbr_enabled: data.fbr_enabled,
+        fbr_pos_id: data.fbr_pos_id.trim() || null,
+        fbr_token: data.fbr_token.trim() || null,
+        fbr_environment: data.fbr_environment,
+        fbr_pct_code: data.fbr_pct_code.trim() || null,
       };
       if (data.brand_ids.length) payload.brand_ids = data.brand_ids;
       payload.menu_item_ids = linkedMenuItemIds;
@@ -309,6 +342,10 @@ const BranchEdit: React.FC = () => {
       formData.supports_delivery;
     if (!hasOrderType) {
       toast.error('At least one order type (Dine-in, Takeaway or Delivery) must be selected.');
+      return;
+    }
+    if (formData.fbr_enabled && (!formData.fbr_pos_id.trim() || !formData.fbr_token.trim())) {
+      toast.error('FBR POS ID and token are required to enable FBR for this branch.');
       return;
     }
     if (isNew) {
@@ -520,11 +557,99 @@ const BranchEdit: React.FC = () => {
           </div>
         </Card>
 
+        <Card className="p-6 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 dark:border-slate-600 pb-2 mb-4">
+            <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">FBR Integration</h2>
+            {!isNew && (
+              <Button
+                type="button"
+                size="small"
+                variant="outline"
+                onClick={() => testFbrConnection.mutate()}
+                isLoading={testFbrConnection.isPending}
+                disabled={!branch?.fbr_pos_id || !branch?.fbr_token}
+              >
+                Test connection
+              </Button>
+            )}
+          </div>
+          <div className="space-y-4">
+            <label className="flex items-start gap-2 cursor-pointer max-w-2xl">
+              <input
+                type="checkbox"
+                checked={formData.fbr_enabled}
+                onChange={(e) => setFormData({ ...formData, fbr_enabled: e.target.checked })}
+                className="mt-1 rounded border-gray-300 dark:border-slate-500 text-red-600 focus:ring-red-500"
+              />
+              <span>
+                <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Report sales to FBR</span>
+                <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
+                  Every POS / app / kiosk order at this branch is reported to FBR and the returned fiscal
+                  invoice number + QR prints on the receipt. Sales are <strong>never blocked</strong>: if FBR is
+                  unreachable (or this is OFF), receipts reuse the branch's last real FBR number. Turning this
+                  off keeps the credentials saved.
+                </p>
+              </span>
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>FBR POS ID</label>
+                <input
+                  type="text"
+                  value={formData.fbr_pos_id}
+                  onChange={(e) => setFormData({ ...formData, fbr_pos_id: e.target.value })}
+                  className={inputClass}
+                  placeholder="e.g. 943050"
+                />
+              </div>
+              <div>
+                <label className={labelClass}>Environment</label>
+                <select
+                  value={formData.fbr_environment}
+                  onChange={(e) => setFormData({ ...formData, fbr_environment: e.target.value })}
+                  className={inputClass}
+                >
+                  <option value="sandbox">Sandbox (testing)</option>
+                  <option value="live">Live (production)</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className={labelClass}>FBR token</label>
+              <textarea
+                value={formData.fbr_token}
+                onChange={(e) => setFormData({ ...formData, fbr_token: e.target.value })}
+                className={inputClass}
+                rows={2}
+                placeholder="Bearer token issued by FBR for this POS registration"
+              />
+            </div>
+            <div className="max-w-xs">
+              <label className={labelClass}>PCT code (optional)</label>
+              <input
+                type="text"
+                value={formData.fbr_pct_code}
+                onChange={(e) => setFormData({ ...formData, fbr_pct_code: e.target.value })}
+                className={inputClass}
+                placeholder="Default: 98211000"
+              />
+              <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                Item classification code from your FBR registration. Leave empty for the restaurant default.
+              </p>
+            </div>
+            {!isNew && (
+              <p className="text-xs text-gray-500 dark:text-slate-400">
+                “Test connection” uses the last <strong>saved</strong> credentials — save changes first.
+              </p>
+            )}
+          </div>
+        </Card>
+
         {!isNew && (
           <Card className="p-6 dark:bg-slate-800 dark:border-slate-700">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 dark:border-slate-600 pb-2 mb-4">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">Brand online availability</h2>
-              {!isBrandLocked && (brandAvailability?.length ?? 0) > 0 && (
+              {!isBrandLocked && canToggleOpen && (brandAvailability?.length ?? 0) > 0 && (
                 <div className="flex gap-2">
                   <Button type="button" size="small" variant="outline" onClick={() => closeAllBrands.mutate(false)} isLoading={closeAllBrands.isPending}>Close all brands</Button>
                   <Button type="button" size="small" variant="outline" onClick={() => closeAllBrands.mutate(true)} isLoading={closeAllBrands.isPending}>Open all</Button>
@@ -543,9 +668,9 @@ const BranchEdit: React.FC = () => {
                       <span className={b.is_open ? 'text-xs font-semibold text-green-600 dark:text-green-400' : 'text-xs font-semibold text-amber-600 dark:text-amber-400'}>
                         {b.is_open ? 'Open' : 'Closed'}
                       </span>
-                      <Button type="button" size="small" variant={b.is_open ? 'danger' : 'primary'} onClick={() => toggleBrandOpen.mutate({ brandId: b.brand_id, is_open: !b.is_open })} isLoading={toggleBrandOpen.isPending}>
+                      {canToggleOpen && <Button type="button" size="small" variant={b.is_open ? 'danger' : 'primary'} onClick={() => toggleBrandOpen.mutate({ brandId: b.brand_id, is_open: !b.is_open })} isLoading={toggleBrandOpen.isPending}>
                         {b.is_open ? 'Close' : 'Open'}
-                      </Button>
+                      </Button>}
                     </div>
                   </div>
                 ))}
@@ -643,10 +768,10 @@ const BranchEdit: React.FC = () => {
                   />
                 </div>
               </div>
-              <div className="flex gap-2 mb-3">
+              {canSave && <div className="flex gap-2 mb-3">
                 <Button type="button" size="small" variant="outline" onClick={() => setLinkedMenuItemIds((prev) => Array.from(new Set([...prev, ...filteredMenuItems.map((mi) => mi.id)])))}>Link all shown ({filteredMenuItems.length})</Button>
                 <Button type="button" size="small" variant="outline" onClick={() => { const visible = new Set(filteredMenuItems.map((mi) => mi.id)); setLinkedMenuItemIds((prev) => prev.filter((id) => !visible.has(id))); }}>Unlink all shown</Button>
-              </div>
+              </div>}
               <div className="border border-gray-200 dark:border-slate-600 rounded-lg overflow-hidden bg-gray-50 dark:bg-slate-700/30 max-h-[28rem] overflow-y-auto">
                 {filteredMenuItems.length === 0 ? (
                   <p className="text-sm text-gray-500 dark:text-slate-400 p-4">No items match the current filters.</p>
@@ -696,10 +821,10 @@ const BranchEdit: React.FC = () => {
         </Card>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" variant="primary" isLoading={isSubmitting} disabled={formData.brand_ids.length === 0}>
+          {canSave && <Button type="submit" variant="primary" isLoading={isSubmitting} disabled={formData.brand_ids.length === 0}>
             {isNew ? 'Create Branch' : 'Save Changes'}
-          </Button>
-          <Link to="/admin/branches"><Button type="button" variant="outline">Cancel</Button></Link>
+          </Button>}
+          <Link to="/admin/branches"><Button type="button" variant="outline">{canSave ? 'Cancel' : 'Back'}</Button></Link>
         </div>
       </form>
     </div>

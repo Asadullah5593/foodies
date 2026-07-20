@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { adminService } from '../../services/api';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import Card from '../../components/Card';
 import SearchableSelect from '../../components/SearchableSelect';
 
@@ -59,6 +60,7 @@ const initialForm: DeliveryTiersForm = {
 
 const DeliveryTiers: React.FC = () => {
   const { user } = useAuth();
+  const canEdit = useHasPermission('delivery-tiers:edit');
   const queryClient = useQueryClient();
   const tenantId = user?.tenant_id ?? null;
 
@@ -272,20 +274,20 @@ const DeliveryTiers: React.FC = () => {
                           onChange={(e) => setBand(key, idx, { fee: Math.max(0, +e.target.value || 0) })}
                           className={`${inputClass} w-32`}
                         />
-                        <Button
+                        {canEdit && <Button
                           variant="outline"
                           size="small"
                           onClick={() => removeBand(key, idx)}
                           disabled={t.bands.length <= 1}
                         >
                           Remove
-                        </Button>
+                        </Button>}
                       </div>
                     ))}
                   </div>
-                  <Button variant="outline" size="small" onClick={() => addBand(key)} className="mt-2">
+                  {canEdit && <Button variant="outline" size="small" onClick={() => addBand(key)} className="mt-2">
                     + Add band
-                  </Button>
+                  </Button>}
                 </div>
               </section>
             );
@@ -317,7 +319,7 @@ const DeliveryTiers: React.FC = () => {
             </div>
           </section>
 
-          <div className="flex justify-end">
+          {canEdit && <div className="flex justify-end">
             <Button
               variant="primary"
               onClick={() => updateMutation.mutate()}
@@ -326,7 +328,7 @@ const DeliveryTiers: React.FC = () => {
             >
               Update delivery tiers
             </Button>
-          </div>
+          </div>}
         </div>
       </Card>
     </div>

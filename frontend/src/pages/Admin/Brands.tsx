@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast';
 import { AnimatePresence } from 'framer-motion';
 import apiClient from '../../utils/apiClient';
 import { useAuth } from '../../contexts/AuthContext';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import { Brand } from '../../types';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
@@ -35,6 +36,10 @@ const Brands: React.FC = () => {
   /** Brand admins see only their own brand and may edit it (rules like the
    *  delivery fee) but cannot create or delete brands. */
   const isBrandLocked = user?.allowed_brand_ids != null;
+  const canCreate = useHasPermission('brands:create');
+  const canEdit = useHasPermission('brands:edit');
+  const canDelete = useHasPermission('brands:delete');
+  const canToggleOpen = useHasPermission('brands:toggle-open');
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showForm, setShowForm] = useState(false);
@@ -278,7 +283,7 @@ const Brands: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Brands</h1>
-        {!isBrandLocked && (
+        {!isBrandLocked && canCreate && (
           <Button onClick={openCreate} variant="primary">Add Brand</Button>
         )}
       </div>
@@ -530,10 +535,10 @@ const Brands: React.FC = () => {
                     animationIndex={i}
                     actions={
                       <>
-                        <Button size="small" variant="edit" onClick={() => openEdit(brand)} disabled={updateMutation.isPending}>
+                        {canEdit && <Button size="small" variant="edit" onClick={() => openEdit(brand)} disabled={updateMutation.isPending}>
                           Edit
-                        </Button>
-                        <Button
+                        </Button>}
+                        {canEdit && <Button
                           size="small"
                           variant={brand.status === 'active' ? 'outline' : 'primary'}
                           title="Toggle whether this branch/brand is active (an inactive brand is hidden from customers everywhere)"
@@ -541,8 +546,8 @@ const Brands: React.FC = () => {
                           isLoading={activeMutation.isPending}
                         >
                           {brand.status === 'active' ? 'Set inactive' : 'Set active'}
-                        </Button>
-                        <Button
+                        </Button>}
+                        {canToggleOpen && <Button
                           size="small"
                           variant="outline"
                           title="Open/close this brand's online ordering (app/web/kiosk). POS is unaffected."
@@ -555,8 +560,8 @@ const Brands: React.FC = () => {
                             : brand.online_status === 'open'
                               ? 'Close online'
                               : 'Open online'}
-                        </Button>
-                        {!isBrandLocked && (
+                        </Button>}
+                        {!isBrandLocked && canDelete && (
                           <Button
                             size="small"
                             variant="danger"

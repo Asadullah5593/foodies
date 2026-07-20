@@ -7,6 +7,7 @@ import {
 import { Reflector } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 import { REQUIRE_PERMISSION_KEY } from './require-permission.decorator';
+import { expandPermissions } from './permission-implications';
 
 @Injectable()
 export class RequirePermissionGuard implements CanActivate {
@@ -16,11 +17,17 @@ export class RequirePermissionGuard implements CanActivate {
     ) {}
 
     async canActivate(context: ExecutionContext): Promise<boolean> {
-        const required = this.reflector.get<string>(
+        // Metadata is an array (any-of). Tolerate a legacy single-string value.
+        const requiredRaw = this.reflector.get<string | string[]>(
             REQUIRE_PERMISSION_KEY,
             context.getHandler(),
         );
-        if (!required) return true;
+        const required = Array.isArray(requiredRaw)
+            ? requiredRaw
+            : requiredRaw
+              ? [requiredRaw]
+              : [];
+        if (required.length === 0) return true;
 
         const request = context.switchToHttp().getRequest<{
             user?: { id: number; tenantId: number | null };
@@ -55,11 +62,13 @@ export class RequirePermissionGuard implements CanActivate {
        WHERE rp.role_id IN (${placeholders})`,
             roleIds,
         )) as unknown as PermissionRow[];
-        const permissionNames = new Set<string>(
+        const permissionNames = expandPermissions(
             rows.map((r: PermissionRow) => r.name),
         );
-        if (!permissionNames.has(required)) {
-            throw new ForbiddenException(`Permission required: ${required}`);
+        if (!required.some((p) => permissionNames.has(p))) {
+            throw new ForbiddenException(
+                `Permission required: one of ${required.join(', ')}`,
+            );
         }
         return true;
     }

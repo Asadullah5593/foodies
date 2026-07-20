@@ -140,7 +140,7 @@ export class BranchUsersController {
 
     @Delete(':branchId/users/:userId')
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission(Permissions.BRANCH_USERS_ASSIGN)
+    @RequirePermission(Permissions.BRANCH_USERS_REMOVE)
     destroy(
         @CurrentUser()
         user: {

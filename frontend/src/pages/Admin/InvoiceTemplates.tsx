@@ -5,6 +5,7 @@ import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
@@ -44,6 +45,10 @@ const emptyForm = () => ({
 
 const InvoiceTemplates: React.FC = () => {
   const qc = useQueryClient();
+  const canCreate = useHasPermission('invoice-templates:create');
+  const canEdit = useHasPermission('invoice-templates:edit');
+  const canDelete = useHasPermission('invoice-templates:delete');
+  const canSetDefault = useHasPermission('invoice-templates:set-default');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm());
   const [previewRow, setPreviewRow] = useState<TemplateRow | null>(null);
@@ -152,7 +157,7 @@ const InvoiceTemplates: React.FC = () => {
             have their own default per scope — kitchen falls back to the customer default until one is set.
           </p>
         </div>
-        <Button onClick={openCreate}>New Template</Button>
+        {canCreate && <Button onClick={openCreate}>New Template</Button>}
       </div>
 
       {list.length === 0 ? (
@@ -182,17 +187,17 @@ const InvoiceTemplates: React.FC = () => {
               actions={
                 <>
                   <Button size="small" variant="outline" onClick={() => setPreviewRow(t)}>Preview</Button>
-                  <Button size="small" variant="edit" onClick={() => openEdit(t)}>Edit</Button>
-                  <Button size="small" variant="outline" onClick={() => openDuplicate(t)}>Duplicate</Button>
-                  {!t.is_default && (
+                  {canEdit && <Button size="small" variant="edit" onClick={() => openEdit(t)}>Edit</Button>}
+                  {canCreate && <Button size="small" variant="outline" onClick={() => openDuplicate(t)}>Duplicate</Button>}
+                  {canSetDefault && !t.is_default && (
                     <Button size="small" variant="primary" onClick={() => activateM.mutate({ id: t.id, purpose: 'customer' })}>Set customer default</Button>
                   )}
-                  {!t.is_default_kitchen && (
+                  {canSetDefault && !t.is_default_kitchen && (
                     <Button size="small" variant="outline" onClick={() => activateM.mutate({ id: t.id, purpose: 'kitchen' })}>Set kitchen default</Button>
                   )}
-                  <Button size="small" variant="danger" onClick={async () => {
+                  {canDelete && <Button size="small" variant="danger" onClick={async () => {
                     if (await confirmDialog({ title: `Delete "${t.name}"?`, confirmText: 'Delete' })) deleteM.mutate(t.id);
-                  }}>Delete</Button>
+                  }}>Delete</Button>}
                 </>
               }
             />

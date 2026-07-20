@@ -14,11 +14,14 @@ import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – Orders')
 @ApiBearerAuth()
 @Controller('admin/orders')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class AdminOrdersController {
     constructor(private service: OrdersService) {}
 
@@ -45,6 +48,7 @@ export class AdminOrdersController {
     }
 
     @Put('group/:orderGroupId/rider')
+    @RequirePermission(Permissions.ORDERS_ASSIGN_RIDER, Permissions.CUSTOMER_DISPLAY_UPDATE)
     assignRiderToGroup(
         @Param('orderGroupId') orderGroupId: string,
         @CurrentUser()
@@ -75,6 +79,7 @@ export class AdminOrdersController {
     }
 
     @Put('group/:orderGroupId/rider/change')
+    @RequirePermission(Permissions.ORDERS_ASSIGN_RIDER, Permissions.CUSTOMER_DISPLAY_UPDATE)
     changeRiderForGroup(
         @Param('orderGroupId') orderGroupId: string,
         @CurrentUser()
@@ -160,6 +165,7 @@ export class AdminOrdersController {
     }
 
     @Put(':id/status')
+    @RequirePermission(Permissions.ORDERS_UPDATE_STATUS)
     updateStatus(
         @Param('id') id: string,
         @CurrentUser()
@@ -181,6 +187,7 @@ export class AdminOrdersController {
     }
 
     @Put(':id/rider')
+    @RequirePermission(Permissions.ORDERS_ASSIGN_RIDER, Permissions.CUSTOMER_DISPLAY_UPDATE)
     assignRider(
         @Param('id') id: string,
         @CurrentUser()
@@ -211,6 +218,7 @@ export class AdminOrdersController {
     }
 
     @Put(':id/rider/change')
+    @RequirePermission(Permissions.ORDERS_ASSIGN_RIDER, Permissions.CUSTOMER_DISPLAY_UPDATE)
     changeRider(
         @Param('id') id: string,
         @CurrentUser()
@@ -241,6 +249,7 @@ export class AdminOrdersController {
     }
 
     @Post(':id/auto-assign')
+    @RequirePermission(Permissions.ORDERS_ASSIGN_RIDER, Permissions.CUSTOMER_DISPLAY_UPDATE)
     retryAutoAssign(
         @Param('id') id: string,
         @CurrentUser()

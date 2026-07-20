@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, IsNull, Repository } from 'typeorm';
-import { randomUUID } from 'crypto';
+import { randomInt, randomUUID } from 'crypto';
 import { Order } from '../entities/order.entity';
 import { OrderItem } from '../entities/order-item.entity';
 import { OrderItemAddon } from '../entities/order-item-addon.entity';
@@ -25,6 +25,7 @@ import {
     sourceToOfferChannel,
 } from '../discounts/offer-preview.util';
 import { InvoiceTemplatesService } from '../invoices/invoice-templates.service';
+import { FbrService } from '../fbr/fbr.service';
 import { User } from '../entities/user.entity';
 import { MenuService } from '../menu/menu.service';
 import {
@@ -161,6 +162,7 @@ export class OrdersService {
         private pushNotificationService: PushNotificationService,
         private notificationsService: NotificationsService,
         private invoiceTemplatesService: InvoiceTemplatesService,
+        private fbrService: FbrService,
     ) {}
 
     /**
@@ -1644,24 +1646,6 @@ export class OrdersService {
             }
         }
 
-        // Pre-generate both identifiers per (branch, brand) group. Each group is
-        // a distinct branch+brand pair = one order, so daily counters don't collide
-        // within a single multi-brand placement.
-        const identifiersByKey = new Map<
-            string,
-            { orderId: string; orderNumber: string }
-        >();
-        for (const key of sortedGroups) {
-            const [branchIdStr, brandIdStr] = key.split('-');
-            identifiersByKey.set(
-                key,
-                await this.generateOrderIdentifiers(
-                    Number(branchIdStr),
-                    Number(brandIdStr),
-                ),
-            );
-        }
-
         const deliveryLatitude =
             dto.latitude != null && Number.isFinite(Number(dto.latitude))
                 ? Number(dto.latitude)
@@ -1692,8 +1676,15 @@ export class OrdersService {
                 const branchId = Number(branchIdStr);
                 const brandId = Number(brandIdStr);
                 const indices = groupToIndices.get(key)!;
-                let { orderId: newOrderId, orderNumber } =
-                    identifiersByKey.get(key)!;
+                // Generate identifiers right before the save so the counter's
+                // timestamp and the row's placedAt are milliseconds apart.
+                // Each group is a distinct branch+brand pair = its own daily
+                // counter, so groups in one placement can't collide.
+                let {
+                    orderId: newOrderId,
+                    orderNumber,
+                    placedAt,
+                } = await this.generateOrderIdentifiers(branchId, brandId);
                 const brandSubtotal = indices.reduce(
                     (s, i) => s + lineDetails[i].itemSubtotal,
                     0,
@@ -1775,9 +1766,10 @@ export class OrdersService {
                             100,
                     ) / 100;
                 let order: Order;
-                // Order number/id sequence is derived from a COUNT, so two orders placed
-                // in the same second for the same branch+brand collide on the unique
-                // index. Regenerate the sequence and retry instead of failing the whole
+                // Two concurrent placements for the same branch+brand can draw the
+                // same daily orderNumber (MAX+1, no lock), and a random orderId can
+                // in theory collide, so the unique indexes may reject the save.
+                // Regenerate both identifiers and retry instead of failing the whole
                 // placement with a 500.
                 for (let attempt = 0; ; attempt++) {
                     try {
@@ -1849,7 +1841,7 @@ export class OrdersService {
                                         id: number;
                                     },
                                 }),
-                                placedAt: new Date(),
+                                placedAt,
                             }),
                         );
                         break;
@@ -1874,7 +1866,17 @@ export class OrdersService {
                                     );
                                 }
                             }
-                            if (attempt < 4) {
+                            // Only the two identifier indexes are fixable by
+                            // regenerating. A violation of any other named
+                            // constraint is rethrown immediately; an unnamed
+                            // one (driver didn't report it) stays retryable.
+                            if (
+                                attempt < 4 &&
+                                (constraint == null ||
+                                    constraint === 'UQ_orders_order_id' ||
+                                    constraint ===
+                                        'UQ_orders_branch_brand_day_number')
+                            ) {
                                 const regen =
                                     await this.generateOrderIdentifiers(
                                         branchId,
@@ -1882,6 +1884,7 @@ export class OrdersService {
                                     );
                                 newOrderId = regen.orderId;
                                 orderNumber = regen.orderNumber;
+                                placedAt = regen.placedAt;
                                 continue;
                             }
                         }
@@ -2095,6 +2098,23 @@ export class OrdersService {
             }
         }
 
+        // FBR fiscalization for pos / kiosk / consumer_app sales (web checkout
+        // is out of scope). Synchronous so the printed receipt carries the real
+        // fiscal number when FBR is up, but NEVER blocking: fiscalizeOrder
+        // swallows every failure, stamps the branch's last real number as a
+        // fallback and schedules its own single background retry.
+        if (source !== 'consumer_web') {
+            for (const id of createdOrderIds) {
+                try {
+                    await this.fbrService.fiscalizeOrder(id);
+                } catch (e) {
+                    this.logger.error(
+                        `FBR fiscalization threw for order ${id}`,
+                        e instanceof Error ? e.stack : undefined,
+                    );
+                }
+            }
+        }
         const orders = await Promise.all(
             createdOrderIds.map((id) => this.findOne(id)),
         );
@@ -2138,6 +2158,8 @@ export class OrdersService {
         return {
             id: order.id,
             order_number: order.orderNumber,
+            fbr_invoice_number: order.fbrInvoiceNumber ?? null,
+            fbr_number_source: order.fbrNumberSource ?? null,
             notes: order.notes ?? null,
             order_type: order.orderType,
             status: order.status,
@@ -2444,6 +2466,8 @@ export class OrdersService {
                 id: o.id,
                 order_number: o.orderNumber,
                 invoice_number: o.orderId ?? String(o.id),
+                fbr_invoice_number: o.fbrInvoiceNumber ?? null,
+                fbr_number_source: o.fbrNumberSource ?? null,
                 brand_id: o.brandId,
                 brand_name: o.brand?.name ?? null,
                 brand_logo_url: o.brand?.logoUrl ?? null,
@@ -2643,6 +2667,8 @@ export class OrdersService {
             order_id: order.id,
             order_number: order.orderNumber,
             invoice_number: order.orderId ?? String(order.id),
+            fbr_invoice_number: order.fbrInvoiceNumber ?? null,
+            fbr_number_source: order.fbrNumberSource ?? null,
             order_group_id: order.orderGroupId ?? null,
             brand: order.brand
                 ? {
@@ -2855,6 +2881,8 @@ export class OrdersService {
                 order_id: o.id,
                 order_number: o.order_number,
                 invoice_number: o.invoice_number,
+                fbr_invoice_number: o.fbr_invoice_number ?? null,
+                fbr_number_source: o.fbr_number_source ?? null,
                 brand_name: o.brand_name,
                 brand_logo_url: o.brand_logo_url,
                 order_type: o.order_type,
@@ -6281,34 +6309,69 @@ export class OrdersService {
     }
 
     /**
-     * Generate both identifiers for one order from a single daily counter.
+     * Generate the identifiers for one order, plus the `placedAt` timestamp
+     * the save site must write. Threading the timestamp through is deliberate:
+     * the daily counter buckets by date(placed_at), so the row must be stamped
+     * with the same moment the counter used — a second clock sample at save
+     * time could cross midnight and file the number into the wrong day's
+     * bucket.
      *
-     * `orderId`  — permanent tracking reference: `BR-{brandId}-{branchId}-{YYYYMMDD}-{seq}`
-     *              e.g. `BR-23-10-20260617-001`. Globally unique, shared with customer.
+     * `orderId`  — permanent tracking / invoice reference: `FDS-XXXXXXXX`
+     *              where XXXXXXXX is 8 crypto-random uppercase alphanumeric
+     *              chars (36^8 ≈ 2.82 trillion codes). Globally unique and
+     *              never reused: enforced by the partial unique index
+     *              `UQ_orders_order_id`; on the astronomically rare collision
+     *              the save-site retry loop draws a fresh code. Orders created
+     *              before this format keep their legacy
+     *              `BR-{brandId}-{branchId}-{YYYYMMDD}-{seq}` values.
      * `orderNumber` — short daily call-out number: `001`, `002` …
-     *              Resets each day per branch+brand. Staff use this to call out orders.
+     *              Resets each day per branch+brand. MAX+1 rather than
+     *              COUNT+1: a max always lands on a free number, so a stray
+     *              row (a midnight straddler, a legacy row numbered under the
+     *              old UTC-prefix scheme, a deleted row) can skew a COUNT into
+     *              a deterministic collision but can never make MAX+1 collide.
+     *              Concurrent placements can still draw the same number; the
+     *              winner's commit raises the max, so the loser's retry
+     *              converges on a free one.
      */
     private async generateOrderIdentifiers(
         branchId: number,
         brandId: number,
-    ): Promise<{ orderId: string; orderNumber: string }> {
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const dateCompact = todayStr.replace(/-/g, '');
-        // Count within the exact order_id namespace (prefix match) rather than by
-        // date(placed_at): the order_id embeds the UTC date, but date(placed_at) is
-        // evaluated in the server's local timezone, so the two disagree in the
-        // local-vs-UTC midnight window and would regenerate a colliding sequence.
-        const prefix = `BR-${brandId}-${branchId}-${dateCompact}-`;
-        const count = await this.orderRepo
+    ): Promise<{ orderId: string; orderNumber: string; placedAt: Date }> {
+        const now = new Date();
+        // date(placed_at) is the same expression the uniqueness index
+        // UQ_orders_branch_brand_day_number keys on, and :now is serialized by
+        // the driver exactly like the returned placedAt, so counter day, index
+        // day and stored day always agree. The numeric-only filter skips
+        // legacy long-format order_numbers (pre-ShortOrderNumber rows) that
+        // would break the cast.
+        const row = await this.orderRepo
             .createQueryBuilder('o')
+            .select('MAX(CAST(o.order_number AS int))', 'max')
             .where('o.branchId = :branchId', { branchId })
             .andWhere('o.brandId = :brandId', { brandId })
-            .andWhere('o.orderId LIKE :prefix', { prefix: `${prefix}%` })
-            .getCount();
-        const seq = String(count + 1).padStart(3, '0');
+            .andWhere('date(o.placed_at) = CAST(:now AS date)', { now })
+            .andWhere("o.order_number ~ '^[0-9]+$'")
+            .getRawOne<{ max: number | string | null }>();
+        const next = Number(row?.max ?? 0) + 1;
         return {
-            orderId: `${prefix}${seq}`,
-            orderNumber: seq,
+            orderId: this.generateOrderRef(),
+            orderNumber: String(next).padStart(3, '0'),
+            placedAt: now,
         };
+    }
+
+    /**
+     * Draw a random `FDS-XXXXXXXX` invoice reference. No existence pre-check:
+     * the partial unique index `UQ_orders_order_id` is the arbiter, and the
+     * save-site retry loop redraws on the ~1-in-2.8-trillion collision.
+     */
+    private generateOrderRef(): string {
+        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let code = '';
+        for (let i = 0; i < 8; i++) {
+            code += alphabet[randomInt(alphabet.length)];
+        }
+        return `FDS-${code}`;
     }
 }

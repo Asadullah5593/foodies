@@ -12,16 +12,20 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { RiderHrmService } from './rider-hrm.service';
 
 @ApiTags('Admin – Rider HRM – Payroll')
 @ApiBearerAuth()
 @Controller('admin/rider-hrm')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class RiderPayrollAdminController {
     constructor(private readonly riderHrmService: RiderHrmService) {}
 
     @Post('payroll/runs')
+    @RequirePermission(Permissions.RIDER_PAYROLL_RUN)
     runPayroll(
         @CurrentUser() user: { id: number; tenantId: number | null },
         @Body()
@@ -65,6 +69,7 @@ export class RiderPayrollAdminController {
     }
 
     @Post('payroll/runs/:id/reverse')
+    @RequirePermission(Permissions.RIDER_PAYROLL_REVERSE)
     reversePayrollRun(
         @Param('id') id: string,
         @CurrentUser() user: { id: number; tenantId: number | null },

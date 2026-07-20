@@ -12,12 +12,15 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { InventoryService } from './inventory.service';
 
 @ApiTags('Admin – Inventory – Vendors')
 @ApiBearerAuth()
 @Controller('admin/inventory/vendors')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class VendorsAdminController {
     constructor(private inventoryService: InventoryService) {}
 
@@ -35,6 +38,7 @@ export class VendorsAdminController {
     }
 
     @Post()
+    @RequirePermission(Permissions.VENDORS_CREATE)
     async create(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -56,6 +60,7 @@ export class VendorsAdminController {
     }
 
     @Patch(':id')
+    @RequirePermission(Permissions.VENDORS_EDIT)
     async update(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -79,6 +84,7 @@ export class VendorsAdminController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.VENDORS_DELETE)
     async remove(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },

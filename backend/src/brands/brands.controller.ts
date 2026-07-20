@@ -61,7 +61,7 @@ export class BrandsController {
 
     @Post()
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission(Permissions.BRANCHES_MANAGE)
+    @RequirePermission(Permissions.BRANDS_CREATE)
     store(
         @Body()
         dto: {
@@ -91,6 +91,8 @@ export class BrandsController {
     }
 
     @Put(':id')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.BRANDS_EDIT)
     update(
         @Param('id') id: string,
         @CurrentUser()
@@ -139,6 +141,8 @@ export class BrandsController {
     }
 
     @Put(':id/loyalty-settings')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.LOYALTY_EDIT)
     updateLoyaltySettings(
         @Param('id') id: string,
         @CurrentUser()
@@ -193,6 +197,8 @@ export class BrandsController {
     }
 
     @Put(':id/delivery-tiers')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.DELIVERY_TIERS_EDIT)
     updateDeliveryTiers(
         @Param('id') id: string,
         @CurrentUser()
@@ -250,6 +256,8 @@ export class BrandsController {
 
     /** Open/close this brand's online ordering across all its branches. */
     @Patch(':id/availability')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.BRANDS_TOGGLE_OPEN)
     setAvailabilityEverywhere(
         @Param('id') id: string,
         @Body() dto: { is_open: boolean },
@@ -273,7 +281,7 @@ export class BrandsController {
 
     @Delete(':id')
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission(Permissions.BRANCHES_MANAGE)
+    @RequirePermission(Permissions.BRANDS_DELETE)
     destroy(
         @Param('id') id: string,
         @CurrentUser()

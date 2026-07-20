@@ -15,11 +15,14 @@ import { UpdateUserDto } from './update-user.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – Users')
 @ApiBearerAuth()
 @Controller('admin/users')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class UsersController {
     constructor(private service: UsersService) {}
 
@@ -56,6 +59,7 @@ export class UsersController {
     }
 
     @Post()
+    @RequirePermission(Permissions.USERS_CREATE)
     store(
         @Body()
         dto: {
@@ -86,6 +90,7 @@ export class UsersController {
     }
 
     @Put(':id')
+    @RequirePermission(Permissions.USERS_EDIT)
     update(
         @Param('id') id: string,
         @CurrentUser()
@@ -111,6 +116,7 @@ export class UsersController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.USERS_DELETE)
     destroy(
         @Param('id') id: string,
         @CurrentUser()

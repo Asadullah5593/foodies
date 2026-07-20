@@ -18,9 +18,13 @@ import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { confirmDialog } from '../../utils/sweetAlert';
+import { useHasPermission } from '../../hooks/useHasPermission';
 
 const MenuVariants: React.FC = () => {
   const queryClient = useQueryClient();
+  const canCreate = useHasPermission('variants:create');
+  const canEdit = useHasPermission('variants:edit');
+  const canDelete = useHasPermission('variants:delete');
   const [searchParams] = useSearchParams();
   const [showForm, setShowForm] = useState(false);
   const [editingVariant, setEditingVariant] = useState<Pick<MenuVariant, 'id' | 'menu_item_id' | 'name' | 'price_modifier' | 'is_default' | 'sort_order' | 'size_key'> | null>(null);
@@ -179,7 +183,7 @@ const MenuVariants: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Menu Variants</h1>
-        <Button onClick={() => setShowForm(true)}>Add Variant</Button>
+        {canCreate && <Button onClick={() => setShowForm(true)}>Add Variant</Button>}
       </div>
 
       <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
@@ -480,8 +484,8 @@ const MenuVariants: React.FC = () => {
                     animationIndex={i}
                     actions={
                       <>
-                        <Button size="small" variant="edit" onClick={() => setEditingVariant({ id: variant.id, menu_item_id: menuItemId, name: variant.name, price_modifier: priceMod, is_default: variant.is_default ?? variant.isDefault ?? false, sort_order: sortOrder, size_key: variant.size_key ?? variant.sizeKey ?? null })}>Edit</Button>
-                        <Button
+                        {canEdit && <Button size="small" variant="edit" onClick={() => setEditingVariant({ id: variant.id, menu_item_id: menuItemId, name: variant.name, price_modifier: priceMod, is_default: variant.is_default ?? variant.isDefault ?? false, sort_order: sortOrder, size_key: variant.size_key ?? variant.sizeKey ?? null })}>Edit</Button>}
+                        {canDelete && <Button
                           size="small"
                           variant="danger"
                           onClick={() => {
@@ -498,7 +502,7 @@ const MenuVariants: React.FC = () => {
                           isLoading={deleteMutation.isPending}
                         >
                           Delete
-                        </Button>
+                        </Button>}
                       </>
                     }
                   />

@@ -30,6 +30,7 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { confirmDialog } from '../../utils/sweetAlert';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import SizeMapEditor from '../../components/SizeMapEditor';
 
@@ -39,9 +40,11 @@ interface SortableModifierRowProps {
   onEdit: () => void;
   onDelete: () => void;
   isDeleting: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
 }
 
-const SortableModifierRow: React.FC<SortableModifierRowProps> = ({ modifier, group: _group, onEdit, onDelete, isDeleting }) => {
+const SortableModifierRow: React.FC<SortableModifierRowProps> = ({ modifier, group: _group, onEdit, onDelete, isDeleting, canEdit, canDelete }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: modifier.id });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -61,8 +64,8 @@ const SortableModifierRow: React.FC<SortableModifierRowProps> = ({ modifier, gro
       </span>
       <span className="flex-1">{modifier.name}</span>
       <span className="text-green-600 font-medium">{formatCurrency(Number(modifier.price))}</span>
-      <Button size="small" variant="edit" onClick={onEdit}>Edit</Button>
-      <Button size="small" variant="danger" onClick={onDelete} isLoading={isDeleting}>Delete</Button>
+      {canEdit && <Button size="small" variant="edit" onClick={onEdit}>Edit</Button>}
+      {canDelete && <Button size="small" variant="danger" onClick={onDelete} isLoading={isDeleting}>Delete</Button>}
     </li>
   );
 };
@@ -83,13 +86,16 @@ interface SortableGroupCardProps {
   isDeletingGroup: boolean;
   onLinkMenuItems: () => void;
   reorderDisabled?: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
 }
 
 const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
   group, brands, localOrder, setLocalOrder, sensors,
   onReorderModifiers, onEditModifier, onDeleteModifier, isDeletingModifier,
   onAddModifier, onEditGroup, onDeleteGroup, isDeletingGroup, onLinkMenuItems,
-  reorderDisabled,
+  reorderDisabled, canCreate, canEdit, canDelete,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: group.id });
   const style: React.CSSProperties = {
@@ -129,10 +135,10 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
             )}
           </div>
           <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
-            <Button size="small" variant="edit" onClick={onLinkMenuItems}>Link to menu items</Button>
-            <Button size="small" variant="secondary" onClick={() => onAddModifier(group.id)}>Add modifier</Button>
-            <Button size="small" variant="edit" onClick={onEditGroup}>Edit group</Button>
-            <Button size="small" variant="danger" onClick={onDeleteGroup} isLoading={isDeletingGroup}>Delete group</Button>
+            {canEdit && <Button size="small" variant="edit" onClick={onLinkMenuItems}>Link to menu items</Button>}
+            {canCreate && <Button size="small" variant="secondary" onClick={() => onAddModifier(group.id)}>Add modifier</Button>}
+            {canEdit && <Button size="small" variant="edit" onClick={onEditGroup}>Edit group</Button>}
+            {canDelete && <Button size="small" variant="danger" onClick={onDeleteGroup} isLoading={isDeletingGroup}>Delete group</Button>}
           </div>
         </div>
         {sortedMods.length > 0 ? (
@@ -160,6 +166,8 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
                     onEdit={() => onEditModifier(m)}
                     onDelete={() => onDeleteModifier(m.id)}
                     isDeleting={isDeletingModifier}
+                    canEdit={canEdit}
+                    canDelete={canDelete}
                   />
                 ))}
               </ul>
@@ -177,6 +185,9 @@ const SIZE_KEYS = ['7', '10', '12', '14'];
 
 const Modifiers: React.FC = () => {
   const queryClient = useQueryClient();
+  const canCreate = useHasPermission('modifiers:create');
+  const canEdit = useHasPermission('modifiers:edit');
+  const canDelete = useHasPermission('modifiers:delete');
   const [searchParams] = useSearchParams();
   const [showGroupForm, setShowGroupForm] = useState(false);
   const [showModifierForm, setShowModifierForm] = useState(false);
@@ -475,10 +486,10 @@ const Modifiers: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Modifiers</h1>
         <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setShowModifierForm(true)}>
+          {canCreate && <Button variant="secondary" onClick={() => setShowModifierForm(true)}>
             + Add Modifier
-          </Button>
-          <Button onClick={() => setShowGroupForm(true)}>+ Add Modifier Group</Button>
+          </Button>}
+          {canCreate && <Button onClick={() => setShowGroupForm(true)}>+ Add Modifier Group</Button>}
         </div>
       </div>
 
@@ -1050,6 +1061,9 @@ const Modifiers: React.FC = () => {
               setLocalOrder={setLocalOrder}
               sensors={sensors}
               reorderDisabled={!filters.menu_item_id}
+              canCreate={canCreate}
+              canEdit={canEdit}
+              canDelete={canDelete}
               onReorderModifiers={(groupId, newIds) => reorderMutation.mutate({ groupId, orderedIds: newIds })}
               onEditModifier={(m) => setEditingModifier({ modifier: m, group })}
               onDeleteModifier={(id) => {

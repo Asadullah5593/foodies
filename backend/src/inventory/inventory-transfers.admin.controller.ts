@@ -12,13 +12,16 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { InventoryService } from './inventory.service';
 import { InventoryTransferService } from './inventory-transfer.service';
 
 @ApiTags('Admin – Inventory Transfers')
 @ApiBearerAuth()
 @Controller('admin/inventory/transfers')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class InventoryTransfersAdminController {
     constructor(
         private inventoryService: InventoryService,
@@ -96,6 +99,7 @@ export class InventoryTransfersAdminController {
     }
 
     @Post('requests')
+    @RequirePermission(Permissions.INVENTORY_TRANSFER_REQUEST, Permissions.INVENTORY_TRANSFER)
     createRequest(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -118,6 +122,7 @@ export class InventoryTransfersAdminController {
     }
 
     @Post('requests/:id/approve')
+    @RequirePermission(Permissions.INVENTORY_TRANSFER_APPROVE, Permissions.INVENTORY_TRANSFER)
     approveRequest(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -128,6 +133,7 @@ export class InventoryTransfersAdminController {
     }
 
     @Post('requests/:id/reject')
+    @RequirePermission(Permissions.INVENTORY_TRANSFER_APPROVE, Permissions.INVENTORY_TRANSFER)
     rejectRequest(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -163,6 +169,7 @@ export class InventoryTransfersAdminController {
     }
 
     @Post('orders/:id/dispatch')
+    @RequirePermission(Permissions.INVENTORY_TRANSFER_APPROVE, Permissions.INVENTORY_TRANSFER)
     dispatchOrder(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -183,6 +190,7 @@ export class InventoryTransfersAdminController {
     }
 
     @Post('orders/:id/receive')
+    @RequirePermission(Permissions.INVENTORY_TRANSFER, Permissions.INVENTORY_TRANSFER_REQUEST)
     receiveOrder(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },

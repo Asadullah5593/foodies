@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
 import Button from '../../../components/Button';
+import { useHasPermission } from '../../../hooks/useHasPermission';
 import apiClient from '../../../utils/apiClient';
 import { adminService } from '../../../services/api/adminService';
 import { useAuth } from '../../../contexts/AuthContext';
@@ -22,6 +23,7 @@ const statusBadge: Record<RiderShareRequestStatus, string> = {
 
 const RequestRiders: React.FC = () => {
   const queryClient = useQueryClient();
+  const canRequest = useHasPermission('rider-share:request');
   const { user } = useAuth();
   const isBrandAdmin =
     Array.isArray(user?.allowed_brand_ids) &&
@@ -155,7 +157,7 @@ const RequestRiders: React.FC = () => {
                   <span className="text-xs font-medium px-2 py-1 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
                     Requested
                   </span>
-                ) : (
+                ) : canRequest ? (
                   <Button
                     variant="primary"
                     isLoading={requestMutation.isPending}
@@ -163,7 +165,7 @@ const RequestRiders: React.FC = () => {
                   >
                     Request
                   </Button>
-                )}
+                ) : null}
               </div>
             ))}
           </div>

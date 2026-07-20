@@ -12,12 +12,15 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { InventoryService } from './inventory.service';
 
 @ApiTags('Admin – Inventory – Items')
 @ApiBearerAuth()
 @Controller('admin/inventory/items')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class InventoryItemsAdminController {
     constructor(private inventoryService: InventoryService) {}
 
@@ -35,6 +38,7 @@ export class InventoryItemsAdminController {
     }
 
     @Post()
+    @RequirePermission(Permissions.INVENTORY_ITEMS_CREATE)
     async create(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -57,6 +61,7 @@ export class InventoryItemsAdminController {
     }
 
     @Patch(':id')
+    @RequirePermission(Permissions.INVENTORY_ITEMS_EDIT)
     async update(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -81,6 +86,7 @@ export class InventoryItemsAdminController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.INVENTORY_ITEMS_DELETE)
     async remove(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -92,6 +98,7 @@ export class InventoryItemsAdminController {
     }
 
     @Post(':id/branch/:branchId/settings')
+    @RequirePermission(Permissions.INVENTORY_ITEMS_EDIT)
     async upsertBranchSettings(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },

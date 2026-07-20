@@ -6,6 +6,7 @@ import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
 import { useAuth } from '../../contexts/AuthContext';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
@@ -54,6 +55,7 @@ type PackingOrder = {
 const FOHPacking: React.FC = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const canAssignRider = useHasPermission(['orders:assign-rider', 'customer-display:update']);
   const [branchId, setBranchId] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('ready');
   const [dateFrom, setDateFrom] = useState<string>(todayIsoDate());
@@ -313,7 +315,7 @@ const FOHPacking: React.FC = () => {
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
               Rider: {order.rider.name}
             </span>
-          ) : (
+          ) : canAssignRider ? (
             <Button
               size="small"
               variant="outline"
@@ -326,7 +328,7 @@ const FOHPacking: React.FC = () => {
             >
               Assign Rider
             </Button>
-          )
+          ) : null
         )}
       </div>
     </Card>

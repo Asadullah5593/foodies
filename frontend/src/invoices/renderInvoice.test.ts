@@ -124,15 +124,67 @@ describe('tabular meta — every template renders header details as a table', ()
     expect(withHeader).toContain('042-111-222');
   });
 
-  // Notes are kitchen instructions, not customer billing info: item, deal-component
-  // and order notes never reach a receipt, in preview or in print.
-  it('never renders notes of any kind', () => {
+  // Notes are opt-in: nothing note-related prints under the default config, so
+  // existing receipts are unchanged until an admin turns a note toggle on.
+  it('prints no notes under the default config', () => {
     for (const layout of ALL_LAYOUTS) {
       const html = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
       expect(html, layout).not.toContain('Birthday'); // order note
       expect(html, layout).not.toContain('Well done, extra crispy'); // item note
-      expect(html, layout).not.toContain('Diet, please'); // deal component note
       expect(html, layout).not.toContain('Note:');
+      expect(html, layout).not.toContain('ordernote');
+    }
+  });
+
+  it('prints the item note under its line when showLineNotes is on', () => {
+    for (const layout of ['thermal_classic', 'bill_bordered'] as const) {
+      const html = renderInvoiceHtml(richSampleInvoice(), layout, cfg({ showLineNotes: true })).html;
+      expect(html, layout).toContain('Note: Well done, extra crispy');
+    }
+  });
+
+  it('prints the order note where the items end, just before the totals', () => {
+    for (const layout of ['thermal_classic', 'bill_bordered'] as const) {
+      const html = renderInvoiceHtml(richSampleInvoice(), layout, cfg({ showOrderNotes: true })).html;
+      expect(html, layout).toContain('Note: Birthday — please add candles');
+      // It closes the items, above the totals — not up in the header meta table.
+      const notePos = html.indexOf('Birthday');
+      const subtotalPos = html.indexOf('Subtotal');
+      expect(notePos, layout).toBeGreaterThan(-1);
+      expect(notePos, layout).toBeLessThan(subtotalPos);
+      // And it is NOT a header/meta row.
+      expect(html, layout).not.toMatch(/<td class="mk">Note<\/td>/);
+    }
+  });
+
+  it('keeps the note toggles independent — one on does not pull in the other', () => {
+    const lineOnly = renderInvoiceHtml(richSampleInvoice(), 'bill_bordered', cfg({ showLineNotes: true })).html;
+    expect(lineOnly).toContain('Well done, extra crispy');
+    expect(lineOnly).not.toContain('Birthday');
+    const orderOnly = renderInvoiceHtml(richSampleInvoice(), 'bill_bordered', cfg({ showOrderNotes: true })).html;
+    expect(orderOnly).toContain('Birthday');
+    expect(orderOnly).not.toContain('Well done, extra crispy');
+  });
+
+  it('drops the modifier group name when showModifierGroup is off', () => {
+    for (const layout of ['thermal_classic', 'bill_bordered'] as const) {
+      const on = renderInvoiceHtml(richSampleInvoice(), layout, cfg({ showModifierGroup: true })).html;
+      expect(on, layout).toContain('Base: Classic Hand-Tossed'); // default look
+
+      const off = renderInvoiceHtml(richSampleInvoice(), layout, cfg({ showModifierGroup: false })).html;
+      expect(off, layout).toContain('Classic Hand-Tossed');
+      expect(off, layout).not.toContain('Base:');
+    }
+  });
+
+  it('drops the leading "+" on modifiers and add-ons when showModifierPlus is off', () => {
+    for (const layout of ['thermal_classic', 'bill_bordered'] as const) {
+      const on = renderInvoiceHtml(richSampleInvoice(), layout, cfg({ showModifierPlus: true })).html;
+      expect(on, layout).toContain('+ Base: Classic Hand-Tossed'); // default look
+
+      const off = renderInvoiceHtml(richSampleInvoice(), layout, cfg({ showModifierPlus: false })).html;
+      expect(off, layout).toContain('Base: Classic Hand-Tossed');
+      expect(off, layout).not.toContain('+ Base:');
     }
   });
 
@@ -199,20 +251,72 @@ describe('tabular meta — every template renders header details as a table', ()
   });
 });
 
+describe('app-download QR', () => {
+  const QR_LAYOUTS: InvoiceLayout[] = ['thermal_classic', 'bill_bordered', 'receipt_logo'];
+
+  it('is hidden by default', () => {
+    for (const layout of QR_LAYOUTS) {
+      const html = renderInvoiceHtml(sampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+      expect(html, layout).not.toContain('qrblock');
+      expect(html, layout).not.toContain('Scan to download');
+    }
+  });
+
+  it('shows the QR and its text when turned on, on every layout', () => {
+    for (const layout of QR_LAYOUTS) {
+      const html = render({ showAppQr: true }, layout);
+      expect(html, layout).toContain('class="qrblock"');
+      expect(html, layout).toContain('Scan to download the Foodies app');
+      // The embedded QR matrix (29×29 modules — same code the consumer site shows).
+      expect(html, layout).toContain('viewBox="0 0 29 29"');
+    }
+  });
+
+  it('sits above the footer, not below it', () => {
+    const html = render({ showAppQr: true, footerText: 'Thank you!' });
+    expect(html.indexOf('qrblock')).toBeGreaterThan(-1);
+    expect(html.indexOf('qrblock')).toBeLessThan(html.indexOf('class="foot"'));
+  });
+
+  it('uses the custom left text, and shows the QR alone when the text is cleared', () => {
+    expect(render({ showAppQr: true, appQrText: 'Get 10% off in the app' })).toContain('Get 10% off in the app');
+    const noText = render({ showAppQr: true, appQrText: null });
+    expect(noText).toContain('class="qrblock"');
+    expect(noText).toContain('viewBox="0 0 29 29"');
+    expect(noText).not.toContain('Scan to download');
+  });
+
+  it('styles the prompt text exactly like the info-box value column', () => {
+    // Same black + weight 600 + info-box value size the meta labels resolve to.
+    const { css } = renderInvoiceHtml(sampleInvoice(), 'thermal_classic', cfg({ showAppQr: true }));
+    const metaLabel = css.match(/\.inv-root \.metatbl \.mk \{[^}]*font-size: ([\d.]+)px/);
+    const qrText = css.match(/\.inv-root \.qrblock \.qr-text \{ color: #000; font-weight: 600; font-size: ([\d.]+)px/);
+    expect(qrText, 'qr-text rule present').not.toBeNull();
+    // Info-box value column is weight 600 at that size; QR text matches it.
+    expect(qrText![1]).toBe(metaLabel![1]);
+  });
+});
+
 describe('invoice number — shown beneath the order number on every template', () => {
   it('renders the invoice number on all layouts', () => {
     for (const layout of ALL_LAYOUTS) {
       const html = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
       expect(html, layout).toContain('014'); // order number
-      expect(html, layout).toContain('BR-1-10-20260709-0481'); // invoice number
+      expect(html, layout).toContain('FDS-A7K2M9QX'); // invoice number
       // invoice number comes AFTER the order number (beneath it)
-      expect(html.indexOf('BR-1-10-20260709-0481'), layout).toBeGreaterThan(html.indexOf('014'));
+      expect(html.indexOf('FDS-A7K2M9QX'), layout).toBeGreaterThan(html.indexOf('014'));
     }
   });
 
   it('honors the showInvoiceNumber toggle', () => {
-    const off = renderInvoiceHtml(richSampleInvoice(), 'bill_bordered', cfg({ showInvoiceNumber: false })).html;
-    expect(off).not.toContain('BR-1-10-20260709-0481');
+    // The FBR fiscal block has its own "FBR Invoice #" label and its own toggle;
+    // turn it off so this asserts only the meta-box invoice number line.
+    const off = renderInvoiceHtml(
+      richSampleInvoice(),
+      'bill_bordered',
+      cfg({ showInvoiceNumber: false, showFbrInvoice: false }),
+    ).html;
+    expect(off).not.toContain('FDS-A7K2M9QX');
     expect(off).not.toContain('Invoice #'); // label absent too
   });
 });
@@ -250,7 +354,7 @@ describe('layout-specific chrome', () => {
 
   it('receipt_logo: big Order # band + Product column; band replaces order no in the meta table', () => {
     const { html } = renderInvoiceHtml(sampleInvoice(), 'receipt_logo', DEFAULT_INVOICE_TEMPLATE_CONFIG);
-    expect(html).toContain('Order # BR-1-000123');
+    expect(html).toContain('Order # 023');
     expect(html).toContain('Product');
     expect(html).toContain('class="orderband"');
     // order number lives in the band, so the meta table must not repeat "Order #"
@@ -719,5 +823,86 @@ describe('showFreeItems — zero-priced lines print in a Free items section, or 
       cfg({ showFreeItems: true }),
     ).html;
     expect(html).not.toContain('Free items');
+  });
+});
+
+describe('FBR fiscal block — number line, logo left, QR right, below the app QR', () => {
+  const FBR_NUM = '515011DDD1287011250929';
+  const withFbr = () => {
+    const data = sampleInvoice();
+    data.orders[0].fbr_invoice_number = FBR_NUM;
+    data.orders[0].fbr_number_source = 'fbr';
+    return data;
+  };
+
+  it('renders on every layout when the order carries an FBR number', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const html = renderInvoiceHtml(withFbr(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+      expect(html, layout).toContain('class="fbrblock"');
+      expect(html, layout).toContain('FBR Invoice #');
+      expect(html, layout).toContain(FBR_NUM);
+      expect(html, layout).toContain('class="fbr-logo"');
+      expect(html, layout).toContain('class="fbr-qr"');
+    }
+  });
+
+  it('is omitted entirely when the order has no FBR number', () => {
+    const html = renderInvoiceHtml(sampleInvoice(), 'thermal_classic', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+    expect(html).not.toContain('fbrblock');
+    expect(html).not.toContain('FBR Invoice #');
+  });
+
+  it('honors the showFbrInvoice toggle', () => {
+    const off = renderInvoiceHtml(withFbr(), 'thermal_classic', cfg({ showFbrInvoice: false })).html;
+    expect(off).not.toContain('fbrblock');
+    expect(off).not.toContain(FBR_NUM);
+  });
+
+  it('sits below the app-QR block and above the footer', () => {
+    const html = renderInvoiceHtml(withFbr(), 'thermal_classic', cfg({ showAppQr: true })).html;
+    expect(html.indexOf('fbrblock')).toBeGreaterThan(html.indexOf('qrblock'));
+    expect(html.indexOf('fbrblock')).toBeLessThan(html.indexOf('class="foot"'));
+  });
+
+  it('a fallback-sourced number prints exactly like a real one', () => {
+    const data = withFbr();
+    data.orders[0].fbr_number_source = 'fallback';
+    const html = renderInvoiceHtml(data, 'thermal_classic', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+    expect(html).toContain(FBR_NUM);
+    expect(html).not.toContain('fallback'); // never leaks onto the receipt
+  });
+
+  it('embeds a generated SVG QR for the fiscal number', () => {
+    const html = renderInvoiceHtml(withFbr(), 'thermal_classic', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+    const qrIdx = html.indexOf('class="fbr-qr"');
+    expect(qrIdx).toBeGreaterThan(-1);
+    expect(html.slice(qrIdx, qrIdx + 300)).toContain('<svg');
+  });
+
+  it('prints the invoice-number line BELOW the logo + QR row, not above', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const html = renderInvoiceHtml(withFbr(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+      // The logo/QR row (fbr-row) comes first; the "FBR Invoice #" head after it.
+      expect(html.indexOf('class="fbr-row"'), layout).toBeLessThan(html.indexOf('class="fbr-head"'));
+      expect(html.indexOf('class="fbr-logo"'), layout).toBeLessThan(html.indexOf('FBR Invoice #'));
+      expect(html.indexOf('class="fbr-qr"'), layout).toBeLessThan(html.indexOf('FBR Invoice #'));
+    }
+  });
+
+  it('uses the bundled PRA logo by default and a custom logo when configured', () => {
+    const def = renderInvoiceHtml(withFbr(), 'thermal_classic', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+    expect(def).toContain('/PRA.jpg'); // default tax-authority mark
+    const custom = renderInvoiceHtml(
+      withFbr(),
+      'thermal_classic',
+      cfg({ fbrLogoUrl: 'https://cdn.example.com/my-logo.png' }),
+    ).html;
+    expect(custom).toContain('https://cdn.example.com/my-logo.png');
+    expect(custom).not.toContain('/PRA.jpg');
+  });
+
+  it('rich sample previews the FBR block so the designer toggle is visible', () => {
+    const html = renderInvoiceHtml(richSampleInvoice(), 'thermal_classic', DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
+    expect(html).toContain('class="fbrblock"');
   });
 });

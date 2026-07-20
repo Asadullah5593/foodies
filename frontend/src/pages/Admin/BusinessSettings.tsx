@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
-import { MdStorefront, MdAttachMoney, MdStars, MdPrint, MdInfoOutline } from 'react-icons/md';
+import { MdStorefront, MdAttachMoney, MdStars, MdPrint, MdInfoOutline, MdReceiptLong } from 'react-icons/md';
 import { useAuth } from '../../contexts/AuthContext';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import { adminService } from '../../services/api';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
@@ -41,6 +42,7 @@ const ToggleRow: React.FC<{
 
 const BusinessSettings: React.FC = () => {
   const { user } = useAuth();
+  const canEdit = useHasPermission('business-settings:edit');
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     name: '',
@@ -55,6 +57,33 @@ const BusinessSettings: React.FC = () => {
     queryKey: ['business-settings'],
     queryFn: adminService.getBusinessSettings,
     enabled: (user?.tenant_id ?? null) != null,
+  });
+
+  const { data: fbrStatus } = useQuery({
+    queryKey: ['fbr-status'],
+    queryFn: adminService.getFbrStatus,
+    enabled: (user?.tenant_id ?? null) != null,
+  });
+
+  // The "all branches at once" switch: rewrites every branch's own FBR flag.
+  const fbrBulkMutation = useMutation({
+    mutationFn: adminService.fbrBulkToggle,
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ['fbr-status'] });
+      if (res.enabled) {
+        toast.success(
+          `FBR enabled on ${res.updated} branch${res.updated === 1 ? '' : 'es'}` +
+            (res.skipped_missing_credentials > 0
+              ? ` — ${res.skipped_missing_credentials} skipped (no credentials saved)`
+              : ''),
+        );
+      } else {
+        toast.success(`FBR disabled on ${res.updated} branch${res.updated === 1 ? '' : 'es'}`);
+      }
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to update FBR on branches');
+    },
   });
 
   useEffect(() => {
@@ -246,6 +275,90 @@ const BusinessSettings: React.FC = () => {
               Prints the customer invoice and kitchen invoice (KOT) as soon as an order is placed, using each one&apos;s default Invoice Template. The terminal&apos;s browser must allow pop-ups.
             </ToggleRow>
           </div>
+
+          <div className={cardClass}>
+            <SectionHead
+              icon={<MdReceiptLong size={16} />}
+              chip="bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400"
+              title="FBR Invoicing"
+            />
+            <div className="mb-3.5 flex flex-wrap items-center justify-between gap-3.5">
+              <div className="max-w-[520px]">
+                <div className="text-[13.5px] font-semibold text-gray-700 dark:text-slate-200">
+                  {fbrStatus
+                    ? `Reporting on ${fbrStatus.enabled_branches} of ${fbrStatus.total_branches} branches`
+                    : 'Loading branch status…'}
+                </div>
+                <div className="mt-0.5 text-[12px] leading-relaxed text-gray-400 dark:text-slate-400">
+                  These buttons rewrite <strong>every branch&apos;s own</strong> FBR switch in one go. Credentials
+                  (POS ID + token) are configured per branch under each Branch&apos;s settings; enabling skips
+                  branches with no credentials saved.
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={fbrBulkMutation.isPending}
+                  onClick={() => {
+                    if (window.confirm('Enable FBR reporting on ALL branches that have credentials saved?'))
+                      fbrBulkMutation.mutate(true);
+                  }}
+                  className="rounded-[10px] border-[1.5px] border-emerald-500 px-3.5 py-2 text-[12.5px] font-bold text-emerald-600 transition-colors hover:bg-emerald-50 disabled:opacity-60 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
+                >
+                  Enable on all
+                </button>
+                <button
+                  type="button"
+                  disabled={fbrBulkMutation.isPending}
+                  onClick={() => {
+                    if (window.confirm('Disable FBR reporting on ALL branches? Receipts will reuse each branch’s last real FBR number.'))
+                      fbrBulkMutation.mutate(false);
+                  }}
+                  className="rounded-[10px] border-[1.5px] border-red-500 px-3.5 py-2 text-[12.5px] font-bold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60 dark:text-red-400 dark:hover:bg-red-500/10"
+                >
+                  Disable on all
+                </button>
+              </div>
+            </div>
+            {(fbrStatus?.branches?.length ?? 0) > 0 && (
+              <div className="flex flex-col gap-1.5">
+                {fbrStatus!.branches.map((b) => (
+                  <div
+                    key={b.id}
+                    className="flex items-center justify-between gap-3 rounded-[10px] bg-gray-50 px-3.5 py-2 dark:bg-slate-900/40"
+                  >
+                    <Link
+                      to={`/admin/branches/${b.id}`}
+                      className="truncate text-[12.5px] font-semibold text-gray-700 hover:underline dark:text-slate-200"
+                    >
+                      {b.name}
+                    </Link>
+                    <span className="flex flex-none items-center gap-2">
+                      {!b.has_credentials && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+                          No credentials
+                        </span>
+                      )}
+                      {b.fbr_enabled && b.fbr_environment === 'sandbox' && (
+                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:bg-blue-500/15 dark:text-blue-400">
+                          Sandbox
+                        </span>
+                      )}
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          b.fbr_enabled
+                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400'
+                            : 'bg-gray-200 text-gray-500 dark:bg-slate-700 dark:text-slate-400'
+                        }`}
+                      >
+                        {b.fbr_enabled ? 'On' : 'Off'}
+                      </span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="flex flex-col gap-4 xl:sticky xl:top-6">
@@ -256,14 +369,19 @@ const BusinessSettings: React.FC = () => {
               {summaryRow('GST', gstSummary)}
               {summaryRow('Loyalty', formData.loyalty_enabled ? 'Enabled' : 'Disabled', formData.loyalty_enabled)}
               {summaryRow('Auto-print', formData.auto_print_invoices ? 'On' : 'Off', formData.auto_print_invoices)}
+              {summaryRow(
+                'FBR',
+                fbrStatus ? `${fbrStatus.enabled_branches}/${fbrStatus.total_branches} branches` : '—',
+                fbrStatus ? fbrStatus.enabled_branches > 0 : undefined,
+              )}
             </div>
-            <button
+            {canEdit && <button
               type="submit"
               disabled={updateMutation.isPending}
               className="mt-[18px] w-full rounded-[11px] bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-red-600/25 transition-colors hover:bg-red-700 active:scale-[0.98] disabled:opacity-60"
             >
               {updateMutation.isPending ? 'Saving…' : 'Save changes'}
-            </button>
+            </button>}
           </div>
           <div className="flex items-start gap-2.5 rounded-xl border border-blue-100 bg-blue-50 px-3.5 py-3 dark:border-blue-500/25 dark:bg-blue-500/10">
             <span className="mt-px flex h-[17px] w-[17px] flex-none items-center justify-center rounded-full bg-blue-500 text-[11px] font-bold text-white">i</span>

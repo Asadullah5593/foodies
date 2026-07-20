@@ -9,6 +9,7 @@ import Modal from '../../../components/Modal';
 import apiClient from '../../../utils/apiClient';
 import SearchableSelect from '../../../components/SearchableSelect';
 import { inventoryService } from '../../../services/api/inventoryService';
+import { useHasPermission } from '../../../hooks/useHasPermission';
 import { confirmDialog } from '../../../utils/sweetAlert';
 
 const BRANCH_ID_KEY = 'foodies-inventory-branch-id';
@@ -96,6 +97,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
 }) => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const canStocktake = useHasPermission('inventory:stocktake');
   const [tab, setTab] = useState<InventoryTabKey>(initialTab);
   const [uomModalOpen, setUomModalOpen] = useState(false);
   const [vendorModalOpen, setVendorModalOpen] = useState(false);
@@ -3380,22 +3382,22 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 Create the weekly stocktake first, then add count lines. After review, submit and close to post variance.
               </div>
               <div className="flex flex-wrap gap-2 items-center">
-                <Button onClick={() => setStocktakeCreateModalOpen(true)}>Create / Load stocktake</Button>
-                <Button
+                {canStocktake && <Button onClick={() => setStocktakeCreateModalOpen(true)}>Create / Load stocktake</Button>}
+                {canStocktake && <Button
                   variant="secondary"
                   disabled={!form.stocktake_id}
                   onClick={() => setStocktakeLineModalOpen(true)}
                 >
                   Add counted line
-                </Button>
+                </Button>}
                 <span className="text-sm text-slate-600 dark:text-slate-300">
                   Active stocktake: {form.stocktake_id ? `#${form.stocktake_id}` : 'None selected'}
                 </span>
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button onClick={() => submitStocktakeM.mutate(Number(form.stocktake_id))}>Submit</Button>
-                <Button onClick={() => closeStocktakeM.mutate(Number(form.stocktake_id))}>Close (post variance)</Button>
+                {canStocktake && <Button onClick={() => submitStocktakeM.mutate(Number(form.stocktake_id))}>Submit</Button>}
+                {canStocktake && <Button onClick={() => closeStocktakeM.mutate(Number(form.stocktake_id))}>Close (post variance)</Button>}
               </div>
             </div>
           )}

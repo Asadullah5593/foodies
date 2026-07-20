@@ -80,6 +80,8 @@ export function singleToPrintVM(s: Record<string, unknown>): InvoiceVM {
         order_id: s.order_id as number,
         order_number: s.order_number as string,
         invoice_number: (s.invoice_number as string) ?? null,
+        fbr_invoice_number: (s.fbr_invoice_number as string) ?? null,
+        fbr_number_source: (s.fbr_number_source as string) ?? null,
         brand_name: brand?.name ?? null,
         brand_logo_url: brand?.logo_url ?? null,
         order_type: (s.order_type as string) ?? null,
@@ -260,7 +262,12 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
         const layout: InvoiceLayout = printData.template?.layout ?? 'bill_bordered';
         const deviceFeed = getDeviceBottomFeedMm();
         const baseCfg = printData.template?.config ?? null;
-        const cfg = deviceFeed != null ? { ...(baseCfg ?? {}), bottomFeedMm: deviceFeed } : baseCfg;
+        // Kitchen tickets never carry the FBR fiscal block — that is customer-receipt chrome.
+        const cfg = {
+          ...(baseCfg ?? {}),
+          ...(deviceFeed != null ? { bottomFeedMm: deviceFeed } : {}),
+          showFbrInvoice: false,
+        };
         const { html, css } = renderInvoiceHtml(printData, layout, cfg);
         printContent(html, `KOT ${(data.order_number as string) ?? String(oid)}`, css);
       } catch {
