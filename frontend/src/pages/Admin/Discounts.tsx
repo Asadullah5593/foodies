@@ -29,6 +29,7 @@ import {
   removeDialog,
   removeLabel,
 } from '../../components/OfferBrandScope';
+import { useHasPermission } from '../../hooks/useHasPermission';
 
 interface Option {
   id: number;
@@ -38,6 +39,9 @@ interface Option {
 
 const Discounts: React.FC = () => {
   const queryClient = useQueryClient();
+  const canCreatePerm = useHasPermission('discounts:create');
+  const canEditPerm = useHasPermission('discounts:edit');
+  const canDeletePerm = useHasPermission('discounts:delete');
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editingDiscount, setEditingDiscount] = useState<Discount | null>(null);
@@ -297,13 +301,13 @@ const Discounts: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Discounts</h1>
-        <Button onClick={() => {
+        {canCreatePerm && <Button onClick={() => {
           setEditingDiscount(null);
           resetForm();
           setShowForm(true);
         }}>
           Add Discount
-        </Button>
+        </Button>}
       </div>
 
       <OfferModal
@@ -560,7 +564,7 @@ const Discounts: React.FC = () => {
                   animationIndex={i}
                   actions={
                     <>
-                      {canEdit(discount.manage_scope) && (
+                      {canEditPerm && canEdit(discount.manage_scope) && (
                         <>
                           <Button size="small" variant="edit" onClick={() => handleEdit(discount)}>Edit</Button>
                           <Button
@@ -573,7 +577,7 @@ const Discounts: React.FC = () => {
                           </Button>
                         </>
                       )}
-                      {discount.manage_scope !== 'read_only' && (
+                      {canDeletePerm && discount.manage_scope !== 'read_only' && (
                         <Button
                           size="small"
                           variant="danger"

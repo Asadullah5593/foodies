@@ -7,6 +7,7 @@ import { Brand, MenuItem } from '../../types';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import Card from '../../components/Card';
 import { adminService } from '../../services/api/adminService';
 import { useAuth } from '../../contexts/AuthContext';
@@ -64,6 +65,8 @@ const BranchEdit: React.FC = () => {
   const queryClient = useQueryClient();
   const isNew = id === 'new';
   const branchId = isNew ? null : parseInt(id ?? '', 10);
+  const canSave = useHasPermission(isNew ? 'branches:create' : 'branches:edit');
+  const canToggleOpen = useHasPermission('brands:toggle-open');
 
   const [formData, setFormData] = useState<FormData>(emptyForm);
   const [linkedMenuItemIds, setLinkedMenuItemIds] = useState<number[]>([]);
@@ -646,7 +649,7 @@ const BranchEdit: React.FC = () => {
           <Card className="p-6 dark:bg-slate-800 dark:border-slate-700">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 dark:border-slate-600 pb-2 mb-4">
               <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400">Brand online availability</h2>
-              {!isBrandLocked && (brandAvailability?.length ?? 0) > 0 && (
+              {!isBrandLocked && canToggleOpen && (brandAvailability?.length ?? 0) > 0 && (
                 <div className="flex gap-2">
                   <Button type="button" size="small" variant="outline" onClick={() => closeAllBrands.mutate(false)} isLoading={closeAllBrands.isPending}>Close all brands</Button>
                   <Button type="button" size="small" variant="outline" onClick={() => closeAllBrands.mutate(true)} isLoading={closeAllBrands.isPending}>Open all</Button>
@@ -665,9 +668,9 @@ const BranchEdit: React.FC = () => {
                       <span className={b.is_open ? 'text-xs font-semibold text-green-600 dark:text-green-400' : 'text-xs font-semibold text-amber-600 dark:text-amber-400'}>
                         {b.is_open ? 'Open' : 'Closed'}
                       </span>
-                      <Button type="button" size="small" variant={b.is_open ? 'danger' : 'primary'} onClick={() => toggleBrandOpen.mutate({ brandId: b.brand_id, is_open: !b.is_open })} isLoading={toggleBrandOpen.isPending}>
+                      {canToggleOpen && <Button type="button" size="small" variant={b.is_open ? 'danger' : 'primary'} onClick={() => toggleBrandOpen.mutate({ brandId: b.brand_id, is_open: !b.is_open })} isLoading={toggleBrandOpen.isPending}>
                         {b.is_open ? 'Close' : 'Open'}
-                      </Button>
+                      </Button>}
                     </div>
                   </div>
                 ))}
@@ -765,10 +768,10 @@ const BranchEdit: React.FC = () => {
                   />
                 </div>
               </div>
-              <div className="flex gap-2 mb-3">
+              {canSave && <div className="flex gap-2 mb-3">
                 <Button type="button" size="small" variant="outline" onClick={() => setLinkedMenuItemIds((prev) => Array.from(new Set([...prev, ...filteredMenuItems.map((mi) => mi.id)])))}>Link all shown ({filteredMenuItems.length})</Button>
                 <Button type="button" size="small" variant="outline" onClick={() => { const visible = new Set(filteredMenuItems.map((mi) => mi.id)); setLinkedMenuItemIds((prev) => prev.filter((id) => !visible.has(id))); }}>Unlink all shown</Button>
-              </div>
+              </div>}
               <div className="border border-gray-200 dark:border-slate-600 rounded-lg overflow-hidden bg-gray-50 dark:bg-slate-700/30 max-h-[28rem] overflow-y-auto">
                 {filteredMenuItems.length === 0 ? (
                   <p className="text-sm text-gray-500 dark:text-slate-400 p-4">No items match the current filters.</p>
@@ -818,10 +821,10 @@ const BranchEdit: React.FC = () => {
         </Card>
 
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" variant="primary" isLoading={isSubmitting} disabled={formData.brand_ids.length === 0}>
+          {canSave && <Button type="submit" variant="primary" isLoading={isSubmitting} disabled={formData.brand_ids.length === 0}>
             {isNew ? 'Create Branch' : 'Save Changes'}
-          </Button>
-          <Link to="/admin/branches"><Button type="button" variant="outline">Cancel</Button></Link>
+          </Button>}
+          <Link to="/admin/branches"><Button type="button" variant="outline">{canSave ? 'Cancel' : 'Back'}</Button></Link>
         </div>
       </form>
     </div>

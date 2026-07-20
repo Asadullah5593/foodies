@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { Branch } from '../../types';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
@@ -19,6 +20,9 @@ import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 const Branches: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const canCreate = useHasPermission('branches:create');
+  const canEdit = useHasPermission('branches:edit');
+  const canDelete = useHasPermission('branches:delete');
   const [filterBrandId, setFilterBrandId] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [filterSearch, setFilterSearch] = useState('');
@@ -109,7 +113,7 @@ const Branches: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Branches</h1>
-        <Button variant="primary" onClick={() => navigate('/admin/branches/new')}>Add Branch</Button>
+        {canCreate && <Button variant="primary" onClick={() => navigate('/admin/branches/new')}>Add Branch</Button>}
       </div>
 
       <Card className="mb-6 dark:bg-slate-800 dark:border-slate-700">
@@ -226,8 +230,8 @@ const Branches: React.FC = () => {
                   animationIndex={i}
                   actions={
                     <>
-                      <Button size="small" variant="edit" onClick={() => navigate(`/admin/branches/${branch.id}`)}>Edit</Button>
-                      <Button
+                      {canEdit && <Button size="small" variant="edit" onClick={() => navigate(`/admin/branches/${branch.id}`)}>Edit</Button>}
+                      {canEdit && <Button
                         size="small"
                         variant={branch.status === 'active' ? 'outline' : 'primary'}
                         title="An inactive branch is hidden from customers and takes no orders (online and POS)."
@@ -235,8 +239,8 @@ const Branches: React.FC = () => {
                         isLoading={activeMutation.isPending}
                       >
                         {branch.status === 'active' ? 'Set inactive' : 'Set active'}
-                      </Button>
-                      <Button
+                      </Button>}
+                      {canDelete && <Button
                         size="small"
                         variant="danger"
                         onClick={() => {
@@ -253,7 +257,7 @@ const Branches: React.FC = () => {
                         isLoading={deleteMutation.isPending}
                       >
                         Delete
-                      </Button>
+                      </Button>}
                     </>
                   }
                 />

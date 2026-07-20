@@ -13,11 +13,14 @@ import { ShiftsService } from './shifts.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – Shifts')
 @ApiBearerAuth()
 @Controller('admin/shifts')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class ShiftsController {
     constructor(private service: ShiftsService) {}
 
@@ -93,6 +96,7 @@ export class ShiftsController {
     }
 
     @Post()
+    @RequirePermission(Permissions.SHIFTS_OPEN)
     store(
         @CurrentUser()
         user: {
@@ -128,6 +132,7 @@ export class ShiftsController {
     }
 
     @Post(':id/close')
+    @RequirePermission(Permissions.SHIFTS_CLOSE)
     close(
         @Param('id') id: string,
         @CurrentUser()

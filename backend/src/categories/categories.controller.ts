@@ -15,6 +15,9 @@ import { CategoriesService, CategoryFilters } from './categories.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 type CategoriesUser = {
     id: number;
@@ -25,7 +28,7 @@ type CategoriesUser = {
 @ApiTags('Admin – Categories')
 @ApiBearerAuth()
 @Controller('admin/categories')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class CategoriesController {
     constructor(private service: CategoriesService) {}
 
@@ -63,6 +66,7 @@ export class CategoriesController {
     }
 
     @Post()
+    @RequirePermission(Permissions.CATEGORIES_CREATE)
     store(
         @CurrentUser() user: CategoriesUser,
         @Body()
@@ -83,6 +87,7 @@ export class CategoriesController {
     }
 
     @Put(':id')
+    @RequirePermission(Permissions.CATEGORIES_EDIT)
     update(
         @Param('id') id: string,
         @CurrentUser() user: CategoriesUser,
@@ -104,6 +109,7 @@ export class CategoriesController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.CATEGORIES_DELETE)
     destroy(@Param('id') id: string, @CurrentUser() user: CategoriesUser) {
         return this.service.remove(+id, user.tenantId, user.allowedBrandIds);
     }

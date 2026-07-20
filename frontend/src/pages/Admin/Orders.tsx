@@ -12,6 +12,7 @@ import AssignRiderModal from '../../components/AssignRiderModal';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import { ORDER_SOURCES, ORDER_SOURCE_LABEL, orderSourceLabel } from '../../utils/orderSources';
 
 type OrderPayment = { paymentMethod?: string; payment_method?: string; status?: string; amount?: number | string };
@@ -228,6 +229,7 @@ const SOURCE_BADGE: Record<string, string> = {
 
 const Orders: React.FC = () => {
   const queryClient = useQueryClient();
+  const canAssignRider = useHasPermission(['orders:assign-rider', 'customer-display:update']);
   const [searchParams, setSearchParams] = useSearchParams();
   const [ordersPage, setOrdersPage] = useState(1);
   const [search, setSearch] = useState('');
@@ -602,6 +604,7 @@ const Orders: React.FC = () => {
   );
 
   const canAssignFor = (o: OrderRow, showPerOrderRiderButton: boolean) =>
+    canAssignRider &&
     showPerOrderRiderButton &&
     isDeliveryOrder(o) &&
     (o.delivery_status === 'accepted' || o.delivery_status == null);
@@ -827,7 +830,7 @@ const Orders: React.FC = () => {
         {g.groupRider && <span className="text-gray-500 dark:text-slate-400">· Rider: {g.groupRider.name}</span>}
       </div>
       <div className="flex flex-wrap gap-1.5">
-        {g.allDelivery && !g.groupRider && (
+        {canAssignRider && g.allDelivery && !g.groupRider && (
           <button
             onClick={() => openRiderModal({
               orderId: null, groupId: gid, isChange: false,
@@ -838,7 +841,7 @@ const Orders: React.FC = () => {
             Assign rider to group
           </button>
         )}
-        {g.groupCanChangeRider && (
+        {canAssignRider && g.groupCanChangeRider && (
           <button
             onClick={() => openRiderModal({
               orderId: null, groupId: gid, isChange: true,

@@ -16,6 +16,9 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { RiderSharingService } from './rider-sharing.service';
 
 type AuthUser = {
@@ -32,7 +35,7 @@ type AuthUser = {
 @ApiTags('Admin – Rider Pool & Sharing')
 @ApiBearerAuth()
 @Controller('admin/rider-sharing')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class RiderSharingAdminController {
     constructor(private readonly sharing: RiderSharingService) {}
 
@@ -65,6 +68,7 @@ export class RiderSharingAdminController {
     }
 
     @Post('riders/:userId/brands')
+    @RequirePermission(Permissions.RIDER_SHARING_MANAGE)
     assignBrand(
         @CurrentUser() user: AuthUser,
         @Param('userId', ParseIntPipe) userId: number,
@@ -83,6 +87,7 @@ export class RiderSharingAdminController {
     }
 
     @Delete('riders/:userId/brands/:brandId')
+    @RequirePermission(Permissions.RIDER_SHARING_MANAGE)
     removeBrand(
         @CurrentUser() user: AuthUser,
         @Param('userId', ParseIntPipe) userId: number,
@@ -93,6 +98,7 @@ export class RiderSharingAdminController {
     }
 
     @Put('riders/:userId/brands')
+    @RequirePermission(Permissions.RIDER_SHARING_MANAGE)
     setBrands(
         @CurrentUser() user: AuthUser,
         @Param('userId', ParseIntPipe) userId: number,
@@ -118,6 +124,7 @@ export class RiderSharingAdminController {
     }
 
     @Post('requests/:id/approve')
+    @RequirePermission(Permissions.RIDER_SHARING_MANAGE)
     approve(
         @CurrentUser() user: AuthUser,
         @Param('id', ParseIntPipe) id: number,
@@ -127,6 +134,7 @@ export class RiderSharingAdminController {
     }
 
     @Post('requests/:id/decline')
+    @RequirePermission(Permissions.RIDER_SHARING_MANAGE)
     decline(
         @CurrentUser() user: AuthUser,
         @Param('id', ParseIntPipe) id: number,
@@ -149,7 +157,7 @@ export class RiderSharingAdminController {
 @ApiTags('Admin – Rider HRM – Sharing')
 @ApiBearerAuth()
 @Controller('admin/rider-hrm')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class RiderShareRequestsController {
     constructor(private readonly sharing: RiderSharingService) {}
 
@@ -177,6 +185,7 @@ export class RiderShareRequestsController {
     }
 
     @Post('share-requests')
+    @RequirePermission(Permissions.RIDER_SHARE_REQUEST)
     create(
         @CurrentUser() user: AuthUser,
         @Body()
@@ -201,6 +210,7 @@ export class RiderShareRequestsController {
     }
 
     @Post('share-requests/:id/cancel')
+    @RequirePermission(Permissions.RIDER_SHARE_REQUEST)
     cancel(
         @CurrentUser() user: AuthUser,
         @Param('id', ParseIntPipe) id: number,

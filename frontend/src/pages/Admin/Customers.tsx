@@ -6,6 +6,7 @@ import { adminService } from '../../services/api';
 import { validatePakistaniPhone, PAKISTANI_PHONE_PLACEHOLDER } from '../../utils/phone';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -33,6 +34,9 @@ type Customer = {
 
 const Customers: React.FC = () => {
   const queryClient = useQueryClient();
+  const canCreate = useHasPermission('customers:create');
+  const canEdit = useHasPermission('customers:edit');
+  const canDelete = useHasPermission('customers:delete');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [name, setName] = useState('');
@@ -195,7 +199,7 @@ const Customers: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Customers</h1>
-        <Button variant="primary" onClick={openCreate}>Add customer</Button>
+        {canCreate && <Button variant="primary" onClick={openCreate}>Add customer</Button>}
       </div>
       <p className="text-gray-600 mb-4">
         Name and phone (Pakistani format 03XXXXXXXXX) are required. Phone is the unique identifier for loyalty.
@@ -295,8 +299,8 @@ const Customers: React.FC = () => {
                   actions={
                     <>
                       <Button size="small" variant="outline" onClick={() => setVouchersFor(c)}>Vouchers</Button>
-                      <Button size="small" variant="edit" onClick={() => openEdit(c)}>Edit</Button>
-                      <Button size="small" variant="danger" onClick={() => setDeleteTarget(c)}>Delete</Button>
+                      {canEdit && <Button size="small" variant="edit" onClick={() => openEdit(c)}>Edit</Button>}
+                      {canDelete && <Button size="small" variant="danger" onClick={() => setDeleteTarget(c)}>Delete</Button>}
                     </>
                   }
                 />

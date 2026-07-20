@@ -15,6 +15,7 @@ import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { confirmDialog } from '../../utils/sweetAlert';
+import { useHasPermission } from '../../hooks/useHasPermission';
 
 export interface CategoryItem {
   id: number;
@@ -31,6 +32,9 @@ export interface CategoryItem {
 
 const Categories: React.FC = () => {
   const queryClient = useQueryClient();
+  const canCreate = useHasPermission('categories:create');
+  const canEdit = useHasPermission('categories:edit');
+  const canDelete = useHasPermission('categories:delete');
   const [showForm, setShowForm] = useState(false);
   const [editingCategory, setEditingCategory] = useState<CategoryItem | null>(null);
   const [filterBrandId, setFilterBrandId] = useState<string>('');
@@ -204,7 +208,7 @@ const Categories: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Categories</h1>
-        <Button variant="primary" onClick={openCreate}>Add Category</Button>
+        {canCreate && <Button variant="primary" onClick={openCreate}>Add Category</Button>}
       </div>
 
       <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
@@ -378,16 +382,16 @@ const Categories: React.FC = () => {
                   animationIndex={i}
                   actions={
                     <>
-                      <Button size="small" variant="edit" onClick={() => openEdit(cat)}>Edit</Button>
-                      <Button
+                      {canEdit && <Button size="small" variant="edit" onClick={() => openEdit(cat)}>Edit</Button>}
+                      {canEdit && <Button
                         size="small"
                         variant={cat.is_active ? 'outline' : 'primary'}
                         isLoading={updateMutation.isPending}
                         onClick={() => updateMutation.mutate({ id: cat.id, data: { is_active: !cat.is_active } })}
                       >
                         {cat.is_active ? 'Set inactive' : 'Set active'}
-                      </Button>
-                      <Button
+                      </Button>}
+                      {canDelete && <Button
                         size="small"
                         variant="danger"
                         onClick={() => {
@@ -404,7 +408,7 @@ const Categories: React.FC = () => {
                         isLoading={deleteMutation.isPending}
                       >
                         Delete
-                      </Button>
+                      </Button>}
                     </>
                   }
                 />

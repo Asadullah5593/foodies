@@ -12,12 +12,15 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { InventoryService } from './inventory.service';
 
 @ApiTags('Admin – Inventory – UOMs')
 @ApiBearerAuth()
 @Controller('admin/inventory/uoms')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class UomsAdminController {
     constructor(private inventoryService: InventoryService) {}
 
@@ -35,6 +38,7 @@ export class UomsAdminController {
     }
 
     @Post()
+    @RequirePermission(Permissions.UOMS_CREATE)
     async create(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -52,6 +56,7 @@ export class UomsAdminController {
     }
 
     @Patch(':id')
+    @RequirePermission(Permissions.UOMS_EDIT)
     async update(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -71,6 +76,7 @@ export class UomsAdminController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.UOMS_DELETE)
     async remove(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },

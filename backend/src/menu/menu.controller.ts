@@ -30,7 +30,7 @@ type MenuUser = {
 @ApiTags('Admin – Menu')
 @ApiBearerAuth()
 @Controller('admin/menu')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class MenuController {
     constructor(private service: MenuService) {}
 
@@ -98,6 +98,7 @@ export class MenuController {
     }
 
     @Post('categories')
+    @RequirePermission(Permissions.CATEGORIES_CREATE)
     async createCategory(
         @CurrentUser() user: MenuUser,
         @Body() dto: { brand_id: number; name: string; is_active?: boolean },
@@ -112,6 +113,7 @@ export class MenuController {
     }
 
     @Put('categories/:id')
+    @RequirePermission(Permissions.CATEGORIES_EDIT)
     async updateCategory(
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,
@@ -123,6 +125,7 @@ export class MenuController {
     }
 
     @Delete('categories/:id')
+    @RequirePermission(Permissions.CATEGORIES_DELETE)
     async deleteCategory(
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,
@@ -164,6 +167,7 @@ export class MenuController {
     }
 
     @Post('items')
+    @RequirePermission(Permissions.MENU_CREATE)
     @ApiOperation({
         summary: 'Create menu item',
         description:
@@ -234,6 +238,7 @@ export class MenuController {
     }
 
     @Put('items/:id')
+    @RequirePermission(Permissions.MENU_EDIT)
     @ApiOperation({
         summary: 'Update menu item',
         description:
@@ -305,12 +310,14 @@ export class MenuController {
     }
 
     @Delete('items/:id')
+    @RequirePermission(Permissions.MENU_DELETE)
     async deleteItem(@CurrentUser() user: MenuUser, @Param('id') id: string) {
         await this.assertEntityBrand(user, 'item', +id);
         return this.service.deleteItem(+id);
     }
 
     @Post('items/:id/link-addons')
+    @RequirePermission(Permissions.MENU_EDIT)
     async linkAddons(
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,
@@ -354,6 +361,7 @@ export class MenuController {
     }
 
     @Post('addons')
+    @RequirePermission(Permissions.ADDONS_CREATE)
     async createAddon(
         @CurrentUser() user: MenuUser,
         @Body()
@@ -375,6 +383,7 @@ export class MenuController {
     }
 
     @Put('addons/:id')
+    @RequirePermission(Permissions.ADDONS_EDIT)
     async updateAddon(
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,
@@ -398,6 +407,7 @@ export class MenuController {
     }
 
     @Delete('addons/:id')
+    @RequirePermission(Permissions.ADDONS_DELETE)
     async deleteAddon(@CurrentUser() user: MenuUser, @Param('id') id: string) {
         await this.assertEntityBrand(user, 'addon', +id);
         return this.service.deleteAddon(+id);
@@ -426,6 +436,7 @@ export class MenuController {
     }
 
     @Post('variants')
+    @RequirePermission(Permissions.VARIANTS_CREATE)
     async createVariant(
         @CurrentUser() user: MenuUser,
         @Body()
@@ -443,6 +454,7 @@ export class MenuController {
     }
 
     @Put('variants/:id')
+    @RequirePermission(Permissions.VARIANTS_EDIT)
     async updateVariant(
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,
@@ -463,6 +475,7 @@ export class MenuController {
     }
 
     @Delete('variants/:id')
+    @RequirePermission(Permissions.VARIANTS_DELETE)
     async deleteVariant(
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,
@@ -495,6 +508,7 @@ export class MenuController {
     }
 
     @Post('modifier-groups')
+    @RequirePermission(Permissions.MODIFIERS_CREATE)
     async createModifierGroup(
         @CurrentUser() user: MenuUser,
         @Body()
@@ -522,6 +536,7 @@ export class MenuController {
     }
 
     @Patch('modifier-groups/reorder')
+    @RequirePermission(Permissions.MODIFIERS_EDIT)
     async reorderModifierGroups(
         @CurrentUser() user: MenuUser,
         @Body() body: { brand_id: number; ordered_ids: number[] },
@@ -534,6 +549,7 @@ export class MenuController {
     }
 
     @Patch('items/:itemId/reorder-modifier-groups')
+    @RequirePermission(Permissions.MENU_EDIT)
     async reorderItemModifierGroups(
         @CurrentUser() user: MenuUser,
         @Param('itemId') itemId: string,
@@ -547,6 +563,7 @@ export class MenuController {
     }
 
     @Put('modifier-groups/:id')
+    @RequirePermission(Permissions.MODIFIERS_EDIT)
     async updateModifierGroup(
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,
@@ -569,6 +586,7 @@ export class MenuController {
     }
 
     @Delete('modifier-groups/:id')
+    @RequirePermission(Permissions.MODIFIERS_DELETE)
     async deleteModifierGroup(
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,
@@ -610,6 +628,7 @@ export class MenuController {
     }
 
     @Post('modifiers')
+    @RequirePermission(Permissions.MODIFIERS_CREATE)
     async createModifier(
         @CurrentUser() user: MenuUser,
         @Body()
@@ -635,6 +654,7 @@ export class MenuController {
     }
 
     @Put('modifiers/:id')
+    @RequirePermission(Permissions.MODIFIERS_EDIT)
     async updateModifier(
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,
@@ -651,6 +671,7 @@ export class MenuController {
     }
 
     @Delete('modifiers/:id')
+    @RequirePermission(Permissions.MODIFIERS_DELETE)
     async deleteModifier(
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,
@@ -660,6 +681,7 @@ export class MenuController {
     }
 
     @Patch('modifier-groups/:groupId/reorder')
+    @RequirePermission(Permissions.MODIFIERS_EDIT)
     async reorderModifiers(
         @Param('groupId') groupId: string,
         @Body() body: { ordered_ids: number[] },
@@ -668,6 +690,7 @@ export class MenuController {
     }
 
     @Post('items/:id/link-modifier-groups')
+    @RequirePermission(Permissions.MENU_EDIT)
     async linkModifierGroups(
         @CurrentUser() user: MenuUser,
         @Param('id') id: string,

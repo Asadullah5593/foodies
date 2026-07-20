@@ -19,6 +19,7 @@ import Loader from '../../../components/Loader';
 import PaginationBar from '../../../components/PaginationBar';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
+import { useHasPermission } from '../../../hooks/useHasPermission';
 
 const card = 'bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm';
 const field = 'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400';
@@ -43,6 +44,8 @@ const PILL: Record<string, string> = {
 
 const StockTransfers: React.FC = () => {
   const queryClient = useQueryClient();
+  const canRequest = useHasPermission(['inventory:transfer:request', 'inventory:transfer']);
+  const canApprove = useHasPermission(['inventory:transfer:approve', 'inventory:transfer']);
   const [tab, setTab] = useState<TabKey>('all');
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -228,9 +231,9 @@ const StockTransfers: React.FC = () => {
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50">
             <LuLightbulb className="w-4 h-4" /> Learn how it works
           </a>
-          <button onClick={() => { setNf({}); setNewOpen(true); }} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold">
+          {canRequest && <button onClick={() => { setNf({}); setNewOpen(true); }} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold">
             <LuPlus className="w-4 h-4" /> New transfer
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -315,9 +318,9 @@ const StockTransfers: React.FC = () => {
                     <td className="py-3 px-4 text-slate-500 dark:text-slate-400">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—'}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-end gap-2">
-                        {r.statusLabel === 'Pending dispatch' && <button onClick={() => openDetail(r, 'dispatch')} className="rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 text-xs font-semibold">Dispatch</button>}
-                        {r.statusLabel === 'Pending receipt' && <button onClick={() => openDetail(r, 'receive')} className="rounded-lg bg-green-50 text-green-700 hover:bg-green-100 px-3 py-1.5 text-xs font-semibold">Receive</button>}
-                        {r.statusLabel === 'Pending approval' && <button onClick={() => openDetail(r, 'view')} className="rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 px-3 py-1.5 text-xs font-semibold">Review</button>}
+                        {canApprove && r.statusLabel === 'Pending dispatch' && <button onClick={() => openDetail(r, 'dispatch')} className="rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 text-xs font-semibold">Dispatch</button>}
+                        {canRequest && r.statusLabel === 'Pending receipt' && <button onClick={() => openDetail(r, 'receive')} className="rounded-lg bg-green-50 text-green-700 hover:bg-green-100 px-3 py-1.5 text-xs font-semibold">Receive</button>}
+                        {canApprove && r.statusLabel === 'Pending approval' && <button onClick={() => openDetail(r, 'view')} className="rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 px-3 py-1.5 text-xs font-semibold">Review</button>}
                         <button onClick={() => openDetail(r, 'view')} className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">View</button>
                       </div>
                     </td>
@@ -422,16 +425,16 @@ const StockTransfers: React.FC = () => {
 
             {/* actions */}
             <div className="flex justify-end gap-2 pt-1">
-              {detailMode === 'view' && detailRow.kind === 'request' && detailRow.status === 'submitted' && (
+              {canApprove && detailMode === 'view' && detailRow.kind === 'request' && detailRow.status === 'submitted' && (
                 <>
                   <button onClick={() => rejectM.mutate(detailRow.id)} className="rounded-lg border border-red-200 text-red-600 px-4 py-2 text-sm font-medium hover:bg-red-50">Reject</button>
                   <button onClick={() => approveM.mutate(detailRow.id)} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold">Approve</button>
                 </>
               )}
-              {detailMode === 'view' && detailRow.statusLabel === 'Pending dispatch' && (
+              {canApprove && detailMode === 'view' && detailRow.statusLabel === 'Pending dispatch' && (
                 <button onClick={() => setDetailMode('dispatch')} className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-semibold">Dispatch…</button>
               )}
-              {detailMode === 'view' && detailRow.statusLabel === 'Pending receipt' && (
+              {canRequest && detailMode === 'view' && detailRow.statusLabel === 'Pending receipt' && (
                 <button onClick={() => openDetail(detailRow, 'receive')} className="rounded-lg bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-semibold">Receive…</button>
               )}
               {detailMode === 'dispatch' && (

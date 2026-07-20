@@ -14,11 +14,14 @@ import { CustomersService } from './customers.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – Customers')
 @ApiBearerAuth()
 @Controller('admin/customers')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class CustomersController {
     constructor(private service: CustomersService) {}
 
@@ -48,6 +51,7 @@ export class CustomersController {
     }
 
     @Post()
+    @RequirePermission(Permissions.CUSTOMERS_CREATE)
     store(
         @CurrentUser()
         user: {
@@ -68,6 +72,7 @@ export class CustomersController {
     }
 
     @Put(':id')
+    @RequirePermission(Permissions.CUSTOMERS_EDIT)
     update(
         @Param('id') id: string,
         @CurrentUser()
@@ -89,6 +94,7 @@ export class CustomersController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.CUSTOMERS_DELETE)
     async remove(
         @Param('id') id: string,
         @CurrentUser()

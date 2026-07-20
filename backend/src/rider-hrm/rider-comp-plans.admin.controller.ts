@@ -13,16 +13,20 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { RiderHrmService } from './rider-hrm.service';
 
 @ApiTags('Admin – Rider HRM – Compensation Plans')
 @ApiBearerAuth()
 @Controller('admin/rider-hrm')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class RiderCompPlansAdminController {
     constructor(private readonly riderHrmService: RiderHrmService) {}
 
     @Post('comp-plans')
+    @RequirePermission(Permissions.RIDER_COMP_PLANS_CREATE)
     createCompPlan(
         @CurrentUser() user: { id: number; tenantId: number | null },
         @Body()
@@ -65,6 +69,7 @@ export class RiderCompPlansAdminController {
     }
 
     @Patch('comp-plans/:id/activate')
+    @RequirePermission(Permissions.RIDER_COMP_PLANS_ACTIVATE)
     activateCompPlan(
         @Param('id') id: string,
         @CurrentUser() user: { id: number; tenantId: number | null },

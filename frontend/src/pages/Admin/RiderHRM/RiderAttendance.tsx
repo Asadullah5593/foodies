@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
 import Button from '../../../components/Button';
+import { useHasPermission } from '../../../hooks/useHasPermission';
 import Loader from '../../../components/Loader';
 import { adminService } from '../../../services/api/adminService';
 import { RiderOnDuty } from '../../../types';
@@ -18,6 +19,7 @@ import {
 
 const RiderAttendance: React.FC = () => {
   const queryClient = useQueryClient();
+  const canManage = useHasPermission('rider-attendance:manage');
 
   const [attendanceForm, setAttendanceForm] = useState({
     rider_user_id: '',
@@ -132,14 +134,14 @@ const RiderAttendance: React.FC = () => {
           </div>
         </div>
         <div className="mt-4 flex justify-end">
-          <Button
+          {canManage && <Button
             variant="primary"
             isLoading={checkInMutation.isPending}
             disabled={!attendanceForm.rider_user_id || !attendanceForm.branch_id}
             onClick={() => checkInMutation.mutate()}
           >
             Check in rider
-          </Button>
+          </Button>}
         </div>
 
         <div className="mt-6 border-t border-gray-200 dark:border-slate-700 pt-4 space-y-3">
@@ -180,14 +182,14 @@ const RiderAttendance: React.FC = () => {
                       </a>
                     ) : null}
                   </div>
-                  <Button
+                  {canManage && <Button
                     size="small"
                     variant="outline"
                     isLoading={checkOutMutation.isPending}
                     onClick={() => checkOutMutation.mutate(entry.rider_user_id)}
                   >
                     Check out
-                  </Button>
+                  </Button>}
                 </div>
               );
             })

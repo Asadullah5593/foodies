@@ -11,6 +11,7 @@ import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { confirmDialog } from '../../utils/sweetAlert';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import {
   Permission,
   Role,
@@ -25,6 +26,9 @@ const Roles: React.FC = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const canCreate = useHasPermission('roles:create');
+  const canEdit = useHasPermission('roles:edit');
+  const canDelete = useHasPermission('roles:delete');
   const [showAllPermissions, setShowAllPermissions] = useState(false);
   const [page, setPage] = useState(1);
 
@@ -200,7 +204,7 @@ const Roles: React.FC = () => {
               Add permission
             </Button>
           )}
-          {user?.tenant_id != null && (
+          {user?.tenant_id != null && canCreate && (
             <Button onClick={() => navigate('/admin/roles/new')}>Create Role</Button>
           )}
         </div>
@@ -407,8 +411,8 @@ const Roles: React.FC = () => {
                     animationIndex={i}
                     actions={
                       <>
-                        <Button size="small" variant={isSuperAdminRole ? 'view' : 'edit'} onClick={() => navigate(`/admin/roles/${role.id}/edit`)}>{isSuperAdminRole ? 'View' : 'Edit'}</Button>
-                        {!isSuperAdminRole && (
+                        {(isSuperAdminRole || canEdit) && <Button size="small" variant={isSuperAdminRole ? 'view' : 'edit'} onClick={() => navigate(`/admin/roles/${role.id}/edit`)}>{isSuperAdminRole ? 'View' : 'Edit'}</Button>}
+                        {!isSuperAdminRole && canDelete && (
                           <Button
                             size="small"
                             variant="danger"

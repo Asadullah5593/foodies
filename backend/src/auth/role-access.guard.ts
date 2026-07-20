@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { PATH_REQUIRED_PERMISSIONS } from './path-permissions';
+import { expandPermissions } from '../roles/permission-implications';
 
 const ALL_BRANCHES_ACCESS = 'all-branches:access';
 
@@ -61,9 +62,10 @@ export class RoleAccessGuard implements CanActivate {
         );
         // Expose the resolved permission set so downstream services can enforce
         // action-specific permissions (the path guard is coarse, any-of-prefix).
-        const permissionNames = await this.getUserPermissionNames(
-            user.id,
-            user.tenantId,
+        // Expand umbrella → granular so services reading request.user.permissions
+        // (and the path check below) see the full effective set.
+        const permissionNames = expandPermissions(
+            await this.getUserPermissionNames(user.id, user.tenantId),
         );
         user.permissions = [...permissionNames];
 

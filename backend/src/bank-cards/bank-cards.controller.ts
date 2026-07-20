@@ -15,6 +15,9 @@ import { BankCardsService } from './bank-cards.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 type CardUser = {
     id: number;
@@ -44,7 +47,7 @@ type CardBody = {
 @ApiTags('Admin – Bank Cards')
 @ApiBearerAuth()
 @Controller('admin/bank-cards')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class BankCardsController {
     constructor(private service: BankCardsService) {}
 
@@ -78,6 +81,7 @@ export class BankCardsController {
     }
 
     @Post()
+    @RequirePermission(Permissions.BANK_CARDS_CREATE)
     store(@CurrentUser() user: CardUser, @Body() body: CardBody) {
         if (user.tenantId == null)
             throw new ForbiddenException('Bank cards are managed per tenant');
@@ -85,6 +89,7 @@ export class BankCardsController {
     }
 
     @Put(':id')
+    @RequirePermission(Permissions.BANK_CARDS_EDIT)
     update(
         @CurrentUser() user: CardUser,
         @Param('id') id: string,
@@ -101,6 +106,7 @@ export class BankCardsController {
     }
 
     @Delete(':id')
+    @RequirePermission(Permissions.BANK_CARDS_DELETE)
     remove(@CurrentUser() user: CardUser, @Param('id') id: string) {
         if (user.tenantId == null)
             throw new ForbiddenException('Bank cards are managed per tenant');

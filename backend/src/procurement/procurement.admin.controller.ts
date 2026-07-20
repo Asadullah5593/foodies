@@ -12,12 +12,15 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { ProcurementService } from './procurement.service';
 
 @ApiTags('Admin – Procurement')
 @ApiBearerAuth()
 @Controller('admin/procurement')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class ProcurementAdminController {
     constructor(private procurementService: ProcurementService) {}
 
@@ -37,6 +40,7 @@ export class ProcurementAdminController {
     }
 
     @Post('purchase-requisitions')
+    @RequirePermission(Permissions.PROCUREMENT_PR_CREATE)
     async createPR(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -58,6 +62,7 @@ export class ProcurementAdminController {
     }
 
     @Patch('purchase-requisitions/:id')
+    @RequirePermission(Permissions.PROCUREMENT_PR_CREATE)
     async updatePR(
         @CurrentUser()
         user: {
@@ -85,6 +90,7 @@ export class ProcurementAdminController {
     }
 
     @Post('purchase-requisitions/:id/submit')
+    @RequirePermission(Permissions.PROCUREMENT_PR_CREATE)
     submitPR(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -94,6 +100,7 @@ export class ProcurementAdminController {
     }
 
     @Post('purchase-requisitions/:id/approve')
+    @RequirePermission(Permissions.PROCUREMENT_PR_APPROVE)
     approvePR(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -113,6 +120,7 @@ export class ProcurementAdminController {
     }
 
     @Post('purchase-requisitions/:id/reject')
+    @RequirePermission(Permissions.PROCUREMENT_PR_APPROVE)
     rejectPR(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -148,6 +156,7 @@ export class ProcurementAdminController {
     }
 
     @Patch('purchase-orders/:id')
+    @RequirePermission(Permissions.PROCUREMENT_PO_MANAGE)
     updatePO(
         @CurrentUser()
         user: {
@@ -199,6 +208,7 @@ export class ProcurementAdminController {
     }
 
     @Post('grns')
+    @RequirePermission(Permissions.PROCUREMENT_GRN_POST)
     createGRN(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -214,6 +224,7 @@ export class ProcurementAdminController {
     }
 
     @Patch('grns/:id')
+    @RequirePermission(Permissions.PROCUREMENT_GRN_POST)
     updateGRN(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -243,6 +254,7 @@ export class ProcurementAdminController {
     }
 
     @Post('grns/:id/lines')
+    @RequirePermission(Permissions.PROCUREMENT_GRN_POST)
     addGRNLine(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -267,6 +279,7 @@ export class ProcurementAdminController {
     }
 
     @Post('grns/:id/post')
+    @RequirePermission(Permissions.PROCUREMENT_GRN_POST)
     postGRN(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },
@@ -276,6 +289,7 @@ export class ProcurementAdminController {
     }
 
     @Post('grns/:id/reverse')
+    @RequirePermission(Permissions.PROCUREMENT_GRN_REVERSE)
     reverseGRN(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },

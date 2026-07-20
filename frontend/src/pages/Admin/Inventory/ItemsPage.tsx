@@ -6,6 +6,7 @@ import Modal from '../../../components/Modal';
 import Loader from '../../../components/Loader';
 import SearchableSelect from '../../../components/SearchableSelect';
 import { inventoryService } from '../../../services/api/inventoryService';
+import { useHasPermission } from '../../../hooks/useHasPermission';
 
 const card = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl';
 const field = 'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400';
@@ -13,6 +14,9 @@ const TRACK_FILTERS: [string, string][] = [['', 'All'], ['expiry', 'Expiry-track
 
 const ItemsPage: React.FC = () => {
   const qc = useQueryClient();
+  const canCreate = useHasPermission('inventory-items:create');
+  const canEdit = useHasPermission('inventory-items:edit');
+  const canDelete = useHasPermission('inventory-items:delete');
   const [search, setSearch] = useState('');
   const [trackFilter, setTrackFilter] = useState('');
   const [open, setOpen] = useState(false);
@@ -57,7 +61,7 @@ const ItemsPage: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Inventory Items</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5 max-w-xl leading-relaxed">The raw ingredients, packaging and goods you stock. Each item has a base unit; recipes and receipts measure against it.</p>
         </div>
-        <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm"><LuPlus className="w-4 h-4" /> Add item</button>
+        {canCreate && <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm"><LuPlus className="w-4 h-4" /> Add item</button>}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -87,7 +91,7 @@ const ItemsPage: React.FC = () => {
                   <td className="py-3 px-4 text-right">{i.defaultReorderPoint != null ? `${Number(i.defaultReorderPoint)} ${uomById.get(Number(i.baseUomId)) ?? ''}` : <span className="text-slate-400">—</span>}</td>
                   <td className="py-3 px-4"><div className="flex gap-1.5">{i.trackExpiry && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-700"><LuCalendarClock className="w-3 h-3" />Expiry</span>}{i.trackLot && <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold bg-purple-100 text-purple-700"><LuTag className="w-3 h-3" />Lot</span>}{!i.trackExpiry && !i.trackLot && <span className="text-slate-400 text-xs">—</span>}</div></td>
                   <td className="py-3 px-4 text-right font-medium">{i.defaultBuyPrice != null ? Number(i.defaultBuyPrice).toFixed(2) : '—'}</td>
-                  <td className="py-3 px-4"><div className="flex gap-2 justify-end"><button onClick={() => openEdit(i)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"><LuPencil className="w-3.5 h-3.5" /></button><button onClick={() => { if (confirm(`Delete item "${i.name}"?`)) deleteM.mutate(Number(i.id)); }} className="px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"><LuTrash2 className="w-3.5 h-3.5" /></button></div></td>
+                  <td className="py-3 px-4"><div className="flex gap-2 justify-end">{canEdit && <button onClick={() => openEdit(i)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"><LuPencil className="w-3.5 h-3.5" /></button>}{canDelete && <button onClick={() => { if (confirm(`Delete item "${i.name}"?`)) deleteM.mutate(Number(i.id)); }} className="px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50"><LuTrash2 className="w-3.5 h-3.5" /></button>}</div></td>
                 </tr>
               ))}
             </tbody>

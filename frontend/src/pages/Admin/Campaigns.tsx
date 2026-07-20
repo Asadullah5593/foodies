@@ -26,6 +26,7 @@ import {
   removeDialog,
   removeLabel,
 } from '../../components/OfferBrandScope';
+import { useHasPermission } from '../../hooks/useHasPermission';
 
 const emptyCampaign = { name: '', description: '', is_active: true, eligibility_brand_ids: [] as number[], ...emptyValidity };
 const emptyItem = {
@@ -47,6 +48,9 @@ type Opt = { value: string; label: string };
 
 const Campaigns: React.FC = () => {
   const queryClient = useQueryClient();
+  const canCreatePerm = useHasPermission('campaigns:create');
+  const canEditPerm = useHasPermission('campaigns:edit');
+  const canDeletePerm = useHasPermission('campaigns:delete');
   const [page, setPage] = useState(1);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
@@ -176,7 +180,7 @@ const Campaigns: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Campaigns</h1>
-        <Button onClick={() => { setEditing(null); setForm({ ...emptyCampaign }); setShowForm(true); }}>Add Campaign</Button>
+        {canCreatePerm && <Button onClick={() => { setEditing(null); setForm({ ...emptyCampaign }); setShowForm(true); }}>Add Campaign</Button>}
       </div>
 
       {/* Campaign form — no image here; images live on each banner */}
@@ -423,7 +427,7 @@ const Campaigns: React.FC = () => {
                   animationIndex={i}
                   actions={
                     <>
-                      {canEdit(c.manage_scope) && (
+                      {canEditPerm && canEdit(c.manage_scope) && (
                         <>
                           {/* Banners mutate shared content and Report aggregates every brand's
                               value, so both follow Edit's gate rather than staying open. */}
@@ -432,7 +436,7 @@ const Campaigns: React.FC = () => {
                           <Button size="small" variant="edit" onClick={() => handleEdit(c)}>Edit</Button>
                         </>
                       )}
-                      {c.manage_scope !== 'read_only' && (
+                      {canDeletePerm && c.manage_scope !== 'read_only' && (
                         <Button
                           size="small"
                           variant="danger"

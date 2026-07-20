@@ -210,6 +210,32 @@ flowchart TB
 - Super Admin can create/update/delete permissions.
 - Tenant users can list roles, create/update/delete roles, and assign permissions to roles.
 
+#### Granular per-action permissions
+
+Every admin module exposes granular permissions (`resource:view` / `:create` /
+`:edit` / `:delete`, plus specials like `shifts:open`, `orders:update-status`,
+`invoice-templates:set-default`, `procurement:grn:reverse`). They are **additive**
+on top of the legacy umbrella permissions: holding an umbrella
+(`menu:manage`, `discounts:manage`, `users:manage`, …) auto-satisfies the
+granular checks it covers, via `expandPermissions()` /
+`PERMISSION_IMPLICATIONS` (`backend/src/roles/permission-implications.ts`),
+which is applied wherever a user's effective permission set is computed
+(`RoleAccessGuard`, `RequirePermissionGuard`, `AuthService.getPermissionsForUser`).
+
+- **Backend enforcement (writes):** each create/edit/delete/action endpoint is
+  guarded with `@RequirePermission(...)` (the decorator is variadic — any-of).
+  This is the guard that actually fires; the route-level path check in
+  `RoleAccessGuard` is currently a no-op because request paths carry the global
+  `/api` prefix that `PATH_REQUIRED_PERMISSIONS` omits (view/read APIs are not
+  permission-gated at the API layer today).
+- **Frontend:** action buttons are gated with the `useHasPermission` hook
+  (`frontend/src/hooks/useHasPermission.ts`); nav/page access adds the granular
+  `:view` permissions to `frontend/src/lib/pathPermissions.ts`.
+
+Assign an umbrella for full module control, or a granular subset (e.g.
+`menu:create` without `menu:delete`) for a fine-grained role. Owner and
+Super Admin hold every permission.
+
 ### Branch Users (branch assignments)
 
 - List users assigned to a branch (or “all” visible branches).

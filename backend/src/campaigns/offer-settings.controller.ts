@@ -13,6 +13,9 @@ import { Tenant } from '../entities/tenant.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import {
     resolveOfferSettings,
     OfferSettings,
@@ -24,7 +27,7 @@ type User = { id: number; tenantId: number | null };
 @ApiTags('Admin – Offer Settings')
 @ApiBearerAuth()
 @Controller('admin/offer-settings')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class OfferSettingsController {
     constructor(
         @InjectRepository(Tenant)
@@ -45,6 +48,7 @@ export class OfferSettingsController {
     }
 
     @Put()
+    @RequirePermission(Permissions.OFFER_SETTINGS_EDIT)
     async put(
         @CurrentUser() user: User,
         @Body() dto: Partial<OfferSettings>,

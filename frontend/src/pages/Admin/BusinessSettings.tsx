@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { MdStorefront, MdAttachMoney, MdStars, MdPrint, MdInfoOutline, MdReceiptLong } from 'react-icons/md';
 import { useAuth } from '../../contexts/AuthContext';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import { adminService } from '../../services/api';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
@@ -41,6 +42,7 @@ const ToggleRow: React.FC<{
 
 const BusinessSettings: React.FC = () => {
   const { user } = useAuth();
+  const canEdit = useHasPermission('business-settings:edit');
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     name: '',
@@ -373,13 +375,13 @@ const BusinessSettings: React.FC = () => {
                 fbrStatus ? fbrStatus.enabled_branches > 0 : undefined,
               )}
             </div>
-            <button
+            {canEdit && <button
               type="submit"
               disabled={updateMutation.isPending}
               className="mt-[18px] w-full rounded-[11px] bg-red-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-red-600/25 transition-colors hover:bg-red-700 active:scale-[0.98] disabled:opacity-60"
             >
               {updateMutation.isPending ? 'Saving…' : 'Save changes'}
-            </button>
+            </button>}
           </div>
           <div className="flex items-start gap-2.5 rounded-xl border border-blue-100 bg-blue-50 px-3.5 py-3 dark:border-blue-500/25 dark:bg-blue-500/10">
             <span className="mt-px flex h-[17px] w-[17px] flex-none items-center justify-center rounded-full bg-blue-500 text-[11px] font-bold text-white">i</span>

@@ -28,7 +28,7 @@ export class NotificationSettingsController {
 
     @Get()
     @ApiOperation({ summary: 'List the event catalog + this tenant overrides' })
-    @RequirePermission(Permissions.NOTIFICATIONS_MANAGE)
+    @RequirePermission(Permissions.NOTIFICATIONS_VIEW)
     list(@CurrentUser() user: JwtUser) {
         if (!user.tenantId) {
             throw new ForbiddenException(
@@ -40,7 +40,7 @@ export class NotificationSettingsController {
 
     @Put()
     @ApiOperation({ summary: 'Create/update a role-targeting override' })
-    @RequirePermission(Permissions.NOTIFICATIONS_MANAGE)
+    @RequirePermission(Permissions.NOTIFICATIONS_EDIT)
     upsert(
         @CurrentUser() user: JwtUser,
         @Body() dto: UpsertNotificationSettingDto,
@@ -55,7 +55,7 @@ export class NotificationSettingsController {
 
     @Delete(':id')
     @ApiOperation({ summary: 'Delete an override (revert to default)' })
-    @RequirePermission(Permissions.NOTIFICATIONS_MANAGE)
+    @RequirePermission(Permissions.NOTIFICATIONS_EDIT)
     remove(@CurrentUser() user: JwtUser, @Param('id') id: string) {
         if (!user.tenantId) {
             throw new ForbiddenException(

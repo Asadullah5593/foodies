@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User } from '../entities/user.entity';
+import { expandPermissions } from '../roles/permission-implications';
 
 @Injectable()
 export class AuthService {
@@ -134,7 +135,9 @@ export class AuthService {
              WHERE rp.role_id IN (${placeholders})`,
             roleIds,
         )) as unknown as { name: string }[];
-        return [...new Set(permRows.map((r) => r.name))];
+        // Expand umbrella permissions to the granular ones they imply, so the
+        // frontend sees (and can gate buttons on) the full effective set.
+        return [...expandPermissions(permRows.map((r) => r.name))];
     }
 
     /**

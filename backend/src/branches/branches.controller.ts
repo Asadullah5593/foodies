@@ -58,7 +58,7 @@ export class BranchesController {
 
     @Post()
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission(Permissions.BRANCHES_MANAGE)
+    @RequirePermission(Permissions.BRANCHES_CREATE)
     async store(
         @Body()
         dto: {
@@ -100,7 +100,7 @@ export class BranchesController {
 
     @Put(':id')
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission(Permissions.BRANCHES_MANAGE)
+    @RequirePermission(Permissions.BRANCHES_EDIT)
     async update(
         @Param('id') id: string,
         @Body()
@@ -148,7 +148,7 @@ export class BranchesController {
 
     @Delete(':id')
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission(Permissions.BRANCHES_MANAGE)
+    @RequirePermission(Permissions.BRANCHES_DELETE)
     destroy(
         @Param('id') id: string,
         @CurrentUser() user: { id: number; tenantId: number | null },
@@ -179,6 +179,8 @@ export class BranchesController {
 
     /** Toggle ONE brand's online availability at this branch. */
     @Patch(':id/brands/:brandId/availability')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.BRANDS_TOGGLE_OPEN)
     setBrandAvailability(
         @Param('id') id: string,
         @Param('brandId') brandId: string,
@@ -203,6 +205,8 @@ export class BranchesController {
 
     /** Bulk: close/open ALL brands at this branch (GM / branch-manager only). */
     @Patch(':id/brands-availability')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.BRANDS_TOGGLE_OPEN)
     setAllBrandsAvailability(
         @Param('id') id: string,
         @Body() dto: { is_open: boolean },

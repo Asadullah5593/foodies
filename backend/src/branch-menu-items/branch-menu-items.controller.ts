@@ -46,7 +46,7 @@ export class BranchMenuItemsController {
 
     @Post('branch-menu-items')
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission(Permissions.BRANCH_MENU_MANAGE)
+    @RequirePermission(Permissions.BRANCH_MENU_EDIT)
     store(
         @CurrentUser()
         user: {
@@ -80,7 +80,7 @@ export class BranchMenuItemsController {
 
     @Put('branch-menu-items/sync')
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission(Permissions.BRANCH_MENU_MANAGE)
+    @RequirePermission(Permissions.BRANCH_MENU_LINK)
     sync(
         @CurrentUser()
         user: {
@@ -101,7 +101,7 @@ export class BranchMenuItemsController {
 
     @Put('branch-menu-items/:id')
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission(Permissions.BRANCH_MENU_MANAGE)
+    @RequirePermission(Permissions.BRANCH_MENU_EDIT)
     update(
         @Param('id') id: string,
         @CurrentUser()
@@ -124,7 +124,7 @@ export class BranchMenuItemsController {
 
     @Delete('branch-menu-items/:id')
     @UseGuards(RequirePermissionGuard)
-    @RequirePermission(Permissions.BRANCH_MENU_MANAGE)
+    @RequirePermission(Permissions.BRANCH_MENU_EDIT)
     destroy(
         @Param('id') id: string,
         @CurrentUser()

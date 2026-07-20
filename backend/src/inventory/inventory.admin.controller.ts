@@ -12,13 +12,16 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 import { InventoryService } from './inventory.service';
 import { InventoryAlertsJob } from './inventory-alerts.job';
 
 @ApiTags('Admin – Inventory')
 @ApiBearerAuth()
 @Controller('admin/inventory')
-@UseGuards(JwtAuthGuard, RoleAccessGuard)
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class InventoryAdminController {
     constructor(
         private inventoryService: InventoryService,
@@ -27,6 +30,7 @@ export class InventoryAdminController {
 
     /** Trigger the low-stock + near-expiry notification sweeps immediately. */
     @Post('alerts/run')
+    @RequirePermission(Permissions.INVENTORY_VIEW)
     runAlertSweeps() {
         return this.inventoryAlertsJob.runNow();
     }
@@ -167,6 +171,7 @@ export class InventoryAdminController {
     }
 
     @Post('branches/:branchId/wastage')
+    @RequirePermission(Permissions.INVENTORY_WASTE)
     async wastage(
         @CurrentUser()
         user: { id: number; tenantId: number | null; isSuperAdmin?: boolean },

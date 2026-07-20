@@ -7,6 +7,7 @@ import Loader from '../../../components/Loader';
 import SearchableSelect from '../../../components/SearchableSelect';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
+import { useHasPermission } from '../../../hooks/useHasPermission';
 
 const card = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl';
 const field = 'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400';
@@ -22,6 +23,7 @@ const fmtNum = (n: number) => Number(n).toLocaleString(undefined, { maximumFract
 
 const StockAdjustments: React.FC = () => {
   const queryClient = useQueryClient();
+  const canAdjust = useHasPermission('inventory:adjust');
   const [branchId, setBranchId] = useState<number | null>(null);
   const [status, setStatus] = useState<'all' | 'draft' | 'posted'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | 'in' | 'out' | 'in+out'>('all');
@@ -270,7 +272,7 @@ const StockAdjustments: React.FC = () => {
               {branches.map((b: any) => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}
             </select>
           </div>
-          <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm"><LuPlus className="w-4 h-4" /> Create adjustment</button>
+          {canAdjust && <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm"><LuPlus className="w-4 h-4" /> Create adjustment</button>}
         </div>
       </div>
 
@@ -335,7 +337,7 @@ const StockAdjustments: React.FC = () => {
                     {draft ? (
                       <>
                         <button onClick={() => openEdit(g)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12.5px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"><LuPencil className="w-3.5 h-3.5" /></button>
-                        <button disabled={busy} onClick={() => postGroup(g)} className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[12.5px] font-bold disabled:opacity-50">Post</button>
+                        {canAdjust && <button disabled={busy} onClick={() => postGroup(g)} className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[12.5px] font-bold disabled:opacity-50">Post</button>}
                       </>
                     ) : <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-semibold text-green-600"><LuCheck className="w-3.5 h-3.5" />Posted</span>}
                   </div>
