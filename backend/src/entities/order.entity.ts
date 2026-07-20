@@ -37,9 +37,11 @@ export class Order {
     branchId: number;
 
     /**
-     * Permanent, globally-unique tracking reference shared with the customer.
-     * Format: `BR-{brandId}-{branchId}-{YYYYMMDD}-{seq}` (e.g. `BR-23-10-20260617-001`).
-     * Null on orders created before migration ShortOrderNumber (legacy rows).
+     * Permanent, globally-unique tracking / invoice reference shared with the
+     * customer. Format: `FDS-XXXXXXXX` — 8 crypto-random uppercase
+     * alphanumeric chars (e.g. `FDS-A7K2M9QX`), never reused.
+     * Legacy rows keep the old `BR-{brandId}-{branchId}-{YYYYMMDD}-{seq}`
+     * format; rows from before migration ShortOrderNumber are null.
      * Unique index: `UQ_orders_order_id`.
      */
     @Column({ type: 'varchar', nullable: true })

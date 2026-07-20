@@ -961,8 +961,8 @@ export function sampleInvoice(): InvoiceVM {
     orders: [
       {
         order_id: 1,
-        order_number: 'BR-1-000123',
-        invoice_number: 'BR-1-10-20260708-0011',
+        order_number: '023',
+        invoice_number: 'FDS-B4T7WQ2N',
         brand_name: 'Fireaway',
         brand_logo_url: null,
         order_type: 'dine_in',
@@ -1027,7 +1027,7 @@ export function richSampleInvoice(): InvoiceVM {
       {
         order_id: 481,
         order_number: '014',
-        invoice_number: 'BR-1-10-20260709-0481',
+        invoice_number: 'FDS-A7K2M9QX',
         brand_name: 'Fireaway',
         brand_logo_url: null, // preview uses the Foodies fallback mark
         order_type: 'dine_in',

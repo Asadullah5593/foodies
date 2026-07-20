@@ -516,11 +516,11 @@ Each order in the payload now also carries the **discount breakdown** (they sum 
   "order_type": "dine_in", "table_number": "7", "placed_at": "…",
   "customer_name": "…", "customer_phone": "…", "cashier_name": "…",
   "payment_method": "cash",        // ← distinct completed tenders, "cash + card" for split; null if untendered
-  "invoice_number": "BR-1-10-20260709-0481"  // ← permanent globally-unique ref; shown beneath order_number
+  "invoice_number": "FDS-A7K2M9QX"  // ← permanent globally-unique ref; shown beneath order_number
 }
 ```
 
-`order_number` is the short daily call-out number ("014"); `invoice_number` is the order's permanent globally-unique reference (`BR-{brand}-{branch}-{date}-{seq}`) and is rendered directly beneath the order number on every template.
+`order_number` is the short daily call-out number ("014"); `invoice_number` is the order's permanent globally-unique reference (`FDS-XXXXXXXX` — 8 crypto-random uppercase alphanumeric chars, never reused; orders placed before the format change keep their legacy `BR-{brand}-{branch}-{date}-{seq}` value) and is rendered directly beneath the order number on every template. Treat it as an opaque string — never parse brand/branch/date out of it.
 
 Group/single invoice root now also returns:
 - `currency` — tenant currency code (format the symbol client-side).

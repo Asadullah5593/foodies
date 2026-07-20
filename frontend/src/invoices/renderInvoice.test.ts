@@ -204,15 +204,15 @@ describe('invoice number — shown beneath the order number on every template', 
     for (const layout of ALL_LAYOUTS) {
       const html = renderInvoiceHtml(richSampleInvoice(), layout, DEFAULT_INVOICE_TEMPLATE_CONFIG).html;
       expect(html, layout).toContain('014'); // order number
-      expect(html, layout).toContain('BR-1-10-20260709-0481'); // invoice number
+      expect(html, layout).toContain('FDS-A7K2M9QX'); // invoice number
       // invoice number comes AFTER the order number (beneath it)
-      expect(html.indexOf('BR-1-10-20260709-0481'), layout).toBeGreaterThan(html.indexOf('014'));
+      expect(html.indexOf('FDS-A7K2M9QX'), layout).toBeGreaterThan(html.indexOf('014'));
     }
   });
 
   it('honors the showInvoiceNumber toggle', () => {
     const off = renderInvoiceHtml(richSampleInvoice(), 'bill_bordered', cfg({ showInvoiceNumber: false })).html;
-    expect(off).not.toContain('BR-1-10-20260709-0481');
+    expect(off).not.toContain('FDS-A7K2M9QX');
     expect(off).not.toContain('Invoice #'); // label absent too
   });
 });
@@ -250,7 +250,7 @@ describe('layout-specific chrome', () => {
 
   it('receipt_logo: big Order # band + Product column; band replaces order no in the meta table', () => {
     const { html } = renderInvoiceHtml(sampleInvoice(), 'receipt_logo', DEFAULT_INVOICE_TEMPLATE_CONFIG);
-    expect(html).toContain('Order # BR-1-000123');
+    expect(html).toContain('Order # 023');
     expect(html).toContain('Product');
     expect(html).toContain('class="orderband"');
     // order number lives in the band, so the meta table must not repeat "Order #"

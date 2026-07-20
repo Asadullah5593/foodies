@@ -271,7 +271,7 @@ export type InvoiceLineVM = {
 export type InvoiceOrderVM = {
   order_id: number;
   order_number: string;
-  /** Permanent globally-unique reference (BR-…) used as the invoice number. */
+  /** Permanent globally-unique reference (FDS-XXXXXXXX; legacy orders BR-…) used as the invoice number. Opaque — never parse it. */
   invoice_number?: string | null;
   brand_name?: string | null;
   brand_logo_url?: string | null;
