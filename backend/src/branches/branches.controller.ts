@@ -124,6 +124,11 @@ export class BranchesController {
             status?: string;
             latitude?: number | null;
             longitude?: number | null;
+            fbr_enabled?: boolean;
+            fbr_pos_id?: string | null;
+            fbr_token?: string | null;
+            fbr_environment?: string;
+            fbr_pct_code?: string | null;
             /** Desired brand-level menu item ids to link to this branch (mapping only). */
             menu_item_ids?: number[];
         },

@@ -296,6 +296,14 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           value: form.config.footerText ?? '',
           onChange: (v) => setCfg('footerText', v || null),
         },
+        {
+          kind: 'text',
+          label: 'App QR text',
+          hint: 'shown left of the download QR — turn the QR on under Branding',
+          placeholder: 'Scan to download the Foodies app',
+          value: form.config.appQrText ?? '',
+          onChange: (v) => setCfg('appQrText', v || null),
+        },
       ],
     },
     {

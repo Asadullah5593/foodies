@@ -7,6 +7,8 @@ import {
   resolveInvoiceConfig,
   LAYOUT_META,
 } from './types';
+import { APP_QR_SVG } from './appQr';
+import { FBR_LOGO_SRC, fbrQrSvg } from './fbr';
 
 function esc(s: unknown): string {
   return String(s ?? '')
@@ -232,6 +234,17 @@ function itemsHtml(
             `${cat}${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}`,
             cfg.showUnitPrice ? `<span data-field="showUnitPrice">${zeroMoney(base)}</span>` : '',
           );
+          // Per-item note (kitchen instruction). Sits right under the item name,
+          // opt-in — receipts carried no notes until this toggle.
+          const noteHtml =
+            cfg.showLineNotes && l.notes
+              ? row(`<span class="sub-l">Note: ${esc(l.notes)}</span>`, '', 'sub', 'showLineNotes')
+              : '';
+          // "+ " and the "Base:"-style group name are each independently
+          // toggleable; both on = today's look.
+          const plus = cfg.showModifierPlus ? '+ ' : '';
+          const grp = (m: NonNullable<InvoiceLineVM['modifiers']>[number]) =>
+            cfg.showModifierGroup && m.group ? esc(`${m.group}: `) : '';
           // Zero-billing add-ons/modifiers are "free lines" too: hidden entirely
           // when free items are off (paid ones always print).
           const addons = cfg.showModifiers
@@ -239,7 +252,7 @@ function itemsHtml(
                 .filter((a) => cfg.showFreeItems || addonAmount(a) !== 0)
                 .map((a) =>
                   row(
-                    `<span class="sub-l">+ ${esc(a.name ?? 'Add-on')}${Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</span>`,
+                    `<span class="sub-l">${plus}${esc(a.name ?? 'Add-on')}${Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</span>`,
                     zeroMoney(addonAmount(a)),
                     'sub',
                     'showModifiers',
@@ -262,7 +275,7 @@ function itemsHtml(
                   'showModifiers',
                 )
               : row(
-                  `<span class="sub-l">+ ${esc(m.group ? `${m.group}: ` : '')}${esc(m.name ?? 'Modifier')}${qty}</span>`,
+                  `<span class="sub-l">${plus}${grp(m)}${esc(m.name ?? 'Modifier')}${qty}</span>`,
                   zeroMoney(b.amount),
                   'sub',
                   'showModifiers',
@@ -275,7 +288,7 @@ function itemsHtml(
                 )
                 .join('')
             : '';
-          return head + addons + mods;
+          return head + noteHtml + addons + mods;
         })
         .join('');
   };
@@ -285,7 +298,12 @@ function itemsHtml(
     cfg.showFreeItems && free.length
       ? `<div class="seclabel freelabel" data-field="showFreeItems">Free items</div>${groupItemsForReceipt(free).map(renderGroup).join('')}`
       : '';
-  return paidHtml + freeHtml;
+  // Order-level note closes the items, right before the totals begin.
+  const orderNote =
+    cfg.showOrderNotes && order.notes
+      ? row(`Note: ${esc(order.notes)}`, '', 'ordernote', 'showOrderNotes')
+      : '';
+  return paidHtml + freeHtml + orderNote;
 }
 
 /**
@@ -342,6 +360,14 @@ function itemsTableHtml(
             zeroRate(l.unit_price, base),
             zeroNum(base),
           );
+          // Per-item note (kitchen instruction), spanning the item column only.
+          const noteCell =
+            cfg.showLineNotes && l.notes
+              ? cell(`<span class="ind">Note: ${esc(l.notes)}</span>`, '', '', '', '', 'showLineNotes')
+              : '';
+          const plus = cfg.showModifierPlus ? '+ ' : '';
+          const grp = (m: NonNullable<InvoiceLineVM['modifiers']>[number]) =>
+            cfg.showModifierGroup && m.group ? esc(`${m.group}: `) : '';
           // Zero-billing add-ons/modifiers are "free lines" too: hidden entirely
           // when free items are off (paid ones always print).
           const addons = cfg.showModifiers
@@ -350,7 +376,7 @@ function itemsTableHtml(
                 .map((a) => {
                   const qty = Number(a.quantity ?? 1);
                   return cell(
-                    `<span class="ind">+ ${esc(a.name ?? 'Add-on')}</span>`,
+                    `<span class="ind">${plus}${esc(a.name ?? 'Add-on')}</span>`,
                     qty !== 1 ? String(qty) : '',
                     zeroRate(a.unit_price, addonAmount(a)),
                     zeroNum(addonAmount(a)),
@@ -369,7 +395,7 @@ function itemsTableHtml(
             return cell(
               nested
                 ? `<span class="ind2">↳ ${esc(m.name ?? 'Modifier')}</span>`
-                : `<span class="ind">+ ${esc(m.group ? `${m.group}: ` : '')}${esc(m.name ?? 'Modifier')}</span>`,
+                : `<span class="ind">${plus}${grp(m)}${esc(m.name ?? 'Modifier')}</span>`,
               String(b.qty),
               zeroRate(b.unit, b.amount),
               zeroNum(b.amount),
@@ -384,17 +410,24 @@ function itemsTableHtml(
                 )
                 .join('')
             : '';
-          return head + addons + mods;
+          return head + noteCell + addons + mods;
         })
         .join('');
   };
   const { paid, free } = splitFreeLines(order.items ?? []);
   const colCount = showRate ? 4 : 3;
+  // Order-level note as the last row, spanning every column so it reads as a
+  // full-width line where the items end — just above the totals.
+  const orderNoteRow =
+    cfg.showOrderNotes && order.notes
+      ? `<tr class="ordernote" data-field="showOrderNotes"><td colspan="${colCount}">Note: ${esc(order.notes)}</td></tr>`
+      : '';
   const rows =
     groupItemsForReceipt(paid).map(renderGroup).join('') +
     (cfg.showFreeItems && free.length
       ? `<tr class="freehead" data-field="showFreeItems"><td colspan="${colCount}">Free items</td></tr>${groupItemsForReceipt(free).map(renderGroup).join('')}`
-      : '');
+      : '') +
+    orderNoteRow;
 
   return `<table class="itbl"><thead><tr><th class="ci">${esc(labels.item)}</th><th class="cq">${esc(labels.qty)}</th>${showRate ? `<th class="cr">${esc(labels.rate)}</th>` : ''}<th class="ca">${esc(labels.amount)}</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
@@ -518,8 +551,36 @@ function bizHeaderHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
     </div>`;
 }
 
-function footerHtml(cfg: InvoiceTemplateConfig): string {
-  return `
+function footerHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
+  // App-download QR closes the receipt, above the footer: prompt text on the
+  // left, the QR on the right. The QR encodes the same deep link the consumer
+  // site shows (see appQr.ts), so scanning a receipt lands in the same place.
+  const qrBlock = cfg.showAppQr
+    ? `
+    <div class="qrblock" data-field="showAppQr">
+      <div class="qr-text">${cfg.appQrText ? esc(cfg.appQrText) : ''}</div>
+      <div class="qr-img">${APP_QR_SVG}</div>
+    </div>`
+    : '';
+  // FBR fiscalization block, directly below the app-QR row: the fiscal number,
+  // then the FBR logo bottom-left (under the app-QR prompt text) and the
+  // verification QR bottom-right (under the app QR). The QR encodes the FBR
+  // invoice number for the Tax Asaan app. Orders without a number (FBR never
+  // active for the branch) print nothing. POS/app/kiosk groups are single-order,
+  // so the first order carrying a number is THE order.
+  const fbrNumber = (data.orders ?? []).find((o) => o.fbr_invoice_number)?.fbr_invoice_number;
+  const fbrBlock =
+    cfg.showFbrInvoice && fbrNumber
+      ? `
+    <div class="fbrblock" data-field="showFbrInvoice">
+      <div class="fbr-head">FBR Invoice # <span class="fbr-num">${esc(fbrNumber)}</span></div>
+      <div class="fbr-row">
+        <img class="fbr-logo" src="${FBR_LOGO_SRC}" alt="FBR POS Invoicing" />
+        <div class="fbr-qr">${fbrQrSvg(fbrNumber)}</div>
+      </div>
+    </div>`
+      : '';
+  return `${qrBlock}${fbrBlock}
     <div class="foot">
       ${cfg.footerText ? `<div class="line">${esc(cfg.footerText)}</div>` : ''}
       ${cfg.showPoweredBy ? `<div class="powered" data-field="showPoweredBy">Powered by Rex Technologies</div>` : ''}
@@ -555,7 +616,7 @@ function billBorderedBody(
         </div>`,
     )
     .join('<div class="rule"></div>');
-  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(cfg)}`;
+  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(data, cfg)}`;
 }
 
 /**
@@ -608,7 +669,7 @@ function receiptLogoBody(
     })
     .join('<div class="rule"></div>');
 
-  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(cfg)}`;
+  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(data, cfg)}`;
 }
 
 /**
@@ -635,7 +696,7 @@ function receiptBorderedLogoBody(
         </div>`,
     )
     .join('<div class="rule"></div>');
-  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(cfg)}`;
+  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(data, cfg)}`;
 }
 
 /**
@@ -661,7 +722,7 @@ function modernBody(
         </div>`,
     )
     .join('<div class="rule"></div>');
-  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(cfg)}`;
+  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(data, cfg)}`;
 }
 
 /**
@@ -685,7 +746,7 @@ function classicMonoBody(
         </div>`,
     )
     .join('<div class="rule"></div>');
-  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(cfg)}`;
+  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(data, cfg)}`;
 }
 
 /** The original flexible-rows receipt body (thermal_58mm / a4_invoice). */
@@ -706,7 +767,7 @@ function classicBody(
         </div>`,
     )
     .join('<div class="rule"></div>');
-  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(cfg)}`;
+  return `${bizHeaderHtml(data, cfg)}${ordersHtml}${grossTotalHtml(data, money)}${footerHtml(data, cfg)}`;
 }
 
 /**
@@ -785,6 +846,9 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     `.inv-root .foot .line { color: #000; font-weight: ${weight(cfg.footerFontWeight)}; font-size: ${px(cfg.footerFontPct)}px; }`,
     `.inv-root .loyalty { color: #000; font-weight: ${weight(cfg.loyaltyFontWeight)}; font-size: ${px(cfg.loyaltyFontPct)}px; }`,
     `.inv-root .row.disc, .inv-root .row.disc .l, .inv-root .row.disc .r { color: #000; font-weight: ${weight(cfg.discountFontWeight)}; font-size: ${px(cfg.discountFontPct)}px; }`,
+    // QR prompt text: locked to the info-box value column (black, weight 600,
+    // same size + inherited family) — not independently configurable.
+    `.inv-root .qrblock .qr-text { color: #000; font-weight: 600; font-size: ${px(100)}px; }`,
   ].join('\n    ');
   return `${layoutCss(layout, cfg)}\n    ${overrides}`;
 }
@@ -837,6 +901,20 @@ function layoutCss(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .grandtotal { border-top: 2px solid #000; margin-top: 8px; padding-top: 6px; font-size: 1.1em; }
     .inv-root .foot { text-align: center; margin-top: 10px; font-size: .8em; color: #333; }
     .inv-root .foot .line { white-space: pre-line; }
+    /* App-download QR: prompt text left, code right. Sits above the footer. */
+    .inv-root .qrblock { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding-top: 6px; border-top: 1px dashed #999; }
+    .inv-root .qrblock .qr-text { text-align: left; flex: 1 1 auto; }
+    .inv-root .qrblock .qr-img { flex: 0 0 auto; }
+    .inv-root .qrblock .qr-img svg { display: block; width: 20mm; height: 20mm; }
+    /* FBR fiscalization: number line, then logo (left, under the app-QR text)
+       and verification QR (right, under the app QR). */
+    .inv-root .fbrblock { margin-top: 8px; padding-top: 6px; border-top: 1px dashed #999; }
+    .inv-root .fbrblock .fbr-head { text-align: center; font-weight: 700; }
+    .inv-root .fbrblock .fbr-num { font-weight: 700; white-space: nowrap; }
+    .inv-root .fbrblock .fbr-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 4px; }
+    .inv-root .fbrblock .fbr-logo { flex: 0 0 auto; width: 22mm; max-height: 12mm; object-fit: contain; display: block; }
+    .inv-root .fbrblock .fbr-qr { flex: 0 0 auto; }
+    .inv-root .fbrblock .fbr-qr svg { display: block; width: 20mm; height: 20mm; }
     .inv-root .powered { margin-top: 6px; color: #222; font-size: ${poweredPx}px; font-weight: ${poweredWeight}; }
     .inv-root .seclabel { text-transform: uppercase; letter-spacing: .12em; font-size: .72em; color: #555; margin: 8px 0 2px; }
     .inv-root .freelabel { margin-top: 8px; padding-top: 4px; border-top: 1px dashed #999; font-weight: 700; }
@@ -1028,6 +1106,10 @@ export function richSampleInvoice(): InvoiceVM {
         order_id: 481,
         order_number: '014',
         invoice_number: 'FDS-A7K2M9QX',
+        // Sample fiscal number so the designer's "Show FBR invoice # + QR"
+        // toggle has something to preview.
+        fbr_invoice_number: '515011DDD1287011250929',
+        fbr_number_source: 'fbr',
         brand_name: 'Fireaway',
         brand_logo_url: null, // preview uses the Foodies fallback mark
         order_type: 'dine_in',

@@ -39,6 +39,7 @@ import { PromotionsModule } from './promotions/promotions.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { FbrModule } from './fbr/fbr.module';
 @Module({
     imports: [
         ConfigModule.forRoot({
@@ -98,6 +99,7 @@ import { NotificationsModule } from './notifications/notifications.module';
         CouponsModule,
         CampaignsModule,
         NotificationsModule,
+        FbrModule,
     ],
     controllers: [AppController],
     providers: [AppService],

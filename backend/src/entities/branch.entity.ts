@@ -81,6 +81,32 @@ export class Branch {
     gstRateCard: number | null;
 
     /**
+     * FBR POS fiscalization. One registration per PHYSICAL branch — a single
+     * POS ID + token covers every brand trading inside it. When enabled, each
+     * pos/kiosk/consumer_app order is reported to FBR at placement and the
+     * returned fiscal invoice number is stamped on the order. Never blocks the
+     * sale: on failure the branch's last real number is reused (see
+     * orders.fbr_number_source) and one background retry is scheduled.
+     */
+    @Column({ default: false })
+    fbrEnabled: boolean;
+
+    @Column({ type: 'varchar', nullable: true })
+    fbrPosId: string | null;
+
+    /** Bearer token issued by FBR for this POS registration. */
+    @Column({ type: 'text', nullable: true })
+    fbrToken: string | null;
+
+    /** 'sandbox' | 'live' — which FBR endpoint this branch reports to. */
+    @Column({ default: 'sandbox' })
+    fbrEnvironment: string;
+
+    /** PCT/HS code sent per invoice line. Null = the system default. */
+    @Column({ type: 'varchar', nullable: true })
+    fbrPctCode: string | null;
+
+    /**
      * Whole-branch master switch. When false the branch is hidden from customers
      * and takes NO orders on any channel (online AND POS). For pausing a single
      * brand's online orders use branch_brands.is_open instead.

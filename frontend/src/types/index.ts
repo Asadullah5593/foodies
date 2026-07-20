@@ -74,6 +74,12 @@ export interface Branch {
   longitude?: number | null;
   is_active?: boolean;
   status: string;
+  /** FBR fiscalization settings — present only on the admin single-branch read. */
+  fbr_enabled?: boolean;
+  fbr_pos_id?: string | null;
+  fbr_token?: string | null;
+  fbr_environment?: string;
+  fbr_pct_code?: string | null;
   /** Present when super admin lists branches */
   tenant_id?: number;
   tenant_name?: string;

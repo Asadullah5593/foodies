@@ -42,6 +42,7 @@ import { InventoryModule } from '../inventory/inventory.module';
 import { RiderHrmModule } from '../rider-hrm/rider-hrm.module';
 import { PushNotificationsModule } from '../push-notifications/push-notifications.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { FbrModule } from '../fbr/fbr.module';
 
 @Module({
     imports: [
@@ -78,6 +79,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
         RiderHrmModule,
         NotificationsModule,
         InvoicesModule,
+        FbrModule,
     ],
     controllers: [
         PosMenuController,

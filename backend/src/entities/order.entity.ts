@@ -212,6 +212,20 @@ export class Order {
     @Column({ type: 'varchar', nullable: true })
     discountCode: string | null;
 
+    /**
+     * FBR fiscal invoice number printed on the receipt. Source tells whether it
+     * is genuine or reused: 'fbr' = FBR returned it for THIS order; 'fallback'
+     * = the branch's most recent real number, reused because FBR was disabled
+     * or unreachable at placement (sales never block on FBR). A successful
+     * background retry overwrites a fallback with the real number.
+     */
+    @Column({ type: 'varchar', nullable: true })
+    fbrInvoiceNumber: string | null;
+
+    /** 'fbr' | 'fallback' — how fbrInvoiceNumber was obtained. */
+    @Column({ type: 'varchar', length: 8, nullable: true })
+    fbrNumberSource: string | null;
+
     @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
     placedAt: Date;
 

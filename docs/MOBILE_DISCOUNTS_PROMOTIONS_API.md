@@ -528,3 +528,20 @@ Group/single invoice root now also returns:
 - `template` — the **resolved active invoice template**: `{ id, layout, config: { …field toggles… } }`. `layout` is one of `"bill_bordered"` (dine-in bill, bordered Item/Qty/Rate/Amount table), `"receipt_logo"` (logo-forward counter receipt with a big Order # band), `"thermal_modern"` (clean minimal), `"thermal_classic"` (monospace), `"thermal_58mm"` (narrow roll) or `"a4_invoice"` (full page) — all but A4 are thermal-roll widths. Header details (order no, date, cashier, payment, customer) render as a two-column label/value table in every layout. The `config` booleans (e.g. `showCategory`, `showTax`, `showPromoDiscount`, `showPaymentMethod`, `showInvoiceNumber`, `showPoweredBy`) tell the client which fields to render; resolution is brand-default → tenant-default → built-in default, so `template` is always present. `config` also has three numeric/style keys: `fontScalePct` (whole-receipt font scale, 50–200), `poweredByFontPct` (size of the "powered by" line, 50–200) and `poweredByBold` (boolean). There is **no** `logoUrl` or `taxLabel` key — each order's own brand logo always prints (the platform logo is used only when a brand has none) and the tax label is fixed. The business header shows only the logo, brand/business name and the admin's free-text `headerText` (branch address/phone are NOT auto-filled); the order note renders below the line items, never in the top meta block. For a native renderer, mirror `frontend/src/invoices/renderInvoice.ts`.
 
 Admin manage the templates via `GET/POST/PUT/DELETE /admin/invoice-templates` (+ `PUT /admin/invoice-templates/:id/activate`, `GET /admin/invoice-templates/active?brand_id=`). See `backend/src/invoices/invoice-template-config.ts` for the full config contract.
+
+## FBR fiscal invoice number (order + invoice payloads) — new fields
+
+Orders placed from **POS, the consumer app and kiosk** are reported to Pakistan's FBR at placement (per-branch setting; consumer-web checkout is exempt). Two additive fields now appear on the order payloads the app already consumes — the create-order response (`POST /public/consumer/orders`), the order-detail/group reads, and both invoice payloads (`GET /pos/orders/:id/invoice`, `GET /pos/orders/group/:groupId/main-invoice`):
+
+```jsonc
+{
+  "fbr_invoice_number": "515011DDD1287011250929", // fiscal number to print/show; null when the branch has never had FBR active
+  "fbr_number_source": "fbr"                      // "fbr" = FBR issued it for THIS order; "fallback" = branch's last real number reused (FBR off/unreachable); null = none
+}
+```
+
+Client rendering rules:
+- If `fbr_invoice_number` is null → render no FBR section at all.
+- Otherwise show **"FBR Invoice #"** + the number, and a QR encoding **exactly the `fbr_invoice_number` string** (customers verify it in FBR's Tax Asaan app). On the printed receipt the QR sits bottom-right below the app-download QR, with the FBR logo bottom-left.
+- Render `"fallback"` numbers identically to `"fbr"` ones — the source distinction is for reporting only, never shown to the customer.
+- The invoice template `config` gained a `showFbrInvoice` boolean (default `true`); honour it like the other toggles. The block renders only when the toggle is on AND the number is non-null.

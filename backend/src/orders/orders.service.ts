@@ -25,6 +25,7 @@ import {
     sourceToOfferChannel,
 } from '../discounts/offer-preview.util';
 import { InvoiceTemplatesService } from '../invoices/invoice-templates.service';
+import { FbrService } from '../fbr/fbr.service';
 import { User } from '../entities/user.entity';
 import { MenuService } from '../menu/menu.service';
 import {
@@ -161,6 +162,7 @@ export class OrdersService {
         private pushNotificationService: PushNotificationService,
         private notificationsService: NotificationsService,
         private invoiceTemplatesService: InvoiceTemplatesService,
+        private fbrService: FbrService,
     ) {}
 
     /**
@@ -2096,6 +2098,23 @@ export class OrdersService {
             }
         }
 
+        // FBR fiscalization for pos / kiosk / consumer_app sales (web checkout
+        // is out of scope). Synchronous so the printed receipt carries the real
+        // fiscal number when FBR is up, but NEVER blocking: fiscalizeOrder
+        // swallows every failure, stamps the branch's last real number as a
+        // fallback and schedules its own single background retry.
+        if (source !== 'consumer_web') {
+            for (const id of createdOrderIds) {
+                try {
+                    await this.fbrService.fiscalizeOrder(id);
+                } catch (e) {
+                    this.logger.error(
+                        `FBR fiscalization threw for order ${id}`,
+                        e instanceof Error ? e.stack : undefined,
+                    );
+                }
+            }
+        }
         const orders = await Promise.all(
             createdOrderIds.map((id) => this.findOne(id)),
         );
@@ -2139,6 +2158,8 @@ export class OrdersService {
         return {
             id: order.id,
             order_number: order.orderNumber,
+            fbr_invoice_number: order.fbrInvoiceNumber ?? null,
+            fbr_number_source: order.fbrNumberSource ?? null,
             notes: order.notes ?? null,
             order_type: order.orderType,
             status: order.status,
@@ -2445,6 +2466,8 @@ export class OrdersService {
                 id: o.id,
                 order_number: o.orderNumber,
                 invoice_number: o.orderId ?? String(o.id),
+                fbr_invoice_number: o.fbrInvoiceNumber ?? null,
+                fbr_number_source: o.fbrNumberSource ?? null,
                 brand_id: o.brandId,
                 brand_name: o.brand?.name ?? null,
                 brand_logo_url: o.brand?.logoUrl ?? null,
@@ -2644,6 +2667,8 @@ export class OrdersService {
             order_id: order.id,
             order_number: order.orderNumber,
             invoice_number: order.orderId ?? String(order.id),
+            fbr_invoice_number: order.fbrInvoiceNumber ?? null,
+            fbr_number_source: order.fbrNumberSource ?? null,
             order_group_id: order.orderGroupId ?? null,
             brand: order.brand
                 ? {
@@ -2856,6 +2881,8 @@ export class OrdersService {
                 order_id: o.id,
                 order_number: o.order_number,
                 invoice_number: o.invoice_number,
+                fbr_invoice_number: o.fbr_invoice_number ?? null,
+                fbr_number_source: o.fbr_number_source ?? null,
                 brand_name: o.brand_name,
                 brand_logo_url: o.brand_logo_url,
                 order_type: o.order_type,
