@@ -14,6 +14,12 @@ vi.mock('../../services/api/adminService', () => ({
     bulkAssignUserToBranches: vi.fn(),
   },
 }));
+// The page gates Assign/Remove on permissions via useHasPermission → useAuth.
+vi.mock('../../contexts/AuthContext', () => ({
+  useAuth: () => ({
+    user: { tenant_id: 1, permissions: ['branch-users:assign', 'branch-users:remove'] },
+  }),
+}));
 
 const USERS = [
   { id: 1, name: 'Ali', email: 'ali@demo.com', phone: null },

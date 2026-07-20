@@ -15,14 +15,19 @@ vi.mock('../../services/api', () => ({
 const toastError = vi.fn();
 vi.mock('react-hot-toast', () => ({ toast: { success: vi.fn(), error: (...a: unknown[]) => toastError(...a) } }));
 
-const authState = vi.hoisted(() => ({ user: { tenant_id: 1 } as { tenant_id: number | null } }));
+const authState = vi.hoisted(() => ({
+  user: { tenant_id: 1, permissions: ['business-settings:edit'] } as {
+    tenant_id: number | null;
+    permissions?: string[];
+  },
+}));
 vi.mock('../../contexts/AuthContext', () => ({ useAuth: () => ({ user: authState.user }) }));
 
 import BusinessSettings from './BusinessSettings';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  authState.user = { tenant_id: 1 };
+  authState.user = { tenant_id: 1, permissions: ['business-settings:edit'] };
   // API stores GST as a fraction; the page shows percent.
   getBusinessSettings.mockResolvedValue({
     name: 'Foodies',
