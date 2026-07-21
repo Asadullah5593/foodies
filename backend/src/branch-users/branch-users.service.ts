@@ -10,6 +10,7 @@ import { Branch } from '../entities/branch.entity';
 import { User } from '../entities/user.entity';
 import { BranchUser } from '../entities/branch-user.entity';
 import { Role } from '../entities/role.entity';
+import { normalizePakistaniPhone } from '../utils/phone';
 
 @Injectable()
 export class BranchUsersService {
@@ -92,13 +93,17 @@ export class BranchUsersService {
     }
 
     /**
-     * A phone is optional on a user until they are made a rider: dispatch has
-     * to reach them, and staff sign in by email so the number is contact data,
-     * never a credential. Assigning the rider role is therefore the point that
-     * demands one — take the number supplied with the assignment, else the one
-     * already on file, and refuse the assignment if there is neither. A
-     * supplied number is written back to the user, so the assignment screen
-     * doubles as the place to correct a stale one.
+     * A phone is optional on a user until they are made a rider, at which point
+     * it becomes their LOGIN CREDENTIAL — riders sign in to the rider app with
+     * mobile number + password, not email. Assigning the rider role is therefore
+     * the point that demands one: take the number supplied with the assignment,
+     * else the one already on file, and refuse the assignment if there is
+     * neither. A supplied number is written back to the user, so the assignment
+     * screen doubles as the place to correct a stale one.
+     *
+     * Because it is a credential it must be a valid Pakistani mobile, stored in
+     * the canonical 03XXXXXXXXX form, and unique across users — otherwise a
+     * login could not resolve to one account.
      */
     private async requireRiderPhones(
         assignments: Array<{
@@ -126,13 +131,28 @@ export class BranchUsersService {
             if (!user)
                 throw new NotFoundException(`User ${rider.userId} not found`);
             const supplied = (rider.phone ?? '').trim();
-            if (!supplied && !(user.phone ?? '').trim()) {
+            const onFile = (user.phone ?? '').trim();
+            if (!supplied && !onFile) {
                 throw new BadRequestException(
-                    `A phone number is required to make ${user.name} a rider`,
+                    `A phone number is required to make ${user.name} a rider — it is how they sign in to the rider app`,
                 );
             }
-            if (supplied && supplied !== user.phone)
-                pending.push([user.id, supplied]);
+            const normalized = normalizePakistaniPhone(supplied || onFile);
+            if (!normalized) {
+                throw new BadRequestException(
+                    `${user.name}'s phone number is not a valid Pakistani mobile. Use format 03XXXXXXXXX`,
+                );
+            }
+            // The number is a credential, so it has to identify one account.
+            const clash = await this.userRepo.findOne({
+                where: { phone: normalized },
+            });
+            if (clash && clash.id !== user.id) {
+                throw new BadRequestException(
+                    `${normalized} is already used by ${clash.name}. A rider's number must be unique — it is their login.`,
+                );
+            }
+            if (normalized !== user.phone) pending.push([user.id, normalized]);
         }
         for (const [userId, phone] of pending) {
             await this.userRepo.update(userId, { phone });

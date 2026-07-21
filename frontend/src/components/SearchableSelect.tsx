@@ -6,6 +6,10 @@ import TypeaheadDropdown from './TypeaheadDropdown';
 export interface SearchableSelectOption {
   value: string;
   label: string;
+  /** Rendered but not selectable (e.g. a rider who fails an availability check). */
+  disabled?: boolean;
+  /** Tooltip explaining why the option is disabled. */
+  title?: string;
 }
 
 interface SearchableSelectProps {
@@ -89,6 +93,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   }, [open]);
 
   const handleSelect = (opt: SearchableSelectOption) => {
+    if (opt.disabled) return;
     setOpen(false);
     setSearch('');
     setSugOpen(false);
@@ -183,14 +188,18 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                   key={opt.value}
                   role="option"
                   aria-selected={opt.value === value}
+                  aria-disabled={opt.disabled || undefined}
+                  title={opt.title}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     handleSelect(opt);
                   }}
-                  className={`px-3 py-2 text-sm cursor-pointer truncate ${
-                    opt.value === value
-                      ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 font-medium'
-                      : 'text-gray-800 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700'
+                  className={`px-3 py-2 text-sm truncate ${
+                    opt.disabled
+                      ? 'cursor-not-allowed text-gray-400 dark:text-slate-500'
+                      : opt.value === value
+                        ? 'cursor-pointer bg-blue-50 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200 font-medium'
+                        : 'cursor-pointer text-gray-800 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700'
                   }`}
                 >
                   {opt.label}

@@ -480,6 +480,7 @@ const FOHPacking: React.FC = () => {
         confirmLabel="Assign"
         brandId={riderModalBrandId}
         brandName={riderModalBrandName}
+        orderId={riderModalOrderId}
         selectedRiderId={selectedRiderId}
         onSelectRider={setSelectedRiderId}
         isPending={assignRiderMutation.isPending}

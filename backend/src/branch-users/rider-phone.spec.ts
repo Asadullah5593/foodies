@@ -3,7 +3,9 @@ import { BranchUsersService } from './branch-users.service';
 
 /**
  * A phone is optional on a user, but becomes mandatory the moment they are
- * given the rider role at a branch — see requireRiderPhones().
+ * given the rider role at a branch — see requireRiderPhones(). It is also the
+ * rider's login credential, so it must be a valid Pakistani mobile, stored
+ * normalised, and unique across users.
  */
 describe('BranchUsersService — rider phone rule', () => {
     const RIDER_ROLE = 7;
@@ -37,6 +39,12 @@ describe('BranchUsersService — rider phone rule', () => {
                 if (u && patch.phone !== undefined) u.phone = patch.phone;
                 return Promise.resolve();
             }),
+            // Uniqueness lookup: the number is a rider's login credential.
+            findOne: jest.fn(({ where }: { where: { phone: string } }) =>
+                Promise.resolve(
+                    users.find((u) => u.phone === where.phone) ?? null,
+                ),
+            ),
         };
         const branchUserRepo = {
             create: jest.fn((row: Record<string, unknown>) => row),
@@ -115,6 +123,43 @@ describe('BranchUsersService — rider phone rule', () => {
     it('leaves the phone alone for a matching number', async () => {
         await assign({ user_id: 2, role_id: RIDER_ROLE, phone: '03001234567' });
         expect(updates).toHaveLength(0);
+    });
+
+    // The number is what the rider types into the app to sign in, so it has to
+    // be dialable and resolve to exactly one account.
+    it('rejects a number that is not a valid Pakistani mobile', async () => {
+        await expect(
+            assign({ user_id: 1, role_id: RIDER_ROLE, phone: '12345' }),
+        ).rejects.toThrow(/not a valid Pakistani mobile/);
+        expect(updates).toHaveLength(0);
+        expect(savedRows).toHaveLength(0);
+    });
+
+    it('stores an international-format number in canonical 03XXXXXXXXX form', async () => {
+        await assign({
+            user_id: 1,
+            role_id: RIDER_ROLE,
+            phone: '+92 300 9998877',
+        });
+        expect(updates).toEqual([[1, { phone: '03009998877' }]]);
+    });
+
+    it('refuses a number already used by another user', async () => {
+        await expect(
+            assign({ user_id: 1, role_id: RIDER_ROLE, phone: '03001234567' }),
+        ).rejects.toThrow(/already used by Sara/);
+        expect(updates).toHaveLength(0);
+        expect(savedRows).toHaveLength(0);
+    });
+
+    it('lets a rider keep their own number without tripping the clash check', async () => {
+        await assign({
+            user_id: 2,
+            role_id: RIDER_ROLE,
+            phone: '+923001234567',
+        });
+        expect(updates).toHaveLength(0);
+        expect(savedRows).toHaveLength(1);
     });
 
     it('keeps the phone optional for every other role', async () => {

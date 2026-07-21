@@ -58,6 +58,18 @@ export class Branch {
     deliveryRadiusKm: number;
 
     /**
+     * The branch "premises": radius in METRES around this branch's latitude /
+     * longitude inside which a rider counts as on-site and therefore available
+     * for assignment (auto-dispatch and manual alike).
+     *
+     * Not to be confused with `deliveryRadiusKm`, which is how far the branch
+     * delivers TO customers. A branch with no coordinates cannot evaluate a
+     * premises, and the check is skipped for it.
+     */
+    @Column({ type: 'int', default: 300 })
+    premisesRadiusM: number;
+
+    /**
      * Per-tender GST rate (fraction, e.g. 0.15 = 15%). Pakistan FBR/PRA/SRB charge a REDUCED
      * rate on card/digital payments vs cash. Null = inherit the tenant's single default rate
      * (so unconfigured branches behave exactly as before). Set via branch admin.

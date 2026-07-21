@@ -34,6 +34,7 @@ const emptyForm = {
   supports_takeaway: true,
   supports_delivery: false,
   delivery_radius_km: '10',
+  premises_radius_m: '300',
   is_active: true,
   fbr_enabled: false,
   fbr_pos_id: '',
@@ -159,6 +160,7 @@ const BranchEdit: React.FC = () => {
           branch.supports_takeaway === true || branch.supports_pickup === true,
         supports_delivery: branch.supports_delivery ?? false,
         delivery_radius_km: branch.delivery_radius_km != null ? String(branch.delivery_radius_km) : '10',
+        premises_radius_m: branch.premises_radius_m != null ? String(branch.premises_radius_m) : '300',
         is_active: branch.is_active ?? true,
         fbr_enabled: branch.fbr_enabled ?? false,
         fbr_pos_id: branch.fbr_pos_id || '',
@@ -280,6 +282,7 @@ const BranchEdit: React.FC = () => {
         supports_takeaway: data.supports_takeaway,
         supports_delivery: data.supports_delivery,
         delivery_radius_km: data.delivery_radius_km ? +data.delivery_radius_km : 10,
+        premises_radius_m: data.premises_radius_m ? +data.premises_radius_m : 300,
         is_active: data.is_active,
       };
       if (linkedMenuItemIds.length) payload.menu_item_ids = linkedMenuItemIds;
@@ -311,6 +314,7 @@ const BranchEdit: React.FC = () => {
         supports_takeaway: data.supports_takeaway,
         supports_delivery: data.supports_delivery,
         delivery_radius_km: data.delivery_radius_km ? +data.delivery_radius_km : 10,
+        premises_radius_m: data.premises_radius_m ? +data.premises_radius_m : 300,
         is_active: data.is_active,
         fbr_enabled: data.fbr_enabled,
         fbr_pos_id: data.fbr_pos_id.trim() || null,
@@ -536,7 +540,16 @@ const BranchEdit: React.FC = () => {
               <label className={labelClass}>Delivery radius (km)</label>
               <input type="number" step="0.1" min="0" value={formData.delivery_radius_km} onChange={(e) => setFormData({ ...formData, delivery_radius_km: e.target.value })} className={inputClass} />
               <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
-                Riders must be within this branch radius for automatic assignment.
+                How far this branch will deliver to customers.
+              </p>
+            </div>
+            <div>
+              <label className={labelClass}>Rider premises radius (m)</label>
+              <input type="number" step="10" min="1" value={formData.premises_radius_m} onChange={(e) => setFormData({ ...formData, premises_radius_m: e.target.value })} className={inputClass} />
+              <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                A rider counts as available only while inside this radius of the branch — for
+                automatic dispatch and manual assignment alike. Requires the branch latitude and
+                longitude below; without them the check is skipped.
               </p>
             </div>
           </div>
