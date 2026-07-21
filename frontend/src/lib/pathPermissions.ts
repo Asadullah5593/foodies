@@ -121,6 +121,10 @@ export function canAccessPath(user: UserForAccess, path: string): boolean {
 /** Ordered paths to try as landing page (first one user can access is used after login / default redirect). */
 const ORDERED_LANDING_PATHS = [
   '/admin/dashboard',
+  // Straight after the dashboard: till staff (cashiers, call-centre agents) have
+  // no dashboard:view, and the POS is their home screen — not the admin order
+  // list they would otherwise fall through to.
+  '/pos/orders',
   '/admin/tenants',
   '/admin/business-settings',
   '/admin/brands',
@@ -149,7 +153,6 @@ const ORDERED_LANDING_PATHS = [
   '/admin/inventory',
   '/admin/procurement',
   '/admin/recipes',
-  '/pos/orders',
   '/kitchen',
   '/kitchen/back',
   '/foh/packing',
