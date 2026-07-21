@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { LatLngLiteral, RawMap, RawMarker, loadMapsSdk, onMapsAuthFailure } from '../utils/googlePlaces';
 
+const key = (p: LatLngLiteral) => `${p.lat},${p.lng}`;
+
 interface DeliveryPinMapProps {
   latitude: number;
   longitude: number;
@@ -25,6 +27,10 @@ const DeliveryPinMap: React.FC<DeliveryPinMapProps> = ({ latitude, longitude, on
   // Read through a ref so re-created handlers never capture a stale callback.
   const onMoveRef = useRef(onMove);
   onMoveRef.current = onMove;
+  // Latest coordinates, readable from the async map build without going stale.
+  const positionRef = useRef<LatLngLiteral>({ lat: latitude, lng: longitude });
+  positionRef.current = { lat: latitude, lng: longitude };
+  const selfMovedRef = useRef<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   // RefererNotAllowedMapError and friends surface here, not as a thrown error.
@@ -37,6 +43,9 @@ const DeliveryPinMap: React.FC<DeliveryPinMapProps> = ({ latitude, longitude, on
       const position = e.latLng;
       if (!position) return;
       const next = { lat: position.lat(), lng: position.lng() };
+      // The pin is already where the cashier put it; remember that so the
+      // recentre effect below doesn't yank the map out from under it.
+      selfMovedRef.current = key(next);
       markerRef.current?.setPosition(next);
       onMoveRef.current(next);
     };
@@ -46,7 +55,11 @@ const DeliveryPinMap: React.FC<DeliveryPinMapProps> = ({ latitude, longitude, on
         const sdk = await loadMapsSdk();
         if (cancelled || !containerRef.current || mapRef.current) return;
 
-        const center = { lat: latitude, lng: longitude };
+        // Read the CURRENT position, not the one captured when this effect was
+        // created — the cashier may have picked another address while the SDK
+        // was still loading, and the recentre effect can't fix a map that did
+        // not exist yet.
+        const center = positionRef.current;
         const map = new sdk.Map(containerRef.current, {
           center,
           zoom: 17,
@@ -63,6 +76,12 @@ const DeliveryPinMap: React.FC<DeliveryPinMapProps> = ({ latitude, longitude, on
 
         mapRef.current = map;
         markerRef.current = marker;
+
+        // Anything that landed during construction.
+        if (key(positionRef.current) !== key(center)) {
+          marker.setPosition(positionRef.current);
+          map.setCenter(positionRef.current);
+        }
       } catch {
         if (!cancelled) setFailed(true);
       }
@@ -75,9 +94,14 @@ const DeliveryPinMap: React.FC<DeliveryPinMapProps> = ({ latitude, longitude, on
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A newly picked address (or a drag) recentres the existing map.
+  // A newly picked address recentres the map — but a drag must not, or the map
+  // slides away under the pin the cashier just placed.
   useEffect(() => {
     const position = { lat: latitude, lng: longitude };
+    if (selfMovedRef.current === key(position)) {
+      selfMovedRef.current = null;
+      return;
+    }
     markerRef.current?.setPosition(position);
     mapRef.current?.panTo(position);
   }, [latitude, longitude]);
