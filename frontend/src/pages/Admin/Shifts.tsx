@@ -280,6 +280,17 @@ const Shifts: React.FC = () => {
     enabled: showCloseForm && !!selectedShift,
   });
 
+  // Orders punched during the shift that are NOT completed/cancelled yet — the
+  // shift cannot close while any remain (server enforces it too). Polled while
+  // the modal is open so orders completed from KDS/POS drop off live.
+  const { data: pendingOrders, isLoading: pendingLoading } = useQuery({
+    queryKey: ['shift-pending-orders', selectedShift?.id],
+    queryFn: () => adminService.getShiftPendingOrders(selectedShift!.id),
+    enabled: showCloseForm && !!selectedShift,
+    refetchInterval: showCloseForm ? 5000 : false,
+  });
+  const pendingCount = pendingOrders?.pending_count ?? 0;
+
   const createMutation = useMutation({
     mutationFn: adminService.createShift,
     onSuccess: () => {
@@ -309,6 +320,40 @@ const Shifts: React.FC = () => {
     },
   });
 
+  const completeOrderMutation = useMutation({
+    mutationFn: (orderId: number) => adminService.updateOrderStatus(orderId, 'completed'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shift-pending-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['shift-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to complete order');
+    },
+  });
+
+  const completeAllMutation = useMutation({
+    // Sequential on purpose: each completion also bumps the shift's expected
+    // cash server-side; a burst of parallel PUTs buys nothing here.
+    mutationFn: async (orderIds: number[]) => {
+      for (const id of orderIds) await adminService.updateOrderStatus(id, 'completed');
+      return orderIds.length;
+    },
+    onSuccess: (n) => {
+      queryClient.invalidateQueries({ queryKey: ['shift-pending-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['shift-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      toast.success(`${n} order${n === 1 ? '' : 's'} marked completed`);
+    },
+    onError: (error: any) => {
+      // Partial progress is possible — refresh so the list shows what's left.
+      queryClient.invalidateQueries({ queryKey: ['shift-pending-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['shift-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      toast.error(error.response?.data?.message || 'Failed to complete all orders');
+    },
+  });
+
   const handleOpenShift = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.branch_id) {
@@ -334,6 +379,10 @@ const Shifts: React.FC = () => {
   const handleCloseShift = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedShift) return;
+    if (pendingLoading || pendingCount > 0) {
+      toast.error('Complete all open orders of this shift before closing it.');
+      return;
+    }
     closeMutation.mutate({
       id: selectedShift.id,
       actualCash: parseFloat(closeFormData.actual_cash),
@@ -1075,6 +1124,77 @@ const Shifts: React.FC = () => {
                 ))}
               </div>
 
+              {/* Open-orders gate: the shift cannot close while these exist */}
+              {(pendingLoading || pendingCount > 0) && (
+                <div className="mb-5 overflow-hidden rounded-xl border-[1.5px] border-[#F3C9C9] bg-[#FFF7F6] dark:border-red-900/70 dark:bg-red-900/10">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#F8DADA] px-4 py-3 dark:border-red-900/50">
+                    <span className="flex items-center gap-2 text-[13px] font-extrabold text-[#B5121B] dark:text-red-300">
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M8 1.8L15 14H1z" /><path d="M8 6.2v3.6" /><circle cx="8" cy="12" r="0.4" fill="currentColor" />
+                      </svg>
+                      {pendingLoading
+                        ? 'Checking for open orders…'
+                        : `${pendingCount} order${pendingCount === 1 ? '' : 's'} from this shift not completed`}
+                    </span>
+                    {!pendingLoading && pendingCount > 0 && (
+                      <button
+                        type="button"
+                        disabled={completeAllMutation.isPending || completeOrderMutation.isPending}
+                        onClick={() => completeAllMutation.mutate(pendingOrders!.orders.map((o) => o.id))}
+                        className="rounded-[9px] bg-[#DC2A2A] px-3.5 py-[7px] text-[12.5px] font-bold text-white transition-colors hover:bg-[#C21F1F] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {completeAllMutation.isPending ? 'Completing…' : 'Mark all completed'}
+                      </button>
+                    )}
+                  </div>
+                  {!pendingLoading && (
+                    <div className="max-h-[220px] overflow-y-auto">
+                      {pendingOrders!.orders.map((o) => {
+                        const chip =
+                          o.status === 'ready'
+                            ? { bg: '#EAF7EE', c: '#16A34A' }
+                            : o.status === 'preparing'
+                              ? { bg: '#FFF6E6', c: '#B45309' }
+                              : o.status === 'accepted'
+                                ? { bg: '#EAF1FF', c: '#2563EB' }
+                                : { bg: '#EEF0F3', c: '#5A6473' };
+                        return (
+                          <div
+                            key={o.id}
+                            className="grid grid-cols-[1fr_auto] items-center gap-2 border-b border-[#FBE9E9] px-4 py-2.5 last:border-b-0 sm:grid-cols-[.8fr_1fr_1fr_.9fr_auto] dark:border-red-900/30"
+                          >
+                            <span className="text-[13px] font-extrabold text-[#20242C] dark:text-slate-100">#{o.order_number}</span>
+                            <span className="hidden min-w-0 truncate text-[12.5px] text-[#6B7280] sm:block dark:text-slate-400">
+                              {o.customer_name ?? (o.table_number ? `Table ${o.table_number}` : 'Walk-in')}
+                              {o.brand_name ? ` · ${o.brand_name}` : ''}
+                            </span>
+                            <span className="hidden sm:block">
+                              <span className="rounded-[7px] px-2 py-[3px] text-xs font-bold" style={{ background: chip.bg, color: chip.c }}>
+                                {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
+                              </span>
+                            </span>
+                            <span className="hidden text-[13px] font-bold tabular-nums text-[#1A1D24] sm:block dark:text-slate-100">
+                              {fmtMoney(o.total_amount)}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={completeAllMutation.isPending || completeOrderMutation.isPending}
+                              onClick={() => completeOrderMutation.mutate(o.id)}
+                              className="justify-self-end rounded-[9px] border-[1.5px] border-[#DC2A2A] bg-white px-3 py-[5px] text-[12px] font-bold text-[#DC2A2A] transition-colors hover:bg-[#FCEEEE] disabled:cursor-not-allowed disabled:opacity-60 dark:bg-transparent"
+                            >
+                              Complete
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <p className="border-t border-[#F8DADA] px-4 py-2 text-[11.5px] font-semibold text-[#B5121B] dark:border-red-900/50 dark:text-red-300">
+                    The shift can only be closed once every order above is completed (or cancelled).
+                  </p>
+                </div>
+              )}
+
               {/* Completed orders header */}
               <div className="mb-[11px] flex flex-wrap items-center justify-between gap-3">
                 <span className="text-[11px] font-extrabold uppercase tracking-[.06em] text-[#9AA1AD]">
@@ -1196,15 +1316,20 @@ const Shifts: React.FC = () => {
               </button>
               <button
                 type="submit"
-                disabled={closeFormData.actual_cash === '' || closeMutation.isPending}
+                disabled={closeFormData.actual_cash === '' || closeMutation.isPending || pendingLoading || pendingCount > 0}
+                title={pendingCount > 0 ? 'Complete all open orders of this shift first' : undefined}
                 className="rounded-[11px] border-none px-6 py-[11px] text-sm font-bold text-white transition-colors"
                 style={
-                  closeFormData.actual_cash === '' || closeMutation.isPending
+                  closeFormData.actual_cash === '' || closeMutation.isPending || pendingLoading || pendingCount > 0
                     ? { background: '#E5A9A9', boxShadow: 'none', cursor: 'not-allowed' }
                     : { background: '#DC2A2A', boxShadow: '0 4px 12px rgba(220,42,42,.26)', cursor: 'pointer' }
                 }
               >
-                {closeMutation.isPending ? 'Closing…' : 'Close Shift'}
+                {closeMutation.isPending
+                  ? 'Closing…'
+                  : pendingCount > 0
+                    ? `${pendingCount} order${pendingCount === 1 ? '' : 's'} pending`
+                    : 'Close Shift'}
               </button>
             </div>
           </form>

@@ -406,6 +406,65 @@ export class ShiftsService {
             .execute();
     }
 
+    /**
+     * Orders punched during this shift (branch + brand + opened-at window) that
+     * are still in a non-terminal status. They block closing the shift: staff
+     * must complete (or cancel) each one first. Cancelled orders are terminal
+     * and never block.
+     */
+    async getPendingOrdersInShift(
+        id: number,
+        tenantId?: number | null,
+        allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
+    ) {
+        // findOne enforces tenant/branch/brand access (throws 403/404).
+        const access = await this.findOne(
+            id,
+            tenantId,
+            allowedBranchIds,
+            allowedBrandIds,
+        );
+        const orders = await this.pendingOrdersQb(
+            access.branch_id,
+            access.brand_id,
+            new Date(access.opened_at),
+        )
+            .leftJoinAndSelect('o.brand', 'brand')
+            .orderBy('o.createdAt', 'ASC')
+            .getMany();
+        return {
+            shift_id: id,
+            pending_count: orders.length,
+            orders: orders.map((o) => ({
+                id: o.id,
+                order_number: o.orderNumber,
+                status: o.status,
+                order_type: o.orderType,
+                total_amount: Number(o.totalAmount),
+                customer_name: o.customerName ?? null,
+                table_number: o.tableNumber ?? null,
+                brand_name: o.brand?.name ?? null,
+                placed_at: (o.placedAt ?? o.createdAt)?.toISOString() ?? null,
+            })),
+        };
+    }
+
+    /** Non-terminal orders of a shift's branch/brand punched since it opened. */
+    private pendingOrdersQb(
+        branchId: number,
+        brandId: number | null,
+        openedAt: Date,
+    ) {
+        const qb = this.orderRepo
+            .createQueryBuilder('o')
+            .where('o.branchId = :branchId', { branchId })
+            .andWhere("o.status NOT IN ('completed', 'cancelled')")
+            .andWhere('o.createdAt >= :openedAt', { openedAt });
+        if (brandId != null) qb.andWhere('o.brandId = :brandId', { brandId });
+        return qb;
+    }
+
     async close(
         id: number,
         dto: { actual_cash: number; notes?: string },
@@ -416,6 +475,24 @@ export class ShiftsService {
     ) {
         if (tenantId != null) {
             await this.findOne(id, tenantId, allowedBranchIds, allowedBrandIds);
+        }
+        // A shift only closes once every order punched during it has reached a
+        // terminal status — otherwise its reconciliation (expected cash, sales)
+        // would silently exclude the stragglers. The UI surfaces this list with
+        // one-click completion; this guard is the actual enforcement.
+        const shift = await this.repo.findOne({ where: { id } });
+        if (!shift) throw new NotFoundException('Shift not found');
+        if (shift.status === 'open' && shift.openedAt) {
+            const pending = await this.pendingOrdersQb(
+                shift.branchId,
+                shift.brandId ?? null,
+                shift.openedAt,
+            ).getCount();
+            if (pending > 0) {
+                throw new ConflictException(
+                    `${pending} order${pending === 1 ? ' is' : 's are'} still not completed for this shift. Complete or cancel them before closing.`,
+                );
+            }
         }
         // Atomic close: only the caller that flips open -> closed wins. A concurrent
         // double-close (double-click, or GM + cashier) affects 0 rows and gets a
