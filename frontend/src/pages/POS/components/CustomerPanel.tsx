@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { QRCodeSVG } from 'qrcode.react';
 import CustomerSearchSelect from '../../../components/CustomerSearchSelect';
+import AddressAutocomplete from '../../../components/AddressAutocomplete';
 import Modal from '../../../components/Modal';
 import Button from '../../../components/Button';
 import { adminService } from '../../../services/api/adminService';
+import { ResolvedPlace } from '../../../utils/googlePlaces';
 import { formatCurrency } from '../../../utils/currency';
 import { OrderTypeOption } from './types';
 
@@ -20,6 +22,10 @@ export type CustomerPanelProps = {
   loyaltyBalance: { balance: number; displayName: string } | null | undefined;
   deliveryAddress: string;
   onDeliveryAddressChange: (v: string) => void;
+  /** Google place backing the address, or null while none is picked. */
+  deliveryPlace: ResolvedPlace | null;
+  onDeliveryPlaceChange: (place: ResolvedPlace) => void;
+  onDeliveryPlacesUnavailable: () => void;
   loyaltyPointsToRedeem: number | '';
   onLoyaltyPointsToRedeemChange: (v: number | '') => void;
   discountCode: string;
@@ -46,6 +52,9 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
   loyaltyBalance,
   deliveryAddress,
   onDeliveryAddressChange,
+  deliveryPlace,
+  onDeliveryPlaceChange,
+  onDeliveryPlacesUnavailable,
   loyaltyPointsToRedeem,
   onLoyaltyPointsToRedeemChange,
   discountCode,
@@ -113,12 +122,12 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
       {effectiveOrderType === 'delivery' && (
         <div>
           <label className="block text-sm font-medium text-foodies-textPrimary mb-1.5">Delivery address *</label>
-          <textarea
+          <AddressAutocomplete
             value={deliveryAddress}
-            onChange={(e) => onDeliveryAddressChange(e.target.value)}
-            placeholder="Street, area, city"
-            rows={2}
-            className="w-full px-4 py-2.5 border border-foodies-border rounded-xl bg-foodies-surface text-foodies-textPrimary placeholder-foodies-textSecondary focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary resize-none"
+            onChange={onDeliveryAddressChange}
+            onPick={onDeliveryPlaceChange}
+            picked={deliveryPlace}
+            onUnavailable={onDeliveryPlacesUnavailable}
           />
         </div>
       )}

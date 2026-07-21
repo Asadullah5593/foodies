@@ -282,6 +282,9 @@ const DockedKeyboard: React.FC = () => {
           exit={{ y: '100%' }}
           transition={{ type: 'tween', duration: 0.18 }}
           className="fixed inset-x-0 bottom-0 z-[100] border-t border-slate-300 bg-slate-100 shadow-2xl dark:border-slate-600 dark:bg-slate-800"
+          // Typeahead dropdowns close on outside mousedown; this marks the
+          // keyboard so tapping a key doesn't read as "clicked away".
+          data-onscreen-keyboard=""
           onMouseDown={(e) => e.preventDefault()}
         >
           <div className="mx-auto max-w-3xl">
