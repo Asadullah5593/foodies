@@ -927,7 +927,7 @@ const Orders: React.FC = () => {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search order #, brand, customer, rider…"
+            placeholder="Search order #, customer"
             className="flex-1 border-none bg-transparent py-3 text-[15px] text-gray-800 outline-none dark:text-slate-100"
           />
         </div>
