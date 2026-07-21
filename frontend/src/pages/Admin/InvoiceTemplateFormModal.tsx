@@ -400,6 +400,21 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
         },
         {
           kind: 'select',
+          label: 'App-QR text weight',
+          hint: '“Scan to download …” next to the app QR; defaults to the info-box values (600)',
+          value: String(form.config.appQrTextFontWeight ?? 600),
+          options: WEIGHT_OPTIONS,
+          onChange: (v) => setCfg('appQrTextFontWeight', Number(v)),
+        },
+        {
+          kind: 'number',
+          label: 'App-QR text size',
+          suffix: '%  (100 = same as info-box values)',
+          value: form.config.appQrTextFontPct ?? 100,
+          onChange: (v) => setCfg('appQrTextFontPct', clampPct(v)),
+        },
+        {
+          kind: 'select',
           label: 'Info-box headings weight',
           hint: 'defaults to the values column (600)',
           value: String(form.config.metaLabelsFontWeight ?? 600),
