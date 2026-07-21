@@ -174,30 +174,39 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
         </div>
       )}
 
-      {resolving ? (
-        <p className="mt-1 text-xs text-foodies-textSecondary">Fetching coordinates…</p>
-      ) : failed ? (
+      {resolving && <p className="mt-1 text-xs text-foodies-textSecondary">Fetching coordinates…</p>}
+
+      {!resolving && failed && (
         <p className="mt-1 text-xs text-foodies-textSecondary">
           Address search unavailable — the order will be sent without map coordinates.
         </p>
-      ) : picked ? (
+      )}
+
+      {!resolving && !failed && !picked && (
+        <p className="mt-1 text-xs text-amber-600">
+          Pick an address from the suggestions so the rider gets exact coordinates.
+        </p>
+      )}
+
+      {/* Rendered outside the branches above so picking another address moves the
+          existing map instead of tearing it down — a rebuild costs another
+          Dynamic Maps load and flashes the panel. */}
+      {!failed && picked && (
         <>
-          <p className="mt-1 text-xs text-green-700">
-            ✓ Location pinned ({picked.latitude.toFixed(6)}, {picked.longitude.toFixed(6)})
-            {editedAfterPick && (
-              <span className="text-amber-600"> · address edited after selection; pin is from the picked place</span>
-            )}
-          </p>
+          {!resolving && (
+            <p className="mt-1 text-xs text-green-700">
+              ✓ Location pinned ({picked.latitude.toFixed(6)}, {picked.longitude.toFixed(6)})
+              {editedAfterPick && (
+                <span className="text-amber-600"> · address edited after selection; pin is from the picked place</span>
+              )}
+            </p>
+          )}
           <DeliveryPinMap
             latitude={picked.latitude}
             longitude={picked.longitude}
             onMove={({ lat, lng }) => onPick({ ...picked, latitude: lat, longitude: lng })}
           />
         </>
-      ) : (
-        <p className="mt-1 text-xs text-amber-600">
-          Pick an address from the suggestions so the rider gets exact coordinates.
-        </p>
       )}
     </div>
   );
