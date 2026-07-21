@@ -35,6 +35,7 @@ const emptyForm = {
   supports_delivery: false,
   delivery_radius_km: '10',
   premises_radius_m: '300',
+  auto_dispatch_enabled: true,
   is_active: true,
   fbr_enabled: false,
   fbr_pos_id: '',
@@ -161,6 +162,7 @@ const BranchEdit: React.FC = () => {
         supports_delivery: branch.supports_delivery ?? false,
         delivery_radius_km: branch.delivery_radius_km != null ? String(branch.delivery_radius_km) : '10',
         premises_radius_m: branch.premises_radius_m != null ? String(branch.premises_radius_m) : '300',
+        auto_dispatch_enabled: branch.auto_dispatch_enabled ?? true,
         is_active: branch.is_active ?? true,
         fbr_enabled: branch.fbr_enabled ?? false,
         fbr_pos_id: branch.fbr_pos_id || '',
@@ -283,6 +285,7 @@ const BranchEdit: React.FC = () => {
         supports_delivery: data.supports_delivery,
         delivery_radius_km: data.delivery_radius_km ? +data.delivery_radius_km : 10,
         premises_radius_m: data.premises_radius_m ? +data.premises_radius_m : 300,
+        auto_dispatch_enabled: data.auto_dispatch_enabled,
         is_active: data.is_active,
       };
       if (linkedMenuItemIds.length) payload.menu_item_ids = linkedMenuItemIds;
@@ -315,6 +318,7 @@ const BranchEdit: React.FC = () => {
         supports_delivery: data.supports_delivery,
         delivery_radius_km: data.delivery_radius_km ? +data.delivery_radius_km : 10,
         premises_radius_m: data.premises_radius_m ? +data.premises_radius_m : 300,
+        auto_dispatch_enabled: data.auto_dispatch_enabled,
         is_active: data.is_active,
         fbr_enabled: data.fbr_enabled,
         fbr_pos_id: data.fbr_pos_id.trim() || null,
@@ -553,6 +557,24 @@ const BranchEdit: React.FC = () => {
                 automatic dispatch and manual assignment alike. Requires the branch latitude and
                 longitude below; without them the check is skipped.
               </p>
+            </div>
+            <div className="sm:col-span-2">
+              <label className="flex items-start gap-2 cursor-pointer max-w-xl">
+                <input
+                  type="checkbox"
+                  checked={formData.auto_dispatch_enabled}
+                  onChange={(e) => setFormData({ ...formData, auto_dispatch_enabled: e.target.checked })}
+                  className="mt-1"
+                />
+                <span>
+                  <span className={labelClass}>Automatic rider assignment</span>
+                  <span className="block text-xs text-gray-500 dark:text-slate-400">
+                    On: delivery orders get a rider automatically once the kitchen moves them to
+                    Preparing. Off: they stay in “Needs rider” for someone to assign by hand.
+                    Turning this off never blocks manual assignment.
+                  </span>
+                </span>
+              </label>
             </div>
           </div>
         </Card>

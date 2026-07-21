@@ -70,6 +70,15 @@ export class Branch {
     premisesRadiusM: number;
 
     /**
+     * Automatic rider assignment for this branch. When false, delivery orders
+     * are left unassigned for an admin to hand out manually — every auto-dispatch
+     * entry point funnels through OrdersService.autoAssignRiderForOrder, which
+     * checks this flag. Manual assignment is unaffected.
+     */
+    @Column({ default: true })
+    autoDispatchEnabled: boolean;
+
+    /**
      * Per-tender GST rate (fraction, e.g. 0.15 = 15%). Pakistan FBR/PRA/SRB charge a REDUCED
      * rate on card/digital payments vs cash. Null = inherit the tenant's single default rate
      * (so unconfigured branches behave exactly as before). Set via branch admin.

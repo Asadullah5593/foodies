@@ -10,6 +10,7 @@ import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { formatCurrency } from '../../utils/currency';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
+import { deliveryStatusLabel } from '../../lib/deliveryStatus';
 
 type OrderRow = {
   id: number;
@@ -31,13 +32,6 @@ type OrderRow = {
   placedAt?: string | null;
 };
 
-const DELIVERY_STATUS_LABELS: Record<string, string> = {
-  assigned: 'Assigned',
-  accepted: 'Accepted',
-  picked_up: 'Picked Up',
-  delivered: 'Delivered',
-  delivery_failed: 'Failed',
-};
 
 function normalizeOrder(o: OrderRow): OrderRow {
   const row = o as OrderRow & { riderId?: number; deliveryStatus?: string };
@@ -245,11 +239,17 @@ const Deliveries: React.FC = () => {
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-500 dark:text-slate-400">Delivery:</span>
                           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${order.delivery_status === 'delivered' ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-200' : order.delivery_status === 'delivery_failed' ? 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-200' : 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200'}`}>
-                            {DELIVERY_STATUS_LABELS[order.delivery_status ?? ''] ?? order.delivery_status ?? 'Assigned'}
+                            {deliveryStatusLabel(order.delivery_status, { short: true, fallback: 'Assigned' })}
                           </span>
                           <span className="text-sm font-medium text-gray-700 dark:text-slate-200">{formatCurrency(Number(order.total_amount ?? 0))}</span>
                         </div>
                       </Link>
+                      {order.delivery_status === 'delivery_failed' && (
+                        <p className="mt-1 text-xs text-red-700 dark:text-red-300">
+                          <span className="font-semibold">Failed: </span>
+                          {order.delivery_failed_reason?.trim() || 'no reason recorded'}
+                        </p>
+                      )}
                       {order.placed_at && <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">Placed {new Date(order.placed_at).toLocaleString()}</p>}
                     </li>
                   ))}

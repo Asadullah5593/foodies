@@ -10,6 +10,7 @@ import { AccentedList, AccentedListRow } from '../../components/AccentedListRow'
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { formatCurrency } from '../../utils/currency';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
+import { deliveryStatusLabel as formatDeliveryStatus } from '../../lib/deliveryStatus';
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   placed: 'Placed',
@@ -20,13 +21,6 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
-const DELIVERY_STATUS_LABELS: Record<string, string> = {
-  assigned: 'Assigned',
-  accepted: 'Accepted',
-  picked_up: 'Picked Up',
-  delivered: 'Delivered',
-  delivery_failed: 'Delivery Failed',
-};
 
 const RiderDashboard: React.FC = () => {
   const [page, setPage] = useState(1);
@@ -118,9 +112,7 @@ const RiderDashboard: React.FC = () => {
               );
               const deliveryStatusLabel =
                 deliveryStatusSet.size === 1
-                  ? (DELIVERY_STATUS_LABELS[first?.delivery_status ?? ''] ??
-                      first?.delivery_status ??
-                      'Assigned')
+                  ? formatDeliveryStatus(first?.delivery_status, { fallback: 'Assigned' })
                   : 'Mixed';
               const isDone =
                 deliveryStatusLabel === 'Delivered' ||
@@ -162,7 +154,7 @@ const RiderDashboard: React.FC = () => {
                             Order: <span className="font-medium text-gray-700 dark:text-slate-200">{ORDER_STATUS_LABELS[order.status ?? ''] ?? order.status ?? 'Placed'}</span>
                           </span>
                           <span className="text-xs text-gray-500 dark:text-slate-400">
-                            Delivery: <span className="font-medium text-gray-700 dark:text-slate-200">{DELIVERY_STATUS_LABELS[order.delivery_status ?? ''] ?? order.delivery_status ?? 'Assigned'}</span>
+                            Delivery: <span className="font-medium text-gray-700 dark:text-slate-200">{formatDeliveryStatus(order.delivery_status, { fallback: 'Assigned' })}</span>
                           </span>
                           <Link to={`/rider/orders/${order.id}`}>
                             <Button size="small" variant="view">View & update</Button>

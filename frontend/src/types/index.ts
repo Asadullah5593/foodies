@@ -72,6 +72,8 @@ export interface Branch {
   delivery_radius_km?: number;
   /** Radius in metres around the branch inside which a rider is assignable. */
   premises_radius_m?: number;
+  /** Automatic rider assignment for this branch; false = orders wait for manual assignment. */
+  auto_dispatch_enabled?: boolean;
   latitude?: number | null;
   longitude?: number | null;
   is_active?: boolean;
