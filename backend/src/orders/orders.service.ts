@@ -8,7 +8,13 @@ import {
     Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, In, IsNull, Repository } from 'typeorm';
+import {
+    DataSource,
+    In,
+    IsNull,
+    Repository,
+    SelectQueryBuilder,
+} from 'typeorm';
 import { randomInt, randomUUID } from 'crypto';
 import { Order } from '../entities/order.entity';
 import { OrderItem } from '../entities/order-item.entity';
@@ -3278,6 +3284,12 @@ export class OrdersService {
             date_from?: string;
             date_to?: string;
             has_rider?: boolean;
+            /** Free-text search over order number / customer / FDS reference. */
+            search?: string;
+            /** 1-based page. */
+            page?: number;
+            /** Rows per page (order-level), capped at 200. */
+            page_size?: number;
         },
         allowedBranchIds?: number[] | null,
         allowedBrandIds?: number[] | null,
@@ -3303,7 +3315,79 @@ export class OrdersService {
             );
         }
 
-        const qb = this.orderRepo
+        const NEEDS_RIDER_STATUSES = [
+            'placed',
+            'accepted',
+            'preparing',
+            'ready',
+        ];
+        const NEEDS_RIDER_SQL =
+            "o.orderType = 'delivery' AND o.riderId IS NULL AND o.status IN (:...nrs)";
+        const page = Math.max(1, Math.floor(Number(filters.page)) || 1);
+        const pageSize = Math.min(
+            200,
+            Math.max(1, Math.floor(Number(filters.page_size)) || 20),
+        );
+        const search =
+            typeof filters.search === 'string' ? filters.search.trim() : '';
+
+        // Filters shared by the data page, the status-tile counts and the
+        // needs-rider count — everything EXCEPT the selected status view, which
+        // is applied only to the data page (so every tile keeps a full count).
+        const applyCommon = (qb: SelectQueryBuilder<Order>): void => {
+            if (tenantId != null)
+                qb.andWhere('o.tenantId = :tenantId', { tenantId });
+            if (
+                allowedBranchIds != null &&
+                Array.isArray(allowedBranchIds) &&
+                allowedBranchIds.length > 0
+            )
+                qb.andWhere('o.branchId IN (:...allowedBranchIds)', {
+                    allowedBranchIds,
+                });
+            // Brand-locked users only ever see their own brand's orders.
+            if (allowedBrandIds != null)
+                qb.andWhere('o.brandId IN (:...allowedBrandIds)', {
+                    allowedBrandIds,
+                });
+            if (filters.branch_id)
+                qb.andWhere('o.branchId = :branchId', {
+                    branchId: filters.branch_id,
+                });
+            if (filters.brand_id)
+                qb.andWhere('o.brandId = :filterBrandId', {
+                    filterBrandId: filters.brand_id,
+                });
+            if (
+                filters.order_type &&
+                ['delivery', 'dine_in', 'takeaway'].includes(filters.order_type)
+            )
+                qb.andWhere('o.orderType = :orderType', {
+                    orderType: filters.order_type,
+                });
+            // Whitelisted: `source` is free-text, so an unknown value would
+            // silently match nothing rather than filtering.
+            if (filters.source && ORDER_SOURCES.includes(filters.source))
+                qb.andWhere('o.source = :source', { source: filters.source });
+            if (filters.date_from)
+                qb.andWhere('date(o.placed_at) >= :dateFrom', {
+                    dateFrom: filters.date_from,
+                });
+            if (filters.date_to)
+                qb.andWhere('date(o.placed_at) <= :dateTo', {
+                    dateTo: filters.date_to,
+                });
+            if (filters.has_rider === true)
+                qb.andWhere('o.riderId IS NOT NULL');
+            if (search)
+                qb.andWhere(
+                    '(o.orderNumber ILIKE :q OR o.customerName ILIKE :q OR o.customerPhone ILIKE :q OR o.orderId ILIKE :q)',
+                    { q: `%${search}%` },
+                );
+        };
+
+        // --- data page (with the selected status / needs-rider view) ---------
+        const dataQb = this.orderRepo
             .createQueryBuilder('o')
             .leftJoinAndSelect('o.branch', 'b')
             .leftJoinAndSelect('o.brand', 'brand')
@@ -3312,61 +3396,52 @@ export class OrdersService {
             .leftJoinAndSelect('o.orderItems', 'oi')
             .leftJoinAndSelect('oi.menuItem', 'mi')
             // Tenders power the admin list's Payment column (method + paid state).
-            .leftJoinAndSelect('o.payments', 'payments')
-            .orderBy('o.createdAt', 'DESC')
-            .take(50);
+            .leftJoinAndSelect('o.payments', 'payments');
+        applyCommon(dataQb);
+        if (filters.status === 'needs_rider')
+            dataQb.andWhere(NEEDS_RIDER_SQL, { nrs: NEEDS_RIDER_STATUSES });
+        else if (filters.status)
+            dataQb.andWhere('o.status = :status', { status: filters.status });
+        // Order by the PK (monotonic with creation, always indexed) so pagination
+        // stays fast and stable at 100k+ rows.
+        dataQb
+            .orderBy('o.id', 'DESC')
+            .skip((page - 1) * pageSize)
+            .take(pageSize);
+        const [data, total] = await dataQb.getManyAndCount();
 
-        if (tenantId != null)
-            qb.andWhere('o.tenantId = :tenantId', { tenantId });
-        if (
-            allowedBranchIds != null &&
-            Array.isArray(allowedBranchIds) &&
-            allowedBranchIds.length > 0
-        ) {
-            qb.andWhere('o.branchId IN (:...allowedBranchIds)', {
-                allowedBranchIds,
-            });
+        // --- status-tile counts over the common filter set (all statuses) ----
+        const countsQb = this.orderRepo
+            .createQueryBuilder('o')
+            .select('o.status', 'status')
+            .addSelect('COUNT(*)', 'count');
+        applyCommon(countsQb);
+        const rawCounts = await countsQb
+            .groupBy('o.status')
+            .getRawMany<{ status: string; count: string }>();
+        const statusCounts: Record<string, number> = {};
+        let totalAll = 0;
+        for (const r of rawCounts) {
+            const n = Number(r.count) || 0;
+            statusCounts[r.status] = n;
+            totalAll += n;
         }
-        // Brand-locked users only ever see their own brand's orders.
-        if (allowedBrandIds != null) {
-            qb.andWhere('o.brandId IN (:...allowedBrandIds)', {
-                allowedBrandIds,
-            });
-        }
-        if (filters.branch_id)
-            qb.andWhere('o.branchId = :branchId', {
-                branchId: filters.branch_id,
-            });
-        if (filters.brand_id)
-            qb.andWhere('o.brandId = :filterBrandId', {
-                filterBrandId: filters.brand_id,
-            });
-        if (filters.status)
-            qb.andWhere('o.status = :status', { status: filters.status });
-        if (
-            filters.order_type &&
-            ['delivery', 'dine_in', 'takeaway'].includes(filters.order_type)
-        ) {
-            qb.andWhere('o.orderType = :orderType', {
-                orderType: filters.order_type,
-            });
-        }
-        // Whitelisted like order_type above: `source` is a free-text column, so an
-        // unknown value silently matches nothing rather than filtering.
-        if (filters.source && ORDER_SOURCES.includes(filters.source)) {
-            qb.andWhere('o.source = :source', { source: filters.source });
-        }
-        if (filters.date_from)
-            qb.andWhere('date(o.placed_at) >= :dateFrom', {
-                dateFrom: filters.date_from,
-            });
-        if (filters.date_to)
-            qb.andWhere('date(o.placed_at) <= :dateTo', {
-                dateTo: filters.date_to,
-            });
-        if (filters.has_rider === true) qb.andWhere('o.riderId IS NOT NULL');
+        const nrQb = this.orderRepo
+            .createQueryBuilder('o')
+            .select('COUNT(*)', 'count');
+        applyCommon(nrQb);
+        nrQb.andWhere(NEEDS_RIDER_SQL, { nrs: NEEDS_RIDER_STATUSES });
+        const nrRow = await nrQb.getRawOne<{ count: string }>();
+        statusCounts['needs_rider'] = Number(nrRow?.count) || 0;
 
-        return qb.getMany();
+        return {
+            data,
+            total,
+            total_all: totalAll,
+            page,
+            page_size: pageSize,
+            status_counts: statusCounts,
+        };
     }
 
     /** List users with Rider role for the tenant (from branch_users for tenant's branches). */

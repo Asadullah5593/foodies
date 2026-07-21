@@ -59,6 +59,12 @@ import { FbrModule } from './fbr/fbr.module';
             ...(process.env.DB_SSL === 'true'
                 ? { ssl: { rejectUnauthorized: false } }
                 : {}),
+            // node-postgres pool size. Raised to absorb concurrent order bursts —
+            // the previous default (~10) was the bottleneck under load. Override
+            // with DB_POOL_MAX. NOTE: Postgres `max_connections` must exceed this
+            // (plus room for migrations/psql/other clients), or connections are
+            // refused; default PG max_connections is 100, so raise it in prod.
+            extra: { max: parseInt(process.env.DB_POOL_MAX || '100', 10) },
             namingStrategy: new SnakeNamingStrategy(),
             synchronize: false,
             migrationsRun: true,

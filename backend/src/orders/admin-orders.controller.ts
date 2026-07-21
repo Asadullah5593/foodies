@@ -126,6 +126,9 @@ export class AdminOrdersController {
         @Query('date_from') dateFrom: string,
         @Query('date_to') dateTo: string,
         @Query('has_rider') hasRider: string,
+        @Query('search') search: string,
+        @Query('page') page: string,
+        @Query('page_size') pageSize: string,
     ) {
         return this.service.findAllAdmin(
             user.tenantId,
@@ -139,6 +142,9 @@ export class AdminOrdersController {
                 date_to: dateTo,
                 has_rider:
                     hasRider === '1' || hasRider === 'true' ? true : undefined,
+                search: search || undefined,
+                page: page ? +page : undefined,
+                page_size: pageSize ? +pageSize : undefined,
             },
             user.allowedBranchIds,
             user.allowedBrandIds,

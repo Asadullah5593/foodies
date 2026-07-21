@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -10,7 +10,7 @@ import { formatCurrency } from '../../utils/currency';
 import { formatOrderType } from '../../utils/format';
 import AssignRiderModal from '../../components/AssignRiderModal';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
-import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
+import PaginationBar from '../../components/PaginationBar';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import { ORDER_SOURCES, ORDER_SOURCE_LABEL, orderSourceLabel } from '../../utils/orderSources';
@@ -41,6 +41,16 @@ type OrderRow = Omit<Order, 'payments' | 'creator'> & {
   orderItems?: unknown[];
   items_count?: number;
   payments?: OrderPayment[] | null;
+};
+
+/** Server-paginated envelope from GET /admin/orders. */
+type OrdersEnvelope = {
+  data: OrderRow[];
+  total: number;
+  total_all: number;
+  page: number;
+  page_size: number;
+  status_counts: Record<string, number>;
 };
 
 function normalizeOrder(o: OrderRow): OrderRow {
@@ -136,7 +146,7 @@ const TYPE_META: Record<string, { bg: string; color: string; short: string; icon
 
 const PAYMENT_METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', other: 'Other', online: 'Online' };
 
-const ORDERS_PAGE_SIZE = DEFAULT_PAGE_SIZE;
+const ORDERS_PAGE_SIZE = 20;
 
 /* --------------------------------------------------------------- helpers -- */
 
@@ -255,10 +265,6 @@ const Orders: React.FC = () => {
   const dateFrom = searchParams.get('date_from') || defaultToday;
   const dateTo = searchParams.get('date_to') || defaultToday;
 
-  // 'needs_rider' is a client-side view (it is not an order status), so it is
-  // never sent to the server.
-  const statusForServer = status && status !== 'needs_rider' ? status : '';
-
   const baseParams = {
     ...(branchId && { branch_id: +branchId }),
     ...(brandId && { brand_id: +brandId }),
@@ -268,34 +274,38 @@ const Orders: React.FC = () => {
     ...(dateTo && { date_to: dateTo }),
   };
 
-  const fetchOrders = async (withStatus: string): Promise<OrderRow[]> => {
-    const search = new URLSearchParams();
-    if (baseParams.branch_id) search.append('branch_id', String(baseParams.branch_id));
-    if (baseParams.brand_id) search.append('brand_id', String(baseParams.brand_id));
-    if (withStatus) search.append('status', withStatus);
-    if (baseParams.order_type) search.append('order_type', baseParams.order_type);
-    if (baseParams.source) search.append('source', baseParams.source);
-    if (baseParams.date_from) search.append('date_from', baseParams.date_from);
-    if (baseParams.date_to) search.append('date_to', baseParams.date_to);
-    const response = await apiClient.get<OrderRow[]>(`/admin/orders?${search.toString()}`);
-    return (response.data ?? []).map(normalizeOrder);
+  // Debounce the search box so we fire one request after typing settles, not per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  const fetchOrders = async (): Promise<OrdersEnvelope> => {
+    const sp = new URLSearchParams();
+    if (baseParams.branch_id) sp.append('branch_id', String(baseParams.branch_id));
+    if (baseParams.brand_id) sp.append('brand_id', String(baseParams.brand_id));
+    // 'needs_rider' is a real server-side view now, so it is sent like any status.
+    if (status) sp.append('status', status);
+    if (baseParams.order_type) sp.append('order_type', baseParams.order_type);
+    if (baseParams.source) sp.append('source', baseParams.source);
+    if (baseParams.date_from) sp.append('date_from', baseParams.date_from);
+    if (baseParams.date_to) sp.append('date_to', baseParams.date_to);
+    if (debouncedSearch) sp.append('search', debouncedSearch);
+    sp.append('page', String(ordersPage));
+    sp.append('page_size', String(ORDERS_PAGE_SIZE));
+    const response = await apiClient.get<OrdersEnvelope>(`/admin/orders?${sp.toString()}`);
+    const env = response.data;
+    return { ...env, data: (env.data ?? []).map(normalizeOrder) };
   };
 
-  // Base query (no status filter): feeds the status-tile counts, and the table
-  // whenever no status tile/select is active.
-  const { data: baseOrdersRaw, isLoading } = useQuery({
-    queryKey: ['admin-orders', baseParams],
-    queryFn: () => fetchOrders(''),
-    refetchInterval: ORDER_POLL_INTERVAL_MS,
-    refetchIntervalInBackground: true,
-  });
-
-  // Status-filtered query: same semantics as before the redesign (the server
-  // applies the status filter inside its 50-row window).
-  const { data: statusOrdersRaw, isLoading: isLoadingStatus } = useQuery({
-    queryKey: ['admin-orders', { ...baseParams, status: statusForServer }],
-    queryFn: () => fetchOrders(statusForServer),
-    enabled: !!statusForServer,
+  // One server-paginated query. status_counts (every tile, over the full filtered
+  // set) come back with each page, so there is no separate counting query and no
+  // row cap — pagination scales to 100k+ orders.
+  const { data: envelope, isLoading } = useQuery({
+    queryKey: ['admin-orders', baseParams, status, debouncedSearch, ordersPage],
+    queryFn: fetchOrders,
+    placeholderData: keepPreviousData,
     refetchInterval: ORDER_POLL_INTERVAL_MS,
     refetchIntervalInBackground: true,
   });
@@ -398,30 +408,29 @@ const Orders: React.FC = () => {
     setSearchParams(p);
   };
 
-  const baseOrders = useMemo(() => baseOrdersRaw ?? [], [baseOrdersRaw]);
-  const orders = useMemo(() => {
-    if (statusForServer) return statusOrdersRaw ?? [];
-    if (status === 'needs_rider') return baseOrders.filter(needsRider);
-    return baseOrders;
-  }, [statusForServer, statusOrdersRaw, status, baseOrders]);
+  const orders = useMemo(() => envelope?.data ?? [], [envelope]);
+  // Total rows matching the current filters/search (across ALL pages) — drives
+  // the pagination bar and the header count.
+  const totalCount = envelope?.total ?? 0;
 
-  /* Status tiles — counted over the base (status-unfiltered) dataset so every
-     tile keeps a live count no matter which one is selected. */
+  /* Status tiles — counts come from the server over the full filtered set (all
+     statuses), so every tile is accurate no matter how many pages exist. */
   const tiles = useMemo(() => {
-    const count = (f: (o: OrderRow) => boolean) => baseOrders.filter(f).length;
+    const sc = envelope?.status_counts ?? {};
+    const c = (k: string) => sc[k] ?? 0;
     return [
-      { key: '', label: 'All', dot: 'bg-gray-300', n: baseOrders.length },
-      { key: 'placed', label: 'Placed', dot: 'bg-gray-400', n: count((o) => o.status === 'placed') },
-      { key: 'accepted', label: 'Accepted', dot: 'bg-blue-500', n: count((o) => o.status === 'accepted') },
-      { key: 'preparing', label: 'Preparing', dot: 'bg-amber-500', n: count((o) => o.status === 'preparing') },
-      { key: 'ready', label: 'Ready', dot: 'bg-emerald-500', n: count((o) => o.status === 'ready') },
-      { key: 'completed', label: 'Completed', dot: 'bg-gray-300', n: count((o) => o.status === 'completed') },
-      { key: 'cancelled', label: 'Cancelled', dot: 'bg-red-600', n: count((o) => o.status === 'cancelled') },
-      { key: 'needs_rider', label: 'Needs rider', dot: 'bg-red-600', n: count(needsRider), alert: true },
+      { key: '', label: 'All', dot: 'bg-gray-300', n: envelope?.total_all ?? 0 },
+      { key: 'placed', label: 'Placed', dot: 'bg-gray-400', n: c('placed') },
+      { key: 'accepted', label: 'Accepted', dot: 'bg-blue-500', n: c('accepted') },
+      { key: 'preparing', label: 'Preparing', dot: 'bg-amber-500', n: c('preparing') },
+      { key: 'ready', label: 'Ready', dot: 'bg-emerald-500', n: c('ready') },
+      { key: 'completed', label: 'Completed', dot: 'bg-gray-300', n: c('completed') },
+      { key: 'cancelled', label: 'Cancelled', dot: 'bg-red-600', n: c('cancelled') },
+      { key: 'needs_rider', label: 'Needs rider', dot: 'bg-red-600', n: c('needs_rider'), alert: true },
     ];
-  }, [baseOrders]);
+  }, [envelope]);
 
-  /* Group split web orders (shared order_group_id) exactly like before. */
+  /* Group split web orders (shared order_group_id) within the current page. */
   const displayGroups = useMemo(() => {
     const map = new Map<string, OrderRow[]>();
     for (const o of orders) {
@@ -440,21 +449,7 @@ const Orders: React.FC = () => {
     return result;
   }, [orders]);
 
-  const searchedGroups = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return displayGroups;
-    const match = (o: OrderRow) =>
-      [o.order_number, o.brand?.name, o.brand_name, customerText(o), o.rider?.name, o.creator?.name]
-        .some((v) => String(v ?? '').toLowerCase().includes(q));
-    return displayGroups.filter((g) => g.orders.some(match));
-  }, [displayGroups, search]);
-
-  const paginatedGroups = useMemo(() => {
-    const start = (ordersPage - 1) * ORDERS_PAGE_SIZE;
-    return searchedGroups.slice(start, start + ORDERS_PAGE_SIZE);
-  }, [searchedGroups, ordersPage]);
-
-  const visibleOrders = useMemo(() => searchedGroups.flatMap((g) => g.orders), [searchedGroups]);
+  const visibleOrders = useMemo(() => displayGroups.flatMap((g) => g.orders), [displayGroups]);
   const visibleTotal = visibleOrders.reduce((s, o) => s + Number(o.total_amount ?? 0), 0);
 
   useEffect(() => {
@@ -477,16 +472,16 @@ const Orders: React.FC = () => {
     };
   }, [statusMenu]);
 
-  /** Serial number of each order within the current filtered view (continuous across pages). */
+  /** Serial number of each order, continuous across pages (offset by the page). */
   const serialByOrderId = useMemo(() => {
     const m = new Map<number, number>();
-    let i = 0;
-    for (const g of searchedGroups) for (const o of g.orders) m.set(o.id, ++i);
+    let i = (ordersPage - 1) * ORDERS_PAGE_SIZE;
+    for (const g of displayGroups) for (const o of g.orders) m.set(o.id, ++i);
     return m;
-  }, [searchedGroups]);
+  }, [displayGroups, ordersPage]);
 
   const isSubmitting = assignRiderMutation.isPending || updateStatusMutation.isPending;
-  if (isLoading || (statusForServer && isLoadingStatus) || isSubmitting) {
+  if (isLoading || isSubmitting) {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading orders...'} />;
   }
 
@@ -870,7 +865,7 @@ const Orders: React.FC = () => {
         <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-extrabold tracking-tight text-gray-800 dark:text-slate-100 sm:text-3xl">Orders</h1>
           <span className="text-[15px] text-gray-400 dark:text-slate-500">
-            {visibleOrders.length} {visibleOrders.length === 1 ? 'order' : 'orders'} · {dateFrom === dateTo ? dateFrom : `${dateFrom} → ${dateTo}`}
+            {totalCount} {totalCount === 1 ? 'order' : 'orders'} · {dateFrom === dateTo ? dateFrom : `${dateFrom} → ${dateTo}`}
           </span>
         </div>
         <div className="flex items-center gap-2.5">
@@ -1020,10 +1015,10 @@ const Orders: React.FC = () => {
                 <span className={`${cellHead} text-right`}>Actions</span>
               </div>
 
-              {paginatedGroups.length === 0 ? (
+              {displayGroups.length === 0 ? (
                 <p className="py-14 text-center text-gray-500 dark:text-slate-400">No orders found.</p>
               ) : (
-                paginatedGroups.map(({ orderGroupId: gid, orders: groupOrders }) => {
+                displayGroups.map(({ orderGroupId: gid, orders: groupOrders }) => {
                   const isGroup = !!gid && groupOrders.length > 1;
                   if (!isGroup) {
                     return renderRow(groupOrders[0], { showPerOrderRiderButton: true });
@@ -1046,11 +1041,11 @@ const Orders: React.FC = () => {
 
         {/* <xl: order cards */}
         <div className="xl:hidden">
-          {paginatedGroups.length === 0 ? (
+          {displayGroups.length === 0 ? (
             <p className="py-14 text-center text-gray-500 dark:text-slate-400">No orders found.</p>
           ) : (
             <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-2">
-              {paginatedGroups.map(({ orderGroupId: gid, orders: groupOrders }) => {
+              {displayGroups.map(({ orderGroupId: gid, orders: groupOrders }) => {
                 const isGroup = !!gid && groupOrders.length > 1;
                 if (!isGroup) {
                   return renderCard(groupOrders[0], { showPerOrderRiderButton: true });
@@ -1074,17 +1069,17 @@ const Orders: React.FC = () => {
         {/* Footer (both layouts) */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/80 px-5 py-3 dark:border-slate-700 dark:bg-slate-900/40">
           <span className="text-[14px] font-bold text-gray-500 dark:text-slate-400">
-            {visibleOrders.length} {visibleOrders.length === 1 ? 'order' : 'orders'}
+            {visibleOrders.length} on this page · {totalCount} total
           </span>
           <span className="text-[14px] text-gray-400 dark:text-slate-500">
-            Total value
+            Page value
             <span className="ml-2 text-[17px] font-black tabular-nums text-gray-800 dark:text-slate-100">{formatCurrency(visibleTotal)}</span>
           </span>
         </div>
       </div>
 
       <div className="mt-3">
-        <PaginationBar totalCount={searchedGroups.length} page={ordersPage} pageSize={ORDERS_PAGE_SIZE} onPageChange={setOrdersPage} itemLabel="orders" />
+        <PaginationBar totalCount={totalCount} page={ordersPage} pageSize={ORDERS_PAGE_SIZE} onPageChange={setOrdersPage} itemLabel="orders" />
       </div>
 
       {/* Kitchen-status popover */}

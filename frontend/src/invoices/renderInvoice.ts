@@ -551,13 +551,33 @@ function bizHeaderHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
     </div>`;
 }
 
+/** Whether the order renders any loyalty/points line under the totals — mirrors
+ *  the conditions in totalsHtml so the footer can tell if points separate the
+ *  grand total from it. */
+function orderHasLoyaltyLines(
+  order: InvoiceOrderVM | undefined,
+  cfg: InvoiceTemplateConfig,
+): boolean {
+  if (!order) return false;
+  return (
+    cfg.showLoyaltyBalance ||
+    (cfg.showLoyaltyEarned && Number(order.loyalty_points_earned ?? 0) > 0) ||
+    (cfg.showLoyaltyRedeemed && Number(order.loyalty_points_redeemed ?? 0) > 0)
+  );
+}
+
 function footerHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
+  // On a single-order receipt with no loyalty line, the grand-total's own
+  // (bold) bottom rule already divides it from the footer, so the FIRST footer
+  // block below it drops its lighter top rule to avoid a stacked double line.
+  const flushTop =
+    (data.orders?.length ?? 0) === 1 && !orderHasLoyaltyLines(data.orders?.[0], cfg);
   // App-download QR closes the receipt, above the footer: prompt text on the
   // left, the QR on the right. The QR encodes the same deep link the consumer
   // site shows (see appQr.ts), so scanning a receipt lands in the same place.
   const qrBlock = cfg.showAppQr
     ? `
-    <div class="qrblock" data-field="showAppQr">
+    <div class="qrblock${flushTop ? ' flush' : ''}" data-field="showAppQr">
       <div class="qr-text">${cfg.appQrText ? esc(cfg.appQrText) : ''}</div>
       <div class="qr-img">${APP_QR_SVG}</div>
     </div>`
@@ -573,7 +593,7 @@ function footerHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
   const fbrBlock =
     cfg.showFbrInvoice && fbrNumber
       ? `
-    <div class="fbrblock" data-field="showFbrInvoice">
+    <div class="fbrblock${flushTop && !cfg.showAppQr ? ' flush' : ''}" data-field="showFbrInvoice">
       <div class="fbr-row">
         <img class="fbr-logo" src="${esc(fbrLogoSrc(cfg.fbrLogoUrl))}" alt="Tax authority" />
         <div class="fbr-qr">${fbrQrSvg(fbrNumber)}</div>
@@ -904,6 +924,9 @@ function layoutCss(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .foot .line { white-space: pre-line; }
     /* App-download QR: prompt text left, code right. Sits above the footer. */
     .inv-root .qrblock { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding-top: 6px; border-top: 1px dashed #999; }
+    /* First footer block sits flush under the grand total (no loyalty line
+       between): drop its own top rule so only the grand total's bolder rule shows. */
+    .inv-root .qrblock.flush, .inv-root .fbrblock.flush { border-top: none; padding-top: 0; }
     .inv-root .qrblock .qr-text { text-align: left; flex: 1 1 auto; }
     .inv-root .qrblock .qr-img { flex: 0 0 auto; }
     .inv-root .qrblock .qr-img svg { display: block; width: 20mm; height: 20mm; }
