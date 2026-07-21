@@ -170,7 +170,7 @@ type FieldDef =
   | { kind: 'text'; label: string; hint?: string; required?: boolean; placeholder?: string; value: string; onChange: (v: string) => void }
   | { kind: 'select'; label: string; hint?: string; value: string; options: Array<{ value: string; label: string }>; onChange: (v: string) => void }
   | { kind: 'textarea'; label: string; hint?: string; placeholder?: string; value: string; onChange: (v: string) => void }
-  | { kind: 'number'; label: string; hint?: string; suffix?: string; value: number; onChange: (v: string) => void }
+  | { kind: 'number'; label: string; hint?: string; suffix?: string; value: number; min?: number; max?: number; step?: number; onChange: (v: string) => void }
   | { kind: 'toggle'; label: string; hint?: string; value: boolean; onChange: (v: boolean) => void }
   | { kind: 'image'; label: string; hint?: string; value: string; defaultHint?: string; onChange: (v: string) => void };
 
@@ -473,6 +473,9 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           hint: 'blank paper fed after the last line so it clears the print-head-to-cutter/tear-bar gap (0 = off)',
           suffix: 'mm  (0–80)',
           value: form.config.bottomFeedMm ?? 22,
+          min: 0,
+          max: 80,
+          step: 2,
           onChange: (v) => setCfg('bottomFeedMm', clampMm(v)),
         },
       ],
@@ -533,9 +536,9 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           <div className="flex items-center gap-2.5">
             <input
               type="number"
-              min={50}
-              max={200}
-              step={5}
+              min={fld.min ?? 50}
+              max={fld.max ?? 200}
+              step={fld.step ?? 5}
               className={`${inputCls} w-[120px]`}
               value={fld.value}
               onChange={(e) => fld.onChange(e.target.value)}
