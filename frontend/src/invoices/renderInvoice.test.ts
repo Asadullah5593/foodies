@@ -286,7 +286,7 @@ describe('app-download QR', () => {
     expect(noText).not.toContain('Scan to download');
   });
 
-  it('styles the prompt text exactly like the info-box value column', () => {
+  it('styles the prompt text exactly like the info-box value column by default', () => {
     // Same black + weight 600 + info-box value size the meta labels resolve to.
     const { css } = renderInvoiceHtml(sampleInvoice(), 'thermal_classic', cfg({ showAppQr: true }));
     const metaLabel = css.match(/\.inv-root \.metatbl \.mk \{[^}]*font-size: ([\d.]+)px/);
@@ -294,6 +294,20 @@ describe('app-download QR', () => {
     expect(qrText, 'qr-text rule present').not.toBeNull();
     // Info-box value column is weight 600 at that size; QR text matches it.
     expect(qrText![1]).toBe(metaLabel![1]);
+  });
+
+  it('applies the appQrTextFontWeight / appQrTextFontPct overrides to the prompt text only', () => {
+    const { css } = renderInvoiceHtml(
+      sampleInvoice(),
+      'thermal_classic',
+      cfg({ showAppQr: true, appQrTextFontWeight: 800, appQrTextFontPct: 150 }),
+    );
+    const metaLabel = css.match(/\.inv-root \.metatbl \.mk \{[^}]*font-size: ([\d.]+)px/);
+    const qrText = css.match(/\.inv-root \.qrblock \.qr-text \{ color: #000; font-weight: 800; font-size: ([\d.]+)px/);
+    expect(qrText, 'overridden qr-text rule present').not.toBeNull();
+    // 150% of the info-box value size, while the meta labels keep theirs.
+    expect(Number(qrText![1])).toBeCloseTo(Number(metaLabel![1]) * 1.5, 1);
+    expect(css).toContain('.inv-root .metatbl .mk { color: #000; font-weight: 600;');
   });
 });
 
