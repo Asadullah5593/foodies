@@ -53,6 +53,9 @@ export interface InvoiceTemplateConfig {
   showAppQr: boolean;
   /** Text shown to the left of the app-download QR (empty = QR only). */
   appQrText: string | null;
+  /** Weight (100–900) and size (% of info-box values) of the app-QR text. */
+  appQrTextFontWeight: number;
+  appQrTextFontPct: number;
   /**
    * FBR fiscalization block below the app-QR row: the tax-authority logo (left)
    * and the verification QR (right), then the "FBR Invoice #" line beneath
@@ -148,6 +151,8 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   footerText: null,
   showAppQr: false,
   appQrText: 'Scan to download the Foodies app',
+  appQrTextFontWeight: 600,
+  appQrTextFontPct: 100,
   showFbrInvoice: true,
   fbrLogoUrl: null,
   fontScalePct: 100,

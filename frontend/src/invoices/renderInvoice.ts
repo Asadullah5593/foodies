@@ -867,9 +867,9 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     `.inv-root .foot .line { color: #000; font-weight: ${weight(cfg.footerFontWeight)}; font-size: ${px(cfg.footerFontPct)}px; }`,
     `.inv-root .loyalty { color: #000; font-weight: ${weight(cfg.loyaltyFontWeight)}; font-size: ${px(cfg.loyaltyFontPct)}px; }`,
     `.inv-root .row.disc, .inv-root .row.disc .l, .inv-root .row.disc .r { color: #000; font-weight: ${weight(cfg.discountFontWeight)}; font-size: ${px(cfg.discountFontPct)}px; }`,
-    // QR prompt text: locked to the info-box value column (black, weight 600,
-    // same size + inherited family) — not independently configurable.
-    `.inv-root .qrblock .qr-text { color: #000; font-weight: 600; font-size: ${px(100)}px; }`,
+    // QR prompt text ("Scan to download …"): defaults to the info-box value
+    // column (black, weight 600, same size), independently adjustable.
+    `.inv-root .qrblock .qr-text { color: #000; font-weight: ${weight(cfg.appQrTextFontWeight)}; font-size: ${px(cfg.appQrTextFontPct)}px; }`,
   ].join('\n    ');
   return `${layoutCss(layout, cfg)}\n    ${overrides}`;
 }
