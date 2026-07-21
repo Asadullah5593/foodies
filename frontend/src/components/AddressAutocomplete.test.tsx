@@ -96,9 +96,13 @@ describe('AddressAutocomplete', () => {
 
     fireEvent.mouseDown(option);
 
+    // Committed on pick, before the map is touched: dismissing the map must
+    // never leave a delivery order without coordinates.
     await waitFor(() => expect(onPick).toHaveBeenCalledWith(LAHORE));
     expect(screen.getByRole('combobox')).toHaveValue(LAHORE.address);
     expect(screen.getByText(/Location pinned \(31\.520400, 74\.358700\)/)).toBeTruthy();
+    // …and the full-screen map opens by itself.
+    expect(await screen.findByRole('dialog', { name: 'Set delivery location' })).toBeTruthy();
   });
 
   it('sends the dragged coordinates, keeping the picked address text', async () => {
@@ -122,6 +126,13 @@ describe('AddressAutocomplete', () => {
     await waitFor(() => expect(mapHandlers['marker:dragend']).toBeTruthy());
     mapHandlers['marker:dragend']({ latLng: { lat: () => 31.5211, lng: () => 74.3599 } });
 
+    // Dragging is a draft — nothing reaches the order until it is confirmed.
+    await waitFor(() => expect(screen.getByText('Pin: 31.521100, 74.359900')).toBeTruthy());
+    expect(onPick).toHaveBeenCalledTimes(1);
+    expect(onPick).toHaveBeenLastCalledWith(LAHORE);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Use this location' }));
+
     await waitFor(() =>
       expect(onPick).toHaveBeenLastCalledWith({
         ...LAHORE,
@@ -132,6 +143,121 @@ describe('AddressAutocomplete', () => {
     expect(screen.getByText(/Location pinned \(31\.521100, 74\.359900\)/)).toBeTruthy();
     // Dragging must not rewrite the address the cashier picked.
     expect(screen.getByRole('combobox')).toHaveValue(LAHORE.address);
+    // Confirming closes the map rather than leaving it over the checkout.
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('keeps the committed coordinates when the map is dismissed', async () => {
+    suggest.mockResolvedValue([
+      {
+        placeId: 'place-1',
+        description: LAHORE.address,
+        primary: '12 Main Boulevard',
+        secondary: 'Gulberg, Lahore',
+        resolve: vi.fn().mockResolvedValue(LAHORE),
+      },
+    ]);
+    const onPick = vi.fn();
+    renderWithQuery(<Harness onPick={onPick} />);
+
+    type('12 Main');
+    fireEvent.mouseDown(await screen.findByText('12 Main Boulevard'));
+    await waitFor(() => expect(mapHandlers['marker:dragend']).toBeTruthy());
+    mapHandlers['marker:dragend']({ latLng: { lat: () => 31.5211, lng: () => 74.3599 } });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    // The address stays picked with Google's coordinates — the cashier is never
+    // blocked from checking out by having dismissed the map.
+    expect(onPick).toHaveBeenCalledTimes(1);
+    expect(onPick).toHaveBeenLastCalledWith(LAHORE);
+    expect(screen.getByText(/Location pinned \(31\.520400, 74\.358700\)/)).toBeTruthy();
+    expect(screen.getByRole('combobox')).toHaveValue(LAHORE.address);
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    // Reopening starts from what is committed, not the discarded drag.
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust pin' }));
+    await screen.findByRole('dialog', { name: 'Set delivery location' });
+    expect(screen.getByText('Pin: 31.520400, 74.358700')).toBeTruthy();
+  });
+
+  it('swallows the POS window hotkeys while the map is open', async () => {
+    suggest.mockResolvedValue([
+      {
+        placeId: 'place-1',
+        description: LAHORE.address,
+        primary: '12 Main Boulevard',
+        secondary: 'Gulberg, Lahore',
+        resolve: vi.fn().mockResolvedValue(LAHORE),
+      },
+    ]);
+    const onPick = vi.fn();
+    // Same shape as OrderTaking's handler: bubble phase, on window. It closes
+    // checkout on Escape and submits the order on Ctrl+Enter, so it must not
+    // see a single keystroke aimed at the map.
+    const posHotkeys = vi.fn();
+    window.addEventListener('keydown', posHotkeys);
+
+    try {
+      renderWithQuery(<Harness onPick={onPick} />);
+      type('12 Main');
+      fireEvent.mouseDown(await screen.findByText('12 Main Boulevard'));
+      const dialog = await screen.findByRole('dialog', { name: 'Set delivery location' });
+
+      fireEvent.keyDown(dialog, { key: 'Enter', ctrlKey: true });
+      fireEvent.keyDown(dialog, { key: '/' });
+      fireEvent.keyDown(dialog, { key: 'Escape' });
+
+      expect(posHotkeys).not.toHaveBeenCalled();
+      // Escape dismisses the map only — the pick survives.
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(onPick).toHaveBeenCalledTimes(1);
+      expect(onPick).toHaveBeenLastCalledWith(LAHORE);
+    } finally {
+      window.removeEventListener('keydown', posHotkeys);
+    }
+  });
+
+  it('opens the map when a suggestion is chosen with the keyboard', async () => {
+    suggest.mockResolvedValue([
+      {
+        placeId: 'place-1',
+        description: LAHORE.address,
+        primary: '12 Main Boulevard',
+        secondary: 'Gulberg, Lahore',
+        resolve: vi.fn().mockResolvedValue(LAHORE),
+      },
+    ]);
+    renderWithQuery(<Harness />);
+
+    type('12 Main');
+    await screen.findByText('12 Main Boulevard');
+    fireEvent.keyDown(screen.getByRole('combobox'), { key: 'Enter' });
+
+    expect(await screen.findByRole('dialog', { name: 'Set delivery location' })).toBeTruthy();
+  });
+
+  it('does not open the map when the details lookup fails', async () => {
+    suggest.mockResolvedValue([
+      {
+        placeId: 'place-1',
+        description: LAHORE.address,
+        primary: '12 Main Boulevard',
+        secondary: 'Gulberg, Lahore',
+        resolve: vi.fn().mockRejectedValue(new Error('no coordinates')),
+      },
+    ]);
+    const onPick = vi.fn();
+    renderWithQuery(<Harness onPick={onPick} />);
+
+    type('12 Main');
+    fireEvent.mouseDown(await screen.findByText('12 Main Boulevard'));
+
+    // Text still lands so the cashier can see what they chose, but with no
+    // coordinates there is nothing to pin and no map to open.
+    await waitFor(() => expect(screen.getByRole('combobox')).toHaveValue(LAHORE.address));
+    expect(onPick).not.toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
   it('moves the pin when the cashier taps the map', async () => {
@@ -154,6 +280,55 @@ describe('AddressAutocomplete', () => {
 
     await waitFor(() => expect(screen.getByText(/31\.520000, 74\.360000/)).toBeTruthy());
     expect(markerPositions).toContainEqual({ lat: 31.52, lng: 74.36 });
+  });
+
+  it('ignores a details lookup that lands after a newer address was picked', async () => {
+    const DHA = {
+      placeId: 'place-2',
+      address: '45 Park Lane, DHA Phase 5, Lahore, Pakistan',
+      latitude: 31.475,
+      longitude: 74.41,
+    };
+    // The first lookup hangs; the cashier changes their mind and picks the
+    // second, which resolves straight away. The stale one lands afterwards.
+    let releaseFirst: (() => void) | null = null;
+    const slow = new Promise<typeof LAHORE>((resolve) => {
+      releaseFirst = () => resolve(LAHORE);
+    });
+    suggest.mockResolvedValue([
+      {
+        placeId: 'place-1',
+        description: LAHORE.address,
+        primary: '12 Main Boulevard',
+        secondary: 'Gulberg, Lahore',
+        resolve: () => slow,
+      },
+      {
+        placeId: 'place-2',
+        description: DHA.address,
+        primary: '45 Park Lane',
+        secondary: 'DHA Phase 5, Lahore',
+        resolve: vi.fn().mockResolvedValue(DHA),
+      },
+    ]);
+    const onPick = vi.fn();
+    renderWithQuery(<Harness onPick={onPick} />);
+
+    type('12 Main');
+    fireEvent.mouseDown(await screen.findByText('12 Main Boulevard'));
+    type('45 Park');
+    fireEvent.mouseDown(await screen.findByText('45 Park Lane'));
+    await waitFor(() => expect(onPick).toHaveBeenCalledWith(DHA));
+
+    releaseFirst!();
+    await new Promise((r) => setTimeout(r, 50));
+
+    // The abandoned lookup must not resurrect its address, its coordinates, or
+    // its map — the rider would be sent to a place nobody selected.
+    expect(onPick).toHaveBeenCalledTimes(1);
+    expect(onPick).toHaveBeenLastCalledWith(DHA);
+    expect(screen.getByRole('combobox')).toHaveValue(DHA.address);
+    expect(screen.getByText(/Location pinned \(31\.475000, 74\.410000\)/)).toBeTruthy();
   });
 
   it('does not query Google until the third character', async () => {
@@ -183,6 +358,8 @@ describe('AddressAutocomplete', () => {
     type('12 Main');
     fireEvent.mouseDown(await screen.findByText('12 Main Boulevard'));
     await screen.findByText(/Location pinned/);
+    // Close the map first — the address box is behind it.
+    fireEvent.click(await screen.findByRole('button', { name: 'Use this location' }));
 
     type(`${LAHORE.address}, Flat 3B`);
 

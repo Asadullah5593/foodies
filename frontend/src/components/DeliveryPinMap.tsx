@@ -8,6 +8,8 @@ interface DeliveryPinMapProps {
   longitude: number;
   /** Fired when the cashier drags the pin or taps a new spot. */
   onMove: (position: LatLngLiteral) => void;
+  /** Sizing for the map surface. Google needs it to have real dimensions already. */
+  className?: string;
 }
 
 /**
@@ -20,7 +22,12 @@ interface DeliveryPinMapProps {
  * Rendering a map bills the Dynamic Maps SKU, so this mounts only after an
  * address is picked: one map load per delivery order, not per keystroke.
  */
-const DeliveryPinMap: React.FC<DeliveryPinMapProps> = ({ latitude, longitude, onMove }) => {
+const DeliveryPinMap: React.FC<DeliveryPinMapProps> = ({
+  latitude,
+  longitude,
+  onMove,
+  className = 'h-full w-full bg-foodies-surfaceMuted',
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<RawMap | null>(null);
   const markerRef = useRef<RawMarker | null>(null);
@@ -106,32 +113,24 @@ const DeliveryPinMap: React.FC<DeliveryPinMapProps> = ({ latitude, longitude, on
     mapRef.current?.panTo(position);
   }, [latitude, longitude]);
 
-  // Say what happened rather than leaving a blank grey box: the coordinates are
-  // already captured, and the console names the exact restriction to fix.
+  // Say what happened rather than leaving a blank grey box: the address's own
+  // coordinates are already captured, and the console names the exact
+  // restriction to fix.
   if (failed) {
     return (
-      <p className="mt-1 text-xs text-foodies-textSecondary">
-        Map preview unavailable — the pinned location above is still sent to the rider.
-        <span className="block">
-          Admin: check the Google key&apos;s website restrictions (browser console names the URL to allow).
-        </span>
-      </p>
+      <div className={`${className} flex items-center justify-center p-6`}>
+        <p className="max-w-md text-center text-sm text-foodies-textSecondary dark:text-slate-400">
+          Map unavailable — the coordinates from the selected address are still sent to the rider.
+          <span className="mt-1 block text-xs">
+            Admin: check the Google key&apos;s website restrictions; the browser console names the
+            URL to allow.
+          </span>
+        </p>
+      </div>
     );
   }
 
-  return (
-    <div className="mt-2">
-      <div
-        ref={containerRef}
-        role="application"
-        aria-label="Delivery location map"
-        className="h-44 w-full rounded-xl border border-foodies-border overflow-hidden bg-foodies-surfaceMuted"
-      />
-      <p className="mt-1 text-xs text-foodies-textSecondary">
-        Drag the pin (or tap the map) if the rider should stop somewhere else.
-      </p>
-    </div>
-  );
+  return <div ref={containerRef} role="application" aria-label="Delivery location map" className={className} />;
 };
 
 export default DeliveryPinMap;
