@@ -14,6 +14,7 @@ import PaginationBar from '../../components/PaginationBar';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import { ORDER_SOURCES, ORDER_SOURCE_LABEL, orderSourceLabel } from '../../utils/orderSources';
+import { deliveryStatusLabel } from '../../lib/deliveryStatus';
 
 type OrderPayment = { paymentMethod?: string; payment_method?: string; status?: string; amount?: number | string };
 
@@ -90,13 +91,6 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
-const DELIVERY_STATUS_LABELS: Record<string, string> = {
-  assigned: 'Assigned',
-  accepted: 'Accepted',
-  picked_up: 'Picked Up',
-  delivered: 'Delivered',
-  delivery_failed: 'Failed',
-};
 
 /* ------------------------------------------------------------------ meta -- */
 
@@ -693,7 +687,7 @@ const Orders: React.FC = () => {
                 dm ? `${dm.bg} ${dm.color}` : 'bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-400'
               }`}
             >
-              {o.delivery_status ? (DELIVERY_STATUS_LABELS[o.delivery_status] ?? o.delivery_status) : 'No rider'}
+              {deliveryStatusLabel(o.delivery_status, { short: true })}
             </span>
           ) : (
             <span className="text-[12.5px] text-gray-300 dark:text-slate-600">—</span>
@@ -789,7 +783,7 @@ const Orders: React.FC = () => {
                 dm ? `${dm.bg} ${dm.color}` : 'bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-400'
               }`}
             >
-              {o.delivery_status ? (DELIVERY_STATUS_LABELS[o.delivery_status] ?? o.delivery_status) : 'No rider'}
+              {deliveryStatusLabel(o.delivery_status, { short: true })}
             </span>
           )}
           {isDeliveryOrder(o) && (
