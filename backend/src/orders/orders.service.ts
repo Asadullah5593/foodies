@@ -3161,11 +3161,8 @@ export class OrdersService {
             }
             if (status === 'completed') {
                 await this.loyaltyService.earnOnOrderComplete(id);
-                await this.shiftsService.addCompletedOrderAmount(
-                    order.branchId,
-                    Number(order.totalAmount),
-                    order.brandId ?? null,
-                );
+                // Shift cash is derived from the order's tenders when the shift
+                // is read or closed — nothing to accrue here.
             } else if (status === 'cancelled') {
                 // Reverse inventory consumption allocations (if any).
                 try {
@@ -4461,11 +4458,9 @@ export class OrdersService {
             order.status = 'completed';
             if (prevStatus !== null) {
                 await this.loyaltyService.earnOnOrderComplete(order.id);
-                await this.shiftsService.addCompletedOrderAmount(
-                    order.branchId,
-                    Number(order.totalAmount),
-                    order.brandId ?? null,
-                );
+                // No shift accrual: a delivery order settled at the door has no
+                // tender recorded, so its balance is counted as cash owed to the
+                // till by computeExpectedCash until the rider hands it in.
             }
         }
         if (

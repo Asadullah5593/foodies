@@ -101,8 +101,20 @@ export class ShiftsService {
         }
         const list = await qb.getMany();
         const collected = await this.getCollectedAmountsBatch(list);
+        // Open shifts derive their expected cash; closed ones keep the value
+        // frozen at close.
+        const expected = new Map<number, number>();
+        for (const s of list.filter((x) => x.status === 'open')) {
+            expected.set(
+                s.id,
+                await this.computeExpectedCash(
+                    s,
+                    collected.get(s.id)?.cash_collected ?? 0,
+                ),
+            );
+        }
         return list.map((s) => ({
-            ...this.toResponse(s),
+            ...this.toResponse(s, expected.get(s.id)),
             ...(collected.get(s.id) ?? {
                 cash_collected: 0,
                 card_collected: 0,
@@ -153,7 +165,14 @@ export class ShiftsService {
             );
         }
         const collected = await this.getCollectedAmounts(shift);
-        return { ...this.toResponse(shift), ...collected };
+        const expected =
+            shift.status === 'open'
+                ? await this.computeExpectedCash(
+                      shift,
+                      collected.cash_collected,
+                  )
+                : undefined;
+        return { ...this.toResponse(shift, expected), ...collected };
     }
 
     async create(
@@ -372,39 +391,76 @@ export class ShiftsService {
         return { cash_collected, card_collected };
     }
 
-    /** Add completed order amount to the open shift's expected cash (called when an order is marked completed). Targets the order's brand shift when set. */
-    async addCompletedOrderAmount(
-        branchId: number,
-        amount: number,
-        brandId?: number | null,
-    ): Promise<void> {
-        const shift = await this.repo.findOne({
-            where:
-                brandId != null
-                    ? { branchId, brandId, status: 'open' }
-                    : { branchId, status: 'open' },
-            order: { openedAt: 'DESC' },
-            select: { id: true },
-        });
-        if (!shift) return;
-        // Atomic increment scoped to the still-open shift row. Avoids the
-        // read-modify-write lost update when two orders complete concurrently, and
-        // the `status = 'open'` guard means a shift closed in the meantime is left
-        // untouched (0 rows affected) rather than resurrected by a full-entity save.
-        await this.repo
-            .createQueryBuilder()
-            .update(Shift)
-            .set({
-                expectedCash: () =>
-                    'COALESCE(expected_cash, opening_cash) + :amount',
-            })
-            .where('id = :id AND status = :open', {
-                id: shift.id,
-                open: 'open',
-            })
-            .setParameter('amount', amount)
-            .execute();
+    /**
+     * Balance of completed orders in the shift window that nobody has tendered.
+     *
+     * There is no online payment anywhere in the system, so an order that
+     * completed without a payment row was settled in cash at the door — money a
+     * rider is carrying and owes the till. Counting it here is what makes a
+     * rider who never hands the cash over show up as a shortfall at close.
+     *
+     * Same matching rule as getCollectedAmounts: completed orders of the
+     * shift's branch (and brand, when set) whose completion falls in the window.
+     */
+    private outstandingQb(shift: Shift) {
+        const qb = this.orderRepo
+            .createQueryBuilder('o')
+            .leftJoin(
+                (sub) =>
+                    sub
+                        .select('p.orderId', 'order_id')
+                        .addSelect('SUM(p.amount)', 'paid')
+                        .from(Payment, 'p')
+                        .groupBy('p.orderId'),
+                'pay',
+                'pay.order_id = o.id',
+            )
+            .where('o.branchId = :branchId', { branchId: shift.branchId })
+            .andWhere("o.status = 'completed'")
+            .andWhere('o.completedAt >= :openedAt', {
+                openedAt: shift.openedAt,
+            });
+        if (shift.brandId != null)
+            qb.andWhere('o.brandId = :brandId', { brandId: shift.brandId });
+        if (shift.closedAt)
+            qb.andWhere('o.completedAt <= :closedAt', {
+                closedAt: shift.closedAt,
+            });
+        return qb;
     }
+
+    /** Untendered balance of the shift's completed orders (never negative). */
+    private async getOutstandingTotal(shift: Shift): Promise<number> {
+        const row = await this.outstandingQb(shift)
+            .select(
+                'COALESCE(SUM(GREATEST(o.total_amount - COALESCE(pay.paid, 0), 0)), 0)',
+                'outstanding',
+            )
+            .getRawOne<{ outstanding: string }>();
+        return parseFloat(row?.outstanding ?? '0') || 0;
+    }
+
+    /**
+     * Cash the till should hold: what it opened with, every cash tender taken
+     * during the shift, and the untendered balance the riders are carrying.
+     * Derived on read for open shifts; closed shifts keep the value frozen at
+     * close, because orders completed before this existed never recorded a
+     * tender and recomputing them could not be more truthful.
+     */
+    private async computeExpectedCash(
+        shift: Shift,
+        cashCollected: number,
+    ): Promise<number> {
+        const outstanding = await this.getOutstandingTotal(shift);
+        return Number(shift.openingCash ?? 0) + cashCollected + outstanding;
+    }
+
+    /**
+     * Expected cash used to be accrued here on every completion, which counted
+     * card sales as cash and never reversed when an order left `completed`. It
+     * is now derived from the tenders themselves (computeExpectedCash), so
+     * nothing needs to be incremented as orders finish.
+     */
 
     /**
      * Orders punched during this shift (branch + brand + opened-at window) that
@@ -467,7 +523,7 @@ export class ShiftsService {
 
     async close(
         id: number,
-        dto: { actual_cash: number; notes?: string },
+        dto: { actual_cash: number; rider_cash?: number; notes?: string },
         tenantId?: number | null,
         allowedBranchIds?: number[] | null,
         closedByUserId?: number | null,
@@ -499,15 +555,27 @@ export class ShiftsService {
         // clean 409 instead of silently overwriting the first close's reconciliation
         // figures. Using a scoped UPDATE (not a full-entity save) also means a
         // completion increment racing this close cannot revert it.
+        // Freeze the derived figure at close: from here on this shift is a
+        // historical record and must not drift if an old order is touched later.
+        const { cash_collected } = await this.getCollectedAmounts(shift);
+        const expectedAtClose = await this.computeExpectedCash(
+            shift,
+            cash_collected,
+        );
+        const riderCash =
+            dto.rider_cash != null && Number.isFinite(Number(dto.rider_cash))
+                ? Number(dto.rider_cash)
+                : 0;
         const res = await this.repo
             .createQueryBuilder()
             .update(Shift)
             .set({
                 closingCash: dto.actual_cash,
+                riderCashCollected: riderCash,
                 status: 'closed',
                 closedAt: () => 'now()',
                 closedByUserId: closedByUserId ?? null,
-                expectedCash: () => 'COALESCE(expected_cash, opening_cash)',
+                expectedCash: expectedAtClose,
                 ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
             })
             .where('id = :id AND status = :open', { id, open: 'open' })
@@ -598,7 +666,24 @@ export class ShiftsService {
         };
     }
 
-    private toResponse(s: Shift) {
+    /**
+     * @param expectedOverride derived expected cash for an open shift. Closed
+     * shifts pass nothing and keep the value frozen at close.
+     */
+    private toResponse(s: Shift, expectedOverride?: number) {
+        const expected =
+            expectedOverride !== undefined
+                ? expectedOverride
+                : s.expectedCash != null
+                  ? Number(s.expectedCash)
+                  : null;
+        const riderCash =
+            s.riderCashCollected != null ? Number(s.riderCashCollected) : null;
+        // Actual cash is the drawer count plus whatever the riders handed in.
+        const actual =
+            s.closingCash != null
+                ? Number(s.closingCash) + (riderCash ?? 0)
+                : null;
         return {
             id: s.id,
             branch_id: s.branchId,
@@ -607,13 +692,13 @@ export class ShiftsService {
             user_id: s.userId,
             shift_number: s.shiftNumber,
             opening_cash: Number(s.openingCash),
-            expected_cash:
-                s.expectedCash != null ? Number(s.expectedCash) : null,
-            actual_cash: s.closingCash != null ? Number(s.closingCash) : null,
-            difference:
-                s.closingCash != null && s.expectedCash != null
-                    ? Number(s.closingCash) - Number(s.expectedCash)
-                    : null,
+            expected_cash: expected,
+            /** Money counted in the drawer, excluding rider cash. */
+            drawer_cash: s.closingCash != null ? Number(s.closingCash) : null,
+            /** Cash riders handed to the till, entered at close. */
+            rider_cash_collected: riderCash,
+            actual_cash: actual,
+            difference: actual != null && expected != null ? actual - expected : null,
             status: s.status,
             opened_at: s.openedAt?.toISOString() ?? null,
             closed_at: s.closedAt?.toISOString() ?? null,

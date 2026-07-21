@@ -605,7 +605,13 @@ export interface Shift {
   user_id: number;
   shift_number: string;
   opening_cash: number;
+  /** Opening cash + cash tenders + the balance riders still owe the till. */
   expected_cash?: number;
+  /** Cash counted in the drawer at close, excluding rider money. */
+  drawer_cash?: number | null;
+  /** Cash riders collected at the door and handed in, entered at close. */
+  rider_cash_collected?: number | null;
+  /** drawer_cash + rider_cash_collected. */
   actual_cash?: number;
   /** Sum of cash payments from completed orders in this shift. */
   cash_collected?: number;
