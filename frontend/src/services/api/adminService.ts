@@ -588,16 +588,20 @@ export const adminService = {
     await apiClient.delete(`/admin/users/${id}`);
   },
 
-  getOrders: async (params?: { branch_id?: number; status?: string; date_from?: string; date_to?: string; has_rider?: boolean }): Promise<Order[]> => {
+  getOrders: async (params?: { branch_id?: number; status?: string; date_from?: string; date_to?: string; has_rider?: boolean; page_size?: number }): Promise<Order[]> => {
     const search = new URLSearchParams();
     if (params?.branch_id) search.append('branch_id', String(params.branch_id));
     if (params?.status) search.append('status', params.status);
     if (params?.date_from) search.append('date_from', params.date_from);
     if (params?.date_to) search.append('date_to', params.date_to);
     if (params?.has_rider) search.append('has_rider', '1');
-    const query = search.toString();
-    const response = await apiClient.get(`/admin/orders${query ? '?' + query : ''}`);
-    return response.data;
+    // /admin/orders is server-paginated ({ data, total, ... }); callers here want a
+    // flat list for a scoped view (e.g. Deliveries = today's has-rider orders), so
+    // request a large page and unwrap the envelope's data array.
+    search.append('page_size', String(params?.page_size ?? 200));
+    const response = await apiClient.get(`/admin/orders?${search.toString()}`);
+    const body = response.data;
+    return Array.isArray(body) ? body : (body?.data ?? []);
   },
 
   getOrder: async (id: number): Promise<Order> => {
