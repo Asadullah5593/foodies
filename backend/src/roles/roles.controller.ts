@@ -106,7 +106,14 @@ export class RolesController {
     @ApiOperation({ summary: 'Create a new role (tenant users only)' })
     createRole(
         @CurrentUser() user: { id: number; tenantId: number | null },
-        @Body() dto: { name: string; slug: string; permission_ids?: number[] },
+        @Body()
+        dto: {
+            name: string;
+            slug: string;
+            permission_ids?: number[];
+            /** Days of order history this role may read; null = unlimited. */
+            order_history_days?: number | null;
+        },
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Only tenant users can create roles');
@@ -123,7 +130,13 @@ export class RolesController {
         @Param('id') id: string,
         @CurrentUser() user: { id: number; tenantId: number | null },
         @Body()
-        dto: { name?: string; slug?: string; permission_ids?: number[] },
+        dto: {
+            name?: string;
+            slug?: string;
+            permission_ids?: number[];
+            /** Days of order history this role may read; null = unlimited. */
+            order_history_days?: number | null;
+        },
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Only tenant users can update roles');

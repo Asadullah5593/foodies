@@ -15,6 +15,12 @@ export interface User {
   role_id?: number | null;
   /** Permission names for RBAC (e.g. orders:view, customer-display:view) */
   permissions?: string[];
+  /**
+   * How many days of order history this user may read (admin Orders module);
+   * null/undefined = unlimited. Enforced server-side; the UI clamps the date
+   * pickers to match.
+   */
+  order_history_days?: number | null;
   /** Brand lock: null = all brands; number[] = user only sees/sells these brands */
   allowed_brand_ids?: number[] | null;
   /** Convenience: the single locked brand id when allowed_brand_ids has exactly one */
