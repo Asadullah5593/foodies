@@ -71,31 +71,54 @@ interface PlacesLib {
   };
 }
 
+export interface LatLngLiteral {
+  lat: number;
+  lng: number;
+}
+
+export interface RawMap {
+  panTo(position: LatLngLiteral): void;
+  setCenter(position: LatLngLiteral): void;
+  addListener(event: string, handler: (e: { latLng?: RawLatLng | null }) => void): void;
+}
+
+export interface RawMarker {
+  setPosition(position: LatLngLiteral): void;
+  addListener(event: string, handler: (e: { latLng?: RawLatLng | null }) => void): void;
+}
+
+/** Everything we use off `google.maps` — Places plus the classes the pin map needs. */
+export interface MapsSdk {
+  places: PlacesLib;
+  Map: new (el: HTMLElement, options: Record<string, unknown>) => RawMap;
+  Marker: new (options: Record<string, unknown>) => RawMarker;
+}
+
 type MapsWindow = Window &
   Record<string, unknown> & {
-    google?: { maps?: { places?: PlacesLib } };
+    google?: { maps?: Partial<MapsSdk> };
   };
 
-let libPromise: Promise<PlacesLib> | null = null;
+let libPromise: Promise<MapsSdk> | null = null;
 
 /** Loads the Maps JS SDK once. Rejects (and allows a retry) if it never arrives. */
-export function loadPlacesLibrary(): Promise<PlacesLib> {
+export function loadMapsSdk(): Promise<MapsSdk> {
   if (libPromise) return libPromise;
   if (!placesConfigured) {
     return Promise.reject(new Error('VITE_GOOGLE_MAPS_API_KEY is not set'));
   }
 
   const w = window as unknown as MapsWindow;
-  const pending = new Promise<PlacesLib>((resolve, reject) => {
-    const ready = w.google?.maps?.places;
-    if (ready) {
-      resolve(ready);
+  const pending = new Promise<MapsSdk>((resolve, reject) => {
+    const sdk = w.google?.maps;
+    if (sdk?.places) {
+      resolve(sdk as MapsSdk);
       return;
     }
 
     w[CALLBACK] = () => {
-      const places = w.google?.maps?.places;
-      if (places) resolve(places);
+      const loaded = w.google?.maps;
+      if (loaded?.places) resolve(loaded as MapsSdk);
       else reject(new Error('Google Maps loaded without the Places library'));
     };
 
@@ -137,10 +160,10 @@ export function createPlacesSession(): PlacesSession {
 
   return {
     async suggest(input: string): Promise<AddressSuggestion[]> {
-      const lib = await loadPlacesLibrary();
-      if (!token) token = new lib.AutocompleteSessionToken();
+      const { places } = await loadMapsSdk();
+      if (!token) token = new places.AutocompleteSessionToken();
 
-      const { suggestions } = await lib.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+      const { suggestions } = await places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
         input,
         sessionToken: token,
         ...(COUNTRY ? { includedRegionCodes: [COUNTRY] } : {}),

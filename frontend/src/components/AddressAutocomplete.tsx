@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
+import DeliveryPinMap from './DeliveryPinMap';
 import {
   AddressSuggestion,
   ResolvedPlace,
@@ -180,12 +181,19 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           Address search unavailable — the order will be sent without map coordinates.
         </p>
       ) : picked ? (
-        <p className="mt-1 text-xs text-green-700">
-          ✓ Location pinned ({picked.latitude.toFixed(6)}, {picked.longitude.toFixed(6)})
-          {editedAfterPick && (
-            <span className="text-amber-600"> · address edited after selection; pin is from the picked place</span>
-          )}
-        </p>
+        <>
+          <p className="mt-1 text-xs text-green-700">
+            ✓ Location pinned ({picked.latitude.toFixed(6)}, {picked.longitude.toFixed(6)})
+            {editedAfterPick && (
+              <span className="text-amber-600"> · address edited after selection; pin is from the picked place</span>
+            )}
+          </p>
+          <DeliveryPinMap
+            latitude={picked.latitude}
+            longitude={picked.longitude}
+            onMove={({ lat, lng }) => onPick({ ...picked, latitude: lat, longitude: lng })}
+          />
+        </>
       ) : (
         <p className="mt-1 text-xs text-amber-600">
           Pick an address from the suggestions so the rider gets exact coordinates.

@@ -46,8 +46,16 @@ pm2 restart foodies-backend
 # 3) Frontend: build with same-origin API and publish to nginx web root
 cd ~/foodies/frontend
 npm install
-echo "VITE_API_URL=/api" > .env.production
+# Write ALL prod vars together — this file is overwritten, so a partial write
+# silently drops the Google key and the POS loses delivery coordinates.
+cat > .env.production <<'EOF'
+VITE_API_URL=/api
+VITE_GOOGLE_MAPS_API_KEY=<POS browser key>
+VITE_GOOGLE_PLACES_COUNTRY=pk
+EOF
 npm run build
+# Vite inlines env vars at build time — no output here means the key is missing.
+grep -rl "AIzaSy" dist/assets | head -1
 
 sudo rsync -a --delete dist/ /var/www/foodies/
 sudo chown -R www-data:www-data /var/www/foodies
@@ -481,7 +489,7 @@ git checkout <GOOD_COMMIT_HASH>
 
 # rebuild + restart
 cd ~/foodies/backend && npm install --legacy-peer-deps && npm run build && pm2 restart foodies-backend
-cd ~/foodies/frontend && npm install && echo "VITE_API_URL=/api" > .env.production && npm run build
+cd ~/foodies/frontend && npm install && npm run build   # keep .env.production as-is (see step 3)
 sudo rsync -a --delete ~/foodies/frontend/dist/ /var/www/foodies/
 sudo systemctl reload nginx
 ```
