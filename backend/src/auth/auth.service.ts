@@ -159,6 +159,39 @@ export class AuthService {
      * brands (every branch_users row carries a brand_id). Mirrors
      * RoleAccessGuard.getAllowedBrandIds so the frontend can adapt its UI.
      */
+    /**
+     * Order-history window (days) across the user's roles; null = unlimited.
+     * Mirrors RoleAccessGuard.getOrderHistoryDays so the frontend can clamp the
+     * date pickers to the same window the API enforces.
+     */
+    private async getOrderHistoryDaysForUser(
+        userId: number,
+        tenantId: number | null,
+    ): Promise<number | null> {
+        if (tenantId == null) return null;
+        const rows = (await this.dataSource.query(
+            `SELECT bool_or(r.order_history_days IS NULL) AS has_unlimited,
+                    MAX(r.order_history_days) AS max_days
+             FROM roles r
+             WHERE r.id IN (
+                 SELECT role_id FROM tenant_users
+                 WHERE user_id = $1 AND tenant_id = $2 AND role_id IS NOT NULL
+                 UNION
+                 SELECT role_id FROM branch_users WHERE user_id = $1
+             )`,
+            [userId, tenantId],
+        )) as unknown as {
+            has_unlimited: boolean | null;
+            max_days: number | string | null;
+        }[];
+        const row = rows[0];
+        if (!row || row.has_unlimited !== false) return null;
+        const maxDays = row.max_days == null ? null : Number(row.max_days);
+        return maxDays != null && Number.isFinite(maxDays) && maxDays > 0
+            ? maxDays
+            : null;
+    }
+
     private async getAllowedBrandIdsForUser(
         userId: number,
         permissions: string[],
@@ -207,6 +240,10 @@ export class AuthService {
             permissions,
         );
         const isOwner = await this.checkIsOwner(user.id, user.tenantId);
+        const orderHistoryDays = await this.getOrderHistoryDaysForUser(
+            user.id,
+            user.tenantId,
+        );
         return {
             user: {
                 id: user.id,
@@ -222,6 +259,7 @@ export class AuthService {
                 allowed_brand_ids: allowedBrandIds,
                 brand_id:
                     allowedBrandIds?.length === 1 ? allowedBrandIds[0] : null,
+                order_history_days: orderHistoryDays,
             },
             token,
         };
@@ -245,6 +283,10 @@ export class AuthService {
             permissions,
         );
         const isOwner = await this.checkIsOwner(user.id, tenantId);
+        const orderHistoryDays = await this.getOrderHistoryDaysForUser(
+            user.id,
+            tenantId,
+        );
         return {
             id: user.id,
             name: user.name,
@@ -256,6 +298,7 @@ export class AuthService {
             is_owner: isOwner,
             is_rider: isRider,
             permissions,
+            order_history_days: orderHistoryDays,
             allowed_brand_ids: allowedBrandIds,
             brand_id: allowedBrandIds?.length === 1 ? allowedBrandIds[0] : null,
         };

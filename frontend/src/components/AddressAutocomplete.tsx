@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
-import DeliveryPinMap from './DeliveryPinMap';
+import DeliveryLocationModal from './DeliveryLocationModal';
 import {
   AddressSuggestion,
   ResolvedPlace,
   createPlacesSession,
+  onMapsAuthFailure,
   placesConfigured,
 } from '../utils/googlePlaces';
 
@@ -39,8 +40,13 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   const [activeIndex, setActiveIndex] = useState(0);
   const [resolving, setResolving] = useState(false);
   const [failed, setFailed] = useState(!placesConfigured);
+  const [mapOpen, setMapOpen] = useState(false);
+  // Maps JS can be rejected (bad key / referrer) while autocomplete still works,
+  // so track it separately: no point throwing up a full-screen empty map.
+  const [mapUsable, setMapUsable] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const session = useRef(createPlacesSession());
+  const selectSeq = useRef(0);
 
   const debouncedQuery = useDebouncedValue(query, 300);
   const canSearch = !failed && !disabled;
@@ -65,6 +71,15 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     if (!placesConfigured) onUnavailable?.();
   }, [onUnavailable]);
 
+  useEffect(
+    () =>
+      onMapsAuthFailure(() => {
+        setMapUsable(false);
+        setMapOpen(false);
+      }),
+    [],
+  );
+
   useEffect(() => {
     setActiveIndex(0);
   }, [debouncedQuery]);
@@ -83,17 +98,29 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   }, []);
 
   const select = async (suggestion: AddressSuggestion) => {
+    // Last pick wins. A slow details lookup that lands after the cashier has
+    // already chosen a different address would otherwise overwrite the newer
+    // one — putting the rider's pin on an address nobody selected.
+    const seq = ++selectSeq.current;
     setOpen(false);
     setResolving(true);
     try {
       const place = await suggestion.resolve();
+      if (seq !== selectSeq.current) return;
       onChange(place.address);
+      // Commit Google's coordinates straight away. The map that opens next only
+      // ever refines them, so dismissing it still leaves the order with a
+      // location — and the checkout gate that requires one stays satisfied.
       onPick(place);
+      // Opened here rather than from an effect on `picked`: confirming the map
+      // calls onPick again, which an effect would read as "open it again".
+      if (mapUsable) setMapOpen(true);
     } catch {
+      if (seq !== selectSeq.current) return;
       // Coordinates failed; keep the readable text so the order can still go out.
       onChange(suggestion.description);
     } finally {
-      setResolving(false);
+      if (seq === selectSeq.current) setResolving(false);
     }
   };
 
@@ -188,23 +215,33 @@ const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
         </p>
       )}
 
-      {/* Rendered outside the branches above so picking another address moves the
-          existing map instead of tearing it down — a rebuild costs another
-          Dynamic Maps load and flashes the panel. */}
       {!failed && picked && (
         <>
-          {!resolving && (
-            <p className="mt-1 text-xs text-green-700">
-              ✓ Location pinned ({picked.latitude.toFixed(6)}, {picked.longitude.toFixed(6)})
-              {editedAfterPick && (
-                <span className="text-amber-600"> · address edited after selection; pin is from the picked place</span>
-              )}
-            </p>
-          )}
-          <DeliveryPinMap
-            latitude={picked.latitude}
-            longitude={picked.longitude}
-            onMove={({ lat, lng }) => onPick({ ...picked, latitude: lat, longitude: lng })}
+          <p className="mt-1 text-xs text-green-700">
+            ✓ Location pinned ({picked.latitude.toFixed(6)}, {picked.longitude.toFixed(6)})
+            {editedAfterPick && (
+              <span className="text-amber-600"> · address edited after selection; pin is from the picked place</span>
+            )}
+            {mapUsable && (
+              // Dismissing the map must not strand the cashier without a way back to it.
+              <button
+                type="button"
+                onClick={() => setMapOpen(true)}
+                className="ml-2 font-semibold text-foodies-primary underline"
+              >
+                Adjust pin
+              </button>
+            )}
+          </p>
+          <DeliveryLocationModal
+            open={mapOpen}
+            place={picked}
+            onConfirm={({ lat, lng }) => {
+              // Spread `picked` so address and placeId survive the adjustment.
+              onPick({ ...picked, latitude: lat, longitude: lng });
+              setMapOpen(false);
+            }}
+            onCancel={() => setMapOpen(false)}
           />
         </>
       )}

@@ -62,13 +62,26 @@ degrades to a plain address box.
   keeps the counter working when Google is unreachable.
 - Editing the text after picking keeps the pin (cashiers append house/flat
   numbers) and shows a note that the address was edited.
-- Once an address is picked, a map appears with a **draggable pin**. Google
-  usually returns the centre of a street or block, so dragging (or tapping the
-  map) lets the cashier move the drop point to the actual gate; the order takes
-  the dragged coordinates and the address text is left alone. The map mounts
-  only after a pick — it bills the **Dynamic Maps** SKU, so that is one map load
-  per delivery order rather than one per keystroke. If the map fails to build,
-  it is hidden and the picked coordinates still go out.
+- Picking a suggestion opens a **full-screen map** (`DeliveryLocationModal`)
+  with a **draggable pin**. Google usually returns the centre of a street or
+  block, so dragging (or tapping the map) moves the drop point to the actual
+  gate. "Use this location" commits the adjusted coordinates; Cancel, Escape and
+  the close button discard only the adjustment. An **Adjust pin** link beside the
+  pinned coordinates reopens it.
+- Google's coordinates are committed the moment the suggestion is picked, before
+  the map opens. Dismissing the map therefore never leaves a delivery order
+  without a location, and never blocks checkout.
+- The modal is portaled to `document.body` at `z-[70]` — it opens from inside the
+  Checkout modal (`z-50`), whose animated panel carries a transform, and a
+  `fixed` element inside a transformed ancestor is clipped to that ancestor
+  instead of filling the viewport. It also shields the POS window hotkeys
+  (Escape/Ctrl+Enter/Enter/`/` in `OrderTaking.tsx`) with a capture-phase
+  listener, so Escape closes the map rather than tearing down Checkout beneath
+  it, and it never touches `document.body.style.overflow` (Checkout owns that
+  lock and it is not refcounted).
+- The map mounts only while the modal is open — it bills the **Dynamic Maps**
+  SKU, so a straightforward order costs one map load. If the map fails to build,
+  the modal says so and the picked coordinates still go out.
 
 ## Where the coordinates go
 

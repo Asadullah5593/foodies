@@ -211,6 +211,19 @@ export const Permissions = {
     ORDERS_UPDATE_STATUS: 'orders:update-status',
     ORDERS_ASSIGN_RIDER: 'orders:assign-rider',
 
+    /*
+     * Order-history filter controls. Without these the Orders page still shows
+     * the date range (every role can narrow by date), but the other filters are
+     * hidden — e.g. a brand cashier who may only pick a date. Backfilled onto
+     * every role that already had orders:view so nothing is lost.
+     */
+    ORDERS_FILTER_BRANCH: 'orders:filter:branch',
+    ORDERS_FILTER_BRAND: 'orders:filter:brand',
+    ORDERS_FILTER_ORDER_TYPE: 'orders:filter:order-type',
+    ORDERS_FILTER_SOURCE: 'orders:filter:source',
+    ORDERS_FILTER_STATUS: 'orders:filter:status',
+    ORDERS_FILTER_SEARCH: 'orders:filter:search',
+
     // — Delivery tiers (umbrella: deliveries:manage) —
     DELIVERY_TIERS_VIEW: 'delivery-tiers:view',
     DELIVERY_TIERS_EDIT: 'delivery-tiers:edit',

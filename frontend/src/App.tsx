@@ -759,6 +759,31 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </span>
             </div>
             <div className="flex items-center gap-2">
+              {/* Quick jumps between the two screens floor staff live in.
+                  Gated the same way as the sidebar, so a user without the
+                  permission never sees a shortcut that would bounce them. */}
+              {canAccessPath(user, '/pos/orders') && (
+                <Link
+                  to="/pos/orders"
+                  onClick={() => handleNavLinkClick('/pos/orders')}
+                  className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                  title="POS"
+                  aria-label="Go to POS"
+                >
+                  <MdOutlineShoppingCart className="h-5 w-5" />
+                </Link>
+              )}
+              {canAccessPath(user, '/admin/orders') && (
+                <Link
+                  to="/admin/orders"
+                  onClick={() => handleNavLinkClick('/admin/orders')}
+                  className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                  title="Orders"
+                  aria-label="Go to Orders"
+                >
+                  <MdOutlineReceiptLong className="h-5 w-5" />
+                </Link>
+              )}
               <NotificationBell />
               <button
                 type="button"

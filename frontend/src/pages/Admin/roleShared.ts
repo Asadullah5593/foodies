@@ -11,6 +11,12 @@ export interface Role {
   name: string;
   slug: string;
   tenant_id?: number | null;
+  /**
+   * Days of order history this role may read; null = unlimited. Read back from
+   * the API as camelCase; written as `order_history_days` (same split as
+   * `permissions` / `permission_ids`).
+   */
+  orderHistoryDays?: number | null;
   permissions?: Permission[];
 }
 

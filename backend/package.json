@@ -26,6 +26,7 @@
     "seed:inventory": "ts-node -r tsconfig-paths/register src/seed-inventory.ts",
     "seed:uoms": "ts-node -r tsconfig-paths/register src/seed-uoms.ts",
     "seed:brand-admins": "ts-node -r tsconfig-paths/register src/seed-brand-admins.ts",
+    "seed:client-users": "ts-node -r tsconfig-paths/register src/seed-client-users.ts",
     "seed:invoice-templates": "ts-node -r tsconfig-paths/register src/seed-invoice-templates.ts",
     "seed:reset-password": "ts-node -r tsconfig-paths/register src/reset-demo-password.ts",
     "typeorm": "node --loader ts-node/esm ./node_modules/typeorm/cli.js -d src/data-source.ts",

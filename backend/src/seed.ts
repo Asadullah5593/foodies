@@ -338,6 +338,14 @@ async function seed() {
             'deliveries:view',
             'deliveries:manage',
         ],
+        // Order-history filter controls (OrderHistoryWindowAndFilters migration):
+        // anyone who could already view orders keeps every filter.
+        'orders:filter:branch': ['orders:view'],
+        'orders:filter:brand': ['orders:view'],
+        'orders:filter:order-type': ['orders:view'],
+        'orders:filter:source': ['orders:view'],
+        'orders:filter:status': ['orders:view'],
+        'orders:filter:search': ['orders:view'],
         'inventory-items:view': ['inventory:view', 'inventory:view:brand'],
         'inventory-items:create': ['inventory:view'],
         'inventory-items:edit': ['inventory:view'],

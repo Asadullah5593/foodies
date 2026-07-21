@@ -236,6 +236,29 @@ Assign an umbrella for full module control, or a granular subset (e.g.
 `menu:create` without `menu:delete`) for a fine-grained role. Owner and
 Super Admin hold every permission.
 
+#### Order-history scope (window + filters)
+
+Two extra controls shape what a role sees in the admin Orders module:
+
+- **`roles.order_history_days`** — how far back the role may read orders;
+  `null` = unlimited. It counts calendar days inclusive of today (7 → today plus
+  the previous 6). Set it on the role form ("Order history", blank = unlimited).
+  A user with several roles gets the **most permissive** window (any unlimited
+  role wins, otherwise the largest value). Enforced **server-side** in
+  `findAllAdmin` (a SQL floor applied on top of any client `date_from`, so the
+  range cannot be widened by hand) and in `findForAdmin` (fetching an older
+  order by id returns 403). The UI mirrors it as a `min` on the date pickers.
+- **`orders:filter:*` permissions** — `branch`, `brand`, `order-type`, `source`,
+  `status`, `search`. Each hides/shows its control on the Orders page; the date
+  range is always available. A role with none of them gets a date-only filter
+  bar. These were backfilled onto every role that already held `orders:view`,
+  so no existing role lost a filter.
+
+Typical shapes: a brand cashier → `orders:create` + `orders:view`, no
+`orders:filter:*`, `order_history_days = 7`; a call-centre agent → same plus
+`all-branches:access` and `order_history_days = 30`; a branch manager → add
+`orders:filter:brand` (and others as needed) with `order_history_days = 30`.
+
 ### Branch Users (branch assignments)
 
 - List users assigned to a branch (or “all” visible branches).

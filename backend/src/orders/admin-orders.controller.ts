@@ -128,6 +128,7 @@ export class AdminOrdersController {
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
             allowedBrandIds?: number[] | null;
+            orderHistoryDays?: number | null;
         },
         @Query('branch_id') branchId: string,
         @Query('brand_id') brandId: string,
@@ -159,6 +160,7 @@ export class AdminOrdersController {
             },
             user.allowedBranchIds,
             user.allowedBrandIds,
+            user.orderHistoryDays,
         );
     }
 
@@ -171,6 +173,7 @@ export class AdminOrdersController {
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
             allowedBrandIds?: number[] | null;
+            orderHistoryDays?: number | null;
         },
     ) {
         return this.service.findForAdmin(
@@ -178,6 +181,7 @@ export class AdminOrdersController {
             user.tenantId,
             user.allowedBranchIds,
             user.allowedBrandIds,
+            user.orderHistoryDays,
         );
     }
 

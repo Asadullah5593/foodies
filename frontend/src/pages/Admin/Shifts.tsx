@@ -175,7 +175,7 @@ const Shifts: React.FC = () => {
   const [detailShiftId, setDetailShiftId] = useState<number | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [formData, setFormData] = useState({ branch_id: '', brand_id: '', opening_cash: '', notes: '' });
-  const [closeFormData, setCloseFormData] = useState({ actual_cash: '', notes: '' });
+  const [closeFormData, setCloseFormData] = useState({ actual_cash: '', rider_cash: '', notes: '' });
 
   // Open-shift durations tick along once a minute.
   const [, setNowTick] = useState(0);
@@ -305,14 +305,23 @@ const Shifts: React.FC = () => {
   });
 
   const closeMutation = useMutation({
-    mutationFn: ({ id, actualCash, notes }: { id: number; actualCash: number; notes?: string }) =>
-      adminService.closeShift(id, actualCash, notes),
+    mutationFn: ({
+      id,
+      actualCash,
+      riderCash,
+      notes,
+    }: {
+      id: number;
+      actualCash: number;
+      riderCash?: number;
+      notes?: string;
+    }) => adminService.closeShift(id, actualCash, riderCash, notes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shifts'] });
       queryClient.invalidateQueries({ queryKey: ['shift-detail'] });
       setShowCloseForm(false);
       setSelectedShift(null);
-      setCloseFormData({ actual_cash: '', notes: '' });
+      setCloseFormData({ actual_cash: '', rider_cash: '', notes: '' });
       toast.success('Shift closed successfully!');
     },
     onError: (error: any) => {
@@ -386,13 +395,14 @@ const Shifts: React.FC = () => {
     closeMutation.mutate({
       id: selectedShift.id,
       actualCash: parseFloat(closeFormData.actual_cash),
+      riderCash: closeFormData.rider_cash === '' ? 0 : parseFloat(closeFormData.rider_cash),
       notes: closeFormData.notes || undefined,
     });
   };
 
   const startClose = (shift: Shift) => {
     setSelectedShift(shift);
-    setCloseFormData({ actual_cash: '', notes: '' });
+    setCloseFormData({ actual_cash: '', rider_cash: '', notes: '' });
     setShowOpenForm(false);
     setDetailShiftId(null);
     setShowCloseForm(true);
@@ -503,12 +513,22 @@ const Shifts: React.FC = () => {
   // Close modal: expected drawer cash = opening float + cash collected. The
   // orders fetch carries the freshest figure; the list row's value stands in
   // while it loads (same backend computation).
+  // Prefer the server's figure: it also counts delivery orders the riders have
+  // not handed cash in for yet, which this page cannot see. Falls back to the
+  // local sum only if the shift payload predates that field.
   const closeExpectedCash =
-    selectedShift != null
-      ? Number(selectedShift.opening_cash) +
-        Number(shiftOrders?.cash_collected ?? selectedShift.cash_collected ?? 0)
-      : null;
-  const closeActualNum = parseFloat(closeFormData.actual_cash);
+    selectedShift == null
+      ? null
+      : selectedShift.expected_cash != null
+        ? Number(selectedShift.expected_cash)
+        : Number(selectedShift.opening_cash) +
+          Number(shiftOrders?.cash_collected ?? selectedShift.cash_collected ?? 0);
+  const closeDrawerNum = parseFloat(closeFormData.actual_cash);
+  const closeRiderNum =
+    closeFormData.rider_cash === '' ? 0 : parseFloat(closeFormData.rider_cash);
+  // Actual cash is the drawer count plus the cash riders handed to the till.
+  const closeActualNum =
+    (isNaN(closeDrawerNum) ? NaN : closeDrawerNum) + (isNaN(closeRiderNum) ? 0 : closeRiderNum);
   const closeVariance = (() => {
     if (closeExpectedCash == null || closeFormData.actual_cash === '' || isNaN(closeActualNum)) return null;
     const diff = closeActualNum - closeExpectedCash;
@@ -1270,7 +1290,7 @@ const Shifts: React.FC = () => {
                 </div>
                 <div>
                   <label className="mb-[7px] block text-[12.5px] font-bold text-[#374151] dark:text-slate-200">
-                    Actual cash <span className="text-[#DC2A2A]">*</span>
+                    Cash in drawer <span className="text-[#DC2A2A]">*</span>
                   </label>
                   <input
                     type="number"
@@ -1282,6 +1302,29 @@ const Shifts: React.FC = () => {
                     placeholder="0.00"
                     className="w-full rounded-[10px] border-[1.5px] border-[#E2E5EA] px-[13px] py-[11px] text-sm tabular-nums text-[#1A1D24] outline-none focus:border-[#DC2A2A] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                   />
+                  <p className="mt-1.5 text-[11.5px] text-[#8A92A0]">Counted in the till, excluding rider money.</p>
+                </div>
+                <div>
+                  <label className="mb-[7px] block text-[12.5px] font-bold text-[#374151] dark:text-slate-200">
+                    Rider cash
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={closeFormData.rider_cash}
+                    onChange={(e) => setCloseFormData({ ...closeFormData, rider_cash: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full rounded-[10px] border-[1.5px] border-[#E2E5EA] px-[13px] py-[11px] text-sm tabular-nums text-[#1A1D24] outline-none focus:border-[#DC2A2A] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                  />
+                  <p className="mt-1.5 text-[11.5px] text-[#8A92A0]">
+                    Collected by riders at the door and handed to the till.
+                  </p>
+                  {closeFormData.actual_cash !== '' && !isNaN(closeActualNum) && (
+                    <div className="mt-2 text-[12.5px] font-bold text-[#374151] dark:text-slate-200">
+                      Total counted: {fmtMoney(closeActualNum)}
+                    </div>
+                  )}
                   {closeVariance && (
                     <div
                       className="mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] font-extrabold"

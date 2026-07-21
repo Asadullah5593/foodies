@@ -13,6 +13,7 @@ import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
 import PaginationBar from '../../components/PaginationBar';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { useHasPermission } from '../../hooks/useHasPermission';
+import { useAuth } from '../../contexts/AuthContext';
 import { ORDER_SOURCES, ORDER_SOURCE_LABEL, orderSourceLabel } from '../../utils/orderSources';
 import { deliveryStatusLabel } from '../../lib/deliveryStatus';
 
@@ -147,8 +148,8 @@ const ORDERS_DEFAULT_PAGE_SIZE = 25;
 
 /* --------------------------------------------------------------- helpers -- */
 
-function localDateYYYYMMDD(): string {
-  const d = new Date();
+function localDateYYYYMMDD(date?: Date): string {
+  const d = date ?? new Date();
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
@@ -236,7 +237,24 @@ const SOURCE_BADGE: Record<string, string> = {
 
 const Orders: React.FC = () => {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const canAssignRider = useHasPermission(['orders:assign-rider', 'customer-display:update']);
+  const canFilterBranch = useHasPermission('orders:filter:branch');
+  const canFilterBrand = useHasPermission('orders:filter:brand');
+  const canFilterOrderType = useHasPermission('orders:filter:order-type');
+  const canFilterSource = useHasPermission('orders:filter:source');
+  const canFilterStatus = useHasPermission('orders:filter:status');
+  const canFilterSearch = useHasPermission('orders:filter:search');
+  // Roles can be limited to the last N days; the server enforces the same floor,
+  // so this only stops the picker offering dates that would return nothing.
+  const historyDays = user?.order_history_days ?? null;
+  const minDate = useMemo(() => {
+    if (historyDays == null || historyDays < 1) return undefined;
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - (Math.floor(historyDays) - 1));
+    return localDateYYYYMMDD(d);
+  }, [historyDays]);
   const [searchParams, setSearchParams] = useSearchParams();
   const [ordersPage, setOrdersPage] = useState(1);
   const [pageSize, setPageSize] = useState(ORDERS_DEFAULT_PAGE_SIZE);
@@ -949,7 +967,7 @@ const Orders: React.FC = () => {
 
       {/* Filters row */}
       <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-[14px] border border-gray-200 bg-white px-3.5 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <div className="flex basis-full items-center gap-2 rounded-[10px] border-[1.5px] border-gray-100 bg-gray-50 px-3 dark:border-slate-600 dark:bg-slate-700 lg:min-w-[200px] lg:flex-1 lg:basis-0">
+        {canFilterSearch && <div className="flex basis-full items-center gap-2 rounded-[10px] border-[1.5px] border-gray-100 bg-gray-50 px-3 dark:border-slate-600 dark:bg-slate-700 lg:min-w-[200px] lg:flex-1 lg:basis-0">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="text-gray-400">
             <circle cx="7" cy="7" r="4.5" /><line x1="10.5" y1="10.5" x2="14" y2="14" />
           </svg>
@@ -959,27 +977,27 @@ const Orders: React.FC = () => {
             placeholder="Search order #, customer"
             className="flex-1 border-none bg-transparent py-3 text-[15px] text-gray-800 outline-none dark:text-slate-100"
           />
-        </div>
-        <select value={branchId} onChange={(e) => setFilter('branch_id', e.target.value)} className={selectCls} aria-label="Branch">
+        </div>}
+        {canFilterBranch && <select value={branchId} onChange={(e) => setFilter('branch_id', e.target.value)} className={selectCls} aria-label="Branch">
           <option value="">All branches</option>
           {(branches ?? []).map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
-        </select>
-        <select value={brandId} onChange={(e) => setFilter('brand_id', e.target.value)} className={selectCls} aria-label="Brand">
+        </select>}
+        {canFilterBrand && <select value={brandId} onChange={(e) => setFilter('brand_id', e.target.value)} className={selectCls} aria-label="Brand">
           <option value="">All brands</option>
           {(brands ?? []).map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
-        </select>
-        <select value={orderType} onChange={(e) => setFilter('order_type', e.target.value)} className={selectCls} aria-label="Order type">
+        </select>}
+        {canFilterOrderType && <select value={orderType} onChange={(e) => setFilter('order_type', e.target.value)} className={selectCls} aria-label="Order type">
           <option value="">All types</option>
           <option value="delivery">Delivery</option>
           <option value="dine_in">Dine in</option>
           <option value="takeaway">Takeaway</option>
-        </select>
-        <select value={source} onChange={(e) => setFilter('source', e.target.value)} className={selectCls} aria-label="Source">
+        </select>}
+        {canFilterSource && <select value={source} onChange={(e) => setFilter('source', e.target.value)} className={selectCls} aria-label="Source">
           <option value="">All sources</option>
           {ORDER_SOURCES.map((s) => <option key={s} value={s}>{ORDER_SOURCE_LABEL[s]}</option>)}
-        </select>
-        <input type="date" value={dateFrom} onChange={(e) => setFilter('date_from', e.target.value)} className={selectCls} aria-label="Date from" />
-        <input type="date" value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />
+        </select>}
+        <input type="date" min={minDate} value={dateFrom} onChange={(e) => setFilter('date_from', e.target.value)} className={selectCls} aria-label="Date from" />
+        <input type="date" min={minDate} value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />
         <button
           onClick={() => {
             const t = localDateYYYYMMDD();
@@ -993,7 +1011,7 @@ const Orders: React.FC = () => {
       </div>
 
       {/* Status tiles */}
-      <div className="mb-5 flex flex-wrap gap-2">
+      {canFilterStatus && <div className="mb-5 flex flex-wrap gap-2">
         {tiles.map((t) => {
           const active = status === t.key || (t.key === '' && status === '');
           const isAlert = 'alert' in t && t.alert;
@@ -1019,7 +1037,7 @@ const Orders: React.FC = () => {
             </button>
           );
         })}
-      </div>
+      </div>}
 
       {/* Table: data grid on xl+, stacked cards below */}
       <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
