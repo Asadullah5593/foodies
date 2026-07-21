@@ -81,6 +81,13 @@ export interface InvoiceTemplateConfig {
     showLineNotes: boolean;
     showUnitPrice: boolean;
     /**
+     * Where a deal's price prints: 'both' = on the deal name line AND its
+     * component lines (legacy behavior), 'deal_only' = only on the deal name
+     * (components list without prices), 'items_only' = only on the component
+     * lines (deal name carries no price).
+     */
+    dealPriceDisplay: 'both' | 'deal_only' | 'items_only';
+    /**
      * How a zero amount prints on modifier / add-on / deal-component lines:
      * 'zero' → "0.00", 'included' → the word "Included", 'blank' → empty cell.
      */
@@ -167,6 +174,7 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     showModifierPlus: true,
     showLineNotes: false,
     showUnitPrice: true,
+    dealPriceDisplay: 'both',
     zeroAmountDisplay: 'zero',
     showFreeItems: true,
 
@@ -225,6 +233,7 @@ const NUMERIC_KEYS: Record<string, { min: number; max: number }> = {
 
 /** Enum config keys and their allowed values (anything else is dropped). */
 const ENUM_KEYS: Record<string, readonly string[]> = {
+    dealPriceDisplay: ['both', 'deal_only', 'items_only'],
     zeroAmountDisplay: ['zero', 'included', 'blank'],
 };
 

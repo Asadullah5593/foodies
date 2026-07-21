@@ -219,11 +219,15 @@ function itemsHtml(
         const sub = g.lines
           .map((l) => {
             const v = cfg.showVariant && l.variant_name ? `<span data-field="showVariant"> (${esc(l.variant_name)})</span>` : '';
-            // Zero-priced bundle components follow zeroAmountDisplay.
-            return `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${zeroMoney(l.subtotal)}</span></div>`;
+            // Zero-priced bundle components follow zeroAmountDisplay; in
+            // deal_only mode component prices are suppressed entirely.
+            const amount = cfg.dealPriceDisplay === 'deal_only' ? '' : zeroMoney(l.subtotal);
+            return `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${amount}</span></div>`;
           })
           .join('');
-        return row(`<strong>${esc(name)}</strong>`, money(dealTotal)) + sub;
+        // items_only: the deal-name line prints without its total.
+        const dealAmount = cfg.dealPriceDisplay === 'items_only' ? '' : money(dealTotal);
+        return row(`<strong>${esc(name)}</strong>`, dealAmount, '', 'dealPriceDisplay') + sub;
       }
       return g.lines
         .map((l) => {
@@ -336,15 +340,18 @@ function itemsTableHtml(
       if (g.dealId != null && g.lines.length > 0) {
         const dealTotal = g.lines.reduce((s, l) => s + Number(l.subtotal), 0);
         const name = g.lines.find((l) => l.deal_name)?.deal_name ?? 'Deal';
-        const head = cell(`<strong>${esc(name)}</strong>`, '', '', num(dealTotal), 'dealrow');
+        // items_only: no total on the deal row; deal_only: components print
+        // without rate/amount (their quantity stays).
+        const dealAmount = cfg.dealPriceDisplay === 'items_only' ? '' : num(dealTotal);
+        const head = cell(`<strong>${esc(name)}</strong>`, '', '', dealAmount, 'dealrow', 'dealPriceDisplay');
         const comps = g.lines
           .map((l) => {
             // Zero-priced bundle components follow zeroAmountDisplay.
             return cell(
               `<span class="ind">${esc(l.name_snapshot ?? 'Item')}${variantHtml(l.variant_name)}</span>`,
               String(l.quantity),
-              zeroRate(l.unit_price, l.subtotal),
-              zeroNum(l.subtotal),
+              cfg.dealPriceDisplay === 'deal_only' ? '' : zeroRate(l.unit_price, l.subtotal),
+              cfg.dealPriceDisplay === 'deal_only' ? '' : zeroNum(l.subtotal),
             );
           })
           .join('');
