@@ -545,7 +545,9 @@ const BranchEdit: React.FC = () => {
             </div>
             <div>
               <label className={labelClass}>Rider premises radius (m)</label>
-              <input type="number" step="10" min="1" value={formData.premises_radius_m} onChange={(e) => setFormData({ ...formData, premises_radius_m: e.target.value })} className={inputClass} />
+              {/* step=1, not 10: HTML validates steps from `min`, so step=10 with
+                  min=1 would only accept 1, 11, 21 … and reject round values like 500. */}
+              <input type="number" step="1" min="1" value={formData.premises_radius_m} onChange={(e) => setFormData({ ...formData, premises_radius_m: e.target.value })} className={inputClass} />
               <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                 A rider counts as available only while inside this radius of the branch — for
                 automatic dispatch and manual assignment alike. Requires the branch latitude and
