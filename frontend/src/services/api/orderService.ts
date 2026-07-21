@@ -9,6 +9,9 @@ export interface CreateOrderRequest {
   customer_name: string;
   customer_phone: string;
   delivery_address?: string;
+  /** Drop-off coordinates from the Google place the cashier picked. */
+  latitude?: number;
+  longitude?: number;
   items: Array<
     | {
         menu_item_id: number;

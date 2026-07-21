@@ -19,6 +19,7 @@ If you change any of those paths/ports, update the commands below accordingly.
 - **Do not develop on EC2.** Only `git pull` and build/restart services. Don’t commit/push from EC2.
 - **Backend restarts + migrations are the risky part.** Always take a DB backup before schema changes.
 - **Frontend “not reflecting” is usually because Nginx serves `/var/www/foodies`,** so you must publish your `dist/` there after each build.
+- **The database is on RDS, not on the EC2 box.** There is also an old, unused `foodies` database in the EC2's local PostgreSQL, left over from an earlier setup. `sudo -u postgres psql -d foodies` connects to **that stale copy** — it looks plausible (same name, same tables) but is months out of date. Every DB command in this runbook therefore connects to RDS explicitly. See **Database connection** below and never use `sudo -u postgres` for anything production.
 
 ---
 
@@ -180,13 +181,77 @@ In `backend/src/app.module.ts`, TypeORM is configured with:
 
 Meaning: **the API will run pending migrations automatically when it starts**.
 
-### Recommended workflow before a deploy that includes migrations
+### Database connection
 
-1) **Backup the DB**
+The app's credentials in `backend/.env` are the single source of truth for which
+database is production. Load them into the standard `PG*` variables once per
+shell and every `psql` / `pg_dump` / `pg_restore` below works with no flags:
 
 ```bash
-sudo -u postgres pg_dump -Fc -d foodies > /tmp/foodies_$(date +%F_%H%M).dump
-ls -lah /tmp/foodies_*.dump | tail -n 1
+cd ~/foodies/backend
+export PGHOST=$(grep -E '^DB_HOST='     .env | cut -d= -f2-)
+export PGPORT=$(grep -E '^DB_PORT='     .env | cut -d= -f2-)
+export PGUSER=$(grep -E '^DB_USERNAME=' .env | cut -d= -f2-)
+export PGDATABASE=$(grep -E '^DB_DATABASE=' .env | cut -d= -f2-)
+export PGPASSWORD=$(grep -E '^DB_PASSWORD=' .env | cut -d= -f2-)
+export PATH=/usr/lib/postgresql/17/bin:$PATH   # see client version note
+```
+
+Confirm you are pointed at RDS, not the stale local database:
+
+```bash
+psql -c "SELECT current_database(), inet_server_addr();"
+```
+
+`inet_server_addr()` must show an RDS address. If it is empty or `127.0.0.1`,
+your `PG*` variables did not load and you are on the local decoy — stop and fix
+it before running anything destructive.
+
+**Client version.** RDS runs PostgreSQL 17; Ubuntu 24.04 ships the v16 client,
+and `pg_dump` refuses to dump a newer server (`aborting because of server version
+mismatch`). Install the matching client once per box:
+
+```bash
+sudo apt install -y postgresql-common && sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+sudo apt install -y postgresql-client-17
+```
+
+(`PGPASSWORD` in the environment is readable by other processes of the same
+user. On a shared box use a `~/.pgpass` file with mode 600 instead.)
+
+### Recommended workflow before a deploy that includes migrations
+
+1) **Backup the DB** (after exporting the `PG*` variables above)
+
+```bash
+mkdir -p ~/db-backups
+pg_dump -Fc > ~/db-backups/foodies_$(date +%F_%H%M).dump
+ls -lah ~/db-backups/ | tail -n 3
+```
+
+**Verify the dump — size alone proves nothing.** A truncated or wrong-database
+dump looks like a perfectly ordinary file:
+
+```bash
+D=$(ls -t ~/db-backups/foodies_*.dump | head -1)
+pg_restore -l "$D" | grep -c "TABLE DATA"
+pg_restore -l "$D" | grep -E "TABLE DATA public (orders|users|branches|customers|migrations) "
+```
+
+Expect a count in the 90s and all five tables listed. `migrations` is the one
+that matters most: without it a restore re-runs every migration from scratch
+against an already-migrated schema and the backend will not boot.
+
+**Take the dump with the backend stopped** if it is your rollback point for this
+deploy. `pg_dump` snapshots the moment it *starts*, so orders taken between the
+dump and `pm2 stop` exist in neither the dump nor the restored database.
+
+**Copy it off the instance.** `/tmp` is cleared on reboot, and a backup that only
+exists on the box it protects is not a backup:
+
+```bash
+# from your laptop, not the server
+scp -i <key.pem> ubuntu@<public-ip>:~/db-backups/foodies_<stamp>.dump ~/Downloads/
 ```
 
 2) Deploy as usual (pull → build → restart). If the backend fails at startup, inspect:
@@ -195,11 +260,33 @@ ls -lah /tmp/foodies_*.dump | tail -n 1
 pm2 logs foodies-backend --lines 300
 ```
 
-### If the backend crashes with “relation already exists”
+### If the backend crashes with “relation already exists” / “constraint … already exists”
 
-That indicates your DB schema doesn’t match the migration state (often the `migrations` table is missing/out of sync).
+The schema has a change that the `migrations` table does not record, so TypeORM
+re-runs a migration that has effectively already been applied. Not every
+migration is safe to re-run: `ADD COLUMN IF NOT EXISTS` is idempotent, but
+Postgres has no `IF NOT EXISTS` for `ADD CONSTRAINT`, so those fail on the
+second run and the API will not boot.
 
-**Best practice:** restore from a consistent backup that includes the `migrations` table.
+**Diagnose** — compare what is recorded against what exists:
+
+```bash
+psql -c "SELECT id, timestamp, name FROM migrations ORDER BY timestamp DESC LIMIT 10;"
+psql -c "SELECT name FROM migrations WHERE name ~ 'Premises|UserPhone|AutoDispatch';"
+psql -c "\d branches" | grep -E 'premises_radius_m|auto_dispatch_enabled'
+```
+
+Order by `timestamp`, not `id` — `id` reflects insertion order, which a past
+restore can scramble, making a current database look years behind.
+
+**If a migration's changes are already present but unrecorded,** mark it applied
+rather than letting it re-run (name and timestamp must match the class exactly):
+
+```bash
+psql -c "INSERT INTO migrations (timestamp, name) VALUES (1760000000091, 'BranchPremisesRadius1760000000091');"
+```
+
+**Otherwise** restore from a verified backup that includes the `migrations` table.
 
 **Do NOT fix production by dropping random tables** unless you are intentionally resetting the environment.
 
@@ -207,41 +294,48 @@ That indicates your DB schema doesn’t match the migration state (often the `mi
 
 ## Database restore (importing an existing backup)
 
-### Plain SQL file (`.sql`)
+> **Destructive.** Every command here erases the current production database.
+> Confirm `psql -c "SELECT current_database(), inet_server_addr();"` points at
+> RDS first — on this box the same commands aimed at the local PostgreSQL would
+> silently destroy the stale decoy while production carried on, or worse be
+> "corrected" later and destroy the real one.
+
+On RDS you cannot `dropdb` the database the app connects to (and there is no
+`postgres` OS user to `sudo` to). Reset the schema in place instead — this is
+the managed-Postgres equivalent of drop-and-recreate, and `foodies_user` owns
+the schema so it has the rights:
 
 ```bash
 pm2 stop foodies-backend
 
-sudo -u postgres dropdb --if-exists foodies
-sudo -u postgres createdb -O foodies_user foodies
-
-# If the SQL file is in /home/ubuntu
-sudo cp ~/foodies.sql /tmp/foodies.sql
-sudo chmod 644 /tmp/foodies.sql
-
-sudo -u postgres psql -d foodies -f /tmp/foodies.sql
+# with the PG* variables exported (see Database connection)
+psql -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 ```
 
 ### Custom-format dump (`pg_dump -Fc`) (`.dump` / `.backup`)
 
 ```bash
-pm2 stop foodies-backend
-
-sudo -u postgres dropdb --if-exists foodies
-sudo -u postgres createdb -O foodies_user foodies
-
-sudo -u postgres pg_restore --no-owner --role=foodies_user -d foodies /path/to/foodies.dump
+pg_restore --no-owner --role="$PGUSER" -d "$PGDATABASE" ~/db-backups/foodies_<stamp>.dump
 ```
+
+### Plain SQL file (`.sql`)
+
+```bash
+psql -f ~/foodies.sql
+```
+
+`--no-owner --role=` matters: a dump may carry ownership from a different role,
+and without these flags the app can end up unable to write to its own tables.
 
 ### After restore: fix ownership/privileges (common requirement)
 
 Some backups restore objects owned by another role. If your app connects as `foodies_user`, make sure it can read/write tables:
 
 ```bash
-sudo -u postgres psql -d foodies -c "ALTER SCHEMA public OWNER TO foodies_user;"
-sudo -u postgres psql -d foodies -c "GRANT ALL ON SCHEMA public TO foodies_user;"
+psql -c "ALTER SCHEMA public OWNER TO foodies_user;"
+psql -c "GRANT ALL ON SCHEMA public TO foodies_user;"
 
-sudo -u postgres psql -d foodies -c "
+psql -c "
 DO \$\$
 DECLARE r RECORD;
 BEGIN
@@ -252,7 +346,7 @@ BEGIN
 END
 \$\$;"
 
-sudo -u postgres psql -d foodies -c "
+psql -c "
 DO \$\$
 DECLARE r RECORD;
 BEGIN
@@ -394,14 +488,25 @@ sudo systemctl reload nginx
 
 ### Roll back the database
 
-Use your latest dump from `/tmp/foodies_*.dump`:
+Use your latest verified dump from `~/db-backups/`. Export the `PG*` variables
+first (see **Database connection**) and confirm you are on RDS — these commands
+destroy whatever database they are pointed at:
 
 ```bash
 pm2 stop foodies-backend
-sudo -u postgres dropdb --if-exists foodies
-sudo -u postgres createdb -O foodies_user foodies
-sudo -u postgres pg_restore --no-owner --role=foodies_user -d foodies /tmp/foodies_YYYY-MM-DD_HHMM.dump
+psql -c "SELECT current_database(), inet_server_addr();"   # must show RDS
+psql -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+pg_restore --no-owner --role="$PGUSER" -d "$PGDATABASE" ~/db-backups/foodies_YYYY-MM-DD_HHMM.dump
 pm2 start foodies-backend
+pm2 logs foodies-backend --lines 50
+```
+
+A rollback only returns you to the schema **as of that dump**. If the dump was
+taken after the migrations ran, restoring it does not undo them — check what the
+dump actually contains before relying on it:
+
+```bash
+pg_restore -l ~/db-backups/foodies_YYYY-MM-DD_HHMM.dump | grep -c "TABLE DATA"
 ```
 
 ---
