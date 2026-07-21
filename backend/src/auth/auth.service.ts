@@ -5,6 +5,7 @@ import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User } from '../entities/user.entity';
 import { expandPermissions } from '../roles/permission-implications';
+import { normalizePakistaniPhone } from '../utils/phone';
 
 @Injectable()
 export class AuthService {
@@ -17,12 +18,23 @@ export class AuthService {
         private dataSource: DataSource,
     ) {}
 
-    async validateUser(email: string, password: string) {
+    async validateUser(
+        identifier: { email?: string; phone?: string },
+        password: string,
+    ) {
         const plain =
             typeof password === 'string' ? String(password).trim() : '';
-        const emailNorm =
-            typeof email === 'string' ? email.trim().toLowerCase() : '';
         if (!plain) return null;
+
+        const emailNorm =
+            typeof identifier.email === 'string'
+                ? identifier.email.trim().toLowerCase()
+                : '';
+        const phoneNorm =
+            typeof identifier.phone === 'string'
+                ? normalizePakistaniPhone(identifier.phone)
+                : null;
+        if (!emailNorm && !phoneNorm) return null;
 
         // Raw query: users table has no tenant_id; we get it from tenant_users
         interface UserRow {
@@ -34,8 +46,10 @@ export class AuthService {
             password: string;
         }
         const rows = (await this.dataSource.query(
-            `SELECT id, name, email, phone, status, password FROM users WHERE LOWER(TRIM(email)) = $1`,
-            [emailNorm || email],
+            phoneNorm
+                ? `SELECT id, name, email, phone, status, password FROM users WHERE phone = $1`
+                : `SELECT id, name, email, phone, status, password FROM users WHERE LOWER(TRIM(email)) = $1`,
+            [phoneNorm ?? emailNorm],
         )) as unknown as UserRow[];
         const row: UserRow | undefined = rows[0];
         if (!row || row.status !== 'active') return null;
@@ -159,10 +173,28 @@ export class AuthService {
         return [...new Set(rows.map((r) => Number(r.brand_id)))];
     }
 
-    async login(email: string, password: string) {
-        const user = await this.validateUser(email, password);
+    /**
+     * Staff login. Office staff sign in with email; riders sign in with their
+     * mobile number and password only — the number is the credential the rider
+     * app collects, and an email is not guaranteed to be current for them. A
+     * rider presenting an email is refused even when the password is right, so
+     * there is exactly one rider login path to reason about.
+     */
+    async login(
+        identifier: { email?: string; phone?: string },
+        password: string,
+    ) {
+        const user = await this.validateUser(identifier, password);
         if (!user) {
             throw new UnauthorizedException('Invalid credentials');
+        }
+        const loggedInWithPhone =
+            typeof identifier.phone === 'string' &&
+            normalizePakistaniPhone(identifier.phone) != null;
+        if (user.isRider && !loggedInWithPhone) {
+            throw new UnauthorizedException(
+                'Riders sign in with their mobile number and password.',
+            );
         }
         const payload = { sub: user.id, email: user.email };
         const token = this.jwtService.sign(payload);

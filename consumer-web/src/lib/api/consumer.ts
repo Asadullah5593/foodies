@@ -145,7 +145,8 @@ export async function registerCustomer(input: {
   return data;
 }
 
-export async function loginCustomer(input: { email: string; password: string }) {
+/** Customers sign in with phone + password; email is profile data, not a credential. */
+export async function loginCustomer(input: { phone: string; password: string }) {
   const { data } = await apiClient.post<LoginResponse>("/public/consumer/auth/login", input);
   return data;
 }

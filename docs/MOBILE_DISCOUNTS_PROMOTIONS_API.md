@@ -41,7 +41,9 @@ offer/campaign and (for coupons) issued a voucher to that customer.**
 `POST /public/consumer/auth/login`  (no auth)
 
 ```jsonc
-// Request  (phone+password primary; email+password legacy)
+// Request  — phone + password ONLY. Email is no longer accepted as a
+// credential (it is profile data); `customers.phone` is mandatory and unique
+// per tenant, so every account is reachable by phone.
 { "phone": "03001234567", "password": "secret123" }
 ```
 ```jsonc
@@ -545,3 +547,30 @@ Client rendering rules:
 - Otherwise show **"FBR Invoice #"** + the number, and a QR encoding **exactly the `fbr_invoice_number` string** (customers verify it in FBR's Tax Asaan app). On the printed receipt the QR sits bottom-right below the app-download QR, with the FBR logo bottom-left.
 - Render `"fallback"` numbers identically to `"fbr"` ones — the source distinction is for reporting only, never shown to the customer.
 - The invoice template `config` gained a `showFbrInvoice` boolean (default `true`); honour it like the other toggles. The block renders only when the toggle is on AND the number is non-null.
+
+## Rider on the customer's order (order tracking) — new field
+
+`GET /public/consumer/orders/:orderId?phone=03001234567` now returns who is
+delivering the order, so the customer can see and call their rider:
+
+```jsonc
+{
+  "delivery_status": "accepted",              // accepted | picked_up | delivered | … ; null before a rider is assigned
+  "rider": {                                  // null until a rider is assigned
+    "id": 41,
+    "name": "Ahmad Nasir",
+    "phone": "03009998877"
+  }
+}
+```
+
+Both fields are additive. `rider` is `null` for pickup/dine-in orders and for
+delivery orders still awaiting dispatch — render the contact row only when it is
+non-null. The `phone` is the rider's own mobile (also their app login), so treat
+it as call/SMS-only and do not display it once `delivery_status` is `delivered`.
+
+Rider availability itself is now geofenced: a rider is only assignable —
+automatically or by an admin — while checked in at the branch and physically
+inside that branch's **premises radius** (`branches.premises_radius_m`, default
+300 m). This does not change any consumer request/response shape; it only means
+`rider` may stay `null` longer when no rider is on-site.

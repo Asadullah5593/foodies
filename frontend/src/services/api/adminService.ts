@@ -616,8 +616,12 @@ export const adminService = {
 
   // Riders (for delivery assignment) — includes all-time customer star averages (tenant orders only).
   // brandId filters to riders linked to that brand (pass the order's brand for the dispatch dropdown).
+  // orderId additionally annotates each rider with the availability verdict the
+  // assign endpoint will apply (checked in, inside the branch premises, under
+  // capacity), so ineligible riders can be disabled with a reason up front.
   getRiders: async (
     brandId?: number,
+    orderId?: number,
   ): Promise<
     Array<{
       id: number;
@@ -626,9 +630,19 @@ export const adminService = {
       phone: string | null;
       rating_average: number | null;
       rating_count: number;
+      /** null when no orderId was supplied. */
+      is_eligible: boolean | null;
+      ineligible_reasons: string[];
+      ineligible_detail: string | null;
+      /** Metres from the branch centre; null if the rider has no fresh location. */
+      distance_m: number | null;
+      premises_radius_m: number | null;
     }>
   > => {
-    const query = brandId != null ? `?brand_id=${brandId}` : '';
+    const params = new URLSearchParams();
+    if (brandId != null) params.set('brand_id', String(brandId));
+    if (orderId != null) params.set('order_id', String(orderId));
+    const query = params.toString() ? `?${params.toString()}` : '';
     const response = await apiClient.get(`/admin/orders/riders${query}`);
     return response.data ?? [];
   },

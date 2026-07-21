@@ -34,21 +34,29 @@ export class AdminOrdersController {
             allowedBrandIds?: number[] | null;
         },
         @Query('brand_id') brandId?: string,
+        @Query('order_id') orderId?: string,
     ) {
         if (user.tenantId == null) {
             throw new BadRequestException(
                 'Riders are listed per tenant; super admin must specify tenant context',
             );
         }
+        // `order_id` is optional: pass it to get each rider annotated with the
+        // availability verdict the assign endpoint would apply (presence,
+        // premises, capacity), so the UI can disable ineligible riders up front.
         return this.service.listRiders(
             user.tenantId,
             user.allowedBrandIds,
             brandId ? +brandId : undefined,
+            orderId ? +orderId : undefined,
         );
     }
 
     @Put('group/:orderGroupId/rider')
-    @RequirePermission(Permissions.ORDERS_ASSIGN_RIDER, Permissions.CUSTOMER_DISPLAY_UPDATE)
+    @RequirePermission(
+        Permissions.ORDERS_ASSIGN_RIDER,
+        Permissions.CUSTOMER_DISPLAY_UPDATE,
+    )
     assignRiderToGroup(
         @Param('orderGroupId') orderGroupId: string,
         @CurrentUser()
@@ -79,7 +87,10 @@ export class AdminOrdersController {
     }
 
     @Put('group/:orderGroupId/rider/change')
-    @RequirePermission(Permissions.ORDERS_ASSIGN_RIDER, Permissions.CUSTOMER_DISPLAY_UPDATE)
+    @RequirePermission(
+        Permissions.ORDERS_ASSIGN_RIDER,
+        Permissions.CUSTOMER_DISPLAY_UPDATE,
+    )
     changeRiderForGroup(
         @Param('orderGroupId') orderGroupId: string,
         @CurrentUser()
@@ -193,7 +204,10 @@ export class AdminOrdersController {
     }
 
     @Put(':id/rider')
-    @RequirePermission(Permissions.ORDERS_ASSIGN_RIDER, Permissions.CUSTOMER_DISPLAY_UPDATE)
+    @RequirePermission(
+        Permissions.ORDERS_ASSIGN_RIDER,
+        Permissions.CUSTOMER_DISPLAY_UPDATE,
+    )
     assignRider(
         @Param('id') id: string,
         @CurrentUser()
@@ -224,7 +238,10 @@ export class AdminOrdersController {
     }
 
     @Put(':id/rider/change')
-    @RequirePermission(Permissions.ORDERS_ASSIGN_RIDER, Permissions.CUSTOMER_DISPLAY_UPDATE)
+    @RequirePermission(
+        Permissions.ORDERS_ASSIGN_RIDER,
+        Permissions.CUSTOMER_DISPLAY_UPDATE,
+    )
     changeRider(
         @Param('id') id: string,
         @CurrentUser()
@@ -255,7 +272,10 @@ export class AdminOrdersController {
     }
 
     @Post(':id/auto-assign')
-    @RequirePermission(Permissions.ORDERS_ASSIGN_RIDER, Permissions.CUSTOMER_DISPLAY_UPDATE)
+    @RequirePermission(
+        Permissions.ORDERS_ASSIGN_RIDER,
+        Permissions.CUSTOMER_DISPLAY_UPDATE,
+    )
     retryAutoAssign(
         @Param('id') id: string,
         @CurrentUser()

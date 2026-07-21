@@ -70,6 +70,8 @@ export interface Branch {
   supports_delivery?: boolean;
   delivery_flat_fee?: number;
   delivery_radius_km?: number;
+  /** Radius in metres around the branch inside which a rider is assignable. */
+  premises_radius_m?: number;
   latitude?: number | null;
   longitude?: number | null;
   is_active?: boolean;

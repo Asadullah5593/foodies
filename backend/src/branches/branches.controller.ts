@@ -76,6 +76,7 @@ export class BranchesController {
             supports_delivery?: boolean;
             delivery_flat_fee?: number;
             delivery_radius_km?: number;
+            premises_radius_m?: number;
             gst_rate_cash?: number | null;
             gst_rate_card?: number | null;
             is_active?: boolean;
@@ -118,6 +119,7 @@ export class BranchesController {
             supports_delivery?: boolean;
             delivery_flat_fee?: number;
             delivery_radius_km?: number;
+            premises_radius_m?: number;
             gst_rate_cash?: number | null;
             gst_rate_card?: number | null;
             is_active?: boolean;

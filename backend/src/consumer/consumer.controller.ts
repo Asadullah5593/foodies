@@ -430,42 +430,34 @@ export class ConsumerController {
     }
 
     /**
-     * Customer login. Primary credential is phone + password; email + password
-     * is still accepted as a fallback for legacy email-only accounts. Returns
-     * JWT and customer.
+     * Customer login: phone + password only. `customers.phone` is NOT NULL and
+     * unique per tenant, so every account is reachable this way; email is
+     * profile data, not a credential.
      */
     @Post('auth/login')
-    @ApiOperation({ summary: 'Customer login (phone or email + password)' })
+    @ApiOperation({ summary: 'Customer login (phone + password)' })
     @ApiBody({
         schema: {
             type: 'object',
-            required: ['password'],
+            required: ['phone', 'password'],
             properties: {
                 phone: { type: 'string', example: '03001234567' },
-                email: { type: 'string', example: 'john@example.com' },
                 password: { type: 'string' },
             },
             example: { phone: '03001234567', password: 'secret123' },
         },
     })
-    async customerLogin(
-        @Body() dto: { phone?: string; email?: string; password: string },
-    ) {
+    async customerLogin(@Body() dto: { phone?: string; password: string }) {
         const phone = typeof dto?.phone === 'string' ? dto.phone.trim() : '';
-        const email = typeof dto?.email === 'string' ? dto.email.trim() : '';
         const password = typeof dto?.password === 'string' ? dto.password : '';
-        if (!password || (!phone && !email)) {
-            throw new BadRequestException(
-                'phone (or email) and password are required',
-            );
+        if (!password || !phone) {
+            throw new BadRequestException('phone and password are required');
         }
-        const customer = phone
-            ? await this.customersService.validateCustomerByPhone(
-                  phone,
-                  password,
-                  this.getTenantIdFromEnv(),
-              )
-            : await this.customersService.validateCustomer(email, password);
+        const customer = await this.customersService.validateCustomerByPhone(
+            phone,
+            password,
+            this.getTenantIdFromEnv(),
+        );
         const token = this.jwtService.sign({
             sub: customer.id,
             type: 'customer',

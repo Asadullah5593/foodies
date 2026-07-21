@@ -1171,6 +1171,7 @@ const Orders: React.FC = () => {
         confirmLabel={riderModalIsChange ? 'Change' : 'Assign'}
         brandId={riderModalBrandId}
         brandName={riderModalBrandName}
+        orderId={riderModalOrderId}
         selectedRiderId={selectedRiderId}
         onSelectRider={setSelectedRiderId}
         isPending={assignRiderMutation.isPending}

@@ -58,7 +58,9 @@ const floatingIcons: IconType[] = [
 ];
 
 const Login: React.FC = () => {
-  const [email, setEmail] = useState('');
+  // One field for both credentials: staff type an email, riders their mobile
+  // number (riders cannot sign in with email).
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -73,7 +75,7 @@ const Login: React.FC = () => {
     setLoading(true);
 
     try {
-      const user = await login(email, password);
+      const user = await login(identifier, password);
       queryClient.clear();
       const landing = getDefaultLandingPath(user ?? null);
       navigate(landing);
@@ -285,15 +287,17 @@ const Login: React.FC = () => {
             >
               <motion.div variants={itemVariants}>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-slate-300 mb-2">
-                  Email
+                  Email or mobile number
                 </label>
                 <motion.input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  type="text"
+                  inputMode="email"
+                  autoComplete="username"
+                  value={identifier}
+                  onChange={(e) => setIdentifier(e.target.value)}
                   required
                   className="w-full px-4 py-3.5 rounded-xl border border-gray-200 dark:border-slate-600 bg-gray-50/80 dark:bg-slate-700/50 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-red-500/50 focus:border-red-500 transition-all"
-                  placeholder="you@example.com"
+                  placeholder="you@example.com or 03001234567"
                   whileFocus={{ scale: 1.01 }}
                   transition={{ type: 'tween', duration: 0.2 }}
                 />

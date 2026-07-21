@@ -463,22 +463,6 @@ export class CustomersService {
         return customer;
     }
 
-    /** Validate customer by email and password; return customer or throw. */
-    async validateCustomer(email: string, password: string): Promise<Customer> {
-        const customer = await this.findByEmail(email);
-        if (!customer || !customer.password) {
-            throw new UnauthorizedException('Invalid email or password');
-        }
-        const ok = await bcrypt.compare(
-            typeof password === 'string' ? password : '',
-            customer.password,
-        );
-        if (!ok) {
-            throw new UnauthorizedException('Invalid email or password');
-        }
-        return customer;
-    }
-
     /**
      * Validate a consumer by phone and password. Pass `tenantId` to scope the
      * lookup to the deployment's consumer tenant (see findConsumerByPhone).
