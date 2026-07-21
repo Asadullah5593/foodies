@@ -70,11 +70,18 @@ import { RiderDispatchState } from '../entities/rider-dispatch-state.entity';
 import { RiderAssignmentLedger } from '../entities/rider-assignment-ledger.entity';
 import { RiderOpsMetricsService } from '../rider-hrm/rider-ops-metrics.service';
 import {
-    freshnessState,
     selectRiderForBatchableOrder,
     riderPassesTierCap,
     type DeliveryTier,
 } from './dispatch.utils';
+import {
+    checkPremises,
+    describeIneligibility,
+    evaluateRiderEligibility,
+    normalizePremisesRadius,
+    type BranchPremises,
+    type RiderEligibilitySnapshot,
+} from './rider-eligibility';
 import {
     buildDeliveryOptions,
     defaultTierKey,
@@ -452,21 +459,39 @@ export class OrdersService {
         }
     }
 
-    private async resolveEligibleRidersForAutoDispatch(
+    /**
+     * Presence / capacity snapshot for the riders attached to (branch, brand),
+     * plus that branch's premises. `riderUserId` narrows it to a single rider so
+     * the manual-assignment path evaluates byte-for-byte the same inputs as
+     * auto-dispatch instead of a looser hand-rolled subset.
+     */
+    private async loadRiderEligibilitySnapshots(
         manager: DataSource['manager'],
         tenantId: number,
         branchId: number,
         brandId: number,
-        effectiveTier: DeliveryTier,
-        maxBatchSize: number,
+        options?: { riderUserId?: number; excludeOrderId?: number | null },
     ): Promise<{
-        eligible: Array<{ riderId: number; activeOrders: number }>;
-        skipped: Array<Record<string, unknown>>;
+        premises: BranchPremises | null;
+        snapshots: RiderEligibilitySnapshot[];
     }> {
         const branch = await manager.findOne(Branch, {
             where: { id: branchId },
         });
-        if (!branch) return { eligible: [], skipped: [] };
+        if (!branch) return { premises: null, snapshots: [] };
+
+        // $1..$4 are fixed; $5 is the optional single-rider filter.
+        const params: unknown[] = [
+            tenantId,
+            branchId,
+            brandId,
+            options?.excludeOrderId ?? 0,
+        ];
+        let riderFilterSql = '';
+        if (options?.riderUserId != null) {
+            params.push(options.riderUserId);
+            riderFilterSql = ` AND u.id = $${params.length}`;
+        }
 
         const rows: Array<{
             rider_user_id: number;
@@ -516,6 +541,7 @@ export class OrdersService {
                  WHERE o.tenant_id = $1
                    AND o.delivery_status IN ('accepted', 'picked_up')
                    AND o.status <> 'cancelled'
+                   AND o.id <> $4
                  GROUP BY o.rider_id
              ) ao ON ao.rider_user_id = u.id
              LEFT JOIN (
@@ -534,87 +560,173 @@ export class OrdersService {
                  WHERE o.tenant_id = $1
                    AND o.delivery_status = 'delivered'
                  GROUP BY o.rider_id
-             ) tr ON tr.rider_user_id = u.id`,
-            [tenantId, branchId, brandId],
+             ) tr ON tr.rider_user_id = u.id
+             WHERE TRUE${riderFilterSql}`,
+            params,
         );
+
+        const toNumber = (value: string | null): number | null =>
+            value != null && value !== '' ? Number(value) : null;
+
+        return {
+            premises: {
+                branchId,
+                latitude:
+                    branch.latitude != null ? Number(branch.latitude) : null,
+                longitude:
+                    branch.longitude != null ? Number(branch.longitude) : null,
+                radiusMeters: normalizePremisesRadius(branch.premisesRadiusM),
+            },
+            snapshots: rows.map((row) => ({
+                riderUserId: Number(row.rider_user_id),
+                userStatus: row.status,
+                isCheckedIn: row.is_checked_in,
+                isPaused: row.is_paused,
+                presenceBranchId:
+                    row.branch_id != null ? Number(row.branch_id) : null,
+                lastHeartbeatAt: row.last_heartbeat_at,
+                lastLocationAt: row.last_location_at,
+                lastLatitude: toNumber(row.last_latitude),
+                lastLongitude: toNumber(row.last_longitude),
+                activeOrders: Number(row.active_orders ?? 0),
+                hasPriorityActive: row.has_priority_active === true,
+                ratingAvg: toNumber(row.rating_avg),
+                minRating: toNumber(row.min_rating),
+                timelyRate: toNumber(row.timely_rate),
+                minTimelyRate: toNumber(row.min_timely_rate),
+            })),
+        };
+    }
+
+    private async resolveEligibleRidersForAutoDispatch(
+        manager: DataSource['manager'],
+        tenantId: number,
+        branchId: number,
+        brandId: number,
+        effectiveTier: DeliveryTier,
+        maxBatchSize: number,
+    ): Promise<{
+        eligible: Array<{ riderId: number; activeOrders: number }>;
+        skipped: Array<Record<string, unknown>>;
+    }> {
+        const { premises, snapshots } =
+            await this.loadRiderEligibilitySnapshots(
+                manager,
+                tenantId,
+                branchId,
+                brandId,
+            );
+        if (!premises) return { eligible: [], skipped: [] };
 
         const skipped: Array<Record<string, unknown>> = [];
         const eligible: Array<{ riderId: number; activeOrders: number }> = [];
-        const branchLat =
-            branch.latitude != null ? Number(branch.latitude) : null;
-        const branchLng =
-            branch.longitude != null ? Number(branch.longitude) : null;
-        const radiusKm = Number(branch.deliveryRadiusKm ?? 10);
-        for (const row of rows) {
-            const riderId = Number(row.rider_user_id);
-            const activeOrders = Number(row.active_orders ?? 0);
-            const hasPriorityActive = row.has_priority_active === true;
-            const minRating =
-                row.min_rating != null ? Number(row.min_rating) : null;
-            const minTimelyRate =
-                row.min_timely_rate != null
-                    ? Number(row.min_timely_rate)
-                    : null;
-            const ratingAvg =
-                row.rating_avg != null ? Number(row.rating_avg) : null;
-            const timelyRate =
-                row.timely_rate != null ? Number(row.timely_rate) : null;
-            const reasons: string[] = [];
-            if (row.status !== 'active') reasons.push('user_inactive');
-            if (!row.is_checked_in) reasons.push('not_checked_in');
-            if (row.is_paused) reasons.push('paused');
-            if (row.branch_id != null && Number(row.branch_id) !== branchId) {
-                reasons.push('checked_in_elsewhere');
-            }
-            if (!freshnessState(row.last_heartbeat_at, 90))
-                reasons.push('heartbeat_stale');
-            if (!freshnessState(row.last_location_at, 120))
-                reasons.push('location_stale');
-            if (
-                !riderPassesTierCap(
-                    { activeOrders, hasPriorityActive },
-                    effectiveTier,
-                    maxBatchSize,
-                )
-            ) {
-                reasons.push(
-                    hasPriorityActive && effectiveTier !== 'priority'
-                        ? 'priority_locked'
-                        : 'active_order_cap',
-                );
-            }
-            if (minRating != null && ratingAvg != null && ratingAvg < minRating)
-                reasons.push('below_min_rating');
-            if (
-                minTimelyRate != null &&
-                timelyRate != null &&
-                timelyRate < minTimelyRate
-            )
-                reasons.push('below_min_timely_rate');
-            if (
-                branchLat != null &&
-                branchLng != null &&
-                row.last_latitude != null &&
-                row.last_longitude != null
-            ) {
-                const dist = this.haversineKm(
-                    branchLat,
-                    branchLng,
-                    Number(row.last_latitude),
-                    Number(row.last_longitude),
-                );
-                if (dist > radiusKm) reasons.push('outside_branch_radius');
-            }
+        for (const snapshot of snapshots) {
+            const reasons = evaluateRiderEligibility(snapshot, {
+                branchId,
+                premises,
+                tier: effectiveTier,
+                maxBatchSize,
+                // Auto-dispatch also honours the rider_profiles quality floors;
+                // manual assignment deliberately does not (see
+                // assertRiderEligibleForManualAssignment).
+                includeQualityThresholds: true,
+            });
             if (reasons.length > 0) {
-                skipped.push({ rider_user_id: riderId, reasons });
+                skipped.push({
+                    rider_user_id: snapshot.riderUserId,
+                    reasons,
+                });
                 continue;
             }
-            eligible.push({ riderId, activeOrders });
+            eligible.push({
+                riderId: snapshot.riderUserId,
+                activeOrders: snapshot.activeOrders,
+            });
         }
         return {
             eligible: eligible.sort((a, b) => a.riderId - b.riderId),
             skipped,
         };
+    }
+
+    /**
+     * Gate every manual assignment on the same availability bar as auto-dispatch:
+     * the rider must be active, checked in at THIS branch, un-paused, reporting a
+     * fresh heartbeat and a fresh position inside the branch premises, and under
+     * the tier/batch capacity. There is no override — a rider who fails any of
+     * these is not assignable by hand either.
+     *
+     * The rider_profiles rating / on-time floors are NOT applied here: those tune
+     * which rider auto-dispatch prefers, and an admin cannot fix a historical
+     * rating in the moment, so enforcing them would leave orders undeliverable.
+     *
+     * Call INSIDE the assignment transaction and AFTER the per-rider advisory
+     * lock, so the capacity portion is a non-stale read.
+     */
+    private async assertRiderEligibleForManualAssignment(
+        manager: DataSource['manager'],
+        params: {
+            tenantId: number;
+            branchId: number;
+            brandId: number | null;
+            riderId: number;
+            tier: DeliveryTier;
+            maxBatchSize: number;
+            excludeOrderId?: number | null;
+        },
+    ): Promise<void> {
+        if (params.brandId == null) {
+            throw new BadRequestException(
+                'Order has no brand; cannot validate rider availability',
+            );
+        }
+        const { premises, snapshots } =
+            await this.loadRiderEligibilitySnapshots(
+                manager,
+                params.tenantId,
+                params.branchId,
+                params.brandId,
+                {
+                    riderUserId: params.riderId,
+                    excludeOrderId: params.excludeOrderId,
+                },
+            );
+        if (!premises) throw new NotFoundException('Branch not found');
+
+        const snapshot = snapshots[0];
+        if (!snapshot) {
+            throw new BadRequestException(
+                'This rider is not assigned to this branch for the order’s brand.',
+            );
+        }
+
+        const reasons = evaluateRiderEligibility(snapshot, {
+            branchId: params.branchId,
+            premises,
+            tier: params.tier,
+            maxBatchSize: params.maxBatchSize,
+            includeQualityThresholds: false,
+            excludeOrderId: params.excludeOrderId,
+        });
+        if (reasons.length === 0) return;
+
+        const premisesCheck = checkPremises(
+            premises,
+            snapshot.lastLatitude,
+            snapshot.lastLongitude,
+        );
+        throw new BadRequestException(
+            reasons
+                .map((reason) =>
+                    describeIneligibility(reason, {
+                        maxBatchSize: params.maxBatchSize,
+                        radiusMeters: premisesCheck.radiusMeters,
+                        distanceMeters:
+                            premisesCheck.distanceMeters ?? undefined,
+                    }),
+                )
+                .join(' '),
+        );
     }
 
     private async autoAssignRiderForOrder(
@@ -963,31 +1075,6 @@ export class OrdersService {
             }
         }
         return { attempted, assigned };
-    }
-
-    /** A rider's live active-order load (count + whether any is a priority order). */
-    private async getRiderActiveState(
-        tenantId: number,
-        riderId: number,
-        excludeOrderId?: number,
-    ): Promise<{ activeOrders: number; hasPriorityActive: boolean }> {
-        const rows: Array<{
-            active_orders: string;
-            has_priority_active: boolean | null;
-        }> = await this.orderRepo.query(
-            `SELECT COUNT(*) AS active_orders,
-                    COALESCE(bool_or(o.delivery_tier = 'priority'), false) AS has_priority_active
-             FROM orders o
-             WHERE o.tenant_id = $1 AND o.rider_id = $2
-               AND o.delivery_status IN ('accepted', 'picked_up')
-               AND o.status <> 'cancelled'
-               AND ($3::int IS NULL OR o.id <> $3)`,
-            [tenantId, riderId, excludeOrderId ?? null],
-        );
-        return {
-            activeOrders: Number(rows[0]?.active_orders ?? 0),
-            hasPriorityActive: rows[0]?.has_priority_active === true,
-        };
     }
 
     /** Tier-aware capacity for the order's brand (priority needs idle; standard/saver up to cap). */
@@ -2352,6 +2439,7 @@ export class OrdersService {
                 'orderItems.addons.addon',
                 'brand',
                 'payments',
+                'rider',
             ],
         });
         if (!order) throw new NotFoundException('Order not found');
@@ -2395,6 +2483,16 @@ export class OrdersService {
                     : null,
             loyalty_points_redeemed: order.loyaltyPointsRedeemed ?? 0,
             placed_at: order.placedAt?.toISOString() ?? null,
+            delivery_status: order.deliveryStatus ?? null,
+            // Who is bringing the order, so the customer can contact them.
+            // Null until a rider is assigned.
+            rider: order.rider
+                ? {
+                      id: order.rider.id,
+                      name: order.rider.name,
+                      phone: order.rider.phone ?? null,
+                  }
+                : null,
             items:
                 order.orderItems?.map((oi) => ({
                     id: oi.id,
@@ -3324,8 +3422,11 @@ export class OrdersService {
         const NEEDS_RIDER_SQL =
             "o.orderType = 'delivery' AND o.riderId IS NULL AND o.status IN (:...nrs)";
         const page = Math.max(1, Math.floor(Number(filters.page)) || 1);
+        // Ceiling guards the server: each row drags its items/payments/relations,
+        // so an unbounded "show all" over a year of orders would be a heavy query
+        // and a huge payload. 1000 covers the largest page-size option offered.
         const pageSize = Math.min(
-            200,
+            1000,
             Math.max(1, Math.floor(Number(filters.page_size)) || 20),
         );
         const search =
@@ -3455,6 +3556,7 @@ export class OrdersService {
         tenantId: number,
         allowedBrandIds?: number[] | null,
         brandId?: number | null,
+        orderId?: number | null,
     ) {
         const brandScope = resolveRiderBrandScope(brandId, allowedBrandIds);
         const params: unknown[] = [tenantId];
@@ -3508,8 +3610,28 @@ export class OrdersService {
             statMap.set(rid, { rating_count: cnt, rating_average: avg });
         }
 
+        // With an order in context, annotate each rider with the SAME verdict the
+        // assignment endpoint will reach, so the admin UI can disable a rider and
+        // say why instead of surfacing a rejection only after the click.
+        const eligibility = await this.resolveRiderEligibilityForOrder(
+            tenantId,
+            orderId,
+        );
+
+        // A rider in the brand list with no verdict is not attached to this
+        // order's branch at all, so they are unavailable for it. Distinguish
+        // that from "has a verdict whose detail is null" (i.e. eligible).
+        const NOT_AT_BRANCH = {
+            reasons: ['not_assigned_to_branch'],
+            detail: 'This rider is not assigned to this branch for the order’s brand.',
+            distanceMeters: null as number | null,
+        };
+
         return rows.map((r) => {
             const st = statMap.get(r.id);
+            const verdict = eligibility
+                ? (eligibility.byRiderId.get(r.id) ?? NOT_AT_BRANCH)
+                : null;
             return {
                 id: r.id,
                 name: r.name,
@@ -3517,8 +3639,102 @@ export class OrdersService {
                 phone: r.phone ?? null,
                 rating_count: st?.rating_count ?? 0,
                 rating_average: st?.rating_average ?? null,
+                // null when no order context was supplied.
+                is_eligible: verdict ? verdict.reasons.length === 0 : null,
+                ineligible_reasons: verdict ? verdict.reasons : [],
+                ineligible_detail: verdict ? verdict.detail : null,
+                distance_m: verdict?.distanceMeters ?? null,
+                premises_radius_m: eligibility?.premisesRadiusM ?? null,
             };
         });
+    }
+
+    /**
+     * Per-rider availability verdicts for one order, keyed by rider id. Returns
+     * null when there is no order context (plain rider list) or the order is not
+     * an assignable delivery.
+     */
+    private async resolveRiderEligibilityForOrder(
+        tenantId: number,
+        orderId?: number | null,
+    ): Promise<{
+        premisesRadiusM: number;
+        byRiderId: Map<
+            number,
+            {
+                reasons: string[];
+                detail: string | null;
+                distanceMeters: number | null;
+            }
+        >;
+    } | null> {
+        if (orderId == null) return null;
+        const order = await this.orderRepo.findOne({
+            where: { id: orderId, tenantId },
+        });
+        if (!order || order.orderType !== 'delivery' || order.brandId == null) {
+            return null;
+        }
+        const { effectiveTier, maxBatchSize } =
+            await this.resolveOrderTierCap(order);
+        const { premises, snapshots } =
+            await this.loadRiderEligibilitySnapshots(
+                this.dataSource.manager,
+                tenantId,
+                order.branchId,
+                order.brandId,
+                { excludeOrderId: order.id },
+            );
+        if (!premises) return null;
+
+        const byRiderId = new Map<
+            number,
+            {
+                reasons: string[];
+                detail: string | null;
+                distanceMeters: number | null;
+            }
+        >();
+        for (const snapshot of snapshots) {
+            const reasons = evaluateRiderEligibility(snapshot, {
+                branchId: order.branchId,
+                premises,
+                tier: effectiveTier,
+                maxBatchSize,
+                includeQualityThresholds: false,
+                excludeOrderId: order.id,
+            });
+            const premisesCheck = checkPremises(
+                premises,
+                snapshot.lastLatitude,
+                snapshot.lastLongitude,
+            );
+            byRiderId.set(snapshot.riderUserId, {
+                reasons,
+                detail:
+                    reasons.length === 0
+                        ? null
+                        : reasons
+                              .map((reason) =>
+                                  describeIneligibility(reason, {
+                                      maxBatchSize,
+                                      radiusMeters: premisesCheck.radiusMeters,
+                                      distanceMeters:
+                                          premisesCheck.distanceMeters ??
+                                          undefined,
+                                  }),
+                              )
+                              .join(' '),
+                distanceMeters:
+                    premisesCheck.distanceMeters != null
+                        ? Math.round(premisesCheck.distanceMeters)
+                        : null,
+            });
+        }
+        return {
+            premisesRadiusM: normalizePremisesRadius(premises.radiusMeters),
+            byRiderId,
+        };
     }
 
     /** Assign a rider to an order. Admin only. */
@@ -3567,22 +3783,18 @@ export class OrdersService {
                 AdvisoryLock.RIDER_ASSIGNMENT,
                 riderId,
             );
-            // Re-check capacity UNDER the lock: a concurrent assignment that committed
-            // while we waited is now visible.
-            const riderState = await this.getRiderActiveState(
+            // Full availability re-check UNDER the lock (presence, premises and
+            // capacity), so a concurrent assignment that committed while we
+            // waited is visible and manual matches auto-dispatch exactly.
+            await this.assertRiderEligibleForManualAssignment(manager, {
                 tenantId,
+                branchId: order.branchId,
+                brandId: order.brandId,
                 riderId,
-                order.id,
-            );
-            if (!riderPassesTierCap(riderState, effectiveTier, maxBatchSize)) {
-                throw new BadRequestException(
-                    effectiveTier === 'priority'
-                        ? 'A priority order needs an idle rider; this rider already has an active order.'
-                        : riderState.hasPriorityActive
-                          ? 'This rider is locked to a priority delivery and cannot take another order.'
-                          : `This rider is at capacity (max ${maxBatchSize} active ${maxBatchSize === 1 ? 'order' : 'orders'}).`,
-                );
-            }
+                tier: effectiveTier,
+                maxBatchSize,
+                excludeOrderId: order.id,
+            });
             // Scoped, terminal-state-guarded update (not a full-entity save): never
             // assign a cancelled/completed order or clobber a concurrent status write.
             const res = await manager
@@ -3664,27 +3876,27 @@ export class OrdersService {
             throw new BadRequestException('Invalid rider for this tenant');
         }
         await this.assertRiderLinkedToBrand(tenantId, order.brandId, riderId);
+        const { effectiveTier, maxBatchSize } =
+            await this.resolveOrderTierCap(order);
         await this.dataSource.transaction(async (manager) => {
-            // Serialize on the rider so the single-active-order check-and-set is atomic.
+            // Serialize on the rider so the capacity check-and-set is atomic.
             await advisoryXactLock(
                 manager,
                 AdvisoryLock.RIDER_ASSIGNMENT,
                 riderId,
             );
-            // A rider carries exactly one order at a time (excluding this order,
-            // which is being reassigned away from its current rider).
-            const activeElsewhere = await this.orderRepo
-                .createQueryBuilder('o')
-                .where('o.tenantId = :tenantId', { tenantId })
-                .andWhere('o.riderId = :riderId', { riderId })
-                .andWhere("o.deliveryStatus IN ('accepted', 'picked_up')")
-                .andWhere('o.id != :orderId', { orderId })
-                .getCount();
-            if (activeElsewhere > 0) {
-                throw new BadRequestException(
-                    'This rider already has an active order. A rider can deliver only one order at a time.',
-                );
-            }
+            // Same availability bar as auto-dispatch and assignRider. The order
+            // being moved is excluded from the capacity count so re-picking the
+            // current rider is not blocked by their own order.
+            await this.assertRiderEligibleForManualAssignment(manager, {
+                tenantId,
+                branchId: order.branchId,
+                brandId: order.brandId,
+                riderId,
+                tier: effectiveTier,
+                maxBatchSize,
+                excludeOrderId: orderId,
+            });
             // Scoped update guarded on still-accepted (pre-pickup) status.
             const res = await manager
                 .getRepository(Order)
@@ -3775,17 +3987,20 @@ export class OrdersService {
                 AdvisoryLock.RIDER_ASSIGNMENT,
                 riderId,
             );
-            const groupActiveCount = await this.orderRepo
-                .createQueryBuilder('o')
-                .where('o.tenantId = :tenantId', { tenantId })
-                .andWhere('o.riderId = :riderId', { riderId })
-                .andWhere("o.deliveryStatus IN ('accepted', 'picked_up')")
-                .andWhere('o.orderGroupId != :orderGroupId', { orderGroupId })
-                .getCount();
-            if (groupActiveCount > 0) {
-                throw new BadRequestException(
-                    'This rider already has an active order. A rider can deliver only one order at a time.',
-                );
+            // The group is capped at a single order above, so this is the same
+            // availability bar the per-order path applies.
+            for (const order of orders) {
+                const { effectiveTier, maxBatchSize } =
+                    await this.resolveOrderTierCap(order);
+                await this.assertRiderEligibleForManualAssignment(manager, {
+                    tenantId,
+                    branchId: order.branchId,
+                    brandId: order.brandId,
+                    riderId,
+                    tier: effectiveTier,
+                    maxBatchSize,
+                    excludeOrderId: order.id,
+                });
             }
             for (const order of orders) {
                 const res = await manager
@@ -3904,19 +4119,19 @@ export class OrdersService {
                 AdvisoryLock.RIDER_ASSIGNMENT,
                 riderId,
             );
-            // A rider carries exactly one order at a time — reject if the target
-            // rider already has an active order outside this group.
-            const activeElsewhere = await this.orderRepo
-                .createQueryBuilder('o')
-                .where('o.tenantId = :tenantId', { tenantId })
-                .andWhere('o.riderId = :riderId', { riderId })
-                .andWhere("o.deliveryStatus IN ('accepted', 'picked_up')")
-                .andWhere('o.orderGroupId != :orderGroupId', { orderGroupId })
-                .getCount();
-            if (activeElsewhere > 0) {
-                throw new BadRequestException(
-                    'This rider already has an active order. A rider can deliver only one order at a time.',
-                );
+            // Same availability bar as every other assignment path.
+            for (const order of orders) {
+                const { effectiveTier, maxBatchSize } =
+                    await this.resolveOrderTierCap(order);
+                await this.assertRiderEligibleForManualAssignment(manager, {
+                    tenantId,
+                    branchId: order.branchId,
+                    brandId: order.brandId,
+                    riderId,
+                    tier: effectiveTier,
+                    maxBatchSize,
+                    excludeOrderId: order.id,
+                });
             }
             for (const order of orders) {
                 const res = await manager

@@ -2,7 +2,10 @@ import apiClient from '../../utils/apiClient';
 import { User } from '../../types';
 
 export interface LoginCredentials {
-  email: string;
+  /** Office staff credential. */
+  email?: string;
+  /** Rider credential — riders sign in with their mobile number, not email. */
+  phone?: string;
   password: string;
 }
 

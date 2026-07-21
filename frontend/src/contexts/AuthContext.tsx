@@ -1,11 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../types';
 import { authService } from '../services/api/authService';
+import { normalizePakistaniPhone } from '../utils/phone';
 
 interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<User | null>;
+  /** `identifier` is an email (staff) or a Pakistani mobile number (riders). */
+  login: (identifier: string, password: string) => Promise<User | null>;
   logout: () => Promise<void>;
   loading: boolean;
 }
@@ -71,8 +73,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, []);
 
-  const login = async (email: string, password: string): Promise<User | null> => {
-    const response = await authService.login({ email, password });
+  /**
+   * `identifier` is whatever was typed into the single credential field: a
+   * Pakistani mobile number is sent as `phone` (how riders sign in), anything
+   * else as `email` (office staff). The backend rejects a rider who presents
+   * an email, so the two are not interchangeable.
+   */
+  const login = async (identifier: string, password: string): Promise<User | null> => {
+    const phone = normalizePakistaniPhone(identifier);
+    const response = await authService.login(
+      phone ? { phone, password } : { email: identifier.trim(), password },
+    );
     // Refetch user from API so we have the same shape as after refresh (tenant_id, is_super_admin, etc.)
     try {
       const userData = await authService.getCurrentUser();

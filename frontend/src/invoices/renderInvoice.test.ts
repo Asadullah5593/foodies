@@ -920,3 +920,50 @@ describe('FBR fiscal block — number line, logo left, QR right, below the app Q
     expect(html).toContain('class="fbrblock"');
   });
 });
+
+describe('dealPriceDisplay — where a deal prints its price', () => {
+  const dealInvoice = () => {
+    const inv = sampleInvoice();
+    inv.orders[0].items = [
+      {
+        name_snapshot: 'Build Your Own Pizza (Small Deal)',
+        variant_name: 'Small 7"',
+        deal_id: 42,
+        deal_slot_index: 0,
+        deal_name: 'Small Pizza Lunch Offer',
+        quantity: 1,
+        unit_price: 549,
+        subtotal: 549,
+      },
+    ];
+    return inv;
+  };
+  const dealRowOf = (html: string, table: boolean) =>
+    table
+      ? html.match(/<tr class="dealrow"[^>]*>[\s\S]*?<\/tr>/)![0]
+      : html.match(/<div class="row " data-field="dealPriceDisplay">[\s\S]*?<\/div>/)![0];
+  const compRowOf = (html: string, table: boolean) =>
+    table
+      ? html.match(/<tr><td class="ci"><span class="ind">Build[\s\S]*?<\/tr>/)![0]
+      : html.match(/<div class="row sub"><span class="l">Build[\s\S]*?<\/div>/)![0];
+
+  for (const [layout, table] of [['bill_bordered', true], ['thermal_classic', false]] as const) {
+    it(`both (default) prints the price on deal name AND component — ${layout}`, () => {
+      const html = renderInvoiceHtml(dealInvoice(), layout, cfg({})).html;
+      expect(dealRowOf(html, table)).toContain('549.00');
+      expect(compRowOf(html, table)).toContain('549.00');
+    });
+
+    it(`items_only drops the price from the deal-name line — ${layout}`, () => {
+      const html = renderInvoiceHtml(dealInvoice(), layout, cfg({ dealPriceDisplay: 'items_only' })).html;
+      expect(dealRowOf(html, table)).not.toContain('549');
+      expect(compRowOf(html, table)).toContain('549.00');
+    });
+
+    it(`deal_only keeps the deal-name price and blanks the components — ${layout}`, () => {
+      const html = renderInvoiceHtml(dealInvoice(), layout, cfg({ dealPriceDisplay: 'deal_only' })).html;
+      expect(dealRowOf(html, table)).toContain('549.00');
+      expect(compRowOf(html, table)).not.toContain('549');
+    });
+  }
+});

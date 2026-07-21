@@ -352,11 +352,23 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
     },
     {
       id: 'amounts',
-      title: 'Zero amounts',
+      title: 'Amounts',
       icon: 'calc',
-      desc: 'How a zero amount prints wherever a line bills nothing — free items, modifiers, add-ons and deal components. Rates of 0 hide too (except in the 0.00 mode); a real rate stays next to an "Included" amount.',
+      desc: 'Where deal prices print, and how a zero amount prints wherever a line bills nothing — free items, modifiers, add-ons and deal components. Rates of 0 hide too (except in the 0.00 mode); a real rate stays next to an "Included" amount.',
       kind: 'fields',
       fields: [
+        {
+          kind: 'select',
+          label: 'Deal price placement',
+          hint: 'where a deal’s price prints — on its name line, its component lines, or both',
+          value: form.config.dealPriceDisplay ?? 'both',
+          options: [
+            { value: 'both', label: 'On deal name + components' },
+            { value: 'items_only', label: 'Only on components (no price on deal name)' },
+            { value: 'deal_only', label: 'Only on deal name (components without prices)' },
+          ],
+          onChange: (v) => setCfg('dealPriceDisplay', v),
+        },
         {
           kind: 'select',
           label: 'Zero amount display',

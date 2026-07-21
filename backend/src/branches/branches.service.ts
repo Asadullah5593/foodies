@@ -234,6 +234,7 @@ export class BranchesService {
             supports_delivery?: boolean;
             delivery_flat_fee?: number;
             delivery_radius_km?: number;
+            premises_radius_m?: number;
             is_active?: boolean;
             status?: string;
             latitude?: number | null;
@@ -309,6 +310,7 @@ export class BranchesService {
         supports_delivery?: boolean;
         delivery_flat_fee?: number;
         delivery_radius_km?: number;
+        premises_radius_m?: number;
         gst_rate_cash?: number | null;
         gst_rate_card?: number | null;
         is_active?: boolean;
@@ -346,6 +348,7 @@ export class BranchesService {
                 supportsDelivery: dto.supports_delivery ?? false,
                 deliveryFlatFee: dto.delivery_flat_fee ?? 0,
                 deliveryRadiusKm: dto.delivery_radius_km ?? 10,
+                premisesRadiusM: dto.premises_radius_m ?? 300,
                 gstRateCash: dto.gst_rate_cash ?? null,
                 gstRateCard: dto.gst_rate_card ?? null,
                 isActive: dto.is_active ?? true,
@@ -390,6 +393,7 @@ export class BranchesService {
             supports_delivery?: boolean;
             delivery_flat_fee?: number;
             delivery_radius_km?: number;
+            premises_radius_m?: number;
             is_active?: boolean;
             status?: string;
             fbr_enabled?: boolean;
@@ -471,6 +475,7 @@ export class BranchesService {
             supports_delivery?: boolean;
             delivery_flat_fee?: number;
             delivery_radius_km?: number;
+            premises_radius_m?: number;
             gst_rate_cash?: number | null;
             gst_rate_card?: number | null;
             is_active?: boolean;
@@ -512,6 +517,8 @@ export class BranchesService {
             branch.deliveryFlatFee = dto.delivery_flat_fee;
         if (dto.delivery_radius_km !== undefined)
             branch.deliveryRadiusKm = dto.delivery_radius_km;
+        if (dto.premises_radius_m !== undefined)
+            branch.premisesRadiusM = dto.premises_radius_m;
         if (dto.gst_rate_cash !== undefined)
             branch.gstRateCash = dto.gst_rate_cash;
         if (dto.gst_rate_card !== undefined)
@@ -606,6 +613,7 @@ export class BranchesService {
         supports_delivery: boolean;
         delivery_flat_fee: number;
         delivery_radius_km: number;
+        premises_radius_m: number;
         gst_rate_cash: number | null;
         gst_rate_card: number | null;
         is_active: boolean;
@@ -640,6 +648,7 @@ export class BranchesService {
             supports_delivery: b.supportsDelivery,
             delivery_flat_fee: Number(b.deliveryFlatFee),
             delivery_radius_km: Number(b.deliveryRadiusKm),
+            premises_radius_m: Number(b.premisesRadiusM),
             gst_rate_cash: b.gstRateCash != null ? Number(b.gstRateCash) : null,
             gst_rate_card: b.gstRateCard != null ? Number(b.gstRateCard) : null,
             is_active: b.isActive,
@@ -670,6 +679,7 @@ export class BranchesService {
             supports_delivery: boolean;
             delivery_flat_fee: number;
             delivery_radius_km: number;
+            premises_radius_m: number;
             gst_rate_cash: number | null;
             gst_rate_card: number | null;
             is_active: boolean;
