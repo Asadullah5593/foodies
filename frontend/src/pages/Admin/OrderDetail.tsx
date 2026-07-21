@@ -13,6 +13,7 @@ import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import Button from '../../components/Button';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import Card from '../../components/Card';
+import { deliveryStatusLabel, deliveryStatusTone, isDeliveryFailed } from '../../lib/deliveryStatus';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
 import { groupOrderItems } from '../../utils/orderItemGrouping';
 
@@ -73,6 +74,11 @@ type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   payments?: Array<{ id: number; method?: string; payment_method?: string; amount: number; status: string; paid_at?: string }>;
   loyalty_points_earned?: number;
   loyalty_points_redeemed?: number;
+  rider_id?: number | null;
+  rider?: { id: number; name: string } | null;
+  delivery_status?: string | null;
+  /** Why the rider could not deliver. Set by the rider when marking delivery failed. */
+  delivery_failed_reason?: string | null;
 };
 
 function escapeHtml(s: string): string {
@@ -264,6 +270,30 @@ const OrderDetail: React.FC = () => {
             {o.customer_name && <p><span className="font-medium text-gray-500 dark:text-slate-400">Customer:</span> {o.customer_name}</p>}
             {o.customer_phone && <p><span className="font-medium text-gray-500 dark:text-slate-400">Phone:</span> {o.customer_phone}</p>}
             {o.delivery_address && <p><span className="font-medium text-gray-500 dark:text-slate-400">Delivery:</span> {o.delivery_address}</p>}
+          </div>
+        )}
+        {(o.delivery_status || o.rider) && (
+          <div className="rounded-lg bg-gray-50 dark:bg-slate-700/50 p-4 mb-4 text-sm">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <span className="font-medium text-gray-500 dark:text-slate-400">Delivery status:</span>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${deliveryStatusTone(o.delivery_status)}`}>
+                {deliveryStatusLabel(o.delivery_status, { fallback: 'Not assigned' })}
+              </span>
+              {o.rider && (
+                <span className="text-gray-700 dark:text-slate-300">
+                  <span className="font-medium text-gray-500 dark:text-slate-400">Rider:</span> {o.rider.name}
+                </span>
+              )}
+            </div>
+            {/* The rider's own words for why it failed — previously stored but never shown. */}
+            {isDeliveryFailed(o.delivery_status) && (
+              <p className="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-red-800 dark:border-red-800 dark:bg-red-900/25 dark:text-red-200">
+                <span className="font-semibold">Reason: </span>
+                {o.delivery_failed_reason?.trim()
+                  ? o.delivery_failed_reason
+                  : 'No reason was recorded by the rider.'}
+              </p>
+            )}
           </div>
         )}
         {canUpdateStatus && <div className="flex items-center gap-3">

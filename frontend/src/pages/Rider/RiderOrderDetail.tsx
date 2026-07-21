@@ -9,6 +9,7 @@ import Card from '../../components/Card';
 import Button from '../../components/Button';
 import { formatCurrency } from '../../utils/currency';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
+import { deliveryStatusLabel } from '../../lib/deliveryStatus';
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   placed: 'Placed',
@@ -26,13 +27,6 @@ const DELIVERY_STATUS_OPTIONS = [
   { value: 'delivery_failed', label: 'Delivery Failed' },
 ];
 
-const DELIVERY_STATUS_LABELS: Record<string, string> = {
-  assigned: 'Assigned',
-  accepted: 'Accepted',
-  picked_up: 'Picked Up',
-  delivered: 'Delivered',
-  delivery_failed: 'Delivery Failed',
-};
 
 /** When order is already assigned/accepted, rider cannot "accept" again – next step is Picked Up. */
 function getStatusOptions(currentStatus: string | null | undefined) {
@@ -158,7 +152,7 @@ const RiderOrderDetail: React.FC = () => {
                     : 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200'
                 }`}
               >
-                {DELIVERY_STATUS_LABELS[o.delivery_status ?? ''] ?? o.delivery_status ?? 'Assigned'}
+                {deliveryStatusLabel(o.delivery_status, { fallback: 'Assigned' })}
               </span>
             </div>
           </div>

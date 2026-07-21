@@ -14,6 +14,7 @@ import PaginationBar from '../../components/PaginationBar';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import { ORDER_SOURCES, ORDER_SOURCE_LABEL, orderSourceLabel } from '../../utils/orderSources';
+import { deliveryStatusLabel } from '../../lib/deliveryStatus';
 
 type OrderPayment = { paymentMethod?: string; payment_method?: string; status?: string; amount?: number | string };
 
@@ -90,13 +91,6 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   cancelled: 'Cancelled',
 };
 
-const DELIVERY_STATUS_LABELS: Record<string, string> = {
-  assigned: 'Assigned',
-  accepted: 'Accepted',
-  picked_up: 'Picked Up',
-  delivered: 'Delivered',
-  delivery_failed: 'Failed',
-};
 
 /* ------------------------------------------------------------------ meta -- */
 
@@ -321,6 +315,26 @@ const Orders: React.FC = () => {
       return response.data;
     },
   });
+
+  // The pill used to be a hardcoded "on" label. Derive it from the branches the
+  // page already loads: scoped to the selected branch, or aggregated when the
+  // filter is "All branches".
+  const autoAssign = useMemo(() => {
+    const all = branches ?? [];
+    const scoped = branchId ? all.filter((b) => String(b.id) === branchId) : all;
+    if (scoped.length === 0) {
+      return { tone: 'on' as const, label: 'Auto-assign on', title: 'Delivery orders get a rider automatically when the kitchen status moves to Preparing', branchId: null as number | null };
+    }
+    const off = scoped.filter((b) => b.auto_dispatch_enabled === false);
+    const only = scoped.length === 1 ? scoped[0].id : null;
+    if (off.length === 0) {
+      return { tone: 'on' as const, label: 'Auto-assign on', title: 'Delivery orders get a rider automatically when the kitchen status moves to Preparing. Click to change it per branch.', branchId: only };
+    }
+    if (off.length === scoped.length) {
+      return { tone: 'off' as const, label: 'Auto-assign off', title: 'Delivery orders will NOT get a rider automatically — assign each one manually. Click to change it.', branchId: only };
+    }
+    return { tone: 'partial' as const, label: `Auto-assign off at ${off.length} branch${off.length === 1 ? '' : 'es'}`, title: `Off at: ${off.map((b) => b.name).join(', ')}. Click to change it per branch.`, branchId: null };
+  }, [branches, branchId]);
 
   // Brand filter (owner sees all; brand-locked users get only their brand back)
   const { data: brands } = useQuery({
@@ -693,7 +707,7 @@ const Orders: React.FC = () => {
                 dm ? `${dm.bg} ${dm.color}` : 'bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-400'
               }`}
             >
-              {o.delivery_status ? (DELIVERY_STATUS_LABELS[o.delivery_status] ?? o.delivery_status) : 'No rider'}
+              {deliveryStatusLabel(o.delivery_status, { short: true })}
             </span>
           ) : (
             <span className="text-[12.5px] text-gray-300 dark:text-slate-600">—</span>
@@ -789,7 +803,7 @@ const Orders: React.FC = () => {
                 dm ? `${dm.bg} ${dm.color}` : 'bg-gray-100 text-gray-400 dark:bg-slate-700 dark:text-slate-400'
               }`}
             >
-              {o.delivery_status ? (DELIVERY_STATUS_LABELS[o.delivery_status] ?? o.delivery_status) : 'No rider'}
+              {deliveryStatusLabel(o.delivery_status, { short: true })}
             </span>
           )}
           {isDeliveryOrder(o) && (
@@ -873,13 +887,24 @@ const Orders: React.FC = () => {
           </span>
         </div>
         <div className="flex items-center gap-2.5">
-          <span
-            title="Delivery orders get a rider automatically when the kitchen status moves to Preparing"
-            className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-[14.5px] font-semibold text-emerald-600 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
+          <Link
+            to={autoAssign.branchId ? `/admin/branches/${autoAssign.branchId}` : '/admin/branches'}
+            title={autoAssign.title}
+            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-[14.5px] font-semibold ${
+              autoAssign.tone === 'on'
+                ? 'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+                : autoAssign.tone === 'off'
+                  ? 'border-gray-200 bg-gray-100 text-gray-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                  : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+            }`}
           >
-            <span className="h-2 w-2 rounded-full bg-emerald-500" />
-            Auto-assign on
-          </span>
+            <span
+              className={`h-2 w-2 rounded-full ${
+                autoAssign.tone === 'on' ? 'bg-emerald-500' : autoAssign.tone === 'off' ? 'bg-gray-400' : 'bg-amber-500'
+              }`}
+            />
+            {autoAssign.label}
+          </Link>
           <button
             title="Refresh"
             onClick={() => queryClient.invalidateQueries({ queryKey: ['admin-orders'] })}

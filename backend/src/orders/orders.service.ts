@@ -729,6 +729,22 @@ export class OrdersService {
         );
     }
 
+    /**
+     * Whether this branch takes automatic rider assignment. Missing branch or
+     * missing column reads as enabled, so dispatch never silently stops because
+     * of a lookup problem — the switch has to be turned off deliberately.
+     */
+    private async isAutoDispatchEnabled(
+        manager: DataSource['manager'],
+        branchId: number,
+    ): Promise<boolean> {
+        const branch = await manager.findOne(Branch, {
+            where: { id: branchId },
+            select: { id: true, autoDispatchEnabled: true },
+        });
+        return branch?.autoDispatchEnabled !== false;
+    }
+
     private async autoAssignRiderForOrder(
         orderId: number,
         options?: {
@@ -754,6 +770,15 @@ export class OrdersService {
             });
             if (!order) return;
             if (order.orderType !== 'delivery' || order.riderId != null) return;
+            // Branch opted out of automatic assignment: leave the order for an
+            // admin to hand out. Every auto-dispatch entry point (KDS →
+            // Preparing, admin status change, the minute sweep, admin retry)
+            // funnels through here, so this one check covers all of them.
+            // Deliberately writes no ledger row — the sweep would otherwise log
+            // the same "skipped" line for every pending order every minute.
+            if (!(await this.isAutoDispatchEnabled(manager, order.branchId))) {
+                return;
+            }
             // Brand-scoped dispatch requires a brand on the order.
             if (order.brandId == null) {
                 this.riderOpsMetrics.inc('auto_assignment_no_eligible_riders');
@@ -1127,6 +1152,17 @@ export class OrdersService {
         if (order.riderId != null) {
             throw new BadRequestException(
                 'Order already has an assigned rider',
+            );
+        }
+        // Explicit admin action: say why nothing happened rather than no-op.
+        if (
+            !(await this.isAutoDispatchEnabled(
+                this.dataSource.manager,
+                order.branchId,
+            ))
+        ) {
+            throw new BadRequestException(
+                'Automatic rider assignment is turned off for this branch. Assign a rider manually, or switch it back on in Branches.',
             );
         }
         await this.autoAssignRiderForOrder(orderId, {
