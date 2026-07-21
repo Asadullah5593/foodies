@@ -11,6 +11,7 @@ import { validatePakistaniPhone, PAKISTANI_PHONE_PLACEHOLDER, normalizePakistani
 import { MenuItem } from '../../types';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
+import { placesConfigured, ResolvedPlace } from '../../utils/googlePlaces';
 import { bogoDealTotal } from '../../utils/bogoPricing';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
@@ -49,6 +50,11 @@ const OrderTaking: React.FC = () => {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
+  // Coordinates for the picked Google place. Delivery orders must carry them so
+  // the rider app navigates to a pin instead of text-searching the address —
+  // unless Places is unusable here (no key / SDK blocked), which relaxes it.
+  const [deliveryPlace, setDeliveryPlace] = useState<ResolvedPlace | null>(null);
+  const [placesUsable, setPlacesUsable] = useState(placesConfigured);
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState<number | ''>('');
   const [phoneError, setPhoneError] = useState('');
   const [justAddedItem, setJustAddedItem] = useState<number | null>(null);
@@ -468,6 +474,7 @@ const OrderTaking: React.FC = () => {
       setCustomerName('');
       setCustomerPhone('');
       setDeliveryAddress('');
+      setDeliveryPlace(null);
       setLoyaltyPointsToRedeem('');
       setPhoneError('');
       setPaymentCashAmount('');
@@ -506,6 +513,7 @@ const OrderTaking: React.FC = () => {
       setCustomerName('');
       setCustomerPhone('');
       setDeliveryAddress('');
+      setDeliveryPlace(null);
       setLoyaltyPointsToRedeem('');
       setPhoneError('');
       setPaymentCashAmount('');
@@ -923,9 +931,15 @@ const OrderTaking: React.FC = () => {
       }
     }
     setPhoneError('');
-    if (effectiveOrderType === 'delivery' && !deliveryAddress.trim()) {
-      toast.error('Delivery address is required for delivery orders');
-      return;
+    if (effectiveOrderType === 'delivery') {
+      if (!deliveryAddress.trim()) {
+        toast.error('Delivery address is required for delivery orders');
+        return;
+      }
+      if (placesUsable && !deliveryPlace) {
+        toast.error('Pick the delivery address from the suggestions so the rider gets exact coordinates');
+        return;
+      }
     }
     if (effectiveOrderType === 'dine_in' && !tableNumber.trim()) {
       toast.error('Please enter a table number for dine-in orders');
@@ -974,6 +988,8 @@ const OrderTaking: React.FC = () => {
       customer_name: customerName.trim(),
       customer_phone: customerPhone.trim(),
       delivery_address: effectiveOrderType === 'delivery' ? deliveryAddress.trim() : undefined,
+      latitude: effectiveOrderType === 'delivery' ? deliveryPlace?.latitude : undefined,
+      longitude: effectiveOrderType === 'delivery' ? deliveryPlace?.longitude : undefined,
       discount_code: discountCode.trim() || undefined,
       loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
       items: selectedItems.map((item) => {
@@ -1729,6 +1745,9 @@ const OrderTaking: React.FC = () => {
               loyaltyBalance={loyaltyBalance}
               deliveryAddress={deliveryAddress}
               onDeliveryAddressChange={setDeliveryAddress}
+              deliveryPlace={deliveryPlace}
+              onDeliveryPlaceChange={setDeliveryPlace}
+              onDeliveryPlacesUnavailable={() => setPlacesUsable(false)}
               loyaltyPointsToRedeem={loyaltyPointsToRedeem}
               onLoyaltyPointsToRedeemChange={setLoyaltyPointsToRedeem}
               discountCode={discountCode}

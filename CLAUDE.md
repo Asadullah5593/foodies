@@ -76,6 +76,8 @@ User assignment: `users` is global; `tenant_users` ties a user to a tenant; `bra
 
 `backend/.env.example` is the reference. Required: `DB_HOST/PORT/DATABASE/USERNAME/PASSWORD` (default DB `foodies` on localhost), strong `JWT_SECRET` (32+ chars, app rejects weak values), `KIOSK_API_KEY`. Media uploads need S3 (`MEDIA_STORAGE_DRIVER=s3`, `AWS_*`, CloudFront URL); push notifications need Firebase service-account vars.
 
+Frontend: `VITE_API_URL`, plus `VITE_GOOGLE_MAPS_API_KEY` for the POS delivery address lookup (empty ⇒ plain address box, no coordinates — `docs/POS_GOOGLE_PLACES.md`).
+
 Production: PM2 + Nginx on EC2, no Docker — `docs/EC2_DEPLOYMENT_RUNBOOK.md`. Frontend build served from `/var/www/foodies`; Nginx proxies `/api` to 3001.
 
 ## Key docs
@@ -85,3 +87,4 @@ Production: PM2 + Nginx on EC2, no Docker — `docs/EC2_DEPLOYMENT_RUNBOOK.md`. 
 - `docs/DATABASE_OVERVIEW.md` + `docs/DATABASE_ERD.md` — schema reference
 - `docs/DISCOUNTS.md` — discount eligibility rules
 - `docs/SYSTEM_FUNCTIONALITIES_AND_FLOW.md` — roles & order lifecycle
+- `docs/POS_GOOGLE_PLACES.md` — POS address autocomplete & delivery coordinates

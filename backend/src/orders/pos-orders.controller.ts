@@ -96,6 +96,9 @@ export class PosOrdersController {
             customer_name?: string;
             customer_phone?: string;
             delivery_address?: string;
+            /** Drop-off coordinates from the cashier's Google Places pick. */
+            latitude?: number;
+            longitude?: number;
             items: {
                 menu_item_id: number;
                 quantity: number;
