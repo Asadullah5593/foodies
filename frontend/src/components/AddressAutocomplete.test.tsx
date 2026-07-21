@@ -13,6 +13,7 @@ const markerPositions: Array<{ lat: number; lng: number }> = [];
 vi.mock('../utils/googlePlaces', () => ({
   placesConfigured: true,
   createPlacesSession: () => ({ suggest }),
+  onMapsAuthFailure: () => () => {},
   loadMapsSdk: async () => ({
     places: {},
     Map: class {
