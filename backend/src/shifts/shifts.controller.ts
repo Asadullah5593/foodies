@@ -95,6 +95,25 @@ export class ShiftsController {
         );
     }
 
+    @Get(':id/pending-orders')
+    pendingOrders(
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
+        },
+        @Param('id') id: string,
+    ) {
+        return this.service.getPendingOrdersInShift(
+            +id,
+            user.tenantId,
+            user.allowedBranchIds,
+            user.allowedBrandIds,
+        );
+    }
+
     @Post()
     @RequirePermission(Permissions.SHIFTS_OPEN)
     store(

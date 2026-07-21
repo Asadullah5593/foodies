@@ -14,6 +14,7 @@ import {
   OfferSettings,
   Shift,
   ShiftOrdersResponse,
+  ShiftPendingOrdersResponse,
   User,
   Order,
   RiderProfile,
@@ -570,6 +571,12 @@ export const adminService = {
 
   getShiftOrders: async (id: number): Promise<ShiftOrdersResponse> => {
     const response = await apiClient.get(`/admin/shifts/${id}/orders`);
+    return response.data;
+  },
+
+  /** Orders punched during the shift that are not completed/cancelled yet — they block closing. */
+  getShiftPendingOrders: async (id: number): Promise<ShiftPendingOrdersResponse> => {
+    const response = await apiClient.get(`/admin/shifts/${id}/pending-orders`);
     return response.data;
   },
 

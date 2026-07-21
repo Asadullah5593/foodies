@@ -635,6 +635,25 @@ export interface ShiftOrdersResponse {
   orders: ShiftOrder[];
 }
 
+/** An order punched during a shift that has not reached a terminal status yet. */
+export interface ShiftPendingOrder {
+  id: number;
+  order_number: string;
+  status: string;
+  order_type: string;
+  total_amount: number;
+  customer_name: string | null;
+  table_number: string | null;
+  brand_name: string | null;
+  placed_at: string | null;
+}
+
+export interface ShiftPendingOrdersResponse {
+  shift_id: number;
+  pending_count: number;
+  orders: ShiftPendingOrder[];
+}
+
 export interface Order {
   id: number;
   order_number: string;
