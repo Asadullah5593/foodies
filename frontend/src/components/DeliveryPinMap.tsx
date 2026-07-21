@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { LatLngLiteral, RawMap, RawMarker, loadMapsSdk } from '../utils/googlePlaces';
+import { LatLngLiteral, RawMap, RawMarker, loadMapsSdk, onMapsAuthFailure } from '../utils/googlePlaces';
 
 interface DeliveryPinMapProps {
   latitude: number;
@@ -26,6 +26,9 @@ const DeliveryPinMap: React.FC<DeliveryPinMapProps> = ({ latitude, longitude, on
   const onMoveRef = useRef(onMove);
   onMoveRef.current = onMove;
   const [failed, setFailed] = useState(false);
+
+  // RefererNotAllowedMapError and friends surface here, not as a thrown error.
+  useEffect(() => onMapsAuthFailure(() => setFailed(true)), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,7 +82,18 @@ const DeliveryPinMap: React.FC<DeliveryPinMapProps> = ({ latitude, longitude, on
     mapRef.current?.panTo(position);
   }, [latitude, longitude]);
 
-  if (failed) return null;
+  // Say what happened rather than leaving a blank grey box: the coordinates are
+  // already captured, and the console names the exact restriction to fix.
+  if (failed) {
+    return (
+      <p className="mt-1 text-xs text-foodies-textSecondary">
+        Map preview unavailable — the pinned location above is still sent to the rider.
+        <span className="block">
+          Admin: check the Google key&apos;s website restrictions (browser console names the URL to allow).
+        </span>
+      </p>
+    );
+  }
 
   return (
     <div className="mt-2">

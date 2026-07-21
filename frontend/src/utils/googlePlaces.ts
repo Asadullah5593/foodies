@@ -101,6 +101,21 @@ type MapsWindow = Window &
 
 let libPromise: Promise<MapsSdk> | null = null;
 
+// Auth failures (bad key, referrer not on the allowlist) don't throw — the SDK
+// logs to the console and leaves a blank map. `gm_authFailure` is Google's hook
+// for noticing, so the UI can say something instead of showing a grey box.
+let authFailed = false;
+const authListeners = new Set<() => void>();
+
+/** Subscribe to Maps auth failure; fires immediately if it already happened. */
+export function onMapsAuthFailure(listener: () => void): () => void {
+  if (authFailed) listener();
+  authListeners.add(listener);
+  return () => {
+    authListeners.delete(listener);
+  };
+}
+
 /** Loads the Maps JS SDK once. Rejects (and allows a retry) if it never arrives. */
 export function loadMapsSdk(): Promise<MapsSdk> {
   if (libPromise) return libPromise;
@@ -109,6 +124,11 @@ export function loadMapsSdk(): Promise<MapsSdk> {
   }
 
   const w = window as unknown as MapsWindow;
+  w.gm_authFailure = () => {
+    authFailed = true;
+    authListeners.forEach((listener) => listener());
+  };
+
   const pending = new Promise<MapsSdk>((resolve, reject) => {
     const sdk = w.google?.maps;
     if (sdk?.places) {

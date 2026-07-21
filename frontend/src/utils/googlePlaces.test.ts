@@ -95,6 +95,23 @@ describe('googlePlaces session', () => {
     expect(requests[0].includedRegionCodes).toBeUndefined();
   });
 
+  it('notifies subscribers when Google rejects the key or referrer', async () => {
+    installFakeSdk();
+    const { loadMapsSdk, onMapsAuthFailure } = await import('./googlePlaces');
+    const onFailure = vi.fn();
+    onMapsAuthFailure(onFailure);
+
+    await loadMapsSdk();
+    // Google calls this global instead of throwing on RefererNotAllowedMapError.
+    (window as unknown as { gm_authFailure?: () => void }).gm_authFailure?.();
+
+    expect(onFailure).toHaveBeenCalled();
+    // A subscriber that arrives after the failure still learns about it.
+    const late = vi.fn();
+    onMapsAuthFailure(late);
+    expect(late).toHaveBeenCalled();
+  });
+
   it('reports itself unconfigured when no key is set', async () => {
     vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', '');
     const { placesConfigured, loadMapsSdk } = await import('./googlePlaces');
