@@ -97,9 +97,9 @@ describe('googlePlaces session', () => {
 
   it('reports itself unconfigured when no key is set', async () => {
     vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', '');
-    const { placesConfigured, loadPlacesLibrary } = await import('./googlePlaces');
+    const { placesConfigured, loadMapsSdk } = await import('./googlePlaces');
 
     expect(placesConfigured).toBe(false);
-    await expect(loadPlacesLibrary()).rejects.toThrow(/VITE_GOOGLE_MAPS_API_KEY/);
+    await expect(loadMapsSdk()).rejects.toThrow(/VITE_GOOGLE_MAPS_API_KEY/);
   });
 });

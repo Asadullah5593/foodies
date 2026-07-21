@@ -62,6 +62,13 @@ degrades to a plain address box.
   keeps the counter working when Google is unreachable.
 - Editing the text after picking keeps the pin (cashiers append house/flat
   numbers) and shows a note that the address was edited.
+- Once an address is picked, a map appears with a **draggable pin**. Google
+  usually returns the centre of a street or block, so dragging (or tapping the
+  map) lets the cashier move the drop point to the actual gate; the order takes
+  the dragged coordinates and the address text is left alone. The map mounts
+  only after a pick — it bills the **Dynamic Maps** SKU, so that is one map load
+  per delivery order rather than one per keystroke. If the map fails to build,
+  it is hidden and the picked coordinates still go out.
 
 ## Where the coordinates go
 
