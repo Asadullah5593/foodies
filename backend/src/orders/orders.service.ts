@@ -3324,8 +3324,11 @@ export class OrdersService {
         const NEEDS_RIDER_SQL =
             "o.orderType = 'delivery' AND o.riderId IS NULL AND o.status IN (:...nrs)";
         const page = Math.max(1, Math.floor(Number(filters.page)) || 1);
+        // Ceiling guards the server: each row drags its items/payments/relations,
+        // so an unbounded "show all" over a year of orders would be a heavy query
+        // and a huge payload. 1000 covers the largest page-size option offered.
         const pageSize = Math.min(
-            200,
+            1000,
             Math.max(1, Math.floor(Number(filters.page_size)) || 20),
         );
         const search =

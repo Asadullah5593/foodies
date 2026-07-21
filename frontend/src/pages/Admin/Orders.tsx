@@ -146,7 +146,10 @@ const TYPE_META: Record<string, { bg: string; color: string; short: string; icon
 
 const PAYMENT_METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', other: 'Other', online: 'Online' };
 
-const ORDERS_PAGE_SIZE = 20;
+/** Rows-per-page choices. Capped at 1000 — the server's ceiling, and beyond that
+ *  a single page drags too many joined rows to render comfortably. */
+const ORDERS_PAGE_SIZE_OPTIONS = [25, 50, 100, 200, 500, 1000];
+const ORDERS_DEFAULT_PAGE_SIZE = 25;
 
 /* --------------------------------------------------------------- helpers -- */
 
@@ -242,6 +245,7 @@ const Orders: React.FC = () => {
   const canAssignRider = useHasPermission(['orders:assign-rider', 'customer-display:update']);
   const [searchParams, setSearchParams] = useSearchParams();
   const [ordersPage, setOrdersPage] = useState(1);
+  const [pageSize, setPageSize] = useState(ORDERS_DEFAULT_PAGE_SIZE);
   const [search, setSearch] = useState('');
   const [customerInvoiceGroupId, setCustomerInvoiceGroupId] = useState<string | null>(null);
   const [customerInvoiceOrderId, setCustomerInvoiceOrderId] = useState<number | null>(null);
@@ -293,7 +297,7 @@ const Orders: React.FC = () => {
     if (baseParams.date_to) sp.append('date_to', baseParams.date_to);
     if (debouncedSearch) sp.append('search', debouncedSearch);
     sp.append('page', String(ordersPage));
-    sp.append('page_size', String(ORDERS_PAGE_SIZE));
+    sp.append('page_size', String(pageSize));
     const response = await apiClient.get<OrdersEnvelope>(`/admin/orders?${sp.toString()}`);
     const env = response.data;
     return { ...env, data: (env.data ?? []).map(normalizeOrder) };
@@ -303,7 +307,7 @@ const Orders: React.FC = () => {
   // set) come back with each page, so there is no separate counting query and no
   // row cap — pagination scales to 100k+ orders.
   const { data: envelope, isLoading } = useQuery({
-    queryKey: ['admin-orders', baseParams, status, debouncedSearch, ordersPage],
+    queryKey: ['admin-orders', baseParams, status, debouncedSearch, ordersPage, pageSize],
     queryFn: fetchOrders,
     placeholderData: keepPreviousData,
     refetchInterval: ORDER_POLL_INTERVAL_MS,
@@ -475,7 +479,7 @@ const Orders: React.FC = () => {
   /** Serial number of each order, continuous across pages (offset by the page). */
   const serialByOrderId = useMemo(() => {
     const m = new Map<number, number>();
-    let i = (ordersPage - 1) * ORDERS_PAGE_SIZE;
+    let i = (ordersPage - 1) * pageSize;
     for (const g of displayGroups) for (const o of g.orders) m.set(o.id, ++i);
     return m;
   }, [displayGroups, ordersPage]);
@@ -1079,7 +1083,18 @@ const Orders: React.FC = () => {
       </div>
 
       <div className="mt-3">
-        <PaginationBar totalCount={totalCount} page={ordersPage} pageSize={ORDERS_PAGE_SIZE} onPageChange={setOrdersPage} itemLabel="orders" />
+        <PaginationBar
+          totalCount={totalCount}
+          page={ordersPage}
+          pageSize={pageSize}
+          onPageChange={setOrdersPage}
+          itemLabel="orders"
+          pageSizeOptions={ORDERS_PAGE_SIZE_OPTIONS}
+          onPageSizeChange={(n) => {
+            setPageSize(n);
+            setOrdersPage(1);
+          }}
+        />
       </div>
 
       {/* Kitchen-status popover */}
