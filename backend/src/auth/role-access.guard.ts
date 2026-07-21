@@ -35,6 +35,7 @@ export class RoleAccessGuard implements CanActivate {
                 allowedBranchIds?: number[] | null;
                 allowedBrandIds?: number[] | null;
                 permissions?: string[];
+                orderHistoryDays?: number | null;
             };
             path?: string;
             url?: string;
@@ -68,6 +69,11 @@ export class RoleAccessGuard implements CanActivate {
             await this.getUserPermissionNames(user.id, user.tenantId),
         );
         user.permissions = [...permissionNames];
+        // How far back this user may read order history (null = unlimited).
+        user.orderHistoryDays = await this.getOrderHistoryDays(
+            user.id,
+            user.tenantId,
+        );
 
         // Tenant users cannot access tenants module (super admin only)
         if (path.startsWith('/admin/tenants')) {
@@ -131,6 +137,39 @@ export class RoleAccessGuard implements CanActivate {
             roleIds,
         )) as unknown as Array<{ name: string }>;
         return new Set(rows.map((r) => r.name));
+    }
+
+    /**
+     * Order-history window in days for the admin Orders module; null =
+     * unlimited. A user may hold several roles, so the most permissive window
+     * wins: any role with no limit means no limit, otherwise the largest value.
+     */
+    private async getOrderHistoryDays(
+        userId: number,
+        tenantId: number,
+    ): Promise<number | null> {
+        const rows = (await this.dataSource.query(
+            `SELECT bool_or(r.order_history_days IS NULL) AS has_unlimited,
+                    MAX(r.order_history_days) AS max_days
+             FROM roles r
+             WHERE r.id IN (
+                 SELECT role_id FROM tenant_users
+                 WHERE user_id = $1 AND tenant_id = $2 AND role_id IS NOT NULL
+                 UNION
+                 SELECT role_id FROM branch_users WHERE user_id = $1
+             )`,
+            [userId, tenantId],
+        )) as unknown as Array<{
+            has_unlimited: boolean | null;
+            max_days: number | string | null;
+        }>;
+        const row = rows[0];
+        // No roles at all, or at least one unrestricted role → unlimited.
+        if (!row || row.has_unlimited !== false) return null;
+        const maxDays = row.max_days == null ? null : Number(row.max_days);
+        return maxDays != null && Number.isFinite(maxDays) && maxDays > 0
+            ? maxDays
+            : null;
     }
 
     /**

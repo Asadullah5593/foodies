@@ -556,9 +556,16 @@ export const adminService = {
     return response.data;
   },
   
-  closeShift: async (id: number, actualCash: number, notes?: string): Promise<Shift> => {
+  /** `actualCash` is the drawer count; `riderCash` is what riders handed to the till. */
+  closeShift: async (
+    id: number,
+    actualCash: number,
+    riderCash?: number,
+    notes?: string,
+  ): Promise<Shift> => {
     const response = await apiClient.post(`/admin/shifts/${id}/close`, {
       actual_cash: actualCash,
+      rider_cash: riderCash ?? 0,
       notes,
     });
     return response.data;

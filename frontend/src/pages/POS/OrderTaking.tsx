@@ -1401,10 +1401,11 @@ const OrderTaking: React.FC = () => {
           <MdOutlineSchedule className="h-10 w-10" />
         </div>
         <h2 className="mt-6 text-2xl font-bold text-foodies-textPrimary dark:text-slate-100">
-          No shift open for this branch
+          No shift open yet
         </h2>
         <p className="mt-2 max-w-sm text-sm leading-relaxed text-foodies-textSecondary dark:text-slate-400">
-          Open a shift before taking orders. Only one shift can be open per branch at a time.
+          Open a shift before taking orders. Each brand has its own shift, and only one can be
+          open per brand at a time.
         </p>
 
         <Link to="/admin/shifts" className="mt-8 w-full max-w-xs">

@@ -161,7 +161,14 @@ export class ShiftsController {
             allowedBranchIds?: number[] | null;
             allowedBrandIds?: number[] | null;
         },
-        @Body() dto: { actual_cash: number; notes?: string },
+        @Body()
+        dto: {
+            /** Cash counted in the drawer, excluding rider money. */
+            actual_cash: number;
+            /** Cash riders collected at the door and handed to the till. */
+            rider_cash?: number;
+            notes?: string;
+        },
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');

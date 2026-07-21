@@ -421,6 +421,22 @@ export class OrdersService {
         return `${fallback}. ${detail}${remaining}`;
     }
 
+    /**
+     * True when an order predates the caller's order-history window. `days`
+     * counts calendar days inclusive of today, matching the SQL floor used by
+     * the list query (CURRENT_DATE - days + 1).
+     */
+    private isOutsideHistoryWindow(
+        placedAt: Date | null | undefined,
+        days: number,
+    ): boolean {
+        if (!placedAt) return false;
+        const floor = new Date();
+        floor.setHours(0, 0, 0, 0);
+        floor.setDate(floor.getDate() - (Math.floor(days) - 1));
+        return new Date(placedAt).getTime() < floor.getTime();
+    }
+
     /** A brand-locked admin may only act on orders of their own brand. */
     private assertOrderBrandAllowed(
         order: Order,
@@ -3145,11 +3161,8 @@ export class OrdersService {
             }
             if (status === 'completed') {
                 await this.loyaltyService.earnOnOrderComplete(id);
-                await this.shiftsService.addCompletedOrderAmount(
-                    order.branchId,
-                    Number(order.totalAmount),
-                    order.brandId ?? null,
-                );
+                // Shift cash is derived from the order's tenders when the shift
+                // is read or closed — nothing to accrue here.
             } else if (status === 'cancelled') {
                 // Reverse inventory consumption allocations (if any).
                 try {
@@ -3198,6 +3211,8 @@ export class OrdersService {
         tenantId: number | null,
         allowedBranchIds?: number[] | null,
         allowedBrandIds?: number[] | null,
+        /** Days of history the caller may read; null/undefined = unlimited. */
+        orderHistoryDays?: number | null,
     ) {
         const order = await this.orderRepo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
@@ -3236,6 +3251,18 @@ export class OrdersService {
         ) {
             throw new ForbiddenException(
                 'You do not have access to this brand',
+            );
+        }
+        // A restricted role must not reach an older order by its id either.
+        if (
+            order &&
+            orderHistoryDays != null &&
+            Number.isFinite(orderHistoryDays) &&
+            orderHistoryDays > 0 &&
+            this.isOutsideHistoryWindow(order.placedAt, orderHistoryDays)
+        ) {
+            throw new ForbiddenException(
+                `Your role can only access the last ${Math.floor(orderHistoryDays)} days of order history`,
             );
         }
         if (!order) throw new NotFoundException('Order not found');
@@ -3427,6 +3454,8 @@ export class OrdersService {
         },
         allowedBranchIds?: number[] | null,
         allowedBrandIds?: number[] | null,
+        /** Days of history the caller may read; null/undefined = unlimited. */
+        orderHistoryDays?: number | null,
     ) {
         if (
             allowedBranchIds != null &&
@@ -3448,6 +3477,14 @@ export class OrdersService {
                 'You do not have access to this brand',
             );
         }
+
+        // Positive value = restricted role; anything else means unlimited.
+        const historyDays =
+            orderHistoryDays != null &&
+            Number.isFinite(orderHistoryDays) &&
+            orderHistoryDays > 0
+                ? Math.floor(orderHistoryDays)
+                : null;
 
         const NEEDS_RIDER_STATUSES = [
             'placed',
@@ -3514,6 +3551,15 @@ export class OrdersService {
                 qb.andWhere('date(o.placed_at) <= :dateTo', {
                     dateTo: filters.date_to,
                 });
+            // Hard floor from the role's history window, applied on top of any
+            // client date_from so a narrower role cannot widen its own range.
+            // Date maths runs in the DB so it matches the server's timezone;
+            // N days means N calendar days inclusive of today.
+            if (historyDays != null)
+                qb.andWhere(
+                    'date(o.placed_at) >= (CURRENT_DATE - CAST(:historyDays AS int) + 1)',
+                    { historyDays },
+                );
             if (filters.has_rider === true)
                 qb.andWhere('o.riderId IS NOT NULL');
             if (search)
@@ -4412,11 +4458,9 @@ export class OrdersService {
             order.status = 'completed';
             if (prevStatus !== null) {
                 await this.loyaltyService.earnOnOrderComplete(order.id);
-                await this.shiftsService.addCompletedOrderAmount(
-                    order.branchId,
-                    Number(order.totalAmount),
-                    order.brandId ?? null,
-                );
+                // No shift accrual: a delivery order settled at the door has no
+                // tender recorded, so its balance is counted as cash owed to the
+                // till by computeExpectedCash until the rider hands it in.
             }
         }
         if (

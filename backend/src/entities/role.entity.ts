@@ -25,6 +25,14 @@ export class Role {
     @Column()
     slug: string;
 
+    /**
+     * How many days of order history this role may see (admin Orders module).
+     * null = unlimited. A user holding several roles gets the most permissive
+     * window (any unlimited role wins; otherwise the largest value).
+     */
+    @Column({ type: 'int', nullable: true })
+    orderHistoryDays: number | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

@@ -145,9 +145,21 @@ export class RolesService {
         return role;
     }
 
+    /** null/0/blank all mean "no limit"; otherwise a positive whole number. */
+    private normalizeHistoryDays(value: unknown): number | null {
+        if (value == null || value === '') return null;
+        const n = Math.floor(Number(value));
+        return Number.isFinite(n) && n > 0 ? n : null;
+    }
+
     async createRole(
         tenantId: number | null,
-        dto: { name: string; slug: string; permission_ids?: number[] },
+        dto: {
+            name: string;
+            slug: string;
+            permission_ids?: number[];
+            order_history_days?: number | null;
+        },
     ) {
         const slug = dto.slug
             .toLowerCase()
@@ -157,6 +169,7 @@ export class RolesService {
             tenantId,
             name: dto.name,
             slug: slug || dto.slug,
+            orderHistoryDays: this.normalizeHistoryDays(dto.order_history_days),
         });
         if (dto.permission_ids?.length) {
             role.permissions = await this.permissionRepo.findBy({
@@ -172,11 +185,21 @@ export class RolesService {
     async updateRole(
         id: number,
         tenantId: number | null,
-        dto: { name?: string; slug?: string; permission_ids?: number[] },
+        dto: {
+            name?: string;
+            slug?: string;
+            permission_ids?: number[];
+            order_history_days?: number | null;
+        },
     ) {
         const role = await this.getRoleById(id, tenantId);
         if (role.slug === 'super_admin') {
             throw new NotFoundException('Super Admin role cannot be edited');
+        }
+        if (dto.order_history_days !== undefined) {
+            role.orderHistoryDays = this.normalizeHistoryDays(
+                dto.order_history_days,
+            );
         }
         if (dto.name !== undefined) role.name = dto.name;
         if (dto.slug !== undefined) {

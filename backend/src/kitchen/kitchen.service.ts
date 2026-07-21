@@ -185,13 +185,8 @@ export class KitchenService {
         );
         if (changed !== null) {
             order.status = status;
-            if (status === 'completed') {
-                await this.shiftsService.addCompletedOrderAmount(
-                    branchId,
-                    Number(order.totalAmount),
-                    order.brandId ?? null,
-                );
-            }
+            // Shift cash is derived from tenders at read/close time; completing
+            // an order here no longer needs to accrue anything.
         }
         await this.ordersService.triggerAutoAssignAfterStatusChange(
             id,

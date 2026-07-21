@@ -26,6 +26,8 @@ const RoleForm: React.FC = () => {
 
   const [name, setName] = useState('');
   const [permissionIds, setPermissionIds] = useState<number[]>([]);
+  /** Blank = unlimited history. Kept as a string so the field can be cleared. */
+  const [historyDays, setHistoryDays] = useState('');
 
   const { data: permissions, isLoading: permsLoading } = useQuery({
     queryKey: ['permissions'],
@@ -48,6 +50,7 @@ const RoleForm: React.FC = () => {
     if (role) {
       setName(role.name);
       setPermissionIds(role.permissions?.map((p) => p.id) ?? []);
+      setHistoryDays(role.orderHistoryDays != null ? String(role.orderHistoryDays) : '');
     }
   }, [role]);
 
@@ -64,7 +67,12 @@ const RoleForm: React.FC = () => {
   const isViewOnly = role?.slug === SUPER_ADMIN_SLUG;
 
   const saveMutation = useMutation({
-    mutationFn: async (data: { name: string; slug?: string; permission_ids: number[] }) => {
+    mutationFn: async (data: {
+      name: string;
+      slug?: string;
+      permission_ids: number[];
+      order_history_days: number | null;
+    }) => {
       const response = isEdit
         ? await apiClient.put(`/admin/roles/${id}`, data)
         : await apiClient.post('/admin/roles', data);
@@ -111,15 +119,30 @@ const RoleForm: React.FC = () => {
       toast.error('Role name is required');
       return;
     }
+    const trimmedDays = historyDays.trim();
+    const parsedDays = trimmedDays === '' ? null : Math.floor(Number(trimmedDays));
+    if (parsedDays !== null && (!Number.isFinite(parsedDays) || parsedDays < 1)) {
+      toast.error('Order history days must be a whole number of 1 or more (leave blank for unlimited)');
+      return;
+    }
     if (isEdit) {
-      saveMutation.mutate({ name: trimmedName, permission_ids: permissionIds });
+      saveMutation.mutate({
+        name: trimmedName,
+        permission_ids: permissionIds,
+        order_history_days: parsedDays,
+      });
     } else {
       // Slug is auto-generated from the role name (not shown in the form).
       const slug = trimmedName
         .toLowerCase()
         .replace(/\s+/g, '-')
         .replace(/[^a-z0-9-]/g, '');
-      saveMutation.mutate({ name: trimmedName, slug, permission_ids: permissionIds });
+      saveMutation.mutate({
+        name: trimmedName,
+        slug,
+        permission_ids: permissionIds,
+        order_history_days: parsedDays,
+      });
     }
   };
 
@@ -176,6 +199,39 @@ const RoleForm: React.FC = () => {
               className="w-full max-w-md px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 read-only:bg-gray-100 dark:read-only:bg-slate-700"
               placeholder="e.g. Accountant"
             />
+          </div>
+
+          {/* Order-history window — a scope limit rather than a permission. */}
+          <div className="px-4 sm:px-8 py-6 border-b border-gray-200 dark:border-slate-700 grid grid-cols-1 md:grid-cols-[13rem_minmax(0,1fr)] gap-3 md:gap-6 items-start">
+            <label
+              htmlFor="role-history-days"
+              className="text-lg font-medium text-gray-800 dark:text-slate-100 md:pt-2"
+            >
+              Order history
+            </label>
+            <div>
+              <div className="flex items-center gap-3">
+                <input
+                  id="role-history-days"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={historyDays}
+                  onChange={(e) => !isViewOnly && setHistoryDays(e.target.value)}
+                  readOnly={isViewOnly}
+                  className="w-32 px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 read-only:bg-gray-100 dark:read-only:bg-slate-700"
+                  placeholder="Unlimited"
+                />
+                <span className="text-[15px] text-slate-600 dark:text-slate-300">
+                  days back {historyDays.trim() === '' && '(blank = unlimited)'}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-slate-400 mt-2">
+                How far back this role can see orders. Enforced on the server, so the limit
+                holds even if the date filter is changed by hand. E.g. 7 for a cashier, 30 for
+                a call-centre agent, blank for full history.
+              </p>
+            </div>
           </div>
 
           {/* Permission sections: title | select all | permissions */}
