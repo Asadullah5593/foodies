@@ -4,14 +4,16 @@ import {
     BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, MoreThan, LessThan, Or, IsNull } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Banner } from '../entities/banner.entity';
+import { MediaCleanupService } from '../media/media-cleanup.service';
 
 @Injectable()
 export class BannersService {
     constructor(
         @InjectRepository(Banner)
         private repo: Repository<Banner>,
+        private mediaCleanup: MediaCleanupService,
     ) {}
 
     async findAll(tenantId: number) {
@@ -78,6 +80,7 @@ export class BannersService {
     ) {
         const b = await this.repo.findOne({ where: { id, tenantId } });
         if (!b) throw new NotFoundException('Banner not found');
+        const oldImageUrl = b.imageUrl;
 
         if (dto.title !== undefined) {
             const t = String(dto.title).trim();
@@ -97,13 +100,22 @@ export class BannersService {
             b.validUntil = dto.valid_until ? new Date(dto.valid_until) : null;
 
         await this.repo.save(b);
+        // Replaced image: drop the old object once nothing references it.
+        if (oldImageUrl && oldImageUrl !== b.imageUrl) {
+            await this.mediaCleanup.deleteIfUnreferenced(
+                oldImageUrl,
+                'banners',
+            );
+        }
         return this.toResponse(b);
     }
 
     async remove(id: number, tenantId: number) {
         const b = await this.repo.findOne({ where: { id, tenantId } });
         if (!b) throw new NotFoundException('Banner not found');
+        const imageUrl = b.imageUrl;
         await this.repo.remove(b);
+        await this.mediaCleanup.deleteIfUnreferenced(imageUrl, 'banners');
         return { message: 'Banner deleted successfully' };
     }
 

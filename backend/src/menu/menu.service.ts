@@ -23,7 +23,7 @@ import { MenuVariant } from '../entities/menu-variant.entity';
 import { ModifierGroup } from '../entities/modifier-group.entity';
 import { Modifier } from '../entities/modifier.entity';
 import { MenuItemModifierGroupPosition } from '../entities/menu-item-modifier-group-position.entity';
-import { MediaStorageService } from '../media/media-storage.service';
+import { MediaCleanupService } from '../media/media-cleanup.service';
 import {
     effectiveMenuOrderChannels,
     isMenuItemAvailableForOrderType,
@@ -193,7 +193,7 @@ export class MenuService {
         private positionRepo: Repository<MenuItemModifierGroupPosition>,
         @InjectRepository(Discount)
         private discountRepo: Repository<Discount>,
-        private mediaStorage: MediaStorageService,
+        private mediaCleanup: MediaCleanupService,
     ) {}
 
     /** Load active auto offers (product_promotion + discount) usable for the menu price preview. */
@@ -392,7 +392,9 @@ export class MenuService {
     async deleteCategory(id: number) {
         const cat = await this.categoryRepo.findOne({ where: { id } });
         if (!cat) throw new NotFoundException('Category not found');
+        const imageUrl = cat.imageUrl;
         await this.categoryRepo.remove(cat);
+        if (imageUrl) await this.mediaCleanup.deleteIfUnreferenced(imageUrl);
         return { message: 'Category deleted successfully' };
     }
 
@@ -585,6 +587,7 @@ export class MenuService {
         }
         if (dto.description !== undefined) item.description = dto.description;
         if (dto.image_url !== undefined) item.imageUrl = dto.image_url;
+        const droppedGalleryUrls: string[] = [];
         if (dto.gallery_image_urls !== undefined) {
             const oldG = Array.isArray(item.galleryImageUrls)
                 ? [...item.galleryImageUrls]
@@ -595,12 +598,10 @@ export class MenuService {
             item.galleryImageUrls = normalized;
             const keep = new Set(normalized ?? []);
             for (const url of oldG) {
-                if (!keep.has(url)) {
-                    await this.mediaStorage.deleteManagedObjectByUrl(
-                        url,
-                        'menu-items',
-                    );
-                }
+                // Cleanup runs after the save below: the reference guard reads
+                // the DB, so deleting here would still see the old gallery and
+                // keep everything.
+                if (!keep.has(url)) droppedGalleryUrls.push(url);
             }
         }
         if (dto.base_price !== undefined) item.basePrice = dto.base_price;
@@ -622,12 +623,16 @@ export class MenuService {
             );
 
         await this.itemRepo.save(item);
+        await this.mediaCleanup.deleteManyIfUnreferenced(
+            droppedGalleryUrls,
+            'menu-items',
+        );
         if (
             dto.image_url !== undefined &&
             oldImageUrl &&
             oldImageUrl !== item.imageUrl
         ) {
-            await this.mediaStorage.deleteManagedObjectByUrl(
+            await this.mediaCleanup.deleteIfUnreferenced(
                 oldImageUrl,
                 'menu-items',
             );
@@ -656,7 +661,17 @@ export class MenuService {
     async deleteItem(id: number) {
         const item = await this.itemRepo.findOne({ where: { id } });
         if (!item) throw new NotFoundException('Menu item not found');
+        const imageUrls = [
+            item.imageUrl,
+            ...(Array.isArray(item.galleryImageUrls)
+                ? item.galleryImageUrls
+                : []),
+        ];
         await this.itemRepo.remove(item);
+        await this.mediaCleanup.deleteManyIfUnreferenced(
+            imageUrls,
+            'menu-items',
+        );
         return { message: 'Menu item deleted successfully' };
     }
 
@@ -1700,7 +1715,8 @@ export class MenuService {
         // Resolve any branch that carries this item and reuse that builder to attach
         // the same read-only `deal` object the app already receives. This is additive
         // (non-deal items get no `deal` field) and does not alter the branch endpoint.
-        let deal: Awaited<ReturnType<MenuService['getDealByMenuItemId']>> = null;
+        let deal: Awaited<ReturnType<MenuService['getDealByMenuItemId']>> =
+            null;
         const dealComponentCount = await this.dealComponentRepo.count({
             where: { menuItemId: item.id },
         });

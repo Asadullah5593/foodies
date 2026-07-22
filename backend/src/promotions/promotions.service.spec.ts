@@ -26,6 +26,11 @@ describe('PromotionsService', () => {
                         getRepository: () => ({}),
                     }),
             },
+            // media cleanup: inert in unit tests
+            {
+                deleteIfUnreferenced: async () => false,
+                deleteManyIfUnreferenced: async () => undefined,
+            } as any,
         );
 
     describe('assignNewCustomerPromotions', () => {

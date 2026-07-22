@@ -14,7 +14,7 @@ import {
 import { Branch } from '../entities/branch.entity';
 import { BranchBrand } from '../entities/branch-brand.entity';
 import { BrandOrderRating } from '../entities/brand-order-rating.entity';
-import { MediaStorageService } from '../media/media-storage.service';
+import { MediaCleanupService } from '../media/media-cleanup.service';
 import {
     DELIVERY_TIER_DEFAULTS,
     validateDeliveryTiers,
@@ -29,7 +29,7 @@ export class BrandsService {
         private branchBrandRepo: Repository<BranchBrand>,
         @InjectRepository(BrandOrderRating)
         private brandRatingRepo: Repository<BrandOrderRating>,
-        private mediaStorage: MediaStorageService,
+        private mediaCleanup: MediaCleanupService,
     ) {}
 
     /** Admin: tenant user sees only their tenant's brands (brand-locked users only their own); super admin (tenantId null) sees all with tenant_name */
@@ -271,7 +271,10 @@ export class BrandsService {
             const r = row as Record<string, unknown>;
             const id = Number(r.brandId ?? r.brand_id);
             const count = Number(r.cnt ?? r.count);
-            const avgRaw = r.avgstars ?? r.avg_stars;
+            const avgRaw = (r.avgstars ?? r.avg_stars) as
+                | string
+                | number
+                | null;
             const avg =
                 avgRaw != null && avgRaw !== ''
                     ? parseFloat(String(avgRaw))
@@ -441,10 +444,7 @@ export class BrandsService {
             oldLogoUrl &&
             oldLogoUrl !== brand.logoUrl
         ) {
-            await this.mediaStorage.deleteManagedObjectByUrl(
-                oldLogoUrl,
-                'brands',
-            );
+            await this.mediaCleanup.deleteIfUnreferenced(oldLogoUrl, 'brands');
         }
         return this.toResponse(brand);
     }
@@ -486,10 +486,7 @@ export class BrandsService {
             oldLogoUrl &&
             oldLogoUrl !== brand.logoUrl
         ) {
-            await this.mediaStorage.deleteManagedObjectByUrl(
-                oldLogoUrl,
-                'brands',
-            );
+            await this.mediaCleanup.deleteIfUnreferenced(oldLogoUrl, 'brands');
         }
         return this.toResponse(brand);
     }
@@ -789,10 +786,40 @@ export class BrandsService {
      * FKs (ledger, transfers, shifts, branch_users, …) SET NULL / CASCADE cleanly.
      */
     private async deleteBrandWithInventoryCleanup(brand: Brand): Promise<void> {
+        // Categories and menu items CASCADE away with the brand, so their
+        // image URLs must be collected BEFORE the delete. Cleanup runs after
+        // the transaction commits; the reference guard keeps any object that
+        // another row (e.g. a shared/pasted URL) still uses.
+        const logoUrl = brand.logoUrl;
+        const itemImageRows: Array<{ url: string }> =
+            await this.repo.manager.query(
+                `SELECT image_url AS url FROM menu_items
+                  WHERE brand_id = $1 AND image_url IS NOT NULL
+                 UNION
+                 SELECT g.u FROM menu_items mi
+                  CROSS JOIN LATERAL jsonb_array_elements_text(mi.gallery_image_urls) AS g(u)
+                  WHERE mi.brand_id = $1 AND mi.gallery_image_urls IS NOT NULL`,
+                [brand.id],
+            );
+        const categoryImageRows: Array<{ url: string }> =
+            await this.repo.manager.query(
+                `SELECT image_url AS url FROM menu_categories
+                  WHERE brand_id = $1 AND image_url IS NOT NULL`,
+                [brand.id],
+            );
         await this.repo.manager.transaction(async (em) => {
             await this.releaseBrandInventoryToBranchPool(em, brand.id);
             await em.remove(brand);
         });
+        await this.mediaCleanup.deleteIfUnreferenced(logoUrl, 'brands');
+        await this.mediaCleanup.deleteManyIfUnreferenced(
+            itemImageRows.map((r) => r.url),
+            'menu-items',
+        );
+        // Category images are pasted URLs of unknown provenance - no folder pin.
+        await this.mediaCleanup.deleteManyIfUnreferenced(
+            categoryImageRows.map((r) => r.url),
+        );
     }
 
     private async releaseBrandInventoryToBranchPool(
