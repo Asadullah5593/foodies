@@ -11,6 +11,7 @@ import { CampaignItem } from '../entities/campaign-item.entity';
 import { Discount } from '../entities/discount.entity';
 import { CouponRealization } from '../entities/coupon-realization.entity';
 import { Brand } from '../entities/brand.entity';
+import { MediaCleanupService } from '../media/media-cleanup.service';
 import {
     ManageScope,
     detachBrands,
@@ -39,6 +40,7 @@ export class CampaignsService {
         private realizationRepo: Repository<CouponRealization>,
         @InjectRepository(Brand)
         private brandRepo: Repository<Brand>,
+        private mediaCleanup: MediaCleanupService,
     ) {}
 
     // ---- Brand scoping -----------------------------------------------------
@@ -157,7 +159,8 @@ export class CampaignsService {
         const c = await this.campaignRepo.findOne({ where: { id, tenantId } });
         if (!c) throw new NotFoundException('Campaign not found');
         this.assertCampaignManageable(c, allowedBrandIds);
-        if (dto.name !== undefined) c.name = String(dto.name).trim();
+        const oldImageUrl = c.imageUrl;
+        if (dto.name !== undefined) c.name = String(dto.name as string).trim();
         if (dto.description !== undefined)
             c.description = (dto.description as string | null) ?? null;
         if (dto.image_url !== undefined)
@@ -178,6 +181,14 @@ export class CampaignsService {
                 allowedBrandIds,
             );
         await this.campaignRepo.save(c);
+        // Campaign artwork uploads land in the shared 'banners' folder; the
+        // reference guard keeps an object alive if a banner still uses it.
+        if (oldImageUrl && oldImageUrl !== c.imageUrl) {
+            await this.mediaCleanup.deleteIfUnreferenced(
+                oldImageUrl,
+                'banners',
+            );
+        }
         return this.campaignResponse(c);
     }
 
@@ -220,7 +231,14 @@ export class CampaignsService {
             }
         }
 
+        // campaign_items rows CASCADE away with the campaign — collect their
+        // artwork before the delete or the URLs are unrecoverable.
+        const items = await this.itemRepo.find({
+            where: { campaignId: c.id },
+        });
+        const imageUrls = [c.imageUrl, ...items.map((i) => i.imageUrl)];
         await this.campaignRepo.remove(c);
+        await this.mediaCleanup.deleteManyIfUnreferenced(imageUrls, 'banners');
         return { message: 'Campaign deleted' };
     }
 
@@ -306,7 +324,9 @@ export class CampaignsService {
         let offer: Discount | null = null;
         if (kind === 'offer') {
             if (dto.offer_id == null)
-                throw new BadRequestException('offer_id required for kind=offer');
+                throw new BadRequestException(
+                    'offer_id required for kind=offer',
+                );
             offer = await this.discountRepo.findOne({
                 where: { id: Number(dto.offer_id), tenantId },
             });
@@ -342,10 +362,7 @@ export class CampaignsService {
             }),
         );
         // Deep link wraps the item id (destination params resolved via the item).
-        if (
-            saved.destinationType != null &&
-            saved.destinationType !== 'none'
-        ) {
+        if (saved.destinationType != null && saved.destinationType !== 'none') {
             saved.deepLinkUrl = `${appBaseUrl()}promo/${saved.id}`;
             await this.itemRepo.save(saved);
         }
@@ -369,6 +386,7 @@ export class CampaignsService {
             where: { id: itemId, campaignId },
         });
         if (!item) throw new NotFoundException('Item not found');
+        const oldItemImageUrl = item.imageUrl;
         if (dto.title !== undefined) item.title = (dto.title as string) ?? null;
         if (dto.subtitle !== undefined)
             item.subtitle = (dto.subtitle as string) ?? null;
@@ -376,8 +394,7 @@ export class CampaignsService {
             item.imageUrl = (dto.image_url as string) ?? null;
         if (dto.sort_order !== undefined)
             item.sortOrder = Number(dto.sort_order);
-        if (dto.is_active !== undefined)
-            item.isActive = Boolean(dto.is_active);
+        if (dto.is_active !== undefined) item.isActive = Boolean(dto.is_active);
         if (dto.valid_from !== undefined)
             item.validFrom = dto.valid_from
                 ? new Date(dto.valid_from as string)
@@ -404,6 +421,12 @@ export class CampaignsService {
                 ? `${appBaseUrl()}promo/${item.id}`
                 : null;
         await this.itemRepo.save(item);
+        if (oldItemImageUrl && oldItemImageUrl !== item.imageUrl) {
+            await this.mediaCleanup.deleteIfUnreferenced(
+                oldItemImageUrl,
+                'banners',
+            );
+        }
         return this.itemResponse(item);
     }
 
@@ -418,7 +441,9 @@ export class CampaignsService {
             where: { id: itemId, campaignId },
         });
         if (!item) throw new NotFoundException('Item not found');
+        const itemImageUrl = item.imageUrl;
         await this.itemRepo.remove(item);
+        await this.mediaCleanup.deleteIfUnreferenced(itemImageUrl, 'banners');
         return { message: 'Item deleted' };
     }
 

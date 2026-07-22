@@ -47,10 +47,13 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
   quote,
   paymentMode,
   onPaymentModeChange,
-  paymentCashAmount,
-  paymentCardAmount,
-  onPaymentCashAmountChange,
-  onPaymentCardAmountChange,
+  // HIDDEN — Cash + Card (split tender). These remain declared in
+  // PaymentPanelProps so callers still compile and pass them; un-comment them
+  // together with the split helpers and the split UI further down to restore.
+  // paymentCashAmount,
+  // paymentCardAmount,
+  // onPaymentCashAmountChange,
+  // onPaymentCardAmountChange,
   bankCards = [],
   bankCardId = null,
   onBankCardChange,
@@ -63,22 +66,27 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
   const taxAmount = Number(quote?.tax_amount ?? 0);
   const deliveryFee = Number(quote?.delivery_fee ?? 0);
 
+  // HIDDEN — Cash + Card (split tender) helpers. Kept verbatim for an easy
+  // restore: un-comment this block, the four props above, the 'multipay' entry
+  // in the tender list, the split UI, and the splitMismatch guard on the
+  // Create Order button.
+  //
   // Clamp a multipay field so cash + card can never exceed the order total:
   // the max a field may hold is (total - the other field's current value).
-  const clampSplit = (raw: string, other: string): string => {
-    if (raw === '') return raw;
-    const n = parseFloat(raw);
-    if (!Number.isFinite(n) || n < 0) return raw;
-    const otherVal = parseFloat(other || '0') || 0;
-    const maxForThis = Math.max(0, Math.round((total - otherVal) * 100) / 100);
-    if (n > maxForThis) return String(maxForThis);
-    return raw;
-  };
-
-  const cashVal = parseFloat(paymentCashAmount || '0') || 0;
-  const cardVal = parseFloat(paymentCardAmount || '0') || 0;
-  const splitSum = Math.round((cashVal + cardVal) * 100) / 100;
-  const splitMismatch = paymentMode === 'multipay' && Math.abs(splitSum - total) > 0.01;
+  // const clampSplit = (raw: string, other: string): string => {
+  //   if (raw === '') return raw;
+  //   const n = parseFloat(raw);
+  //   if (!Number.isFinite(n) || n < 0) return raw;
+  //   const otherVal = parseFloat(other || '0') || 0;
+  //   const maxForThis = Math.max(0, Math.round((total - otherVal) * 100) / 100);
+  //   if (n > maxForThis) return String(maxForThis);
+  //   return raw;
+  // };
+  //
+  // const cashVal = parseFloat(paymentCashAmount || '0') || 0;
+  // const cardVal = parseFloat(paymentCardAmount || '0') || 0;
+  // const splitSum = Math.round((cashVal + cardVal) * 100) / 100;
+  // const splitMismatch = paymentMode === 'multipay' && Math.abs(splitSum - total) > 0.01;
 
   return (
     <div className="mt-auto rounded-2xl border border-foodies-border dark:border-slate-600 bg-foodies-surface dark:bg-slate-800 p-5 shadow-lg">
@@ -157,7 +165,9 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
       <div className="mt-4 pt-4 border-t border-foodies-border dark:border-slate-600">
         <label className="block text-sm font-medium text-foodies-textPrimary dark:text-slate-200 mb-2">Payment *</label>
         <div className="flex flex-wrap gap-2">
-          {(['cash', 'card', 'multipay'] as const).map((mode) => (
+          {/* 'multipay' (Cash + Card) hidden — restore with:
+              (['cash', 'card', 'multipay'] as const) */}
+          {(['cash', 'card'] as const).map((mode) => (
             <button
               key={mode}
               type="button"
@@ -168,7 +178,8 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
                   : 'border-foodies-border dark:border-slate-600 bg-foodies-surfaceMuted dark:bg-slate-700 text-foodies-textPrimary dark:text-slate-200 hover:border-foodies-primary hover:bg-red-50/50 dark:hover:bg-red-900/30'
               }`}
             >
-              {mode === 'cash' ? 'Cash' : mode === 'card' ? 'Card' : 'Cash + Card'}
+              {mode === 'cash' ? 'Cash' : 'Card'}
+              {/* restore with: mode === 'cash' ? 'Cash' : mode === 'card' ? 'Card' : 'Cash + Card' */}
             </button>
           ))}
         </div>
@@ -195,7 +206,8 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
         {/* "Does the customer's card have a discount?" — check by BIN without
             scrolling a hundred-card list. Result only; the cashier still picks
             the card above to actually apply the offer. */}
-        {(paymentMode === 'card' || paymentMode === 'multipay') && (
+        {/* restore with: (paymentMode === 'card' || paymentMode === 'multipay') */}
+        {paymentMode === 'card' && (
           <div className="mt-3">
             <label className="block text-xs font-medium text-foodies-textSecondary dark:text-slate-400 mb-1">
               Check card for discount (BIN)
@@ -203,9 +215,14 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
             <BankCardBinLookup branchId={branchId} compact />
           </div>
         )}
-        {/* A bank's offer is funded on the whole bill going through its card, so a
-            split tender cancels it. Say so — the discount vanishing on its own
-            reads as a bug from behind the counter. */}
+        {/* HIDDEN — Cash + Card (split tender) UI: the card-offer warning and the
+            cash/card amount fields. Kept verbatim for an easy restore; un-comment
+            this block along with the split helpers and props above.
+
+            (The warning existed because a bank's offer is funded on the whole bill
+            going through its card, so a split tender cancels it — worth saying out
+            loud, since the discount vanishing on its own reads as a bug.)
+
         {paymentMode === 'multipay' && bankCards.some((c) => c.has_offer) && (
           <p className="mt-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
             Card offers need the full bill paid on one card — a cash + card split
@@ -247,13 +264,14 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
             </p>
           </div>
         )}
+        */}
       </div>
 
       <motion.div whileTap={{ scale: isSubmitting || itemCount === 0 ? 1 : 0.98 }} whileHover={{ scale: isSubmitting || itemCount === 0 ? 1 : 1.01 }} transition={{ type: 'tween', duration: 0.15 }}>
         <Button
           variant="gradient"
           onClick={onCreateOrder}
-          disabled={isSubmitting || itemCount === 0 || splitMismatch}
+          disabled={isSubmitting || itemCount === 0 /* || splitMismatch — restore with the split tender */}
           isLoading={isSubmitting}
           className="w-full mt-4 font-semibold py-3 rounded-xl"
           size="large"

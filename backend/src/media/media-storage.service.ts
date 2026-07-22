@@ -337,11 +337,16 @@ export class MediaStorageService {
             ? key.slice(this.keyPrefix.length + 1)
             : key;
         const folder = relative.split('/')[0] || '';
+        // Must cover every folder the upload endpoints write to (see
+        // upload.controller.ts) — a folder missing here silently exempts its
+        // objects from cleanup on replace/delete.
         const allowedFolders = new Set([
             'brands',
             'customer-profiles',
             'menu-items',
             'misc',
+            'banners',
+            'promotions',
         ]);
         if (!allowedFolders.has(folder)) return null;
         if (expectedFolder && folder !== expectedFolder) return null;

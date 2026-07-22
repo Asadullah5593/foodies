@@ -16,6 +16,7 @@ import {
 import { Promotion } from '../entities/promotion.entity';
 import { CustomerPromotion } from '../entities/customer-promotion.entity';
 import { Discount } from '../entities/discount.entity';
+import { MediaCleanupService } from '../media/media-cleanup.service';
 
 @Injectable()
 export class PromotionsService {
@@ -29,6 +30,7 @@ export class PromotionsService {
         @InjectRepository(Discount)
         private discountRepo: Repository<Discount>,
         private dataSource: DataSource,
+        private mediaCleanup: MediaCleanupService,
     ) {}
 
     async findAll(tenantId: number) {
@@ -144,6 +146,7 @@ export class PromotionsService {
         const p = await this.promoRepo.findOne({ where: { id, tenantId } });
         if (!p) throw new NotFoundException('Promotion not found');
         const wasActive = p.isActive;
+        const oldImageUrl = p.imageUrl;
 
         if (dto.name !== undefined) {
             const n = String(dto.name).trim();
@@ -163,6 +166,13 @@ export class PromotionsService {
             p.validUntil = dto.valid_until ? new Date(dto.valid_until) : null;
 
         await this.promoRepo.save(p);
+        // Replaced/cleared image: drop the old object once nothing references it.
+        if (oldImageUrl && oldImageUrl !== p.imageUrl) {
+            await this.mediaCleanup.deleteIfUnreferenced(
+                oldImageUrl,
+                'promotions',
+            );
+        }
         // Switching a promotion off tears down its outstanding customer copies.
         if (wasActive && !p.isActive) {
             await this.deactivateAssignments(p.id);
@@ -212,7 +222,9 @@ export class PromotionsService {
     async remove(id: number, tenantId: number) {
         const p = await this.promoRepo.findOne({ where: { id, tenantId } });
         if (!p) throw new NotFoundException('Promotion not found');
+        const imageUrl = p.imageUrl;
         await this.promoRepo.remove(p);
+        await this.mediaCleanup.deleteIfUnreferenced(imageUrl, 'promotions');
         return { message: 'Promotion deleted successfully' };
     }
 
