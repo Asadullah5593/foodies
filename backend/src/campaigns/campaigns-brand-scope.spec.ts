@@ -32,6 +32,7 @@ describe('CampaignsService — brand scoping on writes', () => {
         };
         const itemRepo = {
             count: jest.fn().mockResolvedValue(0),
+            find: jest.fn().mockResolvedValue([]),
             findOne: jest.fn().mockResolvedValue({ id: 3, campaignId: 7 }),
             remove: jest.fn().mockResolvedValue(undefined),
         };
@@ -47,6 +48,11 @@ describe('CampaignsService — brand scoping on writes', () => {
             noop, // discountRepo
             noop, // realizationRepo
             brandRepo as never,
+            // media cleanup: inert in unit tests
+            {
+                deleteIfUnreferenced: async () => false,
+                deleteManyIfUnreferenced: async () => undefined,
+            } as never,
         );
         return { service, campaignRepo, itemRepo, row };
     }

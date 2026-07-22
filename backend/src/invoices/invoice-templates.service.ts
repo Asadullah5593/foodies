@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { InvoiceTemplate } from '../entities/invoice-template.entity';
+import { MediaCleanupService } from '../media/media-cleanup.service';
 import {
     INVOICE_LAYOUTS,
     InvoiceLayout,
@@ -41,7 +42,16 @@ export class InvoiceTemplatesService {
     constructor(
         @InjectRepository(InvoiceTemplate)
         private repo: Repository<InvoiceTemplate>,
+        private mediaCleanup: MediaCleanupService,
     ) {}
+
+    /** The template's stored FBR-logo URL, if any (config is a partial). */
+    private fbrLogoOf(t: InvoiceTemplate): string | null {
+        const cfg = (t.config ?? {}) as { fbrLogoUrl?: unknown };
+        const v =
+            typeof cfg.fbrLogoUrl === 'string' ? cfg.fbrLogoUrl.trim() : '';
+        return v || null;
+    }
 
     private assertManageable(
         t: Pick<InvoiceTemplate, 'brandId'>,
@@ -151,6 +161,7 @@ export class InvoiceTemplatesService {
         const t = await this.repo.findOne({ where: { id, tenantId } });
         if (!t) throw new NotFoundException('Invoice template not found');
         this.assertManageable(t, allowedBrandIds);
+        const oldFbrLogoUrl = this.fbrLogoOf(t);
         if (dto.name !== undefined) {
             const name = String(dto.name).trim();
             if (!name) throw new BadRequestException('Name cannot be empty.');
@@ -196,6 +207,11 @@ export class InvoiceTemplatesService {
                 );
             return r.save(t);
         });
+        // Replaced/cleared FBR logo (uploads land in 'misc'): drop the old
+        // object once no other template references it.
+        if (oldFbrLogoUrl && oldFbrLogoUrl !== this.fbrLogoOf(saved)) {
+            await this.mediaCleanup.deleteIfUnreferenced(oldFbrLogoUrl, 'misc');
+        }
         return this.toResponse(saved);
     }
 
@@ -207,7 +223,9 @@ export class InvoiceTemplatesService {
         const t = await this.repo.findOne({ where: { id, tenantId } });
         if (!t) throw new NotFoundException('Invoice template not found');
         this.assertManageable(t, allowedBrandIds);
+        const fbrLogoUrl = this.fbrLogoOf(t);
         await this.repo.remove(t);
+        await this.mediaCleanup.deleteIfUnreferenced(fbrLogoUrl, 'misc');
         return { success: true };
     }
 

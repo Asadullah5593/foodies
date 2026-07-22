@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { MenuCategory } from '../entities/menu-category.entity';
 import { Brand } from '../entities/brand.entity';
+import { MediaCleanupService } from '../media/media-cleanup.service';
 
 export interface CategoryFilters {
     brand_id?: number;
@@ -31,6 +32,7 @@ export class CategoriesService {
         private repo: Repository<MenuCategory>,
         @InjectRepository(Brand)
         private brandRepo: Repository<Brand>,
+        private mediaCleanup: MediaCleanupService,
     ) {}
 
     private async getBrandIdsForTenant(
@@ -207,6 +209,7 @@ export class CategoriesService {
             throw new ForbiddenException('Category not found or access denied');
         if (allowedBrandIds != null && !allowedBrandIds.includes(cat.brandId))
             throw new ForbiddenException('Category not found or access denied');
+        const oldImageUrl = cat.imageUrl;
         if (dto.name !== undefined) {
             const name = String(dto.name).trim();
             if (!name) throw new BadRequestException('Name cannot be empty');
@@ -219,6 +222,12 @@ export class CategoriesService {
         if (dto.image_url !== undefined)
             cat.imageUrl = normalizeText(dto.image_url);
         await this.repo.save(cat);
+        // Category images are pasted URLs (no dedicated uploader/folder), so
+        // their provenance is unknown — no folder pin; the reference guard is
+        // what keeps a borrowed object (e.g. a menu item's image) alive.
+        if (oldImageUrl && oldImageUrl !== cat.imageUrl) {
+            await this.mediaCleanup.deleteIfUnreferenced(oldImageUrl);
+        }
         return this.toResponse(cat);
     }
 
@@ -234,7 +243,9 @@ export class CategoriesService {
             throw new ForbiddenException('Category not found or access denied');
         if (allowedBrandIds != null && !allowedBrandIds.includes(cat.brandId))
             throw new ForbiddenException('Category not found or access denied');
+        const imageUrl = cat.imageUrl;
         await this.repo.remove(cat);
+        if (imageUrl) await this.mediaCleanup.deleteIfUnreferenced(imageUrl);
         return { message: 'Category deleted successfully' };
     }
 
