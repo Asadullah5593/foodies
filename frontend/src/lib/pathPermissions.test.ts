@@ -56,3 +56,76 @@ describe('canAccessPath — shortcuts in the top bar', () => {
     expect(canAccessPath(withPerms(['orders:create']), '/admin/orders')).toBe(false);
   });
 });
+
+describe('canAccessPath — Rider Supervisor sub-module', () => {
+  // The delivery manager holds exactly one permission.
+  const deliveryManager = withPerms(['rider-supervisor:view']);
+
+  it('grants the delivery manager the supervisor sub-module', () => {
+    expect(canAccessPath(deliveryManager, '/admin/rider-hrm/supervisor')).toBe(true);
+  });
+
+  it('hides every other Rider HRM area from the delivery manager', () => {
+    for (const p of [
+      '/admin/rider-hrm',
+      '/admin/rider-hrm/profiles',
+      '/admin/rider-hrm/attendance',
+      '/admin/rider-hrm/breaks',
+      '/admin/rider-hrm/comp-plans',
+      '/admin/rider-hrm/payroll',
+      '/admin/rider-hrm/metrics',
+      '/admin/rider-hrm/pool-sharing',
+      '/admin/rider-hrm/request-riders',
+    ]) {
+      expect(canAccessPath(deliveryManager, p)).toBe(false);
+    }
+  });
+
+  it('lands a supervisor-only user on the supervisor page', () => {
+    expect(getDefaultLandingPath(deliveryManager)).toBe(
+      '/admin/rider-hrm/supervisor',
+    );
+  });
+
+  it('is standalone — the old rider-hrm permissions do not grant it', () => {
+    expect(
+      canAccessPath(
+        withPerms(['deliveries:view', 'shifts:manage']),
+        '/admin/rider-hrm/supervisor',
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps pool-sharing reachable for an owner/GM who also has the supervisor view', () => {
+    const owner = withPerms([
+      'deliveries:view',
+      'shifts:manage',
+      'rider-sharing:manage',
+      'rider-supervisor:view',
+    ]);
+    expect(canAccessPath(owner, '/admin/rider-hrm/supervisor')).toBe(true);
+    expect(canAccessPath(owner, '/admin/rider-hrm/pool-sharing')).toBe(true);
+  });
+});
+
+describe('canAccessPath — Orders rider-ops banner gating', () => {
+  // The Orders page gates "Open Rider HRM", "Configure Branch Radius" and the
+  // auto-assign pill on the routes they link to, so an orders-only user never
+  // sees dead-end actions.
+  it('hides both banner actions from an orders-only user (e.g. a cashier)', () => {
+    const cashier = withPerms(['orders:view', 'orders:create']);
+    expect(canAccessPath(cashier, '/admin/rider-hrm')).toBe(false);
+    expect(canAccessPath(cashier, '/admin/branches')).toBe(false);
+  });
+
+  it('gates the two actions independently', () => {
+    // Rider-ops access but no branch config → Open Rider HRM only.
+    const riderOps = withPerms(['orders:view', 'deliveries:view']);
+    expect(canAccessPath(riderOps, '/admin/rider-hrm')).toBe(true);
+    expect(canAccessPath(riderOps, '/admin/branches')).toBe(false);
+    // Branch config but no rider-hrm → Configure Branch Radius + pill only.
+    const branchCfg = withPerms(['orders:view', 'branches:view']);
+    expect(canAccessPath(branchCfg, '/admin/rider-hrm')).toBe(false);
+    expect(canAccessPath(branchCfg, '/admin/branches')).toBe(true);
+  });
+});
