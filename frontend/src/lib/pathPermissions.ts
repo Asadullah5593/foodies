@@ -40,6 +40,7 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   // More specific rider-hrm sub-paths (longest-prefix match wins).
   '/admin/rider-hrm/pool-sharing': ['rider-sharing:manage'],
   '/admin/rider-hrm/request-riders': ['rider-share:request'],
+  '/admin/rider-hrm/supervisor': ['rider-supervisor:view'],
   '/admin/rider-hrm': ['deliveries:view', 'shifts:manage', 'rider-hrm:view'],
   '/admin/rider-ops': ['deliveries:view'],
   '/admin/shifts': ['shifts:manage', 'shifts:view'],
@@ -148,6 +149,7 @@ const ORDERED_LANDING_PATHS = [
   '/admin/orders',
   '/admin/deliveries',
   '/admin/rider-hrm',
+  '/admin/rider-hrm/supervisor',
   '/admin/shifts',
   '/admin/reports',
   '/admin/inventory',

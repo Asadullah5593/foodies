@@ -86,6 +86,13 @@ async function seed() {
             description: 'Void orders',
         },
         {
+            name: 'orders:place:call-center',
+            resource: 'orders',
+            action: 'place:call-center',
+            description:
+                'Take orders on behalf of customers (call centre); tags orders as source=call_centre and alerts the till',
+        },
+        {
             name: 'discounts:apply',
             resource: 'discounts',
             action: 'apply',

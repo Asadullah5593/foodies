@@ -5,4 +5,10 @@
  *
  * Keep in sync with the frontend copy in frontend/src/utils/orderSources.ts.
  */
-export const ORDER_SOURCES: string[] = ['pos', 'consumer_app', 'kiosk'];
+export const ORDER_SOURCES: string[] = [
+    'pos',
+    'call_centre',
+    'consumer_app',
+    'consumer_web',
+    'kiosk',
+];

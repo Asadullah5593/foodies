@@ -13,6 +13,7 @@ import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
 import PaginationBar from '../../components/PaginationBar';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { useHasPermission } from '../../hooks/useHasPermission';
+import { canAccessPath } from '../../lib/pathPermissions';
 import { useAuth } from '../../contexts/AuthContext';
 import { ORDER_SOURCES, ORDER_SOURCE_LABEL, orderSourceLabel } from '../../utils/orderSources';
 import { deliveryStatusLabel } from '../../lib/deliveryStatus';
@@ -229,7 +230,9 @@ const gridCols =
 
 const SOURCE_BADGE: Record<string, string> = {
   pos: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200',
+  call_centre: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
   consumer_app: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200',
+  consumer_web: 'bg-teal-50 text-teal-700 dark:bg-teal-900/40 dark:text-teal-200',
   kiosk: 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100',
 };
 
@@ -245,6 +248,11 @@ const Orders: React.FC = () => {
   const canFilterSource = useHasPermission('orders:filter:source');
   const canFilterStatus = useHasPermission('orders:filter:status');
   const canFilterSearch = useHasPermission('orders:filter:search');
+  // Gate the rider-ops banner + auto-assign pill on the routes they link to, so
+  // a user with orders:view but no rider-HRM / branch access never sees
+  // dead-end buttons or the auto-assign status they cannot act on.
+  const canOpenRiderHrm = canAccessPath(user, '/admin/rider-hrm');
+  const canConfigBranches = canAccessPath(user, '/admin/branches');
   // Roles can be limited to the last N days; the server enforces the same floor,
   // so this only stops the picker offering dates that would return nothing.
   const historyDays = user?.order_history_days ?? null;
@@ -905,24 +913,26 @@ const Orders: React.FC = () => {
           </span>
         </div>
         <div className="flex items-center gap-2.5">
-          <Link
-            to={autoAssign.branchId ? `/admin/branches/${autoAssign.branchId}` : '/admin/branches'}
-            title={autoAssign.title}
-            className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-[14.5px] font-semibold ${
-              autoAssign.tone === 'on'
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
-                : autoAssign.tone === 'off'
-                  ? 'border-gray-200 bg-gray-100 text-gray-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                  : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
-            }`}
-          >
-            <span
-              className={`h-2 w-2 rounded-full ${
-                autoAssign.tone === 'on' ? 'bg-emerald-500' : autoAssign.tone === 'off' ? 'bg-gray-400' : 'bg-amber-500'
+          {canConfigBranches && (
+            <Link
+              to={autoAssign.branchId ? `/admin/branches/${autoAssign.branchId}` : '/admin/branches'}
+              title={autoAssign.title}
+              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-[14.5px] font-semibold ${
+                autoAssign.tone === 'on'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+                  : autoAssign.tone === 'off'
+                    ? 'border-gray-200 bg-gray-100 text-gray-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                    : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
               }`}
-            />
-            {autoAssign.label}
-          </Link>
+            >
+              <span
+                className={`h-2 w-2 rounded-full ${
+                  autoAssign.tone === 'on' ? 'bg-emerald-500' : autoAssign.tone === 'off' ? 'bg-gray-400' : 'bg-amber-500'
+                }`}
+              />
+              {autoAssign.label}
+            </Link>
+          )}
           <button
             title="Refresh"
             onClick={() => queryClient.invalidateQueries({ queryKey: ['admin-orders'] })}
@@ -935,35 +945,42 @@ const Orders: React.FC = () => {
         </div>
       </div>
 
-      {/* Rider banner */}
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
-            <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="4" cy="11.5" r="2" /><circle cx="12" cy="11.5" r="2" /><path d="M4 11.5l3-5.5h2.5l2 5.5M7 6l-1-2H4.3" />
-            </svg>
-          </span>
-          <div className="min-w-0">
-            <div className="text-[16px] font-bold text-gray-800 dark:text-slate-100">
-              Automatic rider assignment
-              <span className="ml-2 text-[14px] font-semibold text-gray-400 dark:text-slate-500">
-                {onDutyRiders?.length ?? 0} rider{(onDutyRiders?.length ?? 0) === 1 ? '' : 's'} on duty
-              </span>
-            </div>
-            <div className="truncate text-[14px] text-gray-500 dark:text-slate-400" title="Riders need an HR profile, check-in, fresh heartbeat/location, and the branch needs coordinates plus delivery radius.">
-              Delivery orders get a rider automatically when the kitchen moves to <strong>Preparing</strong>. Riders need an HR profile, check-in, a fresh heartbeat, and a branch delivery radius.
+      {/* Rider banner — shown only if the user can reach at least one of its
+          actions (Rider HRM or branch config). */}
+      {(canOpenRiderHrm || canConfigBranches) && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
+              <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="4" cy="11.5" r="2" /><circle cx="12" cy="11.5" r="2" /><path d="M4 11.5l3-5.5h2.5l2 5.5M7 6l-1-2H4.3" />
+              </svg>
+            </span>
+            <div className="min-w-0">
+              <div className="text-[16px] font-bold text-gray-800 dark:text-slate-100">
+                Automatic rider assignment
+                <span className="ml-2 text-[14px] font-semibold text-gray-400 dark:text-slate-500">
+                  {onDutyRiders?.length ?? 0} rider{(onDutyRiders?.length ?? 0) === 1 ? '' : 's'} on duty
+                </span>
+              </div>
+              <div className="truncate text-[14px] text-gray-500 dark:text-slate-400" title="Riders need an HR profile, check-in, fresh heartbeat/location, and the branch needs coordinates plus delivery radius.">
+                Delivery orders get a rider automatically when the kitchen moves to <strong>Preparing</strong>. Riders need an HR profile, check-in, a fresh heartbeat, and a branch delivery radius.
+              </div>
             </div>
           </div>
+          <div className="flex flex-none gap-2">
+            {canOpenRiderHrm && (
+              <Link to="/admin/rider-hrm" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
+                Open Rider HRM
+              </Link>
+            )}
+            {canConfigBranches && (
+              <Link to="/admin/branches" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
+                Configure Branch Radius
+              </Link>
+            )}
+          </div>
         </div>
-        <div className="flex flex-none gap-2">
-          <Link to="/admin/rider-hrm" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
-            Open Rider HRM
-          </Link>
-          <Link to="/admin/branches" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
-            Configure Branch Radius
-          </Link>
-        </div>
-      </div>
+      )}
 
       {/* Filters row */}
       <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-[14px] border border-gray-200 bg-white px-3.5 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">

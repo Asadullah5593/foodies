@@ -61,14 +61,22 @@ export const NOTIFICATION_EVENTS = {
         type: 'order.placed.online',
         label: 'Online order placed',
         description:
-            'An app, web or kiosk order was placed and needs the till to accept it.',
+            'An app, web, kiosk or call-centre order was placed and needs the till to accept it.',
         category: 'order',
         surface: 'pos_stack',
         severity: 'warning',
         resolutionMode: 'shared',
         sound: true,
         repeatSound: true,
-        defaultRoleSlugs: ['cashier', 'branch_manager'],
+        // Both the demo slugs and the seeded client slugs (pos_cashier /
+        // pos_branch_manager) so the till is alerted out of the box; slug match
+        // is exact, and an admin override in notification_settings still wins.
+        defaultRoleSlugs: [
+            'cashier',
+            'branch_manager',
+            'pos_cashier',
+            'pos_branch_manager',
+        ],
         actions: [
             {
                 key: 'accept',

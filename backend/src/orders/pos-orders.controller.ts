@@ -17,6 +17,25 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 
+/**
+ * A call-centre agent takes orders through this same POS API, so we tag their
+ * orders with their own source (instead of the walk-in `pos`) — this both
+ * surfaces them as a distinct "Call centre" source in the Orders module and
+ * makes the till chime for them (walk-in `pos` orders are skipped). The agent's
+ * role carries the marker permission below; every other POS user falls back to
+ * plain `pos`. The client cannot set the source itself — it is derived server-
+ * side from who is placing the order.
+ */
+const CALL_CENTRE_PLACE_PERMISSION = 'orders:place:call-center';
+
+function resolvePosSource(user: {
+    permissions?: string[];
+}): 'pos' | 'call_centre' {
+    return user.permissions?.includes(CALL_CENTRE_PLACE_PERMISSION)
+        ? 'call_centre'
+        : 'pos';
+}
+
 @ApiTags('POS – Orders')
 @ApiBearerAuth()
 @Controller('pos/orders')
@@ -51,6 +70,7 @@ export class PosOrdersController {
             tenantId: number | null;
             isSuperAdmin?: boolean;
             allowedBrandIds?: number[] | null;
+            permissions?: string[];
         },
         @Body()
         dto: {
@@ -74,7 +94,7 @@ export class PosOrdersController {
         return this.ordersService.quote(
             dto,
             tenantId,
-            'pos',
+            resolvePosSource(user),
             user.allowedBrandIds ?? null,
         );
     }
@@ -87,6 +107,7 @@ export class PosOrdersController {
             tenantId: number | null;
             isSuperAdmin?: boolean;
             allowedBrandIds?: number[] | null;
+            permissions?: string[];
         },
         @Body()
         dto: {
@@ -123,7 +144,7 @@ export class PosOrdersController {
             dto,
             tenantId,
             user.id,
-            'pos',
+            resolvePosSource(user),
             null,
             user.allowedBrandIds ?? null,
             dto.idempotency_key ?? null,
