@@ -2,13 +2,21 @@
  * Where an order was taken. Mirrors backend/src/orders/order-sources.ts — these
  * are the only values the app writes to `orders.source`.
  */
-export const ORDER_SOURCES = ['pos', 'consumer_app', 'kiosk'] as const;
+export const ORDER_SOURCES = [
+  'pos',
+  'call_centre',
+  'consumer_app',
+  'consumer_web',
+  'kiosk',
+] as const;
 
 export type OrderSource = (typeof ORDER_SOURCES)[number];
 
 export const ORDER_SOURCE_LABEL: Record<OrderSource, string> = {
   pos: 'POS',
+  call_centre: 'Call centre',
   consumer_app: 'Consumer app',
+  consumer_web: 'Consumer web',
   kiosk: 'Kiosk',
 };
 

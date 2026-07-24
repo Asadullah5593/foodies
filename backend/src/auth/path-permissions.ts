@@ -137,6 +137,13 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         permissionNames: [Permissions.RIDER_SHARE_REQUEST],
     },
     {
+        // Read-only supervisor surface: its own permission, independent of the
+        // rest of Rider HRM. Longer, more specific prefix wins over the
+        // /admin/rider-hrm gate below.
+        prefix: '/admin/rider-hrm/supervisor',
+        permissionNames: [Permissions.RIDER_SUPERVISOR_VIEW],
+    },
+    {
         prefix: '/admin/rider-hrm',
         permissionNames: [
             Permissions.DELIVERIES_VIEW,

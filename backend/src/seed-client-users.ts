@@ -95,6 +95,11 @@ const CASHIER_PERMISSIONS = [
  */
 const CALL_CENTRE_PERMISSIONS = [
     'orders:create',
+    // Tags their POS orders as source=call_centre so they show as a distinct
+    // "Call centre" source in the Orders module and chime the till (like an
+    // online order). Must stay listed here: upsertRole grants EXACTLY this set,
+    // so dropping it would revoke the marker on the next seed run.
+    'orders:place:call-center',
     'orders:view',
     'shifts:view',
     'all-branches:access',

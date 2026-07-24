@@ -10,7 +10,10 @@ import { RiderPayrollRun } from '../entities/rider-payroll-run.entity';
 import { RiderPayrollLine } from '../entities/rider-payroll-line.entity';
 import { RiderPayrollLineItem } from '../entities/rider-payroll-line-item.entity';
 import { Branch } from '../entities/branch.entity';
+import { Order } from '../entities/order.entity';
 import { RiderHrmService } from './rider-hrm.service';
+import { RiderSupervisorService } from './rider-supervisor.service';
+import { RiderSupervisorAdminController } from './rider-supervisor.admin.controller';
 import { RiderProfilesAdminController } from './rider-profiles.admin.controller';
 import { RiderAttendanceAdminController } from './rider-attendance.admin.controller';
 import { RiderPresenceAdminController } from './rider-presence.admin.controller';
@@ -39,6 +42,7 @@ import {
             RiderPayrollLine,
             RiderPayrollLineItem,
             Branch,
+            Order,
         ]),
     ],
     controllers: [
@@ -52,8 +56,14 @@ import {
         AdminRiderOpsController,
         RiderSharingAdminController,
         RiderShareRequestsController,
+        RiderSupervisorAdminController,
     ],
-    providers: [RiderHrmService, RiderOpsMetricsService, RiderSharingService],
+    providers: [
+        RiderHrmService,
+        RiderOpsMetricsService,
+        RiderSharingService,
+        RiderSupervisorService,
+    ],
     exports: [RiderHrmService, RiderOpsMetricsService, RiderSharingService],
 })
 export class RiderHrmModule {}

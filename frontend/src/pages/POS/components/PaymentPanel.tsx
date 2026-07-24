@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import Button from '../../../components/Button';
 import BankCardBinLookup from '../../../components/BankCardBinLookup';
@@ -65,6 +65,19 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
   const total = Number(quote?.total_amount ?? subtotal) || 0;
   const taxAmount = Number(quote?.tax_amount ?? 0);
   const deliveryFee = Number(quote?.delivery_fee ?? 0);
+
+  // Cash tendered → change to return. A cashier convenience only: the recorded
+  // cash tender is always the bill total (the till is reconciled against that),
+  // so this never enters the order payload. Cleared when leaving cash mode.
+  const [cashReceived, setCashReceived] = useState('');
+  useEffect(() => {
+    if (paymentMode !== 'cash') setCashReceived('');
+  }, [paymentMode]);
+  const cashReceivedNum = parseFloat(cashReceived);
+  const change =
+    cashReceived !== '' && Number.isFinite(cashReceivedNum)
+      ? Math.round((cashReceivedNum - total) * 100) / 100
+      : null;
 
   // HIDDEN — Cash + Card (split tender) helpers. Kept verbatim for an easy
   // restore: un-comment this block, the four props above, the 'multipay' entry
@@ -183,6 +196,35 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
             </button>
           ))}
         </div>
+        {paymentMode === 'cash' && (
+          <div className="mt-3">
+            <label className="block text-xs font-medium text-foodies-textSecondary dark:text-slate-400 mb-1">
+              Cash received
+            </label>
+            <input
+              type="number"
+              min={0}
+              step="any"
+              inputMode="decimal"
+              value={cashReceived}
+              onChange={(e) => setCashReceived(e.target.value)}
+              placeholder="Amount handed over"
+              className="w-full px-3 py-2 border-2 border-foodies-border dark:border-slate-600 rounded-xl bg-foodies-surface dark:bg-slate-700 text-foodies-textPrimary dark:text-slate-100 text-sm focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
+            />
+            {change !== null && (
+              <div
+                className={`mt-2 flex items-center justify-between rounded-xl px-3 py-2 text-sm font-semibold ${
+                  change >= 0
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : 'bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+                }`}
+              >
+                <span>{change >= 0 ? 'Change due' : 'Short by'}</span>
+                <span>{formatCurrency(Math.abs(change))}</span>
+              </div>
+            )}
+          </div>
+        )}
         {paymentMode === 'card' && bankCards.length > 0 && (
           <div className="mt-3">
             <label className="block text-xs font-medium text-foodies-textSecondary dark:text-slate-400 mb-1">

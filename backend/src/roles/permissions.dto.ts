@@ -10,6 +10,10 @@ export const Permissions = {
     ORDERS_CREATE: 'orders:create',
     ORDERS_VIEW: 'orders:view',
     ORDERS_VOID: 'orders:void',
+    // Marker: this user takes orders on behalf of customers (call centre), so
+    // their POS orders are tagged source=call_centre and alert the till. Held by
+    // the Call Centre Agent role; not implied by any umbrella.
+    ORDERS_PLACE_CALL_CENTER: 'orders:place:call-center',
     // Discounts (apply at POS vs manage in admin)
     DISCOUNTS_APPLY: 'discounts:apply',
     DISCOUNTS_MANAGE: 'discounts:manage',
@@ -268,6 +272,10 @@ export const Permissions = {
     RIDER_COMP_PLANS_EDIT: 'rider-comp-plans:edit',
     RIDER_COMP_PLANS_ACTIVATE: 'rider-comp-plans:activate',
     RIDER_ATTENDANCE_MANAGE: 'rider-attendance:manage',
+    // Read-only rider supervisor surface (recent delivery orders, live rider
+    // roster with attendance + base salary). Standalone — NOT implied by any
+    // umbrella — so it can be granted on its own to a limited oversight role.
+    RIDER_SUPERVISOR_VIEW: 'rider-supervisor:view',
 
     // — Notifications (umbrella: notifications:manage) —
     NOTIFICATIONS_VIEW: 'notifications:view',

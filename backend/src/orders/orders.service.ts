@@ -179,9 +179,12 @@ export class OrdersService {
     ) {}
 
     /**
-     * Notify the till/cashier (per role-targeting config) that an online order —
-     * app, web or kiosk — has landed and needs accepting. POS orders are placed by
-     * the till itself and produce no notification. Fire-and-forget.
+     * Notify the till/cashier (per role-targeting config) that a remotely-placed
+     * order — app, web, kiosk or call centre — has landed and needs accepting. A
+     * call-centre agent uses the POS UI but sells against a branch they aren't
+     * standing at, so like the other online sources the till must be prompted to
+     * accept it. Only true walk-in POS orders (placed by the till itself) produce
+     * no notification. Fire-and-forget.
      */
     private async dispatchOnlineOrderNotifications(orderIds: number[]) {
         if (orderIds.length === 0) return;
@@ -190,13 +193,19 @@ export class OrdersService {
         });
         for (const order of orders) {
             if (order.source === 'pos') continue;
+            const sourceLabel =
+                order.source === 'kiosk'
+                    ? 'kiosk'
+                    : order.source === 'call_centre'
+                      ? 'call centre'
+                      : 'online';
             void this.notificationsService
                 .dispatch({
                     tenantId: order.tenantId,
                     branchId: order.branchId,
                     brandId: order.brandId ?? null,
                     type: 'order.placed.online',
-                    title: `New ${order.source === 'kiosk' ? 'kiosk' : 'online'} order #${order.orderNumber}`,
+                    title: `New ${sourceLabel} order #${order.orderNumber}`,
                     body:
                         `${order.orderType}` +
                         (order.customerName ? ` · ${order.customerName}` : '') +
@@ -1259,7 +1268,12 @@ export class OrdersService {
         },
         tenantId: number,
         createdBy: number | null,
-        source: 'pos' | 'consumer_app' | 'consumer_web' | 'kiosk' = 'pos',
+        source:
+            | 'pos'
+            | 'call_centre'
+            | 'consumer_app'
+            | 'consumer_web'
+            | 'kiosk' = 'pos',
         loggedInCustomerId: number | null = null,
         /** Brand lock of the creating user (null = unrestricted). Items outside these brands are rejected. */
         allowedBrandIds: number[] | null = null,
@@ -4512,7 +4526,12 @@ export class OrdersService {
             delivery_tier?: string;
         },
         tenantId: number,
-        source: 'pos' | 'consumer_app' | 'consumer_web' | 'kiosk' = 'pos',
+        source:
+            | 'pos'
+            | 'call_centre'
+            | 'consumer_app'
+            | 'consumer_web'
+            | 'kiosk' = 'pos',
         /** Brand lock of the requesting user (null = unrestricted). */
         allowedBrandIds: number[] | null = null,
     ) {
