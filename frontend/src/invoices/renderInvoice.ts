@@ -448,10 +448,20 @@ function metaTableHtml(order: InvoiceOrderVM, cfg: InvoiceTemplateConfig): strin
   const rows: string[] = [];
   const add = (k: string, v: string, field: string) =>
     rows.push(`<tr data-field="${field}"><td class="mk">${esc(k)}</td><td class="mv">${v}</td></tr>`);
+  // Banner modes pull the table number out of the meta rows into a big
+  // centered band above them (plain, or white-on-black for thermal pop);
+  // row_large keeps the row and enlarges just the value via cssFor().
+  const tableMode = cfg.tableNumberDisplay ?? 'row';
+  const showTable = cfg.showTableNumber && !!order.table_number;
+  const tableAsBanner =
+    showTable && (tableMode === 'banner' || tableMode === 'banner_inverted');
+  const tableBand = tableAsBanner
+    ? `<div class="tableband${tableMode === 'banner_inverted' ? ' invband' : ''}" data-field="showTableNumber">TABLE ${esc(order.table_number)}</div>`
+    : '';
   if (cfg.showOrderNumber) add('Order #', esc(order.order_number), 'showOrderNumber');
   if (cfg.showInvoiceNumber && order.invoice_number) add('Invoice #', esc(order.invoice_number), 'showInvoiceNumber');
   if (cfg.showOrderType && order.order_type) add('Type', esc(titleCase(String(order.order_type))), 'showOrderType');
-  if (cfg.showTableNumber && order.table_number) add('Table', esc(order.table_number), 'showTableNumber');
+  if (showTable && !tableAsBanner) add('Table', esc(order.table_number), 'showTableNumber');
   if (cfg.showDateTime && order.placed_at) add('Date', esc(fmtDateTime(order.placed_at)), 'showDateTime');
   if (cfg.showCashier && order.cashier_name) add('Cashier', esc(order.cashier_name), 'showCashier');
   if (cfg.showPaymentMethod && order.payment_method) add('Payment', esc(titleCase(order.payment_method)), 'showPaymentMethod');
@@ -467,7 +477,8 @@ function metaTableHtml(order: InvoiceOrderVM, cfg: InvoiceTemplateConfig): strin
     : (order.customer_name ?? '');
   if (cfg.showCustomerInfo && customerLine)
     add('Customer', esc(customerLine), 'showCustomerInfo');
-  return rows.length ? `<table class="metatbl"><tbody>${rows.join('')}</tbody></table>` : '';
+  const table = rows.length ? `<table class="metatbl"><tbody>${rows.join('')}</tbody></table>` : '';
+  return `${tableBand}${table}`;
 }
 
 function totalsHtml(
@@ -663,8 +674,13 @@ function receiptLogoBody(
   const ordersHtml = (data.orders ?? [])
     .map((o) => {
       const typeBits: string[] = [];
+      // In the default row mode the table rides in this layout's order band;
+      // any other tableNumberDisplay mode hands it to metaTableHtml so the
+      // configured banner / enlarged row prints instead (no duplication).
+      const tableInOrderBand = (cfg.tableNumberDisplay ?? 'row') === 'row';
       if (cfg.showOrderType && o.order_type) typeBits.push(titleCase(String(o.order_type)));
-      if (cfg.showTableNumber && o.table_number) typeBits.push(`Table ${o.table_number}`);
+      if (tableInOrderBand && cfg.showTableNumber && o.table_number)
+        typeBits.push(`Table ${o.table_number}`);
       const onumLine = cfg.showOrderNumber
         ? `<div class="onum" data-field="showOrderNumber">Order # ${esc(o.order_number)}</div>`
         : '';
@@ -679,12 +695,14 @@ function receiptLogoBody(
           : '';
       // The big band already carries order no / invoice no / type / table, so
       // drop them from the meta table here to avoid repeating the same fields.
+      // (When a non-row tableNumberDisplay mode owns the table, the meta table
+      // keeps it so the banner / enlarged row renders there.)
       const metaCfg = {
         ...cfg,
         showOrderNumber: false,
         showInvoiceNumber: false,
         showOrderType: false,
-        showTableNumber: false,
+        showTableNumber: tableInOrderBand ? false : cfg.showTableNumber,
       };
       return `
         <div class="order">
@@ -877,6 +895,12 @@ function cssFor(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     // QR prompt text ("Scan to download …"): defaults to the info-box value
     // column (black, weight 600, same size), independently adjustable.
     `.inv-root .qrblock .qr-text { color: #000; font-weight: ${weight(cfg.appQrTextFontWeight)}; font-size: ${px(cfg.appQrTextFontPct)}px; }`,
+    // row_large: the table number keeps its meta row but the value prints big.
+    ...(cfg.tableNumberDisplay === 'row_large'
+      ? [
+          `.inv-root .metatbl tr[data-field="showTableNumber"] .mv { font-size: 1.6em; font-weight: 800; }`,
+        ]
+      : []),
   ].join('\n    ');
   return `${layoutCss(layout, cfg)}\n    ${overrides}`;
 }
@@ -909,6 +933,11 @@ function layoutCss(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
        near-white line that no thermal printer renders. Reset here — the layout
        blocks below are more specific and still draw their own borders. */
     .inv-root th, .inv-root td { border: 0; color: inherit; }
+    /* Prominent table number (tableNumberDisplay banner modes). The inverted
+       band forces its background through print rasterization — without
+       print-color-adjust the browser strips it and white text vanishes. */
+    .inv-root .tableband { text-align: center; font-weight: 800; font-size: 1.6em; letter-spacing: .06em; margin: 6px 0 4px; padding: 2px 0; }
+    .inv-root .tableband.invband { background: #000; color: #fff; padding: 4px 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     .inv-root .metatbl { width: 100%; border-collapse: collapse; margin: 6px 0; font-size: .84em; }
     .inv-root .metatbl td { padding: 1px 0; vertical-align: top; }
     .inv-root .metatbl .mk { width: 38%; color: #333; padding-right: 8px; white-space: nowrap; }

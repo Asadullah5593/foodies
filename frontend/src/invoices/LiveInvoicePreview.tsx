@@ -68,6 +68,7 @@ const LiveInvoicePreview: React.FC<{
     .inv-root .inv-flash, .inv-root .inv-flash > td, .inv-root .inv-flash > .l, .inv-root .inv-flash > .r {
       background: #FFF4D1 !important;
       border-radius: 3px;
+      color: #000 !important;
     }
     .inv-root [data-field] { transition: background .18s ease; }
   `;

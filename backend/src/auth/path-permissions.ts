@@ -144,6 +144,15 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         permissionNames: [Permissions.RIDER_SUPERVISOR_VIEW],
     },
     {
+        // Salary data — its own rider-HRM permissions, not the broad
+        // /admin/rider-hrm gate (shifts:manage till staff must not pass).
+        prefix: '/admin/rider-hrm/profiles',
+        permissionNames: [
+            Permissions.RIDER_HRM_VIEW,
+            Permissions.RIDER_PROFILES_EDIT,
+        ],
+    },
+    {
         prefix: '/admin/rider-hrm',
         permissionNames: [
             Permissions.DELIVERIES_VIEW,

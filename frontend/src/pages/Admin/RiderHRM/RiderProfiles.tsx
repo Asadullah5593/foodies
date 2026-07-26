@@ -1,15 +1,26 @@
 import React, { useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
 import Button from '../../../components/Button';
 import { useHasPermission } from '../../../hooks/useHasPermission';
 import Loader from '../../../components/Loader';
 import { adminService } from '../../../services/api/adminService';
-import { RiderProfile } from '../../../types';
-import { formatCurrency } from '../../../utils/currency';
 import RiderHrmHeader from './RiderHrmHeader';
 import { inputClass, labelClass, useRiders } from './shared';
+
+/**
+ * UNROUTED — superseded by RiderProfilesTable.tsx (the one-page base-salary
+ * CRUD at /admin/rider-hrm/profiles). Kept intact for an easy restore of the
+ * full HR form: re-add a route/nav entry in App.tsx and flip the flag below.
+ *
+ * The client only needs base salary for now — the full HR fields (salary type,
+ * employment status, employee code, per-ride commission, dispatch thresholds,
+ * active flag) are HIDDEN, not removed. Flip to true to restore them all;
+ * while hidden they are also left out of the save payload so an existing
+ * profile's values are never overwritten with the form's defaults.
+ */
+const SHOW_FULL_PROFILE_FIELDS = false;
 
 const RiderProfiles: React.FC = () => {
   const queryClient = useQueryClient();
@@ -30,30 +41,31 @@ const RiderProfiles: React.FC = () => {
 
   const { data: riders, isLoading } = useRiders();
 
-  const { data: profiles } = useQuery({
-    queryKey: ['rider-profiles'],
-    queryFn: () => adminService.getRiderProfiles(),
-  });
-
   const upsertProfileMutation = useMutation({
     mutationFn: () =>
       adminService.upsertRiderProfile({
         user_id: Number(profileForm.user_id),
-        employment_status: profileForm.employment_status,
-        salary_type: profileForm.salary_type,
-        employee_code: profileForm.employee_code || undefined,
         base_salary: profileForm.base_salary ? Number(profileForm.base_salary) : 0,
-        default_per_ride_commission: profileForm.default_per_ride_commission
-          ? Number(profileForm.default_per_ride_commission)
-          : 0,
-        max_active_orders: profileForm.max_active_orders
-          ? Number(profileForm.max_active_orders)
-          : 1,
-        min_rating: profileForm.min_rating ? Number(profileForm.min_rating) : undefined,
-        min_timely_rate: profileForm.min_timely_rate
-          ? Number(profileForm.min_timely_rate)
-          : undefined,
-        is_active: profileForm.is_active,
+        // The hidden fields ride along only when the full form is shown —
+        // the upsert is partial, so omitting them preserves stored values.
+        ...(SHOW_FULL_PROFILE_FIELDS
+          ? {
+              employment_status: profileForm.employment_status,
+              salary_type: profileForm.salary_type,
+              employee_code: profileForm.employee_code || undefined,
+              default_per_ride_commission: profileForm.default_per_ride_commission
+                ? Number(profileForm.default_per_ride_commission)
+                : 0,
+              max_active_orders: profileForm.max_active_orders
+                ? Number(profileForm.max_active_orders)
+                : 1,
+              min_rating: profileForm.min_rating ? Number(profileForm.min_rating) : undefined,
+              min_timely_rate: profileForm.min_timely_rate
+                ? Number(profileForm.min_timely_rate)
+                : undefined,
+              is_active: profileForm.is_active,
+            }
+          : {}),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rider-profiles'] });
@@ -80,7 +92,11 @@ const RiderProfiles: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       <RiderHrmHeader
         title="Rider Profiles"
-        subtitle="Employment records and pay terms — salary type, base salary, per-ride commission and the rating / timeliness thresholds used by dispatch."
+        subtitle={
+          SHOW_FULL_PROFILE_FIELDS
+            ? 'Employment records and pay terms — salary type, base salary, per-ride commission and the rating / timeliness thresholds used by dispatch.'
+            : "Set each rider's base salary. Saved profiles are listed on the Rider profile list page."
+        }
       />
 
       <Card className="dark:bg-slate-800 dark:border-slate-700">
@@ -89,7 +105,7 @@ const RiderProfiles: React.FC = () => {
             Rider Profiles
           </h2>
           <span className="text-xs text-gray-500 dark:text-slate-400">
-            salary + dispatch thresholds
+            {SHOW_FULL_PROFILE_FIELDS ? 'salary + dispatch thresholds' : 'base salary'}
           </span>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -108,41 +124,47 @@ const RiderProfiles: React.FC = () => {
               ))}
             </select>
           </div>
-          <div>
-            <label className={labelClass}>Salary type</label>
-            <select
-              value={profileForm.salary_type}
-              onChange={(e) => setProfileForm((prev) => ({ ...prev, salary_type: e.target.value }))}
-              className={inputClass}
-            >
-              <option value="fixed">Fixed salary</option>
-              <option value="commission">Commission only</option>
-              <option value="hybrid">Base + per ride + extras</option>
-            </select>
-          </div>
-          <div>
-            <label className={labelClass}>Employment status</label>
-            <select
-              value={profileForm.employment_status}
-              onChange={(e) =>
-                setProfileForm((prev) => ({ ...prev, employment_status: e.target.value }))
-              }
-              className={inputClass}
-            >
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="suspended">Suspended</option>
-            </select>
-          </div>
-          <div>
-            <label className={labelClass}>Employee code</label>
-            <input
-              value={profileForm.employee_code}
-              onChange={(e) => setProfileForm((prev) => ({ ...prev, employee_code: e.target.value }))}
-              className={inputClass}
-              placeholder="Optional"
-            />
-          </div>
+          {SHOW_FULL_PROFILE_FIELDS && (
+            <div>
+              <label className={labelClass}>Salary type</label>
+              <select
+                value={profileForm.salary_type}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, salary_type: e.target.value }))}
+                className={inputClass}
+              >
+                <option value="fixed">Fixed salary</option>
+                <option value="commission">Commission only</option>
+                <option value="hybrid">Base + per ride + extras</option>
+              </select>
+            </div>
+          )}
+          {SHOW_FULL_PROFILE_FIELDS && (
+            <div>
+              <label className={labelClass}>Employment status</label>
+              <select
+                value={profileForm.employment_status}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({ ...prev, employment_status: e.target.value }))
+                }
+                className={inputClass}
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+                <option value="suspended">Suspended</option>
+              </select>
+            </div>
+          )}
+          {SHOW_FULL_PROFILE_FIELDS && (
+            <div>
+              <label className={labelClass}>Employee code</label>
+              <input
+                value={profileForm.employee_code}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, employee_code: e.target.value }))}
+                className={inputClass}
+                placeholder="Optional"
+              />
+            </div>
+          )}
           <div>
             <label className={labelClass}>Base salary</label>
             <input
@@ -152,66 +174,76 @@ const RiderProfiles: React.FC = () => {
               className={inputClass}
             />
           </div>
-          <div>
-            <label className={labelClass}>Per-ride commission</label>
-            <input
-              type="number"
-              value={profileForm.default_per_ride_commission}
-              onChange={(e) =>
-                setProfileForm((prev) => ({
-                  ...prev,
-                  default_per_ride_commission: e.target.value,
-                }))
-              }
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Max active orders</label>
-            <input
-              type="number"
-              min="1"
-              value={profileForm.max_active_orders}
-              onChange={(e) =>
-                setProfileForm((prev) => ({ ...prev, max_active_orders: e.target.value }))
-              }
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Minimum rating</label>
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              max="5"
-              value={profileForm.min_rating}
-              onChange={(e) => setProfileForm((prev) => ({ ...prev, min_rating: e.target.value }))}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>Minimum timely rate %</label>
-            <input
-              type="number"
-              step="0.1"
-              min="0"
-              max="100"
-              value={profileForm.min_timely_rate}
-              onChange={(e) =>
-                setProfileForm((prev) => ({ ...prev, min_timely_rate: e.target.value }))
-              }
-              className={inputClass}
-            />
-          </div>
-          <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
-            <input
-              type="checkbox"
-              checked={profileForm.is_active}
-              onChange={(e) => setProfileForm((prev) => ({ ...prev, is_active: e.target.checked }))}
-            />
-            HRM profile active
-          </label>
+          {SHOW_FULL_PROFILE_FIELDS && (
+            <div>
+              <label className={labelClass}>Per-ride commission</label>
+              <input
+                type="number"
+                value={profileForm.default_per_ride_commission}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({
+                    ...prev,
+                    default_per_ride_commission: e.target.value,
+                  }))
+                }
+                className={inputClass}
+              />
+            </div>
+          )}
+          {SHOW_FULL_PROFILE_FIELDS && (
+            <div>
+              <label className={labelClass}>Max active orders</label>
+              <input
+                type="number"
+                min="1"
+                value={profileForm.max_active_orders}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({ ...prev, max_active_orders: e.target.value }))
+                }
+                className={inputClass}
+              />
+            </div>
+          )}
+          {SHOW_FULL_PROFILE_FIELDS && (
+            <div>
+              <label className={labelClass}>Minimum rating</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="5"
+                value={profileForm.min_rating}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, min_rating: e.target.value }))}
+                className={inputClass}
+              />
+            </div>
+          )}
+          {SHOW_FULL_PROFILE_FIELDS && (
+            <div>
+              <label className={labelClass}>Minimum timely rate %</label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="100"
+                value={profileForm.min_timely_rate}
+                onChange={(e) =>
+                  setProfileForm((prev) => ({ ...prev, min_timely_rate: e.target.value }))
+                }
+                className={inputClass}
+              />
+            </div>
+          )}
+          {SHOW_FULL_PROFILE_FIELDS && (
+            <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300">
+              <input
+                type="checkbox"
+                checked={profileForm.is_active}
+                onChange={(e) => setProfileForm((prev) => ({ ...prev, is_active: e.target.checked }))}
+              />
+              HRM profile active
+            </label>
+          )}
         </div>
         {canEdit && <div className="mt-4 flex justify-end">
           <Button
@@ -223,64 +255,6 @@ const RiderProfiles: React.FC = () => {
             Save rider profile
           </Button>
         </div>}
-        <div className="mt-6 border-t border-gray-200 dark:border-slate-700 pt-4 space-y-3">
-          {(profiles ?? []).length === 0 ? (
-            <p className="text-sm text-gray-500 dark:text-slate-400">
-              No rider HR profiles yet.
-            </p>
-          ) : (
-            (profiles ?? []).map((profile: RiderProfile) => (
-              <div
-                key={profile.id}
-                className="rounded-lg border border-gray-200 dark:border-slate-700 p-3"
-              >
-                <div className="flex justify-between gap-4">
-                  <div>
-                    <p className="font-medium text-gray-900 dark:text-slate-100">
-                      {profile.user_name ?? `Rider #${profile.user_id}`}
-                    </p>
-                    <p className="text-sm text-gray-500 dark:text-slate-400">
-                      {profile.salary_type} · base {formatCurrency(profile.base_salary)} · ride {formatCurrency(profile.default_per_ride_commission)}
-                    </p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <span
-                      className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
-                        profile.owner_brand_id
-                          ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300'
-                          : 'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                      }`}
-                    >
-                      {profile.owner_brand_id
-                        ? `Owned · ${profile.owner_brand_name}`
-                        : 'Foodies pool'}
-                    </span>
-                    <span className={`text-xs font-medium ${profile.is_active ? 'text-emerald-600 dark:text-emerald-400' : 'text-amber-600 dark:text-amber-400'}`}>
-                      {profile.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </div>
-                </div>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {(profile.brands ?? []).length === 0 ? (
-                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                      No brands linked — not dispatchable
-                    </span>
-                  ) : (
-                    (profile.brands ?? []).map((b) => (
-                      <span
-                        key={b.brand_id ?? b.id}
-                        className="text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-200"
-                      >
-                        {b.brand_name ?? b.name}
-                        {b.source === 'shared' ? ' · shared' : ''}
-                      </span>
-                    ))
-                  )}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
       </Card>
     </div>
   );

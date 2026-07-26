@@ -72,6 +72,18 @@ export const PERMISSION_IMPLICATIONS: Record<string, string[]> = {
         Permissions.SHIFTS_OPEN,
         Permissions.SHIFTS_CLOSE,
     ],
+    // Override holders pass the open/close endpoint guards without needing the
+    // granular grants; the reverse is deliberately NOT true (shifts:manage does
+    // not imply override) so umbrella holders stay opener-only on close.
+    [Permissions.SHIFTS_OVERRIDE]: [
+        Permissions.SHIFTS_VIEW,
+        Permissions.SHIFTS_OPEN,
+        Permissions.SHIFTS_CLOSE,
+    ],
+    // Editing rider profiles requires reading them (GET /admin/rider-hrm/
+    // profiles is guarded by rider-hrm:view) — an edit-only custom role would
+    // otherwise see every salary as unset while still being able to overwrite.
+    [Permissions.RIDER_PROFILES_EDIT]: [Permissions.RIDER_HRM_VIEW],
     [Permissions.BUSINESS_SETTINGS_ACCESS]: [
         Permissions.BUSINESS_SETTINGS_EDIT,
         Permissions.INVOICE_TEMPLATES_VIEW,

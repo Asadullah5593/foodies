@@ -117,6 +117,11 @@ const BRANCH_MANAGER_PERMISSIONS = [
     'orders:filter:brand',
     'shifts:view',
     'shifts:close',
+    // Closing is opener-only; the override lets the manager close any shift at
+    // their branch and open one for any brand. Must stay listed here:
+    // upsertRole grants EXACTLY this set, so dropping it would revoke the
+    // migration's grant on the next seed run.
+    'shifts:override',
     // Full inventory operations at their branch.
     'inventory:view',
     'inventory:receive',

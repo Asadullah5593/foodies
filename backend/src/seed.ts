@@ -93,6 +93,13 @@ async function seed() {
                 'Take orders on behalf of customers (call centre); tags orders as source=call_centre and alerts the till',
         },
         {
+            name: 'shifts:override',
+            resource: 'shifts',
+            action: 'override',
+            description:
+                'Open a shift for any brand and close shifts opened by other users (closing is otherwise opener-only)',
+        },
+        {
             name: 'discounts:apply',
             resource: 'discounts',
             action: 'apply',
@@ -329,7 +336,7 @@ async function seed() {
         `INSERT INTO role_permissions (role_id, permission_id) SELECT ${riderRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'deliveries:view')`,
     );
     await dataSource.query(
-        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${generalManagerRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'all-branches:access', 'orders:create', 'orders:view', 'discounts:apply', 'branch-menu:manage', 'reports:view', 'shifts:manage')`,
+        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${generalManagerRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'all-branches:access', 'orders:create', 'orders:view', 'discounts:apply', 'branch-menu:manage', 'reports:view', 'shifts:manage', 'shifts:override')`,
     );
 
     // —— Granular action permissions: mirror the additive backfill from the
@@ -391,6 +398,32 @@ async function seed() {
             [newPerm, legacyPerms],
         );
     }
+    // Till staff and riders must not hold the rider-HRM family (salary data):
+    // the backfill above keys on shifts:manage / deliveries:view and would
+    // sweep them in. Mirrors migrations 1760000000098 + 1760000000099.
+    await dataSource.query(
+        `DELETE FROM role_permissions rp
+         USING roles r, permissions p
+         WHERE rp.role_id = r.id
+           AND rp.permission_id = p.id
+           AND r.slug = ANY($1::text[])
+           AND p.name = ANY($2::text[])`,
+        [
+            ['cashier', 'pos_cashier', 'call_centre_agent', 'call_center_agent', 'rider'],
+            [
+                'rider-hrm:view',
+                'rider-profiles:edit',
+                'rider-payroll:run',
+                'rider-payroll:reverse',
+                'rider-comp-plans:view',
+                'rider-comp-plans:create',
+                'rider-comp-plans:edit',
+                'rider-comp-plans:activate',
+                'rider-attendance:manage',
+                'rider-supervisor:view',
+            ],
+        ],
+    );
 
     // —— Super admin: no tenant_users row → tenantId null → sees all tenants/brands/branches ——
     await userRepo.save(
