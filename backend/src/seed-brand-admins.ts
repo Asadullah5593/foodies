@@ -63,6 +63,9 @@ const BRAND_ADMIN_PERMISSIONS = [
     'branch-users:assign',
     'customers:manage',
     'shifts:manage',
+    // Closing is opener-only; the override lets the brand admin close any of
+    // their brand's shifts (their brand lock still scopes them) and open one.
+    'shifts:override',
     'deliveries:view',
     'rider-share:request',
     // Brand-scoped inventory: see own brand stock across branches, request

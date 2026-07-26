@@ -52,7 +52,10 @@ export class RiderProfilesAdminController {
         );
     }
 
+    // Profiles carry salary data — require a rider-HRM permission to read,
+    // not just an authenticated tenant session.
     @Get('profiles')
+    @RequirePermission(Permissions.RIDER_HRM_VIEW)
     listProfiles(
         @CurrentUser()
         user: {

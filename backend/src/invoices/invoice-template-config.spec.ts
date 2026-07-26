@@ -56,4 +56,17 @@ describe('sanitizeInvoiceTemplateConfig', () => {
             'Scan to download the Foodies app',
         );
     });
+
+    it('keeps a valid tableNumberDisplay and drops an invalid one', () => {
+        expect(
+            sanitizeInvoiceTemplateConfig({
+                tableNumberDisplay: 'banner_inverted',
+            }),
+        ).toEqual({ tableNumberDisplay: 'banner_inverted' });
+        expect(
+            sanitizeInvoiceTemplateConfig({ tableNumberDisplay: 'huge' }),
+        ).toEqual({});
+        // Backward compatible: stored configs without the key resolve to 'row'.
+        expect(DEFAULT_INVOICE_TEMPLATE_CONFIG.tableNumberDisplay).toBe('row');
+    });
 });

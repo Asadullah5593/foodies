@@ -37,7 +37,8 @@ Tenant (tenant_id; super admin requests have tenantId = null)
 │    branch_menu_items (per-branch price/availability overrides),
 │    kitchen_stations, printer_routes, carts
 ├─ BRANCH + BRAND: shifts (one open shift per brand per branch;
-│    opened only by brand-locked staff — owner/GM can view/close, not open)
+│    opened by brand-locked staff; closing is opener-only; `shifts:override`
+│    holders — owner/GM/managers — open for any brand and close others' shifts)
 ├─ TENANT + BRANCH (operations with tenant column):
 │    orders, kiosk_orders — every order is SINGLE-BRAND (brand_id set);
 │       POS/kiosk/consumer-app reject mixed carts; consumer-web mixed

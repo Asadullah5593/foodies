@@ -114,6 +114,11 @@ export class ShiftsController {
         );
     }
 
+    /** shifts:override lets supervisors open for any brand and close shifts opened by others. */
+    private canOverride(user: { permissions?: string[] }): boolean {
+        return user.permissions?.includes(Permissions.SHIFTS_OVERRIDE) ?? false;
+    }
+
     @Post()
     @RequirePermission(Permissions.SHIFTS_OPEN)
     store(
@@ -123,6 +128,7 @@ export class ShiftsController {
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
             allowedBrandIds?: number[] | null;
+            permissions?: string[];
         },
         @Body()
         dto: {
@@ -145,8 +151,10 @@ export class ShiftsController {
                 opening_cash: dto.opening_cash,
                 notes: dto.notes,
             },
+            user.tenantId,
             user.allowedBranchIds,
             user.allowedBrandIds,
+            this.canOverride(user),
         );
     }
 
@@ -160,6 +168,7 @@ export class ShiftsController {
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
             allowedBrandIds?: number[] | null;
+            permissions?: string[];
         },
         @Body()
         dto: {
@@ -179,6 +188,7 @@ export class ShiftsController {
             user.allowedBranchIds,
             user.id,
             user.allowedBrandIds,
+            this.canOverride(user),
         );
     }
 }

@@ -151,6 +151,11 @@ export const Permissions = {
     SHIFTS_VIEW: 'shifts:view',
     SHIFTS_OPEN: 'shifts:open',
     SHIFTS_CLOSE: 'shifts:close',
+    // Supervisor override: open a shift without being brand-locked staff, and
+    // close shifts opened by OTHER users (closing is otherwise opener-only).
+    // Implies view/open/close, but is NOT implied by shifts:manage — a cashier
+    // with the umbrella stays opener-only; grant this explicitly to overseers.
+    SHIFTS_OVERRIDE: 'shifts:override',
 
     // — Business settings (umbrella: business-settings:access) —
     BUSINESS_SETTINGS_EDIT: 'business-settings:edit',
