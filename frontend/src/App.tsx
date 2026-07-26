@@ -74,7 +74,7 @@ import Reports from './pages/Admin/Reports';
 import Orders from './pages/Admin/Orders';
 import OrderDetail from './pages/Admin/OrderDetail';
 import Deliveries from './pages/Admin/Deliveries';
-import RiderProfiles from './pages/Admin/RiderHRM/RiderProfiles';
+import RiderProfilesTable from './pages/Admin/RiderHRM/RiderProfilesTable';
 import RiderAttendance from './pages/Admin/RiderHRM/RiderAttendance';
 import RiderBreaks from './pages/Admin/RiderHRM/RiderBreaks';
 import RiderCompPlans from './pages/Admin/RiderHRM/RiderCompPlans';
@@ -356,9 +356,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         ...(isTenantUser && (user?.allowed_brand_ids == null)
           ? [{ path: '/admin/rider-hrm/pool-sharing', label: 'Rider pool & sharing' }]
           : []),
+        // Base-salary CRUD (RiderProfilesTable): rider table + prefilled edit
+        // dialog; save needs rider-profiles:edit. The old form/list pages are
+        // kept unrouted in RiderProfiles.tsx / RiderProfilesList.tsx.
+        { path: '/admin/rider-hrm/profiles', label: 'Rider profiles' },
         // Hidden from the nav (routes, pages and backend are all retained).
         // Re-add any line below to restore that Rider HRM sub-module to the menu:
-        // { path: '/admin/rider-hrm/profiles', label: 'Rider profiles' },
         // ...(Array.isArray(user?.allowed_brand_ids) && (user?.allowed_brand_ids?.length ?? 0) > 0
         //   ? [{ path: '/admin/rider-hrm/request-riders', label: 'Request riders' }]
         //   : []),
@@ -1149,7 +1152,7 @@ const AppRoutes: React.FC = () => {
         }
       />
       <Route path="/admin/rider-hrm/supervisor" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderSupervisor /></Layout></AdminOnlyRoute></ProtectedRoute>} />
-      <Route path="/admin/rider-hrm/profiles" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderProfiles /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/rider-hrm/profiles" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderProfilesTable /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/pool-sharing" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderPoolSharing /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/request-riders" element={<ProtectedRoute><AdminOnlyRoute><Layout><RequestRiders /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/attendance" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderAttendance /></Layout></AdminOnlyRoute></ProtectedRoute>} />

@@ -967,3 +967,67 @@ describe('dealPriceDisplay — where a deal prints its price', () => {
     });
   }
 });
+
+describe('tableNumberDisplay — table number prominence', () => {
+  it('default row mode keeps the plain meta row and no band', () => {
+    const html = render({});
+    expect(html).toContain('<td class="mk">Table</td>');
+    expect(html).not.toContain('class="tableband');
+  });
+
+  it('banner mode replaces the meta row with a big centered band', () => {
+    const html = render({ tableNumberDisplay: 'banner' });
+    expect(html).toContain('<div class="tableband" data-field="showTableNumber">TABLE 7</div>');
+    expect(html).not.toContain('<td class="mk">Table</td>');
+  });
+
+  it('banner_inverted adds the white-on-black class', () => {
+    const html = render({ tableNumberDisplay: 'banner_inverted' });
+    expect(html).toContain('class="tableband invband"');
+  });
+
+  it('banner respects showTableNumber=false', () => {
+    const html = render({ tableNumberDisplay: 'banner', showTableNumber: false });
+    expect(html).not.toContain('tableband');
+    expect(html).not.toContain('<td class="mk">Table</td>');
+  });
+
+  it('row_large keeps the row and emits the enlarging CSS override', () => {
+    const out = renderInvoiceHtml(sampleInvoice(), 'thermal_classic', cfg({ tableNumberDisplay: 'row_large' }));
+    expect(out.html).toContain('<td class="mk">Table</td>');
+    expect(out.html).not.toContain('tableband');
+    expect(out.css).toContain('tr[data-field="showTableNumber"] .mv');
+    const off = renderInvoiceHtml(sampleInvoice(), 'thermal_classic', cfg({})).css;
+    expect(off).not.toContain('tr[data-field="showTableNumber"]');
+  });
+
+  it('receipt_logo: banner mode moves the table out of the order band (no duplication)', () => {
+    const html = renderInvoiceHtml(sampleInvoice(), 'receipt_logo', cfg({ tableNumberDisplay: 'banner' })).html;
+    expect(html).toContain('TABLE 7');
+    expect((html.match(/(TABLE|Table) 7/g) ?? []).length).toBe(1);
+    expect(html).not.toContain('· Table 7');
+  });
+
+  it('receipt_logo: row_large hands the table to the meta table as a single enlarged row', () => {
+    const out = renderInvoiceHtml(sampleInvoice(), 'receipt_logo', cfg({ tableNumberDisplay: 'row_large' }));
+    expect(out.html).toContain('<td class="mk">Table</td>');
+    expect(out.html).not.toContain('· Table 7');
+    expect((out.html.match(/(TABLE|Table)&nbsp;?<\/td><td class="mv">7|Table 7/g) ?? []).length).toBeLessThanOrEqual(1);
+    expect((out.html.match(/<td class="mk">Table<\/td>/g) ?? []).length).toBe(1);
+    expect(out.css).toContain('tr[data-field="showTableNumber"] .mv');
+  });
+
+  it('receipt_logo: row mode still prints the table inside the order band only', () => {
+    const html = renderInvoiceHtml(sampleInvoice(), 'receipt_logo', cfg({})).html;
+    expect(html).toContain('Table 7');
+    expect(html).not.toContain('tableband');
+    expect(html).not.toContain('<td class="mk">Table</td>');
+  });
+
+  it('band prints on every layout in banner mode', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const html = renderInvoiceHtml(sampleInvoice(), layout, cfg({ tableNumberDisplay: 'banner' })).html;
+      expect(html, layout).toContain('class="tableband"');
+    }
+  });
+});

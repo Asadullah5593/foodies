@@ -128,6 +128,12 @@ export interface InvoiceTemplateConfig {
   showInvoiceNumber: boolean;
   showOrderType: boolean;
   showTableNumber: boolean;
+  /**
+   * How the table number prints (when shown): its normal meta row, that row
+   * with the value enlarged, or a big centered "TABLE N" band under the
+   * header — plain or white-on-black for maximum pop on thermal paper.
+   */
+  tableNumberDisplay: 'row' | 'row_large' | 'banner' | 'banner_inverted';
   showDateTime: boolean;
   showCashier: boolean;
   showCustomerInfo: boolean;
@@ -200,6 +206,7 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showInvoiceNumber: true,
   showOrderType: true,
   showTableNumber: true,
+  tableNumberDisplay: 'row',
   showDateTime: true,
   showCashier: false,
   showCustomerInfo: true,

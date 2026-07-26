@@ -391,6 +391,19 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
       kind: 'fields',
       fields: [
         {
+          kind: 'select',
+          label: 'Table number style',
+          hint: 'how the table prints when “Show table number” is on — dine-in bills and kitchen tickets',
+          value: form.config.tableNumberDisplay ?? 'row',
+          options: [
+            { value: 'row', label: 'Normal row (as today)' },
+            { value: 'row_large', label: 'Row with enlarged number' },
+            { value: 'banner', label: 'Big centered banner' },
+            { value: 'banner_inverted', label: 'Inverted band (white on black)' },
+          ],
+          onChange: (v) => setCfg('tableNumberDisplay', v),
+        },
+        {
           kind: 'number',
           label: 'Receipt font size',
           suffix: '%  (50–200)',

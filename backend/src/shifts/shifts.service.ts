@@ -9,6 +9,25 @@ import { Brackets, Repository } from 'typeorm';
 import { Shift } from '../entities/shift.entity';
 import { Order } from '../entities/order.entity';
 import { Payment } from '../entities/payment.entity';
+import { BranchBrand } from '../entities/branch-brand.entity';
+
+/**
+ * Closing is opener-only: the drawer belongs to whoever counted it open, so
+ * another cashier may not reconcile it. `shifts:override` holders (owner, GM,
+ * branch managers, brand admins) close on the opener's behalf — the shift still
+ * records them as the closer.
+ */
+export function assertShiftCloseAllowed(
+    openerUserId: number,
+    closerUserId: number | null | undefined,
+    canOverride: boolean,
+): void {
+    if (canOverride) return;
+    if (closerUserId != null && closerUserId === openerUserId) return;
+    throw new ForbiddenException(
+        'Only the user who opened this shift can close it.',
+    );
+}
 
 @Injectable()
 export class ShiftsService {
@@ -183,8 +202,10 @@ export class ShiftsService {
             opening_cash: number;
             notes?: string;
         },
+        tenantId: number,
         allowedBranchIds?: number[] | null,
         allowedBrandIds?: number[] | null,
+        canOverride = false,
     ) {
         if (
             allowedBranchIds != null &&
@@ -196,17 +217,55 @@ export class ShiftsService {
                 'You do not have access to this branch',
             );
         }
-        // Shifts are opened per brand by that brand's staff. Unrestricted
-        // users (owner / GM, allowedBrandIds == null) can view and close
-        // shifts but never open them.
-        if (allowedBrandIds == null) {
+        // An empty allowedBranchIds means a tenant-level role with zero branch
+        // assignments and no all-branches:access. Elsewhere [] reads as
+        // unrestricted, which was harmless while such users could never open;
+        // with shifts:override in play it would mean tenant-wide opens, so
+        // opening requires an actual branch assignment (or all-branches).
+        if (Array.isArray(allowedBranchIds) && allowedBranchIds.length === 0) {
             throw new ForbiddenException(
-                'Shifts are opened by brand staff. Your account is not locked to a brand.',
+                'You are not assigned to any branch',
             );
         }
-        if (!dto.brand_id || !allowedBrandIds.includes(dto.brand_id)) {
+        // Shifts are opened per brand by that brand's staff. Unrestricted
+        // users (owner / GM, allowedBrandIds == null) can view and close
+        // shifts but never open them — unless they hold shifts:override,
+        // which lets a supervisor open for any brand at any of their branches.
+        if (allowedBrandIds == null) {
+            if (!canOverride) {
+                throw new ForbiddenException(
+                    'Shifts are opened by brand staff. Your account is not locked to a brand.',
+                );
+            }
+        } else if (!dto.brand_id || !allowedBrandIds.includes(dto.brand_id)) {
+            // Brand-locked users (override or not) stay pinned to their brand.
             throw new ForbiddenException(
                 'You can only open a shift for your own brand',
+            );
+        }
+        // The chosen brand must be served at the chosen branch and belong to
+        // the caller's tenant. For brand-locked staff their lock implied this;
+        // for override users this IS the tenant boundary — without it an
+        // unrestricted admin could open a shift on another tenant's branch.
+        if (!dto.brand_id) {
+            throw new ForbiddenException('brand_id is required');
+        }
+        const link = await this.repo.manager
+            .createQueryBuilder(BranchBrand, 'bb')
+            .innerJoin(
+                'bb.brand',
+                'brand',
+                'brand.tenantId = :tenantId',
+                { tenantId },
+            )
+            .where('bb.branchId = :branchId AND bb.brandId = :brandId', {
+                branchId: dto.branch_id,
+                brandId: dto.brand_id,
+            })
+            .getOne();
+        if (!link) {
+            throw new ForbiddenException(
+                'This brand is not available at this branch',
             );
         }
         const existingOpen = await this.repo.findOne({
@@ -528,6 +587,7 @@ export class ShiftsService {
         allowedBranchIds?: number[] | null,
         closedByUserId?: number | null,
         allowedBrandIds?: number[] | null,
+        canOverride = false,
     ) {
         if (tenantId != null) {
             await this.findOne(id, tenantId, allowedBranchIds, allowedBrandIds);
@@ -538,6 +598,7 @@ export class ShiftsService {
         // one-click completion; this guard is the actual enforcement.
         const shift = await this.repo.findOne({ where: { id } });
         if (!shift) throw new NotFoundException('Shift not found');
+        assertShiftCloseAllowed(shift.userId, closedByUserId, canOverride);
         if (shift.status === 'open' && shift.openedAt) {
             const pending = await this.pendingOrdersQb(
                 shift.branchId,

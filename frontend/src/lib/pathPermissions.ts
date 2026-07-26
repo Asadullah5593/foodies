@@ -41,6 +41,9 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/rider-hrm/pool-sharing': ['rider-sharing:manage'],
   '/admin/rider-hrm/request-riders': ['rider-share:request'],
   '/admin/rider-hrm/supervisor': ['rider-supervisor:view'],
+  // Salary data — needs a rider-HRM permission of its own, NOT the broad
+  // any-of gate below (which shifts:manage till staff would pass).
+  '/admin/rider-hrm/profiles': ['rider-hrm:view', 'rider-profiles:edit'],
   '/admin/rider-hrm': ['deliveries:view', 'shifts:manage', 'rider-hrm:view'],
   '/admin/rider-ops': ['deliveries:view'],
   '/admin/shifts': ['shifts:manage', 'shifts:view'],

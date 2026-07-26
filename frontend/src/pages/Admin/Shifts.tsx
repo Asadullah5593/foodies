@@ -219,12 +219,20 @@ const Shifts: React.FC = () => {
     },
   });
 
-  // Shifts are opened by brand staff only; owner / GM (no brand lock) can
-  // view and close shifts but never open them.
-  // Opening a shift needs both the brand-lock (only brand staff open) and the permission.
+  // Shifts are opened by brand staff; shifts:override holders (owner/admin,
+  // managers) can also open — for any brand at the branch — and close shifts
+  // opened by OTHER users. Without the override, closing is opener-only (the
+  // server enforces both; these flags only decide what to show).
+  // Super admins pass every useHasPermission check but the server rejects
+  // both shift POSTs without a tenant context — don't offer dead-end buttons.
+  const isTenantStaff = !user?.is_super_admin;
   const hasShiftsOpen = useHasPermission('shifts:open');
-  const canOpenShift = user?.allowed_brand_ids != null && hasShiftsOpen;
-  const canCloseShift = useHasPermission('shifts:close');
+  const hasShiftOverride = useHasPermission('shifts:override');
+  const canOpenShift =
+    isTenantStaff && hasShiftsOpen && (user?.allowed_brand_ids != null || hasShiftOverride);
+  const hasShiftsClose = useHasPermission('shifts:close');
+  const canCloseShift = (s: { user_id?: number | null }) =>
+    isTenantStaff && hasShiftsClose && (hasShiftOverride || s.user_id === user?.id);
 
   // When there is only one branch/brand to choose from, pre-select it and show
   // it read-only — no point making the user pick the only option.
@@ -259,6 +267,12 @@ const Shifts: React.FC = () => {
   // form — one open shift per brand per branch.
   const openFormBranchId = formData.branch_id ? parseInt(formData.branch_id, 10) : null;
   const openFormBrandId = formData.brand_id ? parseInt(formData.brand_id, 10) : null;
+  // Only offer brands actually served at the chosen branch (branch_brands) —
+  // the server rejects an unlinked pair, so don't let the form build one.
+  const openFormBranch = (branches ?? []).find((b) => b.id === openFormBranchId) ?? null;
+  const openFormBrands = (brands ?? []).filter(
+    (b) => !openFormBranch || (openFormBranch.brand_ids ?? []).includes(b.id),
+  );
   const { data: openShiftsForBranch } = useQuery({
     queryKey: ['shifts', 'open-for-branch', openFormBranchId, openFormBrandId],
     queryFn: () => adminService.getShifts(openFormBranchId!, 'open', openFormBrandId ?? undefined),
@@ -513,16 +527,24 @@ const Shifts: React.FC = () => {
   // Close modal: expected drawer cash = opening float + cash collected. The
   // orders fetch carries the freshest figure; the list row's value stands in
   // while it loads (same backend computation).
+  // `selectedShift` is a snapshot taken when the modal opened and never changes
+  // while it's open. Completing an order in-modal recomputes the shift's
+  // expected cash server-side and invalidates the ['shifts'] list, so read the
+  // live row from that (refetched) list — otherwise Expected cash stays stale
+  // until the modal is closed and reopened. Falls back to the snapshot.
+  const liveShift =
+    (selectedShift != null ? shifts?.find((s) => s.id === selectedShift.id) : null) ??
+    selectedShift;
   // Prefer the server's figure: it also counts delivery orders the riders have
   // not handed cash in for yet, which this page cannot see. Falls back to the
   // local sum only if the shift payload predates that field.
   const closeExpectedCash =
-    selectedShift == null
+    liveShift == null
       ? null
-      : selectedShift.expected_cash != null
-        ? Number(selectedShift.expected_cash)
-        : Number(selectedShift.opening_cash) +
-          Number(shiftOrders?.cash_collected ?? selectedShift.cash_collected ?? 0);
+      : liveShift.expected_cash != null
+        ? Number(liveShift.expected_cash)
+        : Number(liveShift.opening_cash) +
+          Number(shiftOrders?.cash_collected ?? liveShift.cash_collected ?? 0);
   const closeDrawerNum = parseFloat(closeFormData.actual_cash);
   const closeRiderNum =
     closeFormData.rider_cash === '' ? 0 : parseFloat(closeFormData.rider_cash);
@@ -557,7 +579,9 @@ const Shifts: React.FC = () => {
         <div>
           <h2 className="m-0 text-[25px] font-extrabold tracking-[-.02em] text-[#1A1D24] dark:text-slate-100">Shifts</h2>
           <p className="m-0 mt-1 text-[13.5px] text-[#8A92A0]">
-            Opened by brand staff — you can review the drawer and close them.
+            {hasShiftOverride
+              ? 'Opened by brand staff — you can review the drawer and close any shift.'
+              : 'Opened by brand staff — each shift is closed by the person who opened it.'}
           </p>
         </div>
         {canOpenShift ? (
@@ -766,7 +790,7 @@ const Shifts: React.FC = () => {
                   >
                     View
                   </button>
-                  {open && canCloseShift && (
+                  {open && canCloseShift(s) && (
                     <button
                       type="button"
                       onClick={() => startClose(s)}
@@ -774,6 +798,14 @@ const Shifts: React.FC = () => {
                     >
                       Close Shift
                     </button>
+                  )}
+                  {open && hasShiftsClose && !canCloseShift(s) && (
+                    <span
+                      className="rounded-[10px] bg-[#F3F4F6] px-3 py-2 text-[12px] font-semibold text-[#8A92A0] dark:bg-slate-700 dark:text-slate-400"
+                      title="Only the user who opened this shift can close it."
+                    >
+                      Closes by {s.user?.name ?? 'opener'}
+                    </span>
                   )}
                 </div>
               </div>
@@ -944,13 +976,15 @@ const Shifts: React.FC = () => {
                       >
                         Print X-report
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => startClose(detail)}
-                        className="cursor-pointer rounded-[11px] border-none bg-[#DC2A2A] px-6 py-[11px] text-sm font-bold text-white shadow-[0_4px_12px_rgba(220,42,42,.26)] transition-colors hover:bg-[#C21F1F]"
-                      >
-                        Close shift &amp; reconcile
-                      </button>
+                      {canCloseShift(detail) && (
+                        <button
+                          type="button"
+                          onClick={() => startClose(detail)}
+                          className="cursor-pointer rounded-[11px] border-none bg-[#DC2A2A] px-6 py-[11px] text-sm font-bold text-white shadow-[0_4px_12px_rgba(220,42,42,.26)] transition-colors hover:bg-[#C21F1F]"
+                        >
+                          Close shift &amp; reconcile
+                        </button>
+                      )}
                     </>
                   ) : (
                     <button
@@ -982,7 +1016,18 @@ const Shifts: React.FC = () => {
             <SearchableSelect
               label="Branch *"
               value={formData.branch_id}
-              onChange={(v) => setFormData({ ...formData, branch_id: v })}
+              onChange={(v) => {
+                // Drop a brand pick that the newly chosen branch doesn't serve.
+                const next = (branches ?? []).find((b) => String(b.id) === v);
+                setFormData((p) => ({
+                  ...p,
+                  branch_id: v,
+                  brand_id:
+                    p.brand_id && next && !(next.brand_ids ?? []).includes(parseInt(p.brand_id, 10))
+                      ? ''
+                      : p.brand_id,
+                }));
+              }}
               options={[
                 { value: '', label: 'Select Branch' },
                 ...(branches ?? []).map((branch) => ({
@@ -1009,7 +1054,7 @@ const Shifts: React.FC = () => {
               onChange={(v) => setFormData({ ...formData, brand_id: v })}
               options={[
                 { value: '', label: 'Select Brand' },
-                ...(brands ?? []).map((brand) => ({
+                ...openFormBrands.map((brand) => ({
                   value: String(brand.id),
                   label: brand.name,
                 })),
