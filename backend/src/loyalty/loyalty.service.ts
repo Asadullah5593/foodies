@@ -12,6 +12,7 @@ import { LoyaltyTransaction } from '../entities/loyalty-transaction.entity';
 import { LoyaltyWallet } from '../entities/loyalty-wallet.entity';
 import { normalizePakistaniPhone } from '../utils/phone';
 import { CustomersService } from '../customers/customers.service';
+import { toCustomerSource } from '../customers/customer-sources';
 
 const DEFAULT_SPEND_PER_POINT = 1000;
 const DEFAULT_MIN_ORDER_TO_EARN = 1;
@@ -177,6 +178,9 @@ export class LoyaltyService {
                         order.tenantId,
                         normalized,
                         order.customerName ?? 'Customer',
+                        // Origin of the order that created them, so an app
+                        // order does not record the customer as walk-in POS.
+                        toCustomerSource(order.source),
                     );
                 if (order.customerId == null) {
                     await this.orderRepo.update(orderId, {

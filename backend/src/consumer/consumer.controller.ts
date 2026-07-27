@@ -385,7 +385,11 @@ export class ConsumerController {
             },
         },
     })
-    async register(@Body() dto: RegisterDto) {
+    async register(
+        @Body() dto: RegisterDto,
+        @Req()
+        req: { headers?: Record<string, string | string[] | undefined> },
+    ) {
         if (dto.password !== dto.confirm_password) {
             throw new BadRequestException(
                 'password and confirm_password do not match',
@@ -418,6 +422,9 @@ export class ConsumerController {
                 password: dto.password,
                 phoneVerified: verified,
             },
+            // Same header the order flow reads: absent/anything-but-web ⇒ the
+            // mobile app, so the app needs no change to be tagged correctly.
+            this.resolveOrderSourceFromRequest(req),
         );
         return {
             id: customer.id,
