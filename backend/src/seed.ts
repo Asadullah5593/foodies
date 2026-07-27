@@ -100,6 +100,13 @@ async function seed() {
                 'Open a shift for any brand and close shifts opened by other users (closing is otherwise opener-only)',
         },
         {
+            name: 'rider-supervisor:view-status',
+            resource: 'rider-supervisor',
+            action: 'view-status',
+            description:
+                'See order status on the rider supervisor dashboard (Status column, status filters and counts)',
+        },
+        {
             name: 'discounts:apply',
             resource: 'discounts',
             action: 'apply',
@@ -409,7 +416,13 @@ async function seed() {
            AND r.slug = ANY($1::text[])
            AND p.name = ANY($2::text[])`,
         [
-            ['cashier', 'pos_cashier', 'call_centre_agent', 'call_center_agent', 'rider'],
+            [
+                'cashier',
+                'pos_cashier',
+                'call_centre_agent',
+                'call_center_agent',
+                'rider',
+            ],
             [
                 'rider-hrm:view',
                 'rider-profiles:edit',

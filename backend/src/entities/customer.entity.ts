@@ -29,6 +29,14 @@ export class Customer {
     @Column({ type: 'boolean', default: false })
     phoneVerified: boolean;
 
+    /**
+     * Where this customer record came from — 'pos' (staff/counter),
+     * 'consumer_app', 'consumer_web' or 'kiosk'. See customers/customer-sources.ts.
+     * Set once at creation and never rewritten, so it stays a true origin.
+     */
+    @Column({ default: 'pos' })
+    source: string;
+
     @Column({ type: 'varchar', nullable: true })
     name: string | null;
 
