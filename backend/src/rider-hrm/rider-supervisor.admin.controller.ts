@@ -18,7 +18,19 @@ type SupervisorUser = {
     tenantId: number | null;
     allowedBranchIds?: number[] | null;
     allowedBrandIds?: number[] | null;
+    /** Per-role history window (roles.order_history_days); null = unlimited. */
+    orderHistoryDays?: number | null;
+    /** Expanded permission names, set by RoleAccessGuard. */
+    permissions?: string[];
 };
+
+/** Order status is a separate grant on this surface — see the migration. */
+function canViewStatus(user: SupervisorUser): boolean {
+    return (
+        user.permissions?.includes(Permissions.RIDER_SUPERVISOR_VIEW_STATUS) ??
+        false
+    );
+}
 
 /**
  * Read-only oversight endpoints for the "Rider supervisor" sub-module. Every
@@ -33,7 +45,11 @@ type SupervisorUser = {
 export class RiderSupervisorAdminController {
     constructor(private readonly service: RiderSupervisorService) {}
 
-    /** Recent (30-day) delivery orders, bucketed by status. */
+    /**
+     * Delivery orders bucketed by status. Defaults to the last 30 days;
+     * date_from / date_to (YYYY-MM-DD, on order placement date) narrow or widen
+     * that, always clamped by the caller's role history window.
+     */
     @Get('delivery-orders')
     @RequirePermission(Permissions.RIDER_SUPERVISOR_VIEW)
     listDeliveryOrders(
@@ -43,16 +59,25 @@ export class RiderSupervisorAdminController {
         @Query('page_size') pageSize?: string,
         @Query('brand_id') brandId?: string,
         @Query('branch_id') branchId?: string,
+        @Query('rider_id') riderId?: string,
+        @Query('date_from') dateFrom?: string,
+        @Query('date_to') dateTo?: string,
     ) {
         if (user.tenantId == null)
             throw new BadRequestException('Tenant context required');
-        return this.service.listDeliveryOrders(user, {
-            status,
-            page: page ? +page : undefined,
-            page_size: pageSize ? +pageSize : undefined,
-            brand_id: brandId ? +brandId : undefined,
-            branch_id: branchId ? +branchId : undefined,
-        });
+        return this.service.listDeliveryOrders(
+            { ...user, canViewStatus: canViewStatus(user) },
+            {
+                status,
+                page: page ? +page : undefined,
+                page_size: pageSize ? +pageSize : undefined,
+                brand_id: brandId ? +brandId : undefined,
+                branch_id: branchId ? +branchId : undefined,
+                rider_id: riderId ? +riderId : undefined,
+                date_from: dateFrom,
+                date_to: dateTo,
+            },
+        );
     }
 
     /** Live rider roster with attendance + base salary. */
@@ -63,6 +88,7 @@ export class RiderSupervisorAdminController {
         @Query('branch_id') branchId?: string,
         @Query('brand_id') brandId?: string,
         @Query('status') status?: string,
+        @Query('rider_id') riderId?: string,
     ) {
         if (user.tenantId == null)
             throw new BadRequestException('Tenant context required');
@@ -70,6 +96,7 @@ export class RiderSupervisorAdminController {
             branchId: branchId ? +branchId : undefined,
             brandId: brandId ? +brandId : undefined,
             status,
+            riderId: riderId ? +riderId : undefined,
         });
     }
 

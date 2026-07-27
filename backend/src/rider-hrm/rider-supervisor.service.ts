@@ -11,10 +11,37 @@ type SupervisorUser = {
     tenantId: number | null;
     allowedBranchIds?: number[] | null;
     allowedBrandIds?: number[] | null;
+    /**
+     * `roles.order_history_days` — the same per-role window that limits the
+     * admin Orders page. Positive = the caller may only reach back that many
+     * calendar days; null/0 = unlimited. Configured per role in Roles.
+     */
+    orderHistoryDays?: number | null;
+    /**
+     * Holds `rider-supervisor:view-status`. When false the order status is
+     * withheld from the payload entirely — not merely hidden by the UI — so
+     * the bucket counts and the status filter go with it.
+     */
+    canViewStatus?: boolean;
 };
 
-/** Rolling window (calendar days, inclusive of today) the supervisor may see. */
+/** Default range (calendar days, incl. today) shown when no dates are picked. */
 const WINDOW_DAYS = 30;
+
+/** Normalise the role window: a positive integer, or null for unlimited. */
+function resolveHistoryDays(days?: number | null): number | null {
+    return days != null && Number.isFinite(days) && days > 0
+        ? Math.floor(days)
+        : null;
+}
+
+/** Accept only YYYY-MM-DD (the date inputs' format); anything else is ignored. */
+function parseDateParam(raw?: string | null): string | null {
+    if (typeof raw !== 'string') return null;
+    const v = raw.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+    return Number.isNaN(new Date(`${v}T00:00:00Z`).getTime()) ? null : v;
+}
 
 /** Delivery-order statuses grouped into the supervisor's filter buckets. */
 const STATUS_GROUPS: Record<string, string[]> = {
@@ -49,11 +76,17 @@ export class RiderSupervisorService {
             page_size?: number;
             brand_id?: number;
             branch_id?: number;
+            rider_id?: number;
+            /** Placement-date range, YYYY-MM-DD (inclusive). */
+            date_from?: string;
+            date_to?: string;
         },
     ) {
         const tenantId = user.tenantId;
         const allowedBranchIds = user.allowedBranchIds ?? null;
         const allowedBrandIds = user.allowedBrandIds ?? null;
+        const historyDays = resolveHistoryDays(user.orderHistoryDays);
+        const canViewStatus = user.canViewStatus !== false;
 
         // Optional narrowing filters, validated against the caller's scope.
         const branchFilter =
@@ -82,12 +115,22 @@ export class RiderSupervisorService {
                 'You do not have access to this brand',
             );
 
+        const riderFilter =
+            filters.rider_id != null && Number.isFinite(filters.rider_id)
+                ? Math.floor(filters.rider_id)
+                : null;
+        const dateFrom = parseDateParam(filters.date_from);
+        const dateTo = parseDateParam(filters.date_to);
+
         const page = Math.max(1, Math.floor(Number(filters.page)) || 1);
         const pageSize = Math.min(
             200,
             Math.max(1, Math.floor(Number(filters.page_size)) || 25),
         );
+        // Without the status permission the status filter is ignored too —
+        // otherwise the buckets would leak exactly what the column hides.
         const statusGroup =
+            canViewStatus &&
             typeof filters.status === 'string' &&
             filters.status in STATUS_GROUPS
                 ? filters.status
@@ -115,17 +158,37 @@ export class RiderSupervisorService {
                     });
                 else qb.andWhere('1 = 0');
             }
-            qb.andWhere(
-                'date(o.placed_at) >= (CURRENT_DATE - CAST(:days AS int) + 1)',
-                { days: WINDOW_DAYS },
-            );
+            // Placement-date range. With no dates picked the page keeps its
+            // default last-30-days view; explicit dates may reach further back,
+            // but never past the role's history window (the floor below).
+            if (dateFrom)
+                qb.andWhere('date(o.placed_at) >= :dateFrom', { dateFrom });
+            else if (!dateTo)
+                qb.andWhere(
+                    'date(o.placed_at) >= (CURRENT_DATE - CAST(:days AS int) + 1)',
+                    { days: WINDOW_DAYS },
+                );
+            if (dateTo) qb.andWhere('date(o.placed_at) <= :dateTo', { dateTo });
+            // Hard floor from `roles.order_history_days`, applied on top of any
+            // client date_from so a restricted role cannot widen its own range.
+            // Date maths runs in the DB (server timezone); N days is N calendar
+            // days inclusive of today — identical to the admin Orders list.
+            if (historyDays != null)
+                qb.andWhere(
+                    'date(o.placed_at) >= (CURRENT_DATE - CAST(:historyDays AS int) + 1)',
+                    { historyDays },
+                );
             if (branchFilter != null)
                 qb.andWhere('o.branchId = :branchFilter', { branchFilter });
             if (brandFilter != null)
                 qb.andWhere('o.brandId = :brandFilter', { brandFilter });
+            if (riderFilter != null)
+                qb.andWhere('o.riderId = :riderFilter', { riderFilter });
         };
 
         // Bucket counts over the common set (every bucket keeps a full count).
+        // Withheld entirely without the status permission — per-status counts
+        // would reveal the same information as the column itself.
         const countsQb = this.orderRepo
             .createQueryBuilder('o')
             .select('o.status', 'status')
@@ -134,16 +197,17 @@ export class RiderSupervisorService {
         const rawCounts = await countsQb
             .groupBy('o.status')
             .getRawMany<{ status: string; count: string }>();
-        const counts = { active: 0, delivered: 0, cancelled: 0, all: 0 };
+        const tally = { active: 0, delivered: 0, cancelled: 0, all: 0 };
         for (const r of rawCounts) {
             const n = Number(r.count) || 0;
-            counts.all += n;
-            if (STATUS_GROUPS.active.includes(r.status)) counts.active += n;
+            tally.all += n;
+            if (STATUS_GROUPS.active.includes(r.status)) tally.active += n;
             else if (STATUS_GROUPS.delivered.includes(r.status))
-                counts.delivered += n;
+                tally.delivered += n;
             else if (STATUS_GROUPS.cancelled.includes(r.status))
-                counts.cancelled += n;
+                tally.cancelled += n;
         }
+        const counts = canViewStatus ? tally : null;
 
         // Data page for the selected bucket.
         const dataQb = this.orderRepo
@@ -167,7 +231,8 @@ export class RiderSupervisorService {
                 id: o.id,
                 order_id: o.orderId,
                 order_number: o.orderNumber,
-                status: o.status,
+                // Withheld (not just hidden) without rider-supervisor:view-status.
+                status: canViewStatus ? o.status : null,
                 delivery_status: o.deliveryStatus,
                 placed_at: o.placedAt?.toISOString() ?? null,
                 completed_at: o.completedAt?.toISOString() ?? null,
@@ -190,6 +255,12 @@ export class RiderSupervisorService {
             page_size: pageSize,
             status: statusGroup,
             counts,
+            // Echo the applied range so the UI can show exactly what it asked
+            // for, plus the role's ceiling for its date-picker limits.
+            date_from: dateFrom,
+            date_to: dateTo,
+            history_days: historyDays,
+            can_view_status: canViewStatus,
         };
     }
 
@@ -202,7 +273,12 @@ export class RiderSupervisorService {
      */
     async listRiders(
         user: SupervisorUser,
-        filters: { branchId?: number; brandId?: number; status?: string },
+        filters: {
+            branchId?: number;
+            brandId?: number;
+            status?: string;
+            riderId?: number;
+        },
     ) {
         const tenantId = user.tenantId;
         if (tenantId == null)
@@ -254,6 +330,17 @@ export class RiderSupervisorService {
             params.push(branchId);
             branchFilterSql = ` AND pres.branch_id = $${params.length}`;
         }
+        // Single-rider narrowing. Applied in SQL (not post-filtered) so the
+        // brand/branch scope above still bounds what can be selected.
+        const riderId =
+            filters.riderId != null && Number.isFinite(filters.riderId)
+                ? Math.floor(filters.riderId)
+                : null;
+        let riderFilterSql = '';
+        if (riderId != null) {
+            params.push(riderId);
+            riderFilterSql = ` AND u.id = $${params.length}`;
+        }
 
         const rows: Array<{
             rider_user_id: number;
@@ -295,7 +382,7 @@ export class RiderSupervisorService {
                  ORDER BY s.checked_in_at DESC
                  LIMIT 1
              ) sess ON true
-             WHERE u.status = 'active'${branchFilterSql}
+             WHERE u.status = 'active'${branchFilterSql}${riderFilterSql}
              ORDER BY u.name ASC`,
             params,
         );
@@ -388,7 +475,12 @@ export class RiderSupervisorService {
         let branchClause = '';
         if (allowedBranchIds != null) {
             if (allowedBranchIds.length === 0)
-                return { branches: [], brands: [] };
+                return {
+                    branches: [],
+                    brands: [],
+                    riders: [],
+                    history_days: resolveHistoryDays(user.orderHistoryDays),
+                };
             branchParams.push(allowedBranchIds);
             branchClause = ` AND br.id = ANY($${branchParams.length}::int[])`;
         }
@@ -415,7 +507,13 @@ export class RiderSupervisorService {
         }
         let brandLockClause = '';
         if (allowedBrandIds != null) {
-            if (allowedBrandIds.length === 0) return { branches, brands: [] };
+            if (allowedBrandIds.length === 0)
+                return {
+                    branches,
+                    brands: [],
+                    riders: [],
+                    history_days: resolveHistoryDays(user.orderHistoryDays),
+                };
             brandParams.push(allowedBrandIds);
             brandLockClause = ` AND b.id = ANY($${brandParams.length}::int[])`;
         }
@@ -432,6 +530,42 @@ export class RiderSupervisorService {
             name: r.name,
         }));
 
-        return { branches, brands };
+        // Riders the caller may see — the same rider_brands scope the roster
+        // uses, so the dropdown can never offer someone outside their brands.
+        const riderParams: unknown[] = [tenantId];
+        let riderBrandClause = '';
+        if (allowedBrandIds != null) {
+            if (allowedBrandIds.length === 0)
+                return {
+                    branches,
+                    brands,
+                    riders: [],
+                    history_days: resolveHistoryDays(user.orderHistoryDays),
+                };
+            riderParams.push(allowedBrandIds);
+            riderBrandClause = ` AND rb.brand_id = ANY($${riderParams.length}::int[])`;
+        }
+        const riderRows: Array<{ id: number; name: string }> =
+            await this.dataSource.query(
+                `SELECT DISTINCT u.id, u.name FROM users u
+                 INNER JOIN rider_brands rb
+                     ON rb.rider_user_id = u.id AND rb.tenant_id = $1${riderBrandClause}
+                 WHERE u.status = 'active'
+                 ORDER BY u.name ASC`,
+                riderParams,
+            );
+        const riders = riderRows.map((r) => ({
+            id: Number(r.id),
+            name: r.name,
+        }));
+
+        return {
+            branches,
+            brands,
+            riders,
+            // How far back this role may look (null = unlimited) so the page
+            // can bound its date pickers and explain the limit.
+            history_days: resolveHistoryDays(user.orderHistoryDays),
+        };
     }
 }

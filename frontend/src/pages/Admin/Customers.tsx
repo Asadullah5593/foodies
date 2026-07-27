@@ -14,6 +14,12 @@ import { AccentedList, AccentedListRow } from '../../components/AccentedListRow'
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
+import {
+  CUSTOMER_SOURCES,
+  CUSTOMER_SOURCE_BADGE,
+  CUSTOMER_SOURCE_LABEL,
+  customerSourceLabel,
+} from '../../utils/customerSources';
 
 type LoyaltyWallet = {
   wallet_type: 'pos' | 'app';
@@ -29,6 +35,8 @@ type Customer = {
   loyaltyPointsBalance?: number;
   loyaltyWallets?: LoyaltyWallet[];
   createdAt?: string;
+  /** Where they signed up: pos | consumer_app | consumer_web | kiosk. */
+  source?: string | null;
   brands?: { id: number; name: string }[];
 };
 
@@ -43,6 +51,7 @@ const Customers: React.FC = () => {
   const [phone, setPhone] = useState('');
   const [phoneError, setPhoneError] = useState('');
   const [filter, setFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState('');
   const debouncedFilter = useDebouncedValue(filter, 300);
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
@@ -169,11 +178,22 @@ const Customers: React.FC = () => {
   };
 
   const filtered = React.useMemo(() => {
-    const list = (customers ?? []) as Customer[];
+    let list = (customers ?? []) as Customer[];
+    if (sourceFilter) list = list.filter((c) => (c.source ?? 'pos') === sourceFilter);
     if (!debouncedFilter.trim()) return list;
     const q = debouncedFilter.trim().toLowerCase();
     return list.filter((c) => (c.name ?? '').toLowerCase().includes(q) || (c.phone ?? '').toLowerCase().includes(q));
-  }, [customers, debouncedFilter]);
+  }, [customers, debouncedFilter, sourceFilter]);
+
+  /** How many customers came from each channel (before the text filter). */
+  const sourceCounts = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const c of (customers ?? []) as Customer[]) {
+      const key = c.source ?? 'pos';
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  }, [customers]);
 
   const customerNameTypeahead = useTypeaheadSuggestions({
     query: debouncedFilter,
@@ -188,7 +208,7 @@ const Customers: React.FC = () => {
     const start = (page - 1) * DEFAULT_PAGE_SIZE;
     return filtered.slice(start, start + DEFAULT_PAGE_SIZE);
   }, [filtered, page]);
-  React.useEffect(() => setPage(1), [debouncedFilter]);
+  React.useEffect(() => setPage(1), [debouncedFilter, sourceFilter]);
 
   const isSubmitting = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
   if (isLoading || isSubmitting) {
@@ -205,6 +225,7 @@ const Customers: React.FC = () => {
         Name and phone (Pakistani format 03XXXXXXXXX) are required. Phone is the unique identifier for loyalty.
       </p>
       <Card className="mb-4 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative w-full max-w-sm">
           <input
             type="text"
@@ -244,6 +265,22 @@ const Customers: React.FC = () => {
             onClose={() => customerNameTypeahead.setOpen(false)}
           />
         </div>
+        {/* Registration channel — POS/counter vs mobile app vs website. */}
+        <select
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+          aria-label="Registered from"
+          className="w-full sm:w-56 px-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">All sources</option>
+          {CUSTOMER_SOURCES.map((s) => (
+            <option key={s} value={s}>
+              {CUSTOMER_SOURCE_LABEL[s]}
+              {sourceCounts[s] ? ` (${sourceCounts[s]})` : ''}
+            </option>
+          ))}
+        </select>
+        </div>
       </Card>
       <div className="w-full space-y-3">
         {!customers?.length ? (
@@ -266,6 +303,17 @@ const Customers: React.FC = () => {
                   subtitle={
                     <>
                       <p className="font-mono">{c.phone}</p>
+                      <p className="mt-0.5">
+                        <span
+                          className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${
+                            CUSTOMER_SOURCE_BADGE[String(c.source ?? 'pos')] ??
+                            'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300'
+                          }`}
+                          title="Where this customer registered"
+                        >
+                          {customerSourceLabel(c.source ?? 'pos')}
+                        </span>
+                      </p>
                       {c.loyaltyWallets && c.loyaltyWallets.length > 0 ? (
                         <p>
                           Loyalty:{' '}

@@ -9,7 +9,8 @@ export interface SupervisorDeliveryOrder {
   id: number;
   order_id: string | null;
   order_number: string;
-  status: string;
+  /** null when the caller lacks rider-supervisor:view-status. */
+  status: string | null;
   delivery_status: string | null;
   placed_at: string | null;
   completed_at: string | null;
@@ -34,7 +35,15 @@ export interface SupervisorDeliveryOrdersResponse {
   page: number;
   page_size: number;
   status: SupervisorDeliveryStatus;
-  counts: { active: number; delivered: number; cancelled: number; all: number };
+  /** null when the caller lacks rider-supervisor:view-status. */
+  counts: { active: number; delivered: number; cancelled: number; all: number } | null;
+  /** Placement-date range actually applied (null = default window). */
+  date_from?: string | null;
+  date_to?: string | null;
+  /** Role history window in days; null = unlimited. */
+  history_days?: number | null;
+  /** Whether the server included order status in this payload. */
+  can_view_status?: boolean;
 }
 
 export type SupervisorRiderStatus = 'active' | 'on_break' | 'off';
@@ -68,6 +77,12 @@ export interface SupervisorFilterOption {
 export interface SupervisorFilterOptions {
   brands: SupervisorFilterOption[];
   branches: SupervisorFilterOption[];
+  riders: SupervisorFilterOption[];
+  /**
+   * How many days of order history this role may read (roles.order_history_days).
+   * null = unlimited. Used to bound the date pickers.
+   */
+  history_days: number | null;
 }
 
 export const riderSupervisorService = {
@@ -77,6 +92,10 @@ export const riderSupervisorService = {
     page_size?: number;
     brand_id?: number;
     branch_id?: number;
+    rider_id?: number;
+    /** YYYY-MM-DD, on order placement date. */
+    date_from?: string;
+    date_to?: string;
   }): Promise<SupervisorDeliveryOrdersResponse> => {
     const response = await apiClient.get<SupervisorDeliveryOrdersResponse>(
       '/admin/rider-hrm/supervisor/delivery-orders',
@@ -90,6 +109,7 @@ export const riderSupervisorService = {
       branch_id?: number;
       brand_id?: number;
       status?: SupervisorRiderStatus;
+      rider_id?: number;
     } = {}
   ): Promise<SupervisorRider[]> => {
     const response = await apiClient.get<SupervisorRider[]>(
@@ -107,6 +127,8 @@ export const riderSupervisorService = {
     return {
       brands: Array.isArray(d?.brands) ? d.brands : [],
       branches: Array.isArray(d?.branches) ? d.branches : [],
+      riders: Array.isArray(d?.riders) ? d.riders : [],
+      history_days: typeof d?.history_days === 'number' ? d.history_days : null,
     };
   },
 };

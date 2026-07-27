@@ -281,6 +281,11 @@ export const Permissions = {
     // roster with attendance + base salary). Standalone — NOT implied by any
     // umbrella — so it can be granted on its own to a limited oversight role.
     RIDER_SUPERVISOR_VIEW: 'rider-supervisor:view',
+    // Order status on that surface: the Status column, the status filter pills
+    // and the per-bucket counts. Separate from :view so a supervisor can be
+    // limited to logistics (who/where/when) without order progress. Granted to
+    // existing :view holders by migration, so nothing is lost by default.
+    RIDER_SUPERVISOR_VIEW_STATUS: 'rider-supervisor:view-status',
 
     // — Notifications (umbrella: notifications:manage) —
     NOTIFICATIONS_VIEW: 'notifications:view',

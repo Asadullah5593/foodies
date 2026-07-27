@@ -17,6 +17,7 @@ import {
 } from '../utils/phone';
 import { PromotionsService } from '../promotions/promotions.service';
 import { CouponsService } from '../coupons/coupons.service';
+import { CustomerSource } from './customer-sources';
 
 /**
  * Union `add` into `current` brand-id list (deduped). Returns the new array, or
@@ -77,7 +78,8 @@ export class CustomersService {
                                  WHERE (e)::int IN (:...allowedBrandIds)))`,
                     { allowedBrandIds },
                 )
-                .orderBy('c.id', 'ASC');
+                // Newest first: a just-registered customer lands at the top.
+                .orderBy('c.id', 'DESC');
             if (tenantId != null)
                 qb.andWhere('c.tenantId = :tenantId', { tenantId });
             const customers = await qb.getMany();
@@ -87,7 +89,8 @@ export class CustomersService {
         // Owner / unrestricted: return all customers with brand badges
         const customers = await this.repo.find({
             where: tenantId != null ? { tenantId } : {},
-            order: { id: 'ASC' },
+            // Newest first: a just-registered customer lands at the top.
+            order: { id: 'DESC' },
         });
         if (!customers.length) return customers;
 
@@ -302,6 +305,8 @@ export class CustomersService {
         },
         allowedBrandIds?: number[] | null,
         link?: boolean,
+        /** Where the record came from; staff-created rows are 'pos'. */
+        source: CustomerSource = 'pos',
     ) {
         const name = dto.name?.trim();
         if (!name) {
@@ -357,6 +362,7 @@ export class CustomersService {
                 email: email ?? null,
                 password: passwordHash,
                 loyaltyPointsBalance: 0,
+                source,
                 // Brand-locked admin → associate their brand(s); owner/GM → null.
                 brandIds: allowedBrandIds ?? null,
             }),
@@ -373,6 +379,8 @@ export class CustomersService {
             password: string;
             phoneVerified?: boolean;
         },
+        /** Consumer client that registered them (from x-client-platform). */
+        source: CustomerSource = 'consumer_app',
     ) {
         const name = dto.name?.trim();
         if (!name) {
@@ -419,6 +427,7 @@ export class CustomersService {
                     password: passwordHash,
                     phoneVerified: dto.phoneVerified ?? false,
                     loyaltyPointsBalance: 0,
+                    source,
                 }),
             );
         } catch (e) {
@@ -751,6 +760,8 @@ export class CustomersService {
         tenantId: number,
         phone: string,
         name?: string | null,
+        /** Source of the order that triggered the auto-create. */
+        source: CustomerSource = 'pos',
     ): Promise<Customer> {
         const normalized = normalizePakistaniPhone(phone);
         if (!normalized) {
@@ -777,6 +788,7 @@ export class CustomersService {
                     phone: normalized,
                     name: name?.trim() || 'Customer',
                     loyaltyPointsBalance: 0,
+                    source,
                 }),
             );
         } catch (e) {
