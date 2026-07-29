@@ -14,6 +14,7 @@ import { OfferSettings } from './offer-settings';
 export type OfferStageKind =
   | 'product_promotion'
   | 'discount'
+  | 'staff_discount'
   | 'coupon'
   | 'card_offer';
 
@@ -79,6 +80,7 @@ export function runOfferEngine(
   const byKind: Record<OfferStageKind, number> = {
     product_promotion: 0,
     discount: 0,
+    staff_discount: 0,
     coupon: 0,
     card_offer: 0,
   };

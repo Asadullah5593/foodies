@@ -504,6 +504,7 @@ function totalsHtml(
     [cfg.showOrderDiscount, 'Order discount', order.order_discount_amount, 'showOrderDiscount'],
     [cfg.showCouponDiscount, 'Coupon discount', order.coupon_discount_amount, 'showCouponDiscount'],
     [cfg.showCardDiscount, 'Card discount', order.card_discount_amount, 'showCardDiscount'],
+    [cfg.showStaffDiscount, 'Staff discount', order.staff_discount_amount, 'showStaffDiscount'],
   ];
   const enabledStages = perStage.filter(([on]) => on);
   const shownStageTotal = enabledStages.reduce((s, [, , amt]) => s + Number(amt ?? 0), 0);
@@ -1254,17 +1255,18 @@ export function richSampleInvoice(): InvoiceVM {
           },
         ],
         subtotal: 6536,
-        discount_amount: 1180,
+        discount_amount: 1280,
         promo_discount_amount: 590,
         order_discount_amount: 295,
         coupon_discount_amount: 200,
         card_discount_amount: 95,
+        staff_discount_amount: 100,
         discount_code: 'FIREAWAY20',
         tax_amount: 268,
         tax_rate: 0.05,
         service_charge: 150,
         delivery_fee: 0,
-        total_amount: 5774,
+        total_amount: 5674,
         loyalty_points_earned: 57,
         loyalty_points_redeemed: 120,
         loyalty_points_remaining: 380,

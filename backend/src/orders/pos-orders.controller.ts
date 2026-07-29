@@ -71,6 +71,10 @@ export class PosOrdersController {
             isSuperAdmin?: boolean;
             allowedBrandIds?: number[] | null;
             permissions?: string[];
+            staffDiscountCeiling?: {
+                maxPercent: number | null;
+                maxAmount: number | null;
+            };
         },
         @Body()
         dto: {
@@ -88,6 +92,7 @@ export class PosOrdersController {
             loyalty_points_to_redeem?: number;
             payment_split?: { cash_amount?: number; card_amount?: number };
             bank_card_id?: number | null;
+            staff_discount_id?: number | null;
         },
     ) {
         const tenantId = await this.resolveTenantId(user, dto.branch_id);
@@ -96,6 +101,7 @@ export class PosOrdersController {
             tenantId,
             resolvePosSource(user),
             user.allowedBrandIds ?? null,
+            user,
         );
     }
 
@@ -108,6 +114,10 @@ export class PosOrdersController {
             isSuperAdmin?: boolean;
             allowedBrandIds?: number[] | null;
             permissions?: string[];
+            staffDiscountCeiling?: {
+                maxPercent: number | null;
+                maxAmount: number | null;
+            };
         },
         @Body()
         dto: {
@@ -135,6 +145,8 @@ export class PosOrdersController {
             loyalty_points_to_redeem?: number;
             payment_split?: { cash_amount?: number; card_amount?: number };
             bank_card_id?: number | null;
+            /** Staff discount preset granted at the till (staff_discounts id). */
+            staff_discount_id?: number | null;
             /** Optional idempotency key so a retried/double-tapped placement is deduped. */
             idempotency_key?: string;
         },
@@ -148,6 +160,7 @@ export class PosOrdersController {
             null,
             user.allowedBrandIds ?? null,
             dto.idempotency_key ?? null,
+            user,
         );
     }
 

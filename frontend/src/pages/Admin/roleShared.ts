@@ -17,6 +17,15 @@ export interface Role {
    * `permissions` / `permission_ids`).
    */
   orderHistoryDays?: number | null;
+  /**
+   * Ceiling on a staff discount this role may grant at the till; null = no
+   * ceiling of that kind (the tenant offer cap still binds). Read back
+   * camelCase like orderHistoryDays, but as a STRING — they are numeric
+   * columns and pg returns decimals as strings. Written as
+   * `max_staff_discount_percent` / `_amount`.
+   */
+  maxStaffDiscountPercent?: number | string | null;
+  maxStaffDiscountAmount?: number | string | null;
   permissions?: Permission[];
 }
 
@@ -70,4 +79,26 @@ export function resourceLabel(resource: string): string {
     .split(/[-_]/)
     .map((s) => s.charAt(0).toUpperCase() + s.slice(1).toLowerCase())
     .join(' ');
+}
+
+/**
+ * Form values for a role's staff-discount ceilings.
+ *
+ * Two traps this exists to keep straight, both of which silently blank the
+ * edit form if got wrong: the API returns these camelCase (they are read off
+ * the entity, unlike the snake_case keys they are WRITTEN with), and they are
+ * numeric columns, so pg hands them back as strings like "5.00". Blank means
+ * no ceiling; "0" is a real value meaning this role may grant nothing, so it
+ * must survive as "0" rather than collapsing to blank.
+ */
+export function ceilingFieldValues(role: Role | null | undefined): {
+  percent: string;
+  amount: string;
+} {
+  const toField = (v: number | string | null | undefined): string =>
+    v == null || v === '' ? '' : String(Number(v));
+  return {
+    percent: toField(role?.maxStaffDiscountPercent),
+    amount: toField(role?.maxStaffDiscountAmount),
+  };
 }

@@ -18,6 +18,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { DiscountsModule } from './discounts/discounts.module';
 import { InvoicesModule } from './invoices/invoices.module';
 import { BankCardsModule } from './bank-cards/bank-cards.module';
+import { StaffDiscountsModule } from './staff-discounts/staff-discounts.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { ReportsModule } from './reports/reports.module';
 import { BranchUsersModule } from './branch-users/branch-users.module';
@@ -85,6 +86,7 @@ import { FbrModule } from './fbr/fbr.module';
         DiscountsModule,
         InvoicesModule,
         BankCardsModule,
+        StaffDiscountsModule,
         ShiftsModule,
         ReportsModule,
         BranchUsersModule,

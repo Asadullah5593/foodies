@@ -112,6 +112,8 @@ export interface InvoiceTemplateConfig {
     showOrderDiscount: boolean;
     showCouponDiscount: boolean;
     showCardDiscount: boolean;
+
+    showStaffDiscount: boolean;
     showDiscountName: boolean;
     /** Discount-line typography; defaults match the info-box value column (black, weight 600, same size). */
     discountFontWeight: number;
@@ -195,6 +197,8 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     showOrderDiscount: false,
     showCouponDiscount: false,
     showCardDiscount: false,
+
+    showStaffDiscount: false,
     showDiscountName: true,
     discountFontWeight: 600,
     discountFontPct: 100,

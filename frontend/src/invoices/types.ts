@@ -115,6 +115,8 @@ export interface InvoiceTemplateConfig {
   showOrderDiscount: boolean;
   showCouponDiscount: boolean;
   showCardDiscount: boolean;
+
+  showStaffDiscount: boolean;
   showDiscountName: boolean;
   /** Discount-line typography; defaults match the info-box value column (black, weight 600, same size). */
   discountFontWeight: number;
@@ -194,6 +196,8 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showOrderDiscount: false,
   showCouponDiscount: false,
   showCardDiscount: false,
+
+  showStaffDiscount: false,
   showDiscountName: true,
   discountFontWeight: 600,
   discountFontPct: 100,
@@ -262,6 +266,7 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
       { key: 'showOrderDiscount', label: 'Show order discount' },
       { key: 'showCouponDiscount', label: 'Show coupon discount' },
       { key: 'showCardDiscount', label: 'Show card / bank discount' },
+      { key: 'showStaffDiscount', label: 'Show staff discount' },
       { key: 'showDiscountName', label: 'Show discount / coupon code' },
     ],
   },
@@ -351,6 +356,7 @@ export type InvoiceOrderVM = {
   order_discount_amount?: number;
   coupon_discount_amount?: number;
   card_discount_amount?: number;
+  staff_discount_amount?: number;
   discount_code?: string | null;
   tax_amount: number;
   tax_rate?: number | null;

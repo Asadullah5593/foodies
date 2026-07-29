@@ -195,6 +195,15 @@ export const Permissions = {
     BANK_CARDS_EDIT: 'bank-cards:edit',
     BANK_CARDS_DELETE: 'bank-cards:delete',
 
+    // — Staff discounts (own module; NOT under discounts:manage — a give-away
+    //   at the till is a different right from authoring offers) —
+    STAFF_DISCOUNTS_VIEW: 'staff-discounts:view',
+    STAFF_DISCOUNTS_CREATE: 'staff-discounts:create',
+    STAFF_DISCOUNTS_EDIT: 'staff-discounts:edit',
+    STAFF_DISCOUNTS_DELETE: 'staff-discounts:delete',
+    /** Grant one on an order at the till. */
+    STAFF_DISCOUNTS_APPLY: 'staff-discounts:apply',
+
     // — Campaigns (umbrella: campaigns:manage) —
     CAMPAIGNS_VIEW: 'campaigns:view',
     CAMPAIGNS_CREATE: 'campaigns:create',

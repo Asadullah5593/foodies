@@ -33,6 +33,32 @@ export class Role {
     @Column({ type: 'int', nullable: true })
     orderHistoryDays: number | null;
 
+    /**
+     * Ceiling on a staff discount this role may grant at the till. `percent`
+     * gates percentage presets by their configured value; `amount` gates the
+     * resulting rupees for ANY preset, which is what keeps flat presets in
+     * check. null = no ceiling of that kind — the tenant offer cap still binds.
+     * A user holding several roles gets the most permissive (null wins,
+     * otherwise the largest).
+     */
+    @Column({
+        name: 'max_staff_discount_percent',
+        type: 'decimal',
+        precision: 5,
+        scale: 2,
+        nullable: true,
+    })
+    maxStaffDiscountPercent: number | null;
+
+    @Column({
+        name: 'max_staff_discount_amount',
+        type: 'decimal',
+        precision: 10,
+        scale: 2,
+        nullable: true,
+    })
+    maxStaffDiscountAmount: number | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

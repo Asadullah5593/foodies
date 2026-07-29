@@ -1,10 +1,29 @@
-import React from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MenuItem } from '../../../types';
 import { getImageFullUrl, MENU_ITEM_PLACEHOLDER } from '../../../utils/imageUrl';
 import { formatCurrency } from '../../../utils/currency';
 
-export const MENU_PAGE_SIZE = 10;
+/** Fallback until the grid has been measured (SSR, or no ResizeObserver). */
+export const MENU_PAGE_SIZE = 12;
+
+/** Rows shown per page; the page size is this times whatever fits across. */
+export const MENU_GRID_ROWS = 3;
+
+/**
+ * Narrowest a card may get before the name/price stop being readable. The grid
+ * fits as many columns as it can while keeping every card at least this wide,
+ * measuring ITSELF rather than the viewport — the menu column also shrinks with
+ * the sidebar and the cart panel, which a viewport breakpoint cannot see.
+ */
+const MIN_CARD_PX = 168;
+const GRID_GAP_PX = 10;
+
+export function columnsForWidth(width: number): number {
+  if (!Number.isFinite(width) || width <= 0) return 0;
+  const fits = Math.floor((width + GRID_GAP_PX) / (MIN_CARD_PX + GRID_GAP_PX));
+  return Math.min(8, Math.max(2, fits));
+}
 
 const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -38,6 +57,8 @@ export type MenuGridProps = {
   page?: number;
   pageSize?: number;
   onPageChange?: (page: number) => void;
+  /** Reports how many columns currently fit, so the page size can match. */
+  onColumnsChange?: (columns: number) => void;
 };
 
 const MenuGrid: React.FC<MenuGridProps> = ({
@@ -49,13 +70,49 @@ const MenuGrid: React.FC<MenuGridProps> = ({
   page = 1,
   pageSize = MENU_PAGE_SIZE,
   onPageChange,
+  onColumnsChange,
 }) => {
+  const gridRef = useRef<HTMLDivElement>(null);
+  const [columns, setColumns] = useState(0);
+
+  const measure = useCallback((width: number) => {
+    setColumns((prev) => {
+      const next = columnsForWidth(width);
+      return next === prev ? prev : next;
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    measure(el.getBoundingClientRect().width);
+    const ro = new ResizeObserver((entries) => {
+      measure(entries[0]?.contentRect.width ?? 0);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measure]);
+
+  useEffect(() => {
+    if (columns > 0) onColumnsChange?.(columns);
+  }, [columns, onColumnsChange]);
+
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const showPagination = totalCount > pageSize && onPageChange;
 
   return (
     <div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5 sm:gap-3.5">
+      {/* Tailwind columns are the pre-measurement fallback; once measured the
+          inline template wins and tracks the menu column's real width. */}
+      <div
+        ref={gridRef}
+        className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2 sm:gap-2.5"
+        style={
+          columns > 0
+            ? { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
+            : undefined
+        }
+      >
         <AnimatePresence mode="popLayout">
           {menu.map((item, i) => {
             const windowLabel = availabilityLabel(item);
@@ -84,25 +141,22 @@ const MenuGrid: React.FC<MenuGridProps> = ({
                 {windowLabel}
               </div>
             )}
-            <div className="aspect-[16/11] overflow-hidden bg-foodies-surfaceMuted dark:bg-slate-700/50 flex items-center justify-center">
+            <div className="aspect-[16/10] overflow-hidden bg-foodies-surfaceMuted dark:bg-slate-700/50 flex items-center justify-center">
               <img
                 src={item.image_url ? getImageFullUrl(item.image_url) : MENU_ITEM_PLACEHOLDER}
                 alt=""
-                className="max-w-[90%] max-h-full object-contain"
+                className="max-w-[85%] max-h-full object-contain"
               />
             </div>
-            <div className="p-2.5">
-              <h3 className="font-semibold text-foodies-textPrimary dark:text-slate-100 text-[13px] leading-tight line-clamp-2 mb-0.5">{item.name}</h3>
+            <div className="p-1.5">
+              <h3 className="font-semibold text-foodies-textPrimary dark:text-slate-100 text-[12px] leading-tight line-clamp-2 mb-0.5">{item.name}</h3>
               {getBrandName(item.brand_id) && (
-                <p className="text-[11px] text-foodies-primary font-medium uppercase tracking-wide mb-0.5">{getBrandName(item.brand_id)}</p>
+                <p className="text-[10px] text-foodies-primary font-medium uppercase tracking-wide mb-0.5">{getBrandName(item.brand_id)}</p>
               )}
-              {item.description && (
-                <p className="text-[11px] text-foodies-textSecondary dark:text-slate-400 line-clamp-1 mb-1">{item.description}</p>
-              )}
-              <div className="flex items-center justify-between gap-1 flex-wrap mb-1">
+              <div className="flex items-center justify-between gap-1 flex-wrap mb-0.5">
                 {(item.discount_amount ?? 0) > 0 && item.discounted_price != null ? (
-                  <p className="text-sm font-bold text-foodies-cta dark:text-red-400 flex items-center gap-1.5 flex-wrap">
-                    <span className="text-xs font-medium text-foodies-textSecondary dark:text-slate-400 line-through">
+                  <p className="text-[13px] font-bold text-foodies-cta dark:text-red-400 flex items-center gap-1 flex-wrap">
+                    <span className="text-[11px] font-medium text-foodies-textSecondary dark:text-slate-400 line-through">
                       {formatCurrency(item.price || item.base_price || 0)}
                     </span>
                     {formatCurrency(item.discounted_price)}
@@ -114,34 +168,34 @@ const MenuGrid: React.FC<MenuGridProps> = ({
                     </span>
                   </p>
                 ) : (
-                  <p className="text-sm font-bold text-foodies-cta dark:text-red-400">
+                  <p className="text-[13px] font-bold text-foodies-cta dark:text-red-400">
                     {formatCurrency(item.price || item.base_price || 0)}
                   </p>
                 )}
               </div>
               <div className="flex flex-wrap gap-1">
                 {(typeof item.category === 'object' ? item.category?.name : item.category ? String(item.category) : null) && (
-                  <span className="inline-block px-2 py-0.5 text-xs font-medium text-foodies-textPrimary dark:text-slate-200 bg-foodies-border dark:bg-slate-600 rounded-md">
+                  <span className="inline-block px-1.5 py-0 text-[10px] font-medium text-foodies-textPrimary dark:text-slate-200 bg-foodies-border dark:bg-slate-600 rounded">
                     {typeof item.category === 'object' ? item.category.name : String(item.category)}
                   </span>
                 )}
                 {item.variants && item.variants.length > 0 && (
-                  <span className="inline-block px-2 py-0.5 text-xs font-medium text-blue-700 bg-blue-100 rounded-md">
+                  <span className="inline-block px-1.5 py-0 text-[10px] font-medium text-blue-700 bg-blue-100 rounded">
                     Variants
                   </span>
                 )}
                 {item.addons && item.addons.length > 0 && (
-                  <span className="inline-block px-2 py-0.5 text-xs font-medium text-emerald-700 bg-emerald-100 rounded-md">
+                  <span className="inline-block px-1.5 py-0 text-[10px] font-medium text-emerald-700 bg-emerald-100 rounded">
                     Add-ons
                   </span>
                 )}
                 {item.modifier_groups && item.modifier_groups.length > 0 && (
-                  <span className="inline-block px-2 py-0.5 text-xs font-medium text-violet-700 bg-violet-100 rounded-md">
+                  <span className="inline-block px-1.5 py-0 text-[10px] font-medium text-violet-700 bg-violet-100 rounded">
                     Modifiers
                   </span>
                 )}
                 {!unavailable && windowLabel && (
-                  <span className="inline-block px-2 py-0.5 text-xs font-medium text-amber-700 bg-amber-100 rounded-md">
+                  <span className="inline-block px-1.5 py-0 text-[10px] font-medium text-amber-700 bg-amber-100 rounded">
                     🕒 {windowLabel}
                   </span>
                 )}

@@ -1,7 +1,10 @@
 export { default as POSLayout } from './POSLayout';
 export { default as POSFilters } from './POSFilters';
+export { default as POSTopBar } from './POSTopBar';
+export { default as POSPillFilters } from './POSPillFilters';
+export { default as OrderTypeNavTabs } from './OrderTypeNavTabs';
 export { default as OrderTypeSelector } from './OrderTypeSelector';
-export { default as MenuGrid, MENU_PAGE_SIZE } from './MenuGrid';
+export { default as MenuGrid, MENU_PAGE_SIZE, MENU_GRID_ROWS, columnsForWidth } from './MenuGrid';
 export { default as CustomerPanel } from './CustomerPanel';
 export { default as CartPanel } from './CartPanel';
 export { default as PaymentPanel } from './PaymentPanel';
@@ -10,3 +13,4 @@ export { default as DealConfigModal } from './DealConfigModal';
 export { default as CollapsibleSection } from './CollapsibleSection';
 export type { OrderTypeOption, CartLine, ItemConfig, DealComponentLine } from './types';
 export type { QuoteLineBreakdown } from './CartPanel';
+export type { PillOption } from './POSPillFilters';

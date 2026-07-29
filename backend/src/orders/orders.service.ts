@@ -5,6 +5,7 @@ import {
     ForbiddenException,
     ConflictException,
     UnprocessableEntityException,
+    HttpException,
     Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -108,6 +109,13 @@ import {
 } from './offer-engine';
 import { resolveOfferSettings, OfferSettings } from './offer-settings';
 import { ORDER_SOURCES } from './order-sources';
+import { StaffDiscount } from '../entities/staff-discount.entity';
+import {
+    staffDiscountToOffer,
+    staffDiscountRawAmount,
+    staffDiscountWithinCeiling,
+    StaffDiscountCeiling,
+} from './staff-discount-offer.util';
 
 /** The tax rate (fraction, e.g. 0.15) to print, chosen by the tender the tax was based on. */
 function effectiveTaxRate(o: {
@@ -161,6 +169,8 @@ export class OrdersService {
         @InjectRepository(Tenant) private tenantRepo: Repository<Tenant>,
         @InjectRepository(Discount) private discountRepo: Repository<Discount>,
         @InjectRepository(BankCard) private bankCardRepo: Repository<BankCard>,
+        @InjectRepository(StaffDiscount)
+        private staffDiscountRepo: Repository<StaffDiscount>,
         @InjectRepository(User) private userRepo: Repository<User>,
         @InjectRepository(RiderAssignmentLedger)
         private riderAssignmentLedgerRepo: Repository<RiderAssignmentLedger>,
@@ -1255,6 +1265,8 @@ export class OrdersService {
             payment_split?: { cash_amount?: number; card_amount?: number };
             /** Selected bank card (bank_cards id) for card-linked discounts. */
             bank_card_id?: number | null;
+            /** Staff discount preset the cashier granted (staff_discounts id). */
+            staff_discount_id?: number | null;
             /** When set, must match normalized customer_phone for same tenant. */
             customer_id?: number;
             /** Optional drop-off coordinates (e.g. consumer map picker). */
@@ -1279,6 +1291,11 @@ export class OrdersService {
         allowedBrandIds: number[] | null = null,
         /** Optional client idempotency key — a retry/double-tap returns the same group. */
         idempotencyKey: string | null = null,
+        /** Creating user — needed to authorize a staff discount. */
+        actor: {
+            permissions?: string[] | null;
+            staffDiscountCeiling?: StaffDiscountCeiling | null;
+        } | null = null,
     ) {
         const tenant = await this.tenantRepo.findOne({
             where: { id: tenantId },
@@ -1660,6 +1677,16 @@ export class OrdersService {
             (tenant as { offerSettings?: OfferSettings | null })
                 .offerSettings ?? null,
         );
+        // Enforcement point: unlike quote this THROWS, so a cashier who posts a
+        // preset above their ceiling is refused rather than quietly clamped.
+        const staffDiscount = await this.authorizeStaffDiscount(
+            dto.staff_discount_id,
+            tenantId,
+            actor,
+            subtotal,
+            primaryBranch.id,
+            orderBrandId,
+        );
         const staged = await this.resolveStagedOffers({
             tenantId,
             subtotal,
@@ -1672,6 +1699,7 @@ export class OrdersService {
             customerId: loggedInCustomerId ?? null,
             fullCardPayment,
             bankCardId,
+            staffDiscount,
             settings: offerSettings,
         });
         const combinedLineDiscount = staged.combinedLineDiscount;
@@ -1877,6 +1905,12 @@ export class OrdersService {
                         0,
                     ),
                 );
+                const brandStaffDiscount = r2(
+                    indices.reduce(
+                        (s, i) => s + stageLineAmount(i, 'staff_discount'),
+                        0,
+                    ),
+                );
                 const isFirstOrder = key === firstKey;
                 let afterDiscount =
                     Math.round((brandSubtotal - brandDiscountAmount) * 100) /
@@ -1962,6 +1996,27 @@ export class OrdersService {
                                 orderDiscountAmount: brandOrderDiscount,
                                 couponDiscountAmount: brandCouponDiscount,
                                 cardDiscountAmount: brandCardDiscount,
+                                staffDiscountAmount: brandStaffDiscount,
+                                // Only stamped on the brand-orders that actually
+                                // received some, so a split cart doesn't credit
+                                // every order with the same give-away. type/value
+                                // are snapshots — editing the preset later must
+                                // not rewrite what this order was given.
+                                staffDiscountId:
+                                    brandStaffDiscount > 0
+                                        ? (staffDiscount?.id ?? null)
+                                        : null,
+                                staffDiscountType:
+                                    brandStaffDiscount > 0
+                                        ? (staffDiscount?.discountType ?? null)
+                                        : null,
+                                staffDiscountValue:
+                                    brandStaffDiscount > 0 &&
+                                    staffDiscount != null
+                                        ? Number(staffDiscount.value)
+                                        : null,
+                                staffDiscountBy:
+                                    brandStaffDiscount > 0 ? createdBy : null,
                                 // Kept even when the offer gave nothing, so take-up
                                 // can be measured against every order that could
                                 // have used the card.
@@ -2657,6 +2712,7 @@ export class OrdersService {
                 order_discount_amount: Number(o.orderDiscountAmount ?? 0),
                 coupon_discount_amount: Number(o.couponDiscountAmount ?? 0),
                 card_discount_amount: Number(o.cardDiscountAmount ?? 0),
+                staff_discount_amount: Number(o.staffDiscountAmount ?? 0),
                 discount_code: o.discountCode ?? null,
                 tax_amount: Number(o.taxAmount),
                 tax_rate: effectiveTaxRate(o),
@@ -2983,6 +3039,7 @@ export class OrdersService {
             order_discount_amount: Number(order.orderDiscountAmount ?? 0),
             coupon_discount_amount: Number(order.couponDiscountAmount ?? 0),
             card_discount_amount: Number(order.cardDiscountAmount ?? 0),
+            staff_discount_amount: Number(order.staffDiscountAmount ?? 0),
             discount_code: order.discountCode ?? null,
             tax_amount: Number(order.taxAmount),
             tax_rate: effectiveTaxRate(order),
@@ -4519,6 +4576,8 @@ export class OrdersService {
             payment_split?: { cash_amount?: number; card_amount?: number };
             /** Selected bank card (bank_cards id) for card-linked discounts. */
             bank_card_id?: number | null;
+            /** Staff discount preset the cashier granted (staff_discounts id). */
+            staff_discount_id?: number | null;
             /** Drop-off coords — required to price/return delivery tiers. */
             latitude?: number;
             longitude?: number;
@@ -4534,6 +4593,11 @@ export class OrdersService {
             | 'kiosk' = 'pos',
         /** Brand lock of the requesting user (null = unrestricted). */
         allowedBrandIds: number[] | null = null,
+        /** Requesting user — needed to authorize a staff discount. */
+        actor: {
+            permissions?: string[] | null;
+            staffDiscountCeiling?: StaffDiscountCeiling | null;
+        } | null = null,
     ) {
         const branch = await this.branchRepo.findOne({
             where: { id: dto.branch_id },
@@ -4616,6 +4680,28 @@ export class OrdersService {
             (tenant as { offerSettings?: OfferSettings | null })
                 .offerSettings ?? null,
         );
+        // A quote must never fail because of the staff discount: the cashier is
+        // mid-order and losing the totals is worse than losing the give-away.
+        // Report why it didn't apply and price without it; createOrder is the
+        // enforcement point, and it runs this same authorization for real.
+        let staffDiscount: StaffDiscount | null = null;
+        let staffDiscountError: string | null = null;
+        try {
+            staffDiscount = await this.authorizeStaffDiscount(
+                dto.staff_discount_id,
+                tenantId,
+                actor,
+                subtotal,
+                branch.id,
+                orderBrandId,
+            );
+        } catch (e) {
+            staffDiscountError =
+                e instanceof HttpException
+                    ? ((e.getResponse() as { message?: string })?.message ??
+                      e.message)
+                    : 'Staff discount could not be applied.';
+        }
         const staged = await this.resolveStagedOffers({
             tenantId,
             subtotal,
@@ -4629,6 +4715,7 @@ export class OrdersService {
                 : null,
             fullCardPayment,
             bankCardId,
+            staffDiscount,
             settings: offerSettings,
         });
         const combinedLineDiscount = staged.combinedLineDiscount;
@@ -4817,6 +4904,11 @@ export class OrdersService {
             order_discount_amount: staged.discountAmount,
             card_discount_amount: staged.cardDiscountAmount,
             coupon_discount_amount: coupon.discountAmount,
+            staff_discount_amount: staged.staffDiscountAmount,
+            staff_discount_id: staffDiscount?.id ?? null,
+            staff_discount_name: staffDiscount?.name ?? null,
+            /** Why the requested preset wasn't applied (over ceiling, inactive, out of scope). */
+            staff_discount_error: staffDiscountError,
             discount_amount: totalDiscount,
             discount_code: coupon.discountCode ?? null,
             cap_applied: staged.capApplied,
@@ -5752,6 +5844,87 @@ export class OrdersService {
     }
 
     /**
+     * Resolve and AUTHORIZE a staff discount preset. Called by both quote and
+     * createOrder — the client-side button filtering is cosmetic, this is what
+     * actually stops a 10%-capped cashier posting the id of the 25% preset.
+     *
+     * Refuses (rather than silently clamping) when the preset is over the
+     * caller's ceiling: a cashier must be told they can't grant it, not handed
+     * a smaller number they didn't ask for. Out-of-scope brand/branch is also a
+     * refusal for the same reason — the button should not have been offered.
+     * Returns null when no preset was requested.
+     */
+    private async authorizeStaffDiscount(
+        staffDiscountId: number | null | undefined,
+        tenantId: number,
+        actor: {
+            permissions?: string[] | null;
+            staffDiscountCeiling?: StaffDiscountCeiling | null;
+        } | null,
+        discountableBase: number,
+        branchId: number,
+        orderBrandId: number | null,
+    ): Promise<StaffDiscount | null> {
+        if (staffDiscountId == null) return null;
+        if (!actor) {
+            throw new ForbiddenException(
+                'A staff discount can only be granted by a signed-in user.',
+            );
+        }
+        const permissions = actor.permissions ?? [];
+        if (!permissions.includes('staff-discounts:apply')) {
+            throw new ForbiddenException(
+                'You do not have permission to grant a staff discount.',
+            );
+        }
+        const preset = await this.staffDiscountRepo.findOne({
+            where: { id: Number(staffDiscountId), tenantId },
+        });
+        if (!preset) throw new NotFoundException('Staff discount not found');
+        if (!preset.isActive) {
+            throw new BadRequestException(
+                'That staff discount is no longer active.',
+            );
+        }
+
+        const brandIds = (preset.eligibilityBrandIds ?? []).map(Number);
+        if (
+            brandIds.length > 0 &&
+            orderBrandId != null &&
+            !brandIds.includes(Number(orderBrandId))
+        ) {
+            throw new BadRequestException(
+                'That staff discount does not apply to this brand.',
+            );
+        }
+        const branchIds = (preset.eligibilityBranchIds ?? []).map(Number);
+        if (branchIds.length > 0 && !branchIds.includes(Number(branchId))) {
+            throw new BadRequestException(
+                'That staff discount does not apply to this branch.',
+            );
+        }
+
+        // Ceiling is checked on the RAW amount the preset would produce, before
+        // the engine's cap and cost floor clamp it — so the refusal reflects
+        // what was asked for, not what happened to survive.
+        const ceiling = actor.staffDiscountCeiling ?? {
+            maxPercent: 0,
+            maxAmount: 0,
+        };
+        const raw = staffDiscountRawAmount(preset, discountableBase);
+        if (!staffDiscountWithinCeiling(preset, ceiling, raw)) {
+            throw new ForbiddenException(
+                `That staff discount is above your limit${
+                    ceiling.maxPercent != null
+                        ? ` of ${ceiling.maxPercent}%`
+                        : ''
+                }. Ask a manager to approve it.`,
+            );
+        }
+        return preset;
+    }
+
+    /**
      * Staged offer resolution — the single pricing engine used by both quote and
      * createOrder. Applies product_promotion → discount → coupon → card_offer as
      * stacking stages (loyalty is applied by the caller with `capRemaining`),
@@ -5780,12 +5953,18 @@ export class OrdersService {
         customerPhone?: string | null;
         fullCardPayment: boolean;
         bankCardId: number | null;
+        /**
+         * Preset the cashier granted, already authorized by the caller
+         * (permission + role ceiling). Null when none was granted.
+         */
+        staffDiscount?: StaffDiscount | null;
         settings: OfferSettings;
     }): Promise<{
         combinedLineDiscount: number[];
         totalDiscount: number;
         productPromoAmount: number;
         discountAmount: number;
+        staffDiscountAmount: number;
         couponDiscountAmount: number;
         cardDiscountAmount: number;
         autoDiscountAmount: number;
@@ -5934,6 +6113,21 @@ export class OrdersService {
                 },
             });
         }
+        // Staff discretion: after automatic offers, before the customer's own
+        // coupon and card offer, so goodwill at the till never devalues what
+        // the customer brought with them. Merchant-funded, so the engine's
+        // progressive cap and cost floor bind it like any other stage.
+        if (ctx.staffDiscount) {
+            const preset = staffDiscountToOffer(ctx.staffDiscount);
+            stages.push({
+                kind: 'staff_discount',
+                funding: 'merchant',
+                compute: (running) => {
+                    const r = this.evalOfferOnRunning(preset, evalCtx, running);
+                    return r ? r.alloc : new Array<number>(n).fill(0);
+                },
+            });
+        }
         if (coupon) {
             const c = coupon;
             stages.push({
@@ -5982,8 +6176,13 @@ export class OrdersService {
             totalDiscount: result.totalDiscount,
             productPromoAmount: result.byKind.product_promotion,
             discountAmount: result.byKind.discount,
+            staffDiscountAmount: result.byKind.staff_discount,
             couponDiscountAmount: result.byKind.coupon,
             cardDiscountAmount: result.byKind.card_offer,
+            // Compat shim for callers predating the staff-discount stage: the
+            // non-coupon total. Staff discount is deliberately NOT folded in —
+            // it is surfaced on its own so a give-away can never be mistaken
+            // for an offer the cart earned.
             autoDiscountAmount: oround2(
                 result.byKind.product_promotion +
                     result.byKind.discount +

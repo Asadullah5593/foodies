@@ -530,6 +530,46 @@ export interface CampaignItem {
   deep_link_url?: string | null;
 }
 
+/**
+ * A preset give-away a cashier can grant at the till. Its own module, not an
+ * offer: an offer is earned by the cart, this is discretion exercised by a
+ * person — so it carries no code, audience, usage limit or day-part.
+ */
+export interface StaffDiscount {
+  id: number;
+  name: string;
+  discount_type: 'percentage' | 'flat';
+  value: number;
+  /** Rupee ceiling on a percentage preset; null = uncapped. Always null for flat. */
+  max_discount_amount: number | null;
+  eligibility_brand_ids?: number[] | null;
+  eligibility_branch_ids?: number[] | null;
+  effective_brand_ids?: number[] | null;
+  manage_scope?: 'full' | 'detach' | 'read_only';
+  sort_order: number;
+  is_active: boolean;
+}
+
+/** The trimmed shape the till's picker returns — only what a button needs. */
+export interface StaffDiscountPreset {
+  id: number;
+  name: string;
+  discount_type: 'percentage' | 'flat';
+  value: number;
+  max_discount_amount: number | null;
+}
+
+export interface StaffDiscountPayload {
+  name?: string;
+  discount_type?: 'percentage' | 'flat';
+  value?: number | null;
+  max_discount_amount?: number | null;
+  eligibility_brand_ids?: number[] | null;
+  eligibility_branch_ids?: number[] | null;
+  sort_order?: number | null;
+  is_active?: boolean;
+}
+
 export interface OfferSettings {
   stackingOrder?: string[];
   withinGroup?: 'best_value' | 'priority';
