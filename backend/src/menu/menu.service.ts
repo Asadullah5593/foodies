@@ -1350,6 +1350,12 @@ export class MenuService {
                     bmi.menuItem?.brandId != null &&
                     linkedBrandIds.has(bmi.menuItem.brandId),
             )
+            // Retired items (and whole retired categories) are OFF the menu
+            // everywhere. is_active=false rows exist since the non-destructive
+            // 2026 re-seeds — retired items are deactivated, never deleted,
+            // because deleting them cascades into order history.
+            .filter((bmi) => bmi.menuItem?.isActive !== false)
+            .filter((bmi) => bmi.menuItem?.category?.isActive !== false)
             .filter((bmi) => bmi.isAvailable !== false)
             .filter(
                 (bmi) =>
@@ -1841,12 +1847,23 @@ export class MenuService {
         source: string,
         itemName?: string,
     ): Promise<void> {
+        const label = itemName ?? 'This item';
+        // Retired items (is_active=false — deactivated, never deleted, so order
+        // history survives) are not orderable anywhere, even from a stale menu.
+        const item = await this.itemRepo.findOne({
+            where: { id: menuItemId },
+            select: ['id', 'isActive'],
+        });
+        if (item && item.isActive === false) {
+            throw new BadRequestException(
+                `"${label}" is no longer on the menu.`,
+            );
+        }
         const bmi = await this.branchMenuItemRepo.findOne({
             where: { branchId, menuItemId },
             select: { id: true, isAvailable: true, isHiddenOnline: true },
         });
         if (!bmi) return;
-        const label = itemName ?? 'This item';
         if (bmi.isAvailable === false) {
             throw new BadRequestException(
                 `"${label}" is currently unavailable at this branch.`,
@@ -2136,6 +2153,8 @@ export class MenuService {
         });
         let item: MenuItem | null = bmi?.menuItem ?? null;
         if (bmi?.isAvailable === false) return null;
+        // Retired items never resolve into a deal slot (mirrors getBranchMenu).
+        if (item && item.isActive === false) return null;
 
         if (!item) {
             item = await this.itemRepo.findOne({
@@ -2149,6 +2168,7 @@ export class MenuService {
                 ],
             });
             if (!item) return null;
+            if (item.isActive === false) return null;
             const branch = await this.branchRepo.findOne({
                 where: { id: branchId },
                 relations: ['branchBrands', 'branchBrands.brand'],
