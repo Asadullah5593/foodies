@@ -56,7 +56,13 @@ export class MenuItem {
     basePrice: number;
 
     /** Unit cost (COGS) for the never-below-cost floor; null = unknown (no cost floor). */
-    @Column({ name: 'cost_price', type: 'decimal', precision: 10, scale: 2, nullable: true })
+    @Column({
+        name: 'cost_price',
+        type: 'decimal',
+        precision: 10,
+        scale: 2,
+        nullable: true,
+    })
     costPrice: number | null;
 
     /** Allergen labels shown to customers (e.g. ["Gluten","Dairy"]). Null/empty = none declared. */
@@ -122,6 +128,20 @@ export class MenuItem {
         nullable: true,
     })
     availableForOrderTypes: string[] | null;
+
+    /**
+     * Which SALE channels this item can be sold on: 'pos' | 'app' | 'web' |
+     * 'kiosk' (same vocabulary as discounts.channels). Null = every channel.
+     * E.g. the Fireaway sheet marks BOGO + lunch deals "FIREAWAY APP & E-Pos
+     * ONLY" → ['pos','app']. call_centre orders count as 'pos' (agents use
+     * the till). Enforced in menu display and at order commit.
+     */
+    @Column({
+        name: 'available_channels',
+        type: 'jsonb',
+        nullable: true,
+    })
+    availableChannels: string[] | null;
 
     /**
      * Recurring availability window (e.g. lunch deals 12:00–16:00). Time of day in the

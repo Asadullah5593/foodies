@@ -381,6 +381,8 @@ async function seed() {
         sizes?: SizeDef[];
         dealOnly?: boolean;
         channels?: string[] | null;
+        /** Sale channels ('pos'|'app'|'web'|'kiosk'); null = all channels. */
+        availableChannels?: string[] | null;
         label?: string | null;
         availableTimeStart?: string | null;
         availableTimeEnd?: string | null;
@@ -408,6 +410,7 @@ async function seed() {
         item.sortOrder = itemSort++;
         item.dealOnly = opts.dealOnly ?? false;
         item.availableForOrderTypes = opts.channels ?? null;
+        item.availableChannels = opts.availableChannels ?? null;
         item.label = opts.label ?? null;
         // Allergens & calories columns are present but BLANK in the sheet → left null.
         item.allergens = null;
@@ -1290,6 +1293,8 @@ async function seed() {
         description: string;
         price: number;
         lunch?: boolean;
+        /** Sheet: "FIREAWAY APP & E-Pos ONLY" → sellable on POS + own app only. */
+        appAndPosOnly?: boolean;
         pricingMode?: string | null;
         bogoBuyQuantity?: number | null;
         bogoGetQuantity?: number | null;
@@ -1315,6 +1320,7 @@ async function seed() {
             description: opts.description,
             basePrice: opts.price,
             channels: opts.lunch ? COLLECTION_ONLY : null,
+            availableChannels: opts.appAndPosOnly ? ['pos', 'app'] : null,
             availableTimeStart: opts.lunch ? LUNCH_START : null,
             availableTimeEnd: opts.lunch ? LUNCH_END : null,
             availableDaysOfWeek: opts.lunch ? LUNCH_DAYS : null,
@@ -1359,6 +1365,7 @@ async function seed() {
     // Classic Lunch Feast Offer — any 12" Classic pizza for Rs999.
     await mkDeal({
         name: 'Classic Lunch Feast Offer',
+        appAndPosOnly: true, // sheet: "FIREAWAY APP & E-Pos ONLY"
         description:
             'Any Large 12" Classic pizza for only Rs 999! Monday–Friday 12–4pm.',
         price: 999,
@@ -1396,6 +1403,7 @@ async function seed() {
     ]);
     await mkDeal({
         name: 'Power Lunch Offer',
+        appAndPosOnly: true, // sheet: "FIREAWAY APP & E-Pos ONLY"
         description:
             'A 12" build-your-own pizza (base, cheese & 2 toppings) or a pasta for only Rs 899. Monday–Friday 12–4pm.',
         price: 899,
@@ -1418,6 +1426,7 @@ async function seed() {
     // upgrade to Firey Special +Rs100.
     await mkDeal({
         name: 'Fireaway Wrap & Roll Lunch Deal',
+        appAndPosOnly: true, // sheet: "FIREAWAY APP & E-Pos ONLY"
         description:
             'Choose any wrap and a 250ml drink for Rs 549 (upgrade to Firey Special wrap for +Rs 100). Monday–Friday 12–4pm.',
         price: 549,
@@ -1625,6 +1634,7 @@ async function seed() {
     ];
     await mkDeal({
         name: 'Buy One Get One Half Price',
+        appAndPosOnly: true, // sheet: "FIREAWAY APP & E-Pos ONLY"
         description:
             'Buy any Large 12" pizza and get a 2nd Large 12" pizza of the same category (Classic, Signature or Build Your Own) at HALF PRICE. Available all day, every day.',
         price: 0, // dynamic — computed from the two chosen pizzas at order time
