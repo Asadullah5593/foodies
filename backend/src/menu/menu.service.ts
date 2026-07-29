@@ -18,6 +18,7 @@ import {
     previewItemOffers,
     PreviewOffer,
     OfferChannel,
+    sourceToOfferChannel,
 } from '../discounts/offer-preview.util';
 import { MenuVariant } from '../entities/menu-variant.entity';
 import { ModifierGroup } from '../entities/modifier-group.entity';
@@ -1356,6 +1357,14 @@ export class MenuService {
             // because deleting them cascades into order history.
             .filter((bmi) => bmi.menuItem?.isActive !== false)
             .filter((bmi) => bmi.menuItem?.category?.isActive !== false)
+            // Channel-restricted items (e.g. "APP & E-Pos ONLY" → ['pos','app'])
+            // only show on the channel this menu is rendered for. No channel
+            // supplied (internal callers) = no filtering; order commit enforces.
+            .filter((bmi) => {
+                const chans = bmi.menuItem?.availableChannels;
+                if (!options?.channel || !chans?.length) return true;
+                return chans.includes(options.channel);
+            })
             .filter((bmi) => bmi.isAvailable !== false)
             .filter(
                 (bmi) =>
@@ -1601,6 +1610,11 @@ export class MenuService {
             .where('i.brandId = :brandId', { brandId })
             .andWhere('i.isActive = :active', { active: true })
             .andWhere('(i.dealOnly IS NULL OR i.dealOnly = false)')
+            // This endpoint only serves the consumer WEB surface — hide items
+            // restricted to other channels (e.g. "APP & E-Pos ONLY" deals).
+            .andWhere(
+                `(i.available_channels IS NULL OR i.available_channels @> '["web"]'::jsonb)`,
+            )
             .orderBy('i.sortOrder', 'ASC')
             .addOrderBy('i.id', 'ASC');
 
@@ -1852,12 +1866,23 @@ export class MenuService {
         // history survives) are not orderable anywhere, even from a stale menu.
         const item = await this.itemRepo.findOne({
             where: { id: menuItemId },
-            select: ['id', 'isActive'],
+            select: ['id', 'isActive', 'availableChannels'],
         });
         if (item && item.isActive === false) {
             throw new BadRequestException(
                 `"${label}" is no longer on the menu.`,
             );
+        }
+        // Channel-restricted items ("APP & E-Pos ONLY" → ['pos','app']).
+        // call_centre agents order through the till, so they count as 'pos'.
+        if (item?.availableChannels?.length) {
+            const channel =
+                source === 'call_centre' ? 'pos' : sourceToOfferChannel(source);
+            if (!channel || !item.availableChannels.includes(channel)) {
+                throw new BadRequestException(
+                    `"${label}" is not available for this order channel.`,
+                );
+            }
         }
         const bmi = await this.branchMenuItemRepo.findOne({
             where: { branchId, menuItemId },
@@ -2155,6 +2180,13 @@ export class MenuService {
         if (bmi?.isAvailable === false) return null;
         // Retired items never resolve into a deal slot (mirrors getBranchMenu).
         if (item && item.isActive === false) return null;
+        // Channel-restricted items only resolve on their allowed channels.
+        if (
+            item?.availableChannels?.length &&
+            channel &&
+            !item.availableChannels.includes(channel)
+        )
+            return null;
 
         if (!item) {
             item = await this.itemRepo.findOne({
