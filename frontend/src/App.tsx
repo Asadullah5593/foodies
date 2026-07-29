@@ -21,6 +21,7 @@ import {
   MdOutlinePayments,
   MdOutlineLocalOffer,
   MdOutlineStarBorder,
+  MdOutlineVolunteerActivism,
   MdOutlineLock,
   MdOutlineReceiptLong,
   MdOutlineDeliveryDining,
@@ -60,6 +61,7 @@ import BranchMenuItems from './pages/Admin/BranchMenuItems';
 import BranchUsers from './pages/Admin/BranchUsers';
 import Discounts from './pages/Admin/Discounts';
 import BankCards from './pages/Admin/BankCards';
+import StaffDiscounts from './pages/Admin/StaffDiscounts';
 import Banners from './pages/Admin/Banners';
 import Promotions from './pages/Admin/Promotions';
 import ProductPromotions from './pages/Admin/ProductPromotions';
@@ -213,6 +215,8 @@ const AdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 };
 
 import { canAccessPath, isRiderForAccess, getDefaultLandingPath } from './lib/pathPermissions';
+import { POSOrderTypeProvider } from './contexts/POSOrderTypeContext';
+import OrderTypeNavTabs from './pages/POS/components/OrderTypeNavTabs';
 
 /** Only super admin can access (e.g. Tenants module). Tenant users are redirected to first accessible module. */
 const SuperAdminOnlyRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -338,6 +342,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { path: '/admin/offer-settings', label: 'Offer Settings' },
       ],
     },
+    // Deliberately outside Discounts & Promotions: an offer is earned by the
+    // cart, a staff discount is a give-away by a cashier. Grouping them made
+    // both screens ambiguous.
+    { path: '/admin/staff-discounts', label: 'Staff Discounts', icon: MdOutlineVolunteerActivism },
     { path: '/admin/loyalty-settings', label: 'Loyalty Settings', icon: MdOutlineStarBorder },
     ...(isTenantUser ? [{ path: '/admin/invoice-templates', label: 'Invoice Templates', icon: MdOutlineReceiptLong }] : []),
     { path: '/admin/delivery-tiers', label: 'Delivery Tiers', icon: MdOutlineDeliveryDining },
@@ -669,6 +677,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const desktopSidebarWidth = sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
 
   return (
+    <POSOrderTypeProvider>
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex">
       {/* Desktop: fixed vertical sidebar (collapsible, theme-aware) */}
       <motion.aside
@@ -767,6 +776,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 {isPOS ? 'POS' : 'Foodies'}
               </span>
             </div>
+            {/* POS order type lives here; the POS page publishes it (see
+                POSOrderTypeContext) and it renders nowhere else. */}
+            {isPOS && <OrderTypeNavTabs />}
             <div className="flex items-center gap-2">
               {/* Quick jumps between the two screens floor staff live in.
                   Gated the same way as the sidebar, so a user without the
@@ -850,6 +862,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </div>
       </div>
     </div>
+    </POSOrderTypeProvider>
   );
 };
 
@@ -1036,6 +1049,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><BankCards /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/staff-discounts"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><StaffDiscounts /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />

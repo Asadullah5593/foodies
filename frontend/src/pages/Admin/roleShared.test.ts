@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   Permission,
+  Role,
   groupByResource,
   resourceGroupKey,
   resourceLabel,
+  ceilingFieldValues,
 } from './roleShared';
 
 const perm = (id: number, name: string, resource: string): Permission => ({
@@ -92,5 +94,44 @@ describe('resourceLabel stays exact per permission', () => {
     expect(resourceLabel('rider-payroll')).toBe('Rider Payroll');
     expect(resourceLabel('rider-comp-plans')).toBe('Rider Comp Plans');
     expect(resourceLabel('rider-supervisor')).toBe('Rider Supervisor');
+  });
+});
+
+describe('ceilingFieldValues', () => {
+  const role = (over: Partial<Role> = {}): Role => ({
+    id: 1,
+    name: 'Cashier',
+    slug: 'pos_cashier',
+    ...over,
+  });
+
+  it('reads the camelCase keys the API actually returns', () => {
+    // The write payload is snake_case (max_staff_discount_percent) but the read
+    // comes off the entity camelCase. Reading the wrong one blanks the form.
+    expect(ceilingFieldValues(role({ maxStaffDiscountPercent: 10 })).percent).toBe('10');
+  });
+
+  it('normalises the string decimals pg returns', () => {
+    const v = ceilingFieldValues(
+      role({ maxStaffDiscountPercent: '5.00', maxStaffDiscountAmount: '500.00' }),
+    );
+    expect(v.percent).toBe('5');
+    expect(v.amount).toBe('500');
+  });
+
+  it('keeps a deliberate 0 — that role may grant nothing', () => {
+    expect(ceilingFieldValues(role({ maxStaffDiscountPercent: 0 })).percent).toBe('0');
+  });
+
+  it('blanks a null ceiling (no limit of that kind)', () => {
+    const v = ceilingFieldValues(
+      role({ maxStaffDiscountPercent: null, maxStaffDiscountAmount: undefined }),
+    );
+    expect(v.percent).toBe('');
+    expect(v.amount).toBe('');
+  });
+
+  it('survives a role that has not loaded yet', () => {
+    expect(ceilingFieldValues(undefined)).toEqual({ percent: '', amount: '' });
   });
 });

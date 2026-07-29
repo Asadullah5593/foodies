@@ -3,6 +3,8 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
 import { Order } from '../entities/order.entity';
 import { BankCard } from '../entities/bank-card.entity';
+import { StaffDiscount } from '../entities/staff-discount.entity';
+import { User } from '../entities/user.entity';
 import { OrderItem } from '../entities/order-item.entity';
 import { Shift } from '../entities/shift.entity';
 import { Payment } from '../entities/payment.entity';
@@ -214,6 +216,7 @@ export class ReportsService {
         order_discounts: number;
         coupon_discounts: number;
         card_discounts: number;
+        staff_discounts: number;
         total_tax: number;
         total_service_charge: number;
         total_delivery_fee: number;
@@ -245,6 +248,12 @@ export class ReportsService {
                 'COALESCE(SUM(o.cardDiscountAmount), 0)',
                 'card_discounts',
             )
+            // Discretion at the till, not an offer the cart earned — the one
+            // slice of the discount total a manager can act on directly.
+            .addSelect(
+                'COALESCE(SUM(o.staffDiscountAmount), 0)',
+                'staff_discounts',
+            )
             .addSelect('COALESCE(SUM(o.taxAmount), 0)', 'total_tax')
             .addSelect(
                 'COALESCE(SUM(o.serviceCharge), 0)',
@@ -270,6 +279,7 @@ export class ReportsService {
             order_discounts: Number(r?.order_discounts ?? 0),
             coupon_discounts: Number(r?.coupon_discounts ?? 0),
             card_discounts: Number(r?.card_discounts ?? 0),
+            staff_discounts: Number(r?.staff_discounts ?? 0),
             total_tax: Number(r?.total_tax ?? 0),
             total_service_charge: Number(r?.total_service_charge ?? 0),
             total_delivery_fee: Number(r?.total_delivery_fee ?? 0),
@@ -613,6 +623,12 @@ export class ReportsService {
             (s, o) => s + Number(o.discountAmount),
             0,
         );
+        // Broken out on the shift because it is the one discount a manager can
+        // hold this till accountable for.
+        const totalStaffDiscounts = orders.reduce(
+            (s, o) => s + Number(o.staffDiscountAmount || 0),
+            0,
+        );
         const totalServiceCharge = orders.reduce(
             (s, o) => s + Number(o.serviceCharge || 0),
             0,
@@ -631,6 +647,7 @@ export class ReportsService {
             total_revenue: totalRevenue,
             total_sales: totalSales,
             total_discounts: totalDiscounts,
+            total_staff_discounts: totalStaffDiscounts,
             total_service_charge: totalServiceCharge,
             total_delivery_fee: totalDeliveryFee,
             total_tax: totalTax,
@@ -985,10 +1002,80 @@ export class ReportsService {
         const cardRows =
             await cardsQb.getRawMany<Record<string, string | null>>();
 
+        // Who granted staff discounts, and how much. Unlike every other stage
+        // this one has a person behind it, so it is grouped by that person
+        // rather than by offer — "Rs. 40k given away" is not actionable,
+        // "Rs. 28k of it by one till" is.
+        const staffQb = this.orderRepo
+            .createQueryBuilder('o')
+            .innerJoin(User, 'u', 'u.id = o.staffDiscountBy')
+            .where("o.status = 'completed'")
+            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', range)
+            .andWhere('o.staffDiscountAmount > 0')
+            .select('u.id', 'user_id')
+            .addSelect('u.name', 'user_name')
+            .addSelect('COUNT(*)', 'orders')
+            .addSelect(
+                'COALESCE(SUM(o.staffDiscountAmount), 0)',
+                'total_discount',
+            )
+            .addSelect('COALESCE(SUM(o.subtotal), 0)', 'total_subtotal')
+            .addSelect('MAX(o.staffDiscountAmount)', 'largest_discount')
+            .groupBy('u.id')
+            .addGroupBy('u.name')
+            .orderBy('SUM(o.staffDiscountAmount)', 'DESC');
+        this.applyOrderScope(
+            staffQb,
+            'o',
+            tenantId,
+            allowedBranchIds,
+            filters.branch_id,
+            allowedBrandIds,
+            filters.brand_id,
+        );
+        const staffRows =
+            await staffQb.getRawMany<Record<string, string | null>>();
+
+        // Which preset was used, so a well-named catalog ("10% – Long wait")
+        // doubles as the reason breakdown. Presets deleted since are grouped
+        // under a null id rather than dropped.
+        const presetQb = this.orderRepo
+            .createQueryBuilder('o')
+            .leftJoin(StaffDiscount, 'sd', 'sd.id = o.staffDiscountId')
+            .where("o.status = 'completed'")
+            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', range)
+            .andWhere('o.staffDiscountAmount > 0')
+            .select('o.staffDiscountId', 'preset_id')
+            .addSelect('sd.name', 'preset_name')
+            .addSelect('o.staffDiscountType', 'preset_type')
+            .addSelect('o.staffDiscountValue', 'preset_value')
+            .addSelect('COUNT(*)', 'orders')
+            .addSelect(
+                'COALESCE(SUM(o.staffDiscountAmount), 0)',
+                'total_discount',
+            )
+            .groupBy('o.staffDiscountId')
+            .addGroupBy('sd.name')
+            .addGroupBy('o.staffDiscountType')
+            .addGroupBy('o.staffDiscountValue')
+            .orderBy('SUM(o.staffDiscountAmount)', 'DESC');
+        this.applyOrderScope(
+            presetQb,
+            'o',
+            tenantId,
+            allowedBranchIds,
+            filters.branch_id,
+            allowedBrandIds,
+            filters.brand_id,
+        );
+        const presetRows =
+            await presetQb.getRawMany<Record<string, string | null>>();
+
         const merchantFunded =
             totals.promo_discounts +
             totals.order_discounts +
-            totals.coupon_discounts;
+            totals.coupon_discounts +
+            totals.staff_discounts;
         return {
             date_from: range.dateFrom.toISOString(),
             date_to: range.dateTo.toISOString(),
@@ -1002,7 +1089,39 @@ export class ReportsService {
                 discount: totals.order_discounts,
                 coupon: totals.coupon_discounts,
                 card: totals.card_discounts,
+                staff_discount: totals.staff_discounts,
             },
+            /** Staff give-aways by the person who granted them. */
+            staff: staffRows.map((r) => {
+                const orders = Number(r.orders ?? 0);
+                const total = Number(r.total_discount ?? 0);
+                const subtotal = Number(r.total_subtotal ?? 0);
+                return {
+                    user_id: Number(r.user_id),
+                    user_name: r.user_name,
+                    orders,
+                    total_discount: total,
+                    /** Discounted turnover, so the give-away has a denominator. */
+                    total_subtotal: subtotal,
+                    /** Average share of the bill given away, as a percentage. */
+                    avg_percent:
+                        subtotal > 0
+                            ? Math.round((total / subtotal) * 10000) / 100
+                            : 0,
+                    largest_discount: Number(r.largest_discount ?? 0),
+                };
+            }),
+            /** Staff give-aways by preset — the "why", when presets are named for it. */
+            staff_by_preset: presetRows.map((r) => ({
+                preset_id: r.preset_id != null ? Number(r.preset_id) : null,
+                /** Null once the preset is deleted; the snapshot below survives. */
+                preset_name: r.preset_name,
+                preset_type: r.preset_type,
+                preset_value:
+                    r.preset_value != null ? Number(r.preset_value) : null,
+                orders: Number(r.orders ?? 0),
+                total_discount: Number(r.total_discount ?? 0),
+            })),
             cards: cardRows.map((r) => {
                 const orders = Number(r.orders ?? 0);
                 const discounted = Number(r.discounted_orders ?? 0);
@@ -1577,10 +1696,12 @@ export class ReportsService {
                     discount: kpiCurrent.order_discounts,
                     coupon: kpiCurrent.coupon_discounts,
                     card: kpiCurrent.card_discounts,
+                    staff_discount: kpiCurrent.staff_discounts,
                     merchant_funded:
                         kpiCurrent.promo_discounts +
                         kpiCurrent.order_discounts +
-                        kpiCurrent.coupon_discounts,
+                        kpiCurrent.coupon_discounts +
+                        kpiCurrent.staff_discounts,
                     bank_funded: kpiCurrent.card_discounts,
                 },
                 total_tax: kpiCurrent.total_tax,

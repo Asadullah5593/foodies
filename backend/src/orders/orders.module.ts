@@ -14,6 +14,7 @@ import { User } from '../entities/user.entity';
 import { Tenant } from '../entities/tenant.entity';
 import { Discount } from '../entities/discount.entity';
 import { BankCard } from '../entities/bank-card.entity';
+import { StaffDiscount } from '../entities/staff-discount.entity';
 import { PosMenuController } from './pos-menu.controller';
 import { PosOrdersController } from './pos-orders.controller';
 import { AdminOrdersController } from './admin-orders.controller';
@@ -62,6 +63,7 @@ import { FbrModule } from '../fbr/fbr.module';
             Tenant,
             Discount,
             BankCard,
+            StaffDiscount,
             RiderOrderLocation,
             RiderOrderLocationSummary,
             RiderProfile,

@@ -113,6 +113,14 @@ export class RolesController {
             permission_ids?: number[];
             /** Days of order history this role may read; null = unlimited. */
             order_history_days?: number | null;
+            /**
+             * Largest staff discount this role may grant at the till. `percent`
+             * gates percentage presets by their configured value; `amount` gates
+             * the resulting rupees for any preset. null = no ceiling of that
+             * kind — the tenant offer cap still binds.
+             */
+            max_staff_discount_percent?: number | null;
+            max_staff_discount_amount?: number | null;
         },
     ) {
         if (!user.tenantId)
@@ -136,6 +144,14 @@ export class RolesController {
             permission_ids?: number[];
             /** Days of order history this role may read; null = unlimited. */
             order_history_days?: number | null;
+            /**
+             * Largest staff discount this role may grant at the till. `percent`
+             * gates percentage presets by their configured value; `amount` gates
+             * the resulting rupees for any preset. null = no ceiling of that
+             * kind — the tenant offer cap still binds.
+             */
+            max_staff_discount_percent?: number | null;
+            max_staff_discount_amount?: number | null;
         },
     ) {
         if (!user.tenantId)

@@ -96,6 +96,15 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         permissionNames: [Permissions.DISCOUNTS_MANAGE],
     },
     {
+        // `apply` is listed so a cashier holding only the till right can reach
+        // /for-till; the per-method guards enforce which right each route needs.
+        prefix: '/admin/staff-discounts',
+        permissionNames: [
+            Permissions.STAFF_DISCOUNTS_VIEW,
+            Permissions.STAFF_DISCOUNTS_APPLY,
+        ],
+    },
+    {
         prefix: '/admin/loyalty-settings',
         permissionNames: [Permissions.LOYALTY_MANAGE],
     },

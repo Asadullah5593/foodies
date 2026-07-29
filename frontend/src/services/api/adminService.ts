@@ -12,6 +12,9 @@ import {
   CouponVoucher,
   OfferReport,
   OfferSettings,
+  StaffDiscount,
+  StaffDiscountPreset,
+  StaffDiscountPayload,
   Shift,
   ShiftOrdersResponse,
   ShiftPendingOrdersResponse,
@@ -1065,6 +1068,46 @@ export const adminService = {
   },
   deleteBankCard: async (id: number) => {
     const response = await apiClient.delete(`/admin/bank-cards/${id}`);
+    return response.data;
+  },
+
+  // Staff discounts — preset give-aways a cashier grants at the till. Its own
+  // module, not an offer: the controls are who may grant it and how much.
+  getStaffDiscounts: async (activeOnly = false) => {
+    const response = await apiClient.get('/admin/staff-discounts', {
+      params: activeOnly ? { active: 1 } : {},
+    });
+    return response.data as StaffDiscount[];
+  },
+  /**
+   * The till's picker: only the presets THIS user may actually grant, already
+   * filtered by their role ceiling, the branch/brand being sold and the cart
+   * size (a percentage preset's rupee value depends on the subtotal).
+   */
+  getStaffDiscountsForTill: async (params: {
+    branch_id?: number | null;
+    brand_id?: number | null;
+    subtotal?: number | null;
+  }) => {
+    const response = await apiClient.get('/admin/staff-discounts/for-till', {
+      params: {
+        ...(params.branch_id != null ? { branch_id: params.branch_id } : {}),
+        ...(params.brand_id != null ? { brand_id: params.brand_id } : {}),
+        ...(params.subtotal != null ? { subtotal: params.subtotal } : {}),
+      },
+    });
+    return response.data as StaffDiscountPreset[];
+  },
+  createStaffDiscount: async (data: StaffDiscountPayload) => {
+    const response = await apiClient.post('/admin/staff-discounts', data);
+    return response.data;
+  },
+  updateStaffDiscount: async (id: number, data: StaffDiscountPayload) => {
+    const response = await apiClient.put(`/admin/staff-discounts/${id}`, data);
+    return response.data;
+  },
+  deleteStaffDiscount: async (id: number) => {
+    const response = await apiClient.delete(`/admin/staff-discounts/${id}`);
     return response.data;
   },
 

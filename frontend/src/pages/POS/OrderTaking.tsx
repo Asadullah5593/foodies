@@ -22,9 +22,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   POSLayout,
   POSFilters,
-  OrderTypeSelector,
+  POSTopBar,
+  POSPillFilters,
   MenuGrid,
   MENU_PAGE_SIZE,
+  MENU_GRID_ROWS,
   CustomerPanel,
   CartPanel,
   PaymentPanel,
@@ -35,6 +37,7 @@ import type { OrderTypeOption, CartLine, DealComponentLine } from './components'
 import type { KioskFinalizeRequest } from '../../services/api/orderService';
 import { defaultVariantIdForItem } from './components/types';
 import { isMenuItemAvailableForOrderType } from '../../utils/menu-order-type';
+import { useRegisterPOSOrderType } from '../../contexts/POSOrderTypeContext';
 import { cartLineSupportsOrderType } from './orderTypeSupport';
 import { computeModifiersPrice, resolveMinSelect, resolveMaxSelect, sizeKeyForSelection } from '../../utils/modifierPricing';
 
@@ -47,6 +50,8 @@ const OrderTaking: React.FC = () => {
   } | null>(null);
   const [tableNumber, setTableNumber] = useState('');
   const [discountCode, setDiscountCode] = useState('');
+  /** Staff discount preset the cashier granted (staff_discounts id), or null. */
+  const [staffDiscountId, setStaffDiscountId] = useState<number | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -90,6 +95,14 @@ const OrderTaking: React.FC = () => {
   });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [currentMenuPage, setCurrentMenuPage] = useState(1);
+  /**
+   * How many cards fit across, reported by the grid as it measures itself. The
+   * page then holds whole rows (columns x MENU_GRID_ROWS), so the last row is
+   * never a ragged half-row and a wider till simply shows more.
+   */
+  const [menuColumns, setMenuColumns] = useState(0);
+  const menuPageSize =
+    menuColumns > 0 ? menuColumns * MENU_GRID_ROWS : MENU_PAGE_SIZE;
   const [removeConfirmIndex, setRemoveConfirmIndex] = useState<number | null>(null);
   const [showCheckoutModal, setShowCheckoutModal] = useState(false);
   const [showDealModal, setShowDealModal] = useState(false);
@@ -169,6 +182,27 @@ const OrderTaking: React.FC = () => {
     ? menuByBrand
     : menuByBrand.filter((item: MenuItem) => (item.category_id ?? item.category?.id) === selectedCategoryId);
 
+  /**
+   * Category pill options. Counts come from the brand-filtered menu, so each
+   * pill states exactly how many items tapping it would show.
+   */
+  const categoryPills = React.useMemo(() => {
+    const perCategory = new Map<number, number>();
+    (menuByBrand as MenuItem[]).forEach((item) => {
+      const id = item.category_id ?? item.category?.id ?? 0;
+      if (!id) return;
+      perCategory.set(id, (perCategory.get(id) ?? 0) + 1);
+    });
+    return [
+      { id: null as number | null, label: 'All items', count: menuByBrand.length },
+      ...categoriesFromMenu.map((c) => ({
+        id: c.id as number | null,
+        label: c.name,
+        count: perCategory.get(c.id) ?? 0,
+      })),
+    ];
+  }, [menuByBrand, categoriesFromMenu]);
+
   const posSearchTypeaheadOptions = React.useMemo(
     () =>
       (menu as MenuItem[]).map((i) => ({
@@ -197,9 +231,16 @@ const OrderTaking: React.FC = () => {
   React.useEffect(() => setCurrentMenuPage(1), [debouncedPosSearch, selectedBrandId, selectedCategoryId, effectiveOrderType]);
 
   const paginatedMenu = React.useMemo(() => {
-    const start = (currentMenuPage - 1) * MENU_PAGE_SIZE;
-    return menuFilteredBySearch.slice(start, start + MENU_PAGE_SIZE);
-  }, [menuFilteredBySearch, currentMenuPage]);
+    const start = (currentMenuPage - 1) * menuPageSize;
+    return menuFilteredBySearch.slice(start, start + menuPageSize);
+  }, [menuFilteredBySearch, currentMenuPage, menuPageSize]);
+
+  // Widening the till fits more per page, which can leave the current page past
+  // the end (e.g. on page 7 of 7 when it becomes 5 of 5) — pull it back.
+  React.useEffect(() => {
+    const totalPages = Math.max(1, Math.ceil(menuFilteredBySearch.length / menuPageSize));
+    setCurrentMenuPage((p) => (p > totalPages ? totalPages : p));
+  }, [menuFilteredBySearch.length, menuPageSize]);
 
   const openShift = branchMenu?.open_shift ?? null;
   /** Brands with an open shift at this branch (shifts are per brand). */
@@ -208,6 +249,26 @@ const OrderTaking: React.FC = () => {
   const cartBrandId = selectedItems.length
     ? (selectedItems[0].menuItem.brand_id ?? null)
     : null;
+
+  /**
+   * Give-away buttons this cashier may grant. The server filters by their role
+   * ceiling and by branch/brand, and 403s when they lack the permission — so an
+   * unauthorized till simply sees no control. Cart size is deliberately NOT in
+   * the key: re-fetching the list on every line added would be chatty, and the
+   * rupee ceiling is enforced for real at quote and order time (the quote says
+   * why, via staff_discount_error).
+   */
+  const { data: staffDiscounts } = useQuery({
+    queryKey: ['pos-staff-discounts', branchId, cartBrandId],
+    queryFn: () =>
+      adminService.getStaffDiscountsForTill({
+        branch_id: branchId,
+        brand_id: cartBrandId,
+      }),
+    enabled: branchId != null,
+    // Treat a 403 as "no buttons" rather than an error on the checkout screen.
+    retry: false,
+  });
 
   const getBrandName = (brandId: number | null | undefined): string | null =>
     brandId != null ? (brands.find((b) => b.id === brandId)?.name ?? null) : null;
@@ -248,6 +309,14 @@ const OrderTaking: React.FC = () => {
       toast('Cart is empty — no items are available for the new order type.');
     }
   };
+
+  // Publish the order-type tabs into the app navbar for as long as the POS is
+  // on screen (see contexts/POSOrderTypeContext).
+  useRegisterPOSOrderType(
+    orderTypeOptions,
+    effectiveOrderType,
+    handleOrderTypeChange as (value: string) => void,
+  );
 
   /**
    * Load a kiosk cart AFTER the order-type change has cleared the cart above.
@@ -306,6 +375,7 @@ const OrderTaking: React.FC = () => {
           };
         }),
         discount_code: discountCode.trim() || undefined,
+        staff_discount_id: staffDiscountId ?? undefined,
         customer_phone: customerPhone.trim() || undefined,
         loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
       }
@@ -471,6 +541,7 @@ const OrderTaking: React.FC = () => {
       setSelectedItems([]);
       setTableNumber('');
       setDiscountCode('');
+      setStaffDiscountId(null);
       setCustomerName('');
       setCustomerPhone('');
       setDeliveryAddress('');
@@ -510,6 +581,7 @@ const OrderTaking: React.FC = () => {
       setSelectedItems([]);
       setTableNumber('');
       setDiscountCode('');
+      setStaffDiscountId(null);
       setCustomerName('');
       setCustomerPhone('');
       setDeliveryAddress('');
@@ -991,6 +1063,7 @@ const OrderTaking: React.FC = () => {
       latitude: effectiveOrderType === 'delivery' ? deliveryPlace?.latitude : undefined,
       longitude: effectiveOrderType === 'delivery' ? deliveryPlace?.longitude : undefined,
       discount_code: discountCode.trim() || undefined,
+      staff_discount_id: staffDiscountId ?? undefined,
       loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
       items: selectedItems.map((item) => {
         if (item.dealId != null && item.components?.length) {
@@ -1213,6 +1286,7 @@ const OrderTaking: React.FC = () => {
       customer_name: customerName.trim(),
       customer_phone: customerPhone.trim(),
       discount_code: discountCode.trim() || undefined,
+      staff_discount_id: staffDiscountId ?? undefined,
       items: selectedItems.map((item) => {
         if (item.dealId != null && item.components?.length) {
           return {
@@ -1560,6 +1634,16 @@ const OrderTaking: React.FC = () => {
         </div>
         <div className="flex-shrink-0 p-6 border-t border-foodies-border dark:border-slate-700 bg-foodies-surface dark:bg-slate-800">
           {renderTenderPreview()}
+          {/* Loyalty is redeemed against the ORDER, not a line, so the engine
+              never attributes it in line_breakdown the way it does promos,
+              discounts, coupons and card offers. Without this row the cart
+              lines add up to more than the total with no visible reason. */}
+          {(quote?.loyalty_discount ?? 0) > 0 && (
+            <div className="mb-1 flex items-center justify-between text-sm text-foodies-cta">
+              <span>Loyalty</span>
+              <span>-{formatCurrency(quote!.loyalty_discount!)}</span>
+            </div>
+          )}
           <div className="flex items-center justify-between text-sm text-foodies-textSecondary dark:text-slate-400">
             <span>Total</span>
             <span className="font-bold text-foodies-textPrimary dark:text-slate-100">{formatCurrency(quote?.total_amount ?? total)}</span>
@@ -1601,31 +1685,54 @@ const OrderTaking: React.FC = () => {
             {/* Order type — full-width screen-mode tab strip (its own row, the
                 primary control), with the menu filters demoted to a quieter
                 row below. */}
-            <OrderTypeSelector
-              options={orderTypeOptions}
-              value={effectiveOrderType}
-              onChange={handleOrderTypeChange}
-            />
-            <div className="flex-shrink-0 px-4 py-3 bg-foodies-surface border-b border-foodies-border dark:bg-slate-800 dark:border-slate-700">
-              <div className="lg:hidden">
-                <POSFilters
-                  {...filtersProps}
-                  showOrderType={false}
-                  showHint={false}
-                  variant="bar"
-                  searchInputRef={searchInputRefMobile}
-                />
-              </div>
-              <div className="hidden lg:block">
-                <POSFilters
-                  {...filtersProps}
-                  showOrderType={false}
-                  showHint={false}
-                  variant="bar"
-                  searchInputRef={searchInputRefDesktop}
-                />
-              </div>
+            <div className="lg:hidden">
+              <POSTopBar
+                search={posSearch}
+                onSearchChange={setPosSearch}
+                searchSuggestions={posSearchTypeahead.suggestions}
+                searchSuggestionsOpen={posSearchTypeahead.open}
+                setSearchSuggestionsOpen={posSearchTypeahead.setOpen}
+                searchSuggestionsActiveIndex={posSearchTypeahead.activeIndex}
+                setSearchSuggestionsActiveIndex={posSearchTypeahead.setActiveIndex}
+                onPickSearchSuggestion={(label: string) => setPosSearch(label)}
+                searchInputRef={searchInputRefMobile}
+                openShift={openShift}
+                branchId={branchId}
+                brands={brands}
+                selectedBrandId={selectedBrandId}
+                onBrandChange={filtersProps.onBrandChange}
+                effectiveBranchId={effectiveBranchId}
+                posBranches={posBranches}
+                onBranchChange={filtersProps.onBranchChange}
+              />
             </div>
+            <div className="hidden lg:block">
+              <POSTopBar
+                search={posSearch}
+                onSearchChange={setPosSearch}
+                searchSuggestions={posSearchTypeahead.suggestions}
+                searchSuggestionsOpen={posSearchTypeahead.open}
+                setSearchSuggestionsOpen={posSearchTypeahead.setOpen}
+                searchSuggestionsActiveIndex={posSearchTypeahead.activeIndex}
+                setSearchSuggestionsActiveIndex={posSearchTypeahead.setActiveIndex}
+                onPickSearchSuggestion={(label: string) => setPosSearch(label)}
+                searchInputRef={searchInputRefDesktop}
+                openShift={openShift}
+                branchId={branchId}
+                brands={brands}
+                selectedBrandId={selectedBrandId}
+                onBrandChange={filtersProps.onBrandChange}
+                effectiveBranchId={effectiveBranchId}
+                posBranches={posBranches}
+                onBranchChange={filtersProps.onBranchChange}
+              />
+            </div>
+            <POSPillFilters
+              categoryPills={categoryPills}
+              selectedCategoryId={selectedCategoryId}
+              onCategoryChange={setSelectedCategoryId}
+              brandChosen={brands.length > 1 ? selectedBrandId != null : true}
+            />
             <div className="flex-1 overflow-y-auto p-4 sm:p-5">
               {/* <RiderTrackingTestPanel /> */}
               <MenuGrid
@@ -1635,7 +1742,8 @@ const OrderTaking: React.FC = () => {
                 getBrandName={getBrandName}
                 totalCount={menuFilteredBySearch.length}
                 page={currentMenuPage}
-                pageSize={MENU_PAGE_SIZE}
+                pageSize={menuPageSize}
+                onColumnsChange={setMenuColumns}
                 onPageChange={setCurrentMenuPage}
               />
             </div>
@@ -1753,6 +1861,9 @@ const OrderTaking: React.FC = () => {
               onLoyaltyPointsToRedeemChange={setLoyaltyPointsToRedeem}
               discountCode={discountCode}
               onDiscountCodeChange={setDiscountCode}
+              staffDiscounts={staffDiscounts ?? []}
+              staffDiscountId={staffDiscountId}
+              onStaffDiscountChange={setStaffDiscountId}
               orderNotes={orderNotes}
               onOrderNotesChange={setOrderNotes}
               quote={quote}

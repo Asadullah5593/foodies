@@ -9,6 +9,8 @@ import { adminService } from '../../../services/api/adminService';
 import { ResolvedPlace } from '../../../utils/googlePlaces';
 import { formatCurrency } from '../../../utils/currency';
 import { OrderTypeOption } from './types';
+import StaffDiscountPicker from './StaffDiscountPicker';
+import { StaffDiscountPreset } from '../../../types';
 
 export type CustomerPanelProps = {
   orderType: OrderTypeOption;
@@ -30,11 +32,17 @@ export type CustomerPanelProps = {
   onLoyaltyPointsToRedeemChange: (v: number | '') => void;
   discountCode: string;
   onDiscountCodeChange: (v: string) => void;
+  /** Give-away buttons this cashier may grant; empty = none, control is hidden. */
+  staffDiscounts: StaffDiscountPreset[];
+  staffDiscountId: number | null;
+  onStaffDiscountChange: (id: number | null) => void;
   orderNotes: string;
   onOrderNotesChange: (v: string) => void;
   quote: {
     loyalty_discount?: number;
     coupon_discount_amount?: number;
+    staff_discount_amount?: number;
+    staff_discount_error?: string | null;
     discount_code?: string | null;
     discount_amount?: number;
   } | null | undefined;
@@ -59,6 +67,9 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
   onLoyaltyPointsToRedeemChange,
   discountCode,
   onDiscountCodeChange,
+  staffDiscounts,
+  staffDiscountId,
+  onStaffDiscountChange,
   orderNotes,
   onOrderNotesChange,
   quote,
@@ -181,6 +192,14 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
           </button>
         )}
       </div>
+
+      <StaffDiscountPicker
+        presets={staffDiscounts}
+        selectedId={staffDiscountId}
+        onSelect={onStaffDiscountChange}
+        appliedAmount={quote?.staff_discount_amount ?? 0}
+        error={quote?.staff_discount_error ?? null}
+      />
 
       <Modal isOpen={showVouchers} onClose={() => setShowVouchers(false)} title="Customer vouchers" size="large">
         {vouchersLoading ? (
