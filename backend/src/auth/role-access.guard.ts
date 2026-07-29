@@ -36,6 +36,10 @@ export class RoleAccessGuard implements CanActivate {
                 allowedBrandIds?: number[] | null;
                 permissions?: string[];
                 orderHistoryDays?: number | null;
+                staffDiscountCeiling?: {
+                    maxPercent: number | null;
+                    maxAmount: number | null;
+                };
             };
             path?: string;
             url?: string;
@@ -71,6 +75,11 @@ export class RoleAccessGuard implements CanActivate {
         user.permissions = [...permissionNames];
         // How far back this user may read order history (null = unlimited).
         user.orderHistoryDays = await this.getOrderHistoryDays(
+            user.id,
+            user.tenantId,
+        );
+        // How large a staff discount this user may grant at the till.
+        user.staffDiscountCeiling = await this.getStaffDiscountCeiling(
             user.id,
             user.tenantId,
         );
@@ -170,6 +179,58 @@ export class RoleAccessGuard implements CanActivate {
         return maxDays != null && Number.isFinite(maxDays) && maxDays > 0
             ? maxDays
             : null;
+    }
+
+    /**
+     * Ceiling on a staff discount this user may grant, resolved across all their
+     * roles — most permissive wins (null/uncapped beats any number, otherwise
+     * the largest), same rule as the order-history window. A user with no roles
+     * gets 0/0, i.e. may grant nothing.
+     *
+     * `maxPercent` gates percentage presets by their configured value;
+     * `maxAmount` gates the resulting rupees for any preset, which is the only
+     * meaningful check on a flat one.
+     */
+    private async getStaffDiscountCeiling(
+        userId: number,
+        tenantId: number,
+    ): Promise<{ maxPercent: number | null; maxAmount: number | null }> {
+        const rows = (await this.dataSource.query(
+            `SELECT bool_or(r.max_staff_discount_percent IS NULL) AS percent_unlimited,
+                    MAX(r.max_staff_discount_percent) AS max_percent,
+                    bool_or(r.max_staff_discount_amount IS NULL) AS amount_unlimited,
+                    MAX(r.max_staff_discount_amount) AS max_amount,
+                    COUNT(*) AS role_count
+             FROM roles r
+             WHERE r.id IN (
+                 SELECT role_id FROM tenant_users
+                 WHERE user_id = $1 AND tenant_id = $2 AND role_id IS NOT NULL
+                 UNION
+                 SELECT role_id FROM branch_users WHERE user_id = $1
+             )`,
+            [userId, tenantId],
+        )) as unknown as Array<{
+            percent_unlimited: boolean | null;
+            max_percent: number | string | null;
+            amount_unlimited: boolean | null;
+            max_amount: number | string | null;
+            role_count: number | string;
+        }>;
+        const row = rows[0];
+        // No roles at all → grant nothing, rather than inheriting "unlimited"
+        // from an empty aggregate.
+        if (!row || Number(row.role_count ?? 0) === 0)
+            return { maxPercent: 0, maxAmount: 0 };
+        return {
+            maxPercent:
+                row.percent_unlimited !== false
+                    ? null
+                    : Number(row.max_percent ?? 0),
+            maxAmount:
+                row.amount_unlimited !== false
+                    ? null
+                    : Number(row.max_amount ?? 0),
+        };
     }
 
     /**

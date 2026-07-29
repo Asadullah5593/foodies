@@ -15,7 +15,6 @@ export type POSLayoutProps = {
   onDrawerClose?: () => void;
 };
 
-const CHECKOUT_PANEL_WIDTH = '30rem';
 
 /**
  * Responsive POS shell.
@@ -40,10 +39,10 @@ const POSLayout: React.FC<POSLayoutProps> = ({
           {centerSection}
         </div>
         {/* Right — checkout */}
-        <div
-          className="flex-shrink-0 flex flex-col border-l border-foodies-border dark:border-slate-700 bg-foodies-surfaceMuted dark:bg-slate-900 overflow-hidden"
-          style={{ width: CHECKOUT_PANEL_WIDTH, minWidth: CHECKOUT_PANEL_WIDTH, maxWidth: '32rem' }}
-        >
+        {/* Sized by breakpoint rather than a flat 30rem: a hard 480px floor left
+            the menu column unusably narrow between 1024px and 1280px, where the
+            sidebar is already taking its share. */}
+        <div className="flex-shrink-0 flex flex-col w-[20rem] xl:w-[24rem] 2xl:w-[30rem] border-l border-foodies-border dark:border-slate-700 bg-foodies-surfaceMuted dark:bg-slate-900 overflow-hidden">
           {checkoutSection}
         </div>
       </div>

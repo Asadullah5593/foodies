@@ -26,6 +26,9 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/campaigns': ['campaigns:manage', 'cms:manage', 'campaigns:view'],
   '/admin/offer-settings': ['campaigns:manage', 'discounts:manage', 'offer-settings:edit'],
   '/admin/bank-cards': ['discounts:manage', 'bank-cards:view'],
+  // Its own right, NOT under discounts:manage — authoring offers and handing
+  // out a give-away at the till are different permissions.
+  '/admin/staff-discounts': ['staff-discounts:view'],
   '/admin/loyalty-settings': ['loyalty:manage', 'loyalty:view'],
   '/admin/invoice-templates': ['business-settings:access', 'invoice-templates:view'],
   '/admin/delivery-tiers': ['deliveries:manage', 'delivery-tiers:view'],

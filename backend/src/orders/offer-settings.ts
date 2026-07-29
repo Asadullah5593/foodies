@@ -39,6 +39,10 @@ export const DEFAULT_OFFER_SETTINGS: OfferSettings = {
   stackingOrder: [
     'product_promotion',
     'discount',
+    // Staff discretion sits after automatic offers but before the customer's
+    // own coupon and card offer, so goodwill at the till never devalues what
+    // the customer brought with them.
+    'staff_discount',
     'coupon',
     'card_offer',
     'loyalty',

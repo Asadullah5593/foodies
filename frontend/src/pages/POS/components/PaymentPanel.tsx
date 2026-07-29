@@ -14,6 +14,8 @@ export type PaymentPanelProps = {
     order_discount_amount?: number;
     card_discount_amount?: number;
     coupon_discount_amount?: number;
+    staff_discount_amount?: number;
+    staff_discount_name?: string | null;
     loyalty_discount?: number;
     discount_amount?: number;
     discount_code?: string | null;
@@ -141,13 +143,19 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
             <span>-{formatCurrency(quote!.coupon_discount_amount!)}</span>
           </div>
         )}
+        {(quote?.staff_discount_amount ?? 0) > 0 && (
+          <div className="flex justify-between text-foodies-cta">
+            <span>Staff discount{quote?.staff_discount_name ? ` (${quote.staff_discount_name})` : ''}</span>
+            <span>-{formatCurrency(quote!.staff_discount_amount!)}</span>
+          </div>
+        )}
         {(quote?.loyalty_discount ?? 0) > 0 && (
           <div className="flex justify-between text-foodies-cta">
             <span>Loyalty</span>
             <span>-{formatCurrency(quote!.loyalty_discount!)}</span>
           </div>
         )}
-        {((quote?.auto_discount_amount ?? 0) > 0 || (quote?.coupon_discount_amount ?? 0) > 0 || (quote?.loyalty_discount ?? 0) > 0) ? null : (
+        {((quote?.auto_discount_amount ?? 0) > 0 || (quote?.coupon_discount_amount ?? 0) > 0 || (quote?.staff_discount_amount ?? 0) > 0 || (quote?.loyalty_discount ?? 0) > 0) ? null : (
           <div className={`flex justify-between ${(quote?.discount_amount ?? 0) > 0 ? 'text-foodies-cta' : 'text-foodies-textSecondary'}`}>
             <span>Discount</span>
             <span>{(quote?.discount_amount ?? 0) > 0 ? `-${formatCurrency(quote?.discount_amount ?? 0)}` : formatCurrency(0)}</span>

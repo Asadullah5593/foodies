@@ -152,6 +152,18 @@ export class RolesService {
         return Number.isFinite(n) && n > 0 ? n : null;
     }
 
+    /**
+     * Staff-discount ceiling. null/blank = no ceiling of this kind (the tenant
+     * offer cap still binds); 0 legitimately means "may grant nothing", so
+     * unlike the history window it is NOT collapsed to null.
+     */
+    private normalizeCeiling(value: unknown, max?: number): number | null {
+        if (value == null || value === '') return null;
+        const n = Number(value);
+        if (!Number.isFinite(n) || n < 0) return null;
+        return max != null ? Math.min(n, max) : n;
+    }
+
     async createRole(
         tenantId: number | null,
         dto: {
@@ -159,6 +171,8 @@ export class RolesService {
             slug: string;
             permission_ids?: number[];
             order_history_days?: number | null;
+            max_staff_discount_percent?: number | null;
+            max_staff_discount_amount?: number | null;
         },
     ) {
         const slug = dto.slug
@@ -170,6 +184,14 @@ export class RolesService {
             name: dto.name,
             slug: slug || dto.slug,
             orderHistoryDays: this.normalizeHistoryDays(dto.order_history_days),
+            // Capped at 99.99: a 100% comp is a void/refund, not a till discount.
+            maxStaffDiscountPercent: this.normalizeCeiling(
+                dto.max_staff_discount_percent,
+                99.99,
+            ),
+            maxStaffDiscountAmount: this.normalizeCeiling(
+                dto.max_staff_discount_amount,
+            ),
         });
         if (dto.permission_ids?.length) {
             role.permissions = await this.permissionRepo.findBy({
@@ -190,6 +212,8 @@ export class RolesService {
             slug?: string;
             permission_ids?: number[];
             order_history_days?: number | null;
+            max_staff_discount_percent?: number | null;
+            max_staff_discount_amount?: number | null;
         },
     ) {
         const role = await this.getRoleById(id, tenantId);
@@ -199,6 +223,17 @@ export class RolesService {
         if (dto.order_history_days !== undefined) {
             role.orderHistoryDays = this.normalizeHistoryDays(
                 dto.order_history_days,
+            );
+        }
+        if (dto.max_staff_discount_percent !== undefined) {
+            role.maxStaffDiscountPercent = this.normalizeCeiling(
+                dto.max_staff_discount_percent,
+                99.99,
+            );
+        }
+        if (dto.max_staff_discount_amount !== undefined) {
+            role.maxStaffDiscountAmount = this.normalizeCeiling(
+                dto.max_staff_discount_amount,
             );
         }
         if (dto.name !== undefined) role.name = dto.name;

@@ -111,7 +111,8 @@ export class Order {
 
     /**
      * Per-stage split of discountAmount for invoice line-items (they sum to
-     * discountAmount): product_promotion, order discount, coupon, card offer.
+     * discountAmount): product_promotion, order discount, coupon, card offer,
+     * staff discount.
      * The pricing engine already computes these; persisting lets invoices show
      * "Promotional discount / Coupon / Card discount" as separate lines.
      */
@@ -150,6 +151,49 @@ export class Order {
         default: 0,
     })
     cardDiscountAmount: number;
+
+    /** Discretionary give-away granted at the till from a staff_discounts preset. */
+    @Column({
+        name: 'staff_discount_amount',
+        type: 'decimal',
+        precision: 12,
+        scale: 2,
+        default: 0,
+    })
+    staffDiscountAmount: number;
+
+    /**
+     * The preset that was granted. Its own column, NOT discountId — that one is
+     * FK-constrained to discounts(id) and the id spaces are unrelated, so a
+     * preset id written there would resolve to an unrelated offer.
+     */
+    @Column({ name: 'staff_discount_id', type: 'int', nullable: true })
+    staffDiscountId: number | null;
+
+    /**
+     * Snapshot of the preset as granted ('percentage' | 'flat' and its value),
+     * so editing or deleting the preset later cannot rewrite history.
+     */
+    @Column({
+        name: 'staff_discount_type',
+        type: 'varchar',
+        length: 16,
+        nullable: true,
+    })
+    staffDiscountType: 'percentage' | 'flat' | null;
+
+    @Column({
+        name: 'staff_discount_value',
+        type: 'decimal',
+        precision: 12,
+        scale: 2,
+        nullable: true,
+    })
+    staffDiscountValue: number | null;
+
+    /** The user who granted it — the whole point of the audit trail. */
+    @Column({ name: 'staff_discount_by', type: 'int', nullable: true })
+    staffDiscountBy: number | null;
 
     /**
      * The bank card the customer paid with, when one was selected. Recorded even

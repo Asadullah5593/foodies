@@ -11,6 +11,7 @@ import {
   SUPER_ADMIN_SLUG,
   groupByResource,
   resourceLabel,
+  ceilingFieldValues,
 } from './roleShared';
 
 /**
@@ -28,6 +29,13 @@ const RoleForm: React.FC = () => {
   const [permissionIds, setPermissionIds] = useState<number[]>([]);
   /** Blank = unlimited history. Kept as a string so the field can be cleared. */
   const [historyDays, setHistoryDays] = useState('');
+  /**
+   * Largest staff discount this role may grant at the till. Blank = no ceiling
+   * of that kind; 0 legitimately means "may grant nothing", so both are kept as
+   * strings to tell an empty field from a deliberate zero.
+   */
+  const [maxStaffPercent, setMaxStaffPercent] = useState('');
+  const [maxStaffAmount, setMaxStaffAmount] = useState('');
 
   const { data: permissions, isLoading: permsLoading } = useQuery({
     queryKey: ['permissions'],
@@ -51,6 +59,9 @@ const RoleForm: React.FC = () => {
       setName(role.name);
       setPermissionIds(role.permissions?.map((p) => p.id) ?? []);
       setHistoryDays(role.orderHistoryDays != null ? String(role.orderHistoryDays) : '');
+      const ceilings = ceilingFieldValues(role);
+      setMaxStaffPercent(ceilings.percent);
+      setMaxStaffAmount(ceilings.amount);
     }
   }, [role]);
 
@@ -72,6 +83,8 @@ const RoleForm: React.FC = () => {
       slug?: string;
       permission_ids: number[];
       order_history_days: number | null;
+      max_staff_discount_percent: number | null;
+      max_staff_discount_amount: number | null;
     }) => {
       const response = isEdit
         ? await apiClient.put(`/admin/roles/${id}`, data)
@@ -125,11 +138,25 @@ const RoleForm: React.FC = () => {
       toast.error('Order history days must be a whole number of 1 or more (leave blank for unlimited)');
       return;
     }
+    const trimmedPct = maxStaffPercent.trim();
+    const parsedPct = trimmedPct === '' ? null : Number(trimmedPct);
+    if (parsedPct !== null && (!Number.isFinite(parsedPct) || parsedPct < 0 || parsedPct >= 100)) {
+      toast.error('Staff discount limit must be between 0 and 99.99% (leave blank for no limit)');
+      return;
+    }
+    const trimmedAmt = maxStaffAmount.trim();
+    const parsedAmt = trimmedAmt === '' ? null : Number(trimmedAmt);
+    if (parsedAmt !== null && (!Number.isFinite(parsedAmt) || parsedAmt < 0)) {
+      toast.error('Staff discount cash limit must be zero or more (leave blank for no limit)');
+      return;
+    }
     if (isEdit) {
       saveMutation.mutate({
         name: trimmedName,
         permission_ids: permissionIds,
         order_history_days: parsedDays,
+        max_staff_discount_percent: parsedPct,
+        max_staff_discount_amount: parsedAmt,
       });
     } else {
       // Slug is auto-generated from the role name (not shown in the form).
@@ -142,6 +169,8 @@ const RoleForm: React.FC = () => {
         slug,
         permission_ids: permissionIds,
         order_history_days: parsedDays,
+        max_staff_discount_percent: parsedPct,
+        max_staff_discount_amount: parsedAmt,
       });
     }
   };
@@ -230,6 +259,52 @@ const RoleForm: React.FC = () => {
                 How far back this role can see orders. Enforced on the server, so the limit
                 holds even if the date filter is changed by hand. E.g. 7 for a cashier, 30 for
                 a call-centre agent, blank for full history.
+              </p>
+            </div>
+          </div>
+
+          <div className="px-4 sm:px-8 py-6 border-b border-gray-200 dark:border-slate-700 grid grid-cols-1 md:grid-cols-[13rem_minmax(0,1fr)] gap-3 md:gap-6 items-start">
+            <label
+              htmlFor="role-max-staff-percent"
+              className="text-lg font-medium text-gray-800 dark:text-slate-100 md:pt-2"
+            >
+              Staff discount limit
+            </label>
+            <div>
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  id="role-max-staff-percent"
+                  type="number"
+                  min={0}
+                  max={99.99}
+                  step="0.01"
+                  value={maxStaffPercent}
+                  onChange={(e) => !isViewOnly && setMaxStaffPercent(e.target.value)}
+                  readOnly={isViewOnly}
+                  className="w-32 px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 read-only:bg-gray-100 dark:read-only:bg-slate-700"
+                  placeholder="No limit"
+                />
+                <span className="text-[15px] text-slate-600 dark:text-slate-300">% at most</span>
+                <input
+                  id="role-max-staff-amount"
+                  type="number"
+                  min={0}
+                  step="1"
+                  value={maxStaffAmount}
+                  onChange={(e) => !isViewOnly && setMaxStaffAmount(e.target.value)}
+                  readOnly={isViewOnly}
+                  className="w-36 px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 read-only:bg-gray-100 dark:read-only:bg-slate-700"
+                  placeholder="No limit"
+                />
+                <span className="text-[15px] text-slate-600 dark:text-slate-300">Rs. at most</span>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-slate-400 mt-2">
+                The largest give-away this role can grant at the till, from{' '}
+                <span className="font-medium">Staff Discounts</span>. The percentage caps
+                percentage buttons; the cash figure caps what any button can actually take off,
+                which is the only limit that binds a flat &ldquo;Rs. 200 off&rdquo;. Buttons above
+                the limit are hidden at the till and refused by the server. E.g. 10% for a
+                cashier, 25% for a manager. Enter 0 to let this role grant nothing.
               </p>
             </div>
           </div>

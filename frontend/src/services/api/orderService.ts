@@ -44,6 +44,8 @@ export interface CreateOrderRequest {
   payment_split?: { cash_amount?: number; card_amount?: number };
   /** Selected bank card (id) for card-linked discounts. */
   bank_card_id?: number | null;
+  /** Staff discount preset the cashier granted (staff_discounts id). */
+  staff_discount_id?: number | null;
 }
 
 export interface ProcessPaymentRequest {
@@ -74,6 +76,11 @@ export interface OrderQuoteResponse {
   discount_amount: number;
   auto_discount_amount?: number;
   coupon_discount_amount?: number;
+  staff_discount_amount?: number;
+  staff_discount_id?: number | null;
+  staff_discount_name?: string | null;
+  /** Why a requested preset wasn't applied (over ceiling, inactive, out of scope). */
+  staff_discount_error?: string | null;
   discount_code: string | null;
   loyalty_discount?: number;
   loyalty_points_redeemed?: number;
@@ -99,6 +106,8 @@ export type OrderQuoteRequest = {
   payment_split?: { cash_amount?: number; card_amount?: number };
   /** Selected bank card (id) for card-linked discounts. */
   bank_card_id?: number | null;
+  /** Staff discount preset the cashier granted (staff_discounts id). */
+  staff_discount_id?: number | null;
 };
 
 export const orderService = {
