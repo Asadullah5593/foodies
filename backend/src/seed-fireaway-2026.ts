@@ -48,8 +48,10 @@
  *  7. Milkshakes cut to the 6 flavours listed in the new sheet.
  *     [client: "milkshake list should be copied from current milkshake
  *      options from new file"]
- *  8. Kids Meal keeps its juice choice and gains "Add Milkshake" Rs499.
- *     [client: "keep juice for kids meal"]
+ *  8. Kids Meal keeps its juice choice and gains an "Add a Milkshake" flavour
+ *     chooser (6 flavours, Rs499 each, repeatable) — a modifier group, not a
+ *     flat addon, so the flavour is captured on the order.
+ *     [client: "keep juice for kids meal" + flavour selection requested]
  *  9. Dessert flavour lists refreshed; pizza dip up-sell drops Mayo and
  *     Tomato Ketchup and gains Chipotle.
  *
@@ -821,11 +823,27 @@ async function seed() {
             ...VEGGIES.map((v) => ({ name: `Extra ${v}`, price: 49 })),
         ],
     );
-    await linkGroups(kids, [grpKidsCheese, grpKidsJuice, grpKidsToppings]);
+    // New in the 2026 sheet: "Add Milkshake for Rs 499". A modifier GROUP (not
+    // a flat addon) so the customer picks WHICH flavour; each option carries the
+    // full Rs 499 price. allowQuantity keeps the multiple-milkshakes ability the
+    // old addon stepper had. (The previous "Add Milkshake" addon is retired by
+    // the deactivation sweep below.)
+    const grpKidsShake = await mkGroup(
+        'Add a Milkshake',
+        { minSelect: 0, maxSelect: 6, allowQuantity: true },
+        MILKSHAKE_FLAVOURS.map((f) => ({
+            name: `${f} Milkshake`,
+            price: 499,
+        })),
+    );
+    await linkGroups(kids, [
+        grpKidsCheese,
+        grpKidsJuice,
+        grpKidsToppings,
+        grpKidsShake,
+    ]);
     const addonKidsFries = await mkAddon(catKids, 'Add Fries', 199, 0);
-    // New in the 2026 sheet: "Add Milkshake for Rs 499".
-    const addonKidsShake = await mkAddon(catKids, 'Add Milkshake', 499, 1);
-    await linkAddons(kids, [addonKidsFries, addonKidsShake]);
+    await linkAddons(kids, [addonKidsFries]);
 
     // ——— PASTA (Rs949 each) ———
     const grpAddParmesan = await mkGroup(
