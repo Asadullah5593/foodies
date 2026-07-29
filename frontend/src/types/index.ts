@@ -605,18 +605,19 @@ export interface Shift {
   user_id: number;
   shift_number: string;
   opening_cash: number;
-  /** Opening cash + cash tenders + the balance riders still owe the till. */
+  /** Opening cash + cash tenders − cash handed out mid-shift. Server-derived. */
   expected_cash?: number;
-  /** Cash counted in the drawer at close, excluding rider money. */
+  /** Cash counted in the drawer at close. */
   drawer_cash?: number | null;
-  /** Cash riders collected at the door and handed in, entered at close. */
-  rider_cash_collected?: number | null;
-  /** drawer_cash + rider_cash_collected. */
+  /** Cash handed out of the till mid-shift (voided entries excluded). */
+  cash_out_total?: number;
+  /** Same as drawer_cash — what was physically counted. */
   actual_cash?: number;
   /** Sum of cash payments from completed orders in this shift. */
   cash_collected?: number;
   /** Sum of card payments from completed orders in this shift. */
   card_collected?: number;
+  /** actual_cash − expected_cash. Server-computed; prefer this over re-deriving. */
   difference?: number;
   status: 'open' | 'closed';
   opened_at: string;
@@ -666,6 +667,27 @@ export interface ShiftPendingOrdersResponse {
   shift_id: number;
   pending_count: number;
   orders: ShiftPendingOrder[];
+}
+
+/** One mid-shift cash hand-over from the till to the owner. */
+export interface ShiftCashOut {
+  id: number;
+  amount: number;
+  note: string | null;
+  created_at: string | null;
+  created_by_name: string | null;
+  /** Voided entries stay listed for the audit trail but stop counting. */
+  voided: boolean;
+  voided_at: string | null;
+  voided_by_name: string | null;
+  void_reason: string | null;
+}
+
+export interface ShiftCashOutsResponse {
+  shift_id: number;
+  items: ShiftCashOut[];
+  /** Sum of the entries that are not voided. */
+  total: number;
 }
 
 export interface Order {

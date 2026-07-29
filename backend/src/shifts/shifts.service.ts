@@ -3,13 +3,23 @@ import {
     NotFoundException,
     ConflictException,
     ForbiddenException,
+    BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, EntityManager, Repository } from 'typeorm';
 import { Shift } from '../entities/shift.entity';
 import { Order } from '../entities/order.entity';
 import { Payment } from '../entities/payment.entity';
 import { BranchBrand } from '../entities/branch-brand.entity';
+
+/**
+ * Round to whole paisa. The module used to only ADD already-2dp figures, so it
+ * never needed this; subtracting a cash-out introduces binary-float drift
+ * (5000 + 90622.24 − 45000 = 50622.240000000005), which would otherwise be
+ * frozen into expected_cash at close and shown in the API.
+ */
+const round2 = (n: number): number =>
+    Math.round((n + Number.EPSILON) * 100) / 100;
 
 /**
  * Closing is opener-only: the drawer belongs to whoever counted it open, so
@@ -120,20 +130,24 @@ export class ShiftsService {
         }
         const list = await qb.getMany();
         const collected = await this.getCollectedAmountsBatch(list);
+        // Cash-outs are shown for closed shifts too (their frozen expected is
+        // already net of them, and the reconciliation ladder has to add up).
+        const cashOuts = await this.getCashOutTotalsBatch(list);
         // Open shifts derive their expected cash; closed ones keep the value
         // frozen at close.
         const expected = new Map<number, number>();
         for (const s of list.filter((x) => x.status === 'open')) {
             expected.set(
                 s.id,
-                await this.computeExpectedCash(
+                this.computeExpectedCash(
                     s,
                     collected.get(s.id)?.cash_collected ?? 0,
+                    cashOuts.get(s.id) ?? 0,
                 ),
             );
         }
         return list.map((s) => ({
-            ...this.toResponse(s, expected.get(s.id)),
+            ...this.toResponse(s, expected.get(s.id), cashOuts.get(s.id) ?? 0),
             ...(collected.get(s.id) ?? {
                 cash_collected: 0,
                 card_collected: 0,
@@ -184,14 +198,19 @@ export class ShiftsService {
             );
         }
         const collected = await this.getCollectedAmounts(shift);
+        const cashOutTotal = await this.getCashOutTotal(shift.id);
         const expected =
             shift.status === 'open'
-                ? await this.computeExpectedCash(
+                ? this.computeExpectedCash(
                       shift,
                       collected.cash_collected,
+                      cashOutTotal,
                   )
                 : undefined;
-        return { ...this.toResponse(shift, expected), ...collected };
+        return {
+            ...this.toResponse(shift, expected, cashOutTotal),
+            ...collected,
+        };
     }
 
     async create(
@@ -223,9 +242,7 @@ export class ShiftsService {
         // with shifts:override in play it would mean tenant-wide opens, so
         // opening requires an actual branch assignment (or all-branches).
         if (Array.isArray(allowedBranchIds) && allowedBranchIds.length === 0) {
-            throw new ForbiddenException(
-                'You are not assigned to any branch',
-            );
+            throw new ForbiddenException('You are not assigned to any branch');
         }
         // Shifts are opened per brand by that brand's staff. Unrestricted
         // users (owner / GM, allowedBrandIds == null) can view and close
@@ -252,12 +269,9 @@ export class ShiftsService {
         }
         const link = await this.repo.manager
             .createQueryBuilder(BranchBrand, 'bb')
-            .innerJoin(
-                'bb.brand',
-                'brand',
-                'brand.tenantId = :tenantId',
-                { tenantId },
-            )
+            .innerJoin('bb.brand', 'brand', 'brand.tenantId = :tenantId', {
+                tenantId,
+            })
             .where('bb.branchId = :branchId AND bb.brandId = :brandId', {
                 branchId: dto.branch_id,
                 brandId: dto.brand_id,
@@ -451,67 +465,67 @@ export class ShiftsService {
     }
 
     /**
-     * Balance of completed orders in the shift window that nobody has tendered.
+     * Cash the till should hold: what it opened with, plus every cash tender it
+     * took, minus anything handed out mid-shift (cash-outs). Money riders are
+     * carrying is deliberately NOT counted — the till reconciles only on cash
+     * that physically passed through it.
      *
-     * There is no online payment anywhere in the system, so an order that
-     * completed without a payment row was settled in cash at the door — money a
-     * rider is carrying and owes the till. Counting it here is what makes a
-     * rider who never hands the cash over show up as a shortfall at close.
-     *
-     * Same matching rule as getCollectedAmounts: completed orders of the
-     * shift's branch (and brand, when set) whose completion falls in the window.
-     */
-    private outstandingQb(shift: Shift) {
-        const qb = this.orderRepo
-            .createQueryBuilder('o')
-            .leftJoin(
-                (sub) =>
-                    sub
-                        .select('p.orderId', 'order_id')
-                        .addSelect('SUM(p.amount)', 'paid')
-                        .from(Payment, 'p')
-                        .groupBy('p.orderId'),
-                'pay',
-                'pay.order_id = o.id',
-            )
-            .where('o.branchId = :branchId', { branchId: shift.branchId })
-            .andWhere("o.status = 'completed'")
-            .andWhere('o.completedAt >= :openedAt', {
-                openedAt: shift.openedAt,
-            });
-        if (shift.brandId != null)
-            qb.andWhere('o.brandId = :brandId', { brandId: shift.brandId });
-        if (shift.closedAt)
-            qb.andWhere('o.completedAt <= :closedAt', {
-                closedAt: shift.closedAt,
-            });
-        return qb;
-    }
-
-    /** Untendered balance of the shift's completed orders (never negative). */
-    private async getOutstandingTotal(shift: Shift): Promise<number> {
-        const row = await this.outstandingQb(shift)
-            .select(
-                'COALESCE(SUM(GREATEST(o.total_amount - COALESCE(pay.paid, 0), 0)), 0)',
-                'outstanding',
-            )
-            .getRawOne<{ outstanding: string }>();
-        return parseFloat(row?.outstanding ?? '0') || 0;
-    }
-
-    /**
-     * Cash the till should hold: what it opened with, every cash tender taken
-     * during the shift, and the untendered balance the riders are carrying.
      * Derived on read for open shifts; closed shifts keep the value frozen at
      * close, because orders completed before this existed never recorded a
      * tender and recomputing them could not be more truthful.
+     *
+     * No clamping: a drop larger than the takings is a real negative
+     * expectation, not an error to hide.
      */
-    private async computeExpectedCash(
+    private computeExpectedCash(
         shift: Shift,
         cashCollected: number,
+        cashOutTotal: number,
+    ): number {
+        return round2(
+            Number(shift.openingCash ?? 0) +
+                Number(cashCollected) -
+                Number(cashOutTotal),
+        );
+    }
+
+    /**
+     * Total handed out of this till mid-shift. Voided entries never count.
+     * Summed in SQL over numeric(12,2) so the arithmetic stays exact; `manager`
+     * lets the close read it inside its own locked transaction.
+     */
+    private async getCashOutTotal(
+        shiftId: number,
+        manager?: EntityManager,
     ): Promise<number> {
-        const outstanding = await this.getOutstandingTotal(shift);
-        return Number(shift.openingCash ?? 0) + cashCollected + outstanding;
+        const runner = manager ?? this.repo.manager;
+        const row = await runner.query<{ total: string | null }[]>(
+            `SELECT COALESCE(SUM(amount), 0) AS total
+             FROM shift_cash_outs
+             WHERE shift_id = $1 AND voided_at IS NULL`,
+            [shiftId],
+        );
+        return parseFloat(row?.[0]?.total ?? '0') || 0;
+    }
+
+    /** Cash-out totals for many shifts at once (list view — avoids an N+1). */
+    private async getCashOutTotalsBatch(
+        shifts: Shift[],
+    ): Promise<Map<number, number>> {
+        const out = new Map<number, number>();
+        if (shifts.length === 0) return out;
+        const rows = await this.repo.manager.query<
+            { shift_id: number; total: string | null }[]
+        >(
+            `SELECT shift_id, COALESCE(SUM(amount), 0) AS total
+             FROM shift_cash_outs
+             WHERE shift_id = ANY($1::int[]) AND voided_at IS NULL
+             GROUP BY shift_id`,
+            [shifts.map((s) => s.id)],
+        );
+        for (const r of rows)
+            out.set(Number(r.shift_id), parseFloat(r.total ?? '0') || 0);
+        return out;
     }
 
     /**
@@ -582,7 +596,7 @@ export class ShiftsService {
 
     async close(
         id: number,
-        dto: { actual_cash: number; rider_cash?: number; notes?: string },
+        dto: { actual_cash: number; notes?: string },
         tenantId?: number | null,
         allowedBranchIds?: number[] | null,
         closedByUserId?: number | null,
@@ -611,50 +625,235 @@ export class ShiftsService {
                 );
             }
         }
-        // Atomic close: only the caller that flips open -> closed wins. A concurrent
-        // double-close (double-click, or GM + cashier) affects 0 rows and gets a
-        // clean 409 instead of silently overwriting the first close's reconciliation
-        // figures. Using a scoped UPDATE (not a full-entity save) also means a
-        // completion increment racing this close cannot revert it.
         // Freeze the derived figure at close: from here on this shift is a
         // historical record and must not drift if an old order is touched later.
-        const { cash_collected } = await this.getCollectedAmounts(shift);
-        const expectedAtClose = await this.computeExpectedCash(
-            shift,
-            cash_collected,
-        );
-        const riderCash =
-            dto.rider_cash != null && Number.isFinite(Number(dto.rider_cash))
-                ? Number(dto.rider_cash)
-                : 0;
-        const res = await this.repo
-            .createQueryBuilder()
-            .update(Shift)
-            .set({
-                closingCash: dto.actual_cash,
-                riderCashCollected: riderCash,
-                status: 'closed',
-                closedAt: () => 'now()',
-                closedByUserId: closedByUserId ?? null,
-                expectedCash: expectedAtClose,
-                ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
-            })
-            .where('id = :id AND status = :open', { id, open: 'open' })
-            .execute();
-        if (res.affected === 0) {
-            const exists = await this.repo.findOne({
-                where: { id },
-                select: { id: true },
-            });
-            if (!exists) throw new NotFoundException('Shift not found');
-            throw new ConflictException('Shift is already closed');
-        }
+        //
+        // The whole read-compute-write runs inside ONE transaction that first
+        // takes a row lock on the shift. Without the lock, a cash-out committing
+        // between the arithmetic and the UPDATE would be missing from the frozen
+        // expected_cash and the drawer would read short by that amount forever.
+        // The lock makes cash-outs and the close strictly serial: whichever gets
+        // the row first wins, and a cash-out arriving after the close sees
+        // status='closed' and is rejected.
+        const cashCollected = (await this.getCollectedAmounts(shift))
+            .cash_collected;
+        await this.repo.manager.transaction(async (manager) => {
+            const locked = await manager.query<{ status: string }[]>(
+                `SELECT status FROM shifts WHERE id = $1 FOR UPDATE`,
+                [id],
+            );
+            if (locked.length === 0)
+                throw new NotFoundException('Shift not found');
+            if (locked[0].status !== 'open')
+                throw new ConflictException('Shift is already closed');
+
+            const cashOutTotal = await this.getCashOutTotal(id, manager);
+            const expectedAtClose = this.computeExpectedCash(
+                shift,
+                cashCollected,
+                cashOutTotal,
+            );
+            // Still scoped by status: a full-entity save could write a stale
+            // 'open' back over a concurrent close.
+            const res = await manager
+                .createQueryBuilder()
+                .update(Shift)
+                .set({
+                    closingCash: dto.actual_cash,
+                    status: 'closed',
+                    closedAt: () => 'now()',
+                    closedByUserId: closedByUserId ?? null,
+                    expectedCash: expectedAtClose,
+                    ...(dto.notes !== undefined ? { notes: dto.notes } : {}),
+                })
+                .where('id = :id AND status = :open', { id, open: 'open' })
+                .execute();
+            if (res.affected === 0)
+                throw new ConflictException('Shift is already closed');
+        });
         const loaded = await this.repo.findOne({
             where: { id },
             relations: ['user', 'branch', 'closer', 'brand'],
         });
         if (!loaded) throw new NotFoundException('Shift not found');
-        return this.toResponse(loaded);
+        return this.toResponse(
+            loaded,
+            undefined,
+            await this.getCashOutTotal(id),
+        );
+    }
+
+    /**
+     * Record cash handed out of the till mid-shift. Only while the shift is
+     * open: once closed, its expected cash is frozen and a late entry would
+     * silently misstate a historical reconciliation, so this 409s instead.
+     * The row lock serialises against a concurrent close (see close()).
+     */
+    async addCashOut(
+        shiftId: number,
+        dto: { amount: number; note?: string | null },
+        tenantId: number | null,
+        allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
+        createdByUserId?: number | null,
+    ) {
+        // Tenant/branch/brand access (throws 403/404).
+        await this.findOne(
+            shiftId,
+            tenantId,
+            allowedBranchIds,
+            allowedBrandIds,
+        );
+        const amount = Number(dto.amount);
+        if (!Number.isFinite(amount) || amount <= 0)
+            throw new BadRequestException(
+                'Cash-out amount must be greater than zero',
+            );
+        await this.repo.manager.transaction(async (manager) => {
+            const locked = await manager.query<{ status: string }[]>(
+                `SELECT status FROM shifts WHERE id = $1 FOR UPDATE`,
+                [shiftId],
+            );
+            if (locked.length === 0)
+                throw new NotFoundException('Shift not found');
+            if (locked[0].status !== 'open')
+                throw new ConflictException(
+                    'This shift is closed — cash-outs can only be recorded while it is open.',
+                );
+            await manager.query(
+                `INSERT INTO shift_cash_outs (shift_id, amount, note, created_by)
+                 VALUES ($1, $2, $3, $4)`,
+                [
+                    shiftId,
+                    amount,
+                    dto.note?.trim() || null,
+                    createdByUserId ?? null,
+                ],
+            );
+        });
+        return this.listCashOuts(
+            shiftId,
+            tenantId,
+            allowedBranchIds,
+            allowedBrandIds,
+        );
+    }
+
+    /**
+     * Void a cash-out (wrong amount, or the money went back in). The row stays
+     * for the audit trail and stops counting; open shifts only, for the same
+     * reason as addCashOut.
+     */
+    async voidCashOut(
+        shiftId: number,
+        cashOutId: number,
+        dto: { reason?: string | null },
+        tenantId: number | null,
+        allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
+        voidedByUserId?: number | null,
+    ) {
+        await this.findOne(
+            shiftId,
+            tenantId,
+            allowedBranchIds,
+            allowedBrandIds,
+        );
+        await this.repo.manager.transaction(async (manager) => {
+            const locked = await manager.query<{ status: string }[]>(
+                `SELECT status FROM shifts WHERE id = $1 FOR UPDATE`,
+                [shiftId],
+            );
+            if (locked.length === 0)
+                throw new NotFoundException('Shift not found');
+            if (locked[0].status !== 'open')
+                throw new ConflictException(
+                    'This shift is closed — its cash-outs can no longer be changed.',
+                );
+            // Checked then updated inside the shift's row lock, so a
+            // double-click cannot re-void (and rewrite the voider of) an entry
+            // someone already voided.
+            const existing = await manager.query<{ id: number }[]>(
+                `SELECT id FROM shift_cash_outs
+                 WHERE id = $1 AND shift_id = $2 AND voided_at IS NULL`,
+                [cashOutId, shiftId],
+            );
+            if (existing.length === 0)
+                throw new NotFoundException(
+                    'Cash-out not found, or already voided',
+                );
+            await manager.query(
+                `UPDATE shift_cash_outs
+                 SET voided_at = now(), voided_by = $1, void_reason = $2
+                 WHERE id = $3`,
+                [voidedByUserId ?? null, dto.reason?.trim() || null, cashOutId],
+            );
+        });
+        return this.listCashOuts(
+            shiftId,
+            tenantId,
+            allowedBranchIds,
+            allowedBrandIds,
+        );
+    }
+
+    /**
+     * Cash-outs of a shift, newest first — visible to anyone who may see the
+     * shift (recording one needs `shifts:cash-out`; reading does not).
+     */
+    async listCashOuts(
+        shiftId: number,
+        tenantId: number | null,
+        allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
+    ) {
+        await this.findOne(
+            shiftId,
+            tenantId,
+            allowedBranchIds,
+            allowedBrandIds,
+        );
+        const rows = await this.repo.manager.query<
+            {
+                id: number;
+                amount: string;
+                note: string | null;
+                created_at: Date;
+                created_by_name: string | null;
+                voided_at: Date | null;
+                void_reason: string | null;
+                voided_by_name: string | null;
+            }[]
+        >(
+            `SELECT co.id, co.amount, co.note, co.created_at, co.voided_at,
+                    co.void_reason,
+                    cu.name AS created_by_name, vu.name AS voided_by_name
+             FROM shift_cash_outs co
+             LEFT JOIN users cu ON cu.id = co.created_by
+             LEFT JOIN users vu ON vu.id = co.voided_by
+             WHERE co.shift_id = $1
+             ORDER BY co.created_at DESC, co.id DESC`,
+            [shiftId],
+        );
+        const items = rows.map((r) => ({
+            id: Number(r.id),
+            amount: parseFloat(r.amount ?? '0') || 0,
+            note: r.note,
+            created_at: r.created_at?.toISOString?.() ?? null,
+            created_by_name: r.created_by_name,
+            voided: r.voided_at != null,
+            voided_at: r.voided_at?.toISOString?.() ?? null,
+            voided_by_name: r.voided_by_name,
+            void_reason: r.void_reason,
+        }));
+        return {
+            shift_id: shiftId,
+            items,
+            // Voided entries are listed but never counted.
+            total: items
+                .filter((i) => !i.voided)
+                .reduce((sum, i) => sum + i.amount, 0),
+        };
     }
 
     /**
@@ -731,20 +930,17 @@ export class ShiftsService {
      * @param expectedOverride derived expected cash for an open shift. Closed
      * shifts pass nothing and keep the value frozen at close.
      */
-    private toResponse(s: Shift, expectedOverride?: number) {
+    private toResponse(s: Shift, expectedOverride?: number, cashOutTotal = 0) {
         const expected =
             expectedOverride !== undefined
                 ? expectedOverride
                 : s.expectedCash != null
                   ? Number(s.expectedCash)
                   : null;
-        const riderCash =
-            s.riderCashCollected != null ? Number(s.riderCashCollected) : null;
-        // Actual cash is the drawer count plus whatever the riders handed in.
-        const actual =
-            s.closingCash != null
-                ? Number(s.closingCash) + (riderCash ?? 0)
-                : null;
+        // Actual cash is simply what was counted in the drawer: cash handed
+        // out mid-shift already left it, and is accounted for on the expected
+        // side instead (see computeExpectedCash).
+        const actual = s.closingCash != null ? Number(s.closingCash) : null;
         return {
             id: s.id,
             branch_id: s.branchId,
@@ -754,12 +950,15 @@ export class ShiftsService {
             shift_number: s.shiftNumber,
             opening_cash: Number(s.openingCash),
             expected_cash: expected,
-            /** Money counted in the drawer, excluding rider cash. */
-            drawer_cash: s.closingCash != null ? Number(s.closingCash) : null,
-            /** Cash riders handed to the till, entered at close. */
-            rider_cash_collected: riderCash,
+            /** Money counted in the drawer at close. */
+            drawer_cash: actual,
+            /** Cash handed out of the till mid-shift (voided entries excluded). */
+            cash_out_total: cashOutTotal,
             actual_cash: actual,
-            difference: actual != null && expected != null ? actual - expected : null,
+            difference:
+                actual != null && expected != null
+                    ? round2(actual - expected)
+                    : null,
             status: s.status,
             opened_at: s.openedAt?.toISOString() ?? null,
             closed_at: s.closedAt?.toISOString() ?? null,

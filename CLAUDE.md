@@ -38,7 +38,11 @@ Tenant (tenant_id; super admin requests have tenantId = null)
 │    kitchen_stations, printer_routes, carts
 ├─ BRANCH + BRAND: shifts (one open shift per brand per branch;
 │    opened by brand-locked staff; closing is opener-only; `shifts:override`
-│    holders — owner/GM/managers — open for any brand and close others' shifts)
+│    holders — owner/GM/managers — open for any brand and close others' shifts.
+│    Till maths: expected = opening + cash tendered − cash-outs; actual =
+│    drawer count. `shift_cash_outs` logs mid-shift hand-overs to the owner
+│    (append-only, voided not deleted, open shifts only, `shifts:cash-out`);
+│    rider cash is NOT part of shift reconciliation)
 ├─ TENANT + BRANCH (operations with tenant column):
 │    orders, kiosk_orders — every order is SINGLE-BRAND (brand_id set);
 │       POS/kiosk/consumer-app reject mixed carts; consumer-web mixed
