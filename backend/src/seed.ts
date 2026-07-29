@@ -100,6 +100,13 @@ async function seed() {
                 'Open a shift for any brand and close shifts opened by other users (closing is otherwise opener-only)',
         },
         {
+            name: 'shifts:cash-out',
+            resource: 'shifts',
+            action: 'cash-out',
+            description:
+                'Record and void mid-shift cash-outs (cash handed from the till to the owner); everyone else sees them read-only',
+        },
+        {
             name: 'rider-supervisor:view-status',
             resource: 'rider-supervisor',
             action: 'view-status',

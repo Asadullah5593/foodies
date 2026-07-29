@@ -15,6 +15,7 @@ import {
   Shift,
   ShiftOrdersResponse,
   ShiftPendingOrdersResponse,
+  ShiftCashOutsResponse,
   User,
   Order,
   RiderProfile,
@@ -556,18 +557,48 @@ export const adminService = {
     return response.data;
   },
   
-  /** `actualCash` is the drawer count; `riderCash` is what riders handed to the till. */
+  /** `actualCash` is the cash counted in the drawer. */
   closeShift: async (
     id: number,
     actualCash: number,
-    riderCash?: number,
     notes?: string,
   ): Promise<Shift> => {
     const response = await apiClient.post(`/admin/shifts/${id}/close`, {
       actual_cash: actualCash,
-      rider_cash: riderCash ?? 0,
       notes,
     });
+    return response.data;
+  },
+
+  /** Cash handed out of the till mid-shift. Readable by any shift viewer. */
+  getShiftCashOuts: async (id: number): Promise<ShiftCashOutsResponse> => {
+    const response = await apiClient.get(`/admin/shifts/${id}/cash-outs`);
+    return response.data;
+  },
+
+  /** Record a hand-over. Needs `shifts:cash-out`; open shifts only. */
+  addShiftCashOut: async (
+    id: number,
+    amount: number,
+    note?: string,
+  ): Promise<ShiftCashOutsResponse> => {
+    const response = await apiClient.post(`/admin/shifts/${id}/cash-outs`, {
+      amount,
+      note,
+    });
+    return response.data;
+  },
+
+  /** Void a mistaken entry (kept in the list, stops counting). */
+  voidShiftCashOut: async (
+    id: number,
+    cashOutId: number,
+    reason?: string,
+  ): Promise<ShiftCashOutsResponse> => {
+    const response = await apiClient.post(
+      `/admin/shifts/${id}/cash-outs/${cashOutId}/void`,
+      { reason },
+    );
     return response.data;
   },
 

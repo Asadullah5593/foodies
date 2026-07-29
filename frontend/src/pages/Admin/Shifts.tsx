@@ -47,16 +47,38 @@ const brandChip = (name?: string | null) =>
   BRAND_CHIP[(name ?? '').trim().toLowerCase()] ?? { c: '#5A6473', bg: '#EEF0F3' };
 
 /**
- * Drawer variance per spec: counted − (opening float + cash sales).
+ * Cash handed out of the till mid-shift (voided entries already excluded
+ * server-side). Absent on payloads that predate cash-outs ⇒ nothing was taken.
+ */
+export const cashOutTotal = (s: Shift): number => Number(s.cash_out_total ?? 0);
+
+/**
+ * What the drawer should hold: opening float + cash sales − cash taken out.
+ *
+ * The server is the source of truth (it derives this for open shifts and
+ * freezes it at close, net of cash-outs); the local sum is only a fallback for
+ * a payload that predates the field. Re-deriving it here is how this page used
+ * to drift from the backend — don't reintroduce that.
+ */
+export const expectedInDrawer = (s: Shift): number =>
+  s.expected_cash != null
+    ? Number(s.expected_cash)
+    : Number(s.opening_cash) + Number(s.cash_collected ?? 0) - cashOutTotal(s);
+
+/**
+ * Drawer variance: counted − expected. Server-computed where available.
  * Null until the drawer has been counted (open shifts).
  */
-const drawerVariance = (s: Shift): number | null =>
-  s.status === 'closed' && s.actual_cash != null
-    ? Number(s.actual_cash) - (Number(s.opening_cash) + Number(s.cash_collected ?? 0))
-    : null;
+export const drawerVariance = (s: Shift): number | null => {
+  if (s.status !== 'closed' || s.actual_cash == null) return null;
+  return s.difference != null
+    ? Number(s.difference)
+    : Number(s.actual_cash) - expectedInDrawer(s);
+};
 
-const expectedTotal = (s: Shift): number =>
-  Number(s.opening_cash) + Number(s.cash_collected ?? 0) + Number(s.card_collected ?? 0);
+/** Total takings (drawer expectation + card, which never reaches the till). */
+export const expectedTotal = (s: Shift): number =>
+  expectedInDrawer(s) + Number(s.card_collected ?? 0);
 
 /** Payment chip colors for the close-modal order rows: cash teal, card/mixed blue. */
 const payChip = (method: string | null | undefined) => {
@@ -175,7 +197,8 @@ const Shifts: React.FC = () => {
   const [detailShiftId, setDetailShiftId] = useState<number | null>(null);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
   const [formData, setFormData] = useState({ branch_id: '', brand_id: '', opening_cash: '', notes: '' });
-  const [closeFormData, setCloseFormData] = useState({ actual_cash: '', rider_cash: '', notes: '' });
+  const [closeFormData, setCloseFormData] = useState({ actual_cash: '', notes: '' });
+  const [cashOutForm, setCashOutForm] = useState({ amount: '', note: '' });
 
   // Open-shift durations tick along once a minute.
   const [, setNowTick] = useState(0);
@@ -231,6 +254,9 @@ const Shifts: React.FC = () => {
   const canOpenShift =
     isTenantStaff && hasShiftsOpen && (user?.allowed_brand_ids != null || hasShiftOverride);
   const hasShiftsClose = useHasPermission('shifts:close');
+  // Recording/voiding a cash-out is admin-held; everyone else who can see the
+  // shift still sees the entries, read-only.
+  const canCashOut = isTenantStaff && useHasPermission('shifts:cash-out');
   const canCloseShift = (s: { user_id?: number | null }) =>
     isTenantStaff && hasShiftsClose && (hasShiftOverride || s.user_id === user?.id);
 
@@ -287,6 +313,15 @@ const Shifts: React.FC = () => {
     enabled: !!detailShiftId,
   });
 
+  // Cash-outs of the shift on screen (detail modal, or the one being closed).
+  // Readable by anyone who can see the shift; adding needs shifts:cash-out.
+  const cashOutShiftId = detailShiftId ?? (showCloseForm ? selectedShift?.id ?? null : null);
+  const { data: cashOutData } = useQuery({
+    queryKey: ['shift-cash-outs', cashOutShiftId],
+    queryFn: () => adminService.getShiftCashOuts(cashOutShiftId!),
+    enabled: cashOutShiftId != null,
+  });
+
   // Completed orders for the shift being closed (closing-clearance review).
   const { data: shiftOrders, isLoading: shiftOrdersLoading } = useQuery({
     queryKey: ['shift-orders', selectedShift?.id],
@@ -318,24 +353,59 @@ const Shifts: React.FC = () => {
     },
   });
 
+  /**
+   * Recording a hand-over refreshes the cash-out list AND the shift queries —
+   * expected cash is derived from these rows, and the close modal reads its
+   * figure from the ['shifts'] list, so invalidating only the detail would
+   * leave a stale Expected cash on screen.
+   */
+  const invalidateCashSurfaces = () => {
+    queryClient.invalidateQueries({ queryKey: ['shift-cash-outs'] });
+    queryClient.invalidateQueries({ queryKey: ['shifts'] });
+    queryClient.invalidateQueries({ queryKey: ['shift-detail'] });
+  };
+
+  const addCashOutMutation = useMutation({
+    mutationFn: ({ id, amount, note }: { id: number; amount: number; note?: string }) =>
+      adminService.addShiftCashOut(id, amount, note),
+    onSuccess: () => {
+      invalidateCashSurfaces();
+      setCashOutForm({ amount: '', note: '' });
+      toast.success('Cash-out recorded');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to record cash-out');
+    },
+  });
+
+  const voidCashOutMutation = useMutation({
+    mutationFn: ({ id, cashOutId }: { id: number; cashOutId: number }) =>
+      adminService.voidShiftCashOut(id, cashOutId),
+    onSuccess: () => {
+      invalidateCashSurfaces();
+      toast.success('Cash-out voided');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to void cash-out');
+    },
+  });
+
   const closeMutation = useMutation({
     mutationFn: ({
       id,
       actualCash,
-      riderCash,
       notes,
     }: {
       id: number;
       actualCash: number;
-      riderCash?: number;
       notes?: string;
-    }) => adminService.closeShift(id, actualCash, riderCash, notes),
+    }) => adminService.closeShift(id, actualCash, notes),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shifts'] });
       queryClient.invalidateQueries({ queryKey: ['shift-detail'] });
       setShowCloseForm(false);
       setSelectedShift(null);
-      setCloseFormData({ actual_cash: '', rider_cash: '', notes: '' });
+      setCloseFormData({ actual_cash: '', notes: '' });
       toast.success('Shift closed successfully!');
     },
     onError: (error: any) => {
@@ -409,14 +479,13 @@ const Shifts: React.FC = () => {
     closeMutation.mutate({
       id: selectedShift.id,
       actualCash: parseFloat(closeFormData.actual_cash),
-      riderCash: closeFormData.rider_cash === '' ? 0 : parseFloat(closeFormData.rider_cash),
       notes: closeFormData.notes || undefined,
     });
   };
 
   const startClose = (shift: Shift) => {
     setSelectedShift(shift);
-    setCloseFormData({ actual_cash: '', rider_cash: '', notes: '' });
+    setCloseFormData({ actual_cash: '', notes: '' });
     setShowOpenForm(false);
     setDetailShiftId(null);
     setShowCloseForm(true);
@@ -510,7 +579,8 @@ const Shifts: React.FC = () => {
         ${row('Cash sales', fmtMoney(s.cash_collected ?? 0))}
         ${row('Card sales', fmtMoney(s.card_collected ?? 0))}
         ${row('Expected total', fmtMoney(expectedTotal(s)))}
-        ${row('Expected in drawer', fmtMoney(Number(s.opening_cash) + Number(s.cash_collected ?? 0)))}
+        ${cashOutTotal(s) > 0 ? row('Cash taken out', `− ${fmtMoney(cashOutTotal(s))}`) : ''}
+        ${row('Expected in drawer', fmtMoney(expectedInDrawer(s)))}
         ${row('Counted cash', s.actual_cash != null ? fmtMoney(s.actual_cash) : 'Not counted')}
         ${v != null ? row('Variance', `${v > 0 ? '+' : ''}${fmtMoney(v)}`) : ''}
       </table>`;
@@ -535,22 +605,21 @@ const Shifts: React.FC = () => {
   const liveShift =
     (selectedShift != null ? shifts?.find((s) => s.id === selectedShift.id) : null) ??
     selectedShift;
-  // Prefer the server's figure: it also counts delivery orders the riders have
-  // not handed cash in for yet, which this page cannot see. Falls back to the
-  // local sum only if the shift payload predates that field.
+  // Prefer the server's figure: it is already net of any cash handed out
+  // mid-shift. Falls back to the local sum only if the payload predates it.
   const closeExpectedCash =
     liveShift == null
       ? null
       : liveShift.expected_cash != null
         ? Number(liveShift.expected_cash)
         : Number(liveShift.opening_cash) +
-          Number(shiftOrders?.cash_collected ?? liveShift.cash_collected ?? 0);
-  const closeDrawerNum = parseFloat(closeFormData.actual_cash);
-  const closeRiderNum =
-    closeFormData.rider_cash === '' ? 0 : parseFloat(closeFormData.rider_cash);
-  // Actual cash is the drawer count plus the cash riders handed to the till.
-  const closeActualNum =
-    (isNaN(closeDrawerNum) ? NaN : closeDrawerNum) + (isNaN(closeRiderNum) ? 0 : closeRiderNum);
+          Number(shiftOrders?.cash_collected ?? liveShift.cash_collected ?? 0) -
+          cashOutTotal(liveShift);
+  // Actual cash is simply what was counted in the drawer.
+  const closeActualNum = parseFloat(closeFormData.actual_cash);
+  // Prefer the live cash-out list; fall back to the figure on the shift row.
+  const closeCashOutTotal =
+    cashOutData?.total ?? (liveShift != null ? cashOutTotal(liveShift) : 0);
   const closeVariance = (() => {
     if (closeExpectedCash == null || closeFormData.actual_cash === '' || isNaN(closeActualNum)) return null;
     const diff = closeActualNum - closeExpectedCash;
@@ -562,6 +631,10 @@ const Shifts: React.FC = () => {
   const detail = shiftDetail ?? null;
   const detailOpen = detail?.status === 'open';
   const detailVariance = detail ? drawerVariance(detail) : null;
+  // Live list wins over the figure baked into the shift payload.
+  const detailCashOutTotal =
+    cashOutData?.total ?? (detail != null ? cashOutTotal(detail) : 0);
+  const cashOutItems = cashOutData?.items ?? [];
   const varianceUi = !detail
     ? null
     : detailOpen || detailVariance == null
@@ -924,10 +997,18 @@ const Shifts: React.FC = () => {
                       <span className="text-[13px] text-[#6B7280] dark:text-slate-400">+ Cash sales</span>
                       <span className="text-[13.5px] font-semibold tabular-nums text-[#1A1D24] dark:text-slate-100">{fmtMoney(detail.cash_collected ?? 0)}</span>
                     </div>
+                    {detailCashOutTotal > 0 && (
+                      <div className="flex items-center justify-between gap-2.5 border-b border-[#F4F5F7] px-4 py-[11px] dark:border-slate-700">
+                        <span className="text-[13px] text-[#6B7280] dark:text-slate-400">− Cash taken out</span>
+                        <span className="text-[13.5px] font-semibold tabular-nums text-[#C21F1F]">
+                          −{fmtMoney(detailCashOutTotal)}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between gap-2.5 border-b border-[#F4F5F7] bg-[#FBFBFC] px-4 py-3 dark:border-slate-700 dark:bg-slate-900/40">
                       <span className="text-[13px] font-extrabold text-[#1A1D24] dark:text-slate-100">Expected in drawer</span>
                       <span className="text-sm font-extrabold tabular-nums text-[#1A1D24] dark:text-slate-100">
-                        {fmtMoney(Number(detail.opening_cash) + Number(detail.cash_collected ?? 0))}
+                        {fmtMoney(expectedInDrawer(detail))}
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-2.5 border-b border-[#F4F5F7] px-4 py-3 dark:border-slate-700">
@@ -953,6 +1034,122 @@ const Shifts: React.FC = () => {
                         {varianceUi?.amount}
                       </span>
                     </div>
+                  </div>
+
+                  {/* ---------------------------------------- cash-outs --- */}
+                  <div className="mt-5">
+                    <div className="mb-[11px] flex items-center justify-between">
+                      <span className="text-[11px] font-extrabold uppercase tracking-[.06em] text-[#9AA1AD]">
+                        Cash taken out
+                      </span>
+                      <span className="text-[12.5px] font-extrabold tabular-nums text-[#1A1D24] dark:text-slate-100">
+                        {fmtMoney(detailCashOutTotal)}
+                      </span>
+                    </div>
+
+                    {cashOutItems.length === 0 ? (
+                      <p className="text-[12.5px] text-[#8A92A0]">
+                        No cash has been taken out of this till.
+                      </p>
+                    ) : (
+                      <div className="overflow-hidden rounded-[14px] border border-[#ECEDF0] dark:border-slate-700">
+                        {cashOutItems.map((c) => (
+                          <div
+                            key={c.id}
+                            className="flex items-center justify-between gap-3 border-b border-[#F4F5F7] px-4 py-[11px] last:border-b-0 dark:border-slate-700"
+                          >
+                            <div className="min-w-0">
+                              <div
+                                className={`text-[13.5px] font-bold tabular-nums ${
+                                  c.voided
+                                    ? 'text-[#9AA1AD] line-through'
+                                    : 'text-[#1A1D24] dark:text-slate-100'
+                                }`}
+                              >
+                                {fmtMoney(c.amount)}
+                                {c.voided && (
+                                  <span className="ml-2 rounded-full bg-[#F3F4F6] px-2 py-0.5 text-[10.5px] font-bold uppercase tracking-wide text-[#8A92A0] no-underline">
+                                    Voided
+                                  </span>
+                                )}
+                              </div>
+                              <div className="truncate text-[11.5px] text-[#8A92A0]">
+                                {c.created_at ? new Date(c.created_at).toLocaleString() : '—'}
+                                {c.created_by_name ? ` · ${c.created_by_name}` : ''}
+                                {c.note ? ` · ${c.note}` : ''}
+                                {c.voided && c.voided_by_name ? ` · voided by ${c.voided_by_name}` : ''}
+                              </div>
+                            </div>
+                            {canCashOut && detailOpen && !c.voided && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  voidCashOutMutation.mutate({ id: detail.id, cashOutId: c.id })
+                                }
+                                disabled={voidCashOutMutation.isPending}
+                                className="flex-none cursor-pointer rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-1.5 text-[12px] font-bold text-[#C21F1F] transition-colors hover:bg-[#FCEEEE] disabled:opacity-50 dark:border-slate-600 dark:bg-slate-700"
+                              >
+                                Void
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {canCashOut && detailOpen && (
+                      <div className="mt-3 flex flex-wrap items-end gap-2">
+                        <div>
+                          <label className="mb-1 block text-[11.5px] font-bold text-[#374151] dark:text-slate-200">
+                            Amount
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={cashOutForm.amount}
+                            onChange={(e) => setCashOutForm({ ...cashOutForm, amount: e.target.value })}
+                            placeholder="0.00"
+                            aria-label="Cash-out amount"
+                            className="w-[130px] rounded-[10px] border-[1.5px] border-[#E2E5EA] px-[11px] py-2 text-sm tabular-nums outline-none focus:border-[#DC2A2A] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                          />
+                        </div>
+                        <div className="min-w-[160px] flex-1">
+                          <label className="mb-1 block text-[11.5px] font-bold text-[#374151] dark:text-slate-200">
+                            Note
+                          </label>
+                          <input
+                            type="text"
+                            value={cashOutForm.note}
+                            onChange={(e) => setCashOutForm({ ...cashOutForm, note: e.target.value })}
+                            placeholder="e.g. handed to owner"
+                            aria-label="Cash-out note"
+                            className="w-full rounded-[10px] border-[1.5px] border-[#E2E5EA] px-[11px] py-2 text-sm outline-none focus:border-[#DC2A2A] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          disabled={
+                            !(Number(cashOutForm.amount) > 0) || addCashOutMutation.isPending
+                          }
+                          onClick={() =>
+                            addCashOutMutation.mutate({
+                              id: detail.id,
+                              amount: Number(cashOutForm.amount),
+                              note: cashOutForm.note || undefined,
+                            })
+                          }
+                          className="cursor-pointer rounded-[10px] border-none bg-[#1A1D24] px-4 py-2 text-[13px] font-bold text-white transition-colors hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Record cash-out
+                        </button>
+                      </div>
+                    )}
+                    {canCashOut && !detailOpen && (
+                      <p className="mt-2 text-[11.5px] text-[#8A92A0]">
+                        This shift is closed — its cash-outs can no longer be changed.
+                      </p>
+                    )}
                   </div>
 
                   {detail.notes && (
@@ -1347,29 +1544,22 @@ const Shifts: React.FC = () => {
                     placeholder="0.00"
                     className="w-full rounded-[10px] border-[1.5px] border-[#E2E5EA] px-[13px] py-[11px] text-sm tabular-nums text-[#1A1D24] outline-none focus:border-[#DC2A2A] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
                   />
-                  <p className="mt-1.5 text-[11.5px] text-[#8A92A0]">Counted in the till, excluding rider money.</p>
+                  <p className="mt-1.5 text-[11.5px] text-[#8A92A0]">Everything counted in the till at close.</p>
                 </div>
                 <div>
-                  <label className="mb-[7px] block text-[12.5px] font-bold text-[#374151] dark:text-slate-200">
-                    Rider cash
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={closeFormData.rider_cash}
-                    onChange={(e) => setCloseFormData({ ...closeFormData, rider_cash: e.target.value })}
-                    placeholder="0.00"
-                    className="w-full rounded-[10px] border-[1.5px] border-[#E2E5EA] px-[13px] py-[11px] text-sm tabular-nums text-[#1A1D24] outline-none focus:border-[#DC2A2A] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100"
-                  />
+                  {/* Read-only here for everyone: cash-outs are recorded on the
+                      shift itself (detail modal), never during reconciliation. */}
+                  <div className="text-[10.5px] font-bold uppercase tracking-[.05em] text-[#9AA1AD]">
+                    Cash taken out
+                  </div>
+                  <div className="mt-1.5 text-xl font-black tabular-nums text-[#20242C] dark:text-slate-100">
+                    {closeCashOutTotal > 0 ? `− ${fmtMoney(closeCashOutTotal)}` : fmtMoney(0)}
+                  </div>
                   <p className="mt-1.5 text-[11.5px] text-[#8A92A0]">
-                    Collected by riders at the door and handed to the till.
+                    {closeCashOutTotal > 0
+                      ? 'Already deducted from expected cash.'
+                      : 'Nothing was handed out during this shift.'}
                   </p>
-                  {closeFormData.actual_cash !== '' && !isNaN(closeActualNum) && (
-                    <div className="mt-2 text-[12.5px] font-bold text-[#374151] dark:text-slate-200">
-                      Total counted: {fmtMoney(closeActualNum)}
-                    </div>
-                  )}
                   {closeVariance && (
                     <div
                       className="mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12.5px] font-extrabold"

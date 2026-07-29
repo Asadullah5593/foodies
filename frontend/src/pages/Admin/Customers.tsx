@@ -303,17 +303,6 @@ const Customers: React.FC = () => {
                   subtitle={
                     <>
                       <p className="font-mono">{c.phone}</p>
-                      <p className="mt-0.5">
-                        <span
-                          className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-bold ${
-                            CUSTOMER_SOURCE_BADGE[String(c.source ?? 'pos')] ??
-                            'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300'
-                          }`}
-                          title="Where this customer registered"
-                        >
-                          {customerSourceLabel(c.source ?? 'pos')}
-                        </span>
-                      </p>
                       {c.loyaltyWallets && c.loyaltyWallets.length > 0 ? (
                         <p>
                           Loyalty:{' '}
@@ -342,6 +331,17 @@ const Customers: React.FC = () => {
                         </div>
                       )}
                     </>
+                  }
+                  meta={
+                    <span
+                      className={`inline-flex items-center rounded-md px-2 py-1 text-[11px] font-bold ${
+                        CUSTOMER_SOURCE_BADGE[String(c.source ?? 'pos')] ??
+                        'bg-gray-100 text-gray-600 dark:bg-slate-700 dark:text-slate-300'
+                      }`}
+                      title="Where this customer registered"
+                    >
+                      {customerSourceLabel(c.source ?? 'pos')}
+                    </span>
                   }
                   animationIndex={i}
                   actions={

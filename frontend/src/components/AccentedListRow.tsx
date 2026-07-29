@@ -22,6 +22,13 @@ export interface AccentedListRowProps {
   deliveryStatusLabel?: string;
   /** Style for status pill(s) */
   statusVariant?: AccentVariant;
+  /**
+   * Optional value rendered in its own fixed-width column between the text
+   * block and the actions, so it lines up down the list instead of being
+   * another line inside the subtitle (e.g. the Customers page's source badge).
+   * Omitted by every other list, which keeps their layout unchanged.
+   */
+  meta?: React.ReactNode;
   /** Action buttons or links (e.g. Edit, Delete) */
   actions: React.ReactNode;
   /** Index for stagger animation delay */
@@ -109,6 +116,7 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
   orderStatusLabel,
   deliveryStatusLabel,
   statusVariant = accent,
+  meta,
   actions,
   animationIndex = 0,
   footer,
@@ -160,6 +168,11 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
             </div>
           )}
         </div>
+        {meta != null && meta !== '' && (
+          <div className="flex-shrink-0 w-24 sm:w-32 py-4 flex items-center">
+            {meta}
+          </div>
+        )}
         <div className="flex-shrink-0 flex items-center gap-3 py-4 pr-4 sm:pr-6">
           {statusContent}
           <div className="flex gap-2">{actions}</div>
