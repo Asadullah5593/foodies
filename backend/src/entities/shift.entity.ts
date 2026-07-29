@@ -40,14 +40,6 @@ export class Shift {
     @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true })
     expectedCash: number | null;
 
-    /**
-     * Cash riders collected at the door and handed to the till, entered when the
-     * shift is closed. Kept apart from closingCash (the drawer count) so both
-     * halves stay auditable; actual cash = closingCash + riderCashCollected.
-     */
-    @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true })
-    riderCashCollected: number | null;
-
     @Column({ default: 'open' })
     status: string;
 

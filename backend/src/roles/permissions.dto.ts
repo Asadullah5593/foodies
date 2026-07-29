@@ -156,6 +156,10 @@ export const Permissions = {
     // Implies view/open/close, but is NOT implied by shifts:manage — a cashier
     // with the umbrella stays opener-only; grant this explicitly to overseers.
     SHIFTS_OVERRIDE: 'shifts:override',
+    // Record / void a mid-shift cash-out (cash handed from the till to the
+    // owner). Standalone like shifts:override — everyone who can see a shift
+    // sees the entries read-only; only holders may add or void one.
+    SHIFTS_CASH_OUT: 'shifts:cash-out',
 
     // — Business settings (umbrella: business-settings:access) —
     BUSINESS_SETTINGS_EDIT: 'business-settings:edit',

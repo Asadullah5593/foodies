@@ -866,6 +866,26 @@ export class ReportsService {
         this.applyBrandScope(qb, 's', allowedBrandIds, filters.brand_id);
 
         const shiftsList = await qb.getMany();
+        // Cash handed out of the till mid-shift (voided entries excluded). A
+        // closed shift's expected_cash is already net of it; reporting the
+        // figure separately keeps opening/closing/expected reconcilable.
+        const cashOutByShift = new Map<number, number>();
+        if (shiftsList.length > 0) {
+            const rows = await this.shiftRepo.manager.query<
+                { shift_id: number; total: string | null }[]
+            >(
+                `SELECT shift_id, COALESCE(SUM(amount), 0) AS total
+                 FROM shift_cash_outs
+                 WHERE shift_id = ANY($1::int[]) AND voided_at IS NULL
+                 GROUP BY shift_id`,
+                [shiftsList.map((s) => s.id)],
+            );
+            for (const r of rows)
+                cashOutByShift.set(
+                    Number(r.shift_id),
+                    parseFloat(r.total ?? '0') || 0,
+                );
+        }
         return shiftsList.map((s) => {
             const sRel = s as typeof s & {
                 branch?: { name: string };
@@ -884,6 +904,7 @@ export class ReportsService {
                     s.closingCash != null ? Number(s.closingCash) : null,
                 expected_cash:
                     s.expectedCash != null ? Number(s.expectedCash) : null,
+                cash_out_total: cashOutByShift.get(s.id) ?? 0,
                 status: s.status,
                 opened_at: s.openedAt?.toISOString() ?? null,
                 closed_at: s.closedAt?.toISOString() ?? null,

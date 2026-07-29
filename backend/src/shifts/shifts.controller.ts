@@ -172,10 +172,8 @@ export class ShiftsController {
         },
         @Body()
         dto: {
-            /** Cash counted in the drawer, excluding rider money. */
+            /** Cash counted in the drawer at close. */
             actual_cash: number;
-            /** Cash riders collected at the door and handed to the till. */
-            rider_cash?: number;
             notes?: string;
         },
     ) {
@@ -189,6 +187,81 @@ export class ShiftsController {
             user.id,
             user.allowedBrandIds,
             this.canOverride(user),
+        );
+    }
+
+    /**
+     * Cash-outs of a shift. Readable by anyone who may see the shift — staff
+     * need to know what the owner already took — while recording or voicing one
+     * needs `shifts:cash-out`.
+     */
+    @Get(':id/cash-outs')
+    listCashOuts(
+        @Param('id') id: string,
+        @CurrentUser()
+        user: {
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
+        },
+    ) {
+        return this.service.listCashOuts(
+            +id,
+            user.tenantId,
+            user.allowedBranchIds,
+            user.allowedBrandIds,
+        );
+    }
+
+    @Post(':id/cash-outs')
+    @RequirePermission(Permissions.SHIFTS_CASH_OUT)
+    addCashOut(
+        @Param('id') id: string,
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
+        },
+        @Body() dto: { amount: number; note?: string },
+    ) {
+        if (!user.tenantId)
+            throw new ForbiddenException('Tenant context required');
+        return this.service.addCashOut(
+            +id,
+            dto,
+            user.tenantId,
+            user.allowedBranchIds,
+            user.allowedBrandIds,
+            user.id,
+        );
+    }
+
+    @Post(':id/cash-outs/:cashOutId/void')
+    @RequirePermission(Permissions.SHIFTS_CASH_OUT)
+    voidCashOut(
+        @Param('id') id: string,
+        @Param('cashOutId') cashOutId: string,
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
+        },
+        @Body() dto: { reason?: string },
+    ) {
+        if (!user.tenantId)
+            throw new ForbiddenException('Tenant context required');
+        return this.service.voidCashOut(
+            +id,
+            +cashOutId,
+            dto ?? {},
+            user.tenantId,
+            user.allowedBranchIds,
+            user.allowedBrandIds,
+            user.id,
         );
     }
 }
