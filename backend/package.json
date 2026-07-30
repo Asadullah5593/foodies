@@ -30,6 +30,7 @@
     "seed:uoms": "ts-node -r tsconfig-paths/register src/seed-uoms.ts",
     "seed:brand-admins": "ts-node -r tsconfig-paths/register src/seed-brand-admins.ts",
     "seed:client-users": "ts-node -r tsconfig-paths/register src/seed-client-users.ts",
+    "seed:shift-managers": "ts-node -r tsconfig-paths/register src/seed-shift-managers.ts",
     "seed:delivery-manager": "ts-node -r tsconfig-paths/register src/seed-delivery-manager.ts",
     "seed:invoice-templates": "ts-node -r tsconfig-paths/register src/seed-invoice-templates.ts",
     "seed:reset-password": "ts-node -r tsconfig-paths/register src/reset-demo-password.ts",

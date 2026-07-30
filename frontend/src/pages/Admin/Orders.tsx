@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
@@ -14,6 +14,13 @@ import PaginationBar from '../../components/PaginationBar';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import { canAccessPath } from '../../lib/pathPermissions';
+import {
+  ORDERS_GRID_MIN_PX,
+  ordersCardColumns,
+  ordersGridTemplate,
+  ordersLayoutForWidth,
+  type OrdersLayout,
+} from './ordersLayout';
 import { useAuth } from '../../contexts/AuthContext';
 import { ORDER_SOURCES, ORDER_SOURCE_LABEL, orderSourceLabel } from '../../utils/orderSources';
 import { deliveryStatusLabel } from '../../lib/deliveryStatus';
@@ -225,8 +232,6 @@ const cellHead =
   'text-[11.5px] font-bold uppercase tracking-[.05em] text-gray-400 dark:text-slate-500';
 
 /** Shared 13-column grid for the table head and rows (leading serial #). */
-const gridCols =
-  'grid-cols-[40px_88px_150px_minmax(180px,1.3fr)_96px_56px_90px_104px_108px_128px_100px_minmax(115px,1fr)_160px]';
 
 const SOURCE_BADGE: Record<string, string> = {
   pos: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200',
@@ -277,6 +282,40 @@ const Orders: React.FC = () => {
   const [selectedRiderId, setSelectedRiderId] = useState<number | null>(null);
   // Custom kitchen-status dropdown (fixed-position popover so the table's
   // overflow container can't clip it).
+  /**
+   * Layout is chosen from the table container's own measured width, not a
+   * viewport breakpoint: the sidebar collapses and the page has padding, so the
+   * viewport says nothing useful about how much room the table actually has.
+   * `null` until first measured; useLayoutEffect measures before paint, so the
+   * fallback never flashes.
+   */
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [layout, setLayout] = useState<OrdersLayout | null>(null);
+  const [measuredWidth, setMeasuredWidth] = useState(0);
+
+  const measure = useCallback((width: number) => {
+    setMeasuredWidth((prev) => (prev === width ? prev : width));
+    setLayout((prev) => {
+      const next = ordersLayoutForWidth(width);
+      return next === prev ? prev : next;
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    const el = tableRef.current;
+    if (!el) return;
+    measure(el.getBoundingClientRect().width);
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver((entries) => {
+      measure(entries[0]?.contentRect.width ?? 0);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measure]);
+
+  const showGrid = layout === 'grid';
+  const cardColumns = ordersCardColumns(measuredWidth);
+
   const [statusMenu, setStatusMenu] = useState<{
     orderId: number; orderNumber?: string; current: string; x: number; y: number; openUp: boolean;
   } | null>(null);
@@ -663,7 +702,8 @@ const Orders: React.FC = () => {
     return (
       <div
         key={o.id}
-        className={`grid min-w-[1600px] ${gridCols} items-center gap-3 border-b border-l-[3px] border-b-gray-100 py-3.5 pl-4 pr-5 dark:border-b-slate-700 ${
+        style={{ gridTemplateColumns: ordersGridTemplate, minWidth: ORDERS_GRID_MIN_PX }}
+        className={`grid items-center gap-2.5 border-b border-l-[3px] border-b-gray-100 py-3.5 pl-4 pr-5 dark:border-b-slate-700 ${
           rowNeeds ? 'border-l-red-600 bg-red-50/30 dark:bg-red-900/10' : 'border-l-transparent bg-white dark:bg-slate-800'
         }`}
       >
@@ -1057,13 +1097,17 @@ const Orders: React.FC = () => {
       </div>}
 
       {/* Table: data grid on xl+, stacked cards below */}
-      <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
-        {/* >=xl: data grid — scrolls inside this card, never the page */}
-        <div className="hidden xl:block">
+      <div ref={tableRef} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
+        {/* Wide enough for all 13 columns: data grid. overflow-x-auto is kept as a
+            backstop only — at this width nothing should actually need to scroll. */}
+        <div className={showGrid ? 'block' : 'hidden'}>
           <div className="overflow-x-auto">
-            <div className="min-w-[1600px]">
+            <div style={{ minWidth: ORDERS_GRID_MIN_PX }}>
               {/* Head */}
-              <div className={`grid ${gridCols} gap-3 border-b border-l-[3px] border-b-gray-100 border-l-transparent bg-gray-50/80 py-3 pl-4 pr-5 dark:border-b-slate-700 dark:bg-slate-900/40`}>
+              <div
+                style={{ gridTemplateColumns: ordersGridTemplate, minWidth: ORDERS_GRID_MIN_PX }}
+                className="grid gap-2.5 border-b border-l-[3px] border-b-gray-100 border-l-transparent bg-gray-50/80 py-3 pl-4 pr-5 dark:border-b-slate-700 dark:bg-slate-900/40"
+              >
                 <span className={cellHead}>#</span>
                 <span className={cellHead}>Type</span>
                 <span className={cellHead}>Order</span>
@@ -1103,12 +1147,16 @@ const Orders: React.FC = () => {
           </div>
         </div>
 
-        {/* <xl: order cards */}
-        <div className="xl:hidden">
+        {/* Narrower than the full table — phone, tablet, or a laptop with the
+            sidebar expanded. Same fields, stacked, no sideways scroll. */}
+        <div className={showGrid ? 'hidden' : 'block'}>
           {displayGroups.length === 0 ? (
             <p className="py-14 text-center text-gray-500 dark:text-slate-400">No orders found.</p>
           ) : (
-            <div className="grid grid-cols-1 gap-3 p-3 md:grid-cols-2">
+            <div
+              className="grid gap-3 p-3"
+              style={{ gridTemplateColumns: `repeat(${cardColumns}, minmax(0, 1fr))` }}
+            >
               {displayGroups.map(({ orderGroupId: gid, orders: groupOrders }) => {
                 const isGroup = !!gid && groupOrders.length > 1;
                 if (!isGroup) {
@@ -1116,7 +1164,7 @@ const Orders: React.FC = () => {
                 }
                 const g = groupMetaFor(groupOrders);
                 return (
-                  <div key={gid} className="rounded-xl border border-violet-200 bg-violet-50/40 p-2.5 dark:border-violet-900 dark:bg-violet-900/10 md:col-span-2">
+                  <div key={gid} style={{ gridColumn: `span ${cardColumns}` }} className="rounded-xl border border-violet-200 bg-violet-50/40 p-2.5 dark:border-violet-900 dark:bg-violet-900/10">
                     <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 px-1">
                       {groupBandContent(gid!, groupOrders, g)}
                     </div>
