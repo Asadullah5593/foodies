@@ -114,6 +114,11 @@ const EXPRESS_ACTIVE = false;
 
 // ——— Shared option lists (straight from the sheet) ———
 const SODAS = ['Pepsi', 'Diet Pepsi', '7up', 'Mirinda', 'Mountain Dew'];
+// 500ml bottles — Pepsi & 7up only, Rs 180 standalone; +Rs 50 as an upgrade
+// wherever a 345ml drink is included (client-confirmed, all brands).
+const SODAS_500ML = ['Pepsi', '7up'];
+const PRICE_500ML = 180;
+const UPGRADE_500ML = 50;
 const MILKSHAKES = [
     'Oreo',
     'Nutella',
@@ -499,6 +504,11 @@ async function seed() {
         { minSelect: 1, maxSelect: 1, hideInDeals: true },
         [
             ...SODAS.map((s) => ({ name: `${s} 345ml` })),
+            // 500ml bottles are a paid upgrade over the included 345ml.
+            ...SODAS_500ML.map((s) => ({
+                name: `${s} 500ml`,
+                price: UPGRADE_500ML,
+            })),
             ...MILKSHAKES.map((m) => ({
                 name: `${m} Milkshake`,
                 price: MILKSHAKE_UPGRADE,
@@ -523,6 +533,11 @@ async function seed() {
         { minSelect: 1, maxSelect: 1, hideInDeals: true },
         [
             ...SODAS.map((s) => ({ name: `${s} 345ml` })),
+            // 500ml bottles are a paid upgrade over the included 345ml.
+            ...SODAS_500ML.map((s) => ({
+                name: `${s} 500ml`,
+                price: UPGRADE_500ML,
+            })),
             ...MILKSHAKES.map((m) => ({
                 name: `${m} Milkshake`,
                 price: MILKSHAKE_UPGRADE,
@@ -542,6 +557,10 @@ async function seed() {
             ...SODAS.map((s) => ({
                 name: `${s} 345ml`,
                 price: MEAL_DRINK_345,
+            })),
+            ...SODAS_500ML.map((s) => ({
+                name: `${s} 500ml`,
+                price: PRICE_500ML,
             })),
             { name: 'Water 500ml', price: 75 },
             ...SODAS.map((s) => ({ name: `${s} 1L`, price: 199 })),
@@ -1159,9 +1178,17 @@ async function seed() {
             drinkItems[`${flavour} ${label}`] = it;
         }
     }
+    for (const flavour of SODAS_500ML) {
+        drinkItems[`${flavour} 500ml`] = await mkItem({
+            category: catDrinks,
+            name: `${flavour} 500ml`,
+            basePrice: PRICE_500ML,
+        });
+    }
     await mkItem({ category: catDrinks, name: 'Water 500ml', basePrice: 75 });
 
     const sodas345 = SODAS.map((f) => drinkItems[`${f} 345ml`].id);
+    const sodas500 = SODAS_500ML.map((f) => drinkItems[`${f} 500ml`].id);
 
     // ===================================================================
     // DEALS (deal = MenuItem in "Deals" category + deal_components)
@@ -1236,12 +1263,21 @@ async function seed() {
     // milkshakes offered in every drink chooser at +Rs250 (client-confirmed).
     const drink345Slot = () => ({
         type: 'choice_list' as const,
-        sourceMenuItemIds: [...sodas345, ...milkshakeItems.map((m) => m.id)],
+        sourceMenuItemIds: [
+            ...sodas345,
+            ...sodas500,
+            ...milkshakeItems.map((m) => m.id),
+        ],
         quantity: 1,
         allowCustomization: false,
-        slotSurcharges: Object.fromEntries(
-            milkshakeItems.map((m) => [String(m.id), MILKSHAKE_UPGRADE]),
-        ),
+        slotSurcharges: {
+            ...Object.fromEntries(
+                milkshakeItems.map((m) => [String(m.id), MILKSHAKE_UPGRADE]),
+            ),
+            ...Object.fromEntries(
+                sodas500.map((id) => [String(id), UPGRADE_500ML]),
+            ),
+        },
     });
 
     await mkDeal({

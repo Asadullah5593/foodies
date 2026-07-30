@@ -589,6 +589,9 @@ async function seed() {
     // house style — single item per flavour); Water 500ml single-size.
     // Juice 200ml withdrawn.
     // ===================================================================
+    // Pepsi & 7up also come as a 500ml bottle (Rs 180) — client-confirmed
+    // across all brands; here it is a variant, Loranzo's house style.
+    const HAS_500ML = new Set(['Pepsi', '7up']);
     for (const flavour of SODAS) {
         await mkItem({
             category: catDrinks,
@@ -596,6 +599,9 @@ async function seed() {
             basePrice: 130,
             sizes: [
                 { name: '345ml', sizeKey: null, price: 130, isDefault: true },
+                ...(HAS_500ML.has(flavour)
+                    ? [{ name: '500ml', sizeKey: null, price: 180 }]
+                    : []),
                 { name: '1L', sizeKey: null, price: 199 },
                 { name: '1.5L', sizeKey: null, price: 249 },
             ],

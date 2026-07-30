@@ -191,6 +191,11 @@ const MILKSHAKE_FLAVOURS = [
     'Pistachio',
 ];
 const SOFT_DRINKS = ['Pepsi', 'Diet Pepsi', '7up', 'Mirinda', 'Mountain Dew'];
+// 500ml bottles — Pepsi & 7up only, Rs 180 standalone; +Rs 50 as an upgrade
+// wherever a 345ml drink is included (client-confirmed, all brands).
+const SODAS_500ML = ['Pepsi', '7up'];
+const PRICE_500ML = 180;
+const UPGRADE_500ML = 50;
 const DEAL_250ML = [
     'Pepsi 250ml',
     'Diet Pepsi 250ml',
@@ -649,6 +654,10 @@ async function seed() {
         { minSelect: 0, maxSelect: REPEAT_MAX, hideInDeals: true },
         [
             ...SOFT_DRINKS.map((f) => ({ name: `${f} 345ml`, price: 130 })),
+            ...SODAS_500ML.map((f) => ({
+                name: `${f} 500ml`,
+                price: PRICE_500ML,
+            })),
             { name: 'Water 500ml', price: 75 },
             ...SOFT_DRINKS.map((f) => ({ name: `${f} 1L`, price: 199 })),
             ...SOFT_DRINKS.map((f) => ({ name: `${f} 1.5L`, price: 249 })),
@@ -1098,9 +1107,13 @@ async function seed() {
         { minSelect: 1, maxSelect: 1, hideInDeals: true },
         [
             ...SOFT_DRINKS.map((s) => ({ name: `${s} 345ml` })),
+            // 500ml bottles are a paid upgrade over the included 345ml.
+            ...SODAS_500ML.map((s) => ({
+                name: `${s} 500ml`,
+                price: UPGRADE_500ML,
+            })),
             { name: 'Water 500ml' },
-            { name: 'Orange Juice 200ml' },
-            { name: 'Mango Juice 200ml' },
+            // Juices removed from the wrap meal chooser (client instruction).
             // Milkshakes are offered in every drink chooser at an extra price.
             ...MILKSHAKE_FLAVOURS.map((f) => ({
                 name: `${f} Milkshake`,
@@ -1278,6 +1291,13 @@ async function seed() {
             });
         }
     }
+    for (const flavour of SODAS_500ML) {
+        await mkItem({
+            category: catDrinks,
+            name: `${flavour} 500ml`,
+            basePrice: PRICE_500ML,
+        });
+    }
     await mkItem({ category: catDrinks, name: 'Water 500ml', basePrice: 75 });
 
     // Deal-only 250ml drinks (lunch-deal drink slots; hidden from the menu).
@@ -1297,6 +1317,9 @@ async function seed() {
     });
     const deal1LDrinks = await itemRepo.find({
         where: { brandId, name: In(SOFT_DRINKS.map((f) => `${f} 1L`)) },
+    });
+    const deal500Drinks = await itemRepo.find({
+        where: { brandId, name: In(SODAS_500ML.map((f) => `${f} 500ml`)) },
     });
 
     // ===================================================================
@@ -1370,6 +1393,11 @@ async function seed() {
     const drink250Ids = deal250Drinks.map((d) => d.id);
     const drink345Ids = deal345Drinks.map((d) => d.id);
     const drink1LIds = deal1LDrinks.map((d) => d.id);
+    const drink500Ids = deal500Drinks.map((d) => d.id);
+    // 500ml bottles upgrade an included 345ml drink for +Rs 50.
+    const drink500Surcharges = Object.fromEntries(
+        drink500Ids.map((id) => [String(id), UPGRADE_500ML]),
+    );
     // Every deal drink chooser also offers the milkshakes at +Rs250.
     const shakeItemIds = shakeItems.map((it) => it.id);
     const shakeUpgradeSurcharges = Object.fromEntries(
@@ -1548,10 +1576,17 @@ async function seed() {
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: [...drink345Ids, ...shakeItemIds],
+                sourceMenuItemIds: [
+                    ...drink345Ids,
+                    ...drink500Ids,
+                    ...shakeItemIds,
+                ],
                 quantity: 2,
                 allowCustomization: false,
-                slotSurcharges: shakeUpgradeSurcharges,
+                slotSurcharges: {
+                    ...shakeUpgradeSurcharges,
+                    ...drink500Surcharges,
+                },
             },
         ],
     });
@@ -1570,10 +1605,17 @@ async function seed() {
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: [...drink345Ids, ...shakeItemIds],
+                sourceMenuItemIds: [
+                    ...drink345Ids,
+                    ...drink500Ids,
+                    ...shakeItemIds,
+                ],
                 quantity: 1,
                 allowCustomization: false,
-                slotSurcharges: shakeUpgradeSurcharges,
+                slotSurcharges: {
+                    ...shakeUpgradeSurcharges,
+                    ...drink500Surcharges,
+                },
             },
         ],
     });
@@ -1599,10 +1641,17 @@ async function seed() {
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: [...drink345Ids, ...shakeItemIds],
+                sourceMenuItemIds: [
+                    ...drink345Ids,
+                    ...drink500Ids,
+                    ...shakeItemIds,
+                ],
                 quantity: 1,
                 allowCustomization: false,
-                slotSurcharges: shakeUpgradeSurcharges,
+                slotSurcharges: {
+                    ...shakeUpgradeSurcharges,
+                    ...drink500Surcharges,
+                },
             },
         ],
     });
@@ -1629,10 +1678,17 @@ async function seed() {
             },
             {
                 type: 'choice_list',
-                sourceMenuItemIds: [...drink345Ids, ...shakeItemIds],
+                sourceMenuItemIds: [
+                    ...drink345Ids,
+                    ...drink500Ids,
+                    ...shakeItemIds,
+                ],
                 quantity: 2,
                 allowCustomization: false,
-                slotSurcharges: shakeUpgradeSurcharges,
+                slotSurcharges: {
+                    ...shakeUpgradeSurcharges,
+                    ...drink500Surcharges,
+                },
             },
         ],
     });
