@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
@@ -253,6 +253,13 @@ const Orders: React.FC = () => {
   const canFilterSource = useHasPermission('orders:filter:source');
   const canFilterStatus = useHasPermission('orders:filter:status');
   const canFilterSearch = useHasPermission('orders:filter:search');
+  /**
+   * Changing the kitchen status is its own right. Without it the pill must be
+   * inert text, not a menu button — order-taking tablets read status, they do
+   * not drive the kitchen. The server guards the mutation too; this stops the
+   * UI offering an action that would be refused.
+   */
+  const canUpdateStatus = useHasPermission('orders:update-status');
   // Gate the rider-ops banner + auto-assign pill on the routes they link to, so
   // a user with orders:view but no rider-HRM / branch access never sees
   // dead-end buttons or the auto-assign status they cannot act on.
@@ -286,10 +293,7 @@ const Orders: React.FC = () => {
    * Layout is chosen from the table container's own measured width, not a
    * viewport breakpoint: the sidebar collapses and the page has padding, so the
    * viewport says nothing useful about how much room the table actually has.
-   * `null` until first measured; useLayoutEffect measures before paint, so the
-   * fallback never flashes.
    */
-  const tableRef = useRef<HTMLDivElement>(null);
   const [layout, setLayout] = useState<OrdersLayout | null>(null);
   const [measuredWidth, setMeasuredWidth] = useState(0);
 
@@ -301,17 +305,30 @@ const Orders: React.FC = () => {
     });
   }, []);
 
-  useLayoutEffect(() => {
-    const el = tableRef.current;
-    if (!el) return;
-    measure(el.getBoundingClientRect().width);
-    if (typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver((entries) => {
-      measure(entries[0]?.contentRect.width ?? 0);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [measure]);
+  /**
+   * A CALLBACK ref, not useRef + useLayoutEffect. This page returns a
+   * full-screen loader while the first fetch is in flight, so the table simply
+   * does not exist on the first render — an effect would run against a null ref,
+   * bail, and never re-run once the table mounted, leaving every user stuck on
+   * the fallback layout. A callback ref fires on every mount, so the table is
+   * measured whenever it actually appears.
+   */
+  const roRef = useRef<ResizeObserver | null>(null);
+  const setTableEl = useCallback(
+    (el: HTMLDivElement | null) => {
+      roRef.current?.disconnect();
+      roRef.current = null;
+      if (!el) return;
+      measure(el.getBoundingClientRect().width);
+      if (typeof ResizeObserver === 'undefined') return;
+      const ro = new ResizeObserver((entries) => {
+        measure(entries[0]?.contentRect.width ?? 0);
+      });
+      ro.observe(el);
+      roRef.current = ro;
+    },
+    [measure],
+  );
 
   const showGrid = layout === 'grid';
   const cardColumns = ordersCardColumns(measuredWidth);
@@ -598,6 +615,18 @@ const Orders: React.FC = () => {
   /** Kitchen-status pill; opens the custom popover. Used by grid rows and cards. */
   const statusPillFor = (o: OrderRow) => {
     const sm = STATUS_META[o.status ?? 'placed'] ?? STATUS_META.placed;
+    const label = ORDER_STATUS_LABELS[o.status ?? ''] ?? o.status;
+    if (!canUpdateStatus) {
+      return (
+        <span
+          aria-label={`Kitchen status for order #${o.order_number}: ${label}`}
+          className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[13px] font-bold ${sm.bg} ${sm.color}`}
+        >
+          <span className={`h-2 w-2 rounded-full ${sm.dot}`} />
+          {label}
+        </span>
+      );
+    }
     return (
       <button
         type="button"
@@ -1097,7 +1126,7 @@ const Orders: React.FC = () => {
       </div>}
 
       {/* Table: data grid on xl+, stacked cards below */}
-      <div ref={tableRef} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
+      <div ref={setTableEl} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
         {/* Wide enough for all 13 columns: data grid. overflow-x-auto is kept as a
             backstop only — at this width nothing should actually need to scroll. */}
         <div className={showGrid ? 'block' : 'hidden'}>
