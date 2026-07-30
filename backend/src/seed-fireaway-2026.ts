@@ -135,11 +135,17 @@ const VEGGIES = [
     'Pineapple',
     'Red Onion',
 ];
-// Cheesy Garlic Bread / wrap extra toppings: the new sheet blanked out
-// Beef Pepperoni and Kebab in this list.
-const SIDE_TOPPING_MEATS = MEATS.filter(
+// EXTRA-topping meat list — the 2026 sheet blanked out Beef Pepperoni and
+// Kebab wherever "Extra <meat>" is offered: pizza/calzone Add Extra Toppings,
+// Kids ("same extra toppings as Signature Pizzas"), lunch-deal 2-topping
+// chooser ("same options as Signature Pizza Extra Toppings"), Cheesy Garlic
+// Bread and wraps. Sausage stays.
+const EXTRA_TOPPING_MEATS = MEATS.filter(
     (m) => m !== 'Beef Pepperoni' && m !== 'Kebab',
 );
+// Build Your Own base meats — the sheet removed only Kebab here; Beef
+// Pepperoni is still choosable when building your own pizza.
+const BYO_MEATS = MEATS.filter((m) => m !== 'Kebab');
 const TOP_IT_OFF = [
     'Chilli Oil',
     'Garlic Oil',
@@ -578,7 +584,7 @@ async function seed() {
             maxSelect: REPEAT_MAX,
             includedQuantity: INCLUDED_TOPPINGS,
         },
-        MEATS.map((m) => ({ name: m, price: MEAT_PRICE })),
+        BYO_MEATS.map((m) => ({ name: m, price: MEAT_PRICE })),
     );
     const grpVegBYO = await mkGroup(
         'Choose Your Veggies',
@@ -600,7 +606,10 @@ async function seed() {
         'Add Extra Toppings',
         { minSelect: 0, maxSelect: REPEAT_MAX },
         [
-            ...MEATS.map((m) => ({ name: `Extra ${m}`, price: MEAT_PRICE })),
+            ...EXTRA_TOPPING_MEATS.map((m) => ({
+                name: `Extra ${m}`,
+                price: MEAT_PRICE,
+            })),
             ...VEGGIES.map((v) => ({ name: `Extra ${v}`, price: VEG_PRICE })),
         ],
     );
@@ -610,7 +619,7 @@ async function seed() {
         'Choose 2 Toppings',
         { minSelect: 0, maxSelect: 2, includedQuantity: 2 },
         [
-            ...MEATS.map((m) => ({ name: m })),
+            ...EXTRA_TOPPING_MEATS.map((m) => ({ name: m })),
             ...VEGGIES.map((v) => ({ name: v })),
         ],
     );
@@ -822,7 +831,10 @@ async function seed() {
         'Add Extra Toppings',
         { minSelect: 0, maxSelect: REPEAT_MAX },
         [
-            ...MEATS.map((m) => ({ name: `Extra ${m}`, price: 99 })),
+            ...EXTRA_TOPPING_MEATS.map((m) => ({
+                name: `Extra ${m}`,
+                price: 99,
+            })),
             ...VEGGIES.map((v) => ({ name: `Extra ${v}`, price: 49 })),
         ],
     );
@@ -901,7 +913,7 @@ async function seed() {
         'Add Extra Toppings',
         { minSelect: 0, maxSelect: REPEAT_MAX },
         [
-            ...SIDE_TOPPING_MEATS.map((m) => ({
+            ...EXTRA_TOPPING_MEATS.map((m) => ({
                 name: `Extra ${m}`,
                 price: 149,
             })),
