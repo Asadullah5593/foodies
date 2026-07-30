@@ -110,6 +110,11 @@ const FLAVOURS = [
     'Lemon and Herbs',
 ];
 const SODAS = ['Pepsi', 'Diet Pepsi', '7up', 'Mirinda', 'Mountain Dew'];
+// 500ml bottles — Pepsi & 7up only, Rs 180 standalone; +Rs 50 as an upgrade
+// wherever a 345ml drink is included (client-confirmed, all brands).
+const SODAS_500ML = ['Pepsi', '7up'];
+const PRICE_500ML = 180;
+const UPGRADE_500ML = 50;
 const MILKSHAKES = [
     'Oreo',
     'Nutella',
@@ -596,6 +601,11 @@ async function seed() {
         { minSelect: 1, maxSelect: 1, hideInDeals: true },
         [
             ...SODAS.map((s) => ({ name: `${s} 345ml` })),
+            // 500ml bottles are a paid upgrade over the included 345ml.
+            ...SODAS_500ML.map((s) => ({
+                name: `${s} 500ml`,
+                price: UPGRADE_500ML,
+            })),
             ...MILKSHAKES.map((m) => ({
                 name: `${m} Milkshake`,
                 price: MILKSHAKE_UPGRADE,
@@ -616,6 +626,11 @@ async function seed() {
         { minSelect: 1, maxSelect: 1, hideInDeals: true },
         [
             ...SODAS.map((s) => ({ name: `${s} 345ml` })),
+            // 500ml bottles are a paid upgrade over the included 345ml.
+            ...SODAS_500ML.map((s) => ({
+                name: `${s} 500ml`,
+                price: UPGRADE_500ML,
+            })),
             ...MILKSHAKES.map((m) => ({
                 name: `${m} Milkshake`,
                 price: MILKSHAKE_UPGRADE,
@@ -646,6 +661,10 @@ async function seed() {
         { minSelect: 0, maxSelect: 12, allowQuantity: true, hideInDeals: true },
         [
             ...SODAS.map((s) => ({ name: `${s} 345ml`, price: 130 })),
+            ...SODAS_500ML.map((s) => ({
+                name: `${s} 500ml`,
+                price: PRICE_500ML,
+            })),
             { name: 'Water 500ml', price: 75 },
             { name: 'Juice 200ml', price: 75 },
             ...SODAS.map((s) => ({ name: `${s} 1L`, price: 199 })),
@@ -1185,6 +1204,13 @@ async function seed() {
             drinkItems[`${flavour} ${label}`] = it;
         }
     }
+    for (const flavour of SODAS_500ML) {
+        drinkItems[`${flavour} 500ml`] = await mkItem({
+            category: catDrinks,
+            name: `${flavour} 500ml`,
+            basePrice: PRICE_500ML,
+        });
+    }
     await mkItem({ category: catDrinks, name: 'Water 500ml', basePrice: 75 });
     await mkItem({ category: catDrinks, name: 'Juice 200ml', basePrice: 75 });
 
@@ -1194,6 +1220,7 @@ async function seed() {
     });
 
     const sodas345 = SODAS.map((f) => drinkItems[`${f} 345ml`].id);
+    const sodas500 = SODAS_500ML.map((f) => drinkItems[`${f} 500ml`].id);
     const sodas1L = SODAS.map((f) => drinkItems[`${f} 1L`].id);
     const sodas15L = SODAS.map((f) => drinkItems[`${f} 1.5L`].id);
 
@@ -1253,6 +1280,7 @@ async function seed() {
     const optionalDrinkSlot = () => {
         const surcharges: Record<string, number> = {};
         for (const id of sodas345) surcharges[String(id)] = 130;
+        for (const id of sodas500) surcharges[String(id)] = PRICE_500ML;
         for (const id of sodas1L) surcharges[String(id)] = 199;
         for (const id of sodas15L) surcharges[String(id)] = 249;
         for (const m of milkshakeItems) surcharges[String(m.id)] = 499;
@@ -1260,6 +1288,7 @@ async function seed() {
             type: 'choice_list' as const,
             sourceMenuItemIds: [
                 ...sodas345,
+                ...sodas500,
                 ...sodas1L,
                 ...sodas15L,
                 ...milkshakeItems.map((m) => m.id),
@@ -1289,10 +1318,12 @@ async function seed() {
         const surcharges: Record<string, number> = {};
         for (const m of milkshakeItems)
             surcharges[String(m.id)] = MILKSHAKE_UPGRADE;
+        for (const id of sodas500) surcharges[String(id)] = UPGRADE_500ML;
         return {
             type: 'choice_list' as const,
             sourceMenuItemIds: [
                 ...sodas345,
+                ...sodas500,
                 ...milkshakeItems.map((m) => m.id),
             ],
             quantity,
@@ -1366,9 +1397,12 @@ async function seed() {
             sideSlot(1),
             {
                 type: 'choice_list',
-                sourceMenuItemIds: sodas345,
+                sourceMenuItemIds: [...sodas345, ...sodas500],
                 quantity: 1,
                 allowCustomization: false,
+                slotSurcharges: Object.fromEntries(
+                    sodas500.map((id) => [String(id), UPGRADE_500ML]),
+                ),
             },
         ],
     });
