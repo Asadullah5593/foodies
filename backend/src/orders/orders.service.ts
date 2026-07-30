@@ -6122,6 +6122,10 @@ export class OrdersService {
             stages.push({
                 kind: 'staff_discount',
                 funding: 'merchant',
+                // A give-away is a deliberate write-off of margin, so it may go
+                // below cost — a 100% comp has to reach zero. The tenant cap
+                // and the role ceiling remain the limits that bind it.
+                bypassesCostFloor: true,
                 compute: (running) => {
                     const r = this.evalOfferOnRunning(preset, evalCtx, running);
                     return r ? r.alloc : new Array<number>(n).fill(0);

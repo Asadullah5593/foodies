@@ -140,8 +140,8 @@ const RoleForm: React.FC = () => {
     }
     const trimmedPct = maxStaffPercent.trim();
     const parsedPct = trimmedPct === '' ? null : Number(trimmedPct);
-    if (parsedPct !== null && (!Number.isFinite(parsedPct) || parsedPct < 0 || parsedPct >= 100)) {
-      toast.error('Staff discount limit must be between 0 and 99.99% (leave blank for no limit)');
+    if (parsedPct !== null && (!Number.isFinite(parsedPct) || parsedPct < 0 || parsedPct > 100)) {
+      toast.error('Staff discount limit must be between 0 and 100% (leave blank for no limit)');
       return;
     }
     const trimmedAmt = maxStaffAmount.trim();
@@ -276,7 +276,7 @@ const RoleForm: React.FC = () => {
                   id="role-max-staff-percent"
                   type="number"
                   min={0}
-                  max={99.99}
+                  max={100}
                   step="0.01"
                   value={maxStaffPercent}
                   onChange={(e) => !isViewOnly && setMaxStaffPercent(e.target.value)}
@@ -304,7 +304,8 @@ const RoleForm: React.FC = () => {
                 percentage buttons; the cash figure caps what any button can actually take off,
                 which is the only limit that binds a flat &ldquo;Rs. 200 off&rdquo;. Buttons above
                 the limit are hidden at the till and refused by the server. E.g. 10% for a
-                cashier, 25% for a manager. Enter 0 to let this role grant nothing.
+                cashier, 25% for a manager, 100% for a role allowed to comp a whole bill.
+                Enter 0 to let this role grant nothing.
               </p>
             </div>
           </div>

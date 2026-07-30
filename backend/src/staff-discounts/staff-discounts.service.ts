@@ -110,11 +110,13 @@ export class StaffDiscountsService {
                 'Value must be greater than zero — a button that discounts nothing is not useful.',
             );
         }
-        // A full comp is not a till discount. Writing off a whole bill is a void
-        // or a refund, with its own approval and its own audit trail.
-        if (p.discountType === 'percentage' && value >= 100) {
+        // 100% is allowed — a full comp granted at the till. Who may actually
+        // grant it is the role ceiling's job, not this validation's. Above 100
+        // is a data-entry slip: a discount larger than the bill is not an
+        // intent anyone has.
+        if (p.discountType === 'percentage' && value > 100) {
             throw new BadRequestException(
-                'A staff discount must be under 100%. To write off a whole bill, void or refund the order instead.',
+                'A percentage discount cannot exceed 100%.',
             );
         }
         if (p.discountType === 'flat' && p.maxDiscountAmount != null) {

@@ -33,6 +33,14 @@ export interface EngineStage {
   kind: OfferStageKind;
   funding: 'merchant' | 'bank';
   /**
+   * Ignore the per-line "never below cost" floor for this stage. Set only by
+   * the staff-discount stage: a give-away granted by hand is a deliberate
+   * write-off of margin, so silently stopping it at cost would hand the
+   * customer less than the cashier promised. Automatic offers keep the floor —
+   * nobody chose those line by line.
+   */
+  bypassesCostFloor?: boolean;
+  /**
    * Given the current running per-line amounts (post previous stages), return
    * the raw desired discount for each line (index-aligned). Percentage offers
    * should compute against `running[i]`, flat/whole-order offers should
@@ -125,7 +133,8 @@ export function runOfferEngine(
     // Clamp each line to its floor + exclusion.
     let alloc = raw.map((d, i) => {
       if (excluded[i]) return 0;
-      const maxByFloor = Math.max(0, round2(running[i] - floorFor(i)));
+      const floor = stage.bypassesCostFloor ? 0 : floorFor(i);
+      const maxByFloor = Math.max(0, round2(running[i] - floor));
       const desired = Math.max(0, d ?? 0);
       return round2(Math.min(desired, maxByFloor));
     });

@@ -39,6 +39,7 @@ import { defaultVariantIdForItem } from './components/types';
 import { isMenuItemAvailableForOrderType } from '../../utils/menu-order-type';
 import { useRegisterPOSOrderType } from '../../contexts/POSOrderTypeContext';
 import { cartLineSupportsOrderType } from './orderTypeSupport';
+import { canPlaceOrder } from './checkoutGuards';
 import { computeModifiersPrice, resolveMinSelect, resolveMaxSelect, sizeKeyForSelection } from '../../utils/modifierPricing';
 
 const OrderTaking: React.FC = () => {
@@ -1026,7 +1027,14 @@ const OrderTaking: React.FC = () => {
       return;
     }
     const orderTotal = Number(quote?.total_amount ?? total ?? 0);
-    if (orderTotal <= 0) {
+    if (
+      !canPlaceOrder({
+        orderTotal,
+        itemCount: selectedItems.length,
+        discountAmount: Number(quote?.discount_amount ?? 0),
+        loyaltyDiscount: Number(quote?.loyalty_discount ?? 0),
+      })
+    ) {
       toast.error('Order total must be greater than zero');
       return;
     }
@@ -1045,6 +1053,11 @@ const OrderTaking: React.FC = () => {
       }
       if (cash > 0) payments.push({ method: 'cash', amount: cash });
       if (card > 0) payments.push({ method: 'card', amount: card });
+    }
+    // Fully comped: no money changes hands, but the order still needs one
+    // zero tender so processPayment advances it out of 'placed'.
+    if (payments.length === 0 && orderTotal === 0) {
+      payments.push({ method: 'cash', amount: 0 });
     }
     if (payments.length === 0) {
       toast.error('Please select payment method and ensure payment covers the total');
@@ -1251,7 +1264,14 @@ const OrderTaking: React.FC = () => {
       return;
     }
     const orderTotal = Number(quote?.total_amount ?? total ?? 0);
-    if (orderTotal <= 0) {
+    if (
+      !canPlaceOrder({
+        orderTotal,
+        itemCount: selectedItems.length,
+        discountAmount: Number(quote?.discount_amount ?? 0),
+        loyaltyDiscount: Number(quote?.loyalty_discount ?? 0),
+      })
+    ) {
       toast.error('Order total must be greater than zero');
       return;
     }
@@ -1270,6 +1290,11 @@ const OrderTaking: React.FC = () => {
       }
       if (cash > 0) payments.push({ method: 'cash', amount: cash });
       if (card > 0) payments.push({ method: 'card', amount: card });
+    }
+    // Fully comped: no money changes hands, but the order still needs one
+    // zero tender so processPayment advances it out of 'placed'.
+    if (payments.length === 0 && orderTotal === 0) {
+      payments.push({ method: 'cash', amount: 0 });
     }
     if (payments.length === 0) {
       toast.error('Please select payment method and ensure payment covers the total');
