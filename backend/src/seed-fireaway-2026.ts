@@ -34,7 +34,9 @@
  * ───────────────────────────────────────────────────────────────────────────
  * WHAT CHANGED vs the previous menu
  * ───────────────────────────────────────────────────────────────────────────
- *  1. Sizes collapsed to Large 12" only (7", 9"/10" and 14" withdrawn).
+ *  1. Sizes collapsed to Large 12" only (7", 9"/10" and 14" withdrawn) —
+ *     with ONE exception: the Power Lunch Offer's deal-only build-your-own
+ *     pizza stays a 9" base, per the sheet (client-confirmed).
  *     Extra toppings are now flat: meat Rs199, veg Rs89, extra cheese Rs249.
  *     3 meats + 3 veg included; 1 free dip.  [client: "its 12""]
  *  2. Coca-Cola range → Pepsi range (Pepsi, Diet Pepsi, 7up, Mirinda,
@@ -135,11 +137,17 @@ const VEGGIES = [
     'Pineapple',
     'Red Onion',
 ];
-// Cheesy Garlic Bread / wrap extra toppings: the new sheet blanked out
-// Beef Pepperoni and Kebab in this list.
-const SIDE_TOPPING_MEATS = MEATS.filter(
+// EXTRA-topping meat list — the 2026 sheet blanked out Beef Pepperoni and
+// Kebab wherever "Extra <meat>" is offered: pizza/calzone Add Extra Toppings,
+// Kids ("same extra toppings as Signature Pizzas"), lunch-deal 2-topping
+// chooser ("same options as Signature Pizza Extra Toppings"), Cheesy Garlic
+// Bread and wraps. Sausage stays.
+const EXTRA_TOPPING_MEATS = MEATS.filter(
     (m) => m !== 'Beef Pepperoni' && m !== 'Kebab',
 );
+// Build Your Own base meats — the sheet removed only Kebab here; Beef
+// Pepperoni is still choosable when building your own pizza.
+const BYO_MEATS = MEATS.filter((m) => m !== 'Kebab');
 const TOP_IT_OFF = [
     'Chilli Oil',
     'Garlic Oil',
@@ -578,7 +586,7 @@ async function seed() {
             maxSelect: REPEAT_MAX,
             includedQuantity: INCLUDED_TOPPINGS,
         },
-        MEATS.map((m) => ({ name: m, price: MEAT_PRICE })),
+        BYO_MEATS.map((m) => ({ name: m, price: MEAT_PRICE })),
     );
     const grpVegBYO = await mkGroup(
         'Choose Your Veggies',
@@ -600,7 +608,10 @@ async function seed() {
         'Add Extra Toppings',
         { minSelect: 0, maxSelect: REPEAT_MAX },
         [
-            ...MEATS.map((m) => ({ name: `Extra ${m}`, price: MEAT_PRICE })),
+            ...EXTRA_TOPPING_MEATS.map((m) => ({
+                name: `Extra ${m}`,
+                price: MEAT_PRICE,
+            })),
             ...VEGGIES.map((v) => ({ name: `Extra ${v}`, price: VEG_PRICE })),
         ],
     );
@@ -610,7 +621,7 @@ async function seed() {
         'Choose 2 Toppings',
         { minSelect: 0, maxSelect: 2, includedQuantity: 2 },
         [
-            ...MEATS.map((m) => ({ name: m })),
+            ...EXTRA_TOPPING_MEATS.map((m) => ({ name: m })),
             ...VEGGIES.map((v) => ({ name: v })),
         ],
     );
@@ -822,7 +833,10 @@ async function seed() {
         'Add Extra Toppings',
         { minSelect: 0, maxSelect: REPEAT_MAX },
         [
-            ...MEATS.map((m) => ({ name: `Extra ${m}`, price: 99 })),
+            ...EXTRA_TOPPING_MEATS.map((m) => ({
+                name: `Extra ${m}`,
+                price: 99,
+            })),
             ...VEGGIES.map((v) => ({ name: `Extra ${v}`, price: 49 })),
         ],
     );
@@ -901,7 +915,7 @@ async function seed() {
         'Add Extra Toppings',
         { minSelect: 0, maxSelect: REPEAT_MAX },
         [
-            ...SIDE_TOPPING_MEATS.map((m) => ({
+            ...EXTRA_TOPPING_MEATS.map((m) => ({
                 name: `Extra ${m}`,
                 price: 149,
             })),
@@ -1382,17 +1396,21 @@ async function seed() {
         ],
     });
 
-    // Power Lunch Offer — a 12" build-your-own pizza (base + cheese + 2 free
-    // toppings) OR a pasta, flat Rs899. The à-la-carte BYO item is not reused:
-    // its meat/veg groups include 3 free each plus charged extras, well beyond
-    // the deal's "2 toppings" grant.
+    // Power Lunch Offer — a 9" build-your-own pizza (base + cheese + 2 free
+    // toppings) OR a pasta, flat Rs899. The sheet keeps this deal on a 9" base
+    // (client-confirmed) even though 9" left the à-la-carte menu — so the
+    // deal-only item carries the menu's ONLY 9" variant. The à-la-carte BYO
+    // item is not reused: its meat/veg groups include 3 free each plus charged
+    // extras, well beyond the deal's "2 toppings" grant.
     const byoLunchDeal = await mkItem({
         category: catBYO,
         name: 'Build Your Own Pizza (Lunch Deal)',
         description:
-            'Your 12" pizza, built your way: choose a base, cheese and 2 toppings.',
+            'Your 9" pizza, built your way: choose a base, cheese and 2 toppings.',
         basePrice: PRICE_BYO,
-        sizes: large12(PRICE_BYO),
+        sizes: [
+            { name: '9"', sizeKey: '9', price: PRICE_BYO, isDefault: true },
+        ],
         dealOnly: true, // used only inside this deal — hidden from the menu
     });
     await linkGroups(byoLunchDeal, [
@@ -1405,7 +1423,7 @@ async function seed() {
         name: 'Power Lunch Offer',
         appAndPosOnly: true, // sheet: "FIREAWAY APP & E-Pos ONLY"
         description:
-            'A 12" build-your-own pizza (base, cheese & 2 toppings) or a pasta for only Rs 899. Monday–Friday 12–4pm.',
+            'A 9" build-your-own pizza (base, cheese & 2 toppings) or a pasta for only Rs 899. Monday–Friday 12–4pm.',
         price: 899,
         lunch: true,
         slots: [
@@ -1417,7 +1435,7 @@ async function seed() {
                 ],
                 quantity: 1,
                 allowCustomization: true,
-                slotSizeKey: SIZE, // pizza pins to 12"; pasta is sizeless (no-op)
+                slotSizeKey: '9', // pizza pins to its 9" variant; pasta is sizeless (no-op)
             },
         ],
     });
