@@ -25,6 +25,7 @@
     "seed:fireaway-real": "ts-node -r tsconfig-paths/register src/seed-fireaway-real.ts",
     "seed:fireaway-2026": "ts-node -r tsconfig-paths/register src/seed-fireaway-2026.ts",
     "seed:loranzo-real": "ts-node -r tsconfig-paths/register src/seed-loranzo-real.ts",
+    "seed:loranzo-2026": "ts-node -r tsconfig-paths/register src/seed-loranzo-2026.ts",
     "seed:pizza-pasta": "ts-node -r tsconfig-paths/register src/seed-pizza-pasta.ts",
     "seed:inventory": "ts-node -r tsconfig-paths/register src/seed-inventory.ts",
     "seed:uoms": "ts-node -r tsconfig-paths/register src/seed-uoms.ts",
