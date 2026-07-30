@@ -34,7 +34,9 @@
  * ───────────────────────────────────────────────────────────────────────────
  * WHAT CHANGED vs the previous menu
  * ───────────────────────────────────────────────────────────────────────────
- *  1. Sizes collapsed to Large 12" only (7", 9"/10" and 14" withdrawn).
+ *  1. Sizes collapsed to Large 12" only (7", 9"/10" and 14" withdrawn) —
+ *     with ONE exception: the Power Lunch Offer's deal-only build-your-own
+ *     pizza stays a 9" base, per the sheet (client-confirmed).
  *     Extra toppings are now flat: meat Rs199, veg Rs89, extra cheese Rs249.
  *     3 meats + 3 veg included; 1 free dip.  [client: "its 12""]
  *  2. Coca-Cola range → Pepsi range (Pepsi, Diet Pepsi, 7up, Mirinda,
@@ -1394,17 +1396,21 @@ async function seed() {
         ],
     });
 
-    // Power Lunch Offer — a 12" build-your-own pizza (base + cheese + 2 free
-    // toppings) OR a pasta, flat Rs899. The à-la-carte BYO item is not reused:
-    // its meat/veg groups include 3 free each plus charged extras, well beyond
-    // the deal's "2 toppings" grant.
+    // Power Lunch Offer — a 9" build-your-own pizza (base + cheese + 2 free
+    // toppings) OR a pasta, flat Rs899. The sheet keeps this deal on a 9" base
+    // (client-confirmed) even though 9" left the à-la-carte menu — so the
+    // deal-only item carries the menu's ONLY 9" variant. The à-la-carte BYO
+    // item is not reused: its meat/veg groups include 3 free each plus charged
+    // extras, well beyond the deal's "2 toppings" grant.
     const byoLunchDeal = await mkItem({
         category: catBYO,
         name: 'Build Your Own Pizza (Lunch Deal)',
         description:
-            'Your 12" pizza, built your way: choose a base, cheese and 2 toppings.',
+            'Your 9" pizza, built your way: choose a base, cheese and 2 toppings.',
         basePrice: PRICE_BYO,
-        sizes: large12(PRICE_BYO),
+        sizes: [
+            { name: '9"', sizeKey: '9', price: PRICE_BYO, isDefault: true },
+        ],
         dealOnly: true, // used only inside this deal — hidden from the menu
     });
     await linkGroups(byoLunchDeal, [
@@ -1417,7 +1423,7 @@ async function seed() {
         name: 'Power Lunch Offer',
         appAndPosOnly: true, // sheet: "FIREAWAY APP & E-Pos ONLY"
         description:
-            'A 12" build-your-own pizza (base, cheese & 2 toppings) or a pasta for only Rs 899. Monday–Friday 12–4pm.',
+            'A 9" build-your-own pizza (base, cheese & 2 toppings) or a pasta for only Rs 899. Monday–Friday 12–4pm.',
         price: 899,
         lunch: true,
         slots: [
@@ -1429,7 +1435,7 @@ async function seed() {
                 ],
                 quantity: 1,
                 allowCustomization: true,
-                slotSizeKey: SIZE, // pizza pins to 12"; pasta is sizeless (no-op)
+                slotSizeKey: '9', // pizza pins to its 9" variant; pasta is sizeless (no-op)
             },
         ],
     });
