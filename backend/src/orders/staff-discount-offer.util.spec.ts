@@ -200,15 +200,15 @@ describe('staff_discount stage in the pricing engine', () => {
         expect(r.totalDiscount).toBe(200);
     });
 
-    it('respects the cost floor — a give-away never sells below cost', () => {
+    it('goes below cost when the stage bypasses the floor', () => {
         const r = runOfferEngine(
             [line(1000, { lineCost: 950 })],
-            [staffStage(25)],
+            [{ ...staffStage(25), bypassesCostFloor: true }],
             {
                 ...DEFAULT_OFFER_SETTINGS,
             },
         );
-        expect(r.byKind.staff_discount).toBe(50);
+        expect(r.byKind.staff_discount).toBe(250);
     });
 
     it('leaves deal lines alone by default', () => {
@@ -219,5 +219,94 @@ describe('staff_discount stage in the pricing engine', () => {
         );
         expect(r.lines[0].totalDiscount).toBe(0);
         expect(r.lines[1].totalDiscount).toBe(50);
+    });
+});
+
+describe('full comp (100%)', () => {
+    const line = (
+        subtotal: number,
+        over: Partial<EngineLine> = {},
+    ): EngineLine => ({
+        itemSubtotal: subtotal,
+        lineCost: null,
+        isDeal: false,
+        isOverridden: false,
+        ...over,
+    });
+
+    it('takes the whole discountable base', () => {
+        expect(staffDiscountRawAmount(preset({ value: 100 }), 1299)).toBe(1299);
+    });
+
+    it('zeroes the bill through the engine', () => {
+        const r = runOfferEngine(
+            [line(1299)],
+            [
+                {
+                    kind: 'staff_discount',
+                    funding: 'merchant',
+                    compute: (running) => running.slice(),
+                },
+            ],
+            { ...DEFAULT_OFFER_SETTINGS },
+        );
+        expect(r.byKind.staff_discount).toBe(1299);
+        expect(r.lines[0].after).toBe(0);
+    });
+
+    it('needs a role ceiling of 100 — a 25% manager still cannot grant it', () => {
+        const p = preset({ value: 100 });
+        expect(
+            staffDiscountWithinCeiling(
+                p,
+                { maxPercent: 25, maxAmount: null },
+                1299,
+            ),
+        ).toBe(false);
+        expect(
+            staffDiscountWithinCeiling(
+                p,
+                { maxPercent: 100, maxAmount: null },
+                1299,
+            ),
+        ).toBe(true);
+    });
+
+    it('reaches zero even on an item with a cost price', () => {
+        // The staff-discount stage bypasses the cost floor: a give-away is a
+        // deliberate write-off of margin, so a 100% comp must actually reach
+        // zero rather than silently stopping at cost.
+        const r = runOfferEngine(
+            [line(1299, { lineCost: 400 })],
+            [
+                {
+                    kind: 'staff_discount',
+                    funding: 'merchant',
+                    bypassesCostFloor: true,
+                    compute: (running) => running.slice(),
+                },
+            ],
+            { ...DEFAULT_OFFER_SETTINGS },
+        );
+        expect(r.byKind.staff_discount).toBe(1299);
+        expect(r.lines[0].after).toBe(0);
+    });
+
+    it('does NOT lift the floor for other stages in the same order', () => {
+        // Only the staff stage sets the flag; an automatic promo on the same
+        // cart still stops at cost.
+        const r = runOfferEngine(
+            [line(1000, { lineCost: 700 })],
+            [
+                {
+                    kind: 'product_promotion',
+                    funding: 'merchant',
+                    compute: (running) => running.slice(),
+                },
+            ],
+            { ...DEFAULT_OFFER_SETTINGS },
+        );
+        expect(r.byKind.product_promotion).toBe(300);
+        expect(r.lines[0].after).toBe(700);
     });
 });

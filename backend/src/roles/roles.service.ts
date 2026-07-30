@@ -184,10 +184,10 @@ export class RolesService {
             name: dto.name,
             slug: slug || dto.slug,
             orderHistoryDays: this.normalizeHistoryDays(dto.order_history_days),
-            // Capped at 99.99: a 100% comp is a void/refund, not a till discount.
+            // 100 is a legal ceiling — it is what lets a role grant a full comp.
             maxStaffDiscountPercent: this.normalizeCeiling(
                 dto.max_staff_discount_percent,
-                99.99,
+                100,
             ),
             maxStaffDiscountAmount: this.normalizeCeiling(
                 dto.max_staff_discount_amount,
@@ -228,7 +228,7 @@ export class RolesService {
         if (dto.max_staff_discount_percent !== undefined) {
             role.maxStaffDiscountPercent = this.normalizeCeiling(
                 dto.max_staff_discount_percent,
-                99.99,
+                100,
             );
         }
         if (dto.max_staff_discount_amount !== undefined) {

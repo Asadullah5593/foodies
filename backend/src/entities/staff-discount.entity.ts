@@ -41,8 +41,9 @@ export class StaffDiscount {
     discountType: 'percentage' | 'flat';
 
     /**
-     * Percent (0 < v < 100 — a 100% comp is not grantable at the till) or a flat
-     * currency amount, per `discountType`.
+     * Percent (0 < v <= 100; 100 is a full comp) or a flat currency amount, per
+     * `discountType`. Who may actually grant a given size is the role ceiling's
+     * job — `roles.max_staff_discount_percent` — not this column's.
      */
     @Column({ type: 'decimal', precision: 10, scale: 2 })
     value: number;

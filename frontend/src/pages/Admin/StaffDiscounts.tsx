@@ -152,8 +152,8 @@ const StaffDiscounts: React.FC = () => {
       toast.error('Value must be greater than zero');
       return;
     }
-    if (form.discount_type === 'percentage' && Number(form.value) >= 100) {
-      toast.error('A staff discount must be under 100%. To write off a whole bill, void or refund the order.');
+    if (form.discount_type === 'percentage' && Number(form.value) > 100) {
+      toast.error('A percentage discount cannot exceed 100%.');
       return;
     }
     saveMutation.mutate();
@@ -333,7 +333,7 @@ const StaffDiscounts: React.FC = () => {
               <input
                 type="number"
                 min={0}
-                max={form.discount_type === 'percentage' ? 99.99 : undefined}
+                max={form.discount_type === 'percentage' ? 100 : undefined}
                 value={form.value}
                 onChange={(e) => setForm({ ...form, value: e.target.value === '' ? '' : Number(e.target.value) })}
                 className={offerInput}
@@ -361,8 +361,9 @@ const StaffDiscounts: React.FC = () => {
 
           <p className="flex items-start gap-1.5 text-[12px] leading-snug text-gray-400">
             <MdInfoOutline size={14} className="mt-px shrink-0" />
-            A staff discount must be under 100%. To write off a whole bill, void or refund the order instead — that
-            keeps its own approval and audit trail. Your tenant&apos;s maximum-total-discount cap still applies on top.
+            100% is allowed — that is a full comp, and the bill goes to zero. Who may grant it is set per role under{' '}
+            <span className="font-medium text-gray-500">Roles → Staff discount limit</span>; a role has to be set to
+            100 before its cashiers see the button. Your tenant&apos;s maximum-total-discount cap still applies on top.
           </p>
 
           {allowedBrandIds == null && (
