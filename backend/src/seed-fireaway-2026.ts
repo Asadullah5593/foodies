@@ -634,10 +634,15 @@ async function seed() {
             ...VEGGIES.map((v) => ({ name: v })),
         ],
     );
+    // Calzone withdrawn (client, 2026-07-31) — Pizza only. To re-enable,
+    // restore the commented option.
     const grpPizzaOrCalzone = await mkGroup(
         'Pizza or Calzone',
         { minSelect: 1, maxSelect: 1 },
-        [{ name: 'Pizza' }, { name: 'Calzone' }],
+        [
+            { name: 'Pizza' },
+            // { name: 'Calzone' },
+        ],
     );
     // Dips on a pizza/calzone: 1 free on 12", then a tiered bundle price
     // (1=99, 2=169, 3=249) for the extras.
