@@ -556,11 +556,15 @@ async function seed() {
     // ===================================================================
     // SHARED MODIFIER GROUPS (reused across items via M2M)
     // ===================================================================
-    // Only 12" survives, so Thin and Regular are both always available.
+    // Thin Crust withdrawn across Fireaway (client, 2026-07-31) — the group
+    // stays with Regular only. To re-enable, restore the commented option.
     const grpCrust = await mkGroup(
         'Choose your Crust',
         { minSelect: 1, maxSelect: 1 },
-        [{ name: 'Thin Crust' }, { name: 'Regular Crust' }],
+        [
+            // { name: 'Thin Crust' },
+            { name: 'Regular Crust' },
+        ],
     );
     const grpBase = await mkGroup(
         'Choose Your Base',
@@ -1177,7 +1181,10 @@ async function seed() {
     const grpChocCrust = await mkGroup(
         'Crust',
         { minSelect: 1, maxSelect: 1 },
-        [{ name: 'Thin Crust' }, { name: 'Regular' }],
+        [
+            // { name: 'Thin Crust' }, // withdrawn with the pizza thin crust
+            { name: 'Regular' },
+        ],
     );
     // "Bananas" dropped in the 2026 sheet.
     const grpChocToppings = await mkGroup(
