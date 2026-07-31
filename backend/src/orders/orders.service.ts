@@ -3513,6 +3513,8 @@ export class OrdersService {
             order_type?: string;
             /** Where the order was taken: pos | consumer_app | kiosk. */
             source?: string;
+            /** Tender type: cash | card. A split order matches either. */
+            payment_method?: string;
             date_from?: string;
             date_to?: string;
             has_rider?: boolean;
@@ -3614,6 +3616,16 @@ export class OrdersService {
             // silently match nothing rather than filtering.
             if (filters.source && ORDER_SOURCES.includes(filters.source))
                 qb.andWhere('o.source = :source', { source: filters.source });
+            // Tender-type filter: the order has at least one tender of this
+            // method, so a cash+card split shows under both views.
+            if (
+                filters.payment_method &&
+                ['cash', 'card'].includes(filters.payment_method)
+            )
+                qb.andWhere(
+                    'EXISTS (SELECT 1 FROM payments pm WHERE pm.order_id = o.id AND pm.payment_method = :pmMethod)',
+                    { pmMethod: filters.payment_method },
+                );
             if (filters.date_from)
                 qb.andWhere('date(o.placed_at) >= :dateFrom', {
                     dateFrom: filters.date_from,
