@@ -519,11 +519,14 @@ async function seed() {
         ),
     );
 
-    // Salad groups — all free, multi-choice. "Remove" (item comes loaded) vs "Add" (item comes plain).
+    // Salad groups — all free, multi-choice. "Remove" (item comes loaded) vs
+    // "Add" (item comes plain). The sheet lists an explicit "As it comes"
+    // first option on every burger salad column (client-confirmed).
     const saladRemoveLTOJ = await mkGroup(
         'Salad Options',
         { minSelect: 0, maxSelect: 4 },
         [
+            'As it Comes',
             'Remove Lettuce',
             'Remove Tomato',
             'Remove Onion',
@@ -533,16 +536,19 @@ async function seed() {
     const saladAddLTOJ = await mkGroup(
         'Salad Options',
         { minSelect: 0, maxSelect: 4 },
-        ['Add Lettuce', 'Add Tomato', 'Add Onion', 'Add Jalapenos'].map(
-            (s) => ({
-                name: s,
-            }),
-        ),
+        [
+            'As it Comes',
+            'Add Lettuce',
+            'Add Tomato',
+            'Add Onion',
+            'Add Jalapenos',
+        ].map((s) => ({ name: s })),
     );
     const saladRemovePine = await mkGroup(
         'Salad Options',
         { minSelect: 0, maxSelect: 4 },
         [
+            'As it Comes',
             'Remove Lettuce',
             'Remove Tomato',
             'Remove Onion',
@@ -553,6 +559,7 @@ async function seed() {
         'Salad Options',
         { minSelect: 0, maxSelect: 4 },
         [
+            'As it Comes',
             'Remove Lettuce',
             'Remove Tomato',
             'Remove Onion',
@@ -563,6 +570,7 @@ async function seed() {
         'Salad Options',
         { minSelect: 0, maxSelect: 4 },
         [
+            'As it Comes',
             'Remove Onion',
             'Remove Mushroom',
             'Remove Pickle',
@@ -573,6 +581,7 @@ async function seed() {
         'Salad Options',
         { minSelect: 0, maxSelect: 5 },
         [
+            'As it Comes',
             'Add Lettuce',
             'Add Tomato',
             'Add Onion',
@@ -712,7 +721,14 @@ async function seed() {
         'Peri Peri Chicken',
         'Our famous juicy grill chicken with secret herbs & a special blend of sauces',
     );
-    const catBurgers = await mkCategory('Burgers');
+    // The sheet splits Burgers into named subsections; no subcategory
+    // mechanism exists, so they become three real categories. The old
+    // "Burgers" category empties out and is retired by the sweep below.
+    // (Sheet also heads "PERI PERI SPECIAL" over the Peperico Special Burger
+    // alone — folded into Chicken Burgers per the client's three-way list.)
+    const catBeefSmashed = await mkCategory('Beef Smashed Special');
+    const catChickenBurgers = await mkCategory('Chicken Burgers');
+    const catSupremeBurgers = await mkCategory('Special Supreme Burgers');
     const catWraps = await mkCategory(
         'Firey Wraps',
         'All wraps come with lettuce, onion, cucumber and mayo',
@@ -760,13 +776,14 @@ async function seed() {
     // BURGERS (à la carte)
     // ===================================================================
     const mkBurger = async (
+        category: MenuCategory,
         name: string,
         price: number,
         description: string,
         intrinsic: ModifierGroup[],
     ) => {
         const it = await mkItem({
-            category: catBurgers,
+            category,
             name,
             description,
             basePrice: price,
@@ -779,6 +796,7 @@ async function seed() {
     // Keeps its flavour group: the new sheet blanked the flavour cells only as
     // collateral from deleting the withdrawn Peri Peri Burger Meal rows.
     const periBurger = await mkBurger(
+        catChickenBurgers,
         'Peperico Special Burger',
         649,
         'Special blend of peri peri grilled chicken burger with lettuce, tomatoes, onion, jalapenos and peri peri mayo',
@@ -787,30 +805,35 @@ async function seed() {
 
     // — Beef smashed —
     await mkBurger(
+        catBeefSmashed,
         'Smashed Classic',
         899,
         '5oz juicy beef and a cheese slice with our special secret grill sauce',
         [grpCheese, grpMeatBeef, saladAddLTOJ, grpSauceSecret],
     );
     const wildMushroom = await mkBurger(
+        catBeefSmashed,
         'Wild Mushroom Smashed',
         999,
         'Smashed beef with wild mushrooms and sauteed onions, a choice of cheese and our special grill sauce',
         [grpCheese, grpMeatBeef, saladAddLTOJ, grpSauceSecret],
     );
     await mkBurger(
+        catBeefSmashed,
         'California Smash',
         1199,
         '2 perfectly smashed grilled beef patties with double cheese, double onion and double sauce',
         [grpCheese, grpMeatPatty, saladAddLTOJ, grpSauceSecret],
     );
     await mkBurger(
+        catBeefSmashed,
         'Saucy Pine Smashed',
         999,
         'A perfectly grilled pineapple with smashed beef, lettuce, fresh onions, tomato and our secret grill sauce',
         [grpCheese, grpMeatBeef, saladRemovePine, grpSauceSecret],
     );
     const oldGold = await mkBurger(
+        catBeefSmashed,
         'Old & Gold Smashed',
         899,
         'Perfectly smashed beef & cheese with fresh lettuce, fresh onions, tomato, pickle and our secret grill sauce',
@@ -821,6 +844,7 @@ async function seed() {
     const crispyBurgers: MenuItem[] = [];
     crispyBurgers.push(
         await mkBurger(
+            catChickenBurgers,
             'Crispy Blaze',
             549,
             'Our best fried chicken with fresh iceberg lettuce and mayo',
@@ -829,6 +853,7 @@ async function seed() {
     );
     crispyBurgers.push(
         await mkBurger(
+            catChickenBurgers,
             'Spicey Sizzler',
             549,
             'Our special spicy fried chicken with iceberg lettuce and our secret burger sauce',
@@ -837,6 +862,7 @@ async function seed() {
     );
     crispyBurgers.push(
         await mkBurger(
+            catChickenBurgers,
             'Crisp Tower',
             749,
             'Double the crisp with fresh lettuce and mayo',
@@ -845,6 +871,7 @@ async function seed() {
     );
     crispyBurgers.push(
         await mkBurger(
+            catChickenBurgers,
             'Sizzler Tower',
             749,
             'Double sizzler with fresh lettuce and our secret burger sauce',
@@ -854,6 +881,7 @@ async function seed() {
     crispyBurgers.push(
         // Snap Chick: sheet explicitly says "NO EXTRA SALAD OPTION" → no salad group.
         await mkBurger(
+            catChickenBurgers,
             'Snap Chick',
             299,
             'Crispy chicken with lettuce and mayo',
@@ -863,18 +891,21 @@ async function seed() {
 
     // — Special supreme —
     await mkBurger(
+        catSupremeBurgers,
         'Supreme Smashed',
         1399,
         'A perfectly grilled layer of pineapple with 2 smashed beef patties, wild mushrooms, sauteed onions and pickle, a choice of cheese and our special grill sauce',
         [grpCheese, grpMeatPatty, saladRemoveSupreme, grpSauceSecret],
     );
     await mkBurger(
+        catSupremeBurgers,
         'Supreme Combo',
         1099,
         'A special treat of our smashed beef and blend of peri peri grilled chicken together with lettuce, tomatoes, onion, jalapenos and our secret burger sauce',
         [grpCheese, saladRemoveLTOJ, grpSauceSecret],
     );
     await mkBurger(
+        catSupremeBurgers,
         'Kiwi Kick',
         1199,
         'A real kiwi flavour of smashed beef with fried egg, cheese, lettuce, tomato, onion, jalapenos and mustard sauce',
