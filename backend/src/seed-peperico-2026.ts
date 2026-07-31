@@ -465,16 +465,10 @@ async function seed() {
         { name: 'Double Meat', price: 250 },
         { name: 'Triple Meat', price: 500 },
     ]);
-    // Crispy chicken burgers: paid extra fillet (client-confirmed +200/+400).
-    const grpMeatCrispy = await mkGroup(
-        'Meat',
-        { minSelect: 1, maxSelect: 1 },
-        [
-            { name: 'As it comes' },
-            { name: 'Add Extra Crispy Fillet', price: 200 },
-            { name: 'Add 2 Extra Crispy Fillets', price: 400 },
-        ],
-    );
+    // NOTE: crispy chicken burgers carry NO meat multiplier — the sheet's
+    // Chicken Burgers block has no Meat column (the old "+200/+400 extra
+    // fillet" came from a verbal note and was removed 2026-07-31; pending
+    // final client confirmation).
     const grpMeatPatty = await mkGroup('Meat', { minSelect: 1, maxSelect: 1 }, [
         { name: 'As it comes' },
         { name: 'Add Extra single patty', price: 250 },
@@ -847,7 +841,7 @@ async function seed() {
             'Crispy Blaze',
             549,
             'Our best fried chicken with fresh iceberg lettuce and mayo',
-            [grpCheese, grpMeatCrispy, saladAddCrispy, grpSauceCrispy],
+            [grpCheese, saladAddCrispy, grpSauceCrispy],
         ),
     );
     crispyBurgers.push(
@@ -856,7 +850,7 @@ async function seed() {
             'Spicey Sizzler',
             549,
             'Our special spicy fried chicken with iceberg lettuce and our secret burger sauce',
-            [grpCheese, grpMeatCrispy, saladAddCrispy, grpSauceCrispy],
+            [grpCheese, saladAddCrispy, grpSauceCrispy],
         ),
     );
     crispyBurgers.push(
@@ -865,7 +859,7 @@ async function seed() {
             'Crisp Tower',
             749,
             'Double the crisp with fresh lettuce and mayo',
-            [grpCheese, grpMeatCrispy, saladAddCrispy, grpSauceCrispy],
+            [grpCheese, saladAddCrispy, grpSauceCrispy],
         ),
     );
     crispyBurgers.push(
@@ -874,7 +868,7 @@ async function seed() {
             'Sizzler Tower',
             749,
             'Double sizzler with fresh lettuce and our secret burger sauce',
-            [grpCheese, grpMeatCrispy, saladAddCrispy, grpSauceCrispy],
+            [grpCheese, saladAddCrispy, grpSauceCrispy],
         ),
     );
     crispyBurgers.push(
@@ -884,7 +878,7 @@ async function seed() {
             'Snap Chick',
             299,
             'Crispy chicken with lettuce and mayo',
-            [grpCheese, grpMeatCrispy, grpSauceCrispy],
+            [grpCheese, grpSauceCrispy],
         ),
     );
 
