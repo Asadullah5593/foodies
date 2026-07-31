@@ -135,6 +135,7 @@ export class AdminOrdersController {
         @Query('status') status: string,
         @Query('order_type') orderType: string,
         @Query('source') source: string,
+        @Query('payment_method') paymentMethod: string,
         @Query('date_from') dateFrom: string,
         @Query('date_to') dateTo: string,
         @Query('has_rider') hasRider: string,
@@ -150,6 +151,7 @@ export class AdminOrdersController {
                 status,
                 order_type: orderType || undefined,
                 source: source || undefined,
+                payment_method: paymentMethod || undefined,
                 date_from: dateFrom,
                 date_to: dateTo,
                 has_rider:

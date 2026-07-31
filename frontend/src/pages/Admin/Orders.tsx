@@ -253,6 +253,7 @@ const Orders: React.FC = () => {
   const canFilterSource = useHasPermission('orders:filter:source');
   const canFilterStatus = useHasPermission('orders:filter:status');
   const canFilterSearch = useHasPermission('orders:filter:search');
+  const canFilterPayment = useHasPermission('orders:filter:payment');
   /**
    * Changing the kitchen status is its own right. Without it the pill must be
    * inert text, not a menu button — order-taking tablets read status, they do
@@ -341,6 +342,7 @@ const Orders: React.FC = () => {
   const status = searchParams.get('status') || '';
   const orderType = searchParams.get('order_type') || '';
   const source = searchParams.get('source') || '';
+  const paymentMethod = searchParams.get('payment_method') || '';
   const defaultToday = localDateYYYYMMDD();
   const dateFrom = searchParams.get('date_from') || defaultToday;
   const dateTo = searchParams.get('date_to') || defaultToday;
@@ -350,6 +352,7 @@ const Orders: React.FC = () => {
     ...(brandId && { brand_id: +brandId }),
     ...(orderType && { order_type: orderType }),
     ...(source && { source }),
+    ...(paymentMethod && { payment_method: paymentMethod }),
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo && { date_to: dateTo }),
   };
@@ -369,6 +372,7 @@ const Orders: React.FC = () => {
     if (status) sp.append('status', status);
     if (baseParams.order_type) sp.append('order_type', baseParams.order_type);
     if (baseParams.source) sp.append('source', baseParams.source);
+    if (baseParams.payment_method) sp.append('payment_method', baseParams.payment_method);
     if (baseParams.date_from) sp.append('date_from', baseParams.date_from);
     if (baseParams.date_to) sp.append('date_to', baseParams.date_to);
     if (debouncedSearch) sp.append('search', debouncedSearch);
@@ -554,7 +558,7 @@ const Orders: React.FC = () => {
 
   useEffect(() => {
     setOrdersPage(1);
-  }, [branchId, brandId, status, orderType, source, dateFrom, dateTo, search]);
+  }, [branchId, brandId, status, orderType, source, paymentMethod, dateFrom, dateTo, search]);
 
   // The status popover is position:fixed — dismiss it whenever the page moves
   // or ESC is pressed, so it can never drift away from its pill.
@@ -1081,6 +1085,11 @@ const Orders: React.FC = () => {
         {canFilterSource && <select value={source} onChange={(e) => setFilter('source', e.target.value)} className={selectCls} aria-label="Source">
           <option value="">All sources</option>
           {ORDER_SOURCES.map((s) => <option key={s} value={s}>{ORDER_SOURCE_LABEL[s]}</option>)}
+        </select>}
+        {canFilterPayment && <select value={paymentMethod} onChange={(e) => setFilter('payment_method', e.target.value)} className={selectCls} aria-label="Payment type">
+          <option value="">All payments</option>
+          <option value="cash">Cash</option>
+          <option value="card">Card</option>
         </select>}
         <input type="date" min={minDate} value={dateFrom} onChange={(e) => setFilter('date_from', e.target.value)} className={selectCls} aria-label="Date from" />
         <input type="date" min={minDate} value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />
