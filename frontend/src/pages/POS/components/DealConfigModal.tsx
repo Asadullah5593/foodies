@@ -171,11 +171,11 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
       return { picks: [initPick(slot, slot.choice_items[0] ?? null)] };
     }
     if (slot.type === 'choice_category' || slot.type === 'choice_list') {
-      // Mix & match (quantity > 1): start empty; the tap-to-add flow fills the units.
-      if (isMultiPick(slot)) return { picks: [] };
-      // Single choice: pre-select the first option so the step is ready to advance.
-      const first = slot.choice_items?.[0] ?? null;
-      return { picks: [initPick(slot, first)] };
+      // Choice slots start EMPTY — nothing pre-selected, so the running total
+      // starts at 0 for dynamic (BOGO) deals and the cashier must actively pick
+      // each slot (a pre-selected first option kept landing in orders unnoticed
+      // and made the opening price read as already-charged).
+      return { picks: [] };
     }
     return { picks: [{ selectedItem: null, config: { addons: [], modifiers: [] } }] };
   };
