@@ -722,10 +722,9 @@ async function seed() {
         'Our famous juicy grill chicken with secret herbs & a special blend of sauces',
     );
     // The sheet splits Burgers into named subsections; no subcategory
-    // mechanism exists, so they become three real categories. The old
-    // "Burgers" category empties out and is retired by the sweep below.
-    // (Sheet also heads "PERI PERI SPECIAL" over the Peperico Special Burger
-    // alone — folded into Chicken Burgers per the client's three-way list.)
+    // mechanism exists, so all FOUR become real categories (client-confirmed).
+    // The old "Burgers" category empties out and is retired by the sweep below.
+    const catPeriPeriSpecial = await mkCategory('Peri Peri Special');
     const catBeefSmashed = await mkCategory('Beef Smashed Special');
     const catChickenBurgers = await mkCategory('Chicken Burgers');
     const catSupremeBurgers = await mkCategory('Special Supreme Burgers');
@@ -796,7 +795,7 @@ async function seed() {
     // Keeps its flavour group: the new sheet blanked the flavour cells only as
     // collateral from deleting the withdrawn Peri Peri Burger Meal rows.
     const periBurger = await mkBurger(
-        catChickenBurgers,
+        catPeriPeriSpecial,
         'Peperico Special Burger',
         649,
         'Special blend of peri peri grilled chicken burger with lettuce, tomatoes, onion, jalapenos and peri peri mayo',
