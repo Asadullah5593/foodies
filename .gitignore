@@ -28,3 +28,25 @@ Thumbs.db
 # Committed credential docs (history rotated separately)
 LOGIN_CREDENTIALS.md
 USER_CREDENTIALS.md
+
+# Client working files — spreadsheets, decks, archives. These arrive by email,
+# get superseded weekly, and bloat the repo; the seeders are the source of truth
+# for what they contain.
+*.xlsx
+*.xls
+*.docx
+*.doc
+*.pptx
+*.ppt
+*.pdf
+*.zip
+*.rar
+*.7z
+
+# ...except the product documentation already versioned under docs/, which is
+# deliberate. New files there still need `git add -f` if they match the above.
+!docs/**
+!consumer-web/docs/**
+
+# Postman collection + its load-test script: local API tooling, not source.
+postman/
