@@ -84,6 +84,62 @@ export class ReportsController {
         );
     }
 
+    /**
+     * Product-wise sales: every menu item sold in the window with quantity,
+     * gross / net sales and its share, filterable by date, branch, brand and
+     * category, with a child split by variant, branch or brand.
+     */
+    @Get('product-sales')
+    productSales(
+        @CurrentUser() user: ReportsUser,
+        @Query('branch_id') branchId: string,
+        @Query('brand_id') brandId: string,
+        @Query('category_id') categoryId: string,
+        @Query('date_from') dateFrom: string,
+        @Query('date_to') dateTo: string,
+        @Query('time_from') timeFrom: string,
+        @Query('time_to') timeTo: string,
+        @Query('status') status: string,
+        @Query('split_by') splitBy: string,
+        @Query('sort_by') sortBy: string,
+        @Query('sort_dir') sortDir: string,
+        @Query('limit') limit: string,
+    ) {
+        const splits = ['variant', 'branch', 'brand', 'none'] as const;
+        const sorts = [
+            'quantity',
+            'gross_sales',
+            'net_sales',
+            'orders',
+            'name',
+        ] as const;
+        type Split = (typeof splits)[number];
+        type Sort = (typeof sorts)[number];
+        return this.service.productSales(
+            user.tenantId,
+            {
+                branch_id: branchId ? +branchId : undefined,
+                brand_id: brandId ? +brandId : undefined,
+                category_id: categoryId ? +categoryId : undefined,
+                date_from: dateFrom,
+                date_to: dateTo,
+                time_from: timeFrom,
+                time_to: timeTo,
+                status: status || undefined,
+                split_by: splits.includes(splitBy as Split)
+                    ? (splitBy as Split)
+                    : undefined,
+                sort_by: sorts.includes(sortBy as Sort)
+                    ? (sortBy as Sort)
+                    : undefined,
+                sort_dir: sortDir === 'asc' ? 'asc' : 'desc',
+                limit: limit ? +limit : undefined,
+            },
+            user.allowedBranchIds,
+            user.allowedBrandIds,
+        );
+    }
+
     /** Order-wise trend: per-order points (capped) + uncapped totals (all-status count, completed-only revenue). */
     @Get('order-series')
     orderSeries(

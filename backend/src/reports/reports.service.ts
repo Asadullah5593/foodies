@@ -721,6 +721,290 @@ export class ReportsService {
     }
 
     /**
+     * Product-wise sales: one row per menu item over the window, with an
+     * optional child split (variant / branch / brand).
+     *
+     * Two things are worth knowing about the money columns:
+     *
+     * - `gross_sales` is the sum of the order LINE subtotals, which already
+     *   include addon and modifier surcharges (see orders.service —
+     *   itemSubtotal accumulates both before the line is stored).
+     * - Discounts are only ever stored at ORDER level (orders.discount_amount
+     *   and its per-stage split); there is no per-line discount column. So the
+     *   `discount` column is a PRO-RATA allocation — each line takes the share
+     *   of its order's discount that matches its share of that order's
+     *   subtotal. Summed over all lines of an order this lands exactly on the
+     *   order's discount_amount, so the report's net total reconciles with
+     *   sales-summary.
+     *
+     * Deal components are counted as themselves: a pizza sold inside a deal
+     * lands on the pizza's row, priced at the resolved deal unit price.
+     */
+    async productSales(
+        tenantId: number | null,
+        filters: {
+            branch_id?: number;
+            brand_id?: number;
+            category_id?: number;
+            date_from?: string;
+            date_to?: string;
+            time_from?: string;
+            time_to?: string;
+            /** completed (default) | all | excluding_cancelled */
+            status?: string;
+            /** child rows under each product */
+            split_by?: 'variant' | 'branch' | 'brand' | 'none';
+            sort_by?:
+                | 'quantity'
+                | 'gross_sales'
+                | 'net_sales'
+                | 'orders'
+                | 'name';
+            sort_dir?: 'asc' | 'desc';
+            limit?: number;
+        },
+        allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
+    ) {
+        this.assertBranchAccess(allowedBranchIds, filters.branch_id);
+        this.assertBrandAccess(allowedBrandIds, filters.brand_id);
+
+        const splitBy = filters.split_by ?? 'variant';
+        const { dateFrom, dateTo } = this.resolveDayRange(filters);
+
+        // Each line's slice of its order's discount, weighted by subtotal share.
+        // A zero-subtotal order (fully-comped, or a data oddity) divides by
+        // nothing rather than blowing up.
+        const discountExpr =
+            'COALESCE(SUM(oi.subtotal * (CASE WHEN o.subtotal > 0 THEN o.discountAmount / o.subtotal ELSE 0 END)), 0)';
+
+        const scoped = (): SelectQueryBuilder<OrderItem> => {
+            const qb = this.orderItemRepo
+                .createQueryBuilder('oi')
+                .innerJoin('oi.order', 'o')
+                .leftJoin('oi.menuItem', 'mi')
+                .where('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                });
+            if (filters.status === 'all') {
+                // no status predicate
+            } else if (filters.status === 'excluding_cancelled') {
+                qb.andWhere("o.status <> 'cancelled'");
+            } else {
+                qb.andWhere('o.status = :psStatus', { psStatus: 'completed' });
+            }
+            this.applyOrderScope(
+                qb,
+                'o',
+                tenantId,
+                allowedBranchIds,
+                filters.branch_id,
+                allowedBrandIds,
+                filters.brand_id,
+            );
+            if (filters.category_id)
+                qb.andWhere('mi.categoryId = :psCategoryId', {
+                    psCategoryId: filters.category_id,
+                });
+            return qb;
+        };
+
+        const rowsQb = scoped()
+            .leftJoin('mi.category', 'mc')
+            // A menu item hangs off exactly one category, and a category off one
+            // brand, so the brand column is a single value per row. Branch is not:
+            // the same product sells across branches, hence the count alongside
+            // the name (the client shows "N branches" when it is more than one).
+            .leftJoin('mc.brand', 'mb')
+            .leftJoin('o.branch', 'ob')
+            .select('oi.menuItemId', 'menu_item_id')
+            .addSelect('MAX(COALESCE(mi.name, oi.nameSnapshot))', 'name')
+            .addSelect('MAX(mi.categoryId)', 'category_id')
+            .addSelect('MAX(mc.name)', 'category_name')
+            .addSelect('MAX(mc.brandId)', 'brand_id')
+            .addSelect('MAX(mb.name)', 'brand_name')
+            .addSelect('COUNT(DISTINCT o.branchId)', 'branch_count')
+            .addSelect('MIN(ob.name)', 'branch_name')
+            .addSelect('COALESCE(SUM(oi.quantity), 0)', 'quantity')
+            .addSelect('COUNT(DISTINCT o.id)', 'orders')
+            .addSelect('COALESCE(SUM(oi.subtotal), 0)', 'gross_sales')
+            .addSelect(discountExpr, 'discount')
+            .groupBy('oi.menuItemId');
+
+        const childQb =
+            splitBy === 'none'
+                ? null
+                : splitBy === 'branch'
+                  ? scoped()
+                        .leftJoin('o.branch', 'b')
+                        .select('oi.menuItemId', 'menu_item_id')
+                        .addSelect('o.branchId', 'child_id')
+                        .addSelect('MAX(b.name)', 'child_name')
+                        .addSelect('COALESCE(SUM(oi.quantity), 0)', 'quantity')
+                        .addSelect('COUNT(DISTINCT o.id)', 'orders')
+                        .addSelect(
+                            'COALESCE(SUM(oi.subtotal), 0)',
+                            'gross_sales',
+                        )
+                        .addSelect(discountExpr, 'discount')
+                        .groupBy('oi.menuItemId')
+                        .addGroupBy('o.branchId')
+                  : splitBy === 'brand'
+                    ? scoped()
+                          .leftJoin('o.brand', 'br')
+                          .select('oi.menuItemId', 'menu_item_id')
+                          .addSelect('o.brandId', 'child_id')
+                          .addSelect('MAX(br.name)', 'child_name')
+                          .addSelect(
+                              'COALESCE(SUM(oi.quantity), 0)',
+                              'quantity',
+                          )
+                          .addSelect('COUNT(DISTINCT o.id)', 'orders')
+                          .addSelect(
+                              'COALESCE(SUM(oi.subtotal), 0)',
+                              'gross_sales',
+                          )
+                          .addSelect(discountExpr, 'discount')
+                          .groupBy('oi.menuItemId')
+                          .addGroupBy('o.brandId')
+                    : scoped()
+                          .leftJoin('oi.variant', 'v')
+                          .select('oi.menuItemId', 'menu_item_id')
+                          .addSelect('oi.variantId', 'child_id')
+                          .addSelect('MAX(v.name)', 'child_name')
+                          .addSelect(
+                              'COALESCE(SUM(oi.quantity), 0)',
+                              'quantity',
+                          )
+                          .addSelect('COUNT(DISTINCT o.id)', 'orders')
+                          .addSelect(
+                              'COALESCE(SUM(oi.subtotal), 0)',
+                              'gross_sales',
+                          )
+                          .addSelect(discountExpr, 'discount')
+                          .groupBy('oi.menuItemId')
+                          .addGroupBy('oi.variantId');
+
+        const [rawRows, rawChildren] = await Promise.all([
+            rowsQb.getRawMany<Record<string, string | number | null>>(),
+            childQb
+                ? childQb.getRawMany<Record<string, string | number | null>>()
+                : Promise.resolve([]),
+        ]);
+
+        const round2 = (n: number): number => Math.round(n * 100) / 100;
+        const toMoney = (v: string | number | null | undefined): number =>
+            round2(Number(v ?? 0));
+
+        const childrenByItem = new Map<
+            number,
+            Array<{
+                id: number | null;
+                name: string;
+                quantity: number;
+                orders: number;
+                gross_sales: number;
+                discount: number;
+                net_sales: number;
+            }>
+        >();
+        for (const c of rawChildren) {
+            const itemId = Number(c.menu_item_id);
+            const gross = toMoney(c.gross_sales);
+            const discount = toMoney(c.discount);
+            const list = childrenByItem.get(itemId) ?? [];
+            list.push({
+                id: c.child_id == null ? null : Number(c.child_id),
+                name:
+                    (c.child_name as string | null) ??
+                    (splitBy === 'variant' ? 'Regular' : 'Unassigned'),
+                quantity: Number(c.quantity ?? 0),
+                orders: Number(c.orders ?? 0),
+                gross_sales: gross,
+                discount,
+                net_sales: round2(gross - discount),
+            });
+            childrenByItem.set(itemId, list);
+        }
+        for (const list of childrenByItem.values())
+            list.sort((a, b) => b.quantity - a.quantity);
+
+        let rows = rawRows.map((r) => {
+            const gross = toMoney(r.gross_sales);
+            const discount = toMoney(r.discount);
+            const menuItemId = Number(r.menu_item_id);
+            return {
+                menu_item_id: menuItemId,
+                name: (r.name as string | null) ?? 'Unknown item',
+                category_id:
+                    r.category_id == null ? null : Number(r.category_id),
+                category_name: (r.category_name as string | null) ?? null,
+                brand_id: r.brand_id == null ? null : Number(r.brand_id),
+                brand_name: (r.brand_name as string | null) ?? null,
+                branch_count: Number(r.branch_count ?? 0),
+                branch_name: (r.branch_name as string | null) ?? null,
+                quantity: Number(r.quantity ?? 0),
+                orders: Number(r.orders ?? 0),
+                gross_sales: gross,
+                discount,
+                net_sales: round2(gross - discount),
+                children: childrenByItem.get(menuItemId) ?? [],
+            };
+        });
+
+        const totals = rows.reduce(
+            (acc, r) => {
+                acc.quantity += r.quantity;
+                acc.gross_sales += r.gross_sales;
+                acc.discount += r.discount;
+                acc.net_sales += r.net_sales;
+                return acc;
+            },
+            {
+                quantity: 0,
+                orders: 0,
+                gross_sales: 0,
+                discount: 0,
+                net_sales: 0,
+            },
+        );
+        totals.gross_sales = round2(totals.gross_sales);
+        totals.discount = round2(totals.discount);
+        totals.net_sales = round2(totals.net_sales);
+        // Order count is per-order, not per-line: summing the row counts would
+        // count an order once for every distinct product on it.
+        totals.orders = await scoped()
+            .select('COUNT(DISTINCT o.id)', 'c')
+            .getRawOne<{ c: string }>()
+            .then((r) => Number(r?.c ?? 0));
+
+        const sortBy = filters.sort_by ?? 'net_sales';
+        const dir = filters.sort_dir === 'asc' ? 1 : -1;
+        rows.sort((a, b) =>
+            sortBy === 'name'
+                ? a.name.localeCompare(b.name) * dir
+                : (Number(a[sortBy]) - Number(b[sortBy])) * dir,
+        );
+        if (filters.limit && filters.limit > 0)
+            rows = rows.slice(0, filters.limit);
+
+        // Local components, not toISOString(): the range bounds are built on the
+        // branch clock, and a UTC render would echo back the previous day.
+        const localDay = (d: Date): string =>
+            `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+        return {
+            split_by: splitBy,
+            status: filters.status ?? 'completed',
+            date_from: localDay(dateFrom),
+            date_to: localDay(dateTo),
+            totals,
+            rows,
+        };
+    }
+
+    /**
      * Order-wise trend feed: every order in the window as its own chart point
      * (newest `limit` fetched, served oldest→newest), plus UNCAPPED totals
      * covering the whole selection, not just the plotted tail. order_count is
