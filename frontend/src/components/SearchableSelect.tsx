@@ -25,6 +25,14 @@ interface SearchableSelectProps {
   /** Optional min width for the trigger (e.g. min-w-[160px]) */
   minWidth?: string;
   disabled?: boolean;
+  /** Replaces the default trigger styling wholesale (for pages with their own look). */
+  triggerClassName?: string;
+  /**
+   * Names the control for assistive tech when the filter bar shows no visible
+   * label. Rendered as "<ariaLabel>: <selected option>" so the value is
+   * announced too.
+   */
+  ariaLabel?: string;
 }
 
 const baseTriggerClass =
@@ -44,6 +52,8 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   id,
   minWidth = 'min-w-[140px]',
   disabled = false,
+  triggerClassName,
+  ariaLabel,
 }) => {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -136,9 +146,10 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
         id={id}
         disabled={disabled}
         onClick={() => !disabled && setOpen((o) => !o)}
-        className={`${baseTriggerClass} ${minWidth} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+        className={`${triggerClassName ?? baseTriggerClass} ${minWidth} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={ariaLabel ? `${ariaLabel}: ${selectedLabel || placeholder}` : undefined}
       >
         <span className="truncate">{selectedLabel || placeholder}</span>
         <svg

@@ -73,6 +73,7 @@ import Roles from './pages/Admin/Roles';
 import RoleForm from './pages/Admin/RoleForm';
 import Shifts from './pages/Admin/Shifts';
 import Reports from './pages/Admin/Reports';
+import ProductSales from './pages/Admin/ProductSales';
 import Orders from './pages/Admin/Orders';
 import OrderDetail from './pages/Admin/OrderDetail';
 import Deliveries from './pages/Admin/Deliveries';
@@ -305,7 +306,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   type MenuLink = { type: 'link'; path: string; label: string; icon: IconType };
   type MenuGroup = {
     type: 'group';
-    id: 'inventory' | 'procurement' | 'recipes' | 'rider-hrm' | 'cms';
+    id: 'inventory' | 'procurement' | 'recipes' | 'rider-hrm' | 'cms' | 'reports';
     label: string;
     icon: IconType;
     children: Array<{ path: string; label: string }>;
@@ -380,7 +381,17 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         // { path: '/admin/rider-hrm/metrics', label: 'Ops metrics' },
       ],
     },
-    { path: '/admin/reports', label: 'Reports', icon: MdOutlineTrendingUp },
+    {
+      type: 'group',
+      id: 'reports',
+      label: 'Reports',
+      icon: MdOutlineTrendingUp,
+      children: [
+        // Keeps the original /admin/reports URL so existing links still land here.
+        { path: '/admin/reports', label: 'Sales Overview' },
+        { path: '/admin/reports/product-sales', label: 'Product-wise Sales' },
+      ],
+    },
     {
       type: 'group',
       id: 'inventory',
@@ -437,6 +448,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     procurement: location.pathname.startsWith('/admin/procurement'),
     recipes: location.pathname.startsWith('/admin/recipes'),
     'rider-hrm': location.pathname.startsWith('/admin/rider-hrm'),
+    reports: location.pathname.startsWith('/admin/reports'),
     cms: location.pathname.startsWith('/admin/banners') || location.pathname.startsWith('/admin/promotions'),
   });
 
@@ -447,6 +459,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       procurement: location.pathname.startsWith('/admin/procurement') ? true : prev.procurement,
       recipes: location.pathname.startsWith('/admin/recipes') ? true : prev.recipes,
       'rider-hrm': location.pathname.startsWith('/admin/rider-hrm') ? true : prev['rider-hrm'],
+      reports: location.pathname.startsWith('/admin/reports') ? true : prev.reports,
       cms: location.pathname.startsWith('/admin/banners') || location.pathname.startsWith('/admin/promotions') ? true : prev.cms,
     }));
   }, [location.pathname]);
@@ -1186,6 +1199,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><Reports /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/reports/product-sales"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><ProductSales /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />
