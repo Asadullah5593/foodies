@@ -212,6 +212,77 @@ function itemsHtml(
   money: (n: unknown) => string,
 ): string {
   const zeroMoney = makeZeroAwareMoney(cfg, money);
+  // "+ " and the "Base:"-style group name are each independently
+  // toggleable; both on = today's look.
+  const plus = cfg.showModifierPlus ? '+ ' : '';
+  const grp = (m: NonNullable<InvoiceLineVM['modifiers']>[number]) =>
+    cfg.showModifierGroup && m.group ? esc(`${m.group}: `) : '';
+
+  /**
+   * Note + add-on + modifier rows belonging to ONE item line. `depth` is the
+   * indent of the owning line: 0 for a standalone item, 1 for a deal component
+   * (already indented under its deal), so a component's picks sit one step in
+   * from the component and conditional picks one step further again. Deal
+   * components carry their own modifiers — the chosen flavour of a component is
+   * what the kitchen cooks, so it must print in both cases.
+   */
+  const extrasHtml = (l: InvoiceLineVM, depth: 0 | 1): string => {
+    const ownCls = depth === 0 ? 'sub' : 'sub sub2';
+    const ownSpan = depth === 0 ? 'sub-l' : 'sub2-l';
+    const nestCls = depth === 0 ? 'sub sub2' : 'sub sub3';
+    const nestSpan = depth === 0 ? 'sub2-l' : 'sub3-l';
+    // Per-item note (kitchen instruction). Sits right under the item name,
+    // opt-in — receipts carried no notes until this toggle.
+    const noteHtml =
+      cfg.showLineNotes && l.notes
+        ? row(`<span class="${ownSpan}">Note: ${esc(l.notes)}</span>`, '', ownCls, 'showLineNotes')
+        : '';
+    // Zero-billing add-ons/modifiers are "free lines" too: hidden entirely
+    // when free items are off (paid ones always print).
+    const addons = cfg.showModifiers
+      ? (l.addons ?? [])
+          .filter((a) => cfg.showFreeItems || addonAmount(a) !== 0)
+          .map((a) =>
+            row(
+              `<span class="${ownSpan}">${plus}${esc(a.name ?? 'Add-on')}${Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</span>`,
+              zeroMoney(addonAmount(a)),
+              ownCls,
+              'showModifiers',
+            ),
+          )
+          .join('')
+      : '';
+    const modList = (l.modifiers ?? []).filter(
+      (m) => cfg.showFreeItems || modifierBilling(m).amount !== 0,
+    );
+    const { roots, children } = splitModifiers(modList);
+    const modRow = (m: (typeof modList)[number], nested: boolean) => {
+      const b = modifierBilling(m);
+      const qty = b.qty !== 1 ? ` × ${b.qty}` : '';
+      return nested
+        ? row(
+            `<span class="${nestSpan}">↳ ${esc(m.name ?? 'Modifier')}${qty}</span>`,
+            zeroMoney(b.amount),
+            nestCls,
+            'showModifiers',
+          )
+        : row(
+            `<span class="${ownSpan}">${plus}${grp(m)}${esc(m.name ?? 'Modifier')}${qty}</span>`,
+            zeroMoney(b.amount),
+            ownCls,
+            'showModifiers',
+          );
+    };
+    const mods = cfg.showModifiers
+      ? roots
+          .map((m) =>
+            [modRow(m, false), ...(children.get(m.name ?? '') ?? []).map((c) => modRow(c, true))].join(''),
+          )
+          .join('')
+      : '';
+    return noteHtml + addons + mods;
+  };
+
   const renderGroup = (g: { dealId: number | null; lines: InvoiceLineVM[] }): string => {
       if (g.dealId != null && g.lines.length > 0) {
         const dealTotal = g.lines.reduce((s, l) => s + Number(l.subtotal), 0);
@@ -222,7 +293,10 @@ function itemsHtml(
             // Zero-priced bundle components follow zeroAmountDisplay; in
             // deal_only mode component prices are suppressed entirely.
             const amount = cfg.dealPriceDisplay === 'deal_only' ? '' : zeroMoney(l.subtotal);
-            return `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${amount}</span></div>`;
+            return (
+              `<div class="row sub"><span class="l">${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}</span><span class="r">${amount}</span></div>` +
+              extrasHtml(l, 1)
+            );
           })
           .join('');
         // items_only: the deal-name line prints without its total.
@@ -238,61 +312,7 @@ function itemsHtml(
             `${cat}${esc(l.name_snapshot ?? 'Item')}${v} × ${l.quantity}`,
             cfg.showUnitPrice ? `<span data-field="showUnitPrice">${zeroMoney(base)}</span>` : '',
           );
-          // Per-item note (kitchen instruction). Sits right under the item name,
-          // opt-in — receipts carried no notes until this toggle.
-          const noteHtml =
-            cfg.showLineNotes && l.notes
-              ? row(`<span class="sub-l">Note: ${esc(l.notes)}</span>`, '', 'sub', 'showLineNotes')
-              : '';
-          // "+ " and the "Base:"-style group name are each independently
-          // toggleable; both on = today's look.
-          const plus = cfg.showModifierPlus ? '+ ' : '';
-          const grp = (m: NonNullable<InvoiceLineVM['modifiers']>[number]) =>
-            cfg.showModifierGroup && m.group ? esc(`${m.group}: `) : '';
-          // Zero-billing add-ons/modifiers are "free lines" too: hidden entirely
-          // when free items are off (paid ones always print).
-          const addons = cfg.showModifiers
-            ? (l.addons ?? [])
-                .filter((a) => cfg.showFreeItems || addonAmount(a) !== 0)
-                .map((a) =>
-                  row(
-                    `<span class="sub-l">${plus}${esc(a.name ?? 'Add-on')}${Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</span>`,
-                    zeroMoney(addonAmount(a)),
-                    'sub',
-                    'showModifiers',
-                  ),
-                )
-                .join('')
-            : '';
-          const modList = (l.modifiers ?? []).filter(
-            (m) => cfg.showFreeItems || modifierBilling(m).amount !== 0,
-          );
-          const { roots, children } = splitModifiers(modList);
-          const modRow = (m: (typeof modList)[number], nested: boolean) => {
-            const b = modifierBilling(m);
-            const qty = b.qty !== 1 ? ` × ${b.qty}` : '';
-            return nested
-              ? row(
-                  `<span class="sub2-l">↳ ${esc(m.name ?? 'Modifier')}${qty}</span>`,
-                  zeroMoney(b.amount),
-                  'sub sub2',
-                  'showModifiers',
-                )
-              : row(
-                  `<span class="sub-l">${plus}${grp(m)}${esc(m.name ?? 'Modifier')}${qty}</span>`,
-                  zeroMoney(b.amount),
-                  'sub',
-                  'showModifiers',
-                );
-          };
-          const mods = cfg.showModifiers
-            ? roots
-                .map((m) =>
-                  [modRow(m, false), ...(children.get(m.name ?? '') ?? []).map((c) => modRow(c, true))].join(''),
-                )
-                .join('')
-            : '';
-          return head + noteHtml + addons + mods;
+          return head + extrasHtml(l, 0);
         })
         .join('');
   };
@@ -335,6 +355,70 @@ function itemsTableHtml(
     `<tr${cls ? ` class="${cls}"` : ''}${field ? ` data-field="${field}"` : ''}><td class="ci">${name}</td><td class="cq">${qty}</td>${showRate ? `<td class="cr">${rate}</td>` : ''}<td class="ca">${amount}</td></tr>`;
   const variantHtml = (name?: string | null) =>
     cfg.showVariant && name ? `<span data-field="showVariant"> (${esc(name)})</span>` : '';
+  const plus = cfg.showModifierPlus ? '+ ' : '';
+  const grp = (m: NonNullable<InvoiceLineVM['modifiers']>[number]) =>
+    cfg.showModifierGroup && m.group ? esc(`${m.group}: `) : '';
+
+  /**
+   * Note + add-on + modifier rows belonging to ONE item line. `depth` is the
+   * indent of the owning line: 0 for a standalone item, 1 for a deal component
+   * (already indented under its deal), so a component's picks sit one step in
+   * from the component and conditional picks one step further again. Deal
+   * components carry their own modifiers — the chosen flavour of a component is
+   * what the kitchen cooks, so it must print in both cases.
+   */
+  const extrasCells = (l: InvoiceLineVM, depth: 0 | 1): string => {
+    const own = depth === 0 ? 'ind' : 'ind2';
+    const nest = depth === 0 ? 'ind2' : 'ind3';
+    // Per-item note (kitchen instruction), spanning the item column only.
+    const noteCell =
+      cfg.showLineNotes && l.notes
+        ? cell(`<span class="${own}">Note: ${esc(l.notes)}</span>`, '', '', '', '', 'showLineNotes')
+        : '';
+    // Zero-billing add-ons/modifiers are "free lines" too: hidden entirely
+    // when free items are off (paid ones always print).
+    const addons = cfg.showModifiers
+      ? (l.addons ?? [])
+          .filter((a) => cfg.showFreeItems || addonAmount(a) !== 0)
+          .map((a) => {
+            const qty = Number(a.quantity ?? 1);
+            return cell(
+              `<span class="${own}">${plus}${esc(a.name ?? 'Add-on')}</span>`,
+              qty !== 1 ? String(qty) : '',
+              zeroRate(a.unit_price, addonAmount(a)),
+              zeroNum(addonAmount(a)),
+              '',
+              'showModifiers',
+            );
+          })
+          .join('')
+      : '';
+    const modList = (l.modifiers ?? []).filter(
+      (m) => cfg.showFreeItems || modifierBilling(m).amount !== 0,
+    );
+    const { roots, children } = splitModifiers(modList);
+    const modCell = (m: (typeof modList)[number], nested: boolean) => {
+      const b = modifierBilling(m);
+      return cell(
+        nested
+          ? `<span class="${nest}">↳ ${esc(m.name ?? 'Modifier')}</span>`
+          : `<span class="${own}">${plus}${grp(m)}${esc(m.name ?? 'Modifier')}</span>`,
+        String(b.qty),
+        zeroRate(b.unit, b.amount),
+        zeroNum(b.amount),
+        '',
+        'showModifiers',
+      );
+    };
+    const mods = cfg.showModifiers
+      ? roots
+          .map((m) =>
+            [modCell(m, false), ...(children.get(m.name ?? '') ?? []).map((c) => modCell(c, true))].join(''),
+          )
+          .join('')
+      : '';
+    return noteCell + addons + mods;
+  };
 
   const renderGroup = (g: { dealId: number | null; lines: InvoiceLineVM[] }): string => {
       if (g.dealId != null && g.lines.length > 0) {
@@ -347,11 +431,13 @@ function itemsTableHtml(
         const comps = g.lines
           .map((l) => {
             // Zero-priced bundle components follow zeroAmountDisplay.
-            return cell(
-              `<span class="ind">${esc(l.name_snapshot ?? 'Item')}${variantHtml(l.variant_name)}</span>`,
-              String(l.quantity),
-              cfg.dealPriceDisplay === 'deal_only' ? '' : zeroRate(l.unit_price, l.subtotal),
-              cfg.dealPriceDisplay === 'deal_only' ? '' : zeroNum(l.subtotal),
+            return (
+              cell(
+                `<span class="ind">${esc(l.name_snapshot ?? 'Item')}${variantHtml(l.variant_name)}</span>`,
+                String(l.quantity),
+                cfg.dealPriceDisplay === 'deal_only' ? '' : zeroRate(l.unit_price, l.subtotal),
+                cfg.dealPriceDisplay === 'deal_only' ? '' : zeroNum(l.subtotal),
+              ) + extrasCells(l, 1)
             );
           })
           .join('');
@@ -367,57 +453,7 @@ function itemsTableHtml(
             zeroRate(l.unit_price, base),
             zeroNum(base),
           );
-          // Per-item note (kitchen instruction), spanning the item column only.
-          const noteCell =
-            cfg.showLineNotes && l.notes
-              ? cell(`<span class="ind">Note: ${esc(l.notes)}</span>`, '', '', '', '', 'showLineNotes')
-              : '';
-          const plus = cfg.showModifierPlus ? '+ ' : '';
-          const grp = (m: NonNullable<InvoiceLineVM['modifiers']>[number]) =>
-            cfg.showModifierGroup && m.group ? esc(`${m.group}: `) : '';
-          // Zero-billing add-ons/modifiers are "free lines" too: hidden entirely
-          // when free items are off (paid ones always print).
-          const addons = cfg.showModifiers
-            ? (l.addons ?? [])
-                .filter((a) => cfg.showFreeItems || addonAmount(a) !== 0)
-                .map((a) => {
-                  const qty = Number(a.quantity ?? 1);
-                  return cell(
-                    `<span class="ind">${plus}${esc(a.name ?? 'Add-on')}</span>`,
-                    qty !== 1 ? String(qty) : '',
-                    zeroRate(a.unit_price, addonAmount(a)),
-                    zeroNum(addonAmount(a)),
-                    '',
-                    'showModifiers',
-                  );
-                })
-                .join('')
-            : '';
-          const modList = (l.modifiers ?? []).filter(
-            (m) => cfg.showFreeItems || modifierBilling(m).amount !== 0,
-          );
-          const { roots, children } = splitModifiers(modList);
-          const modCell = (m: (typeof modList)[number], nested: boolean) => {
-            const b = modifierBilling(m);
-            return cell(
-              nested
-                ? `<span class="ind2">↳ ${esc(m.name ?? 'Modifier')}</span>`
-                : `<span class="ind">${plus}${grp(m)}${esc(m.name ?? 'Modifier')}</span>`,
-              String(b.qty),
-              zeroRate(b.unit, b.amount),
-              zeroNum(b.amount),
-              '',
-              'showModifiers',
-            );
-          };
-          const mods = cfg.showModifiers
-            ? roots
-                .map((m) =>
-                  [modCell(m, false), ...(children.get(m.name ?? '') ?? []).map((c) => modCell(c, true))].join(''),
-                )
-                .join('')
-            : '';
-          return head + noteCell + addons + mods;
+          return head + extrasCells(l, 0);
         })
         .join('');
   };
@@ -948,6 +984,8 @@ function layoutCss(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .row .r { white-space: nowrap; text-align: right; }
     .inv-root .row.sub .l, .inv-root .sub-l { padding-left: 10px; color: #444; font-size: .92em; }
     .inv-root .row.sub2 .l, .inv-root .sub2-l { padding-left: 22px; }
+    /* Third level: a conditional pick under a DEAL COMPONENT's modifier. */
+    .inv-root .row.sub3 .l, .inv-root .sub3-l { padding-left: 34px; }
     .inv-root .cat { display: inline-block; font-size: .72em; text-transform: uppercase; color: #666; margin-right: 4px; }
     .inv-root .muted { color: #666; }
     .inv-root .items { border-top: 1px dashed #999; border-bottom: 1px dashed #999; padding: 6px 0; margin: 6px 0; }
@@ -989,6 +1027,7 @@ function layoutCss(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .itbl .ca { text-align: right; width: 54px; }
     .inv-root .itbl .ind { padding-left: 8px; display: inline-block; }
     .inv-root .itbl .ind2 { padding-left: 16px; display: inline-block; }
+    .inv-root .itbl .ind3 { padding-left: 24px; display: inline-block; }
     .inv-root .cutfeed { height: 0; }
     .inv-root .cutfeed .cutline { display: none; }
     @media print {
@@ -1224,6 +1263,10 @@ export function richSampleInvoice(): InvoiceVM {
             unit_price: 2999,
             subtotal: 2999,
           },
+          // Deal components carry their OWN picks — the flavour chosen for the
+          // chicken inside a combo is what the kitchen cooks. Kept at price 0
+          // (as real deal-component picks are) so the sample's line amounts
+          // still add up to subtotal exactly.
           {
             name_snapshot: 'Large Pepperoni Pizza',
             variant_name: 'Large',
@@ -1233,6 +1276,19 @@ export function richSampleInvoice(): InvoiceVM {
             quantity: 1,
             unit_price: 0,
             subtotal: 0,
+            addons: [{ name: 'Garlic Dip', quantity: 1, unit_price: 0, subtotal: 0 }],
+            modifiers: [
+              { group: 'Base', name: 'Classic Hand-Tossed', unit_price: 0 },
+              { group: 'Choose your Flavour', name: 'Hot Peri Peri', unit_price: 0 },
+              // Conditional pick: renders one indent deeper again, so the
+              // preview exercises the third level that only deals reach.
+              {
+                group: 'Choose your Drink',
+                name: 'Mint Margarita',
+                unit_price: 0,
+                triggered_by: 'Hot Peri Peri',
+              },
+            ],
           },
           {
             name_snapshot: 'Garlic Bread',
@@ -1242,6 +1298,7 @@ export function richSampleInvoice(): InvoiceVM {
             quantity: 1,
             unit_price: 0,
             subtotal: 0,
+            modifiers: [{ group: 'Salad Options', name: 'Add Jalapeños', unit_price: 0 }],
           },
           {
             name_snapshot: '1.5L Soft Drink',
@@ -1252,6 +1309,7 @@ export function richSampleInvoice(): InvoiceVM {
             unit_price: 0,
             subtotal: 0,
             notes: 'Diet, please',
+            modifiers: [{ group: 'Choose your Drink', name: '7up 345ml', unit_price: 0 }],
           },
         ],
         subtotal: 6536,

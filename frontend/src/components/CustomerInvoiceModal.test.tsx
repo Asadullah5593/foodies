@@ -107,3 +107,91 @@ describe('CustomerInvoiceModal — kitchen (KOT) printing', () => {
     expect(printContent).not.toHaveBeenCalled();
   });
 });
+
+describe('CustomerInvoiceModal — deal components show their own picks', () => {
+  const comboGroup = {
+    order_group_id: 'g-2',
+    gross_total: 1079,
+    currency: 'PKR',
+    template: { id: 1, layout: 'thermal_classic', config: {} },
+    orders: [
+      {
+        order_id: 12,
+        order_number: 'A-12',
+        items: [
+          {
+            name_snapshot: '1/4 Peri Peri Chicken',
+            deal_id: 7,
+            deal_slot_index: 0,
+            deal_name: '1/4 Peri Peri Chicken with 1 Classic Side',
+            quantity: 1,
+            unit_price: 1079,
+            subtotal: 1079,
+            notes: 'extra crispy',
+            addons: [{ name: 'Garlic Mayo', quantity: 1, unit_price: 0, subtotal: 0 }],
+            modifiers: [{ name: 'Hot Peri Peri', group: 'Choose your Flavour', unit_price: 0 }],
+          },
+        ],
+        subtotal: 1079,
+        discount_amount: 0,
+        tax_amount: 0,
+        service_charge: 0,
+        delivery_fee: 0,
+        total_amount: 1079,
+      },
+    ],
+  };
+
+  it('renders the flavour chosen on a deal component, not just the component', async () => {
+    getOrderGroupMainInvoice.mockResolvedValue(comboGroup);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <ThemeProvider>
+        <QueryClientProvider client={qc}>
+          <CustomerInvoiceModal isOpen onClose={() => {}} orderGroupId="g-2" />
+        </QueryClientProvider>
+      </ThemeProvider>,
+    );
+    await screen.findByText('1/4 Peri Peri Chicken with 1 Classic Side');
+    expect(screen.getByText(/Choose your Flavour: Hot Peri Peri/)).toBeInTheDocument();
+    expect(screen.getByText(/Add-on: Garlic Mayo/)).toBeInTheDocument();
+    expect(screen.getByText(/Note: extra crispy/)).toBeInTheDocument();
+  });
+});
+
+describe('CustomerInvoiceModal — single-order view keeps per-item notes', () => {
+  it('shows the item note and the real deal name for a non-group order', async () => {
+    getOrderInvoice.mockResolvedValue({
+      order_id: 21,
+      order_number: 'A-21',
+      items: [
+        {
+          name: 'Peri Peri Wings',
+          quantity: 1,
+          unit_price: 649,
+          subtotal: 649,
+          notes: 'no chilli flakes',
+          deal_id: 9,
+          deal_slot_index: 0,
+          deal_name: 'Wings Wednesday',
+        },
+      ],
+      subtotal: 649,
+      total_amount: 649,
+      template: { id: 1, layout: 'thermal_classic', config: {} },
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <ThemeProvider>
+        <QueryClientProvider client={qc}>
+          <CustomerInvoiceModal isOpen onClose={() => {}} orderId={21} />
+        </QueryClientProvider>
+      </ThemeProvider>,
+    );
+    await screen.findByText(/Order #A-21/);
+    // Both were dropped by the single-order mapping: the note never reached the
+    // view, and the deal header fell back to the literal word "Deal".
+    expect(screen.getByText(/Note: no chilli flakes/)).toBeInTheDocument();
+    expect(screen.getByText('Wings Wednesday')).toBeInTheDocument();
+  });
+});

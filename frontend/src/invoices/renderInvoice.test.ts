@@ -968,6 +968,68 @@ describe('dealPriceDisplay — where a deal prints its price', () => {
   }
 });
 
+/**
+ * A deal component's own picks (the flavour chosen for the chicken inside a
+ * combo) used to be dropped: only the standalone-item branch rendered addons /
+ * modifiers / notes, so the KOT told the kitchen to cook the component but not
+ * how. These lines are what gets cooked — they must print under the component.
+ */
+describe('deal components print their own modifiers, add-ons and notes', () => {
+  const comboInvoice = () => {
+    const inv = sampleInvoice();
+    inv.orders[0].items = [
+      {
+        name_snapshot: '1/4 Peri Peri Chicken',
+        deal_id: 7,
+        deal_slot_index: 0,
+        deal_name: '1/4 Peri Peri Chicken with 1 Classic Side + 345ml Drink',
+        quantity: 1,
+        unit_price: 1079,
+        subtotal: 1079,
+        notes: 'extra crispy',
+        addons: [{ name: 'Garlic Mayo', quantity: 1, unit_price: 0, subtotal: 0 }],
+        modifiers: [
+          { name: 'Hot Peri Peri', group: 'Choose your Flavour', unit_price: 0, quantity: 1, free_quantity: 0 },
+          { name: 'Milkshake upgrade', group: 'Drink', unit_price: 250, triggered_by: 'Hot Peri Peri', quantity: 1 },
+        ],
+      },
+    ] as InvoiceLineVM[];
+    return inv;
+  };
+
+  for (const layout of ['bill_bordered', 'thermal_classic'] as const) {
+    it(`prints the component's chosen flavour — ${layout}`, () => {
+      const html = renderInvoiceHtml(comboInvoice(), layout, cfg({})).html;
+      expect(html).toContain('Hot Peri Peri');
+      expect(html).toContain('Choose your Flavour');
+      expect(html).toContain('Garlic Mayo');
+    });
+
+    it(`nests a conditional pick one level deeper than the component's own — ${layout}`, () => {
+      const html = renderInvoiceHtml(comboInvoice(), layout, cfg({})).html;
+      // Third indent level exists only for picks hanging off a deal component.
+      expect(html).toMatch(/(ind3|sub3-l)[^>]*>↳ Milkshake upgrade/);
+    });
+
+    it(`still honours showModifiers=false — ${layout}`, () => {
+      const html = renderInvoiceHtml(comboInvoice(), layout, cfg({ showModifiers: false })).html;
+      expect(html).not.toContain('Hot Peri Peri');
+      expect(html).not.toContain('Garlic Mayo');
+      // The component itself stays.
+      expect(html).toContain('1/4 Peri Peri Chicken');
+    });
+
+    it(`prints the component note when showLineNotes is on — ${layout}`, () => {
+      expect(renderInvoiceHtml(comboInvoice(), layout, cfg({ showLineNotes: true })).html).toContain(
+        'Note: extra crispy',
+      );
+      expect(renderInvoiceHtml(comboInvoice(), layout, cfg({ showLineNotes: false })).html).not.toContain(
+        'extra crispy',
+      );
+    });
+  }
+});
+
 describe('tableNumberDisplay — table number prominence', () => {
   it('default row mode keeps the plain meta row and no band', () => {
     const html = render({});
