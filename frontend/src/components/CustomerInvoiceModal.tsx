@@ -175,8 +175,12 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
         unit_price: i.unit_price,
         subtotal: i.subtotal,
         variant_name: i.variant_name ?? null,
+        // The backend sends per-item notes (kitchen instructions); dropping them
+        // here hid them from the on-screen view of any single (non-group) order.
+        notes: i.notes ?? null,
         deal_id: i.deal_id ?? null,
         deal_slot_index: i.deal_slot_index ?? null,
+        deal_name: i.deal_name ?? null,
         addons: i.addons ?? [],
         modifiers: i.modifiers ?? [],
       })),
@@ -224,6 +228,69 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
       }
     });
     return result;
+  };
+
+  /**
+   * Add-on and modifier rows for ONE item line. `depth` is the indent of the
+   * owning line: 0 for a standalone item, 1 for a deal component (already
+   * indented under its deal). Deal components carry their own modifiers — the
+   * flavour chosen for a component is what the kitchen cooks — so they render
+   * in both cases, just one step further in.
+   */
+  const extrasRows = (
+    line: MainInvoiceLine,
+    keyPrefix: string,
+    depth: 0 | 1,
+  ): React.ReactNode[] => {
+    const pad = depth === 0 ? 'pl-4' : 'pl-8';
+    const nestPad = depth === 0 ? 'pl-8' : 'pl-12';
+    const rows: React.ReactNode[] = [];
+    (line.addons ?? []).forEach((a, ai: number) => {
+      rows.push(
+        <tr key={`a-${keyPrefix}-${ai}`} className="border-b border-gray-100">
+          <td className={`py-1 text-gray-500 ${pad}`}>
+            Add-on: {a.name ?? '—'}
+            {Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}
+          </td>
+          <td className="py-1 text-right text-gray-600">
+            {formatCurrency(Number(addonTotal(a)))}
+          </td>
+        </tr>,
+      );
+    });
+    // Nest conditional chooser picks under their trigger option
+    // (e.g. milkshake upgrade under "Add a 345ml Drink").
+    const mods = line.modifiers ?? [];
+    const isChild = (m: (typeof mods)[number]) =>
+      !!m.triggered_by && mods.some((x) => x !== m && (x.name ?? '') === m.triggered_by);
+    const roots = mods.filter((m) => !isChild(m));
+    roots.forEach((m, mi) => {
+      rows.push(
+        <tr key={`m-${keyPrefix}-${mi}`} className="border-b border-gray-100">
+          <td className={`py-1 text-gray-500 ${pad}`}>
+            {m.group ?? 'Modifier'}: {m.name ?? '—'}
+          </td>
+          <td className="py-1 text-right text-gray-600">
+            {formatCurrency(Number(m.unit_price))}
+          </td>
+        </tr>,
+      );
+      mods
+        .filter((c) => isChild(c) && c.triggered_by === (m.name ?? ''))
+        .forEach((c, ci) => {
+          rows.push(
+            <tr key={`mc-${keyPrefix}-${mi}-${ci}`} className="border-b border-gray-100">
+              <td className={`py-1 text-gray-500 ${nestPad}`}>↳ {c.name ?? '—'}</td>
+              <td className="py-1 text-right text-gray-600">
+                {Number(c.unit_price) ? formatCurrency(Number(c.unit_price)) : (
+                  <span className="text-emerald-600">Included</span>
+                )}
+              </td>
+            </tr>,
+          );
+        });
+    });
+    return rows;
   };
 
   /**
@@ -379,6 +446,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                                       {Number(line.unit_price) === 0 ? '—' : formatCurrency(Number(line.subtotal))}
                                     </td>
                                   </tr>
+                                  {extrasRows(line, `d-${gi}-${si}`, 1)}
                                   {line.notes ? (
                                     <tr className="border-b border-gray-100">
                                       <td colSpan={2} className="py-1 pl-8 text-amber-700 italic">
@@ -411,53 +479,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                                       {formatCurrency(Number(baseAmount))}
                                     </td>
                                   </tr>
-                                  {(line.addons ?? []).map((a, ai: number) => (
-                                    <tr key={`a-${gi}-${i}-${ai}`} className="border-b border-gray-100">
-                                      <td className="py-1 text-gray-500 pl-4">
-                                        Add-on: {a.name ?? '—'}
-                                        {Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}
-                                      </td>
-                                      <td className="py-1 text-right text-gray-600">
-                                        {formatCurrency(Number(addonTotal(a)))}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                  {(() => {
-                                    // Nest conditional chooser picks under their trigger option
-                                    // (e.g. milkshake upgrade under "Add a 345ml Drink").
-                                    const mods = line.modifiers ?? [];
-                                    const isChild = (m: (typeof mods)[number]) =>
-                                      !!m.triggered_by && mods.some((x) => x !== m && (x.name ?? '') === m.triggered_by);
-                                    const roots = mods.filter((m) => !isChild(m));
-                                    const rows: React.ReactNode[] = [];
-                                    roots.forEach((m, mi) => {
-                                      rows.push(
-                                        <tr key={`m-${gi}-${i}-${mi}`} className="border-b border-gray-100">
-                                          <td className="py-1 text-gray-500 pl-4">
-                                            {m.group ?? 'Modifier'}: {m.name ?? '—'}
-                                          </td>
-                                          <td className="py-1 text-right text-gray-600">
-                                            {formatCurrency(Number(m.unit_price))}
-                                          </td>
-                                        </tr>,
-                                      );
-                                      mods
-                                        .filter((c) => isChild(c) && c.triggered_by === (m.name ?? ''))
-                                        .forEach((c, ci) => {
-                                          rows.push(
-                                            <tr key={`mc-${gi}-${i}-${mi}-${ci}`} className="border-b border-gray-100">
-                                              <td className="py-1 text-gray-500 pl-8">↳ {c.name ?? '—'}</td>
-                                              <td className="py-1 text-right text-gray-600">
-                                                {Number(c.unit_price) ? formatCurrency(Number(c.unit_price)) : (
-                                                  <span className="text-emerald-600">Included</span>
-                                                )}
-                                              </td>
-                                            </tr>,
-                                          );
-                                        });
-                                    });
-                                    return rows;
-                                  })()}
+                                  {extrasRows(line, `${gi}-${i}`, 0)}
                                   {line.notes ? (
                                     <tr className="border-b border-gray-100">
                                       <td colSpan={2} className="py-1 pl-8 text-amber-700 italic">
