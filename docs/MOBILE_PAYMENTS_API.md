@@ -87,12 +87,18 @@ any such fields are ignored).
 | `discount_code` | string | no | |
 | `loyalty_points_to_redeem` | number | no | requires `customer_phone` |
 
+> **You never send an amount, currency, or paisa.** Send only the cart. The
+> backend prices it (as card tender), converts to paisa, and sets currency 586.
+> The amount to charge comes back in the response for you to display.
+
 ### Response `201`
 ```json
 {
   "session_id": "1bfed13c-f7a2-4db3-88fd-6a0d07402478",
   "status": "pending",
-  "form_url": "https://acquiring.meezanbank.com/payment/merchants/.../payment_en.html?mdOrder=...",
+  "amount": 659,
+  "currency": "586",
+  "form_url": "https://test-securepayment.meezanbank.com:9716/epg/merchants/ibft_merchant/payment.html?mdOrder=...",
   "expires_at": "2026-07-24T08:17:52.364Z",
   "order_group_id": null
 }
@@ -102,6 +108,8 @@ any such fields are ignored).
 |---|---|
 | `session_id` | Opaque token. Use it for the status endpoint. **This is the only id you get** — never expose or guess numeric ids. |
 | `status` | Always `pending` here. |
+| `amount` | The amount that will be charged, in **PKR** (rupees). Display this to the customer. |
+| `currency` | ISO 4217 numeric (`"586"` = PKR). |
 | `form_url` | Open this in the WebView / Custom Tab. |
 | `expires_at` | ISO-8601. The payment window closes at this time (20 min). |
 | `order_group_id` | `null` until paid. |
@@ -131,7 +139,9 @@ so it returns a fresh result.
 {
   "session_id": "1bfed13c-f7a2-4db3-88fd-6a0d07402478",
   "status": "paid",
-  "form_url": "https://acquiring.meezanbank.com/payment/.../payment_en.html?mdOrder=...",
+  "amount": 659,
+  "currency": "586",
+  "form_url": "https://test-securepayment.meezanbank.com:9716/epg/merchants/ibft_merchant/payment.html?mdOrder=...",
   "expires_at": "2026-07-24T08:17:52.364Z",
   "order_group_id": "28056bff-88c5-4e28-ab0d-17bbc55e2ee3"
 }

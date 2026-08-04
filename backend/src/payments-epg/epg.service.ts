@@ -36,6 +36,10 @@ export interface CreateSessionInput {
 export interface SessionView {
     session_id: string; // publicToken — never the serial id
     status: EpgSessionStatus;
+    /** Amount that will be charged, in PKR (major units) — for the app to display. */
+    amount: number;
+    /** ISO 4217 numeric currency (PKR = "586"). */
+    currency: string;
     form_url: string | null;
     expires_at: string;
     order_group_id: string | null;
@@ -411,6 +415,9 @@ export class EpgService {
         return {
             session_id: s.publicToken,
             status: s.status,
+            // amountMinor is a bigint column (returned as a string by pg).
+            amount: Number(s.amountMinor) / 100,
+            currency: s.currency,
             form_url: s.formUrl,
             expires_at: new Date(s.expiresAt).toISOString(),
             order_group_id: s.createdOrderGroupId,
