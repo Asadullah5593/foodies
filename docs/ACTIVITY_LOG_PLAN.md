@@ -170,9 +170,18 @@ Mitigations, all mandatory:
 4. **Deploy window**: off-peak, with `pm2 logs` watched. Boot is the only moment the
    migration runs.
 
-Confirmed on dev: **PostgreSQL 14.23**. Please confirm the prod major version before
-Phase 0 — everything here assumes ≥ 11 (true for any supported release), which is
-what makes `ADD COLUMN` metadata-only and partitioning cheap.
+**Versions (confirmed 2026-08-05): prod is PostgreSQL 17.9, dev is 14.23.**
+
+Everything the design needs is supported on both: range partitioning (10+), the
+DEFAULT partition (11+), metadata-only `ADD COLUMN` (11+), and — the one that
+matters most — row triggers on a partitioned parent, which enforce append-only and
+need 13+.
+
+The three-major gap is itself a risk to manage, not a blocker. Phase 0 was verified
+on 14.23, which is the *weaker* case for the trigger cascade, so a pass there
+implies a pass on 17. But the migration rehearsal (§11) must run against a
+**restored prod snapshot on 17**, not the dev box, before anything is enabled in
+production.
 
 ### 4.2 Runtime safety
 
