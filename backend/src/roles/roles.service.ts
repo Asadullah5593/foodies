@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, In } from 'typeorm';
+import { ActivityContext } from '../activity-log/activity-context';
 import { Role } from '../entities/role.entity';
 import { Permission } from '../entities/permission.entity';
 
@@ -220,6 +221,14 @@ export class RolesService {
         if (role.slug === 'super_admin') {
             throw new NotFoundException('Super Admin role cannot be edited');
         }
+
+        // Snapshot BEFORE the assignments below overwrite it. A role's
+        // permission set is replaced wholesale here and there is no history
+        // table, so without this the previous grant is gone the instant it is
+        // saved — which is exactly the question forensics asks ("what could
+        // this person do at the time?"). No-op outside a request.
+        const before = this.auditSnapshot(role);
+
         if (dto.order_history_days !== undefined) {
             role.orderHistoryDays = this.normalizeHistoryDays(
                 dto.order_history_days,
@@ -251,7 +260,40 @@ export class RolesService {
                 : [];
         }
         await this.roleRepo.save(role);
-        return this.getRoleById(id, tenantId);
+        const updated = await this.getRoleById(id, tenantId);
+        ActivityContext.recordChange(
+            'role',
+            id,
+            before,
+            this.auditSnapshot(updated),
+            updated.name,
+        );
+        return updated;
+    }
+
+    /**
+     * The fields worth recording on a role change. Permissions are captured as
+     * a sorted list of NAMES, not ids: an audit row has to stay readable years
+     * later, when the id of a since-renamed permission means nothing.
+     */
+    private auditSnapshot(role: {
+        name?: string;
+        slug?: string;
+        orderHistoryDays?: number | null;
+        maxStaffDiscountPercent?: number | null;
+        maxStaffDiscountAmount?: number | null;
+        permissions?: Array<{ name: string }> | null;
+    }): Record<string, unknown> {
+        return {
+            name: role.name ?? null,
+            slug: role.slug ?? null,
+            order_history_days: role.orderHistoryDays ?? null,
+            max_staff_discount_percent: role.maxStaffDiscountPercent ?? null,
+            max_staff_discount_amount: role.maxStaffDiscountAmount ?? null,
+            permissions: (role.permissions ?? [])
+                .map((p) => p.name)
+                .sort((a, b) => a.localeCompare(b)),
+        };
     }
 
     async removeRole(id: number, tenantId: number | null) {

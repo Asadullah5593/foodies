@@ -136,6 +136,23 @@ export class ActivityLogMiddleware implements NestMiddleware {
 
         const merged = this.mergeChanges(store, path, piiMask);
 
+        // Subject precedence: an explicit setSubject wins; then whatever a
+        // single recordChange() named (the service knows the entity better than
+        // a URL or a permission slug does — "role"/"Cashier" beats "roles"/null);
+        // then the interceptor's resource with an id from the path or response.
+        const only = store.changes.length === 1 ? store.changes[0] : null;
+        const entityType =
+            store.entityType ??
+            only?.entityType ??
+            enrichment?.entityType ??
+            null;
+        const entityId =
+            store.entityId ??
+            only?.entityId ??
+            this.idFromPath(path) ??
+            this.idFromResponse(enrichment?.responseMeta);
+        const entityLabel = store.entityLabel ?? only?.entityLabel ?? null;
+
         const row: ActivityLogRow = {
             createdAt: new Date(),
             requestId: store.requestId,
@@ -153,13 +170,9 @@ export class ActivityLogMiddleware implements NestMiddleware {
             brandId: store.brandId ?? null,
             action,
             actionGroup: deriveActionGroup(path),
-            entityType: store.entityType ?? enrichment?.entityType ?? null,
-            entityId:
-                store.entityId != null
-                    ? String(store.entityId).slice(0, 64)
-                    : (this.idFromPath(path) ??
-                      this.idFromResponse(enrichment?.responseMeta)),
-            entityLabel: store.entityLabel ?? null,
+            entityType,
+            entityId: entityId != null ? String(entityId).slice(0, 64) : null,
+            entityLabel: entityLabel ? entityLabel.slice(0, 200) : null,
             summary: null,
             httpMethod: method,
             route: path.slice(0, 300),

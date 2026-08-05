@@ -132,6 +132,35 @@ describe('ActivityLog', () => {
     expect(screen.getByText('read,write')).toBeInTheDocument();
   });
 
+  it('reads a permission change as what was added and removed', async () => {
+    // Two 119-item arrays side by side are unreadable; the question is always
+    // "what did they grant themselves?"
+    detail.mockResolvedValue({
+      ...row(),
+      query: null,
+      request_body: null,
+      response_meta: null,
+      changes: {
+        permissions: {
+          before: ['orders:view', 'orders:create'],
+          after: ['orders:view', 'orders:refund'],
+        },
+      },
+      user_agent: null,
+      session_id: null,
+      device_id: null,
+      actor_customer_id: null,
+    });
+    renderPage();
+    fireEvent.click(await screen.findByText('role.update'));
+    await screen.findByText('What changed');
+    expect(screen.getByText('+ orders:refund')).toBeInTheDocument();
+    expect(screen.getByText('− orders:create')).toBeInTheDocument();
+    // Unchanged entries are not repeated as noise
+    expect(screen.queryByText('+ orders:view')).not.toBeInTheDocument();
+    expect(screen.queryByText('− orders:view')).not.toBeInTheDocument();
+  });
+
   it('renders a redacted value as a visible marker, not an absence', async () => {
     detail.mockResolvedValue({
       ...row(),

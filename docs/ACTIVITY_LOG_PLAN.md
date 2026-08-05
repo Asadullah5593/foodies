@@ -1,7 +1,8 @@
 # Activity / Audit Log — implementation plan
 
-> **Status:** Phases 0, 1 and 2 built and verified (2026-08-05). Phases 3–6
-> outstanding. Branch `feat/activity-log`.
+> **Status:** Phases 0–3 built and verified (2026-08-05); Phase 3 covers items
+> 1–3 of its list (roles, users, menu/branch prices) — discounts, shifts and
+> inventory remain. Phases 4–6 outstanding. Branch `feat/activity-log`.
 > **Anchors verified against the tree on 2026-08-05.** Line references drift; the
 > "Verified anchors" table at the end is the source of truth and should be
 > re-checked at the start of each phase.
@@ -342,7 +343,25 @@ Registration: nav item + route in `App.tsx`, `PATH_PERMISSIONS` entry in
 `services/api/activityLogService.ts`. `resource = 'activity-log'` means
 `roleShared.ts` labels it "Activity Log" with no change.
 
-### Phase 3 — Diffs
+### Phase 3 — Diffs — ✅ roles, users, menu/prices (1–3 of 6)
+
+Landed: `recordChange()` in `roles.service.updateRole` (snapshotted *before* the
+permission set is overwritten), `users.service.update`, `menu.service.updateItem`
+and `branch-menu-items.service.update`.
+
+Verified live: granting `activity-log:view` to the Cashier role recorded
+`+ activity-log:view` by NAME alongside the rename, and a menu price edit
+recorded `base_price 699 → 749.5` with no phantom diff from
+`'699.00'` vs `699`. Subject precedence was fixed while testing — the service's
+own naming (`role` / "Cashier") now beats the interceptor's plural resource
+(`roles` / null), so a row says which record it touched in the terms a human
+uses.
+
+The UI reads set-valued changes as `+ added` / `− removed` chips: two 119-item
+permission arrays side by side are the same information and practically
+unreadable, and the question is always "what did they grant themselves?".
+
+Remaining: 4. discounts/coupons → 5. shifts/cash-outs → 6. inventory/procurement.
 
 `ActivityContext.recordChange()` instrumentation, in this order (each independent;
 the diff panel lights up incrementally):

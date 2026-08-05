@@ -58,6 +58,43 @@ const DiffValue: React.FC<{ value: unknown }> = ({ value }) => {
 };
 
 /**
+ * A set-valued change (a role's permissions, most importantly) read as what was
+ * added and removed. Two 119-item JSON blobs side by side are technically the
+ * same information and practically unreadable — this is the difference between
+ * "the permissions changed" and "they granted themselves refunds".
+ */
+const SetDiff: React.FC<{ before: unknown[]; after: unknown[] }> = ({ before, after }) => {
+  const beforeSet = before.map(String);
+  const afterSet = after.map(String);
+  const added = afterSet.filter((v) => !beforeSet.includes(v));
+  const removed = beforeSet.filter((v) => !afterSet.includes(v));
+
+  if (!added.length && !removed.length) {
+    return <span className="text-xs text-gray-400">reordered only</span>;
+  }
+  return (
+    <div className="flex flex-wrap gap-1">
+      {added.map((v) => (
+        <span
+          key={`+${v}`}
+          className="rounded bg-emerald-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-emerald-700"
+        >
+          + {v}
+        </span>
+      ))}
+      {removed.map((v) => (
+        <span
+          key={`-${v}`}
+          className="rounded bg-rose-50 px-1.5 py-0.5 font-mono text-[11px] font-semibold text-rose-700"
+        >
+          − {v}
+        </span>
+      ))}
+    </div>
+  );
+};
+
+/**
  * Reports → Activity Log.
  *
  * Read-only by construction: there is no edit or delete control anywhere on this
@@ -444,17 +481,37 @@ const ActivityLog: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {Object.entries(detail.changes).map(([field, value]) => (
-                        <tr key={field} className="border-b border-gray-100 last:border-0">
-                          <td className="py-1.5 pr-3 font-medium text-gray-700">{field}</td>
-                          <td className="py-1.5 pr-3">
-                            <DiffValue value={value.before} />
-                          </td>
-                          <td className="py-1.5">
-                            <DiffValue value={value.after} />
-                          </td>
-                        </tr>
-                      ))}
+                      {Object.entries(detail.changes).map(([field, value]) => {
+                        const isSet =
+                          Array.isArray(value.before) && Array.isArray(value.after);
+                        return (
+                          <tr
+                            key={field}
+                            className="border-b border-gray-100 last:border-0"
+                          >
+                            <td className="py-1.5 pr-3 align-top font-medium text-gray-700">
+                              {field}
+                            </td>
+                            {isSet ? (
+                              <td className="py-1.5" colSpan={2}>
+                                <SetDiff
+                                  before={value.before as unknown[]}
+                                  after={value.after as unknown[]}
+                                />
+                              </td>
+                            ) : (
+                              <>
+                                <td className="py-1.5 pr-3 align-top">
+                                  <DiffValue value={value.before} />
+                                </td>
+                                <td className="py-1.5 align-top">
+                                  <DiffValue value={value.after} />
+                                </td>
+                              </>
+                            )}
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </section>

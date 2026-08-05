@@ -37,6 +37,7 @@ import {
 } from './modifier-pricing';
 import { restrictDealChoiceItemsForConsumer } from './deal-consumer-shaping';
 import { getBranchClock, isWithinSchedule } from '../utils/branch-schedule';
+import { ActivityContext } from '../activity-log/activity-context';
 
 const MENU_ITEM_GALLERY_MAX = 12;
 
@@ -567,6 +568,17 @@ export class MenuService {
         const item = await this.itemRepo.findOne({ where: { id } });
         if (!item) throw new NotFoundException('Menu item not found');
         const oldImageUrl = item.imageUrl ?? null;
+        // "Who changed this price?" is the single most asked question of an
+        // audit log in a POS. base_price is numeric, so TypeORM hands it back
+        // as a string — the diff layer normalises before comparing, otherwise
+        // '12.00' vs 12 would look like a change on every save.
+        const auditBefore = {
+            name: item.name,
+            base_price: item.basePrice,
+            is_active: item.isActive,
+            category_id: item.categoryId,
+            deal_only: item.dealOnly,
+        };
 
         if (dto.brand_id !== undefined) item.brandId = dto.brand_id;
         if (dto.category_id !== undefined) item.categoryId = dto.category_id;
@@ -624,6 +636,19 @@ export class MenuService {
             );
 
         await this.itemRepo.save(item);
+        ActivityContext.recordChange(
+            'menu_item',
+            item.id,
+            auditBefore,
+            {
+                name: item.name,
+                base_price: item.basePrice,
+                is_active: item.isActive,
+                category_id: item.categoryId,
+                deal_only: item.dealOnly,
+            },
+            item.name,
+        );
         await this.mediaCleanup.deleteManyIfUnreferenced(
             droppedGalleryUrls,
             'menu-items',
