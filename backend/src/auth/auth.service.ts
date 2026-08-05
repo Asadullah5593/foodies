@@ -6,6 +6,7 @@ import * as bcrypt from 'bcryptjs';
 import { User } from '../entities/user.entity';
 import { expandPermissions } from '../roles/permission-implications';
 import { normalizePakistaniPhone } from '../utils/phone';
+import { ActivityContext } from '../activity-log/activity-context';
 
 @Injectable()
 export class AuthService {
@@ -52,6 +53,24 @@ export class AuthService {
             [phoneNorm ?? emailNorm],
         )) as unknown as UserRow[];
         const row: UserRow | undefined = rows[0];
+
+        // Attribute the ATTEMPT, not just the success. A failed login is written
+        // by the audit middleware with whatever scope it can see, and it can see
+        // none — the request is unauthenticated by definition. Without this, a
+        // tenant's own admins could never review failed logins against their own
+        // staff, because those rows would carry no tenant_id and be filtered out
+        // of every tenant-scoped query. No-op when no request is in flight.
+        if (row) {
+            ActivityContext.setSubject('user', row.id, row.name);
+            const attemptTenant = (await this.dataSource.query(
+                'SELECT tenant_id FROM tenant_users WHERE user_id = $1 LIMIT 1',
+                [row.id],
+            )) as unknown as Array<{ tenant_id: number }>;
+            ActivityContext.setScope({
+                tenantId: attemptTenant[0]?.tenant_id ?? null,
+            });
+        }
+
         if (!row || row.status !== 'active') return null;
 
         const hash = row.password;
@@ -75,6 +94,7 @@ export class AuthService {
             [row.id],
         )) as unknown as { tenant_id: number }[];
         const tenantId = tenantRows[0]?.tenant_id ?? null;
+        ActivityContext.setScope({ tenantId });
         const isRider = await this.checkIsRider(row.id);
         return {
             id: row.id,

@@ -233,28 +233,29 @@ describe('activity log policy', () => {
                 new Promise<string[]>((resolve) => {
                     ActivityContext.run(
                         { requestId: id, changes: [] },
-                        async () => {
-                            ActivityContext.recordChange(
-                                'menu_item',
-                                entityId,
-                                { price: 1 },
-                                { price: 2 },
-                            );
-                            // Yield, so the two requests genuinely interleave
-                            await new Promise((r) => setTimeout(r, 5));
-                            ActivityContext.recordChange(
-                                'menu_item',
-                                entityId,
-                                { name: 'a' },
-                                { name: 'b' },
-                            );
-                            const store = ActivityContext.get();
-                            resolve(
-                                (store?.changes ?? []).map((c) =>
-                                    String(c.entityId),
-                                ),
-                            );
-                        },
+                        () =>
+                            void (async () => {
+                                ActivityContext.recordChange(
+                                    'menu_item',
+                                    entityId,
+                                    { price: 1 },
+                                    { price: 2 },
+                                );
+                                // Yield, so the two requests genuinely interleave
+                                await new Promise((r) => setTimeout(r, 5));
+                                ActivityContext.recordChange(
+                                    'menu_item',
+                                    entityId,
+                                    { name: 'a' },
+                                    { name: 'b' },
+                                );
+                                const store = ActivityContext.get();
+                                resolve(
+                                    (store?.changes ?? []).map((c) =>
+                                        String(c.entityId),
+                                    ),
+                                );
+                            })(),
                     );
                 });
 

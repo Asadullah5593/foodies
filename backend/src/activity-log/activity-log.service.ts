@@ -1,0 +1,433 @@
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
+
+export interface ActivityLogFilters {
+    date_from?: string;
+    date_to?: string;
+    actor_user_id?: number;
+    actor_type?: string;
+    action?: string;
+    action_group?: string;
+    entity_type?: string;
+    entity_id?: string;
+    outcome?: string;
+    branch_id?: number;
+    brand_id?: number;
+    request_id?: string;
+    /** Free text over actor label, action, route and entity label. */
+    search?: string;
+    page?: number;
+    page_size?: number;
+}
+
+const DEFAULT_WINDOW_DAYS = 7;
+/** Hard ceiling. A year-wide query would defeat partition pruning entirely. */
+const MAX_WINDOW_DAYS = 92;
+const DEFAULT_PAGE_SIZE = 25;
+const MAX_PAGE_SIZE = 200;
+
+/** Columns the list returns — the payload and diff are detail-only. */
+export interface ActivityLogListRow {
+    id: string;
+    created_at: Date;
+    request_id: string | null;
+    actor_type: string;
+    actor_user_id: number | null;
+    actor_label: string | null;
+    actor_role_slugs: string[] | null;
+    actor_role_names: string[] | null;
+    actor_is_super_admin: boolean;
+    tenant_id: number | null;
+    branch_id: number | null;
+    brand_id: number | null;
+    action: string;
+    action_group: string | null;
+    entity_type: string | null;
+    entity_id: string | null;
+    entity_label: string | null;
+    summary: string | null;
+    http_method: string | null;
+    route: string | null;
+    status_code: number | null;
+    outcome: string;
+    duration_ms: number | null;
+    changed_fields: string[] | null;
+    ip: string | null;
+    payload_truncated: boolean;
+    diff_expected: boolean;
+}
+
+export interface ActivityLogDetailRow extends ActivityLogListRow {
+    query: Record<string, unknown> | null;
+    request_body: Record<string, unknown> | null;
+    response_meta: Record<string, unknown> | null;
+    changes: Record<string, { before: unknown; after: unknown }> | null;
+    user_agent: string | null;
+    session_id: string | null;
+    device_id: string | null;
+    actor_customer_id: number | null;
+}
+
+export interface ActivityLogRelatedRow {
+    id: string;
+    created_at: Date;
+    action: string;
+    outcome: string;
+    status_code: number | null;
+    route: string | null;
+    entity_type: string | null;
+    entity_id: string | null;
+}
+
+export interface ActivityLogHistoryRow {
+    id: string;
+    created_at: Date;
+    actor_label: string | null;
+    actor_role_names: string[] | null;
+    action: string;
+    outcome: string;
+    changes: Record<string, { before: unknown; after: unknown }> | null;
+    changed_fields: string[] | null;
+}
+
+const OUTCOMES = ['success', 'denied', 'failed', 'error'] as const;
+const ACTOR_TYPES = [
+    'staff',
+    'rider',
+    'customer',
+    'kiosk',
+    'anonymous',
+    'system',
+] as const;
+
+/**
+ * Read side of the activity log. Deliberately read-only: this service exposes
+ * no create, update or delete. Rows are written by ActivityLogWriter, and the
+ * table's trigger refuses modification anyway (§9 of the plan).
+ *
+ * **Every query is date-bounded.** That is not a nicety: the table is
+ * partitioned monthly, and an unbounded query would scan every partition —
+ * including archived months restored for an investigation. The bound is
+ * enforced here rather than trusted to the caller.
+ */
+@Injectable()
+export class ActivityLogService {
+    constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+
+    /**
+     * Resolve the window, clamped to MAX_WINDOW_DAYS.
+     *
+     * Dates are read as local days (the branch clock) and the end is pushed to
+     * 23:59:59.999, matching how the reports module reads a range — a user who
+     * types 5 Aug to 5 Aug means that whole day, not a zero-width instant.
+     */
+    private resolveRange(filters: ActivityLogFilters): {
+        from: Date;
+        to: Date;
+    } {
+        const parseDay = (v: string | undefined, endOfDay: boolean) => {
+            const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((v ?? '').trim());
+            if (!m) return null;
+            return new Date(
+                +m[1],
+                +m[2] - 1,
+                +m[3],
+                endOfDay ? 23 : 0,
+                endOfDay ? 59 : 0,
+                endOfDay ? 59 : 0,
+                endOfDay ? 999 : 0,
+            );
+        };
+
+        const to = parseDay(filters.date_to, true) ?? new Date();
+        const from =
+            parseDay(filters.date_from, false) ??
+            new Date(to.getTime() - DEFAULT_WINDOW_DAYS * 86_400_000);
+
+        if (from > to) {
+            throw new BadRequestException('date_from must be before date_to');
+        }
+        const spanDays = (to.getTime() - from.getTime()) / 86_400_000;
+        if (spanDays > MAX_WINDOW_DAYS) {
+            throw new BadRequestException(
+                `Date range is limited to ${MAX_WINDOW_DAYS} days. Narrow the range, or read an archived month instead.`,
+            );
+        }
+        return { from, to };
+    }
+
+    /** Builds the shared WHERE clause. Every value is parameterised. */
+    private buildWhere(
+        filters: ActivityLogFilters,
+        tenantId: number | null,
+        allowedBranchIds: number[] | null | undefined,
+    ): { sql: string; params: unknown[] } {
+        const { from, to } = this.resolveRange(filters);
+        const params: unknown[] = [from, to];
+        const clauses = ['created_at BETWEEN $1 AND $2'];
+
+        const add = (clause: string, value: unknown) => {
+            params.push(value);
+            clauses.push(clause.replace('?', `$${params.length}`));
+        };
+
+        // Super admins (tenantId null) see everything; everyone else is scoped.
+        if (tenantId != null) add('tenant_id = ?', tenantId);
+
+        // Branch-restricted staff see only their branches' rows, plus the rows
+        // that carry no branch at all (logins, tenant-level admin).
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0
+        ) {
+            params.push(allowedBranchIds);
+            clauses.push(
+                `(branch_id IS NULL OR branch_id = ANY($${params.length}))`,
+            );
+        }
+
+        if (filters.actor_user_id)
+            add('actor_user_id = ?', filters.actor_user_id);
+        if (
+            filters.actor_type &&
+            ACTOR_TYPES.includes(filters.actor_type as never)
+        )
+            add('actor_type = ?', filters.actor_type);
+        if (filters.action) add('action = ?', filters.action);
+        if (filters.action_group) add('action_group = ?', filters.action_group);
+        if (filters.entity_type) add('entity_type = ?', filters.entity_type);
+        if (filters.entity_id) add('entity_id = ?', filters.entity_id);
+        if (filters.outcome && OUTCOMES.includes(filters.outcome as never))
+            add('outcome = ?', filters.outcome);
+        if (filters.branch_id) add('branch_id = ?', filters.branch_id);
+        if (filters.brand_id) add('brand_id = ?', filters.brand_id);
+        if (filters.request_id) add('request_id = ?', filters.request_id);
+
+        if (filters.search?.trim()) {
+            const term = `%${filters.search.trim().toLowerCase()}%`;
+            params.push(term);
+            const i = params.length;
+            clauses.push(
+                `(lower(actor_label) LIKE $${i} OR lower(action) LIKE $${i} OR lower(route) LIKE $${i} OR lower(entity_label) LIKE $${i})`,
+            );
+        }
+
+        return { sql: clauses.join(' AND '), params };
+    }
+
+    /** Paginated list plus the outcome tallies the UI shows as chips. */
+    async find(
+        filters: ActivityLogFilters,
+        tenantId: number | null,
+        allowedBranchIds?: number[] | null,
+    ) {
+        const { sql, params } = this.buildWhere(
+            filters,
+            tenantId,
+            allowedBranchIds,
+        );
+        const page = Math.max(1, Math.floor(Number(filters.page) || 1));
+        const pageSize = Math.min(
+            MAX_PAGE_SIZE,
+            Math.max(
+                1,
+                Math.floor(Number(filters.page_size) || DEFAULT_PAGE_SIZE),
+            ),
+        );
+        const offset = (page - 1) * pageSize;
+
+        const [rows, totals, outcomes] = await Promise.all([
+            this.dataSource.query<ActivityLogListRow[]>(
+                `SELECT id, created_at, request_id, actor_type, actor_user_id,
+                        actor_label, actor_role_slugs, actor_role_names,
+                        actor_is_super_admin, tenant_id, branch_id, brand_id,
+                        action, action_group, entity_type, entity_id,
+                        entity_label, summary, http_method, route, status_code,
+                        outcome, duration_ms, changed_fields, ip,
+                        payload_truncated, diff_expected
+                 FROM activity_logs
+                 WHERE ${sql}
+                 ORDER BY created_at DESC, id DESC
+                 LIMIT ${pageSize} OFFSET ${offset}`,
+                params,
+            ),
+            this.dataSource.query<{ total: number }[]>(
+                `SELECT count(*)::int AS total FROM activity_logs WHERE ${sql}`,
+                params,
+            ),
+            this.dataSource.query<{ outcome: string; count: number }[]>(
+                `SELECT outcome, count(*)::int AS count FROM activity_logs
+                 WHERE ${sql} GROUP BY outcome`,
+                params,
+            ),
+        ]);
+
+        const outcomeCounts: Record<string, number> = {
+            success: 0,
+            denied: 0,
+            failed: 0,
+            error: 0,
+        };
+        for (const row of outcomes) {
+            outcomeCounts[row.outcome] = row.count;
+        }
+
+        return {
+            data: rows,
+            total: totals[0]?.total ?? 0,
+            page,
+            page_size: pageSize,
+            outcome_counts: outcomeCounts,
+        };
+    }
+
+    /**
+     * One row in full, including the payload and diff the list omits.
+     *
+     * `created_at` is required alongside the id: the primary key is
+     * (created_at, id), and without the date Postgres would have to search
+     * every partition for a single row.
+     */
+    async findOne(
+        id: string,
+        createdAt: string,
+        tenantId: number | null,
+        allowedBranchIds?: number[] | null,
+    ) {
+        const at = new Date(createdAt);
+        if (Number.isNaN(at.getTime())) {
+            throw new BadRequestException('A valid created_at is required');
+        }
+        // One-day window around the row: keeps the scan to a single partition.
+        const params: unknown[] = [
+            id,
+            new Date(at.getTime() - 86_400_000),
+            new Date(at.getTime() + 86_400_000),
+        ];
+        const clauses = ['id = $1', 'created_at BETWEEN $2 AND $3'];
+        if (tenantId != null) {
+            params.push(tenantId);
+            clauses.push(`tenant_id = $${params.length}`);
+        }
+        if (
+            allowedBranchIds != null &&
+            Array.isArray(allowedBranchIds) &&
+            allowedBranchIds.length > 0
+        ) {
+            params.push(allowedBranchIds);
+            clauses.push(
+                `(branch_id IS NULL OR branch_id = ANY($${params.length}))`,
+            );
+        }
+        const rows = await this.dataSource.query<ActivityLogDetailRow[]>(
+            `SELECT * FROM activity_logs WHERE ${clauses.join(' AND ')} LIMIT 1`,
+            params,
+        );
+        return rows[0] ?? null;
+    }
+
+    /**
+     * Everything else that happened in the same request — the panel that turns
+     * a single row into a story.
+     */
+    async findRelated(
+        requestId: string,
+        createdAt: string,
+        tenantId: number | null,
+    ) {
+        const at = new Date(createdAt);
+        if (Number.isNaN(at.getTime())) return [];
+        const params: unknown[] = [
+            requestId,
+            new Date(at.getTime() - 86_400_000),
+            new Date(at.getTime() + 86_400_000),
+        ];
+        const clauses = ['request_id = $1', 'created_at BETWEEN $2 AND $3'];
+        if (tenantId != null) {
+            params.push(tenantId);
+            clauses.push(`tenant_id = $${params.length}`);
+        }
+        return await this.dataSource.query<ActivityLogRelatedRow[]>(
+            `SELECT id, created_at, action, outcome, status_code, route, entity_type, entity_id
+             FROM activity_logs WHERE ${clauses.join(' AND ')}
+             ORDER BY created_at ASC LIMIT 50`,
+            params,
+        );
+    }
+
+    /**
+     * History of one record, for the "History" drawer on a record page.
+     * Served by the (entity_type, entity_id, created_at DESC) index.
+     */
+    async findForEntity(
+        entityType: string,
+        entityId: string,
+        tenantId: number | null,
+        days = MAX_WINDOW_DAYS,
+    ) {
+        const from = new Date(Date.now() - Math.min(days, 365) * 86_400_000);
+        const params: unknown[] = [entityType, entityId, from];
+        const clauses = [
+            'entity_type = $1',
+            'entity_id = $2',
+            'created_at >= $3',
+        ];
+        if (tenantId != null) {
+            params.push(tenantId);
+            clauses.push(`tenant_id = $${params.length}`);
+        }
+        return await this.dataSource.query<ActivityLogHistoryRow[]>(
+            `SELECT id, created_at, actor_label, actor_role_names, action,
+                    outcome, changes, changed_fields
+             FROM activity_logs WHERE ${clauses.join(' AND ')}
+             ORDER BY created_at DESC LIMIT 100`,
+            params,
+        );
+    }
+
+    /** Distinct values for the filter dropdowns, within the current window. */
+    async filterOptions(tenantId: number | null) {
+        const from = new Date(Date.now() - 30 * 86_400_000);
+        const params: unknown[] = [from];
+        let scope = 'created_at >= $1';
+        if (tenantId != null) {
+            params.push(tenantId);
+            scope += ` AND tenant_id = $${params.length}`;
+        }
+        const [actions, groups, actors] = await Promise.all([
+            this.dataSource.query<Array<{ action: string }>>(
+                `SELECT DISTINCT action FROM activity_logs WHERE ${scope} ORDER BY action LIMIT 200`,
+                params,
+            ),
+            this.dataSource.query<Array<{ action_group: string }>>(
+                `SELECT DISTINCT action_group FROM activity_logs WHERE ${scope} AND action_group IS NOT NULL ORDER BY action_group`,
+                params,
+            ),
+            this.dataSource.query<
+                Array<{ actor_user_id: number; actor_label: string }>
+            >(
+                `SELECT DISTINCT actor_user_id, actor_label FROM activity_logs
+                 WHERE ${scope} AND actor_user_id IS NOT NULL
+                 ORDER BY actor_label LIMIT 200`,
+                params,
+            ),
+        ]);
+        return {
+            actions: (actions as Array<{ action: string }>).map(
+                (r) => r.action,
+            ),
+            action_groups: (groups as Array<{ action_group: string }>).map(
+                (r) => r.action_group,
+            ),
+            actors: actors as Array<{
+                actor_user_id: number;
+                actor_label: string;
+            }>,
+            outcomes: [...OUTCOMES],
+            actor_types: [...ACTOR_TYPES],
+            max_window_days: MAX_WINDOW_DAYS,
+        };
+    }
+}
