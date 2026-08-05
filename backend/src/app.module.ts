@@ -21,6 +21,7 @@ import { BankCardsModule } from './bank-cards/bank-cards.module';
 import { StaffDiscountsModule } from './staff-discounts/staff-discounts.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { ReportsModule } from './reports/reports.module';
+import { ActivityLogModule } from './activity-log/activity-log.module';
 import { BranchUsersModule } from './branch-users/branch-users.module';
 import { BranchMenuItemsModule } from './branch-menu-items/branch-menu-items.module';
 import { RolesModule } from './roles/roles.module';
@@ -89,6 +90,7 @@ import { FbrModule } from './fbr/fbr.module';
         StaffDiscountsModule,
         ShiftsModule,
         ReportsModule,
+        ActivityLogModule,
         BranchUsersModule,
         BranchMenuItemsModule,
         RolesModule,

@@ -1,6 +1,7 @@
 # Activity / Audit Log — implementation plan
 
-> **Status:** approved, not started. Branch `feat/activity-log`.
+> **Status:** Phase 0 built and verified on the dev DB (2026-08-05). Phases 1–6
+> outstanding. Branch `feat/activity-log`.
 > **Anchors verified against the tree on 2026-08-05.** Line references drift; the
 > "Verified anchors" table at the end is the source of truth and should be
 > re-checked at the start of each phase.
@@ -198,7 +199,14 @@ what makes `ADD COLUMN` metadata-only and partitioning cheap.
 
 Each phase lands independently and is revertable. Only Phase 0 touches the schema.
 
-### Phase 0 — Foundations (invisible at runtime)
+### Phase 0 — Foundations (invisible at runtime) — ✅ DONE
+
+Landed: migration `1760000000107-ActivityLogs.ts`, `activity-log.entity.ts`,
+`activity-log/` (module, writer, redaction, policy, activity-context, maintenance),
+permission constants + seed rows, module registered in `app.module.ts`.
+Verified on dev: partitions and indexes created, rows route to the right partition,
+append-only enforced (§9), `down()` fully reverses, entity ↔ table columns match
+35/35, 18 redaction specs green, full backend suite 484/484.
 
 - `backend/src/migrations/1760000000107-ActivityLogs.ts` — table, partitions,
   indexes, `REVOKE UPDATE, DELETE`, and the `activity-log:view` /
@@ -487,9 +495,29 @@ Guard rails, because a kill switch is the obvious evasion route:
 
 ## 9. Integrity
 
-- **Append-only:** the service exposes only `find*`; raw parameterised INSERT only;
-  `REVOKE UPDATE, DELETE` in the migration. Retention still works because
-  `DROP TABLE <partition>` needs ownership, not `DELETE`.
+- **Append-only:** the service exposes only `find*`; raw parameterised INSERT only.
+  Retention still works because `DROP TABLE <partition>` needs ownership, not
+  `DELETE`.
+
+  ⚠️ **Corrected 2026-08-05 by testing, not reasoning.** The plan originally relied
+  on `REVOKE UPDATE, DELETE`. That is **ineffective here**: the app user *owns*
+  `activity_logs`, and Postgres grants owners their privileges implicitly, so the
+  REVOKE changes `information_schema.table_privileges` but not behaviour. Measured
+  on 14.23: after the REVOKE, `UPDATE`, `DELETE` **and** `TRUNCATE` all still
+  succeeded.
+
+  Enforcement is therefore a **trigger** (`activity_logs_append_only()`), which
+  fires for the owner too and — on PG 13+ — cascades from the partitioned parent to
+  every partition, present and future. Verified: `UPDATE`/`DELETE`/`TRUNCATE` are
+  refused both on the parent and directly on a partition, while `CREATE`/`DROP
+  PARTITION` still work so retention is unaffected. The REVOKE is kept as belt and
+  braces for the day the table is owned by a different role.
+
+  A table owner can still drop the trigger. That is unavoidable with one DB role,
+  and is exactly why real tamper-evidence comes from the write-once S3 archive
+  (§7.3) rather than from anything inside the database. What the trigger removes is
+  every *accidental* path: an ORM `save()`, a stray script, a careless `UPDATE` in
+  psql.
 - **Honest ceiling:** with one DB user and no WORM storage, in-database
   tamper-evidence is theatre — anyone who can write can rewrite a hash chain. Real
   tamper-evidence comes from §7.3 (Object Lock) and, optionally, mirroring critical

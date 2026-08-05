@@ -161,6 +161,15 @@ export const Permissions = {
     // sees the entries read-only; only holders may add or void one.
     SHIFTS_CASH_OUT: 'shifts:cash-out',
 
+    // — Activity / audit log (no umbrella: each right is granted deliberately) —
+    ACTIVITY_LOG_VIEW: 'activity-log:view',
+    ACTIVITY_LOG_EXPORT: 'activity-log:export',
+    // Reading the log and being able to destroy or silence it are different
+    // powers, so purge and configure are separate from view and from each
+    // other. Both additionally require a password re-entry at the call site.
+    ACTIVITY_LOG_PURGE: 'activity-log:purge',
+    ACTIVITY_LOG_CONFIGURE: 'activity-log:configure',
+
     // — Business settings (umbrella: business-settings:access) —
     BUSINESS_SETTINGS_EDIT: 'business-settings:edit',
 
