@@ -90,6 +90,20 @@ const CRITICAL_ACTIONS = [
     'activity-log.',
 ];
 
+/**
+ * English-ish singularisation for action names. A naive `replace(/s$/, '')`
+ * produces `categorie.create` and `branche.update`, which look like typos in
+ * every filter and report.
+ */
+export function singularise(word: string): string {
+    const w = word.toLowerCase();
+    if (w.endsWith('ies') && w.length > 4) return `${w.slice(0, -3)}y`;
+    if (/(ch|sh|ss|x|z)es$/.test(w)) return w.slice(0, -2);
+    if (w.endsWith('ss')) return w;
+    if (w.endsWith('s') && w.length > 2) return w.slice(0, -1);
+    return w;
+}
+
 /** Strips the global `/api` prefix and the query string. */
 export function normalisePath(url: string): string {
     const path = (url.split('?')[0] || '').replace(/\/+$/, '');
@@ -133,6 +147,12 @@ export function shouldCapture(
     // interceptor-based design would never have seen it.
     if (statusCode === 401 || statusCode === 403) return true;
 
+    // So is a server error. Skipping POS/KDS chatter is about volume, and a 500
+    // is not volume — it is the one time that traffic is worth reading. Without
+    // this, the busiest routes in the system are also the ones whose failures
+    // are invisible.
+    if (statusCode >= 500) return true;
+
     if (isSkippedRoute(method, path)) return false;
     if (MUTATING.has(method)) return true;
     if (level === 'mutations+sensitive_reads') {
@@ -152,7 +172,7 @@ export function deriveAction(method: string, path: string): string {
     const meaningful = segments.filter(
         (s) => !/^\d+$/.test(s) && s !== 'api' && s !== 'admin',
     );
-    const resource = (meaningful[0] ?? 'request').replace(/s$/, '');
+    const resource = singularise(meaningful[0] ?? 'request');
     const sub = meaningful.length > 1 ? meaningful[meaningful.length - 1] : '';
     const verb =
         method === 'POST'
@@ -167,6 +187,20 @@ export function deriveAction(method: string, path: string): string {
         return `${resource}.${sub}`.toLowerCase();
     }
     return `${resource}.${verb}`.toLowerCase();
+}
+
+/**
+ * Refines an action with what actually happened. A failed login and a
+ * successful one are different events for alerting — "five auth.login rows from
+ * one IP" is meaningless if you cannot tell them apart without also reading the
+ * status code.
+ */
+export function refineAction(action: string, statusCode: number): string {
+    if (statusCode < 400) return action;
+    if (action === 'auth.login' || action.endsWith('.login')) {
+        return 'auth.login.failed';
+    }
+    return action;
 }
 
 /** Coarse bucket for the UI's filter chips. */

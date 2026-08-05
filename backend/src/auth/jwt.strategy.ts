@@ -24,6 +24,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
             tenantId: user.tenant_id,
             isSuperAdmin: user.is_super_admin === true,
             isRider: user.is_rider === true,
+            // Already selected by findById — carried so the activity log can
+            // name the actor without a second lookup, and so a row still reads
+            // after the user is renamed or deleted.
+            name: user.name,
+            email: user.email,
         };
     }
 }

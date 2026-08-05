@@ -1,24 +1,34 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ActivityLog } from '../entities/activity-log.entity';
 import { ActivityLogWriter } from './activity-log.writer';
 import { ActivityLogMaintenanceService } from './activity-log-maintenance.service';
+import { ActivityLogMiddleware } from './activity-log.middleware';
+import { ActivityLogInterceptor } from './activity-log.interceptor';
 
 /**
- * Activity / audit log — Phase 0.
+ * Activity / audit log — Phases 0 and 1.
  *
- * Nothing here observes traffic yet: the middleware and the APP_INTERCEPTOR
- * arrive in Phase 1, and the read API in Phase 2. What this module does today
- * is own the writer (so Phase 1 has somewhere to hand rows) and keep the
- * table's partitions ahead of the clock.
+ * Capture is wired but **dark**: with `ACTIVITY_LOG_ENABLED` unset or false the
+ * middleware returns after minting a correlation id, the interceptor returns
+ * `next.handle()` untouched, and nothing is written. The read API (Phase 2) and
+ * archiving (Phase 6) are still to come.
  *
- * Registering it is deliberately inert: the writer has no callers, and the
- * maintenance job only creates future partitions unless
- * ACTIVITY_LOG_RETENTION_ENABLED is explicitly turned on.
+ * The middleware is registered in `main.ts` with `app.use()` rather than
+ * `configure(consumer)` here, because it has to sit outside the global `/api`
+ * prefix and ahead of everything — including the guards whose rejections are the
+ * rows we most want.
  */
 @Module({
     imports: [TypeOrmModule.forFeature([ActivityLog])],
-    providers: [ActivityLogWriter, ActivityLogMaintenanceService],
-    exports: [ActivityLogWriter],
+    providers: [
+        ActivityLogWriter,
+        ActivityLogMaintenanceService,
+        ActivityLogMiddleware,
+        // The repo's first APP_* provider. Enrichment only — see the interceptor.
+        { provide: APP_INTERCEPTOR, useClass: ActivityLogInterceptor },
+    ],
+    exports: [ActivityLogWriter, ActivityLogMiddleware],
 })
 export class ActivityLogModule {}

@@ -234,7 +234,27 @@ append-only enforced (§9), `down()` fully reverses, entity ↔ table columns ma
   where relevant — seed slugs and production slugs differ (see the permission
   migration precedent).
 
-### Phase 1 — Capture, dark
+### Phase 1 — Capture, dark — ✅ DONE
+
+Landed: `activity-log.middleware.ts` (lifecycle, ALS store, emit on `finish`),
+`activity-log.interceptor.ts` (APP_INTERCEPTOR, enrichment only),
+`activity-log.actor.ts`, `activity-log.config.ts`, wiring in `main.ts`
+(`app.use` first + `enableShutdownHooks()`), the role snapshot in
+`role-access.guard.ts` (skipped entirely when the log is off) and `name`/`email`
+on the JWT payload.
+
+Verified against live dev traffic with capture on: 401 and 403 both produced rows
+(the case an interceptor-only design cannot see), role slugs snapshotted per
+actor, a repeated sensitive read collapsed to one row, the POS quote route
+produced none, a failed login stored `password: "[redacted]"` with the email
+masked, and a secret sweep for `$2b$` / `eyJ` / `Bearer` / the real password came
+back clean across every row. 39 specs for policy, actor and ALS concurrency.
+
+Three defects were found by driving it rather than by reading it: naive
+singularisation produced `categorie.create`; a failed login was indistinguishable
+from a successful one (`auth.login` either way); and a 500 on a skipped route was
+dropped, so the busiest paths in the system were also the ones whose failures
+were invisible. All three fixed and covered by specs.
 
 - `backend/src/main.ts` — `app.use(...)` as the **first** line after
   `NestFactory.create` (line 9, before `setGlobalPrefix` on line 10), plus
@@ -499,6 +519,24 @@ Guard rails, because a kill switch is the obvious evasion route:
   brake that does not depend on the database being reachable.
 - If the settings read fails, the last known good value is kept (never silently
   fails to `off`).
+
+---
+
+## 8a. Environment variables
+
+⚠️ `backend/.env.example` is **gitignored** (`.gitignore:9` — the `.env.*` pattern
+also swallows `.env.example`), so it is not a durable reference. The additions are
+mirrored here, and must be copied to the server's `.env` by hand.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ACTIVITY_LOG_ENABLED` | `false` | Master switch and hard override. Wins over the admin-panel setting, so the brake works even when the DB is unhappy. |
+| `ACTIVITY_LOG_CAPTURE_LEVEL` | `mutations+sensitive_reads` | `off` · `mutations` · `mutations+sensitive_reads` · `all` |
+| `ACTIVITY_LOG_PII_MODE` | `mask` | `mask` keeps "the phone changed, roughly how"; `full` stores contact details verbatim. |
+| `ACTIVITY_LOG_READ_COLLAPSE_SECONDS` | `300` | Repeat views of one screen by one person collapse to a single row per window. |
+| `ACTIVITY_LOG_RETENTION_ENABLED` | `false` | Phase 6. Must be true *and* DRY_RUN false before a partition is ever dropped. |
+| `ACTIVITY_LOG_RETENTION_DRY_RUN` | `true` | Defaults to dry-run: deleting audit history is opted into twice. |
+| `ACTIVITY_LOG_RETENTION_MONTHS` | `13` | Age at which a partition becomes expirable. |
 
 ---
 
