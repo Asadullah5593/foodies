@@ -1,6 +1,6 @@
 # Activity / Audit Log — implementation plan
 
-> **Status:** Phase 0 built and verified on the dev DB (2026-08-05). Phases 1–6
+> **Status:** Phases 0, 1 and 2 built and verified (2026-08-05). Phases 3–6
 > outstanding. Branch `feat/activity-log`.
 > **Anchors verified against the tree on 2026-08-05.** Line references drift; the
 > "Verified anchors" table at the end is the source of truth and should be
@@ -302,7 +302,25 @@ payroll, all `/admin/reports/*`, `/admin/shifts/:id` + cash-outs,
 per 5 min per (actor, route, query) — without this, report polling alone is ~8k
 rows/day.
 
-### Phase 2 — Read UI
+### Phase 2 — Read UI — ✅ DONE
+
+Landed: `activity-log.service.ts` + `activity-log.controller.ts` (list,
+filter-options, entity history, related-by-request, detail), the frontend
+`activityLogService.ts` and `pages/Admin/ActivityLog.tsx`, registered as a third
+child of the Reports nav group with its own `activity-log:view` path permission
+on both sides.
+
+Verified live: the default 7-day window returns rows with tallies; a 2020..2030
+range is refused with a 400 that says how to read an archived month instead;
+`outcome=denied` filters correctly. 11 page specs, frontend suite 403/403.
+
+**A scoping flaw surfaced here** and is fixed: failed logins and anonymous 401s
+are unauthenticated by definition, so they carried no `tenant_id` and were
+filtered out of every tenant-scoped query — the tenant's own admins could never
+review failed logins against their own staff. `validateUser` now attributes the
+*attempt*: a failed login for a known account records the subject and resolves
+that user's tenant, while an attempt against an unknown email stays tenant-less
+and is visible only to a super admin, which is the correct privacy boundary.
 
 `frontend/src/pages/Admin/ActivityLog.tsx`, mirroring `pages/Admin/Orders.tsx`:
 URL-driven filters (`useSearchParams`), 300 ms debounced search, server pagination
