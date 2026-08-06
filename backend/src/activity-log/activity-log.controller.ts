@@ -139,6 +139,7 @@ export class ActivityLogController {
             entityType,
             entityId,
             user.tenantId,
+            user.allowedBranchIds,
             days ? +days : undefined,
         );
     }
@@ -154,7 +155,12 @@ export class ActivityLogController {
         @Param('requestId') requestId: string,
         @Query('created_at') createdAt: string,
     ) {
-        return this.service.findRelated(requestId, createdAt, user.tenantId);
+        return this.service.findRelated(
+            requestId,
+            createdAt,
+            user.tenantId,
+            user.allowedBranchIds,
+        );
     }
 
     /**

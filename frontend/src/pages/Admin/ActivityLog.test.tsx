@@ -93,6 +93,51 @@ beforeEach(() => {
   related.mockResolvedValue([]);
 });
 
+describe('ActivityLog record lens', () => {
+  const renderFor = (search: string) =>
+    render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <MemoryRouter initialEntries={[`/admin/activity-logs${search}`]}>
+          <ActivityLog />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+  it('shows one record\'s history when arrived at from a History link', async () => {
+    renderFor('?entity_type=menu_item&entity_id=2421&entity_label=Pepperoni');
+    expect(await screen.findByText(/History — Pepperoni/)).toBeInTheDocument();
+    const sent = list.mock.calls[0][0] as {
+      entity_type: string;
+      entity_id: string;
+      date_from: string;
+      date_to: string;
+    };
+    expect(sent.entity_type).toBe('menu_item');
+    expect(sent.entity_id).toBe('2421');
+    // A record's history is worth more than the time lens's default week
+    const span =
+      (new Date(sent.date_to).getTime() - new Date(sent.date_from).getTime()) /
+      86_400_000;
+    expect(span).toBeGreaterThan(300);
+  });
+
+  it('keeps the normal heading when not looking at one record', async () => {
+    renderFor('');
+    expect(await screen.findByText('role.update')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Activity Log' })).toBeInTheDocument();
+    expect(screen.queryByText(/History —/)).not.toBeInTheDocument();
+  });
+
+  it('offers a way back to everything', async () => {
+    renderFor('?entity_type=role&entity_id=11');
+    expect(
+      await screen.findByRole('button', { name: /Back to all activity/ })
+    ).toBeInTheDocument();
+  });
+});
+
 describe('ActivityLog', () => {
   it('lists activity with who, what and outcome', async () => {
     renderPage();

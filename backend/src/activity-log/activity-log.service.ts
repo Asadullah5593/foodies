@@ -29,6 +29,8 @@ export interface ActivityLogFilters {
 const DEFAULT_WINDOW_DAYS = 7;
 /** Hard ceiling. A year-wide query would defeat partition pruning entirely. */
 const MAX_WINDOW_DAYS = 92;
+/** Wider ceiling when the query names one record — see resolveRange. */
+const MAX_ENTITY_WINDOW_DAYS = 400;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 200;
 
@@ -237,9 +239,17 @@ export class ActivityLogService {
             throw new BadRequestException('date_from must be before date_to');
         }
         const spanDays = (to.getTime() - from.getTime()) / 86_400_000;
-        if (spanDays > MAX_WINDOW_DAYS) {
+        // Asking for ONE record's history is a different query shape: the
+        // (entity_type, entity_id, created_at DESC) index makes it selective
+        // enough that a wider window is affordable, and "every price this item
+        // ever had" is the whole point of the record lens. Still bounded.
+        const limit =
+            filters.entity_type && filters.entity_id
+                ? MAX_ENTITY_WINDOW_DAYS
+                : MAX_WINDOW_DAYS;
+        if (spanDays > limit) {
             throw new BadRequestException(
-                `Date range is limited to ${MAX_WINDOW_DAYS} days. Narrow the range, or read an archived month instead.`,
+                `Date range is limited to ${limit} days. Narrow the range, or read an archived month instead.`,
             );
         }
         return { from, to };
@@ -303,6 +313,30 @@ export class ActivityLogService {
         }
 
         return { sql: clauses.join(' AND '), params };
+    }
+
+    /**
+     * Branch scoping, in one place so no read path can forget it.
+     *
+     * Rows carrying no branch (logins, tenant-level admin) stay visible: they
+     * belong to no branch, and hiding them would keep a branch manager from
+     * seeing failed logins against their own staff.
+     *
+     * Appends to `params` and returns the clause, or null when unrestricted.
+     */
+    private branchClause(
+        params: unknown[],
+        allowedBranchIds: number[] | null | undefined,
+    ): string | null {
+        if (
+            allowedBranchIds == null ||
+            !Array.isArray(allowedBranchIds) ||
+            allowedBranchIds.length === 0
+        ) {
+            return null;
+        }
+        params.push(allowedBranchIds);
+        return `(branch_id IS NULL OR branch_id = ANY($${params.length}))`;
     }
 
     /** Paginated list plus the outcome tallies the UI shows as chips. */
@@ -424,6 +458,7 @@ export class ActivityLogService {
         requestId: string,
         createdAt: string,
         tenantId: number | null,
+        allowedBranchIds?: number[] | null,
     ) {
         const at = new Date(createdAt);
         if (Number.isNaN(at.getTime())) return [];
@@ -437,6 +472,8 @@ export class ActivityLogService {
             params.push(tenantId);
             clauses.push(`tenant_id = $${params.length}`);
         }
+        const branch = this.branchClause(params, allowedBranchIds);
+        if (branch) clauses.push(branch);
         return await this.dataSource.query<ActivityLogRelatedRow[]>(
             `SELECT id, created_at, action, outcome, status_code, route, entity_type, entity_id
              FROM activity_logs WHERE ${clauses.join(' AND ')}
@@ -453,6 +490,7 @@ export class ActivityLogService {
         entityType: string,
         entityId: string,
         tenantId: number | null,
+        allowedBranchIds?: number[] | null,
         days = MAX_WINDOW_DAYS,
     ) {
         const from = new Date(Date.now() - Math.min(days, 365) * 86_400_000);
@@ -466,6 +504,8 @@ export class ActivityLogService {
             params.push(tenantId);
             clauses.push(`tenant_id = $${params.length}`);
         }
+        const branch = this.branchClause(params, allowedBranchIds);
+        if (branch) clauses.push(branch);
         return await this.dataSource.query<ActivityLogHistoryRow[]>(
             `SELECT id, created_at, actor_label, actor_role_names, action,
                     outcome, changes, changed_fields

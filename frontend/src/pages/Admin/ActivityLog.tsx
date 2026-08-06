@@ -109,14 +109,24 @@ const ActivityLog: React.FC = () => {
   const [selected, setSelected] = useState<ActivityLogRow | null>(null);
   const [searchInput, setSearchInput] = useState(params.get('search') ?? '');
 
+  // Record lens: arriving from a History link asks "everything that ever
+  // happened to this record", so the window opens to a year rather than the
+  // week the time lens defaults to. The server allows it because
+  // (entity_type, entity_id) is selective enough to afford the wider range.
+  const isRecordLens = params.get('entity_id') != null;
+
   const filters = useMemo(
     () => ({
-      date_from: params.get('date_from') ?? daysAgoIso(7),
+      date_from:
+        params.get('date_from') ??
+        (params.get('entity_id') != null ? daysAgoIso(365) : daysAgoIso(7)),
       date_to: params.get('date_to') ?? todayIso(),
       outcome: params.get('outcome') ?? '',
       action_group: params.get('action_group') ?? '',
       actor_user_id: params.get('actor_user_id') ?? '',
       actor_type: params.get('actor_type') ?? '',
+      entity_type: params.get('entity_type') ?? '',
+      entity_id: params.get('entity_id') ?? '',
       search: params.get('search') ?? '',
       page: Number(params.get('page') ?? 1),
     }),
@@ -156,6 +166,8 @@ const ActivityLog: React.FC = () => {
         action_group: filters.action_group || undefined,
         actor_user_id: filters.actor_user_id ? Number(filters.actor_user_id) : undefined,
         actor_type: filters.actor_type || undefined,
+        entity_type: filters.entity_type || undefined,
+        entity_id: filters.entity_id || undefined,
         search: filters.search || undefined,
         page: filters.page,
         page_size: PAGE_SIZE,
@@ -184,11 +196,33 @@ const ActivityLog: React.FC = () => {
     <div className="mx-auto max-w-[1500px] p-6">
       <div className="mb-5">
         <div className="mb-1 text-xs font-semibold text-gray-400">Reports</div>
-        <h1 className="text-2xl font-bold text-gray-800">Activity Log</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Who did what, when, from where — and what the value was before. Append-only:
-          entries cannot be edited or deleted from this screen.
-        </p>
+        {isRecordLens ? (
+          <>
+            <h1 className="text-2xl font-bold text-gray-800">
+              History — {params.get('entity_label') || filters.entity_type.replace(/_/g, ' ')}
+              {params.get('entity_label') ? '' : ` #${filters.entity_id}`}
+            </h1>
+            <p className="mt-1 text-sm text-gray-500">
+              Everything recorded against this record, newest first. Showing the last
+              year.
+            </p>
+            <button
+              type="button"
+              onClick={() => setParams(new URLSearchParams(), { replace: true })}
+              className="mt-2 text-sm font-medium text-blue-600 hover:underline"
+            >
+              ← Back to all activity
+            </button>
+          </>
+        ) : (
+          <>
+            <h1 className="text-2xl font-bold text-gray-800">Activity Log</h1>
+            <p className="mt-1 text-sm text-gray-500">
+              Who did what, when, from where — and what the value was before.
+              Append-only: entries cannot be edited or deleted from this screen.
+            </p>
+          </>
+        )}
       </div>
 
       <Card className="mb-4 p-4">

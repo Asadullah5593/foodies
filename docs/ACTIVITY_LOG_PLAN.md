@@ -1,7 +1,7 @@
 # Activity / Audit Log — implementation plan
 
-> **Status:** Phases 0–4 complete (2026-08-06). Phases 5–6 outstanding.
-> Branch `feat/activity-log`.
+> **Status:** Phases 0–5 complete (2026-08-06). Phase 6 (archive, purge,
+> runtime controls) outstanding. Branch `feat/activity-log`.
 > **Anchors verified against the tree on 2026-08-05.** Line references drift; the
 > "Verified anchors" table at the end is the source of truth and should be
 > re-checked at the start of each phase.
@@ -434,12 +434,38 @@ filed as a shift report.
   `trigger: 'user' | 'auto'` flag through — otherwise the log claims a human
   deliberately printed ~4,000 documents a day.
 
-### Phase 5 — Record history
+### Phase 5 — Record history — ✅ DONE
 
-"History" button/drawer on the record pages that matter (menu item, role, user,
-branch pricing), served by the `(entity_type, entity_id, created_at DESC)` index.
-This is what makes the feature get used day to day rather than only after an
-incident.
+**Decision (2026-08-06): one module, two lenses — not a second module.** A
+separate History module would read the same table, need its own nav entry,
+permission and filters, and drift from the Activity Log over time. Because
+Phase 2 put every filter in the URL, "History" is a *link*, not a feature.
+
+Landed: `components/RecordHistoryLink.tsx` (renders **nothing** without
+`activity-log:view`), wired into Roles, Users and Menu Items; and a **record
+lens** on the Activity Log page — arriving with `entity_type`/`entity_id` shows
+"History — <record>", opens the window to a year instead of a week, and offers a
+way back. The server allows the wider window only when both entity filters are
+present, because `(entity_type, entity_id, created_at DESC)` makes that query
+selective enough to afford it.
+
+**Scoping leak fixed here, before it could matter.** `findRelated` and
+`findForEntity` took no `allowedBranchIds` — only `find` and `findOne` did. Today
+nobody is both branch-restricted and a holder of `activity-log:view`, so nothing
+leaked; but the moment the permission is granted to a branch manager it would
+have. Branch scoping now lives in one `branchClause()` helper used by every read
+path, so a future method cannot quietly omit it.
+
+Verified: a cashier gets **403 on all five read endpoints** (list,
+filter-options, entity, related, detail) while the owner gets 200 — the gate is
+server-side, and hiding the link is only cosmetic on top of it. 6 specs assert
+the link renders nothing without the permission, is not unlocked by
+`activity-log:export` or `roles:manage`, and renders for a super admin.
+
+**Access stays owner + super admin only** (confirmed against the live dev DB:
+those two roles hold all four `activity-log:*` permissions, and none is implied
+by any umbrella in `permission-implications.ts`, so no back door via
+`expandPermissions`). Widening is a deliberate grant from the Roles UI.
 
 ### Phase 6 — Archive, purge & runtime controls
 

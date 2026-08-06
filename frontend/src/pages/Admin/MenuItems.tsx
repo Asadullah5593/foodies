@@ -19,6 +19,7 @@ import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { confirmDialog } from '../../utils/sweetAlert';
 import { useHasPermission } from '../../hooks/useHasPermission';
+import RecordHistoryLink from '../../components/RecordHistoryLink';
 
 interface MenuItemAddon {
   id: number;
@@ -1587,6 +1588,8 @@ const MenuItems: React.FC = () => {
                     actions={
                       <>
                         {canEdit && <Button size="small" variant="edit" onClick={() => setEditingItem(item)}>Edit</Button>}
+                        {/* "Who changed this price?", answered where it is asked. */}
+                        <RecordHistoryLink entityType="menu_item" entityId={item.id} label={item.name} />
                         {canEdit && <Button
                           size="small"
                           variant={item.is_active ? 'outline' : 'primary'}

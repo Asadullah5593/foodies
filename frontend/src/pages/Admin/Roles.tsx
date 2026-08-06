@@ -20,6 +20,7 @@ import {
   resourceLabel,
 } from './roleShared';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
+import RecordHistoryLink from '../../components/RecordHistoryLink';
 
 const isSuperAdmin = (u: { tenant_id?: number | null } | null) => u?.tenant_id == null;
 
@@ -415,6 +416,10 @@ const Roles: React.FC = () => {
                     actions={
                       <>
                         {(isSuperAdminRole || canEdit) && <Button size="small" variant={isSuperAdminRole ? 'view' : 'edit'} onClick={() => navigate(`/admin/roles/${role.id}/edit`)}>{isSuperAdminRole ? 'View' : 'Edit'}</Button>}
+                        {/* Renders nothing without activity-log:view. A role's
+                            permission history is otherwise unrecoverable —
+                            updateRole overwrites the set in place. */}
+                        <RecordHistoryLink entityType="role" entityId={role.id} label={role.name} />
                         {!isSuperAdminRole && canDelete && (
                           <Button
                             size="small"
