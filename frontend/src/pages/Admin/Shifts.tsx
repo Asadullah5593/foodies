@@ -1202,6 +1202,7 @@ const Shifts: React.FC = () => {
                   )}
                   {/* Cash-outs, the close and its variance are all recorded. */}
                   <RecordHistoryLink
+                        module="shifts"
                     entityType="shift"
                     entityId={detail.id}
                     label={`Shift #${detail.shift_number ?? detail.id}`}

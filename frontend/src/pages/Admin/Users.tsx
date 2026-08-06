@@ -476,7 +476,7 @@ const Users: React.FC = () => {
                       <>
                         {canEdit && <Button size="small" variant="edit" onClick={() => openEdit(u)}>Edit</Button>}
                         {/* Hidden without activity-log:view; the endpoint enforces it too. */}
-                        <RecordHistoryLink entityType="user" entityId={u.id} label={u.name} />
+                        <RecordHistoryLink module="access" entityType="user" entityId={u.id} label={u.name} />
                         {canDelete && <Button
                           size="small"
                           variant="danger"

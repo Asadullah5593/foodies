@@ -231,42 +231,45 @@ const ActivityLog: React.FC = () => {
     isError && (error as { response?: { status?: number } })?.response?.status === 400;
 
   return (
-    <div className="mx-auto max-w-[1500px] p-6">
-      <div className="mb-5">
-        <div className="mb-1 text-xs font-semibold text-gray-400">Reports</div>
+    <div className="mx-auto max-w-[1500px] px-9 pb-20 pt-8 text-[#1F2430]">
+      <div className="mb-[22px] flex flex-wrap items-start justify-between gap-5">
+        <div>
+          <div className="mb-[5px] text-xs font-semibold text-[#9AA1AD]">Oversight</div>
         {isRecordLens ? (
           <>
-            <h1 className="text-2xl font-bold text-gray-800">
-              History — {params.get('entity_label') || filters.entity_type.replace(/_/g, ' ')}
+            <h1 className="mb-1.5 text-[27px] font-extrabold tracking-[-0.02em]">
+              {params.get('entity_label') || filters.entity_type.replace(/_/g, ' ')}
               {params.get('entity_label') ? '' : ` #${filters.entity_id}`}
             </h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Everything recorded against this record, newest first. Showing the last
-              year.
+            <p className="text-[13.5px] text-[#8A92A0]">
+              Full history of this record, newest first · last 12 months
             </p>
             <button
               type="button"
               onClick={() => setParams(new URLSearchParams(), { replace: true })}
-              className="mt-2 text-sm font-medium text-blue-600 hover:underline"
+              className="mt-2.5 inline-flex items-center gap-1.5 rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6]"
             >
-              ← Back to all activity
+              ← All activity
             </button>
           </>
         ) : (
           <>
-            <h1 className="text-2xl font-bold text-gray-800">Activity Log</h1>
-            <p className="mt-1 text-sm text-gray-500">
-              Who did what, when, from where — and what the value was before.
-              Append-only: entries cannot be edited or deleted from this screen.
+            <h1 className="mb-1.5 text-[27px] font-extrabold tracking-[-0.02em]">
+              Activity Log
+            </h1>
+            <p className="text-[13.5px] text-[#8A92A0]">
+              Who did what, when and from where — append-only, and nothing here can be
+              edited or deleted
             </p>
           </>
         )}
+        </div>
+        <ActivityLogSettingsPanel />
       </div>
 
       <CaptureStateBanner />
-      <ActivityLogSettingsPanel />
 
-      <Card className="mb-4 p-4">
+      <Card className="mb-[18px] rounded-2xl border border-[#ECEDF0] p-4 shadow-[0_6px_18px_rgba(15,23,42,0.04)]">
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -360,9 +363,9 @@ const ActivityLog: React.FC = () => {
                 onClick={() =>
                   setFilter('outcome', filters.outcome === outcome ? '' : outcome)
                 }
-                className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                className={`rounded-full border px-3.5 py-1 text-xs font-bold transition ${
                   OUTCOME_STYLES[outcome] ?? 'border-gray-200 bg-gray-50 text-gray-600'
-                } ${filters.outcome === outcome ? 'ring-2 ring-offset-1' : ''}`}
+                } ${filters.outcome === outcome ? 'ring-2 ring-[#DC2A2A]/30 ring-offset-1' : 'hover:brightness-95'}`}
               >
                 {outcome}: {count}
               </button>
@@ -371,7 +374,7 @@ const ActivityLog: React.FC = () => {
         )}
       </Card>
 
-      <Card className="overflow-hidden p-0">
+      <Card className="overflow-hidden rounded-2xl border border-[#ECEDF0] p-0 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
         {rangeError ? (
           <div className="p-8 text-center text-sm text-amber-700">
             {(error as { response?: { data?: { message?: string } } })?.response?.data
@@ -391,14 +394,14 @@ const ActivityLog: React.FC = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
-                  <th className="px-4 py-2.5">When</th>
-                  <th className="px-4 py-2.5">Who</th>
-                  <th className="px-4 py-2.5">Action</th>
-                  <th className="px-4 py-2.5">Record</th>
-                  <th className="px-4 py-2.5">Outcome</th>
-                  <th className="px-4 py-2.5">From</th>
-                  <th className="px-4 py-2.5" />
+                <tr className="border-b border-[#F1F2F5] bg-[#FBFBFC] text-left text-[10.5px] font-bold uppercase tracking-[0.05em] text-[#9AA1AD]">
+                  <th className="px-5 py-[11px]">When</th>
+                  <th className="px-5 py-[11px]">Who</th>
+                  <th className="px-5 py-[11px]">What happened</th>
+                  <th className="px-5 py-[11px]">Record</th>
+                  <th className="px-5 py-[11px]">Outcome</th>
+                  <th className="px-5 py-[11px]">From</th>
+                  <th className="px-5 py-[11px]" />
                 </tr>
               </thead>
               <tbody>
@@ -406,9 +409,9 @@ const ActivityLog: React.FC = () => {
                   <tr
                     key={row.id}
                     onClick={() => setSelected(row)}
-                    className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50"
+                    className="cursor-pointer border-b border-[#F4F5F7] last:border-0 hover:bg-[#FBFBFC]"
                   >
-                    <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+                    <td className="whitespace-nowrap px-5 py-3 text-gray-600">
                       <div className="text-xs font-medium text-gray-700">
                         {relativeWhen(row.created_at)}
                       </div>
@@ -416,7 +419,7 @@ const ActivityLog: React.FC = () => {
                         {formatWhen(row.created_at)}
                       </div>
                     </td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-5 py-3">
                       <div className="font-medium text-gray-800">
                         {row.actor_label ?? '—'}
                       </div>
@@ -441,7 +444,7 @@ const ActivityLog: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-5 py-3">
                       <div className="text-[13px] text-gray-800">
                         {plainEnglish(row)}
                       </div>
@@ -461,13 +464,13 @@ const ActivityLog: React.FC = () => {
                           </span>
                         )}
                     </td>
-                    <td className="px-4 py-2.5 text-gray-600">
+                    <td className="px-5 py-3 text-gray-600">
                       {row.entity_label ??
                         (row.entity_type
                           ? `${row.entity_type}${row.entity_id ? ` #${row.entity_id}` : ''}`
                           : '—')}
                     </td>
-                    <td className="px-4 py-2.5">
+                    <td className="px-5 py-3">
                       <span
                         className={`rounded-full border px-2 py-0.5 text-xs font-semibold ${
                           OUTCOME_STYLES[row.outcome] ??
@@ -482,10 +485,12 @@ const ActivityLog: React.FC = () => {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-gray-500">
+                    <td className="px-5 py-3 font-mono text-xs text-gray-500">
                       {row.ip ?? '—'}
                     </td>
-                    <td className="px-4 py-2.5 text-right text-xs text-blue-600">View</td>
+                    <td className="px-5 py-3 text-right text-xs font-semibold text-[#DC2A2A]">
+                      Details →
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -500,67 +505,114 @@ const ActivityLog: React.FC = () => {
             pageSize={data.page_size}
             onPageChange={(p) => setFilter('page', String(p))}
             itemLabel="entries"
-            className="border-t border-gray-100 px-4 py-3"
+            className="border-t border-gray-100 px-5 py-3"
           />
         )}
       </Card>
 
       {selected && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/30">
-          <div className="h-full w-full max-w-2xl overflow-y-auto bg-white shadow-xl">
-            <div className="flex items-start justify-between border-b border-gray-200 p-5">
-              <div>
-                <div className="font-mono text-sm font-bold text-gray-800">
-                  {selected.action}
+        <div
+          className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-[1px]"
+          onClick={() => setSelected(null)}
+        >
+          <div
+            className="h-full w-full max-w-2xl overflow-y-auto bg-[#FBFBFC] shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Lead with the sentence, not the machine name: the first thing a
+                reader needs is what happened, in words. */}
+            <div className="sticky top-0 z-10 border-b border-[#ECEDF0] bg-white px-6 py-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="mb-1.5 flex items-center gap-2">
+                    <span
+                      className={`rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${
+                        OUTCOME_STYLES[selected.outcome] ??
+                        'border-gray-200 bg-gray-50 text-gray-600'
+                      }`}
+                    >
+                      {selected.outcome}
+                    </span>
+                    <span className="font-mono text-[11px] text-[#9AA1AD]">
+                      {selected.action}
+                    </span>
+                  </div>
+                  <h2 className="text-[19px] font-extrabold leading-tight tracking-[-0.01em] text-[#20242C]">
+                    {plainEnglish(selected)}
+                  </h2>
+                  <div className="mt-1.5 text-[12.5px] text-[#8A92A0]">
+                    {relativeWhen(selected.created_at)} · {formatWhen(selected.created_at)}
+                    {selected.duration_ms != null && ` · took ${selected.duration_ms}ms`}
+                  </div>
                 </div>
-                <div className="mt-1 text-xs text-gray-500">
-                  {formatWhen(selected.created_at)} · {selected.http_method}{' '}
-                  {selected.route}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelected(null)}
+                  aria-label="Close"
+                  className="flex-none rounded-lg px-3 py-1 text-xl leading-none text-[#9AA1AD] transition hover:bg-[#F3F4F6]"
+                >
+                  ✕
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                aria-label="Close"
-                className="rounded-lg px-3 py-1 text-gray-500 hover:bg-gray-100"
-              >
-                ✕
-              </button>
             </div>
 
-            <div className="space-y-5 p-5">
-              <section>
-                <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
-                  Who
+            <div className="space-y-4 p-6">
+              <section className="rounded-2xl border border-[#ECEDF0] bg-white p-4">
+                <h3 className="mb-3 text-[10.5px] font-bold uppercase tracking-[0.05em] text-[#9AA1AD]">
+                  Who did it
                 </h3>
-                <div className="rounded-lg bg-gray-50 p-3 text-sm">
-                  <div className="font-medium text-gray-800">
-                    {selected.actor_label ?? 'Unknown'}{' '}
-                    <span className="text-xs text-gray-500">({selected.actor_type})</span>
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-[#F3F4F6] text-sm font-bold text-[#5A6473]">
+                    {(selected.actor_label ?? '?').slice(0, 2).toUpperCase()}
                   </div>
-                  <div className="mt-1 text-xs text-gray-600">
-                    {/* Labelled explicitly: roles are edited over time */}
-                    Role at the time of the action:{' '}
-                    {selected.actor_role_names?.length
-                      ? selected.actor_role_names.join(', ')
-                      : selected.actor_is_super_admin
-                        ? 'super admin (unrestricted)'
-                        : 'none recorded'}
-                  </div>
-                  <div className="mt-1 text-xs text-gray-500">
-                    IP {selected.ip ?? '—'} · request {selected.request_id ?? '—'}
+                  <div className="min-w-0 text-sm">
+                    <div className="font-bold text-[#20242C]">
+                      {selected.actor_label ?? 'Unknown'}
+                      <span
+                        className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                          ACTOR_STYLES[selected.actor_type] ??
+                          'bg-gray-100 text-gray-600'
+                        }`}
+                      >
+                        {selected.actor_type}
+                      </span>
+                    </div>
+                    {/* Labelled explicitly: roles are edited over time, so
+                        today's role is the wrong answer for a past action. */}
+                    <dl className="mt-2 grid grid-cols-[auto,1fr] gap-x-3 gap-y-1 text-[12.5px]">
+                      <dt className="text-[#9AA1AD]">Role at the time</dt>
+                      <dd className="font-medium text-[#374151]">
+                        {selected.actor_role_names?.length
+                          ? selected.actor_role_names.join(', ')
+                          : selected.actor_is_super_admin
+                            ? 'super admin (unrestricted)'
+                            : 'none recorded'}
+                      </dd>
+                      <dt className="text-[#9AA1AD]">From</dt>
+                      <dd className="font-mono text-[12px] text-[#374151]">
+                        {selected.ip ?? '—'}
+                      </dd>
+                      <dt className="text-[#9AA1AD]">Request</dt>
+                      <dd className="truncate font-mono text-[11px] text-[#8A92A0]">
+                        {selected.request_id ?? '—'}
+                      </dd>
+                      <dt className="text-[#9AA1AD]">Route</dt>
+                      <dd className="truncate font-mono text-[11px] text-[#8A92A0]">
+                        {selected.http_method} {selected.route}
+                      </dd>
+                    </dl>
                   </div>
                 </div>
               </section>
 
               {detail?.changes && (
-                <section>
-                  <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
+                <section className="rounded-2xl border border-[#ECEDF0] bg-white p-4">
+                  <h3 className="mb-3 text-[10.5px] font-bold uppercase tracking-[0.05em] text-[#9AA1AD]">
                     What changed
                   </h3>
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="border-b border-gray-200 text-left text-xs text-gray-500">
+                      <tr className="border-b border-[#F1F2F5] text-left text-[10.5px] font-bold uppercase tracking-[0.05em] text-[#9AA1AD]">
                         <th className="py-1.5">Field</th>
                         <th className="py-1.5">Before</th>
                         <th className="py-1.5">After</th>
@@ -604,34 +656,51 @@ const ActivityLog: React.FC = () => {
               )}
 
               {detail?.request_body && (
-                <section>
-                  <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
-                    Request
+                <section className="rounded-2xl border border-[#ECEDF0] bg-white p-4">
+                  <h3 className="mb-3 text-[10.5px] font-bold uppercase tracking-[0.05em] text-[#9AA1AD]">
+                    What was sent
                     {detail.payload_truncated && (
                       <span className="ml-2 font-normal normal-case text-gray-400">
                         (truncated)
                       </span>
                     )}
                   </h3>
-                  <pre className="overflow-x-auto rounded-lg bg-gray-900 p-3 text-xs text-gray-100">
+                  <pre className="overflow-x-auto rounded-xl bg-[#20242C] p-3.5 text-[11.5px] leading-relaxed text-gray-100">
                     {JSON.stringify(detail.request_body, null, 2)}
                   </pre>
                 </section>
               )}
 
               {related && related.length > 1 && (
-                <section>
-                  <h3 className="mb-2 text-xs font-bold uppercase tracking-wide text-gray-500">
-                    Same request
+                <section className="rounded-2xl border border-[#ECEDF0] bg-white p-4">
+                  <h3 className="mb-3 text-[10.5px] font-bold uppercase tracking-[0.05em] text-[#9AA1AD]">
+                    Everything else in this request
                   </h3>
-                  <ul className="space-y-1 text-xs">
+                  <ul className="space-y-1.5">
                     {related.map((r) => (
-                      <li key={r.id} className="flex justify-between rounded bg-gray-50 px-2 py-1">
-                        <span className="font-mono">{r.action}</span>
-                        <span className="text-gray-500">{r.outcome}</span>
+                      <li
+                        key={r.id}
+                        className="flex items-center justify-between rounded-lg bg-[#FBFBFC] px-3 py-2 text-[12.5px]"
+                      >
+                        <span className="font-mono text-[#374151]">{r.action}</span>
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${
+                            OUTCOME_STYLES[r.outcome] ??
+                            'border-gray-200 bg-gray-50 text-gray-600'
+                          }`}
+                        >
+                          {r.outcome}
+                        </span>
                       </li>
                     ))}
                   </ul>
+                </section>
+              )}
+
+              {!detail?.changes && selected.diff_expected && (
+                <section className="rounded-2xl border border-dashed border-[#E2E5EA] bg-white p-4 text-[12.5px] text-[#8A92A0]">
+                  This route should record a before/after, but none was captured —
+                  missing instrumentation rather than an unchanged record.
                 </section>
               )}
             </div>

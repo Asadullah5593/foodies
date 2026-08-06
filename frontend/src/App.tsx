@@ -23,6 +23,7 @@ import {
   MdOutlineStarBorder,
   MdOutlineVolunteerActivism,
   MdOutlineLock,
+  MdOutlineHistory,
   MdOutlineReceiptLong,
   MdOutlineDeliveryDining,
   MdOutlineBadge,
@@ -352,6 +353,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     ...(isTenantUser ? [{ path: '/admin/invoice-templates', label: 'Invoice Templates', icon: MdOutlineReceiptLong }] : []),
     { path: '/admin/delivery-tiers', label: 'Delivery Tiers', icon: MdOutlineDeliveryDining },
     { path: '/admin/roles', label: 'Roles', icon: MdOutlineLock },
+    { path: '/admin/activity-logs', label: 'Activity Log', icon: MdOutlineHistory },
     { path: '/admin/notification-settings', label: 'Notifications', icon: MdOutlineNotificationsActive },
     {
       type: 'group',
@@ -391,7 +393,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         // Keeps the original /admin/reports URL so existing links still land here.
         { path: '/admin/reports', label: 'Sales Overview' },
         { path: '/admin/reports/product-sales', label: 'Product-wise Sales' },
-        { path: '/admin/activity-logs', label: 'Activity Log' },
       ],
     },
     {
@@ -450,9 +451,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     procurement: location.pathname.startsWith('/admin/procurement'),
     recipes: location.pathname.startsWith('/admin/recipes'),
     'rider-hrm': location.pathname.startsWith('/admin/rider-hrm'),
-    reports:
-      location.pathname.startsWith('/admin/reports') ||
-      location.pathname.startsWith('/admin/activity-logs'),
+    reports: location.pathname.startsWith('/admin/reports'),
     cms: location.pathname.startsWith('/admin/banners') || location.pathname.startsWith('/admin/promotions'),
   });
 
@@ -463,11 +462,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       procurement: location.pathname.startsWith('/admin/procurement') ? true : prev.procurement,
       recipes: location.pathname.startsWith('/admin/recipes') ? true : prev.recipes,
       'rider-hrm': location.pathname.startsWith('/admin/rider-hrm') ? true : prev['rider-hrm'],
-      reports:
-        location.pathname.startsWith('/admin/reports') ||
-        location.pathname.startsWith('/admin/activity-logs')
-          ? true
-          : prev.reports,
+      reports: location.pathname.startsWith('/admin/reports')
+        ? true
+        : prev.reports,
       cms: location.pathname.startsWith('/admin/banners') || location.pathname.startsWith('/admin/promotions') ? true : prev.cms,
     }));
   }, [location.pathname]);

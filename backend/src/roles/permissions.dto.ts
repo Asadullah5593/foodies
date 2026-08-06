@@ -169,6 +169,17 @@ export const Permissions = {
     // other. Both additionally require a password re-entry at the call site.
     ACTIVITY_LOG_PURGE: 'activity-log:purge',
     ACTIVITY_LOG_CONFIGURE: 'activity-log:configure',
+    // Narrow read rights. activity-log:view is the umbrella and implies them
+    // all; grant these individually to give someone history for their own area
+    // without exposing users, money or sign-ins.
+    ACTIVITY_LOG_VIEW_ACCESS: 'activity-log:view:access',
+    ACTIVITY_LOG_VIEW_MENU: 'activity-log:view:menu',
+    ACTIVITY_LOG_VIEW_OFFERS: 'activity-log:view:offers',
+    ACTIVITY_LOG_VIEW_SHIFTS: 'activity-log:view:shifts',
+    ACTIVITY_LOG_VIEW_INVENTORY: 'activity-log:view:inventory',
+    ACTIVITY_LOG_VIEW_ORDERS: 'activity-log:view:orders',
+    ACTIVITY_LOG_VIEW_AUTH: 'activity-log:view:auth',
+    ACTIVITY_LOG_VIEW_SYSTEM: 'activity-log:view:system',
 
     // — Business settings (umbrella: business-settings:access) —
     BUSINESS_SETTINGS_EDIT: 'business-settings:edit',

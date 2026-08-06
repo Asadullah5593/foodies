@@ -13,7 +13,13 @@ import RecordHistoryLink from './RecordHistoryLink';
 const renderLink = (props = {}) =>
   render(
     <MemoryRouter>
-      <RecordHistoryLink entityType="menu_item" entityId={2421} label="Pepperoni" {...props} />
+      <RecordHistoryLink
+      module="menu"
+      entityType="menu_item"
+      entityId={2421}
+      label="Pepperoni"
+      {...props}
+    />
     </MemoryRouter>
   );
 
@@ -29,6 +35,20 @@ describe('RecordHistoryLink', () => {
   it('renders nothing when nobody is logged in', () => {
     mockUser.mockReturnValue(null);
     const { container } = renderLink();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it('renders for a narrow grant covering THIS module', () => {
+    // A menu manager sees price history without seeing users, roles or money.
+    mockUser.mockReturnValue({ permissions: ['activity-log:view:menu'] });
+    renderLink();
+    expect(screen.getByRole('link', { name: /History/ })).toBeInTheDocument();
+  });
+
+  it('does not leak across modules', () => {
+    // Holding menu history must not reveal role history.
+    mockUser.mockReturnValue({ permissions: ['activity-log:view:menu'] });
+    const { container } = renderLink({ module: 'access', entityType: 'role' });
     expect(container).toBeEmptyDOMElement();
   });
 

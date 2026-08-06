@@ -419,7 +419,7 @@ const Roles: React.FC = () => {
                         {/* Renders nothing without activity-log:view. A role's
                             permission history is otherwise unrecoverable —
                             updateRole overwrites the set in place. */}
-                        <RecordHistoryLink entityType="role" entityId={role.id} label={role.name} />
+                        <RecordHistoryLink module="access" entityType="role" entityId={role.id} label={role.name} />
                         {!isSuperAdminRole && canDelete && (
                           <Button
                             size="small"

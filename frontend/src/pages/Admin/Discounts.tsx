@@ -568,7 +568,7 @@ const Discounts: React.FC = () => {
                       {canEditPerm && canEdit(discount.manage_scope) && (
                         <>
                           <Button size="small" variant="edit" onClick={() => handleEdit(discount)}>Edit</Button>
-                          <RecordHistoryLink entityType="discount" entityId={discount.id} label={discount.name} />
+                          <RecordHistoryLink module="offers" entityType="discount" entityId={discount.id} label={discount.name} />
                           <Button
                             size="small"
                             variant={discount.is_active ? 'outline' : 'primary'}

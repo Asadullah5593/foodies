@@ -2,7 +2,23 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { useHasPermission } from '../hooks/useHasPermission';
 
+/**
+ * Which per-module read permission covers this record. Holding the umbrella
+ * `activity-log:view` satisfies any of them.
+ */
+export type HistoryModule =
+  | 'access'
+  | 'menu'
+  | 'offers'
+  | 'shifts'
+  | 'inventory'
+  | 'orders'
+  | 'auth'
+  | 'system';
+
 interface RecordHistoryLinkProps {
+  /** Gates the link on `activity-log:view:<module>`. */
+  module: HistoryModule;
   /** Must match the entity_type the backend records (e.g. 'menu_item', 'role'). */
   entityType: string;
   entityId: number | string;
@@ -25,13 +41,19 @@ interface RecordHistoryLinkProps {
  * door they cannot open.
  */
 const RecordHistoryLink: React.FC<RecordHistoryLinkProps> = ({
+  module,
   entityType,
   entityId,
   label,
   className = '',
   children,
 }) => {
-  const canView = useHasPermission('activity-log:view');
+  // Any-of: the umbrella, or the narrow grant for this module. Hiding the link
+  // is cosmetic — the endpoint filters rows by the same permission server-side.
+  const canView = useHasPermission([
+    'activity-log:view',
+    `activity-log:view:${module}`,
+  ]);
   if (!canView) return null;
 
   const params = new URLSearchParams({

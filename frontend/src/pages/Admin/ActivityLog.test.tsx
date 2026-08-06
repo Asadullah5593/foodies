@@ -164,7 +164,10 @@ describe('ActivityLog record lens', () => {
 
   it('shows one record\'s history when arrived at from a History link', async () => {
     renderFor('?entity_type=menu_item&entity_id=2421&entity_label=Pepperoni');
-    expect(await screen.findByText(/History — Pepperoni/)).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: /Pepperoni/ })
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Full history of this record/)).toBeInTheDocument();
     const sent = list.mock.calls[0][0] as {
       entity_type: string;
       entity_id: string;
@@ -184,13 +187,13 @@ describe('ActivityLog record lens', () => {
     renderFor('');
     expect(await screen.findByText('role.update')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Activity Log' })).toBeInTheDocument();
-    expect(screen.queryByText(/History —/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Full history of this record/)).not.toBeInTheDocument();
   });
 
   it('offers a way back to everything', async () => {
     renderFor('?entity_type=role&entity_id=11');
     expect(
-      await screen.findByRole('button', { name: /Back to all activity/ })
+      await screen.findByRole('button', { name: /All activity/ })
     ).toBeInTheDocument();
   });
 });
@@ -219,10 +222,9 @@ describe('ActivityLog', () => {
   it('shows the role held AT THE TIME, labelled as such', async () => {
     renderPage();
     fireEvent.click(await screen.findByText('role.update'));
-    expect(
-      await screen.findByText(/Role at the time of the action/)
-    ).toBeInTheDocument();
-    const drawer = screen.getByText(/Role at the time of the action/).closest('div')!;
+    // Labelled explicitly, because today's role is the wrong answer for a past action
+    expect(await screen.findByText(/Role at the time/)).toBeInTheDocument();
+    const drawer = screen.getByText(/Role at the time/).closest('dl')!;
     expect(within(drawer).getByText(/Owner/)).toBeInTheDocument();
   });
 

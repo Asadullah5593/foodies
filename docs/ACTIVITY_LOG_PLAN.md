@@ -496,10 +496,23 @@ re-entry. The change is written to the log **before** it takes effect, and a
 persistent amber banner announces a disabled log to everyone who can read it —
 not just to whoever switched it off.
 
-**History links now exist on six modules**: Roles, Users, Menu Items, Branch
-Pricing, Discounts and Shifts. All six are controlled by the single
-`activity-log:view` permission; per-module granularity was considered and not
-built.
+**History links exist on six modules**: Roles, Users, Menu Items, Branch
+Pricing, Discounts and Shifts.
+
+**Per-module read permissions (added 2026-08-06):** migration `…109` adds
+`activity-log:view:{access,menu,offers,shifts,inventory,orders,auth,system}`.
+`activity-log:view` is the umbrella and implies all eight. The split follows
+`action_group`, which every row already carries, so a narrow grant is an indexed
+equality check rather than a second taxonomy.
+
+Enforced server-side on the list, the detail row and the entity history — not
+just by hiding links. Verified: a cashier holding only `activity-log:view:menu`
+sees **4 rows, group `menu`**, gets `[]` from a role's history and nothing from a
+direct id lookup of an `access` row, while the owner sees all 52 rows across
+eight groups.
+
+**Activity Log is now its own top-level nav module**, not a child of Reports —
+it is an oversight tool, not a report.
 
 See §7 and §8. Lands last because it is only meaningful once real rows exist, and it
 is the only phase that deletes anything.

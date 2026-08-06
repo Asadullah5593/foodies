@@ -106,6 +106,42 @@ export interface ActivityLogHistoryRow {
     changed_fields: string[] | null;
 }
 
+/**
+ * Which `action_group`s each per-module permission unlocks. The groups already
+ * exist on every row, so a narrow grant is an indexed equality check rather
+ * than a second taxonomy to keep in sync.
+ */
+export const MODULE_GROUPS: Record<string, string[]> = {
+    'activity-log:view:access': ['access'],
+    'activity-log:view:menu': ['menu'],
+    'activity-log:view:offers': ['offers'],
+    'activity-log:view:shifts': ['shifts'],
+    'activity-log:view:inventory': ['inventory'],
+    'activity-log:view:orders': ['orders'],
+    'activity-log:view:auth': ['auth'],
+    'activity-log:view:system': ['reports', 'audit', 'client', 'other'],
+};
+
+/**
+ * The action groups a user may read. `null` means unrestricted.
+ *
+ * Enforced server-side rather than by hiding UI: a narrow grant has to be a
+ * boundary, not a suggestion.
+ */
+export function allowedGroupsFor(
+    permissions: string[] | undefined,
+    isSuperAdmin: boolean,
+): string[] | null {
+    if (isSuperAdmin) return null;
+    const held = permissions ?? [];
+    if (held.includes('activity-log:view')) return null;
+    const groups = new Set<string>();
+    for (const [permission, mapped] of Object.entries(MODULE_GROUPS)) {
+        if (held.includes(permission)) mapped.forEach((g) => groups.add(g));
+    }
+    return [...groups];
+}
+
 const OUTCOMES = ['success', 'denied', 'failed', 'error'] as const;
 const ACTOR_TYPES = [
     'staff',
@@ -370,6 +406,7 @@ export class ActivityLogService {
         filters: ActivityLogFilters,
         tenantId: number | null,
         allowedBranchIds: number[] | null | undefined,
+        allowedGroups?: string[] | null,
     ): { sql: string; params: unknown[] } {
         const { from, to } = this.resolveRange(filters);
         const params: unknown[] = [from, to];
@@ -394,6 +431,16 @@ export class ActivityLogService {
             clauses.push(
                 `(branch_id IS NULL OR branch_id = ANY($${params.length}))`,
             );
+        }
+
+        // A narrow grant caps what can be seen, whatever the filters ask for.
+        if (allowedGroups != null) {
+            if (allowedGroups.length === 0) {
+                clauses.push('FALSE');
+            } else {
+                params.push(allowedGroups);
+                clauses.push(`action_group = ANY($${params.length})`);
+            }
         }
 
         if (filters.actor_user_id)
@@ -454,11 +501,13 @@ export class ActivityLogService {
         filters: ActivityLogFilters,
         tenantId: number | null,
         allowedBranchIds?: number[] | null,
+        allowedGroups?: string[] | null,
     ) {
         const { sql, params } = this.buildWhere(
             filters,
             tenantId,
             allowedBranchIds,
+            allowedGroups,
         );
         const page = Math.max(1, Math.floor(Number(filters.page) || 1));
         const pageSize = Math.min(
@@ -527,6 +576,7 @@ export class ActivityLogService {
         createdAt: string,
         tenantId: number | null,
         allowedBranchIds?: number[] | null,
+        allowedGroups?: string[] | null,
     ) {
         const at = new Date(createdAt);
         if (Number.isNaN(at.getTime())) {
@@ -552,6 +602,13 @@ export class ActivityLogService {
             clauses.push(
                 `(branch_id IS NULL OR branch_id = ANY($${params.length}))`,
             );
+        }
+        // A narrow grant must gate the detail view too, or the list filter
+        // would be a formality anyone could step around with a direct id.
+        if (allowedGroups != null) {
+            if (allowedGroups.length === 0) return null;
+            params.push(allowedGroups);
+            clauses.push(`action_group = ANY($${params.length})`);
         }
         const rows = await this.dataSource.query<ActivityLogDetailRow[]>(
             `SELECT * FROM activity_logs WHERE ${clauses.join(' AND ')} LIMIT 1`,
@@ -601,6 +658,7 @@ export class ActivityLogService {
         entityId: string,
         tenantId: number | null,
         allowedBranchIds?: number[] | null,
+        allowedGroups?: string[] | null,
         days = MAX_WINDOW_DAYS,
     ) {
         const from = new Date(Date.now() - Math.min(days, 365) * 86_400_000);
@@ -616,6 +674,11 @@ export class ActivityLogService {
         }
         const branch = this.branchClause(params, allowedBranchIds);
         if (branch) clauses.push(branch);
+        if (allowedGroups != null) {
+            if (allowedGroups.length === 0) return [];
+            params.push(allowedGroups);
+            clauses.push(`action_group = ANY($${params.length})`);
+        }
         return await this.dataSource.query<ActivityLogHistoryRow[]>(
             `SELECT id, created_at, actor_label, actor_role_names, action,
                     outcome, changes, changed_fields

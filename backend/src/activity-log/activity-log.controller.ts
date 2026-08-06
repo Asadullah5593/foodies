@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { ActivityLogService } from './activity-log.service';
+import { ActivityLogService, allowedGroupsFor } from './activity-log.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { RequirePermissionGuard } from '../roles/require-permission.guard';
@@ -28,6 +28,7 @@ type ActivityUser = {
     id: number;
     tenantId: number | null;
     allowedBranchIds?: number[] | null;
+    permissions?: string[];
     name?: string;
     email?: string;
     isSuperAdmin?: boolean;
@@ -78,7 +79,17 @@ export class ActivityLogController {
     }
 
     @Get()
-    @RequirePermission(Permissions.ACTIVITY_LOG_VIEW)
+    @RequirePermission(
+        Permissions.ACTIVITY_LOG_VIEW,
+        Permissions.ACTIVITY_LOG_VIEW_ACCESS,
+        Permissions.ACTIVITY_LOG_VIEW_MENU,
+        Permissions.ACTIVITY_LOG_VIEW_OFFERS,
+        Permissions.ACTIVITY_LOG_VIEW_SHIFTS,
+        Permissions.ACTIVITY_LOG_VIEW_INVENTORY,
+        Permissions.ACTIVITY_LOG_VIEW_ORDERS,
+        Permissions.ACTIVITY_LOG_VIEW_AUTH,
+        Permissions.ACTIVITY_LOG_VIEW_SYSTEM,
+    )
     @ApiOperation({
         summary:
             'List activity, newest first. The date range is bounded (default 7 days, max 92) so queries stay inside a partition.',
@@ -121,6 +132,9 @@ export class ActivityLogController {
             },
             user.tenantId,
             user.allowedBranchIds,
+            // A narrow grant caps the list too — otherwise the per-module
+            // permission would only hide links, not withhold rows.
+            allowedGroupsFor(user.permissions, user.isSuperAdmin === true),
         );
     }
 
@@ -171,7 +185,17 @@ export class ActivityLogController {
 
     /** History of one record — what the "History" drawer on a record page uses. */
     @Get('entity/:entityType/:entityId')
-    @RequirePermission(Permissions.ACTIVITY_LOG_VIEW)
+    @RequirePermission(
+        Permissions.ACTIVITY_LOG_VIEW,
+        Permissions.ACTIVITY_LOG_VIEW_ACCESS,
+        Permissions.ACTIVITY_LOG_VIEW_MENU,
+        Permissions.ACTIVITY_LOG_VIEW_OFFERS,
+        Permissions.ACTIVITY_LOG_VIEW_SHIFTS,
+        Permissions.ACTIVITY_LOG_VIEW_INVENTORY,
+        Permissions.ACTIVITY_LOG_VIEW_ORDERS,
+        Permissions.ACTIVITY_LOG_VIEW_AUTH,
+        Permissions.ACTIVITY_LOG_VIEW_SYSTEM,
+    )
     forEntity(
         @CurrentUser() user: ActivityUser,
         @Param('entityType') entityType: string,
@@ -183,6 +207,7 @@ export class ActivityLogController {
             entityId,
             user.tenantId,
             user.allowedBranchIds,
+            allowedGroupsFor(user.permissions, user.isSuperAdmin === true),
             days ? +days : undefined,
         );
     }
@@ -212,7 +237,17 @@ export class ActivityLogController {
      * searching every partition.
      */
     @Get(':id')
-    @RequirePermission(Permissions.ACTIVITY_LOG_VIEW)
+    @RequirePermission(
+        Permissions.ACTIVITY_LOG_VIEW,
+        Permissions.ACTIVITY_LOG_VIEW_ACCESS,
+        Permissions.ACTIVITY_LOG_VIEW_MENU,
+        Permissions.ACTIVITY_LOG_VIEW_OFFERS,
+        Permissions.ACTIVITY_LOG_VIEW_SHIFTS,
+        Permissions.ACTIVITY_LOG_VIEW_INVENTORY,
+        Permissions.ACTIVITY_LOG_VIEW_ORDERS,
+        Permissions.ACTIVITY_LOG_VIEW_AUTH,
+        Permissions.ACTIVITY_LOG_VIEW_SYSTEM,
+    )
     detail(
         @CurrentUser() user: ActivityUser,
         @Param('id') id: string,
@@ -223,6 +258,7 @@ export class ActivityLogController {
             createdAt,
             user.tenantId,
             user.allowedBranchIds,
+            allowedGroupsFor(user.permissions, user.isSuperAdmin === true),
         );
     }
 }
