@@ -70,6 +70,16 @@ export interface ActivityLogRelated {
   entity_id: string | null;
 }
 
+export interface ActivityLogSettings {
+  capture_level: 'off' | 'mutations' | 'mutations+sensitive_reads' | 'all';
+  pii_mode: 'mask' | 'full';
+  hot_months: number;
+  retention_months: number;
+  updated_at: string | null;
+  /** ACTIVITY_LOG_ENABLED=false overrides everything else. */
+  env_disabled: boolean;
+}
+
 export interface ActivityLogQuery {
   date_from?: string;
   date_to?: string;
@@ -126,6 +136,27 @@ export const activityLogService = {
   async related(requestId: string, createdAt: string): Promise<ActivityLogRelated[]> {
     const response = await apiClient.get<ActivityLogRelated[]>(
       `/admin/activity-logs/related/${requestId}?created_at=${encodeURIComponent(createdAt)}`
+    );
+    return response.data;
+  },
+
+  async settings(): Promise<ActivityLogSettings> {
+    const response = await apiClient.get<ActivityLogSettings>(
+      '/admin/activity-logs/settings'
+    );
+    return response.data;
+  },
+
+  async updateSettings(payload: {
+    capture_level?: string;
+    pii_mode?: string;
+    hot_months?: number;
+    retention_months?: number;
+    password: string;
+  }): Promise<ActivityLogSettings> {
+    const response = await apiClient.put<ActivityLogSettings>(
+      '/admin/activity-logs/settings',
+      payload
     );
     return response.data;
   },

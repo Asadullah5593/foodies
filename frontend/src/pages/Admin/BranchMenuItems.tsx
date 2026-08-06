@@ -16,6 +16,7 @@ import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { confirmDialog } from '../../utils/sweetAlert';
+import RecordHistoryLink from '../../components/RecordHistoryLink';
 
 const BranchMenuItems: React.FC = () => {
   const queryClient = useQueryClient();
@@ -320,6 +321,11 @@ const BranchMenuItems: React.FC = () => {
                   actions={
                     <>
                       {canEdit && <Button size="small" variant="edit" onClick={() => { const newPrice = prompt('Enter new price override (leave empty to use base price):'); if (newPrice !== null) { const trimmed = newPrice.trim(); const value = trimmed === '' ? null : Number.isFinite(parseFloat(trimmed)) ? parseFloat(trimmed) : undefined; if (value !== undefined && value !== null) updateMutation.mutate({ id: item.id, data: { price_override: value } }); else if (trimmed !== '') toast.error('Enter a valid number or leave empty to use base price'); } }} isLoading={updateMutation.isPending}>Edit Price</Button>}
+                      <RecordHistoryLink
+                        entityType="branch_menu_item"
+                        entityId={item.id}
+                        label={item.menu_item?.name}
+                      />
                       {canEdit && <Button
                         size="small"
                         variant="danger"

@@ -5,6 +5,7 @@ import {
     HttpCode,
     Param,
     Post,
+    Put,
     Query,
     Req,
     UseGuards,
@@ -20,6 +21,8 @@ import { Permissions } from '../roles/permissions.dto';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ClientEventBatchDto } from './client-event.dto';
 import { PurgeMonthDto } from './purge-month.dto';
+import { ActivityLogSettingsService } from './activity-log-settings.service';
+import { UpdateSettingsDto } from './update-settings.dto';
 
 type ActivityUser = {
     id: number;
@@ -48,7 +51,31 @@ type ActivityUser = {
 @Controller('admin/activity-logs')
 @UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
 export class ActivityLogController {
-    constructor(private readonly service: ActivityLogService) {}
+    constructor(
+        private readonly service: ActivityLogService,
+        private readonly settings: ActivityLogSettingsService,
+    ) {}
+
+    /** Current capture settings. Readable by anyone who can read the log. */
+    @Get('settings')
+    @RequirePermission(Permissions.ACTIVITY_LOG_VIEW)
+    getSettings() {
+        return this.settings.get();
+    }
+
+    /**
+     * Change what is captured. Needs activity-log:configure AND the caller's
+     * own password — turning capture off is the obvious way to work unobserved,
+     * so it is gated like the purge and logged before it takes effect.
+     */
+    @Put('settings')
+    @RequirePermission(Permissions.ACTIVITY_LOG_CONFIGURE)
+    updateSettings(
+        @CurrentUser() user: ActivityUser,
+        @Body() dto: UpdateSettingsDto,
+    ) {
+        return this.settings.update(dto, user);
+    }
 
     @Get()
     @RequirePermission(Permissions.ACTIVITY_LOG_VIEW)

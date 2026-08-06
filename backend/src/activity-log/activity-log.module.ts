@@ -9,6 +9,7 @@ import { ActivityLogInterceptor } from './activity-log.interceptor';
 import { ActivityLogController } from './activity-log.controller';
 import { ActivityLogService } from './activity-log.service';
 import { ActivityLogArchiveService } from './activity-log-archive.service';
+import { ActivityLogSettingsService } from './activity-log-settings.service';
 
 /**
  * Activity / audit log — Phases 0 to 2.
@@ -29,6 +30,7 @@ import { ActivityLogArchiveService } from './activity-log-archive.service';
     providers: [
         ActivityLogService,
         ActivityLogArchiveService,
+        ActivityLogSettingsService,
         ActivityLogWriter,
         ActivityLogMaintenanceService,
         ActivityLogMiddleware,
@@ -40,6 +42,7 @@ import { ActivityLogArchiveService } from './activity-log-archive.service';
         ActivityLogMiddleware,
         ActivityLogService,
         ActivityLogArchiveService,
+        ActivityLogSettingsService,
     ],
 })
 export class ActivityLogModule {}

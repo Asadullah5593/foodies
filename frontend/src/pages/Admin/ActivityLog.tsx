@@ -9,6 +9,9 @@ import {
 import Card from '../../components/Card';
 import PaginationBar from '../../components/PaginationBar';
 import SearchableSelect from '../../components/SearchableSelect';
+import ActivityLogSettingsPanel, {
+  CaptureStateBanner,
+} from './ActivityLogSettings';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 
 const PAGE_SIZE = 25;
@@ -41,6 +44,41 @@ const formatWhen = (iso: string) =>
     minute: '2-digit',
     second: '2-digit',
   });
+
+/** "4m ago" reads faster than a timestamp when scanning for what just happened. */
+const relativeWhen = (iso: string): string => {
+  const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  return `${Math.floor(days / 30)}mo ago`;
+};
+
+/** A plain-English sentence for a row, so the table reads without decoding. */
+const plainEnglish = (row: ActivityLogRow): string => {
+  const who = row.actor_label ?? 'Someone';
+  const what = row.action.split('.').slice(1).join(' ') || row.action;
+  const subject = row.entity_label
+    ? `"${row.entity_label}"`
+    : row.entity_type
+      ? `${row.entity_type.replace(/_/g, ' ')}${row.entity_id ? ` #${row.entity_id}` : ''}`
+      : '';
+  const verb =
+    row.outcome === 'denied'
+      ? 'was refused'
+      : row.outcome === 'failed'
+        ? 'failed to'
+        : '';
+  const noun = row.action.split('.')[0].replace(/_/g, ' ');
+  return [who, verb, what, subject && `${subject}`, !subject && noun]
+    .filter(Boolean)
+    .join(' ')
+    .replace(/\s+/g, ' ');
+};
 
 /** Renders a diff value, keeping `[redacted]` visibly removed rather than absent. */
 const DiffValue: React.FC<{ value: unknown }> = ({ value }) => {
@@ -225,6 +263,9 @@ const ActivityLog: React.FC = () => {
         )}
       </div>
 
+      <CaptureStateBanner />
+      <ActivityLogSettingsPanel />
+
       <Card className="mb-4 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div>
@@ -367,8 +408,13 @@ const ActivityLog: React.FC = () => {
                     onClick={() => setSelected(row)}
                     className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-gray-50"
                   >
-                    <td className="whitespace-nowrap px-4 py-2.5 tabular-nums text-gray-600">
-                      {formatWhen(row.created_at)}
+                    <td className="whitespace-nowrap px-4 py-3 text-gray-600">
+                      <div className="text-xs font-medium text-gray-700">
+                        {relativeWhen(row.created_at)}
+                      </div>
+                      <div className="text-[11px] tabular-nums text-gray-400">
+                        {formatWhen(row.created_at)}
+                      </div>
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="font-medium text-gray-800">
@@ -395,8 +441,11 @@ const ActivityLog: React.FC = () => {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-2.5">
-                      <span className="font-mono text-xs text-gray-800">{row.action}</span>
+                    <td className="px-4 py-3">
+                      <div className="text-[13px] text-gray-800">
+                        {plainEnglish(row)}
+                      </div>
+                      <span className="font-mono text-[11px] text-gray-400">{row.action}</span>
                       {row.changed_fields && row.changed_fields.length > 0 && (
                         <span className="ml-2 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
                           {row.changed_fields.length} changed

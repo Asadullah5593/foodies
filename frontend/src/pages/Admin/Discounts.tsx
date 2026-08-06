@@ -30,6 +30,7 @@ import {
   removeLabel,
 } from '../../components/OfferBrandScope';
 import { useHasPermission } from '../../hooks/useHasPermission';
+import RecordHistoryLink from '../../components/RecordHistoryLink';
 
 interface Option {
   id: number;
@@ -567,6 +568,7 @@ const Discounts: React.FC = () => {
                       {canEditPerm && canEdit(discount.manage_scope) && (
                         <>
                           <Button size="small" variant="edit" onClick={() => handleEdit(discount)}>Edit</Button>
+                          <RecordHistoryLink entityType="discount" entityId={discount.id} label={discount.name} />
                           <Button
                             size="small"
                             variant={discount.is_active ? 'outline' : 'primary'}

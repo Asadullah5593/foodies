@@ -12,6 +12,7 @@ import { useHasPermission } from '../../hooks/useHasPermission';
 import SearchableSelect from '../../components/SearchableSelect';
 import Modal from '../../components/Modal';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
+import RecordHistoryLink from '../../components/RecordHistoryLink';
 
 /* ------------------------------------------------------------- helpers --- */
 
@@ -1199,6 +1200,12 @@ const Shifts: React.FC = () => {
                       Print Z-report
                     </button>
                   )}
+                  {/* Cash-outs, the close and its variance are all recorded. */}
+                  <RecordHistoryLink
+                    entityType="shift"
+                    entityId={detail.id}
+                    label={`Shift #${detail.shift_number ?? detail.id}`}
+                  />
                 </div>
               </>
             )}

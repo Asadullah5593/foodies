@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { ActivityContext, type ActivityStore } from './activity-context';
 import { ActivityLogWriter, type ActivityLogRow } from './activity-log.writer';
+import { ActivityLogSettingsService } from './activity-log-settings.service';
 import {
     captureLevel,
     isEnabled,
@@ -61,7 +62,10 @@ export class ActivityLogMiddleware implements NestMiddleware {
     private readonly recentReads = new Map<string, number>();
     private lastSweep = Date.now();
 
-    constructor(private readonly writer: ActivityLogWriter) {}
+    constructor(
+        private readonly writer: ActivityLogWriter,
+        private readonly settings: ActivityLogSettingsService,
+    ) {}
 
     use(req: Request, res: Response, next: NextFunction): void {
         // Correlation id is minted even when capture is off: it costs nothing,
@@ -108,7 +112,18 @@ export class ActivityLogMiddleware implements NestMiddleware {
         const path = normalisePath(req.originalUrl || req.url || '/');
         const statusCode = res.statusCode || 0;
 
-        if (!shouldCapture(captureLevel(), method, path, statusCode)) return;
+        // Env is the hard override; the admin-set level refines it. Read from
+        // the 30s cache, never a DB round trip on the request path.
+        const level = this.settings.cached()?.capture_level ?? captureLevel();
+        if (
+            !shouldCapture(
+                captureLevel() === 'off' ? 'off' : level,
+                method,
+                path,
+                statusCode,
+            )
+        )
+            return;
 
         // Collapse repeat views of the same screen by the same person.
         const headers = req.headers as unknown as Record<string, unknown>;
@@ -132,7 +147,10 @@ export class ActivityLogMiddleware implements NestMiddleware {
                 : (enrichment?.action ?? routeAction),
             statusCode,
         );
-        const piiMask = piiMaskEnabled();
+        const piiMask =
+            this.settings.cached()?.pii_mode === 'full'
+                ? false
+                : piiMaskEnabled();
 
         // Subject scope comes from what was acted ON, falling back to the
         // actor's tenant only so multi-tenant filtering still works.

@@ -4,6 +4,14 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const mockUser = vi.fn(() => ({
+  permissions: ['activity-log:view', 'activity-log:configure'],
+}) as unknown);
+vi.mock('../../contexts/AuthContext', () => ({
+  useAuth: () => ({ user: mockUser() }),
+}));
+
+const settings = vi.fn();
 const list = vi.fn();
 const filterOptions = vi.fn();
 const detail = vi.fn();
@@ -14,6 +22,8 @@ vi.mock('../../services/api/activityLogService', () => ({
     filterOptions: () => filterOptions(),
     detail: (...a: unknown[]) => detail(...a),
     related: (...a: unknown[]) => related(...a),
+    settings: () => settings(),
+    updateSettings: vi.fn(),
     forEntity: vi.fn(),
   },
 }));
@@ -91,6 +101,53 @@ beforeEach(() => {
     actor_customer_id: null,
   });
   related.mockResolvedValue([]);
+  settings.mockResolvedValue({
+    capture_level: 'mutations+sensitive_reads',
+    pii_mode: 'mask',
+    hot_months: 3,
+    retention_months: 13,
+    updated_at: null,
+    env_disabled: false,
+  });
+});
+
+describe('ActivityLog capture state', () => {
+  it('warns loudly when capture is switched off', async () => {
+    settings.mockResolvedValue({
+      capture_level: 'off',
+      pii_mode: 'mask',
+      hot_months: 3,
+      retention_months: 13,
+      updated_at: '2026-08-06T09:00:00.000Z',
+      env_disabled: false,
+    });
+    renderPage();
+    // The person who turned it off is the last one who would mention it.
+    expect(
+      await screen.findByText(/Activity logging is currently OFF/)
+    ).toBeInTheDocument();
+  });
+
+  it('says nothing when capture is on', async () => {
+    renderPage();
+    await screen.findByText('role.update');
+    expect(screen.queryByText(/currently OFF/)).not.toBeInTheDocument();
+  });
+
+  it('hides the settings panel from someone who cannot configure', async () => {
+    mockUser.mockReturnValue({ permissions: ['activity-log:view'] });
+    renderPage();
+    await screen.findByText('role.update');
+    expect(screen.queryByText('Capture settings')).not.toBeInTheDocument();
+    mockUser.mockReturnValue({
+      permissions: ['activity-log:view', 'activity-log:configure'],
+    });
+  });
+
+  it('offers the settings panel to a holder of activity-log:configure', async () => {
+    renderPage();
+    expect(await screen.findByText('Capture settings')).toBeInTheDocument();
+  });
 });
 
 describe('ActivityLog record lens', () => {

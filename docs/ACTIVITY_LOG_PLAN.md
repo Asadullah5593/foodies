@@ -1,7 +1,6 @@
 # Activity / Audit Log — implementation plan
 
-> **Status:** Phases 0–6 complete except the admin-side capture toggle
-> (2026-08-06). Branch `feat/activity-log`.
+> **Status:** Phases 0–6 complete (2026-08-06). Branch `feat/activity-log`.
 > **Anchors verified against the tree on 2026-08-05.** Line references drift; the
 > "Verified anchors" table at the end is the source of truth and should be
 > re-checked at the start of each phase.
@@ -489,8 +488,18 @@ wrong password 403 and logged as `activity-log.purge.denied`; a recent month
 refused with the 90-day floor message; the successful purge recorded its own row
 carrying row count, object key and checksum.
 
-Still outstanding: §8's admin-panel capture toggle (DB-backed settings + UI).
-The env hard-override works today, so capture can be changed with a restart.
+§8's admin-panel controls landed too: migration `…108-ActivityLogSettings`,
+`activity_log_settings` (one row per tenant, NULL = global default), a 30-second
+cached read so the request path never does a DB round trip, and a settings panel
+on the Activity Log page gated behind `activity-log:configure` + password
+re-entry. The change is written to the log **before** it takes effect, and a
+persistent amber banner announces a disabled log to everyone who can read it —
+not just to whoever switched it off.
+
+**History links now exist on six modules**: Roles, Users, Menu Items, Branch
+Pricing, Discounts and Shifts. All six are controlled by the single
+`activity-log:view` permission; per-module granularity was considered and not
+built.
 
 See §7 and §8. Lands last because it is only meaningful once real rows exist, and it
 is the only phase that deletes anything.
