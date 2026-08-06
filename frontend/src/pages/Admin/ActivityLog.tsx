@@ -264,7 +264,9 @@ const ActivityLog: React.FC = () => {
           </>
         )}
         </div>
-        <ActivityLogSettingsPanel />
+        <div className="flex flex-none items-center gap-2.5">
+          <ActivityLogSettingsPanel />
+        </div>
       </div>
 
       <CaptureStateBanner />

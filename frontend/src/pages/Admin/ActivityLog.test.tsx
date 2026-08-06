@@ -124,29 +124,40 @@ describe('ActivityLog capture state', () => {
     renderPage();
     // The person who turned it off is the last one who would mention it.
     expect(
-      await screen.findByText(/Activity logging is currently OFF/)
+      await screen.findByText(/Logging is OFF/)
     ).toBeInTheDocument();
   });
 
   it('says nothing when capture is on', async () => {
     renderPage();
     await screen.findByText('role.update');
-    expect(screen.queryByText(/currently OFF/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Logging is OFF/)).not.toBeInTheDocument();
   });
 
   it('hides the settings panel from someone who cannot configure', async () => {
     mockUser.mockReturnValue({ permissions: ['activity-log:view'] });
     renderPage();
     await screen.findByText('role.update');
-    expect(screen.queryByText('Capture settings')).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /Capture settings/ })
+    ).not.toBeInTheDocument();
     mockUser.mockReturnValue({
       permissions: ['activity-log:view', 'activity-log:configure'],
     });
   });
 
-  it('offers the settings panel to a holder of activity-log:configure', async () => {
+  it('keeps settings behind a button rather than on the page', async () => {
     renderPage();
-    expect(await screen.findByText('Capture settings')).toBeInTheDocument();
+    const trigger = await screen.findByRole('button', { name: /Capture settings/ });
+    // Set-once controls must not compete with the log people came to read.
+    expect(screen.queryByLabelText('Capture level')).not.toBeInTheDocument();
+    fireEvent.click(trigger);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByLabelText('Capture level')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    );
   });
 });
 
