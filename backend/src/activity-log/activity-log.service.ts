@@ -1,8 +1,14 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import {
+    BadRequestException,
+    ForbiddenException,
+    Injectable,
+} from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import type { Request } from 'express';
 import { ActivityLogWriter } from './activity-log.writer';
+import { ActivityLogArchiveService } from './activity-log-archive.service';
+import * as bcrypt from 'bcryptjs';
 import { clientIp } from './activity-log.actor';
 import { isEnabled } from './activity-log.config';
 import type { ClientEventDto } from './client-event.dto';
@@ -31,6 +37,8 @@ const DEFAULT_WINDOW_DAYS = 7;
 const MAX_WINDOW_DAYS = 92;
 /** Wider ceiling when the query names one record — see resolveRange. */
 const MAX_ENTITY_WINDOW_DAYS = 400;
+/** Nothing inside this window can be purged, by any role. See purgeMonth. */
+const PURGE_FLOOR_DAYS = 90;
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 200;
 
@@ -123,7 +131,109 @@ export class ActivityLogService {
     constructor(
         @InjectDataSource() private readonly dataSource: DataSource,
         private readonly writer: ActivityLogWriter,
+        private readonly archive: ActivityLogArchiveService,
     ) {}
+
+    /**
+     * Archive and purge one past month.
+     *
+     * Four things stand between an admin and the destruction of audit history,
+     * and all four are enforced here rather than in the UI:
+     *
+     * 1. `activity-log:purge`, a permission held by nobody by default.
+     * 2. The caller re-enters their OWN password (bcrypt-compared).
+     * 3. A 90-day floor: the recent past cannot be erased by anyone, ever —
+     *    which is precisely the history someone covering their tracks wants.
+     * 4. Archive → verify → drop. The month is written out and read back
+     *    before the partition is dropped, so a purge is a MOVE, not a delete.
+     *
+     * The purge writes its own audit row into the current partition, which by
+     * rule 3 can never itself be purged.
+     */
+    async purgeMonth(
+        month: string,
+        password: string,
+        actor: {
+            id: number;
+            tenantId: number | null;
+            name?: string;
+            email?: string;
+        },
+    ): Promise<{ month: string; rows: number; archive: string }> {
+        if (!/^\d{4}-\d{2}$/.test(month)) {
+            throw new BadRequestException('month must be YYYY-MM');
+        }
+        // 1. Re-authenticate. Same comparison the login path uses.
+        const rows = await this.dataSource.query<Array<{ password: string }>>(
+            'SELECT password FROM users WHERE id = $1',
+            [actor.id],
+        );
+        const hash = rows[0]?.password;
+        const ok =
+            typeof hash === 'string' &&
+            hash.length > 0 &&
+            (await bcrypt.compare(password ?? '', hash));
+        if (!ok) {
+            // The failed attempt is itself worth recording.
+            await this.writer.writeImmediate({
+                ...this.writer.systemRow(
+                    'activity-log.purge.denied',
+                    `Purge of ${month} refused: password re-entry failed`,
+                ),
+                actorType: 'staff',
+                actorUserId: actor.id,
+                actorLabel: actor.name ?? actor.email ?? `user#${actor.id}`,
+                tenantId: actor.tenantId,
+                outcome: 'denied',
+            });
+            throw new ForbiddenException('Password is incorrect');
+        }
+
+        // 3. The floor. Computed from the END of the month being purged.
+        const [year, mon] = month.split('-').map(Number);
+        const monthEnd = new Date(Date.UTC(year, mon, 1));
+        const ageDays = (Date.now() - monthEnd.getTime()) / 86_400_000;
+        if (ageDays < PURGE_FLOOR_DAYS) {
+            throw new BadRequestException(
+                `${month} is too recent to purge. Nothing inside the last ${PURGE_FLOOR_DAYS} days can be removed, by any role.`,
+            );
+        }
+
+        const partition = `activity_logs_${year}_${String(mon).padStart(2, '0')}`;
+        const exists = await this.dataSource.query<Array<{ exists: boolean }>>(
+            'SELECT to_regclass($1) IS NOT NULL AS exists',
+            [partition],
+        );
+        if (!exists[0]?.exists) {
+            throw new BadRequestException(
+                `${month} is not held in the database`,
+            );
+        }
+
+        // 4. Archive, verify, and only then drop.
+        const result = await this.archive.archivePartition(partition);
+        if (!result.verified) {
+            throw new BadRequestException(
+                'Archive could not be verified — nothing was deleted',
+            );
+        }
+        await this.dataSource.query(`DROP TABLE IF EXISTS ${partition}`);
+
+        await this.writer.writeImmediate({
+            ...this.writer.systemRow(
+                'activity-log.purge',
+                `Purged ${month}: ${result.rowCount} rows archived to ${result.key} (sha256 ${result.sha256.slice(0, 16)}…)`,
+            ),
+            actorType: 'staff',
+            actorUserId: actor.id,
+            actorLabel: actor.name ?? actor.email ?? `user#${actor.id}`,
+            tenantId: actor.tenantId,
+            entityType: 'activity_log_month',
+            entityId: month,
+        });
+
+        return { month, rows: result.rowCount, archive: result.key };
+    }
 
     /**
      * Record events the server would otherwise never see — a print dialog, a

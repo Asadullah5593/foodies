@@ -1,7 +1,7 @@
 # Activity / Audit Log — implementation plan
 
-> **Status:** Phases 0–5 complete (2026-08-06). Phase 6 (archive, purge,
-> runtime controls) outstanding. Branch `feat/activity-log`.
+> **Status:** Phases 0–6 complete except the admin-side capture toggle
+> (2026-08-06). Branch `feat/activity-log`.
 > **Anchors verified against the tree on 2026-08-05.** Line references drift; the
 > "Verified anchors" table at the end is the source of truth and should be
 > re-checked at the start of each phase.
@@ -467,7 +467,30 @@ those two roles hold all four `activity-log:*` permissions, and none is implied
 by any umbrella in `permission-implications.ts`, so no back door via
 `expandPermissions`). Widening is a deliberate grant from the Roles UI.
 
-### Phase 6 — Archive, purge & runtime controls
+### Phase 6 — Archive & purge — ✅ DONE (runtime toggle UI still to come)
+
+Landed: `activity-log-archive.service.ts` (gzipped NDJSON + checksummed
+manifest, `s3` or `local` driver), archive→verify→drop wired into the retention
+job, and `POST /admin/activity-logs/purge`.
+
+**Infrastructure (2026-08-06):** bucket `foodies-audit-archive` in
+`ap-southeast-1`, Object Lock **Compliance / 400 days**, lifecycle
+`expire-after-lock` (current 405d, noncurrent 1d, multipart 7d), IAM inline
+policy `foodies-audit-archive-write` on the `media-uploader` user — Allow
+Put/Get/List on `activity-logs/*`, explicit **Deny** on every delete and on
+weakening the lock. The user's permissions boundary is `AmazonS3FullAccess`, so
+the grant is fully effective.
+
+Verified end to end against the **local** driver (never the write-once bucket):
+2,500 seeded rows in a 2025-01 partition → 19,515-byte archive → manifest
+sha256 matches the file on disk → `zcat | jq` reads all 2,500 lines → partition
+dropped **only after** verification. Purge guards each proved: cashier 403;
+wrong password 403 and logged as `activity-log.purge.denied`; a recent month
+refused with the 90-day floor message; the successful purge recorded its own row
+carrying row count, object key and checksum.
+
+Still outstanding: §8's admin-panel capture toggle (DB-backed settings + UI).
+The env hard-override works today, so capture can be changed with a restart.
 
 See §7 and §8. Lands last because it is only meaningful once real rows exist, and it
 is the only phase that deletes anything.

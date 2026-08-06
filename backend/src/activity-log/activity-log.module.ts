@@ -8,6 +8,7 @@ import { ActivityLogMiddleware } from './activity-log.middleware';
 import { ActivityLogInterceptor } from './activity-log.interceptor';
 import { ActivityLogController } from './activity-log.controller';
 import { ActivityLogService } from './activity-log.service';
+import { ActivityLogArchiveService } from './activity-log-archive.service';
 
 /**
  * Activity / audit log — Phases 0 to 2.
@@ -27,12 +28,18 @@ import { ActivityLogService } from './activity-log.service';
     controllers: [ActivityLogController],
     providers: [
         ActivityLogService,
+        ActivityLogArchiveService,
         ActivityLogWriter,
         ActivityLogMaintenanceService,
         ActivityLogMiddleware,
         // The repo's first APP_* provider. Enrichment only — see the interceptor.
         { provide: APP_INTERCEPTOR, useClass: ActivityLogInterceptor },
     ],
-    exports: [ActivityLogWriter, ActivityLogMiddleware, ActivityLogService],
+    exports: [
+        ActivityLogWriter,
+        ActivityLogMiddleware,
+        ActivityLogService,
+        ActivityLogArchiveService,
+    ],
 })
 export class ActivityLogModule {}

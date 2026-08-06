@@ -19,6 +19,7 @@ import { RequirePermission } from '../roles/require-permission.decorator';
 import { Permissions } from '../roles/permissions.dto';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { ClientEventBatchDto } from './client-event.dto';
+import { PurgeMonthDto } from './purge-month.dto';
 
 type ActivityUser = {
     id: number;
@@ -117,6 +118,21 @@ export class ActivityLogController {
         @Req() req: Request,
     ) {
         return this.service.recordClientEvents(body.events ?? [], user, req);
+    }
+
+    /**
+     * Archive one past month and drop it from the database.
+     *
+     * Four gates, all server-side: the `activity-log:purge` permission, the
+     * caller re-entering their own password, a 90-day floor no role can reach
+     * past, and archive → verify → drop so a purge is a move rather than a
+     * deletion. The purge writes its own audit row.
+     */
+    @Post('purge')
+    @HttpCode(200)
+    @RequirePermission(Permissions.ACTIVITY_LOG_PURGE)
+    purge(@CurrentUser() user: ActivityUser, @Body() dto: PurgeMonthDto) {
+        return this.service.purgeMonth(dto.month, dto.password, user);
     }
 
     /** Options for the filter dropdowns (last 30 days of distinct values). */

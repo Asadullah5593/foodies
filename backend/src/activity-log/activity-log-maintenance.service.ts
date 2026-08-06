@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { ActivityLogArchiveService } from './activity-log-archive.service';
 
 /** Partitions kept ahead of "now" so a row can never arrive without a home. */
 const MONTHS_AHEAD = 3;
@@ -30,7 +31,10 @@ const MIN_DROP_AGE_MONTHS = 3;
 export class ActivityLogMaintenanceService {
     private readonly logger = new Logger(ActivityLogMaintenanceService.name);
 
-    constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+    constructor(
+        @InjectDataSource() private readonly dataSource: DataSource,
+        private readonly archive: ActivityLogArchiveService,
+    ) {}
 
     @Cron(CronExpression.EVERY_DAY_AT_4AM)
     async handleDailyMaintenance(): Promise<void> {
@@ -114,12 +118,38 @@ export class ActivityLogMaintenanceService {
             if (start >= cutoff) continue;
             const ageMonths = this.monthsBetween(start, new Date());
             if (ageMonths < MIN_DROP_AGE_MONTHS) continue;
-            if (dryRun) {
-                this.logger.log(`[dry-run] would drop partition ${name}`);
-                continue;
+
+            // ARCHIVE → VERIFY → DROP, in that order, always. The archive is
+            // read back and re-hashed before anything is deleted; if that fails
+            // we log and move on, leaving the data exactly where it is. The
+            // next run retries. There is no path here that drops first.
+            try {
+                const result = await this.archive.archivePartition(name, {
+                    dryRun,
+                });
+                if (dryRun) {
+                    this.logger.log(
+                        `[dry-run] would archive ${name} (${result.rowCount} rows) then drop it`,
+                    );
+                    continue;
+                }
+                if (!result.verified) {
+                    this.logger.error(
+                        `archive of ${name} did not verify — keeping the partition`,
+                    );
+                    continue;
+                }
+                await this.dataSource.query(`DROP TABLE IF EXISTS ${name}`);
+                dropped.push(name);
+                this.logger.log(
+                    `dropped ${name} after verified archive ${result.key}`,
+                );
+            } catch (e) {
+                // A failed archive must never cost us the data.
+                this.logger.error(
+                    `could not archive ${name}, partition kept: ${String(e)}`,
+                );
             }
-            await this.dataSource.query(`DROP TABLE IF EXISTS ${name}`);
-            dropped.push(name);
         }
         return dropped;
     }
