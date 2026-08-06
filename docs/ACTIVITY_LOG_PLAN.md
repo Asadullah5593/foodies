@@ -1,6 +1,6 @@
 # Activity / Audit Log — implementation plan
 
-> **Status:** Phases 0–3 complete (2026-08-06). Phases 4–6 outstanding.
+> **Status:** Phases 0–4 complete (2026-08-06). Phases 5–6 outstanding.
 > Branch `feat/activity-log`.
 > **Anchors verified against the tree on 2026-08-05.** Line references drift; the
 > "Verified anchors" table at the end is the source of truth and should be
@@ -393,7 +393,29 @@ the diff panel lights up incrementally):
 Numeric normalisation is mandatory: TypeORM returns `decimal` as **strings**, so
 `'12.00'` vs `12` would produce phantom diffs on every money field.
 
-### Phase 4 — Client beacon
+### Phase 4 — Client beacon — ✅ DONE
+
+Landed: `utils/activityBeacon.ts` (batched, keepalive, fully try/caught),
+correlation ids minted in the `apiClient` request interceptor,
+`POST /admin/activity-logs/events` with closed action/subject enums, a
+`trigger: 'user' | 'auto'` flag threaded through `printContent`, all five print
+sites, all three CSV exporters (including the one added with Product-wise
+Sales), and `useSensitivePageView` on Customers, Shifts, Roles, Rider Profiles,
+Reports and the Activity Log itself.
+
+Verified live against the endpoint: a valid batch lands with subject, entity,
+session and device ids; **a forged `actor_label`/`actor_user_id`/`tenant_id` in
+the body is ignored** and the row carries the real JWT identity; an invented
+action is refused with 400; unauthenticated is 401; and an auto-print is stored
+with the summary "invoice (automatic, no user action)".
+
+Two bugs `tsc` caught before they shipped: `onClick={handlePrint}` passed React's
+MouseEvent as the `trigger` argument (which would have failed server validation
+and dropped the whole batch), and a `kind === 'z'` comparison against a
+`'X' | 'Z'` union that could never be true, so every Z-report would have been
+filed as a shift report.
+
+8 beacon specs; frontend suite 412, backend 507.
 
 - `frontend/src/utils/apiClient.ts` — mint `X-Request-Id`/`X-Session-Id`/
   `X-Device-Id` in the existing request interceptor (total choke point: 62

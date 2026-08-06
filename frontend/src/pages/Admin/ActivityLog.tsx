@@ -9,6 +9,7 @@ import {
 import Card from '../../components/Card';
 import PaginationBar from '../../components/PaginationBar';
 import SearchableSelect from '../../components/SearchableSelect';
+import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 
 const PAGE_SIZE = 25;
 
@@ -43,6 +44,8 @@ const formatWhen = (iso: string) =>
 
 /** Renders a diff value, keeping `[redacted]` visibly removed rather than absent. */
 const DiffValue: React.FC<{ value: unknown }> = ({ value }) => {
+  // Opening this screen is itself worth recording — see the hook.
+  useSensitivePageView('activity-log');
   if (value === null || value === undefined) {
     return <span className="text-gray-400">—</span>;
   }

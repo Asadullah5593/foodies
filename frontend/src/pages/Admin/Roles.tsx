@@ -19,10 +19,13 @@ import {
   groupByResource,
   resourceLabel,
 } from './roleShared';
+import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 
 const isSuperAdmin = (u: { tenant_id?: number | null } | null) => u?.tenant_id == null;
 
 const Roles: React.FC = () => {
+  // Opening this screen is itself worth recording — see the hook.
+  useSensitivePageView('roles');
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { user } = useAuth();

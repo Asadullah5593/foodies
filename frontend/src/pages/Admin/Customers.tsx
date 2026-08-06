@@ -20,6 +20,7 @@ import {
   CUSTOMER_SOURCE_LABEL,
   customerSourceLabel,
 } from '../../utils/customerSources';
+import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 
 type LoyaltyWallet = {
   wallet_type: 'pos' | 'app';
@@ -41,6 +42,8 @@ type Customer = {
 };
 
 const Customers: React.FC = () => {
+  // Opening this screen is itself worth recording — see the hook.
+  useSensitivePageView('customers');
   const queryClient = useQueryClient();
   const canCreate = useHasPermission('customers:create');
   const canEdit = useHasPermission('customers:edit');

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { deviceId, sessionId } from './activityBeacon';
 
 // Use environment variable or default to NestJS backend
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:3001/api';
@@ -18,6 +19,17 @@ apiClient.interceptors.request.use(
     const token = localStorage.getItem('auth_token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    // Correlation ids for the activity log. This interceptor is the single
+    // choke point for API traffic, so tagging here covers every call without
+    // touching a service. Harmless when the log is off — the server ignores them.
+    try {
+      const sid = sessionId();
+      const did = deviceId();
+      if (sid) config.headers['X-Session-Id'] = sid;
+      if (did) config.headers['X-Device-Id'] = did;
+    } catch {
+      /* correlation is a nice-to-have; never block a request for it */
     }
     return config;
   },

@@ -4,6 +4,8 @@ import { useQuery } from '@tanstack/react-query';
 import apiClient from '../../utils/apiClient';
 import SearchableSelect from '../../components/SearchableSelect';
 import { Branch } from '../../types';
+import { recordBeacon } from '../../utils/activityBeacon';
+import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 
 /** One split row under a product: a variant, a branch or a brand. */
 interface ProductSalesChild {
@@ -149,6 +151,8 @@ const PRINT_CSS = `
  * ReportsService.productSales.
  */
 const ProductSales: React.FC = () => {
+  // Opening this screen is itself worth recording — see the hook.
+  useSensitivePageView('reports');
   const today = new Date().toISOString().split('T')[0];
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null);
   const [selectedBrand, setSelectedBrand] = useState<number | null>(null);
@@ -388,6 +392,9 @@ const ProductSales: React.FC = () => {
       }
     }
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    // A download never reaches the server, so this is the only place it can
+    // be recorded. Exporting data is the step before it leaves the building.
+    recordBeacon({ action: 'client.export', subject: 'product-sales' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;

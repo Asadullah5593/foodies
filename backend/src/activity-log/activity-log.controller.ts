@@ -1,4 +1,15 @@
-import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
+import {
+    Body,
+    Controller,
+    Get,
+    HttpCode,
+    Param,
+    Post,
+    Query,
+    Req,
+    UseGuards,
+} from '@nestjs/common';
+import type { Request } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ActivityLogService } from './activity-log.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -7,11 +18,16 @@ import { RequirePermissionGuard } from '../roles/require-permission.guard';
 import { RequirePermission } from '../roles/require-permission.decorator';
 import { Permissions } from '../roles/permissions.dto';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { ClientEventBatchDto } from './client-event.dto';
 
 type ActivityUser = {
     id: number;
     tenantId: number | null;
     allowedBranchIds?: number[] | null;
+    name?: string;
+    email?: string;
+    isSuperAdmin?: boolean;
+    roles?: Array<{ slug: string; name: string }>;
 };
 
 /**
@@ -78,6 +94,29 @@ export class ActivityLogController {
             user.tenantId,
             user.allowedBranchIds,
         );
+    }
+
+    /**
+     * Client-side events the server never sees: printing a receipt, exporting a
+     * CSV, opening a screen full of customer phone numbers.
+     *
+     * **The client supplies the WHAT; the server supplies the WHO.** Actor,
+     * tenant, roles and IP come from the JWT and the request, never from the
+     * body — otherwise any logged-in browser could write rows attributed to
+     * someone else. The action and subject are validated against closed enums
+     * for the same reason.
+     *
+     * Deliberately NOT permission-gated beyond being logged in: a cashier
+     * printing a receipt must produce a row, and cashiers hold no admin rights.
+     */
+    @Post('events')
+    @HttpCode(202)
+    recordClientEvents(
+        @CurrentUser() user: ActivityUser,
+        @Body() body: ClientEventBatchDto,
+        @Req() req: Request,
+    ) {
+        return this.service.recordClientEvents(body.events ?? [], user, req);
     }
 
     /** Options for the filter dropdowns (last 30 days of distinct values). */

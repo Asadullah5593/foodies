@@ -1,6 +1,11 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import type { Request } from 'express';
+import { ActivityLogWriter } from './activity-log.writer';
+import { clientIp } from './activity-log.actor';
+import { isEnabled } from './activity-log.config';
+import type { ClientEventDto } from './client-event.dto';
 
 export interface ActivityLogFilters {
     date_from?: string;
@@ -113,7 +118,90 @@ const ACTOR_TYPES = [
  */
 @Injectable()
 export class ActivityLogService {
-    constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+    constructor(
+        @InjectDataSource() private readonly dataSource: DataSource,
+        private readonly writer: ActivityLogWriter,
+    ) {}
+
+    /**
+     * Record events the server would otherwise never see — a print dialog, a
+     * CSV download, a sensitive screen being opened.
+     *
+     * The batch is capped and every field the client sends is either validated
+     * against a closed enum (action, subject) or bounded (label). Identity is
+     * taken from the JWT, never the body.
+     */
+    recordClientEvents(
+        events: ClientEventDto[],
+        user: {
+            id: number;
+            tenantId: number | null;
+            name?: string;
+            email?: string;
+            isSuperAdmin?: boolean;
+            roles?: Array<{ slug: string; name: string }>;
+        },
+        req: Request,
+    ): { accepted: number } {
+        if (!isEnabled() || !Array.isArray(events) || events.length === 0) {
+            return { accepted: 0 };
+        }
+        // A browser cannot be trusted to bound its own batch.
+        const batch = events.slice(0, 50);
+        const headers = req.headers as unknown as Record<string, unknown>;
+        const header = (name: string, max = 64): string | null => {
+            const v = headers[name];
+            return typeof v === 'string' && v.trim()
+                ? v.trim().slice(0, max)
+                : null;
+        };
+        const roles = user.roles ?? [];
+
+        for (const event of batch) {
+            this.writer.enqueue({
+                createdAt: new Date(),
+                requestId: header('x-request-id', 36),
+                sessionId: header('x-session-id'),
+                deviceId: header('x-device-id'),
+                actorType: 'staff',
+                actorUserId: user.id,
+                actorCustomerId: null,
+                actorLabel: user.name ?? user.email ?? `user#${user.id}`,
+                actorRoleSlugs: roles.length ? roles.map((r) => r.slug) : null,
+                actorRoleNames: roles.length ? roles.map((r) => r.name) : null,
+                actorIsSuperAdmin: user.isSuperAdmin === true,
+                tenantId: user.tenantId,
+                branchId: event.branch_id ?? null,
+                brandId: event.brand_id ?? null,
+                action: event.action,
+                actionGroup: 'client',
+                entityType: event.subject,
+                entityId:
+                    event.entity_id != null ? String(event.entity_id) : null,
+                entityLabel: event.label ?? null,
+                // The distinction that keeps the print trail meaningful.
+                summary:
+                    event.trigger === 'auto'
+                        ? `${event.subject} (automatic, no user action)`
+                        : null,
+                httpMethod: null,
+                route: null,
+                query: null,
+                requestBody: { trigger: event.trigger ?? 'user' },
+                responseMeta: null,
+                statusCode: null,
+                outcome: 'success',
+                durationMs: null,
+                changes: null,
+                changedFields: null,
+                ip: clientIp(headers, req.ip),
+                userAgent: header('user-agent', 400),
+                payloadTruncated: false,
+                diffExpected: false,
+            });
+        }
+        return { accepted: batch.length };
+    }
 
     /**
      * Resolve the window, clamped to MAX_WINDOW_DAYS.

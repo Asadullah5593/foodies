@@ -11,6 +11,7 @@ import Button from '../../components/Button';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import SearchableSelect from '../../components/SearchableSelect';
 import Modal from '../../components/Modal';
+import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 
 /* ------------------------------------------------------------- helpers --- */
 
@@ -180,6 +181,8 @@ const StatusPill: React.FC<{ open: boolean }> = ({ open }) => (
 /* ------------------------------------------------------------ component --- */
 
 const Shifts: React.FC = () => {
+  // Opening this screen is itself worth recording — see the hook.
+  useSensitivePageView('shifts');
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const today = todayYMD();
@@ -584,7 +587,11 @@ const Shifts: React.FC = () => {
         ${row('Counted cash', s.actual_cash != null ? fmtMoney(s.actual_cash) : 'Not counted')}
         ${v != null ? row('Variance', `${v > 0 ? '+' : ''}${fmtMoney(v)}`) : ''}
       </table>`;
-    printContent(html, `${kind}-report ${s.shift_number}`);
+    printContent(html, `${kind}-report ${s.shift_number}`, '', {
+      subject: kind === 'Z' ? 'z-report' : 'shift-report',
+      entityId: s.id,
+      label: `${kind}-report ${s.shift_number}`,
+    });
   };
 
   /* ------------------------------------------------------------ render --- */

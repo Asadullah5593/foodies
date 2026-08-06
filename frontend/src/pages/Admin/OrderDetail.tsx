@@ -200,7 +200,11 @@ const OrderDetail: React.FC = () => {
       ${(o.loyalty_points_redeemed ?? 0) > 0 ? `<p class="py-2 text-gray-600">Points redeemed: ${o.loyalty_points_redeemed}</p>` : ''}
       <p class="py-2 border-t total-row">Total: ${formatCurrency(totalAmount)}</p>
     `;
-    printContent(html, `Order ${orderNum}`);
+    printContent(html, `Order ${orderNum}`, '', {
+      subject: 'order',
+      entityId: Number(id) || undefined,
+      label: `Order ${orderNum}`,
+    });
   };
 
   return (

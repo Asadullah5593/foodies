@@ -11,6 +11,7 @@ import SearchableSelect from '../../../components/SearchableSelect';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { useHasPermission } from '../../../hooks/useHasPermission';
 import { confirmDialog } from '../../../utils/sweetAlert';
+import { recordBeacon } from '../../../utils/activityBeacon';
 
 const BRANCH_ID_KEY = 'foodies-inventory-branch-id';
 
@@ -1150,6 +1151,9 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
       }),
     ].join('\n');
     const blob = new Blob([lines], { type: 'text/csv;charset=utf-8' });
+    // A download never reaches the server, so this is the only place it can
+    // be recorded. Exporting data is the step before it leaves the building.
+    recordBeacon({ action: 'client.export', subject: 'inventory-items' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
