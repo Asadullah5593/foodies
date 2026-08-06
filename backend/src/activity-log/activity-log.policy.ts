@@ -190,6 +190,25 @@ export function deriveAction(method: string, path: string): string {
 }
 
 /**
+ * True when the path ends in a word that is a verb rather than a resource or an
+ * id — `/shifts/82/cash-outs/2/void`, `/shifts/5/close`, `/orders/9/refund`.
+ *
+ * This matters because a handler's @RequirePermission is coarser than its
+ * route: recording a cash-out and voiding one both carry shifts:cash-out, so
+ * naming the action after the permission alone would make a reversal
+ * indistinguishable from the thing it reverses.
+ */
+export function hasTrailingVerb(path: string): boolean {
+    const segments = path.split('/').filter(Boolean);
+    const last = segments[segments.length - 1];
+    if (!last || /^\d+$/.test(last) || /^[0-9a-f-]{36}$/i.test(last)) {
+        return false;
+    }
+    // A trailing plural is a collection (`/admin/roles`), not a verb.
+    return segments.length > 2 && !last.endsWith('s');
+}
+
+/**
  * Refines an action with what actually happened. A failed login and a
  * successful one are different events for alerting — "five auth.login rows from
  * one IP" is meaningless if you cannot tell them apart without also reading the

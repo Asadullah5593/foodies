@@ -3,6 +3,7 @@ import { classifyActor, clientIp } from './activity-log.actor';
 import {
     deriveAction,
     deriveActionGroup,
+    hasTrailingVerb,
     expectsDiff,
     isCriticalAction,
     isSkippedRoute,
@@ -109,6 +110,22 @@ describe('activity log policy', () => {
             expect(deriveAction('POST', '/admin/shifts/5/close')).toBe(
                 'shift.close',
             );
+        });
+
+        it('tells a sub-action apart from the collection it lives under', () => {
+            // A permission is shared by every handler that needs it, so
+            // recording a cash-out and voiding one both carry shifts:cash-out.
+            // The route is what distinguishes them.
+            expect(hasTrailingVerb('/admin/shifts/82/cash-outs/2/void')).toBe(
+                true,
+            );
+            expect(hasTrailingVerb('/admin/shifts/5/close')).toBe(true);
+            expect(hasTrailingVerb('/admin/shifts/82/cash-outs')).toBe(false);
+            expect(hasTrailingVerb('/admin/roles')).toBe(false);
+            expect(hasTrailingVerb('/admin/roles/4')).toBe(false);
+            expect(
+                deriveAction('POST', '/admin/shifts/82/cash-outs/2/void'),
+            ).toBe('shift.void');
         });
 
         it('separates a failed login from a successful one', () => {

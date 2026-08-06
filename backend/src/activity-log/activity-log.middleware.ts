@@ -13,6 +13,7 @@ import {
     deriveAction,
     deriveActionGroup,
     expectsDiff,
+    hasTrailingVerb,
     isCriticalAction,
     isSensitiveRead,
     normalisePath,
@@ -121,8 +122,14 @@ export class ActivityLogMiddleware implements NestMiddleware {
             ENRICHMENT_KEY
         ] as InterceptorEnrichment | undefined;
 
+        // The route wins when it ends in a verb: a permission name is shared by
+        // every handler that needs it, so `/cash-outs/2/void` must not be
+        // reported under the same action as recording a cash-out.
+        const routeAction = deriveAction(method, path);
         const action = refineAction(
-            enrichment?.action || deriveAction(method, path),
+            hasTrailingVerb(path)
+                ? routeAction
+                : (enrichment?.action ?? routeAction),
             statusCode,
         );
         const piiMask = piiMaskEnabled();

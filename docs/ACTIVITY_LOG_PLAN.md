@@ -1,8 +1,7 @@
 # Activity / Audit Log — implementation plan
 
-> **Status:** Phases 0–3 built and verified (2026-08-05); Phase 3 covers items
-> 1–3 of its list (roles, users, menu/branch prices) — discounts, shifts and
-> inventory remain. Phases 4–6 outstanding. Branch `feat/activity-log`.
+> **Status:** Phases 0–3 complete (2026-08-06). Phases 4–6 outstanding.
+> Branch `feat/activity-log`.
 > **Anchors verified against the tree on 2026-08-05.** Line references drift; the
 > "Verified anchors" table at the end is the source of truth and should be
 > re-checked at the start of each phase.
@@ -343,7 +342,7 @@ Registration: nav item + route in `App.tsx`, `PATH_PERMISSIONS` entry in
 `services/api/activityLogService.ts`. `resource = 'activity-log'` means
 `roleShared.ts` labels it "Activity Log" with no change.
 
-### Phase 3 — Diffs — ✅ roles, users, menu/prices (1–3 of 6)
+### Phase 3 — Diffs — ✅ DONE (all six areas)
 
 Landed: `recordChange()` in `roles.service.updateRole` (snapshotted *before* the
 permission set is overwritten), `users.service.update`, `menu.service.updateItem`
@@ -361,7 +360,26 @@ The UI reads set-valued changes as `+ added` / `− removed` chips: two 119-item
 permission arrays side by side are the same information and practically
 unreadable, and the question is always "what did they grant themselves?".
 
-Remaining: 4. discounts/coupons → 5. shifts/cash-outs → 6. inventory/procurement.
+Also landed: `discounts.service.update`, `shifts.service` (close, `addCashOut`,
+`voidCashOut`) and inventory (`createAdjustment`, `recordWastage`).
+
+Verified live: a discount edit recorded `value 12 → 15` and `is_active
+true → false`; a cash-out recorded `amount 250`; its void recorded
+`voided false → true` with the reason. Shift close and the two inventory paths
+follow the same proven pattern but were **not exercised live** — closing a shift
+needs every order terminal, and posting an adjustment would move real dev stock.
+
+**Sub-action naming fixed here.** A handler's `@RequirePermission` is coarser
+than its route: recording a cash-out and voiding one both carry
+`shifts:cash-out`, so the reversal was indistinguishable from the thing it
+reversed. `hasTrailingVerb()` now lets a route ending in a verb
+(`/cash-outs/2/void`, `/shifts/5/close`) name the action, giving `shift.void`
+instead of a second `shift.cash-out`.
+
+A false alarm worth recording: a discount edit first appeared to record no diff.
+The instrumentation was correct — an earlier request had already set the value,
+so the "change" was genuinely a no-op. Verify the data before trusting the
+symptom.
 
 `ActivityContext.recordChange()` instrumentation, in this order (each independent;
 the diff panel lights up incrementally):
