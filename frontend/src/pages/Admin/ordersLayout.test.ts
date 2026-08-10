@@ -25,21 +25,36 @@ describe('orders grid geometry', () => {
     expect(ordersGridTemplate.split(' ')).toHaveLength(ORDERS_COLUMNS.length);
   });
 
-  it('still covers all 13 columns of the list', () => {
+  it('still covers all 14 columns of the list', () => {
     expect(ORDERS_COLUMNS.map((c) => c.key)).toEqual([
       'serial', 'type', 'order', 'customer', 'source', 'items', 'placed',
-      'total', 'payment', 'kitchen', 'delivery', 'rider', 'actions',
+      'total', 'discount', 'payment', 'kitchen', 'delivery', 'rider', 'actions',
     ]);
   });
 
   it('fits a 1080p laptop with the sidebar expanded', () => {
-    // 1920 viewport − ~280px sidebar − 64px page padding. This is the case the
-    // user reported: it was showing a scrollbar.
-    expect(ORDERS_GRID_MIN_PX).toBeLessThanOrEqual(1920 - 280 - 64);
+    // Measured, not estimated: on a 1920 window with the sidebar expanded the
+    // Orders table container comes out at 1498px. An arithmetic guess at this
+    // number (viewport − sidebar − padding) reads ~90px too generous, which is
+    // exactly how a 1542px grid shipped and demoted every desktop to cards.
+    expect(ORDERS_GRID_MIN_PX).toBeLessThanOrEqual(1498);
+  });
+
+  it('does not grow past the width the layout was signed off at', () => {
+    // A new column must be paid for out of the existing tracks. Widening the
+    // sum does not add a scrollbar — ordersLayoutForWidth silently swaps the
+    // whole table for the card fallback, which reads as "the design changed".
+    expect(ORDERS_GRID_MIN_PX).toBe(1440);
   });
 });
 
 describe('ordersLayoutForWidth', () => {
+  it('gives a 1920 desktop the table, not the card fallback', () => {
+    // The regression this pins: the container measures 1498px there, and a
+    // grid minimum above that turns the admin Orders list into stacked cards.
+    expect(ordersLayoutForWidth(1498)).toBe('grid');
+  });
+
   it('uses the grid exactly when every column fits', () => {
     expect(ordersLayoutForWidth(ORDERS_GRID_MIN_PX)).toBe('grid');
     expect(ordersLayoutForWidth(ORDERS_GRID_MIN_PX + 400)).toBe('grid');

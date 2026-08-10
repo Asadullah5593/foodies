@@ -37,6 +37,9 @@ vi.mock('react-hot-toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } 
 vi.mock('../../components/AssignRiderModal', () => ({ default: () => null }));
 vi.mock('../../components/CustomerInvoiceModal', () => ({ default: () => null }));
 
+/** Flipped by the discount-column tests; the fetch mock reads it per call. */
+let discounted = true;
+
 const order = {
   id: 1,
   order_number: '003',
@@ -55,7 +58,18 @@ vi.mock('../../utils/apiClient', () => ({
   default: {
     get: vi.fn().mockImplementation((url: string) => {
       if (String(url).includes('/admin/orders')) {
-        return Promise.resolve({ data: { data: [order], total: 1 } });
+        // /admin/orders serves raw entities, so the split arrives camelCase.
+        const split = discounted
+          ? {
+              discountAmount: '340.00',
+              cardDiscountAmount: '250.00',
+              staffDiscountAmount: '90.00',
+              promoDiscountAmount: '0.00',
+              orderDiscountAmount: '0.00',
+              couponDiscountAmount: '0.00',
+            }
+          : {};
+        return Promise.resolve({ data: { data: [{ ...order, ...split }], total: 1 } });
       }
       return Promise.resolve({ data: [] });
     }),
@@ -82,6 +96,7 @@ const renderPage = () => {
 describe('Orders — kitchen status pill', () => {
   beforeEach(() => {
     permissions = [];
+    discounted = true;
   });
 
   it('is inert text for a tablet that may only view orders', async () => {
@@ -104,6 +119,30 @@ describe('Orders — kitchen status pill', () => {
     ).toBeGreaterThan(0);
     // And no inert read-only pill in its place.
     expect(screen.queryAllByLabelText(/Kitchen status for order #003: Accepted/i)).toHaveLength(0);
+  });
+});
+
+describe('Orders — discount column', () => {
+  beforeEach(() => {
+    permissions = ['orders:view'];
+  });
+
+  it('shows the total given away and which kinds produced it', async () => {
+    renderPage();
+    await waitFor(() => expect(screen.getAllByText('Accepted').length).toBeGreaterThan(0));
+    // Both layouts render, so every match is doubled.
+    expect(screen.getAllByText('−Rs. 340.00').length).toBeGreaterThan(0);
+    // A bank-card offer plus a till give-away: the column names both, because
+    // "who paid for this discount" is the question the number alone can't answer.
+    expect(screen.getAllByText('Card, Staff').length).toBeGreaterThan(0);
+  });
+
+  it('reads a dash when nothing was discounted', async () => {
+    discounted = false;
+    renderPage();
+    await waitFor(() => expect(screen.getAllByText('Accepted').length).toBeGreaterThan(0));
+    expect(screen.queryByText(/^−Rs\./)).not.toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 });
 
