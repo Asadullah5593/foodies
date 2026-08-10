@@ -109,6 +109,7 @@ import {
 } from './offer-engine';
 import { resolveOfferSettings, OfferSettings } from './offer-settings';
 import { ORDER_SOURCES } from './order-sources';
+import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
 import { StaffDiscount } from '../entities/staff-discount.entity';
 import {
     staffDiscountToOffer,
@@ -3539,6 +3540,8 @@ export class OrdersService {
             source?: string;
             /** Tender type: cash | card. A split order matches either. */
             payment_method?: string;
+            /** any | none | promo | order | coupon | card | staff. */
+            discount?: string;
             date_from?: string;
             date_to?: string;
             has_rider?: boolean;
@@ -3652,6 +3655,12 @@ export class OrdersService {
                     'EXISTS (SELECT 1 FROM payments pm WHERE pm.order_id = o.id AND pm.payment_method = :pmMethod)',
                     { pmMethod: filters.payment_method },
                 );
+            // Discount filter: "show me the orders that were discounted", or
+            // the ones that carried one particular kind of discount.
+            if (isDiscountFilter(filters.discount)) {
+                const predicate = discountFilterSql(filters.discount, 'o');
+                if (predicate) qb.andWhere(predicate);
+            }
             if (filters.date_from)
                 qb.andWhere('date(o.placed_at) >= :dateFrom', {
                     dateFrom: filters.date_from,

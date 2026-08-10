@@ -102,6 +102,18 @@ const STATUS_OPTIONS = [
   { value: 'all', label: 'All orders' },
 ];
 
+/**
+ * Discount filter. It narrows the ORDERS the report reads, not the product
+ * rows: "what sold on coupon orders" is the question worth asking, and a given
+ * product on such an order may still carry a zero share of that coupon.
+ */
+const DISCOUNT_FILTER_OPTIONS = [
+  { value: '', label: 'All orders' },
+  { value: 'any', label: 'Discounted only' },
+  { value: 'none', label: 'Full price only' },
+  ...DISCOUNT_TYPES.map((t) => ({ value: t.key as string, label: `${t.long} only` })),
+];
+
 // Branch and brand are columns on every row now, so splitting by them here
 // would only repeat what the table already says.
 const SPLIT_OPTIONS: Array<{ value: SplitBy; label: string }> = [
@@ -202,6 +214,7 @@ const ProductSales: React.FC = () => {
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
   const [status, setStatus] = useState('completed');
+  const [discountFilter, setDiscountFilter] = useState('');
   const [splitBy, setSplitBy] = useState<SplitBy>('variant');
   const [sortBy, setSortBy] = useState<SortBy>('net_sales');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -264,6 +277,7 @@ const ProductSales: React.FC = () => {
       dateFrom,
       dateTo,
       status,
+      discountFilter,
       splitBy,
       sortBy,
       sortDir,
@@ -276,6 +290,7 @@ const ProductSales: React.FC = () => {
       params.append('date_from', dateFrom);
       params.append('date_to', dateTo);
       params.append('status', status);
+      if (discountFilter) params.append('discount', discountFilter);
       params.append('split_by', splitBy);
       params.append('sort_by', sortBy);
       params.append('sort_dir', sortDir);
@@ -389,6 +404,7 @@ const ProductSales: React.FC = () => {
     setCategoryId(null);
     setSearch('');
     setStatus('completed');
+    setDiscountFilter('');
     setDateFrom(today);
     setDateTo(today);
     resetPage();
@@ -507,6 +523,11 @@ const ProductSales: React.FC = () => {
   const statusLabel = STATUS_OPTIONS.find((s) => s.value === status)?.label ?? status;
   const categoryLabel = categories?.find((c) => c.id === categoryId)?.name ?? 'All categories';
   const splitLabel = SPLIT_OPTIONS.find((s) => s.value === splitBy)?.label ?? '—';
+  // Only named on paper when it is actually narrowing something — an unfiltered
+  // report should not claim a filter it did not apply.
+  const discountFilterLabel = discountFilter
+    ? (DISCOUNT_FILTER_OPTIONS.find((o) => o.value === discountFilter)?.label ?? null)
+    : null;
 
   /**
    * Print report: the WHOLE filtered selection, not the page on screen, and
@@ -523,7 +544,8 @@ const ProductSales: React.FC = () => {
             {rangeText} · {scopeText}
           </p>
           <p className="psp-meta">
-            {categoryLabel} · {statusLabel} · Breakdown: {splitLabel}
+            {categoryLabel} · {statusLabel}
+            {discountFilterLabel ? ` · ${discountFilterLabel}` : ''} · Breakdown: {splitLabel}
             {search.trim() ? ` · Search: “${search.trim()}”` : ''} · {rows.length}{' '}
             {rows.length === 1 ? 'product' : 'products'} · Generated{' '}
             {new Date().toLocaleString('en-GB', {
@@ -772,6 +794,19 @@ const ProductSales: React.FC = () => {
               resetPage();
             }}
             options={STATUS_OPTIONS}
+          />
+          <SearchableSelect
+            ariaLabel="Discount"
+            searchPlaceholder="Search…"
+            triggerClassName={selectTrigger}
+            minWidth="min-w-[168px]"
+            className="flex-none"
+            value={discountFilter}
+            onChange={(v) => {
+              setDiscountFilter(v);
+              resetPage();
+            }}
+            options={DISCOUNT_FILTER_OPTIONS}
           />
           {/* Date range and Clear travel together so Clear never drops to a line
               of its own when the bar wraps. */}
