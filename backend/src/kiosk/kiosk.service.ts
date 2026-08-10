@@ -577,14 +577,31 @@ export class KioskService {
             (s, o) => s + Number(o.total_amount ?? 0),
             0,
         );
-        if (!orders.length || grandTotal <= 0) return;
+        const clientSum = payments.reduce((s, p) => s + Number(p.amount), 0);
+        if (!orders.length || grandTotal <= 0 || clientSum <= 0) return;
         for (const order of orders) {
             const orderTotal = Number(order.total_amount ?? 0);
             if (orderTotal <= 0) continue;
-            const ratio = orderTotal / grandTotal;
+            // Allocate the order's SERVER total across the tendered methods.
+            // The client's absolute amounts may be stale (the cart can re-price
+            // at placement), so only their ratio is trusted; the last slice
+            // takes the rounding remainder so the recorded tenders sum to the
+            // order total exactly.
+            let remainingP = Math.round(orderTotal * 100);
             for (let i = 0; i < payments.length; i++) {
                 const p = payments[i];
-                const amount = Math.round(Number(p.amount) * ratio * 100) / 100;
+                const shareP =
+                    i === payments.length - 1
+                        ? remainingP
+                        : Math.min(
+                              remainingP,
+                              Math.round(
+                                  (orderTotal * Number(p.amount) * 100) /
+                                      clientSum,
+                              ),
+                          );
+                remainingP -= shareP;
+                const amount = shareP / 100;
                 if (amount > 0) {
                     // Stable per-slice idempotency key: a retry re-applies the SAME
                     // keys, so processPayment deduplicates and a partial/lost
