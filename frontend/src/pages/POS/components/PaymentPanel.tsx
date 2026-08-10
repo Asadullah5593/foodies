@@ -22,8 +22,10 @@ export type PaymentPanelProps = {
     tax_amount?: number;
     delivery_fee?: number;
   } | null | undefined;
-  paymentMode: 'cash' | 'card' | 'multipay';
-  onPaymentModeChange: (mode: 'cash' | 'card' | 'multipay') => void;
+  paymentMode: 'cash' | 'card' | 'online_transfer' | 'multipay';
+  onPaymentModeChange: (
+    mode: 'cash' | 'card' | 'online_transfer' | 'multipay',
+  ) => void;
   paymentCashAmount: string;
   paymentCardAmount: string;
   onPaymentCashAmountChange: (v: string) => void;
@@ -186,9 +188,10 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
       <div className="mt-4 pt-4 border-t border-foodies-border dark:border-slate-600">
         <label className="block text-sm font-medium text-foodies-textPrimary dark:text-slate-200 mb-2">Payment *</label>
         <div className="flex flex-wrap gap-2">
-          {/* 'multipay' (Cash + Card) hidden — restore with:
-              (['cash', 'card', 'multipay'] as const) */}
-          {(['cash', 'card'] as const).map((mode) => (
+          {/* 'multipay' (Cash + Card) stays hidden — restore with:
+              (['cash', 'card', 'online_transfer', 'multipay'] as const).
+              Online transfer is a standalone tender, never part of a split. */}
+          {(['cash', 'card', 'online_transfer'] as const).map((mode) => (
             <button
               key={mode}
               type="button"
@@ -199,8 +202,12 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
                   : 'border-foodies-border dark:border-slate-600 bg-foodies-surfaceMuted dark:bg-slate-700 text-foodies-textPrimary dark:text-slate-200 hover:border-foodies-primary hover:bg-red-50/50 dark:hover:bg-red-900/30'
               }`}
             >
-              {mode === 'cash' ? 'Cash' : 'Card'}
-              {/* restore with: mode === 'cash' ? 'Cash' : mode === 'card' ? 'Card' : 'Cash + Card' */}
+              {mode === 'cash'
+                ? 'Cash'
+                : mode === 'card'
+                  ? 'Card'
+                  : 'Online transfer'}
+              {/* restore with: … : mode === 'multipay' ? 'Cash + Card' : … */}
             </button>
           ))}
         </div>

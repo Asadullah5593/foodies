@@ -151,6 +151,7 @@ export class ShiftsService {
             ...(collected.get(s.id) ?? {
                 cash_collected: 0,
                 card_collected: 0,
+                online_transfer_collected: 0,
             }),
         }));
     }
@@ -388,17 +389,30 @@ export class ShiftsService {
      * getCollectedAmounts: completed orders of the shift's branch (and brand,
      * when set) whose completion falls inside the shift's open window.
      */
-    private async getCollectedAmountsBatch(
-        shifts: Shift[],
-    ): Promise<
-        Map<number, { cash_collected: number; card_collected: number }>
+    private async getCollectedAmountsBatch(shifts: Shift[]): Promise<
+        Map<
+            number,
+            {
+                cash_collected: number;
+                card_collected: number;
+                online_transfer_collected: number;
+            }
+        >
     > {
         const out = new Map<
             number,
-            { cash_collected: number; card_collected: number }
+            {
+                cash_collected: number;
+                card_collected: number;
+                online_transfer_collected: number;
+            }
         >();
         for (const s of shifts)
-            out.set(s.id, { cash_collected: 0, card_collected: 0 });
+            out.set(s.id, {
+                cash_collected: 0,
+                card_collected: 0,
+                online_transfer_collected: 0,
+            });
         if (shifts.length === 0) return out;
         const rows = await this.paymentRepo
             .createQueryBuilder('p')
@@ -425,6 +439,11 @@ export class ShiftsService {
             const tot = parseFloat(row.total ?? '0') || 0;
             if (row.method === 'cash') entry.cash_collected = tot;
             else if (row.method === 'card') entry.card_collected = tot;
+            // Its own bucket on purpose: an online transfer is taxed like a
+            // card but reconciles like neither, and merging it into card would
+            // hide it from the person counting the till.
+            else if (row.method === 'online_transfer')
+                entry.online_transfer_collected = tot;
         }
         return out;
     }
@@ -432,6 +451,7 @@ export class ShiftsService {
     async getCollectedAmounts(shift: Shift): Promise<{
         cash_collected: number;
         card_collected: number;
+        online_transfer_collected: number;
     }> {
         const qb = this.paymentRepo
             .createQueryBuilder('p')
@@ -456,12 +476,15 @@ export class ShiftsService {
             .getRawMany<{ method: string; total: string }>();
         let cash_collected = 0;
         let card_collected = 0;
+        let online_transfer_collected = 0;
         for (const row of rows) {
             const tot = parseFloat(row.total ?? '0') || 0;
             if (row.method === 'cash') cash_collected = tot;
             else if (row.method === 'card') card_collected = tot;
+            else if (row.method === 'online_transfer')
+                online_transfer_collected = tot;
         }
-        return { cash_collected, card_collected };
+        return { cash_collected, card_collected, online_transfer_collected };
     }
 
     /**
@@ -922,6 +945,7 @@ export class ShiftsService {
             ),
             cash_collected: access.cash_collected,
             card_collected: access.card_collected,
+            online_transfer_collected: access.online_transfer_collected ?? 0,
             orders: serialized,
         };
     }

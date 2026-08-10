@@ -147,7 +147,7 @@ const TYPE_META: Record<string, { bg: string; color: string; short: string; icon
   },
 };
 
-const PAYMENT_METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', other: 'Other', online: 'Online' };
+const PAYMENT_METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', online_transfer: 'Online transfer', other: 'Other', online: 'Online' };
 
 /** Rows-per-page choices. Capped at 1000 — the server's ceiling, and beyond that
  *  a single page drags too many joined rows to render comfortably. */
@@ -1090,6 +1090,7 @@ const Orders: React.FC = () => {
           <option value="">All payments</option>
           <option value="cash">Cash</option>
           <option value="card">Card</option>
+          <option value="online_transfer">Online transfer</option>
         </select>}
         <input type="date" min={minDate} value={dateFrom} onChange={(e) => setFilter('date_from', e.target.value)} className={selectCls} aria-label="Date from" />
         <input type="date" min={minDate} value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />

@@ -578,6 +578,7 @@ const Shifts: React.FC = () => {
         ${row('Opening float', fmtMoney(s.opening_cash))}
         ${row('Cash sales', fmtMoney(s.cash_collected ?? 0))}
         ${row('Card sales', fmtMoney(s.card_collected ?? 0))}
+        ${row('Online transfer sales', fmtMoney(s.online_transfer_collected ?? 0))}
         ${row('Expected total', fmtMoney(expectedTotal(s)))}
         ${cashOutTotal(s) > 0 ? row('Cash taken out', `− ${fmtMoney(cashOutTotal(s))}`) : ''}
         ${row('Expected in drawer', fmtMoney(expectedInDrawer(s)))}
@@ -980,6 +981,19 @@ const Shifts: React.FC = () => {
                         Card sales
                       </span>
                       <span className="text-sm font-bold tabular-nums text-[#1A1D24] dark:text-slate-100">{fmtMoney(detail.card_collected ?? 0)}</span>
+                    </div>
+                    {/* Its own line: an online transfer is taxed like a card but
+                        settles into a bank account, not the drawer or a terminal. */}
+                    <div className="flex items-center justify-between gap-2.5 border-b border-[#F4F5F7] px-4 py-3 dark:border-slate-700">
+                      <span className="inline-flex items-center gap-[9px] text-[13.5px] text-[#4B5563] dark:text-slate-300">
+                        <span className="flex h-[26px] w-[26px] items-center justify-center rounded-[7px] bg-[#EDE9FE] text-[#7C3AED]">
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6}>
+                            <path d="M3 6.5h10M3 9.5h10M6 3.5 3 6.5l3 3M10 12.5l3-3-3-3" />
+                          </svg>
+                        </span>
+                        Online transfer
+                      </span>
+                      <span className="text-sm font-bold tabular-nums text-[#1A1D24] dark:text-slate-100">{fmtMoney(detail.online_transfer_collected ?? 0)}</span>
                     </div>
                     <div className="flex items-center justify-between gap-2.5 bg-[#FBFBFC] px-4 py-3.5 dark:bg-slate-900/40">
                       <span className="text-[13.5px] font-extrabold text-[#1A1D24] dark:text-slate-100">Expected total</span>
