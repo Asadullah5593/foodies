@@ -246,6 +246,7 @@ export const Permissions = {
     ORDERS_FILTER_STATUS: 'orders:filter:status',
     ORDERS_FILTER_SEARCH: 'orders:filter:search',
     ORDERS_FILTER_PAYMENT: 'orders:filter:payment',
+    ORDERS_FILTER_DISCOUNT: 'orders:filter:discount',
 
     // — Delivery tiers (umbrella: deliveries:manage) —
     DELIVERY_TIERS_VIEW: 'delivery-tiers:view',

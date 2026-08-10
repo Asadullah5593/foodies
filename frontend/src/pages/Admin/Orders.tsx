@@ -237,12 +237,20 @@ function paymentMethodText(o: OrderRow): string {
  * actually ask about — whether the money came out of the merchant's margin or
  * the bank's.
  */
-const DISCOUNT_KINDS: Array<{ key: keyof OrderRow; label: string }> = [
-  { key: 'promo_discount_amount' as keyof OrderRow, label: 'Promo' },
-  { key: 'order_discount_amount' as keyof OrderRow, label: 'Discount' },
-  { key: 'coupon_discount_amount' as keyof OrderRow, label: 'Coupon' },
-  { key: 'card_discount_amount' as keyof OrderRow, label: 'Card' },
-  { key: 'staff_discount_amount' as keyof OrderRow, label: 'Staff' },
+const DISCOUNT_KINDS: Array<{
+  key: keyof OrderRow;
+  /** Column label — kept short, several share one cell. */
+  label: string;
+  /** `discount` query value; matches the server's whitelist. */
+  filter: string;
+  /** Filter-dropdown label, where there is room to be unambiguous. */
+  long: string;
+}> = [
+  { key: 'promo_discount_amount' as keyof OrderRow, label: 'Promo', filter: 'promo', long: 'Promotion only' },
+  { key: 'order_discount_amount' as keyof OrderRow, label: 'Discount', filter: 'order', long: 'Order discount only' },
+  { key: 'coupon_discount_amount' as keyof OrderRow, label: 'Coupon', filter: 'coupon', long: 'Coupon only' },
+  { key: 'card_discount_amount' as keyof OrderRow, label: 'Card', filter: 'card', long: 'Card offer only' },
+  { key: 'staff_discount_amount' as keyof OrderRow, label: 'Staff', filter: 'staff', long: 'Staff discount only' },
 ];
 
 function discountKinds(o: OrderRow): Array<{ label: string; amount: number }> {
@@ -297,6 +305,7 @@ const Orders: React.FC = () => {
   const canFilterStatus = useHasPermission('orders:filter:status');
   const canFilterSearch = useHasPermission('orders:filter:search');
   const canFilterPayment = useHasPermission('orders:filter:payment');
+  const canFilterDiscount = useHasPermission('orders:filter:discount');
   /**
    * Changing the kitchen status is its own right. Without it the pill must be
    * inert text, not a menu button — order-taking tablets read status, they do
@@ -386,6 +395,7 @@ const Orders: React.FC = () => {
   const orderType = searchParams.get('order_type') || '';
   const source = searchParams.get('source') || '';
   const paymentMethod = searchParams.get('payment_method') || '';
+  const discount = searchParams.get('discount') || '';
   const defaultToday = localDateYYYYMMDD();
   const dateFrom = searchParams.get('date_from') || defaultToday;
   const dateTo = searchParams.get('date_to') || defaultToday;
@@ -396,6 +406,7 @@ const Orders: React.FC = () => {
     ...(orderType && { order_type: orderType }),
     ...(source && { source }),
     ...(paymentMethod && { payment_method: paymentMethod }),
+    ...(discount && { discount }),
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo && { date_to: dateTo }),
   };
@@ -416,6 +427,7 @@ const Orders: React.FC = () => {
     if (baseParams.order_type) sp.append('order_type', baseParams.order_type);
     if (baseParams.source) sp.append('source', baseParams.source);
     if (baseParams.payment_method) sp.append('payment_method', baseParams.payment_method);
+    if (baseParams.discount) sp.append('discount', baseParams.discount);
     if (baseParams.date_from) sp.append('date_from', baseParams.date_from);
     if (baseParams.date_to) sp.append('date_to', baseParams.date_to);
     if (debouncedSearch) sp.append('search', debouncedSearch);
@@ -1160,6 +1172,12 @@ const Orders: React.FC = () => {
           <option value="cash">Cash</option>
           <option value="card">Card</option>
           <option value="online_transfer">Online transfer</option>
+        </select>}
+        {canFilterDiscount && <select value={discount} onChange={(e) => setFilter('discount', e.target.value)} className={selectCls} aria-label="Discount">
+          <option value="">All discounts</option>
+          <option value="any">Discounted only</option>
+          <option value="none">Full price only</option>
+          {DISCOUNT_KINDS.map((k) => <option key={k.filter} value={k.filter}>{k.long}</option>)}
         </select>}
         <input type="date" min={minDate} value={dateFrom} onChange={(e) => setFilter('date_from', e.target.value)} className={selectCls} aria-label="Date from" />
         <input type="date" min={minDate} value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />

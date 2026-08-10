@@ -165,6 +165,39 @@ describe('ProductSales page', () => {
     expect(screen.getAllByText('−Rs. 1,200.26').length).toBe(2);
   });
 
+  it('filters the report down to one kind of discount', async () => {
+    renderPage();
+    await screen.findByText('BBQ Chicken Pizza');
+
+    await pick('Discount', 'Coupon only');
+    await waitFor(() =>
+      expect(reportUrls().some((u) => u.includes('discount=coupon'))).toBe(true)
+    );
+  });
+
+  it('asks for every order until a discount filter is chosen', async () => {
+    renderPage();
+    await screen.findByText('BBQ Chicken Pizza');
+    // "All orders" is the absence of a filter, not `discount=` — the server
+    // whitelists the value, but a stray param still churns the query key.
+    expect(reportUrls().every((u) => !u.includes('discount='))).toBe(true);
+  });
+
+  it('offers a plain discounted / full-price split as well as the kinds', async () => {
+    renderPage();
+    await screen.findByText('BBQ Chicken Pizza');
+
+    await pick('Discount', 'Discounted only');
+    await waitFor(() =>
+      expect(reportUrls().some((u) => u.includes('discount=any'))).toBe(true)
+    );
+
+    await pick('Discount', 'Full price only');
+    await waitFor(() =>
+      expect(reportUrls().some((u) => u.includes('discount=none'))).toBe(true)
+    );
+  });
+
   it('names which kinds of discount were given, on the row and in the summary', async () => {
     renderPage();
     await screen.findByText('BBQ Chicken Pizza');

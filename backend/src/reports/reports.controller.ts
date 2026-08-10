@@ -100,6 +100,7 @@ export class ReportsController {
         @Query('time_from') timeFrom: string,
         @Query('time_to') timeTo: string,
         @Query('status') status: string,
+        @Query('discount') discount: string,
         @Query('split_by') splitBy: string,
         @Query('sort_by') sortBy: string,
         @Query('sort_dir') sortDir: string,
@@ -126,6 +127,7 @@ export class ReportsController {
                 time_from: timeFrom,
                 time_to: timeTo,
                 status: status || undefined,
+                discount: discount || undefined,
                 split_by: splits.includes(splitBy as Split)
                     ? (splitBy as Split)
                     : undefined,

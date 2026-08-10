@@ -375,6 +375,7 @@ async function seed() {
         'orders:filter:status': ['orders:view'],
         'orders:filter:search': ['orders:view'],
         'orders:filter:payment': ['orders:view'],
+        'orders:filter:discount': ['orders:view'],
         'inventory-items:view': ['inventory:view', 'inventory:view:brand'],
         'inventory-items:create': ['inventory:view'],
         'inventory-items:edit': ['inventory:view'],
