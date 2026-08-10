@@ -164,6 +164,20 @@ export class Discount {
     @Column({ name: 'global_limit', type: 'int', nullable: true })
     globalLimit: number | null;
 
+    /**
+     * How the offer reaches an order.
+     *  'auto'   — applies to every qualifying cart (the historic behaviour).
+     *  'manual' — skipped in the auto `discount` stage unless the cashier
+     *             activated it for that specific order. Lets one BOGO be
+     *             granted to one customer and not the next, without the offer
+     *             itself knowing anything about customers.
+     *
+     * Per offer, deliberately: making every buy_x_get_y opt-in would switch
+     * BOGO off for consumer web and app, where nobody can press a button.
+     */
+    @Column({ type: 'varchar', default: 'auto' })
+    activation: 'auto' | 'manual';
+
     /** Within-group ordering when not resolving by best value. */
     @Column({ type: 'int', default: 0 })
     priority: number;
