@@ -53,6 +53,8 @@ const OrderTaking: React.FC = () => {
   const [discountCode, setDiscountCode] = useState('');
   /** Staff discount preset the cashier granted (staff_discounts id), or null. */
   const [staffDiscountId, setStaffDiscountId] = useState<number | null>(null);
+  /** Till-activated offer switched on for this cart (discounts id), or null. */
+  const [manualOfferId, setManualOfferId] = useState<number | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -271,6 +273,22 @@ const OrderTaking: React.FC = () => {
     retry: false,
   });
 
+  /**
+   * Offers the cashier may switch on for one cart. Server-filtered by
+   * permission and by branch/brand; a till without the right gets [] and the
+   * control never renders.
+   */
+  const { data: manualOffers } = useQuery({
+    queryKey: ['pos-manual-offers', branchId, cartBrandId],
+    queryFn: () =>
+      adminService.getManualOffersForTill({
+        branch_id: branchId,
+        brand_id: cartBrandId,
+      }),
+    enabled: branchId != null,
+    retry: false,
+  });
+
   const getBrandName = (brandId: number | null | undefined): string | null =>
     brandId != null ? (brands.find((b) => b.id === brandId)?.name ?? null) : null;
 
@@ -382,6 +400,7 @@ const OrderTaking: React.FC = () => {
         }),
         discount_code: discountCode.trim() || undefined,
         staff_discount_id: staffDiscountId ?? undefined,
+        manual_offer_id: manualOfferId ?? undefined,
         customer_phone: customerPhone.trim() || undefined,
         loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
       }
@@ -557,6 +576,7 @@ const OrderTaking: React.FC = () => {
       setTableNumber('');
       setDiscountCode('');
       setStaffDiscountId(null);
+      setManualOfferId(null);
       setCustomerName('');
       setCustomerPhone('');
       setDeliveryAddress('');
@@ -597,6 +617,7 @@ const OrderTaking: React.FC = () => {
       setTableNumber('');
       setDiscountCode('');
       setStaffDiscountId(null);
+      setManualOfferId(null);
       setCustomerName('');
       setCustomerPhone('');
       setDeliveryAddress('');
@@ -1096,6 +1117,7 @@ const OrderTaking: React.FC = () => {
       longitude: effectiveOrderType === 'delivery' ? deliveryPlace?.longitude : undefined,
       discount_code: discountCode.trim() || undefined,
       staff_discount_id: staffDiscountId ?? undefined,
+      manual_offer_id: manualOfferId ?? undefined,
       loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
       items: selectedItems.map((item) => {
         if (item.dealId != null && item.components?.length) {
@@ -1336,6 +1358,7 @@ const OrderTaking: React.FC = () => {
       customer_phone: customerPhone.trim(),
       discount_code: discountCode.trim() || undefined,
       staff_discount_id: staffDiscountId ?? undefined,
+      manual_offer_id: manualOfferId ?? undefined,
       items: selectedItems.map((item) => {
         if (item.dealId != null && item.components?.length) {
           return {
@@ -1913,6 +1936,9 @@ const OrderTaking: React.FC = () => {
               staffDiscounts={staffDiscounts ?? []}
               staffDiscountId={staffDiscountId}
               onStaffDiscountChange={setStaffDiscountId}
+              manualOffers={manualOffers ?? []}
+              manualOfferId={manualOfferId}
+              onManualOfferChange={setManualOfferId}
               orderNotes={orderNotes}
               onOrderNotesChange={setOrderNotes}
               quote={quote}

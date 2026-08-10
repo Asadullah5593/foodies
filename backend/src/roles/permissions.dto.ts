@@ -204,6 +204,9 @@ export const Permissions = {
     /** Grant one on an order at the till. */
     STAFF_DISCOUNTS_APPLY: 'staff-discounts:apply',
 
+    /** Switch a till-activated offer (activation='manual') on for one cart. */
+    ORDERS_APPLY_MANUAL_OFFER: 'orders:apply-manual-offer',
+
     // — Campaigns (umbrella: campaigns:manage) —
     CAMPAIGNS_VIEW: 'campaigns:view',
     CAMPAIGNS_CREATE: 'campaigns:create',

@@ -6,6 +6,7 @@ import {
     Delete,
     Body,
     Param,
+    Query,
     UseGuards,
     ForbiddenException,
 } from '@nestjs/common';
@@ -40,6 +41,36 @@ export class DiscountsController {
         return this.service.findAll(user.tenantId, user.allowedBrandIds, [
             'discount',
         ]);
+    }
+
+    /**
+     * The till's picker: offers a cashier may switch on for one cart. Gated on
+     * `orders:apply-manual-offer`, NOT on discounts:view — a cashier applies
+     * these without any access to the admin module.
+     *
+     * Whether the cart actually qualifies is the pricing engine's job; this only
+     * says which offers are offerable here at all.
+     */
+    @Get('for-till')
+    @RequirePermission(Permissions.ORDERS_APPLY_MANUAL_OFFER)
+    forTill(
+        @CurrentUser()
+        user: {
+            id: number;
+            tenantId: number | null;
+            allowedBrandIds?: number[] | null;
+        },
+        @Query('branch_id') branchId?: string,
+        @Query('brand_id') brandId?: string,
+    ) {
+        return this.service.findManualForTill(
+            user.tenantId,
+            user.allowedBrandIds,
+            {
+                branchId: branchId ? Number(branchId) : null,
+                brandId: brandId ? Number(brandId) : null,
+            },
+        );
     }
 
     @Post()

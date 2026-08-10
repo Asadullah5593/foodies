@@ -15,6 +15,7 @@ import {
   StaffDiscount,
   StaffDiscountPreset,
   StaffDiscountPayload,
+  ManualOffer,
   Shift,
   ShiftOrdersResponse,
   ShiftPendingOrdersResponse,
@@ -1098,6 +1099,24 @@ export const adminService = {
     });
     return response.data as StaffDiscountPreset[];
   },
+  /**
+   * Offers this cashier may switch on for one cart. Gated server-side on
+   * orders:apply-manual-offer, so a till without the right gets [] and shows
+   * no control at all.
+   */
+  getManualOffersForTill: async (params: {
+    branch_id?: number | null;
+    brand_id?: number | null;
+  }) => {
+    const response = await apiClient.get('/admin/discounts/for-till', {
+      params: {
+        ...(params.branch_id != null ? { branch_id: params.branch_id } : {}),
+        ...(params.brand_id != null ? { brand_id: params.brand_id } : {}),
+      },
+    });
+    return response.data as ManualOffer[];
+  },
+
   createStaffDiscount: async (data: StaffDiscountPayload) => {
     const response = await apiClient.post('/admin/staff-discounts', data);
     return response.data;
