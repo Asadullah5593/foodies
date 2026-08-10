@@ -4,6 +4,7 @@ import { ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
 import { Order } from '../entities/order.entity';
 import { BankCard } from '../entities/bank-card.entity';
 import { StaffDiscount } from '../entities/staff-discount.entity';
+import { Discount } from '../entities/discount.entity';
 import { User } from '../entities/user.entity';
 import { OrderItem } from '../entities/order-item.entity';
 import { Shift } from '../entities/shift.entity';
@@ -1446,6 +1447,49 @@ export class ReportsService {
         const presetRows =
             await presetQb.getRawMany<Record<string, string | null>>();
 
+        // Till-activated offers: which offer, who switched it on, and what it
+        // actually produced. Grouped by both because "which BOGO is being used"
+        // and "which cashier is handing it out" are different questions.
+        const manualQb = this.orderRepo
+            .createQueryBuilder('o')
+            .leftJoin(Discount, 'mo', 'mo.id = o.manualOfferId')
+            .leftJoin(User, 'mu', 'mu.id = o.manualOfferBy')
+            .where("o.status = 'completed'")
+            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', range)
+            .andWhere('o.manualOfferId IS NOT NULL')
+            .select('o.manualOfferId', 'offer_id')
+            .addSelect('mo.name', 'offer_name')
+            .addSelect('mu.id', 'user_id')
+            .addSelect('mu.name', 'user_name')
+            .addSelect('COUNT(*)', 'orders')
+            // Switched on but worth nothing — the cart didn't qualify, or a
+            // better automatic offer won. High numbers here mean the cashiers
+            // are pressing a button that does nothing.
+            .addSelect(
+                'COUNT(*) FILTER (WHERE o.manual_offer_amount = 0)',
+                'applied_nothing',
+            )
+            .addSelect(
+                'COALESCE(SUM(o.manualOfferAmount), 0)',
+                'total_discount',
+            )
+            .groupBy('o.manualOfferId')
+            .addGroupBy('mo.name')
+            .addGroupBy('mu.id')
+            .addGroupBy('mu.name')
+            .orderBy('SUM(o.manualOfferAmount)', 'DESC');
+        this.applyOrderScope(
+            manualQb,
+            'o',
+            tenantId,
+            allowedBranchIds,
+            filters.branch_id,
+            allowedBrandIds,
+            filters.brand_id,
+        );
+        const manualRows =
+            await manualQb.getRawMany<Record<string, string | null>>();
+
         const merchantFunded =
             totals.promo_discounts +
             totals.order_discounts +
@@ -1484,6 +1528,21 @@ export class ReportsService {
                             ? Math.round((total / subtotal) * 10000) / 100
                             : 0,
                     largest_discount: Number(r.largest_discount ?? 0),
+                };
+            }),
+            /** Till-activated offers, by offer and by the cashier who applied them. */
+            manual_offers: manualRows.map((r) => {
+                const orders = Number(r.orders ?? 0);
+                const nothing = Number(r.applied_nothing ?? 0);
+                return {
+                    offer_id: r.offer_id != null ? Number(r.offer_id) : null,
+                    offer_name: r.offer_name,
+                    user_id: r.user_id != null ? Number(r.user_id) : null,
+                    user_name: r.user_name,
+                    orders,
+                    /** Switched on but produced nothing. */
+                    applied_nothing: nothing,
+                    total_discount: Number(r.total_discount ?? 0),
                 };
             }),
             /** Staff give-aways by preset — the "why", when presets are named for it. */

@@ -93,6 +93,7 @@ export class PosOrdersController {
             payment_split?: { cash_amount?: number; card_amount?: number };
             bank_card_id?: number | null;
             staff_discount_id?: number | null;
+            manual_offer_id?: number | null;
         },
     ) {
         const tenantId = await this.resolveTenantId(user, dto.branch_id);
@@ -147,6 +148,8 @@ export class PosOrdersController {
             bank_card_id?: number | null;
             /** Staff discount preset granted at the till (staff_discounts id). */
             staff_discount_id?: number | null;
+            /** Till-activated offer switched on for this cart (discounts id). */
+            manual_offer_id?: number | null;
             /** Optional idempotency key so a retried/double-tapped placement is deduped. */
             idempotency_key?: string;
         },

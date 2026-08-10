@@ -235,6 +235,70 @@ export class DiscountsService {
         return this.toResponse(d);
     }
 
+    /**
+     * Offers a cashier may switch on for a single cart: active, manual, in date,
+     * and scoped to this branch/brand. Deliberately does NOT evaluate the cart —
+     * whether it qualifies is the pricing engine's answer, and pre-filtering here
+     * would need the lines and duplicate that logic.
+     */
+    async findManualForTill(
+        tenantId: number | null,
+        allowedBrandIds: number[] | null | undefined,
+        opts: { branchId?: number | null; brandId?: number | null } = {},
+    ) {
+        if (tenantId == null) return [];
+        const rows: Discount[] = await this.repo.find({
+            where: { tenantId, isActive: true },
+            order: { priority: 'ASC', id: 'ASC' },
+        });
+        const now = new Date();
+        return rows
+            .filter(
+                (d) => (d as { activation?: string }).activation === 'manual',
+            )
+            // Both automatic kinds, not just 'discount': a product-scoped BOGO is
+            // stored as offer_kind='product_promotion', so filtering to
+            // 'discount' hid exactly the offers this feature was built for.
+            // Coupons and card offers are excluded — they reach an order by
+            // their own route and ignore `activation` entirely.
+            .filter((d) =>
+                ['discount', 'product_promotion'].includes(
+                    (d as { offerKind?: string }).offerKind ?? 'discount',
+                ),
+            )
+            .filter((d) => !(d.validFrom && now < d.validFrom))
+            .filter((d) => !(d.validUntil && now > d.validUntil))
+            .filter((d) => {
+                const ids = (d.eligibilityBrandIds ?? []).map(Number);
+                if (ids.length === 0) return true;
+                if (opts.brandId != null)
+                    return ids.includes(Number(opts.brandId));
+                // No cart brand yet: keep it if the user could sell it at all.
+                if (allowedBrandIds == null) return true;
+                return ids.some((id) => allowedBrandIds.includes(id));
+            })
+            .filter((d) => {
+                const ids = (d.eligibilityBranchIds ?? []).map(Number);
+                return (
+                    ids.length === 0 ||
+                    opts.branchId == null ||
+                    ids.includes(Number(opts.branchId))
+                );
+            })
+            .map((d) => ({
+                id: d.id,
+                name: d.name,
+                type: d.type,
+                value: Number(d.value ?? 0),
+                buy_quantity: d.buyQuantity ?? null,
+                get_quantity: d.getQuantity ?? null,
+                get_discount_percent:
+                    d.getDiscountPercent != null
+                        ? Number(d.getDiscountPercent)
+                        : null,
+            }));
+    }
+
     async create(
         dto: {
             name: string;
@@ -269,6 +333,8 @@ export class DiscountsService {
             global_limit?: number | null;
             priority?: number;
             funding?: string;
+            /** 'auto' (default) or 'manual' — a till-activated offer. */
+            activation?: string;
         },
         tenantId: number,
         allowedBrandIds?: number[] | null,
@@ -399,6 +465,9 @@ export class DiscountsService {
                             ? Math.max(0, Math.floor(Number(dto.priority)))
                             : 0,
                     funding: dto.funding === 'bank' ? 'bank' : 'merchant',
+                    // Anything but an explicit 'manual' stays automatic, so a
+                    // client that never sends the field behaves as before.
+                    activation: dto.activation === 'manual' ? 'manual' : 'auto',
                 }),
             );
             return this.toResponse(discount);
@@ -464,6 +533,8 @@ export class DiscountsService {
             global_limit?: number | null;
             priority?: number;
             funding?: string;
+            /** 'auto' (default) or 'manual' — a till-activated offer. */
+            activation?: string;
         },
         allowedBrandIds?: number[] | null,
     ) {
@@ -589,6 +660,8 @@ export class DiscountsService {
                 d.bogoMatchSameGroup = dto.bogo_match_same_group;
             if (dto.offer_kind !== undefined)
                 d.offerKind = dto.offer_kind as Discount['offerKind'];
+            if (dto.activation !== undefined)
+                d.activation = dto.activation === 'manual' ? 'manual' : 'auto';
             if (dto.audience !== undefined)
                 d.audience = (dto.audience as Discount['audience']) ?? null;
             if (dto.eligible_customer_ids !== undefined)
@@ -762,6 +835,7 @@ export class DiscountsService {
                     : null,
             bogo_match_same_group: d.bogoMatchSameGroup ?? false,
             offer_kind: (d as { offerKind?: string }).offerKind ?? 'discount',
+            activation: (d as { activation?: string }).activation ?? 'auto',
             audience: (d as { audience?: string | null }).audience ?? null,
             eligible_customer_ids:
                 (d as { eligibleCustomerIds?: number[] | null })

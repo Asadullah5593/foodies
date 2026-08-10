@@ -51,6 +51,8 @@ export interface CreateOrderRequest {
   bank_card_id?: number | null;
   /** Staff discount preset the cashier granted (staff_discounts id). */
   staff_discount_id?: number | null;
+  /** Till-activated offer switched on for this cart (discounts id). */
+  manual_offer_id?: number | null;
 }
 
 export interface ProcessPaymentRequest {
@@ -86,6 +88,12 @@ export interface OrderQuoteResponse {
   staff_discount_name?: string | null;
   /** Why a requested preset wasn't applied (over ceiling, inactive, out of scope). */
   staff_discount_error?: string | null;
+  manual_offer_amount?: number;
+  manual_offer_id?: number | null;
+  manual_offer_name?: string | null;
+  /** False when the activated offer produced nothing — lost, or cart doesn't qualify. */
+  manual_offer_applied?: boolean;
+  manual_offer_error?: string | null;
   discount_code: string | null;
   loyalty_discount?: number;
   loyalty_points_redeemed?: number;
@@ -118,6 +126,8 @@ export type OrderQuoteRequest = {
   bank_card_id?: number | null;
   /** Staff discount preset the cashier granted (staff_discounts id). */
   staff_discount_id?: number | null;
+  /** Till-activated offer switched on for this cart (discounts id). */
+  manual_offer_id?: number | null;
 };
 
 export const orderService = {
