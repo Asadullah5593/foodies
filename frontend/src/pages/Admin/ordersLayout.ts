@@ -22,24 +22,32 @@ export type OrdersColumn = {
 };
 
 /**
- * The 13 columns, in render order. Tightened from the original widths so the
+ * The 14 columns, in render order. Tightened from the original widths so the
  * full table fits a 1080p laptop with the sidebar expanded — every one of these
  * holds a badge, a short label or truncating text, so the trim costs nothing.
+ *
+ * `discount` was added last, and it is paid for out of the other tracks rather
+ * than bolted on: widening the sum is what silently demotes the whole table to
+ * the card fallback on any container that used to fit it. ORDERS_GRID_MIN_PX
+ * must stay at 1440 — that is the width real screens were measured against.
  */
 export const ORDERS_COLUMNS: OrdersColumn[] = [
   { key: 'serial', css: '34px', minPx: 34 },
-  { key: 'type', css: '78px', minPx: 78 },
-  { key: 'order', css: '134px', minPx: 134 },
-  { key: 'customer', css: 'minmax(150px,1.3fr)', minPx: 150 },
-  { key: 'source', css: '90px', minPx: 90 },
+  { key: 'type', css: '66px', minPx: 66 },
+  { key: 'order', css: '122px', minPx: 122 },
+  { key: 'customer', css: 'minmax(132px,1.3fr)', minPx: 132 },
+  { key: 'source', css: '72px', minPx: 72 },
   { key: 'items', css: '48px', minPx: 48 },
-  { key: 'placed', css: '86px', minPx: 86 },
-  { key: 'total', css: '98px', minPx: 98 },
+  { key: 'placed', css: '80px', minPx: 80 },
+  { key: 'total', css: '92px', minPx: 92 },
+  { key: 'discount', css: '96px', minPx: 96 },
+  // Left at 98: "Online transfer" is the longest label the cell carries and
+  // already sits on the edge of truncating.
   { key: 'payment', css: '98px', minPx: 98 },
-  { key: 'kitchen', css: '122px', minPx: 122 },
-  { key: 'delivery', css: '92px', minPx: 92 },
-  { key: 'rider', css: 'minmax(104px,1fr)', minPx: 104 },
-  { key: 'actions', css: '150px', minPx: 150 },
+  { key: 'kitchen', css: '112px', minPx: 112 },
+  { key: 'delivery', css: '82px', minPx: 82 },
+  { key: 'rider', css: 'minmax(96px,1fr)', minPx: 96 },
+  { key: 'actions', css: '144px', minPx: 144 },
 ];
 
 /** gap-2.5 between tracks. */
@@ -51,7 +59,7 @@ export const ORDERS_GRID_PADDING_PX = 36;
 export const ordersGridTemplate = ORDERS_COLUMNS.map((c) => c.css).join(' ');
 
 /**
- * Narrowest width at which all 13 columns fit without a horizontal scrollbar.
+ * Narrowest width at which all 14 columns fit without a horizontal scrollbar.
  * Derived, never hand-written.
  */
 export const ORDERS_GRID_MIN_PX =

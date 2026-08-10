@@ -16,7 +16,15 @@ const report = {
   status: 'completed',
   date_from: '2026-08-01',
   date_to: '2026-08-03',
-  totals: { quantity: 15, orders: 6, gross_sales: 7225, discount: 1740.26, net_sales: 5484.74 },
+  totals: {
+    quantity: 15,
+    orders: 6,
+    gross_sales: 7225,
+    discount: 1740.26,
+    // Two kinds in play: a product promotion and a bank-card offer.
+    discount_breakdown: { promo: 940.26, order: 0, coupon: 0, card: 800, staff: 0 },
+    net_sales: 5484.74,
+  },
   rows: [
     {
       menu_item_id: 2515,
@@ -31,10 +39,29 @@ const report = {
       orders: 4,
       gross_sales: 5000,
       discount: 1200.26,
+      discount_breakdown: { promo: 400.26, order: 0, coupon: 0, card: 800, staff: 0 },
       net_sales: 3799.74,
       children: [
-        { id: 91, name: '12"', quantity: 7, orders: 3, gross_sales: 3500, discount: 900, net_sales: 2600 },
-        { id: 90, name: '9"', quantity: 3, orders: 1, gross_sales: 1500, discount: 300.26, net_sales: 1199.74 },
+        {
+          id: 91,
+          name: '12"',
+          quantity: 7,
+          orders: 3,
+          gross_sales: 3500,
+          discount: 900,
+          discount_breakdown: { promo: 100, order: 0, coupon: 0, card: 800, staff: 0 },
+          net_sales: 2600,
+        },
+        {
+          id: 90,
+          name: '9"',
+          quantity: 3,
+          orders: 1,
+          gross_sales: 1500,
+          discount: 300.26,
+          discount_breakdown: { promo: 300.26, order: 0, coupon: 0, card: 0, staff: 0 },
+          net_sales: 1199.74,
+        },
       ],
     },
     {
@@ -50,6 +77,7 @@ const report = {
       orders: 2,
       gross_sales: 2225,
       discount: 0,
+      discount_breakdown: { promo: 0, order: 0, coupon: 0, card: 0, staff: 0 },
       net_sales: 2225,
       children: [],
     },
@@ -130,9 +158,30 @@ describe('ProductSales page', () => {
   it('flags discounted products and renders discounts as deductions', async () => {
     renderPage();
     await screen.findByText('BBQ Chicken Pizza');
-    expect(screen.getByText('Discounted')).toBeInTheDocument();
+    // The badge names the biggest contributing kind, not a generic "Discounted":
+    // card offer 800 leads, product promotion 400.26 is the "+1".
+    expect(screen.getAllByText('Card +1').length).toBeGreaterThan(0);
     // Product row + totals strip both show the deduction
     expect(screen.getAllByText('−Rs. 1,200.26').length).toBe(2);
+  });
+
+  it('names which kinds of discount were given, on the row and in the summary', async () => {
+    renderPage();
+    await screen.findByText('BBQ Chicken Pizza');
+
+    // Per-row: the stages that actually contributed, biggest first.
+    expect(screen.getAllByText('Card · Promo').length).toBeGreaterThan(0);
+
+    // Summary strip: every kind with its own total, so the reader can see
+    // whether the money came off the menu price or off the bank's offer.
+    expect(screen.getAllByText('Bank card offer').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Product promotion').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('−Rs. 800.00').length).toBeGreaterThan(0);
+    // Recomputed over the visible rows, like every other figure in the strip.
+    expect(screen.getAllByText('−Rs. 400.26').length).toBeGreaterThan(0);
+    // Kinds that gave nothing away are not listed at all.
+    expect(screen.queryByText('Staff discount')).not.toBeInTheDocument();
+    expect(screen.queryByText('Coupon')).not.toBeInTheDocument();
   });
 
   it('passes branch, brand, category, status and split filters to the API', async () => {
@@ -271,11 +320,11 @@ describe('ProductSales page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
 
     expect(csv).toContain(
-      'Product,Category,Brand,Branch,Variant / size,Qty sold,Orders,Gross sales,Discount,Net sales'
+      'Product,Category,Brand,Branch,Variant / size,Qty sold,Orders,Gross sales,Discount,Product promotion,Order discount,Coupon,Bank card offer,Staff discount,Net sales'
     );
-    expect(csv).toContain('BBQ Chicken Pizza,Pizzas,Fireaway,2 branches,,10,4,5000,1200.26,3799.74');
+    expect(csv).toContain('BBQ Chicken Pizza,Pizzas,Fireaway,2 branches,,10,4,5000,1200.26,400.26,0,0,800,0,3799.74');
     // Child rows are exported under their parent
-    expect(csv).toContain('BBQ Chicken Pizza,Pizzas,Fireaway,2 branches,"12""",7,3,3500,900,2600');
+    expect(csv).toContain('BBQ Chicken Pizza,Pizzas,Fireaway,2 branches,"12""",7,3,3500,900,100,0,0,800,0,2600');
     expect(created[0].download).toMatch(/^product-sales_\d{4}-\d{2}-\d{2}_to_\d{4}-\d{2}-\d{2}\.csv$/);
     vi.restoreAllMocks();
     vi.unstubAllGlobals();

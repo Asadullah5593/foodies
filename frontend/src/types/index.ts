@@ -657,6 +657,8 @@ export interface Shift {
   cash_collected?: number;
   /** Sum of card payments from completed orders in this shift. */
   card_collected?: number;
+  /** Digital transfers: taxed like card, reconciled like neither — its own line. */
+  online_transfer_collected?: number;
   /** actual_cash − expected_cash. Server-computed; prefer this over re-deriving. */
   difference?: number;
   status: 'open' | 'closed';
@@ -687,6 +689,7 @@ export interface ShiftOrdersResponse {
   total_amount: number;
   cash_collected: number;
   card_collected: number;
+  online_transfer_collected: number;
   orders: ShiftOrder[];
 }
 

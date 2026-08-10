@@ -142,7 +142,16 @@ function invoicePaymentMethod(
     const methods = [
         ...new Set(done.map((p) => p.paymentMethod).filter(Boolean)),
     ];
-    return methods.length ? methods.join(' + ') : null;
+    // Stored values are machine-readable; a receipt is not the place to print
+    // "online_transfer" at a customer.
+    const label: Record<string, string> = {
+        cash: 'cash',
+        card: 'card',
+        online_transfer: 'online transfer',
+    };
+    return methods.length
+        ? methods.map((m) => label[m] ?? m).join(' + ')
+        : null;
 }
 
 /** Internal signal: a concurrent placement with the same idempotency key already
@@ -1262,7 +1271,11 @@ export class OrdersService {
             /** Points to redeem as discount (requires customer_phone). */
             loyalty_points_to_redeem?: number;
             /** Tender split for per-tender GST (cash vs card). Omit → cash rate. */
-            payment_split?: { cash_amount?: number; card_amount?: number };
+            payment_split?: {
+                cash_amount?: number;
+                card_amount?: number;
+                online_transfer_amount?: number;
+            };
             /** Selected bank card (bank_cards id) for card-linked discounts. */
             bank_card_id?: number | null;
             /** Staff discount preset the cashier granted (staff_discounts id). */
@@ -1672,6 +1685,10 @@ export class OrdersService {
             dto.bank_card_id != null ? Number(dto.bank_card_id) : null;
         const fullCardPayment =
             (Number(dto.payment_split?.cash_amount) || 0) <= 0 &&
+            // An online transfer is a digital tender but NOT a bank card, so a
+            // bill part-paid by transfer is not "wholly paid by the selected
+            // card" and must not earn a card-linked discount.
+            (Number(dto.payment_split?.online_transfer_amount) || 0) <= 0 &&
             (Number(dto.payment_split?.card_amount) || 0) > 0;
         const offerSettings = resolveOfferSettings(
             (tenant as { offerSettings?: OfferSettings | null })
@@ -1729,7 +1746,14 @@ export class OrdersService {
         const paymentSplit: TenderSplit = dto.payment_split
             ? {
                   cash: dto.payment_split.cash_amount,
-                  card: dto.payment_split.card_amount,
+                  // An online transfer is a DIGITAL tender: it is taxed at the
+                  // card rate and reported to FBR as CARD, so it belongs in the
+                  // card weight here. It stays a distinct payment_method on the
+                  // payments row, which is what keeps shifts, reports and
+                  // filters showing it separately.
+                  card:
+                      (Number(dto.payment_split.card_amount) || 0) +
+                      (Number(dto.payment_split.online_transfer_amount) || 0),
               }
             : null;
         // Delivery fee is per brand: each order in the group charges its own brand's fee
@@ -3620,7 +3644,9 @@ export class OrdersService {
             // method, so a cash+card split shows under both views.
             if (
                 filters.payment_method &&
-                ['cash', 'card'].includes(filters.payment_method)
+                ['cash', 'card', 'online_transfer'].includes(
+                    filters.payment_method,
+                )
             )
                 qb.andWhere(
                     'EXISTS (SELECT 1 FROM payments pm WHERE pm.order_id = o.id AND pm.payment_method = :pmMethod)',
@@ -4585,7 +4611,11 @@ export class OrdersService {
             customer_phone?: string;
             loyalty_points_to_redeem?: number;
             /** Tender split for per-tender GST (cash vs card). Omit → cash rate. */
-            payment_split?: { cash_amount?: number; card_amount?: number };
+            payment_split?: {
+                cash_amount?: number;
+                card_amount?: number;
+                online_transfer_amount?: number;
+            };
             /** Selected bank card (bank_cards id) for card-linked discounts. */
             bank_card_id?: number | null;
             /** Staff discount preset the cashier granted (staff_discounts id). */
@@ -4805,7 +4835,14 @@ export class OrdersService {
         const paymentSplit: TenderSplit = dto.payment_split
             ? {
                   cash: dto.payment_split.cash_amount,
-                  card: dto.payment_split.card_amount,
+                  // An online transfer is a DIGITAL tender: it is taxed at the
+                  // card rate and reported to FBR as CARD, so it belongs in the
+                  // card weight here. It stays a distinct payment_method on the
+                  // payments row, which is what keeps shifts, reports and
+                  // filters showing it separately.
+                  card:
+                      (Number(dto.payment_split.card_amount) || 0) +
+                      (Number(dto.payment_split.online_transfer_amount) || 0),
               }
             : null;
         const tax = computeTenderTax(
