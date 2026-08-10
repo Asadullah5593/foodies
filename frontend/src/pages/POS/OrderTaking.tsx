@@ -85,7 +85,7 @@ const OrderTaking: React.FC = () => {
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [posSearch, setPosSearch] = useState('');
   const debouncedPosSearch = useDebouncedValue(posSearch, 300);
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'multipay'>('cash');
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'online_transfer' | 'multipay'>('cash');
   const [paymentCashAmount, setPaymentCashAmount] = useState<string>('');
   const [paymentCardAmount, setPaymentCardAmount] = useState<string>('');
   // Selected bank card (for card-linked discounts); only meaningful when paying fully by card.
@@ -337,7 +337,12 @@ const OrderTaking: React.FC = () => {
   const paymentSplit =
     paymentMode === 'card'
       ? { cash_amount: 0, card_amount: 1 }
-      : paymentMode === 'multipay'
+      : // Online transfer is taxed at the CARD rate, so it goes in the card
+        // weight here. It stays a distinct method on the payment row, which is
+        // what keeps it separate in shifts, reports and filters.
+        paymentMode === 'online_transfer'
+        ? { cash_amount: 0, card_amount: 0, online_transfer_amount: 1 }
+        : paymentMode === 'multipay'
         ? {
             cash_amount: parseFloat(paymentCashAmount || '0') || 0,
             card_amount: parseFloat(paymentCardAmount || '0') || 0,
@@ -496,11 +501,20 @@ const OrderTaking: React.FC = () => {
   const createOrderMutation = useMutation({
     mutationFn: async (arg: {
       order: CreateOrderRequest;
-      payments: Array<{ method: 'cash' | 'card'; amount: number }>;
+      payments: Array<{
+        method: 'cash' | 'card' | 'online_transfer';
+        amount: number;
+      }>;
     }) => orderService.createOrder(arg.order),
     onSuccess: async (
       data: { order_group_id: string; orders: Array<{ id: number; order_number: string; total_amount?: number }> },
-      variables: { order: CreateOrderRequest; payments: Array<{ method: 'cash' | 'card'; amount: number }> }
+      variables: {
+        order: CreateOrderRequest;
+        payments: Array<{
+          method: 'cash' | 'card' | 'online_transfer';
+          amount: number;
+        }>;
+      }
     ) => {
       const orders = data?.orders ?? [];
       const payments = variables?.payments ?? [];
@@ -1038,11 +1052,16 @@ const OrderTaking: React.FC = () => {
       toast.error('Order total must be greater than zero');
       return;
     }
-    const payments: Array<{ method: 'cash' | 'card'; amount: number }> = [];
+    const payments: Array<{
+      method: 'cash' | 'card' | 'online_transfer';
+      amount: number;
+    }> = [];
     if (paymentMode === 'cash') {
       payments.push({ method: 'cash', amount: orderTotal });
     } else if (paymentMode === 'card') {
       payments.push({ method: 'card', amount: orderTotal });
+    } else if (paymentMode === 'online_transfer') {
+      payments.push({ method: 'online_transfer', amount: orderTotal });
     } else {
       const cash = parseFloat(paymentCashAmount || '0') || 0;
       const card = parseFloat(paymentCardAmount || '0') || 0;
@@ -1275,11 +1294,16 @@ const OrderTaking: React.FC = () => {
       toast.error('Order total must be greater than zero');
       return;
     }
-    const payments: Array<{ method: 'cash' | 'card'; amount: number }> = [];
+    const payments: Array<{
+      method: 'cash' | 'card' | 'online_transfer';
+      amount: number;
+    }> = [];
     if (paymentMode === 'cash') {
       payments.push({ method: 'cash', amount: orderTotal });
     } else if (paymentMode === 'card') {
       payments.push({ method: 'card', amount: orderTotal });
+    } else if (paymentMode === 'online_transfer') {
+      payments.push({ method: 'online_transfer', amount: orderTotal });
     } else {
       const cash = parseFloat(paymentCashAmount || '0') || 0;
       const card = parseFloat(paymentCardAmount || '0') || 0;

@@ -41,7 +41,12 @@ export interface CreateOrderRequest {
   discount_code?: string;
   loyalty_points_to_redeem?: number;
   /** Tender split for per-tender GST (cash vs card). */
-  payment_split?: { cash_amount?: number; card_amount?: number };
+  payment_split?: {
+    cash_amount?: number;
+    card_amount?: number;
+    /** Digital transfer: taxed at the card rate, recorded as its own method. */
+    online_transfer_amount?: number;
+  };
   /** Selected bank card (id) for card-linked discounts. */
   bank_card_id?: number | null;
   /** Staff discount preset the cashier granted (staff_discounts id). */
@@ -49,7 +54,7 @@ export interface CreateOrderRequest {
 }
 
 export interface ProcessPaymentRequest {
-  payment_method: 'cash' | 'card' | 'other';
+  payment_method: 'cash' | 'card' | 'online_transfer' | 'other';
   amount: number;
   reference_number?: string;
 }
@@ -103,7 +108,12 @@ export type OrderQuoteRequest = {
   customer_phone?: string;
   loyalty_points_to_redeem?: number;
   /** Tender split for per-tender GST (cash vs card). */
-  payment_split?: { cash_amount?: number; card_amount?: number };
+  payment_split?: {
+    cash_amount?: number;
+    card_amount?: number;
+    /** Digital transfer: taxed at the card rate, recorded as its own method. */
+    online_transfer_amount?: number;
+  };
   /** Selected bank card (id) for card-linked discounts. */
   bank_card_id?: number | null;
   /** Staff discount preset the cashier granted (staff_discounts id). */
@@ -196,5 +206,8 @@ export interface KioskLookupResponse {
 export interface KioskFinalizeRequest {
   branch_id: number;
   order?: CreateOrderRequest;
-  payments: Array<{ method: 'cash' | 'card'; amount: number }>;
+  payments: Array<{
+    method: 'cash' | 'card' | 'online_transfer';
+    amount: number;
+  }>;
 }

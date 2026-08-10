@@ -32,6 +32,18 @@ type OrderRow = Omit<Order, 'payments' | 'creator'> & {
   orderNumber?: string;
   total_amount?: number;
   totalAmount?: number;
+  // The discount split, in both casings — /admin/orders returns raw entities.
+  discountAmount?: number | string;
+  promo_discount_amount?: number | string;
+  promoDiscountAmount?: number | string;
+  order_discount_amount?: number | string;
+  orderDiscountAmount?: number | string;
+  coupon_discount_amount?: number | string;
+  couponDiscountAmount?: number | string;
+  card_discount_amount?: number | string;
+  cardDiscountAmount?: number | string;
+  staff_discount_amount?: number | string;
+  staffDiscountAmount?: number | string;
   order_group_id?: string | null;
   orderGroupId?: string | null;
   branch?: { id: number; name: string; code: string };
@@ -72,6 +84,14 @@ function normalizeOrder(o: OrderRow): OrderRow {
     ...o,
     order_number: o.order_number ?? o.orderNumber,
     total_amount: o.total_amount ?? o.totalAmount ?? 0,
+    // /admin/orders returns raw entities, so the discount split arrives
+    // camelCase. Normalised here so the column reads one shape.
+    discount_amount: Number(o.discount_amount ?? row.discountAmount ?? 0),
+    promo_discount_amount: Number(o.promo_discount_amount ?? row.promoDiscountAmount ?? 0),
+    order_discount_amount: Number(o.order_discount_amount ?? row.orderDiscountAmount ?? 0),
+    coupon_discount_amount: Number(o.coupon_discount_amount ?? row.couponDiscountAmount ?? 0),
+    card_discount_amount: Number(o.card_discount_amount ?? row.cardDiscountAmount ?? 0),
+    staff_discount_amount: Number(o.staff_discount_amount ?? row.staffDiscountAmount ?? 0),
     order_group_id: o.order_group_id ?? o.orderGroupId ?? null,
     order_type: o.order_type ?? o.orderType,
     // /admin/orders returns raw entities (camelCase + nested brand), never brand_id.
@@ -147,7 +167,7 @@ const TYPE_META: Record<string, { bg: string; color: string; short: string; icon
   },
 };
 
-const PAYMENT_METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', other: 'Other', online: 'Online' };
+const PAYMENT_METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', online_transfer: 'Online transfer', other: 'Other', online: 'Online' };
 
 /** Rows-per-page choices. Capped at 1000 — the server's ceiling, and beyond that
  *  a single page drags too many joined rows to render comfortably. */
@@ -207,6 +227,29 @@ function paymentMethodText(o: OrderRow): string {
   const methods = [...new Set(done.map((p) => p.paymentMethod ?? p.payment_method).filter(Boolean))] as string[];
   if (!methods.length) return '—';
   return methods.map((m) => PAYMENT_METHOD_LABEL[m] ?? m).join(' + ');
+}
+
+/**
+ * Which kinds of discount made up an order's total reduction.
+ *
+ * The stored split (promo / order / coupon / card / staff) is what the invoice
+ * itemises, so a single "Discount: 120" column would hide the thing people
+ * actually ask about — whether the money came out of the merchant's margin or
+ * the bank's.
+ */
+const DISCOUNT_KINDS: Array<{ key: keyof OrderRow; label: string }> = [
+  { key: 'promo_discount_amount' as keyof OrderRow, label: 'Promo' },
+  { key: 'order_discount_amount' as keyof OrderRow, label: 'Discount' },
+  { key: 'coupon_discount_amount' as keyof OrderRow, label: 'Coupon' },
+  { key: 'card_discount_amount' as keyof OrderRow, label: 'Card' },
+  { key: 'staff_discount_amount' as keyof OrderRow, label: 'Staff' },
+];
+
+function discountKinds(o: OrderRow): Array<{ label: string; amount: number }> {
+  return DISCOUNT_KINDS.map(({ key, label }) => ({
+    label,
+    amount: Number((o as unknown as Record<string, unknown>)[key] ?? 0),
+  })).filter((d) => d.amount > 0);
 }
 
 function paymentState(o: OrderRow): 'paid' | 'partial' | 'unpaid' {
@@ -786,6 +829,21 @@ const Orders: React.FC = () => {
         <div className="text-right text-[14.5px] font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
           {formatCurrency(Number(o.total_amount ?? 0))}
         </div>
+        {/* Discount — total, with the kinds that produced it underneath */}
+        <div className="text-right">
+          {Number(o.discount_amount ?? 0) > 0 ? (
+            <>
+              <div className="text-[14px] font-bold tabular-nums text-amber-700 dark:text-amber-400">
+                −{formatCurrency(Number(o.discount_amount ?? 0))}
+              </div>
+              <div className="mt-0.5 truncate text-[11px] text-gray-400 dark:text-slate-500">
+                {discountKinds(o).map((d) => d.label).join(', ') || 'Discount'}
+              </div>
+            </>
+          ) : (
+            <span className="text-[13.5px] text-gray-300 dark:text-slate-600">—</span>
+          )}
+        </div>
         {/* Payment */}
         <div>
           <div className="text-[13.5px] font-semibold text-gray-700 dark:text-slate-200">{paymentMethodText(o)}</div>
@@ -864,8 +922,19 @@ const Orders: React.FC = () => {
             </Link>
             <span className="truncate text-[12.5px] text-gray-400 dark:text-slate-500">· {o.brand?.name ?? o.brand_name ?? '—'}</span>
           </div>
-          <span className="flex-none text-[15px] font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
-            {formatCurrency(Number(o.total_amount ?? 0))}
+          <span className="flex-none text-right">
+            <span className="block text-[15px] font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
+              {formatCurrency(Number(o.total_amount ?? 0))}
+            </span>
+            {Number(o.discount_amount ?? 0) > 0 && (
+              <span className="block text-[11px] font-bold tabular-nums text-amber-700 dark:text-amber-400">
+                −{formatCurrency(Number(o.discount_amount ?? 0))}
+                {' '}
+                <span className="font-medium text-gray-400 dark:text-slate-500">
+                  {discountKinds(o).map((d) => d.label).join(', ')}
+                </span>
+              </span>
+            )}
           </span>
         </div>
         {/* customer + source */}
@@ -1090,6 +1159,7 @@ const Orders: React.FC = () => {
           <option value="">All payments</option>
           <option value="cash">Cash</option>
           <option value="card">Card</option>
+          <option value="online_transfer">Online transfer</option>
         </select>}
         <input type="date" min={minDate} value={dateFrom} onChange={(e) => setFilter('date_from', e.target.value)} className={selectCls} aria-label="Date from" />
         <input type="date" min={minDate} value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />
@@ -1154,6 +1224,7 @@ const Orders: React.FC = () => {
                 <span className={`${cellHead} text-center`}>Items</span>
                 <span className={cellHead}>Placed</span>
                 <span className={`${cellHead} text-right`}>Total</span>
+                <span className={`${cellHead} text-right`}>Discount</span>
                 <span className={cellHead}>Payment</span>
                 <span className={cellHead}>Kitchen</span>
                 <span className={cellHead}>Delivery</span>
