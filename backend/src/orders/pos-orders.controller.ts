@@ -201,6 +201,8 @@ export class PosOrdersController {
             payment_method: string;
             amount: number;
             reference_number?: string;
+            /** Optional key so a retried/double-submitted tender is recorded once. */
+            idempotency_key?: string;
         },
     ) {
         return this.paymentsService.processPayment(
@@ -208,6 +210,7 @@ export class PosOrdersController {
             dto.payment_method,
             dto.amount,
             dto.reference_number,
+            dto.idempotency_key ?? null,
         );
     }
 }

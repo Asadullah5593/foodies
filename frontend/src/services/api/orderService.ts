@@ -59,6 +59,8 @@ export interface ProcessPaymentRequest {
   payment_method: 'cash' | 'card' | 'online_transfer' | 'other';
   amount: number;
   reference_number?: string;
+  /** Optional key so a retried/double-submitted tender is recorded once. */
+  idempotency_key?: string;
 }
 
 export interface OrderQuoteLineBreakdown {
