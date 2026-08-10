@@ -13,6 +13,7 @@ import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import { placesConfigured, ResolvedPlace } from '../../utils/googlePlaces';
 import { bogoDealTotal } from '../../utils/bogoPricing';
+import { allocateTenders } from './allocateTenders';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import SearchableSelect from '../../components/SearchableSelect';
@@ -406,7 +407,7 @@ const OrderTaking: React.FC = () => {
       }
     : null;
 
-  const { data: quoteData } = useQuery({
+  const { data: quoteData, isFetching: quoteIsFetching } = useQuery({
     queryKey: ['pos-quote', quotePayload],
     queryFn: () => orderService.getQuote(quotePayload!),
     enabled: quotePayload != null,
@@ -537,22 +538,15 @@ const OrderTaking: React.FC = () => {
     ) => {
       const orders = data?.orders ?? [];
       const payments = variables?.payments ?? [];
-      const grandTotal = orders.reduce((sum, o) => sum + Number(o?.total_amount ?? 0), 0);
-      if (orders.length > 0 && payments.length > 0 && grandTotal > 0) {
-        for (const order of orders) {
-          const orderTotal = Number(order.total_amount ?? 0);
-          if (orderTotal <= 0) continue;
-          const ratio = orderTotal / grandTotal;
-          for (const p of payments) {
-            const amount = Math.round(p.amount * ratio * 100) / 100;
-            if (amount > 0) {
-              await orderService.processPayment(order.id, {
-                payment_method: p.method,
-                amount,
-              });
-            }
-          }
-        }
+      // Tender the SERVER totals, not the on-screen quote: the cart can re-price
+      // at placement (checkout-page discounts), and recording the stale client
+      // amount is how payments drift above the bill.
+      for (const t of allocateTenders(orders, payments)) {
+        await orderService.processPayment(t.orderId, {
+          payment_method: t.method,
+          amount: t.amount,
+          idempotency_key: `pos:${data?.order_group_id ?? 'grp'}:${t.orderId}:${t.method}`,
+        });
       }
       const grossTotal = orders.reduce((sum, o) => sum + Number(o?.total_amount ?? 0), 0);
       const groupId = data?.order_group_id ?? '';
@@ -1061,6 +1055,12 @@ const OrderTaking: React.FC = () => {
       toast.error('No shift is open for this branch. Open a shift in Admin → Shifts before placing orders.');
       return;
     }
+    // A discount toggled at checkout re-prices the cart; placing against the
+    // held previous quote would show (and tender) a stale total.
+    if (quoteIsFetching) {
+      toast.error('Prices are updating — tap Place Order again in a moment');
+      return;
+    }
     const orderTotal = Number(quote?.total_amount ?? total ?? 0);
     if (
       !canPlaceOrder({
@@ -1302,6 +1302,12 @@ const OrderTaking: React.FC = () => {
     setPhoneError('');
     if (effectiveOrderType === 'dine_in' && !tableNumber.trim()) {
       toast.error('Please enter a table number for dine-in orders');
+      return;
+    }
+    // A discount toggled at checkout re-prices the cart; finalizing against the
+    // held previous quote would show (and tender) a stale total.
+    if (quoteIsFetching) {
+      toast.error('Prices are updating — tap Place Order again in a moment');
       return;
     }
     const orderTotal = Number(quote?.total_amount ?? total ?? 0);
@@ -1961,7 +1967,7 @@ const OrderTaking: React.FC = () => {
               onBankCardChange={setBankCardId}
               branchId={branchId}
               onCreateOrder={activeKioskCode ? handleFinalizeKiosk : handleCreateOrder}
-              isSubmitting={isSubmittingOrder}
+              isSubmitting={isSubmittingOrder || quoteIsFetching}
               itemCount={selectedItems.length}
             />
             <div className="flex justify-end mt-3">
