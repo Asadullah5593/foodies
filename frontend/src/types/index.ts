@@ -550,6 +550,21 @@ export interface StaffDiscount {
   is_active: boolean;
 }
 
+/**
+ * An offer the cashier can switch on for one cart (discounts.activation =
+ * 'manual'). Unlike a staff discount this is a real offer — it competes in the
+ * pricing engine and may lose to a better automatic one.
+ */
+export interface ManualOffer {
+  id: number;
+  name: string;
+  type: string;
+  value: number;
+  buy_quantity: number | null;
+  get_quantity: number | null;
+  get_discount_percent: number | null;
+}
+
 /** The trimmed shape the till's picker returns — only what a button needs. */
 export interface StaffDiscountPreset {
   id: number;

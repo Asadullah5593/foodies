@@ -10,7 +10,8 @@ import { ResolvedPlace } from '../../../utils/googlePlaces';
 import { formatCurrency } from '../../../utils/currency';
 import { OrderTypeOption } from './types';
 import StaffDiscountPicker from './StaffDiscountPicker';
-import { StaffDiscountPreset } from '../../../types';
+import ManualOfferPicker from './ManualOfferPicker';
+import { StaffDiscountPreset, ManualOffer } from '../../../types';
 
 export type CustomerPanelProps = {
   orderType: OrderTypeOption;
@@ -36,6 +37,10 @@ export type CustomerPanelProps = {
   staffDiscounts: StaffDiscountPreset[];
   staffDiscountId: number | null;
   onStaffDiscountChange: (id: number | null) => void;
+  /** Offers this cashier may switch on for one cart; empty = no control shown. */
+  manualOffers: ManualOffer[];
+  manualOfferId: number | null;
+  onManualOfferChange: (id: number | null) => void;
   orderNotes: string;
   onOrderNotesChange: (v: string) => void;
   quote: {
@@ -43,6 +48,9 @@ export type CustomerPanelProps = {
     coupon_discount_amount?: number;
     staff_discount_amount?: number;
     staff_discount_error?: string | null;
+    manual_offer_amount?: number;
+    manual_offer_applied?: boolean;
+    manual_offer_error?: string | null;
     discount_code?: string | null;
     discount_amount?: number;
   } | null | undefined;
@@ -70,6 +78,9 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
   staffDiscounts,
   staffDiscountId,
   onStaffDiscountChange,
+  manualOffers,
+  manualOfferId,
+  onManualOfferChange,
   orderNotes,
   onOrderNotesChange,
   quote,
@@ -192,6 +203,15 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
           </button>
         )}
       </div>
+
+      <ManualOfferPicker
+        offers={manualOffers}
+        selectedId={manualOfferId}
+        onSelect={onManualOfferChange}
+        appliedAmount={quote?.manual_offer_amount ?? 0}
+        applied={quote?.manual_offer_applied ?? false}
+        error={quote?.manual_offer_error ?? null}
+      />
 
       <StaffDiscountPicker
         presets={staffDiscounts}

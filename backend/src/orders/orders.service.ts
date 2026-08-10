@@ -1281,6 +1281,8 @@ export class OrdersService {
             bank_card_id?: number | null;
             /** Staff discount preset the cashier granted (staff_discounts id). */
             staff_discount_id?: number | null;
+            /** Till-activated offer the cashier switched on (discounts id). */
+            manual_offer_id?: number | null;
             /** When set, must match normalized customer_phone for same tenant. */
             customer_id?: number;
             /** Optional drop-off coordinates (e.g. consumer map picker). */
@@ -1705,6 +1707,15 @@ export class OrdersService {
             primaryBranch.id,
             orderBrandId,
         );
+        // Enforcement point: unlike quote this THROWS, so an unauthorized or
+        // out-of-scope activation is refused rather than silently dropped.
+        const manualOffer = await this.authorizeManualOffer(
+            dto.manual_offer_id,
+            tenantId,
+            actor,
+            primaryBranch.id,
+            orderBrandId,
+        );
         const staged = await this.resolveStagedOffers({
             tenantId,
             subtotal,
@@ -1718,6 +1729,7 @@ export class OrdersService {
             fullCardPayment,
             bankCardId,
             staffDiscount,
+            manualOffer,
             settings: offerSettings,
         });
         const combinedLineDiscount = staged.combinedLineDiscount;
@@ -2042,6 +2054,28 @@ export class OrdersService {
                                         : null,
                                 staffDiscountBy:
                                     brandStaffDiscount > 0 ? createdBy : null,
+                                // Recorded on every brand-order the activation
+                                // covered, so take-up is answerable even when
+                                // the offer lost the stage (amount 0) or a web
+                                // cart split across brands.
+                                manualOfferId: manualOffer?.id ?? null,
+                                // Take the share from the stage the offer
+                                // actually ran in — a product-scoped BOGO books
+                                // into promo, not `discount` — and cap it by the
+                                // whole-order figure so a split cart's parts sum
+                                // to what was really given, never more.
+                                manualOfferAmount:
+                                    manualOffer == null
+                                        ? 0
+                                        : Math.min(
+                                              staged.manualOfferKind ===
+                                                  'product_promotion'
+                                                  ? brandPromoDiscount
+                                                  : brandOrderDiscount,
+                                              staged.manualOfferAmount,
+                                          ),
+                                manualOfferBy:
+                                    manualOffer != null ? createdBy : null,
                                 // Kept even when the offer gave nothing, so take-up
                                 // can be measured against every order that could
                                 // have used the card.
@@ -2738,6 +2772,8 @@ export class OrdersService {
                 coupon_discount_amount: Number(o.couponDiscountAmount ?? 0),
                 card_discount_amount: Number(o.cardDiscountAmount ?? 0),
                 staff_discount_amount: Number(o.staffDiscountAmount ?? 0),
+                manual_offer_id: o.manualOfferId ?? null,
+                manual_offer_amount: Number(o.manualOfferAmount ?? 0),
                 discount_code: o.discountCode ?? null,
                 tax_amount: Number(o.taxAmount),
                 tax_rate: effectiveTaxRate(o),
@@ -3065,6 +3101,8 @@ export class OrdersService {
             coupon_discount_amount: Number(order.couponDiscountAmount ?? 0),
             card_discount_amount: Number(order.cardDiscountAmount ?? 0),
             staff_discount_amount: Number(order.staffDiscountAmount ?? 0),
+            manual_offer_id: order.manualOfferId ?? null,
+            manual_offer_amount: Number(order.manualOfferAmount ?? 0),
             discount_code: order.discountCode ?? null,
             tax_amount: Number(order.taxAmount),
             tax_rate: effectiveTaxRate(order),
@@ -4629,6 +4667,8 @@ export class OrdersService {
             bank_card_id?: number | null;
             /** Staff discount preset the cashier granted (staff_discounts id). */
             staff_discount_id?: number | null;
+            /** Till-activated offer the cashier switched on (discounts id). */
+            manual_offer_id?: number | null;
             /** Drop-off coords — required to price/return delivery tiers. */
             latitude?: number;
             longitude?: number;
@@ -4753,6 +4793,25 @@ export class OrdersService {
                       e.message)
                     : 'Staff discount could not be applied.';
         }
+        // Same soft treatment as the staff discount: a quote must not fail
+        // mid-order, so report why and price without it.
+        let manualOffer: Discount | null = null;
+        let manualOfferError: string | null = null;
+        try {
+            manualOffer = await this.authorizeManualOffer(
+                dto.manual_offer_id,
+                tenantId,
+                actor,
+                branch.id,
+                orderBrandId,
+            );
+        } catch (e) {
+            manualOfferError =
+                e instanceof HttpException
+                    ? ((e.getResponse() as { message?: string })?.message ??
+                      e.message)
+                    : 'That offer could not be applied.';
+        }
         const staged = await this.resolveStagedOffers({
             tenantId,
             subtotal,
@@ -4767,6 +4826,7 @@ export class OrdersService {
             fullCardPayment,
             bankCardId,
             staffDiscount,
+            manualOffer,
             settings: offerSettings,
         });
         const combinedLineDiscount = staged.combinedLineDiscount;
@@ -4967,6 +5027,17 @@ export class OrdersService {
             staff_discount_name: staffDiscount?.name ?? null,
             /** Why the requested preset wasn't applied (over ceiling, inactive, out of scope). */
             staff_discount_error: staffDiscountError,
+            manual_offer_amount: staged.manualOfferAmount,
+            manual_offer_id: manualOffer?.id ?? null,
+            manual_offer_name: manualOffer?.name ?? null,
+            /**
+             * Set when the activated offer produced nothing — it lost the
+             * `discount` stage to a better automatic offer, or the cart does not
+             * qualify. The cashier needs telling; a silent zero reads as a bug.
+             */
+            manual_offer_applied: staged.manualOfferAmount > 0,
+            /** Why a requested offer wasn't applied (permission, scope, inactive). */
+            manual_offer_error: manualOfferError,
             discount_amount: totalDiscount,
             discount_code: coupon.discountCode ?? null,
             cap_applied: staged.capApplied,
@@ -5983,6 +6054,66 @@ export class OrdersService {
     }
 
     /**
+     * Resolve and AUTHORIZE a till-activated offer. Called by both quote and
+     * createOrder — the client-side button is cosmetic, this is what stops an
+     * unauthorized till posting an offer id.
+     *
+     * Refuses rather than ignoring: a cashier who pressed the button and got no
+     * discount deserves to know why, not to discover it on the receipt. Returns
+     * null when nothing was requested.
+     */
+    private async authorizeManualOffer(
+        offerId: number | null | undefined,
+        tenantId: number,
+        actor: { permissions?: string[] | null } | null,
+        branchId: number,
+        orderBrandId: number | null,
+    ): Promise<Discount | null> {
+        if (offerId == null) return null;
+        if (!actor) {
+            throw new ForbiddenException(
+                'A till-activated offer can only be applied by a signed-in user.',
+            );
+        }
+        if (!(actor.permissions ?? []).includes('orders:apply-manual-offer')) {
+            throw new ForbiddenException(
+                'You do not have permission to apply this offer.',
+            );
+        }
+        const offer = await this.discountRepo.findOne({
+            where: { id: Number(offerId), tenantId },
+        });
+        if (!offer) throw new NotFoundException('Offer not found');
+        if ((offer as { activation?: string }).activation !== 'manual') {
+            // An auto offer needs no activation and would double-count if it
+            // were also recorded as manually applied.
+            throw new BadRequestException(
+                'That offer applies automatically and cannot be switched on per order.',
+            );
+        }
+        if (!offer.isActive) {
+            throw new BadRequestException('That offer is no longer active.');
+        }
+        const brandIds = (offer.eligibilityBrandIds ?? []).map(Number);
+        if (
+            brandIds.length > 0 &&
+            orderBrandId != null &&
+            !brandIds.includes(Number(orderBrandId))
+        ) {
+            throw new BadRequestException(
+                'That offer does not apply to this brand.',
+            );
+        }
+        const branchIds = (offer.eligibilityBranchIds ?? []).map(Number);
+        if (branchIds.length > 0 && !branchIds.includes(Number(branchId))) {
+            throw new BadRequestException(
+                'That offer does not apply to this branch.',
+            );
+        }
+        return offer;
+    }
+
+    /**
      * Staged offer resolution — the single pricing engine used by both quote and
      * createOrder. Applies product_promotion → discount → coupon → card_offer as
      * stacking stages (loyalty is applied by the caller with `capRemaining`),
@@ -6016,6 +6147,12 @@ export class OrdersService {
          * (permission + role ceiling). Null when none was granted.
          */
         staffDiscount?: StaffDiscount | null;
+        /**
+         * Till-activated offer the cashier switched on, already authorized by
+         * the caller. Null when none was activated — in which case every
+         * activation='manual' offer stays out of the automatic pass.
+         */
+        manualOffer?: Discount | null;
         settings: OfferSettings;
     }): Promise<{
         combinedLineDiscount: number[];
@@ -6023,6 +6160,10 @@ export class OrdersService {
         productPromoAmount: number;
         discountAmount: number;
         staffDiscountAmount: number;
+        /** What the till-activated offer produced; 0 if it lost to a better one. */
+        manualOfferAmount: number;
+        /** Which stage it ran in — the caller needs it to apportion per brand. */
+        manualOfferKind: 'product_promotion' | 'discount' | null;
         couponDiscountAmount: number;
         cardDiscountAmount: number;
         autoDiscountAmount: number;
@@ -6082,12 +6223,34 @@ export class OrdersService {
         }
         const kindOf = (d: Discount): string =>
             (d as { offerKind?: string }).offerKind ?? 'discount';
+        /** Rows predating the column read as 'auto', preserving old behaviour. */
+        const activationOf = (d: Discount): string =>
+            (d as { activation?: string }).activation ?? 'auto';
+        // Manual ('till-activated') offers sit out the automatic pass entirely
+        // unless the cashier switched THIS one on for THIS order. That is what
+        // lets one customer get a BOGO and the next not, without the offer
+        // needing to know anything about customers.
+        //
+        // The gate has to cover EVERY auto stage, not just `discount`: a
+        // product-scoped BOGO is stored as offer_kind='product_promotion', so
+        // gating only the discount stage would let the owner mark an offer
+        // manual and have it still fire for everyone — the exact failure this
+        // feature exists to prevent.
+        const manualOfferId = ctx.manualOffer?.id ?? null;
+        const activatable = (d: Discount): boolean =>
+            activationOf(d) !== 'manual' || d.id === manualOfferId;
         const productPromos = eligibleAuto.filter(
-            (d) => kindOf(d) === 'product_promotion',
+            (d) => kindOf(d) === 'product_promotion' && activatable(d),
         );
         const orderDiscounts = eligibleAuto.filter(
-            (d) => kindOf(d) === 'discount',
+            (d) => kindOf(d) === 'discount' && activatable(d),
         );
+        /**
+         * What the activated offer produced on its own, before the stage merged
+         * it with any competing offer. Capped against the stage total below, so
+         * an overlapping automatic offer can never inflate the figure.
+         */
+        let manualOfferRaw = 0;
         // Card offers live on the bank cards themselves, not in `discounts`. They
         // are adapted into the engine's shape and then run through the very same
         // date/branch-time/eligibility gates as every other offer.
@@ -6143,6 +6306,7 @@ export class OrdersService {
                     for (const d of productPromos) {
                         const r = this.evalOfferOnRunning(d, evalCtx, running);
                         if (!r) continue;
+                        if (d.id === manualOfferId) manualOfferRaw = r.amount;
                         for (let i = 0; i < n; i++)
                             if (r.alloc[i] > best[i]) best[i] = r.alloc[i];
                     }
@@ -6160,6 +6324,8 @@ export class OrdersService {
                     let chosen: Discount | null = null;
                     for (const d of orderDiscounts) {
                         const r = this.evalOfferOnRunning(d, evalCtx, running);
+                        if (r && d.id === manualOfferId)
+                            manualOfferRaw = r.amount;
                         if (r && r.amount > bestAmt) {
                             bestAmt = r.amount;
                             bestAlloc = r.alloc;
@@ -6220,6 +6386,9 @@ export class OrdersService {
             });
         }
 
+        const manualIsPromo =
+            ctx.manualOffer != null &&
+            kindOf(ctx.manualOffer) === 'product_promotion';
         const result = runOfferEngine(engineLines, stages, settings);
         const combinedLineDiscount = result.lines.map((l) => l.totalDiscount);
         const promoUsed = result.byKind.product_promotion > 0;
@@ -6239,6 +6408,28 @@ export class OrdersService {
             productPromoAmount: result.byKind.product_promotion,
             discountAmount: result.byKind.discount,
             staffDiscountAmount: result.byKind.staff_discount,
+            /**
+             * What the activated offer actually produced. Capped by its own
+             * stage's booked total, because the cap or the cost floor may have
+             * clamped the stage below what the offer asked for, and because a
+             * competing offer may have out-bid it — in which case the honest
+             * answer is what survived, not what was requested.
+             */
+            manualOfferKind:
+                ctx.manualOffer == null
+                    ? null
+                    : manualIsPromo
+                      ? 'product_promotion'
+                      : 'discount',
+            manualOfferAmount:
+                manualOfferId == null
+                    ? 0
+                    : Math.min(
+                          manualOfferRaw,
+                          manualIsPromo
+                              ? result.byKind.product_promotion
+                              : result.byKind.discount,
+                      ),
             couponDiscountAmount: result.byKind.coupon,
             cardDiscountAmount: result.byKind.card_offer,
             // Compat shim for callers predating the staff-discount stage: the

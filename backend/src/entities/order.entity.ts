@@ -196,6 +196,34 @@ export class Order {
     staffDiscountBy: number | null;
 
     /**
+     * Till-activated offer (discounts.activation = 'manual') that the cashier
+     * switched on for this cart — e.g. a BOGO given to one customer and not the
+     * next. Unlike a staff discount this is a real offer, so it competes in the
+     * `discount` stage and its value lands in orderDiscountAmount when it wins.
+     */
+    @Column({ name: 'manual_offer_id', type: 'int', nullable: true })
+    manualOfferId: number | null;
+
+    /**
+     * What the activated offer actually produced. Recorded separately because
+     * the `discount` stage keeps only the best offer: an activated offer that
+     * loses to a better automatic one books 0 here while orderDiscountAmount
+     * shows the winner. Take-up is unanswerable without the distinction.
+     */
+    @Column({
+        name: 'manual_offer_amount',
+        type: 'decimal',
+        precision: 12,
+        scale: 2,
+        default: 0,
+    })
+    manualOfferAmount: number;
+
+    /** Who switched it on. */
+    @Column({ name: 'manual_offer_by', type: 'int', nullable: true })
+    manualOfferBy: number | null;
+
+    /**
      * The bank card the customer paid with, when one was selected. Recorded even
      * if its offer gave nothing (below min spend, outside its window), so a card
      * offer's take-up can be measured against every order that could have used it
