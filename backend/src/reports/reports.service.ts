@@ -13,6 +13,7 @@ import { RiderOrderRating } from '../entities/rider-order-rating.entity';
 import { RiderPresence } from '../entities/rider-presence.entity';
 import { InventoryOnHand } from '../entities/inventory-on-hand.entity';
 import { WastageEvent } from '../entities/wastage-event.entity';
+import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
 
 /**
  * Nudges a per-stage discount split so it adds up to the total exactly.
@@ -775,6 +776,13 @@ export class ReportsService {
             time_to?: string;
             /** completed (default) | all | excluding_cancelled */
             status?: string;
+            /**
+             * Restrict to orders that were discounted: any | none, or one
+             * stage (promo | order | coupon | card | staff). Filters the
+             * ORDERS, not the product rows — "what sold on coupon orders" is
+             * the question, and a product's own share may still be zero.
+             */
+            discount?: string;
             /** child rows under each product */
             split_by?: 'variant' | 'branch' | 'brand' | 'none';
             sort_by?:
@@ -853,6 +861,10 @@ export class ReportsService {
                 allowedBrandIds,
                 filters.brand_id,
             );
+            if (isDiscountFilter(filters.discount)) {
+                const predicate = discountFilterSql(filters.discount, 'o');
+                if (predicate) qb.andWhere(predicate);
+            }
             if (filters.category_id)
                 qb.andWhere('mi.categoryId = :psCategoryId', {
                     psCategoryId: filters.category_id,
@@ -1073,6 +1085,9 @@ export class ReportsService {
         return {
             split_by: splitBy,
             status: filters.status ?? 'completed',
+            discount: isDiscountFilter(filters.discount)
+                ? filters.discount
+                : null,
             date_from: localDay(dateFrom),
             date_to: localDay(dateTo),
             totals,
