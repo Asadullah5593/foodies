@@ -92,6 +92,7 @@ import {
 } from './delivery-tier.utils';
 import { resolveRiderBrandScope } from './rider-brand-scope.util';
 import { PushNotificationService } from '../push-notifications/push-notification.service';
+import { PaymentsService } from '../payments/payments.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
     transitionStatus,
@@ -149,6 +150,7 @@ function invoicePaymentMethod(
         cash: 'cash',
         card: 'card',
         online_transfer: 'online transfer',
+        cod: 'cash on delivery',
     };
     return methods.length
         ? methods.map((m) => label[m] ?? m).join(' + ')
@@ -196,6 +198,7 @@ export class OrdersService {
         private notificationsService: NotificationsService,
         private invoiceTemplatesService: InvoiceTemplatesService,
         private fbrService: FbrService,
+        private paymentsService: PaymentsService,
     ) {}
 
     /**
@@ -4614,9 +4617,38 @@ export class OrdersService {
             order.status = 'completed';
             if (prevStatus !== null) {
                 await this.loyaltyService.earnOnOrderComplete(order.id);
-                // No shift accrual: a delivery order settled at the door has no
-                // tender recorded, so its balance is counted as cash owed to the
-                // till by computeExpectedCash until the rider hands it in.
+                // Money settled at the door is recorded as its own 'cod' tender:
+                // the order reads Paid and payment reports include it, while
+                // shift reconciliation (which only buckets cash / card /
+                // online_transfer) keeps ignoring money that never passed
+                // through the till. Only fires when nothing was tendered yet —
+                // a POS delivery order is paid up front and must not log a
+                // clamped duplicate. The idempotency key makes a racing retry
+                // of the same delivered event record once.
+                const tendered: unknown[] = await this.dataSource.query(
+                    `SELECT 1 FROM payments WHERE order_id = $1 LIMIT 1`,
+                    [order.id],
+                );
+                if (!tendered.length && Number(order.totalAmount) > 0) {
+                    try {
+                        await this.paymentsService.processPayment(
+                            order.id,
+                            'cod',
+                            Number(order.totalAmount),
+                            undefined,
+                            `cod:order:${order.id}`,
+                        );
+                    } catch (err) {
+                        // The rider's delivery confirmation must never fail over
+                        // the tender record; the zero-tender audit query surfaces
+                        // any straggler this leaves behind.
+                        this.logger.error(
+                            `COD tender failed for order ${order.id}: ${
+                                err instanceof Error ? err.message : String(err)
+                            }`,
+                        );
+                    }
+                }
             }
         }
         if (

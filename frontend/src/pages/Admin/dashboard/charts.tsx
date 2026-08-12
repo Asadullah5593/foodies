@@ -341,7 +341,7 @@ export const PaymentMethodDonut: React.FC<{
   theme: Theme;
 }> = ({ data, theme }) => (
   <Donut
-    data={data.map((d) => ({ name: prettify(d.method), value: d.amount }))}
+    data={data.map((d) => ({ name: d.method === 'cod' ? 'COD' : prettify(d.method), value: d.amount }))}
     theme={theme}
     currency
   />

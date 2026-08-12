@@ -167,7 +167,7 @@ const TYPE_META: Record<string, { bg: string; color: string; short: string; icon
   },
 };
 
-const PAYMENT_METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', online_transfer: 'Online transfer', other: 'Other', online: 'Online' };
+const PAYMENT_METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', online_transfer: 'Online transfer', cod: 'COD', other: 'Other', online: 'Online' };
 
 /** Rows-per-page choices. Capped at 1000 — the server's ceiling, and beyond that
  *  a single page drags too many joined rows to render comfortably. */
@@ -1172,6 +1172,7 @@ const Orders: React.FC = () => {
           <option value="cash">Cash</option>
           <option value="card">Card</option>
           <option value="online_transfer">Online transfer</option>
+          <option value="cod">COD</option>
         </select>}
         {canFilterDiscount && <select value={discount} onChange={(e) => setFilter('discount', e.target.value)} className={selectCls} aria-label="Discount">
           <option value="">All discounts</option>
