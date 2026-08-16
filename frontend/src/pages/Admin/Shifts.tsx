@@ -76,9 +76,9 @@ export const drawerVariance = (s: Shift): number | null => {
     : Number(s.actual_cash) - expectedInDrawer(s);
 };
 
-/** Total takings (drawer expectation + card, which never reaches the till). */
+/** Total takings: drawer expectation + card + online transfer (the latter two never reach the till). */
 export const expectedTotal = (s: Shift): number =>
-  expectedInDrawer(s) + Number(s.card_collected ?? 0);
+  expectedInDrawer(s) + Number(s.card_collected ?? 0) + Number(s.online_transfer_collected ?? 0);
 
 /** Payment chip colors for the close-modal order rows: cash teal, card/mixed blue. */
 const payChip = (method: string | null | undefined) => {
