@@ -30,6 +30,16 @@ import { PublicHoliday } from '../entities/public-holiday.entity';
 import { HolidayPolicy } from '../entities/holiday-policy.entity';
 import { LeavesController, LeaveSettingsController } from './leaves.controller';
 import { LeavesService } from './leaves.service';
+import { EmployeeSalaryStructure } from '../entities/employee-salary-structure.entity';
+import { EmployeeSalaryComponent } from '../entities/employee-salary-component.entity';
+import { OvertimePolicy } from '../entities/overtime-policy.entity';
+import { EmployeeLoanAdvance } from '../entities/employee-loan-advance.entity';
+import { PayrollRun } from '../entities/payroll-run.entity';
+import { PayrollLine } from '../entities/payroll-line.entity';
+import { PayrollLineItem } from '../entities/payroll-line-item.entity';
+import { PayrollAdjustment } from '../entities/payroll-adjustment.entity';
+import { PayrollController, SalaryController } from './payroll.controller';
+import { PayrollService } from './payroll.service';
 import {
     EmployeeExitsController,
     EmployeesController,
@@ -75,6 +85,14 @@ import { HrAuditService } from './hr-audit.service';
             LeaveRequest,
             PublicHoliday,
             HolidayPolicy,
+            EmployeeSalaryStructure,
+            EmployeeSalaryComponent,
+            OvertimePolicy,
+            EmployeeLoanAdvance,
+            PayrollRun,
+            PayrollLine,
+            PayrollLineItem,
+            PayrollAdjustment,
         ]),
     ],
     controllers: [
@@ -86,6 +104,8 @@ import { HrAuditService } from './hr-audit.service';
         AttendancePinController,
         LeavesController,
         LeaveSettingsController,
+        PayrollController,
+        SalaryController,
     ],
     providers: [
         EmployeesService,
@@ -95,6 +115,7 @@ import { HrAuditService } from './hr-audit.service';
         AttendanceService,
         AttendanceRecomputeService,
         LeavesService,
+        PayrollService,
     ],
     exports: [EmployeesService, HrAuditService, AttendanceService],
 })

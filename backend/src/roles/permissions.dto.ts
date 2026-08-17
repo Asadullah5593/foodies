@@ -353,6 +353,20 @@ export const Permissions = {
     LEAVES_APPROVE: 'leaves:approve',
     /** Leave types, holiday policy and the public holiday calendar. */
     HOLIDAYS_MANAGE: 'holidays:manage',
+
+    // — Payroll (Phase 4). Owner / GM / HR only; branch managers get none. —
+    PAYROLL_VIEW: 'payroll:view',
+    PAYROLL_RUN: 'payroll:run',
+    /** Approving locks the attendance period. */
+    PAYROLL_APPROVE: 'payroll:approve',
+    PAYROLL_REVERSE: 'payroll:reverse',
+    /**
+     * Waive or add a deduction on a payslip, with a mandatory reason
+     * (decision #9). Separate from :approve — signing off a run and rewriting
+     * one person's pay are different acts.
+     */
+    PAYROLL_ADJUST: 'payroll:adjust',
+    PAYROLL_EXPORT: 'payroll:export',
 } as const;
 
 export type PermissionName = (typeof Permissions)[keyof typeof Permissions];
