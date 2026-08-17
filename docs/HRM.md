@@ -244,7 +244,8 @@ This system has no application-wide audit log today. Payroll is legally sensitiv
 
 ## 4. Timezone
 
-- `branches.timezone` **already exists** and currently defaults to `'UTC'`. No new column is needed — but every existing row must be backfilled to `Asia/Karachi` before attendance goes live, and the column default changed. Left at `'UTC'`, a 17:00 Karachi punch records a work-date rule five hours out and the midnight logic in §5 silently misfires.
+- `branches.timezone` **already exists and is already correct** — every live branch is `Asia/Karachi`, and the admin UI defaults new branches to it. No new column, and no backfill needed. It is not an HRM-only field: it already gates time-restricted menu items, lunch deals and bank-card offer windows, so it is well-established.
+- The residual risk is narrow: the **column default is still `'UTC'`**, so a branch created outside the admin UI (seed, direct SQL) gets UTC silently. Phase 2 must therefore **validate rather than assume** — a branch whose timezone is `UTC` while attendance is enabled is surfaced as a settings warning, not quietly computed five hours out. Do not blanket-change the column default: this is a multi-tenant platform and `UTC` is the defensible neutral default for a tenant outside Pakistan.
 - Timestamps remain **naive UTC in the database and correct `...Z` on the API**, exactly like the rest of the system. Nothing about the existing convention changes.
 - All attendance *arithmetic* — work-date attribution, lateness, day boundaries, payroll periods — happens in **branch-local time**, converted at the edge.
 - Use IANA timezone arithmetic, never a fixed `+05:00` offset. Pakistan has no DST today; a fixed offset would silently break the day someone opens a branch where it exists.
@@ -658,7 +659,7 @@ Employees follow the existing scoping model exactly: `tenantId` + `allowedBranch
 |---|---|---|
 | **0** | This document | done |
 | **1** | Employee master, designations, assignments, documents, events timeline, Employee 360, **exit record + clearance**, `hr_manager` role, RBAC, backfill from `branch_users` | ~1.5 weeks |
-| **2** | Attendance: capture policies, PIN/QR/photo/attestation, POS station, punches → `attendance_days` recompute, `branches.timezone` backfill, schedules + roster tables, work-date rule, daily register, adjustments, exceptions report | ~2 weeks |
+| **2** | Attendance: capture policies, PIN/QR/photo/attestation, POS station, punches → `attendance_days` recompute, `branches.timezone` validation, schedules + roster tables, work-date rule, daily register, adjustments, exceptions report | ~2 weeks |
 | **3** | Leave types, balances, requests → attendance, 4-offs policy, public holidays | ~1 week |
 | **4** | Salary structures, deduction rules, OT policies + approval, waivers, payroll run state machine, adjustments, payslip PDF, **off encashment, exit settlement**, **rider convergence + migration** | ~2.5 weeks |
 | **5** | Training programs and records, review templates, cycle scheduler, review form, outcome application | ~1.5 weeks |
@@ -688,7 +689,7 @@ Set without further consultation, recorded here so nothing is silently assumed.
 | Payroll cycle | Calendar month |
 | Review reminder | 7 days before due |
 | OT rounding | 15 min, approval required |
-| Branch timezone | `Asia/Karachi` (existing `branches.timezone`, backfilled from `'UTC'` in Phase 2) |
+| Branch timezone | Existing `branches.timezone`, already `Asia/Karachi` on live data; Phase 2 warns if any branch is left on `UTC` |
 
 ---
 
