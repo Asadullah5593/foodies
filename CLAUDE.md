@@ -20,6 +20,7 @@ Root (monorepo, uses `concurrently`):
 Backend (`cd backend`):
 - `npm run start:dev` · `npm run build` · `npm test` (Jest, `*.spec.ts`) · `npm run test:e2e` · `npm run lint`
 - Migrations: `npm run migration:run | migration:revert | migration:show` (builds first, runs against `dist/data-source.js`). `synchronize: false` — schema changes always go through a timestamped migration in `backend/src/migrations/`. Migrations also run automatically on app boot.
+  - Naming: `<13-digit-timestamp>-<PascalCaseName>.ts`, and the exported class must end with the same timestamp. **Timestamps must be unique** — take the next free number in the `1760000000NNN` sequence. Ties make execution order depend on filesystem glob order, so dev and prod can apply the same pair in opposite orders. `migration-naming.spec.ts` enforces this. Two legacy pairs (`…091`, `…092`) are grandfathered and must **not** be renamed: the `migrations` table matches on name, so renaming an applied migration makes it re-run in production.
 - Seeds: `npm run seed` (demo owner `owner@demo.com` / `owner123`), `seed:menu`, `seed:inventory`, `seed:uoms`, per-brand seeds (`seed:wok-and-go`, `seed:peri-peri-co`, `seed:fireaway`, `seed:pizza-pasta`)
 
 Frontend: `npm run dev`, tests via Vitest (`globals: true`, jsdom). Husky pre-commit runs lint-staged.
