@@ -271,9 +271,10 @@ export class TrainingController {
     @RequirePermission(Permissions.TRAINING_VIEW)
     @ApiOperation({ summary: 'Is this employee training-ready for that role?' })
     readiness(
+        @CurrentUser() user: HrUser,
         @Param('employeeId', ParseIntPipe) employeeId: number,
         @Param('designationId', ParseIntPipe) designationId: number,
     ) {
-        return this.training.readinessFor(employeeId, designationId);
+        return this.training.readinessFor(user, employeeId, designationId);
     }
 }

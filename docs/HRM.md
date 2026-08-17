@@ -1,6 +1,6 @@
 # Employee HRM — specification of record
 
-Status: **Phase 0 (design locked, not implemented).** Decisions here were agreed with the client on 2026-08-12. Anything not written down here is undecided; anything written down here is the reference implementation must match.
+Status: **Phases 1–5 built (backend + admin UI) on `feat/employee-hrm`; Phase 6 not started.** Decisions here were agreed with the client on 2026-08-12. Anything not written down here is undecided; anything written down here is the reference implementation must match.
 
 Scope: employee master data, attendance capture without biometrics, leaves and holidays, overtime, payroll, employment history, reviews and promotion, training, and exit. Rider *dispatch* and rider *sharing* are out of scope; rider *pay* is in scope and converges into this module (see [Rider convergence](#12-rider-convergence)).
 

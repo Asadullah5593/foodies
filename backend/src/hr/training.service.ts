@@ -334,7 +334,14 @@ export class TrainingService {
      * ⚠️ Advisory. The client chose a WARNING rather than a block (decision #16),
      * so nothing here prevents a promotion — it only records what is missing.
      */
-    async readinessFor(employeeId: number, designationId: number) {
+    async readinessFor(
+        user: HrUser,
+        employeeId: number,
+        designationId: number,
+    ) {
+        // Scoped like every other read: without this, any holder of
+        // `training:view` could probe employee ids belonging to another tenant.
+        await this.employeesService.loadScoped(user, employeeId);
         const required = await this.requirements.find({
             where: { designationId, requiredFor: 'promotion_into' },
             relations: ['program'],

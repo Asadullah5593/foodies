@@ -464,6 +464,7 @@ export class ReviewsService {
         let gaps: Array<Record<string, unknown>> = [];
         if (dto.promoted_to_designation_id) {
             const readiness = await this.training.readinessFor(
+                user,
                 cycle.employeeId,
                 dto.promoted_to_designation_id,
             );

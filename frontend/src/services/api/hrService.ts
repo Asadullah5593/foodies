@@ -345,6 +345,101 @@ export interface StationRow {
   branch: { name: string } | null;
 }
 
+export interface ReviewCycleRow {
+  id: number;
+  cycle_type: 'probation_3m' | 'quarterly' | 'ad_hoc';
+  /** False for ad-hoc. Completion metrics must count scheduled cycles only. */
+  is_scheduled: boolean;
+  ad_hoc_reason: string | null;
+  sequence_no: number | null;
+  period_from: string;
+  period_to: string;
+  due_date: string;
+  overdue: boolean;
+  status: string;
+  template_id: number | null;
+  employee: { id: number; full_name: string; employee_code: string };
+  reviewer: { id: number; name: string } | null;
+}
+
+export interface ReviewQuestion {
+  key: string;
+  label: string;
+  type: 'rating' | 'text' | 'boolean' | 'select';
+  weight?: number;
+  max?: number;
+}
+
+export interface ReviewTemplateSchema {
+  sections?: Array<{ title: string; questions: ReviewQuestion[] }>;
+}
+
+export interface ReviewDetail {
+  cycle: {
+    id: number;
+    cycle_type: string;
+    is_scheduled: boolean;
+    ad_hoc_reason: string | null;
+    period_from: string;
+    period_to: string;
+    due_date: string;
+    status: string;
+  };
+  review: {
+    id: number;
+    answers: Record<string, unknown>;
+    total_score: number;
+    max_score: number;
+    normalized_percent: number | null;
+    strengths: string | null;
+    improvements: string | null;
+    reviewer_comments: string | null;
+    outcome: string | null;
+    promoted_to_designation_id: number | null;
+    new_basic_amount: number | null;
+    effective_from: string | null;
+    training_gaps: Array<{ programName?: string; reason?: string }>;
+    status: string;
+  };
+  template: ReviewTemplateSchema;
+  employee: EmployeeDetail;
+  trainings: EmployeeTrainingRow[];
+}
+
+export interface EmployeeTrainingRow {
+  id: number;
+  program: { id: number; name?: string; category?: string | null; level?: number };
+  status: string;
+  assigned_on: string | null;
+  completed_on: string | null;
+  expires_on: string | null;
+  expiring_soon: boolean;
+  score: number | null;
+  certificate_url: string | null;
+}
+
+export interface TrainingProgramRow {
+  id: number;
+  name: string;
+  code: string;
+  category: string | null;
+  level: number;
+  durationHours: number;
+  validityMonths: number | null;
+  isMandatory: boolean;
+  isActive: boolean;
+}
+
+export interface TrainingRequirementRow {
+  id: number;
+  designationId: number;
+  programId: number;
+  requiredFor: 'promotion_into' | 'holding_role';
+  minScore: number | null;
+  program: { name: string } | null;
+  designation: { name: string } | null;
+}
+
 export type DayPart = 'full' | 'first_half' | 'second_half';
 
 export interface LeaveTypeRow {
@@ -869,6 +964,194 @@ export const hrService = {
   revokeQrCard: async (employeeId: number): Promise<{ revoked: boolean }> => {
     const { data } = await apiClient.delete(
       `/admin/hr/employees/${employeeId}/qr-card`,
+    );
+    return data;
+  },
+
+  // --- reviews --------------------------------------------------------------
+
+  listReviewCycles: async (params: {
+    status?: string;
+    employee_id?: number;
+    overdue_only?: boolean;
+  } = {}): Promise<ReviewCycleRow[]> => {
+    const { data } = await apiClient.get('/admin/hr/reviews/cycles', {
+      params: {
+        ...params,
+        overdue_only: params.overdue_only ? 1 : undefined,
+      },
+    });
+    return data;
+  },
+
+  syncReviewCycles: async (): Promise<{ created: number; employees: number }> => {
+    const { data } = await apiClient.post('/admin/hr/reviews/sync');
+    return data;
+  },
+
+  createAdHocReview: async (payload: {
+    employee_id: number;
+    ad_hoc_reason: string;
+    due_date: string;
+  }): Promise<{ id: number }> => {
+    const { data } = await apiClient.post('/admin/hr/reviews/ad-hoc', payload);
+    return data;
+  },
+
+  openReview: async (cycleId: number): Promise<ReviewDetail> => {
+    const { data } = await apiClient.get(`/admin/hr/reviews/cycles/${cycleId}`);
+    return data;
+  },
+
+  saveReviewDraft: async (
+    cycleId: number,
+    payload: {
+      answers?: Record<string, unknown>;
+      strengths?: string;
+      improvements?: string;
+      reviewer_comments?: string;
+    },
+  ): Promise<{ totalScore: number; maxScore: number; normalizedPercent: number | null }> => {
+    const { data } = await apiClient.patch(
+      `/admin/hr/reviews/cycles/${cycleId}`,
+      payload,
+    );
+    return data;
+  },
+
+  submitReview: async (
+    cycleId: number,
+    payload: {
+      outcome: string;
+      promoted_to_designation_id?: number;
+      new_basic_amount?: number;
+      effective_from?: string;
+      reviewer_comments?: string;
+    },
+  ): Promise<{ id: number; status: string; training_gaps: unknown[] }> => {
+    const { data } = await apiClient.post(
+      `/admin/hr/reviews/cycles/${cycleId}/submit`,
+      payload,
+    );
+    return data;
+  },
+
+  approveReview: async (
+    cycleId: number,
+  ): Promise<{ id: number; status: string; applied: string[] }> => {
+    const { data } = await apiClient.post(
+      `/admin/hr/reviews/cycles/${cycleId}/approve`,
+    );
+    return data;
+  },
+
+  skipReviewCycle: async (
+    cycleId: number,
+    reason: string,
+  ): Promise<{ id: number; status: string }> => {
+    const { data } = await apiClient.post(
+      `/admin/hr/reviews/cycles/${cycleId}/skip`,
+      { reason },
+    );
+    return data;
+  },
+
+  // --- training -------------------------------------------------------------
+
+  listTrainingPrograms: async (): Promise<TrainingProgramRow[]> => {
+    const { data } = await apiClient.get('/admin/hr/training/programs');
+    return data;
+  },
+
+  createTrainingProgram: async (payload: {
+    name: string;
+    category?: string;
+    level?: number;
+    duration_hours?: number;
+    validity_months?: number;
+    is_mandatory?: boolean;
+  }): Promise<{ id: number; code: string }> => {
+    const { data } = await apiClient.post('/admin/hr/training/programs', payload);
+    return data;
+  },
+
+  listEmployeeTrainings: async (employeeId: number): Promise<EmployeeTrainingRow[]> => {
+    const { data } = await apiClient.get(`/admin/hr/training/employees/${employeeId}`);
+    return data;
+  },
+
+  assignTraining: async (
+    employeeId: number,
+    programId: number,
+  ): Promise<{ id: number; restarted: boolean }> => {
+    const { data } = await apiClient.post(
+      `/admin/hr/training/employees/${employeeId}/assign`,
+      { program_id: programId },
+    );
+    return data;
+  },
+
+  recordTraining: async (
+    recordId: number,
+    payload: {
+      status: 'in_progress' | 'completed' | 'failed';
+      completed_on?: string;
+      score?: number;
+      certificate_url?: string;
+    },
+  ): Promise<{ id: number; status: string; expires_on: string | null }> => {
+    const { data } = await apiClient.patch(
+      `/admin/hr/training/records/${recordId}`,
+      payload,
+    );
+    return data;
+  },
+
+  listExpiringTrainings: async (withinDays = 30) => {
+    const { data } = await apiClient.get('/admin/hr/training/expiring', {
+      params: { within_days: withinDays },
+    });
+    return data as Array<{
+      id: number;
+      expiresOn: string;
+      program: { name: string } | null;
+      employee: { id: number; fullName: string; employeeCode: string } | null;
+    }>;
+  },
+
+  listTrainingRequirements: async (
+    designationId?: number,
+  ): Promise<TrainingRequirementRow[]> => {
+    const { data } = await apiClient.get('/admin/hr/training/requirements', {
+      params: { designation_id: designationId },
+    });
+    return data;
+  },
+
+  setTrainingRequirement: async (payload: {
+    designation_id: number;
+    program_id: number;
+    required_for?: 'promotion_into' | 'holding_role';
+    min_score?: number;
+  }): Promise<{ id: number; updated: boolean }> => {
+    const { data } = await apiClient.post('/admin/hr/training/requirements', payload);
+    return data;
+  },
+
+  removeTrainingRequirement: async (id: number): Promise<{ deleted: boolean }> => {
+    const { data } = await apiClient.delete(`/admin/hr/training/requirements/${id}`);
+    return data;
+  },
+
+  trainingReadiness: async (
+    employeeId: number,
+    designationId: number,
+  ): Promise<{
+    ready: boolean;
+    missing: Array<{ programId: number; programName: string; reason: string }>;
+  }> => {
+    const { data } = await apiClient.get(
+      `/admin/hr/training/readiness/${employeeId}/${designationId}`,
     );
     return data;
   },

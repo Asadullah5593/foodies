@@ -89,6 +89,9 @@ import RiderSupervisor from './pages/Admin/RiderHRM/RiderSupervisor';
 import Employees from './pages/Admin/HR/Employees';
 import EmployeeDetail from './pages/Admin/HR/EmployeeDetail';
 import Designations from './pages/Admin/HR/Designations';
+import Reviews from './pages/Admin/HR/Reviews';
+import ReviewDetail from './pages/Admin/HR/ReviewDetail';
+import Training from './pages/Admin/HR/Training';
 import AttendanceRegister from './pages/Admin/HR/AttendanceRegister';
 import Leaves from './pages/Admin/HR/Leaves';
 import Payroll from './pages/Admin/HR/Payroll';
@@ -401,6 +404,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { path: '/admin/hr/attendance', label: 'Attendance' },
         { path: '/admin/hr/leaves', label: 'Leaves' },
         { path: '/admin/hr/payroll', label: 'Payroll' },
+        { path: '/admin/hr/reviews', label: 'Reviews' },
+        { path: '/admin/hr/training', label: 'Training' },
         { path: '/admin/hr/settings/designations', label: 'Designations' },
       ],
     },
@@ -1219,6 +1224,9 @@ const AppRoutes: React.FC = () => {
       {/* Detail before list so longest-prefix permission matching agrees either way. */}
       <Route path="/admin/hr/payroll/:id" element={<ProtectedRoute><AdminOnlyRoute><Layout><PayrollRunDetail /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/payroll" element={<ProtectedRoute><AdminOnlyRoute><Layout><Payroll /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/reviews/:id" element={<ProtectedRoute><AdminOnlyRoute><Layout><ReviewDetail /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/reviews" element={<ProtectedRoute><AdminOnlyRoute><Layout><Reviews /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/training" element={<ProtectedRoute><AdminOnlyRoute><Layout><Training /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/settings/designations" element={<ProtectedRoute><AdminOnlyRoute><Layout><Designations /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       {/* Full-screen station, deliberately OUTSIDE ProtectedRoute: it runs on a
           device token, with nobody logged in. Staff have no user accounts, and

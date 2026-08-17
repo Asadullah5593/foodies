@@ -56,6 +56,8 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/hr/leaves': ['leaves:view'],
   // Payroll is Owner / GM / HR only — branch managers hold none of these.
   '/admin/hr/payroll': ['payroll:view'],
+  '/admin/hr/reviews': ['reviews:view'],
+  '/admin/hr/training': ['training:view'],
   '/admin/hr/audit': ['hr-audit:view'],
   '/admin/hr': ['employees:view'],
   '/admin/rider-ops': ['deliveries:view'],

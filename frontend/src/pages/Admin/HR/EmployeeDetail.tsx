@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { MdArrowBack, MdOutlineHistory, MdOutlineLock } from 'react-icons/md';
 import { hrService } from '../../../services/api/hrService';
@@ -10,6 +10,8 @@ import RecordExitModal from './RecordExitModal';
 import EmployeeSalarySection from './EmployeeSalarySection';
 import EmployeeCredentials from './EmployeeCredentials';
 import EmployeeEditModal from './EmployeeEditModal';
+import EmployeeTrainingSection from './EmployeeTrainingSection';
+import AdHocReviewModal from './AdHocReviewModal';
 import {
   CHANGE_REASON_LABELS,
   canSeeSalary,
@@ -51,12 +53,17 @@ const Section: React.FC<{ title: string; children: React.ReactNode; action?: Rea
 const EmployeeDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const employeeId = Number(id);
+  const navigate = useNavigate();
   const canEdit = useHasPermission('employees:edit');
   const canTerminate = useHasPermission('employees:terminate');
+  const canViewReviews = useHasPermission('reviews:view');
+  const canConductReviews = useHasPermission('reviews:conduct');
+  const canInitiateAdHoc = useHasPermission('reviews:initiate-adhoc');
 
   const [showAssignment, setShowAssignment] = useState(false);
   const [showExit, setShowExit] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showAdHoc, setShowAdHoc] = useState(false);
 
   const { data: employee, isLoading, isError } = useQuery({
     queryKey: ['hr-employee', employeeId],
@@ -73,6 +80,12 @@ const EmployeeDetail: React.FC = () => {
     queryKey: ['hr-employee-exit', employeeId],
     queryFn: () => hrService.getExit(employeeId),
     enabled: Number.isFinite(employeeId),
+  });
+
+  const { data: reviewCycles = [] } = useQuery({
+    queryKey: ['hr-review-cycles', employeeId],
+    queryFn: () => hrService.listReviewCycles({ employee_id: employeeId }),
+    enabled: Number.isFinite(employeeId) && canViewReviews,
   });
 
   if (isLoading) return <Loader />;
@@ -235,6 +248,97 @@ const EmployeeDetail: React.FC = () => {
             )}
           </Section>
 
+          {canViewReviews && (
+            <Section
+              title="Reviews"
+              action={
+                canInitiateAdHoc && !hasLeft ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAdHoc(true)}
+                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-gray-200 dark:hover:bg-slate-800"
+                  >
+                    Start a review
+                  </button>
+                ) : undefined
+              }
+            >
+              {reviewCycles.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  No reviews yet. The first one falls due three months after joining.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase text-gray-500 dark:text-gray-400">
+                        <th className="py-2 pr-4">Cycle</th>
+                        <th className="py-2 pr-4">Period</th>
+                        <th className="py-2 pr-4">Due</th>
+                        <th className="py-2 pr-4">Status</th>
+                        <th className="py-2" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                      {reviewCycles.map((c) => (
+                        <tr key={c.id}>
+                          <td className="py-2 pr-4">
+                            <span className="text-gray-800 dark:text-gray-200">
+                              {c.cycle_type === 'probation_3m'
+                                ? 'Probation'
+                                : c.cycle_type === 'quarterly'
+                                  ? 'Quarterly'
+                                  : 'Ad-hoc'}
+                              {c.is_scheduled && c.sequence_no != null && ` #${c.sequence_no}`}
+                            </span>
+                            {!c.is_scheduled && (
+                              <span
+                                className="ml-1 text-xs text-purple-700 dark:text-purple-300"
+                                title="Raised out of cycle — does not affect the cadence"
+                              >
+                                (extra)
+                              </span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap py-2 pr-4 text-gray-600 dark:text-gray-400">
+                            {c.period_from} → {c.period_to}
+                          </td>
+                          <td className="whitespace-nowrap py-2 pr-4">
+                            <span
+                              className={
+                                c.overdue
+                                  ? 'font-medium text-red-600 dark:text-red-400'
+                                  : 'text-gray-600 dark:text-gray-400'
+                              }
+                            >
+                              {c.due_date}
+                            </span>
+                          </td>
+                          <td className="py-2 pr-4 text-gray-600 dark:text-gray-400">
+                            {c.status.replace('_', ' ')}
+                          </td>
+                          <td className="py-2 text-right">
+                            {canConductReviews && (
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/admin/hr/reviews/${c.id}`)}
+                                className="text-xs text-blue-600 hover:underline"
+                              >
+                                Open
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
+          )}
+
+          <EmployeeTrainingSection employeeId={employeeId} />
+
           {exit && (
             <Section title="Exit &amp; clearance">
               <dl className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -378,6 +482,9 @@ const EmployeeDetail: React.FC = () => {
           dateOfJoining={employee.date_of_joining}
           onClose={() => setShowExit(false)}
         />
+      )}
+      {showAdHoc && (
+        <AdHocReviewModal employeeId={employeeId} onClose={() => setShowAdHoc(false)} />
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import {
     BadRequestException,
     ForbiddenException,
     Injectable,
+    Logger,
     NotFoundException,
     UnauthorizedException,
 } from '@nestjs/common';
@@ -19,6 +20,7 @@ import { AttendanceStation } from '../entities/attendance-station.entity';
 import { Permissions } from '../roles/permissions.dto';
 import { AttendanceRecomputeService } from './attendance-recompute.service';
 import { HrAuditService } from './hr-audit.service';
+import { MediaStorageService } from '../media/media-storage.service';
 import { hasPermission, HrUser } from './employee-scope';
 import { PunchDto, ManagerAttestDto, SetPinDto } from './dto/attendance.dto';
 import { canPunch, pairSessions } from './attendance-rules';
@@ -28,6 +30,8 @@ const PIN_MAX_ATTEMPTS = 5;
 
 @Injectable()
 export class AttendanceService {
+    private readonly logger = new Logger(AttendanceService.name);
+
     constructor(
         @InjectRepository(Employee)
         private readonly employees: Repository<Employee>,
@@ -45,6 +49,7 @@ export class AttendanceService {
         private readonly stations: Repository<AttendanceStation>,
         private readonly recompute: AttendanceRecomputeService,
         private readonly audit: HrAuditService,
+        private readonly mediaStorage: MediaStorageService,
     ) {}
 
     // ------------------------------------------------------------- policy
@@ -1093,19 +1098,45 @@ export class AttendanceService {
             where: { isActive: true },
         });
         let purged = 0;
+
         for (const policy of policies) {
             const cutoff = new Date(
                 Date.now() - policy.photoRetentionDays * 86_400_000,
             );
-            const result = await this.punches
-                .createQueryBuilder()
-                .update()
-                .set({ photoUrl: null })
-                .where('tenant_id = :tenantId', { tenantId: policy.tenantId })
-                .andWhere('photo_url IS NOT NULL')
-                .andWhere('punched_at < :cutoff', { cutoff })
-                .execute();
-            purged += result.affected ?? 0;
+            // Bounded per run so one night's job cannot stall on a huge backlog;
+            // the next run picks up where this one stopped.
+            const stale = await this.punches
+                .createQueryBuilder('p')
+                .where('p.tenantId = :tenantId', { tenantId: policy.tenantId })
+                .andWhere('p.photoUrl IS NOT NULL')
+                .andWhere('p.punchedAt < :cutoff', { cutoff })
+                .select(['p.id', 'p.photoUrl'])
+                .limit(500)
+                .getMany();
+
+            for (const punch of stale) {
+                try {
+                    await this.mediaStorage.deleteManagedObjectByUrl(
+                        punch.photoUrl,
+                        'attendance',
+                    );
+                } catch (err) {
+                    this.logger.warn(
+                        `Could not delete punch photo for punch ${punch.id}: ${
+                            err instanceof Error ? err.message : String(err)
+                        }`,
+                    );
+                }
+                // Cleared even if the object delete failed: a file we cannot
+                // reach is better unlinked than left referenced by a record
+                // that claims to have been purged.
+                await this.punches.update({ id: punch.id }, { photoUrl: null });
+                purged += 1;
+            }
+        }
+
+        if (purged > 0) {
+            this.logger.log(`Purged ${purged} punch photo(s) past retention`);
         }
         return purged;
     }
