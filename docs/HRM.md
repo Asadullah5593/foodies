@@ -46,6 +46,10 @@ This codebase already uses two of these words for something else. Using them loo
 | 17 | Approvals | `hr_approval_rules` — configurable thresholds, permission-gated |
 | 18 | Reviews | Scheduled cycles anchored to joining date. Ad-hoc reviews fully independent, identical consequences |
 | 19 | Data | Fresh start. No historical migration |
+| 20 | Nav | New **top-level "HR"** admin section. Rider HRM stays separate until Phase 4 folds rider pay in |
+| 21 | Backfill | Generate employee records from existing `branch_users` logins, with a placeholder joining date HR must correct. Guarantees the user↔employee link is right; nobody is paid off it until HR completes the data |
+| 22 | Terminals | **No terminal registry.** Punches bind to the branch; burst detection groups by `pos_user_id` instead of device |
+| 23 | Media | S3 + CloudFront confirmed live in production, so punch photos use the existing media pipeline |
 
 ---
 
@@ -107,7 +111,7 @@ Optional per date. Built now, used later — see §5.1.
 ### 3.3 Attendance
 
 **`attendance_punches`** — raw, immutable
-`id, tenant_id, employee_id, branch_id, punch_type, punched_at (server time, UTC), source, method, terminal_id, pos_user_id (nullable), photo_url (nullable), latitude, longitude, is_manual, created_by (nullable), note, created_at`
+`id, tenant_id, employee_id, branch_id, punch_type, punched_at (server time, UTC), source, method, pos_user_id (nullable), photo_url (nullable), latitude, longitude, is_manual, created_by (nullable), note, created_at`
 
 `punch_type` ∈ `in | out | break_start | break_end`
 `source` ∈ `pos | manager_attestation | admin_manual | rider_app`
@@ -131,11 +135,11 @@ Unique on `(employee_id, work_date)`. Recomputed idempotently — see §6.
 
 Append-only. A rejected or superseded exception stays in the table.
 
-**`attendance_capture_policies`** — `id, tenant_id, branch_id (nullable), primary_method, require_photo (bool), allow_manager_attestation (bool), duplicate_window_seconds, allow_off_terminal_punch (bool), photo_retention_days, is_active`
+**`attendance_capture_policies`** — `id, tenant_id, branch_id (nullable), primary_method, require_photo (bool), allow_manager_attestation (bool), duplicate_window_seconds, photo_retention_days, is_active`
 
 `primary_method` ∈ `pin | qr_card` (phone OTP deliberately excluded from v1; the enum leaves room).
 
-**`pos_terminals`** — `id, tenant_id, branch_id, terminal_key, label, registered_by, registered_at, last_seen_at, is_active` — needed to bind a punch to a physical till.
+> **No terminal registry.** Punches bind to the **branch** only (decision #22). A `pos_terminals` table was specced and then dropped: it would have required a rollout step (naming every till) for a signal that `pos_user_id` largely already carries. Burst detection moves from per-device to **per (branch, pos_user_id)**, which is arguably the better grouping anyway — "this cashier's session recorded 11 punches in 90 seconds" is the finding worth acting on, not "this tablet did".
 
 ### 3.4 Leaves, offs and holidays
 
@@ -494,14 +498,14 @@ A POS tab plus a standalone `/attendance` route, so a tablet can be parked at th
 ### 11.2 Controls
 
 - Server timestamps only.
-- Every punch is bound to `branch_id` + `terminal_id`, and stamps `pos_user_id` — whichever till session was on screen. If one cashier punches in the whole team, the data shows it.
+- Every punch is bound to `branch_id` and stamps `pos_user_id` — whichever till session was on screen. If one cashier punches in the whole team, the data shows it. There is no per-device binding (decision #22).
 - Duplicate-punch suppression, default 60 seconds.
 - Manager-attested punches are always tagged `source = manager_attestation` and always appear in the exceptions report. They are never silently equivalent to a self-punch.
 - Punch photos are retained **90 days**, then purged. Indefinite retention of staff photographs is a storage cost and a privacy exposure with no operational benefit.
 
 ### 11.3 Exceptions report — a first-class screen
 
-Surfaces: manager-attested punches, photo-less punches where photo is required, orphan punches, missing clock-outs, punches outside the rostered window, riders who checked in on the app but never punched, and **burst detection** (many punches from one terminal within a short window — one person punching for everybody).
+Surfaces: manager-attested punches, photo-less punches where photo is required, orphan punches, missing clock-outs, punches outside the rostered window, riders who checked in on the app but never punched, and **burst detection** — many punches under one `pos_user_id` at one branch within a short window, i.e. one person punching for everybody.
 
 ---
 
@@ -654,7 +658,7 @@ Employees follow the existing scoping model exactly: `tenantId` + `allowedBranch
 |---|---|---|
 | **0** | This document | done |
 | **1** | Employee master, designations, assignments, documents, events timeline, Employee 360, **exit record + clearance**, `hr_manager` role, RBAC, backfill from `branch_users` | ~1.5 weeks |
-| **2** | Attendance: capture policies, PIN/QR/photo/attestation, POS station, terminals, punches → `attendance_days` recompute, schedules + roster tables, work-date rule, daily register, adjustments, exceptions report | ~2 weeks |
+| **2** | Attendance: capture policies, PIN/QR/photo/attestation, POS station, punches → `attendance_days` recompute, `branches.timezone` backfill, schedules + roster tables, work-date rule, daily register, adjustments, exceptions report | ~2 weeks |
 | **3** | Leave types, balances, requests → attendance, 4-offs policy, public holidays | ~1 week |
 | **4** | Salary structures, deduction rules, OT policies + approval, waivers, payroll run state machine, adjustments, payslip PDF, **off encashment, exit settlement**, **rider convergence + migration** | ~2.5 weeks |
 | **5** | Training programs and records, review templates, cycle scheduler, review form, outcome application | ~1.5 weeks |
