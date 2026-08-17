@@ -23,6 +23,13 @@ import {
 } from './attendance.controller';
 import { AttendanceService } from './attendance.service';
 import { AttendanceRecomputeService } from './attendance-recompute.service';
+import { LeaveType } from '../entities/leave-type.entity';
+import { LeaveBalance } from '../entities/leave-balance.entity';
+import { LeaveRequest } from '../entities/leave-request.entity';
+import { PublicHoliday } from '../entities/public-holiday.entity';
+import { HolidayPolicy } from '../entities/holiday-policy.entity';
+import { LeavesController, LeaveSettingsController } from './leaves.controller';
+import { LeavesService } from './leaves.service';
 import {
     EmployeeExitsController,
     EmployeesController,
@@ -63,6 +70,11 @@ import { HrAuditService } from './hr-audit.service';
             AttendanceCapturePolicy,
             WorkScheduleTemplate,
             EmployeeSchedule,
+            LeaveType,
+            LeaveBalance,
+            LeaveRequest,
+            PublicHoliday,
+            HolidayPolicy,
         ]),
     ],
     controllers: [
@@ -72,6 +84,8 @@ import { HrAuditService } from './hr-audit.service';
         HrAuditController,
         AttendanceController,
         AttendancePinController,
+        LeavesController,
+        LeaveSettingsController,
     ],
     providers: [
         EmployeesService,
@@ -80,6 +94,7 @@ import { HrAuditService } from './hr-audit.service';
         HrAuditService,
         AttendanceService,
         AttendanceRecomputeService,
+        LeavesService,
     ],
     exports: [EmployeesService, HrAuditService, AttendanceService],
 })

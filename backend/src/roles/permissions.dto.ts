@@ -346,6 +346,13 @@ export const Permissions = {
     ATTENDANCE_RECOMPUTE: 'attendance:recompute',
     OVERTIME_VIEW: 'overtime:view',
     OVERTIME_APPROVE: 'overtime:approve',
+
+    // — Leaves & holidays (Phase 3) —
+    LEAVES_VIEW: 'leaves:view',
+    LEAVES_REQUEST: 'leaves:request',
+    LEAVES_APPROVE: 'leaves:approve',
+    /** Leave types, holiday policy and the public holiday calendar. */
+    HOLIDAYS_MANAGE: 'holidays:manage',
 } as const;
 
 export type PermissionName = (typeof Permissions)[keyof typeof Permissions];
