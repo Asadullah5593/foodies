@@ -86,6 +86,9 @@ import RiderOpsMetrics from './pages/Admin/RiderHRM/RiderOpsMetrics';
 import RiderPoolSharing from './pages/Admin/RiderHRM/RiderPoolSharing';
 import RequestRiders from './pages/Admin/RiderHRM/RequestRiders';
 import RiderSupervisor from './pages/Admin/RiderHRM/RiderSupervisor';
+import Employees from './pages/Admin/HR/Employees';
+import EmployeeDetail from './pages/Admin/HR/EmployeeDetail';
+import Designations from './pages/Admin/HR/Designations';
 import LoyaltySettings from './pages/Admin/LoyaltySettings';
 import DeliveryTiers from './pages/Admin/DeliveryTiers';
 import BusinessSettings from './pages/Admin/BusinessSettings';
@@ -306,7 +309,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   type MenuLink = { type: 'link'; path: string; label: string; icon: IconType };
   type MenuGroup = {
     type: 'group';
-    id: 'inventory' | 'procurement' | 'recipes' | 'rider-hrm' | 'cms' | 'reports';
+    id: 'inventory' | 'procurement' | 'recipes' | 'rider-hrm' | 'hr' | 'cms' | 'reports';
     label: string;
     icon: IconType;
     children: Array<{ path: string; label: string }>;
@@ -379,6 +382,18 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         // { path: '/admin/rider-hrm/comp-plans', label: 'Compensation plans' },
         // { path: '/admin/rider-hrm/payroll', label: 'Payroll runs' },
         // { path: '/admin/rider-hrm/metrics', label: 'Ops metrics' },
+      ],
+    },
+    {
+      // Employee HRM — people, not dispatch. Kept separate from Rider HRM
+      // above; riders appear in both until Phase 4 folds rider pay in here.
+      type: 'group',
+      id: 'hr',
+      label: 'HR',
+      icon: MdOutlineBadge,
+      children: [
+        { path: '/admin/hr/employees', label: 'Employees' },
+        { path: '/admin/hr/settings/designations', label: 'Designations' },
       ],
     },
     {
@@ -1188,6 +1203,10 @@ const AppRoutes: React.FC = () => {
       <Route path="/admin/rider-hrm/supervisor" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderSupervisor /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/profiles" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderProfilesTable /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/pool-sharing" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderPoolSharing /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      {/* Employee HRM (docs/HRM.md) — people, as opposed to Rider HRM's dispatch. */}
+      <Route path="/admin/hr/employees/:id" element={<ProtectedRoute><AdminOnlyRoute><Layout><EmployeeDetail /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/employees" element={<ProtectedRoute><AdminOnlyRoute><Layout><Employees /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/settings/designations" element={<ProtectedRoute><AdminOnlyRoute><Layout><Designations /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/request-riders" element={<ProtectedRoute><AdminOnlyRoute><Layout><RequestRiders /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/attendance" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderAttendance /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/breaks" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderBreaks /></Layout></AdminOnlyRoute></ProtectedRoute>} />

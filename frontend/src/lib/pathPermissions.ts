@@ -48,6 +48,12 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   // any-of gate below (which shifts:manage till staff would pass).
   '/admin/rider-hrm/profiles': ['rider-hrm:view', 'rider-profiles:edit'],
   '/admin/rider-hrm': ['deliveries:view', 'shifts:manage', 'rider-hrm:view'],
+  // Employee HRM. Settings need hr-settings:manage; the roster and the 360 page
+  // need only employees:view, which branch managers hold. Salary data inside the
+  // 360 payload is gated separately server-side by salary:view.
+  '/admin/hr/settings/designations': ['hr-settings:manage', 'employees:view'],
+  '/admin/hr/audit': ['hr-audit:view'],
+  '/admin/hr': ['employees:view'],
   '/admin/rider-ops': ['deliveries:view'],
   '/admin/shifts': ['shifts:manage', 'shifts:view'],
   '/admin/reports': ['reports:view'],
@@ -156,6 +162,7 @@ const ORDERED_LANDING_PATHS = [
   '/admin/deliveries',
   '/admin/rider-hrm',
   '/admin/rider-hrm/supervisor',
+  '/admin/hr/employees',
   '/admin/shifts',
   '/admin/reports',
   '/admin/inventory',
