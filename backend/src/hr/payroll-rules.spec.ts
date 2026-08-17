@@ -6,6 +6,7 @@ import {
     hourlyRate,
     PeriodConfig,
     proratedBasic,
+    proratedOffEntitlement,
     SalaryConfig,
 } from './payroll-rules';
 
@@ -121,15 +122,65 @@ describe('hourlyRate', () => {
 
 describe('proratedBasic', () => {
     it('pays a full month in full', () => {
-        expect(proratedBasic(30000, 31, 31)).toBe(30000);
+        expect(proratedBasic(30000, 31, 31, 1000)).toBe(30000);
     });
 
-    it('halves it for a mid-month joiner', () => {
-        expect(proratedBasic(30000, 15, 30)).toBe(15000);
+    /**
+     * Regression: proration must use the SAME daily rate as deductions.
+     *
+     * Under fixed_30 a day is worth basic/30 = 1000, so 15 days is 15,000. The
+     * first implementation divided by days-in-month instead and paid 14,516 for
+     * a half-month leaver while charging 1,000 a day elsewhere on the same
+     * payslip — a discrepancy the employee spots and nobody can justify.
+     */
+    it('pays 15 days at the fixed_30 daily rate, not basic × 15/31', () => {
+        expect(proratedBasic(30000, 15, 31, 1000)).toBe(15000);
+        expect(proratedBasic(30000, 15, 31, 1000)).not.toBeCloseTo(14516.13, 2);
     });
 
-    it('never exceeds the full amount', () => {
-        expect(proratedBasic(30000, 40, 30)).toBe(30000);
+    it('a one-week leaver gets exactly seven days', () => {
+        expect(proratedBasic(30000, 7, 31, 1000)).toBe(7000);
+    });
+
+    it('a single day gets one day', () => {
+        expect(proratedBasic(30000, 1, 31, 1000)).toBe(1000);
+    });
+
+    it('is capped at the full basic even in a 31-day month', () => {
+        // 31 × 1000 would be 31,000; nobody is paid more than their salary.
+        expect(proratedBasic(30000, 31, 31, 1000)).toBe(30000);
+        expect(proratedBasic(30000, 40, 30, 1000)).toBe(30000);
+    });
+
+    it('honours a different daily-rate basis', () => {
+        // days_in_month in a 28-day February: a day is worth basic/28.
+        expect(proratedBasic(30000, 14, 28, 30000 / 28)).toBe(15000);
+    });
+
+    it('pays nothing for zero days employed', () => {
+        expect(proratedBasic(30000, 0, 31, 1000)).toBe(0);
+    });
+});
+
+describe('proratedOffEntitlement', () => {
+    it('gives the full entitlement for a full month', () => {
+        expect(proratedOffEntitlement(4, 31, 31)).toBe(4);
+    });
+
+    /**
+     * Regression: a mid-month leaver was credited all four offs and had the
+     * unused ones encashed, paying for time never worked.
+     */
+    it('halves the entitlement for a half-month leaver', () => {
+        expect(proratedOffEntitlement(4, 15, 31)).toBe(2);
+    });
+
+    it('gives half a day to a one-week employee', () => {
+        expect(proratedOffEntitlement(4, 7, 31)).toBe(1);
+    });
+
+    it('never exceeds the monthly entitlement', () => {
+        expect(proratedOffEntitlement(4, 40, 31)).toBe(4);
     });
 });
 
@@ -430,5 +481,78 @@ describe('computePayrollLines — floors', () => {
         expect(item(result, 'basic')?.amount).toBe(15000);
         expect(item(result, 'absence')?.amount).toBe(1000);
         expect(result.netPayable).toBe(14000);
+    });
+});
+
+/**
+ * The case the client asked about directly: hired and fired inside one month.
+ * Both figures must be consistent with the daily rate the rest of the payslip
+ * uses, or the settlement is indefensible.
+ */
+describe('computePayrollLines — hired and terminated mid-month', () => {
+    const partial = (employedDays: number) =>
+        run({
+            period: {
+                daysInMonth: 31,
+                employedDays,
+                offsEntitled: 4,
+                offsTaken: 0,
+                encashUnusedOffs: true,
+            },
+            facts: { presentDays: employedDays, weeklyOffDays: 0 },
+        });
+
+    it('joined 1st, terminated 15th: 15 days basic + 2 earned offs', () => {
+        const result = partial(15);
+        expect(item(result, 'basic')?.amount).toBe(15000);
+        expect(item(result, 'off_encashment')?.amount).toBe(2000);
+        expect(result.netPayable).toBe(17000);
+    });
+
+    it('terminated after one week: 7 days basic + 1 earned off', () => {
+        const result = partial(7);
+        expect(item(result, 'basic')?.amount).toBe(7000);
+        expect(item(result, 'off_encashment')?.amount).toBe(1000);
+        expect(result.netPayable).toBe(8000);
+    });
+
+    it('terminated after three days: 3 days basic + half an earned off', () => {
+        const result = partial(3);
+        expect(item(result, 'basic')?.amount).toBe(3000);
+        // 4 × 3/31 = 0.387, rounded to the nearest half day = 0.5.
+        expect(item(result, 'off_encashment')?.amount).toBe(500);
+        expect(result.netPayable).toBe(3500);
+    });
+
+    it('terminated on the first day earns no off at all', () => {
+        // 4 × 1/31 = 0.13 → rounds to zero, so nothing is encashed.
+        const result = partial(1);
+        expect(item(result, 'basic')?.amount).toBe(1000);
+        expect(item(result, 'off_encashment')).toBeUndefined();
+        expect(result.netPayable).toBe(1000);
+    });
+
+    it('marks the encashment line as prorated so the payslip explains itself', () => {
+        const result = partial(15);
+        expect(item(result, 'off_encashment')?.calcMeta).toMatchObject({
+            offs_entitled: 4,
+            offs_earned: 2,
+            prorated: true,
+        });
+    });
+
+    it('a leaver who already took their offs gets no encashment', () => {
+        const result = run({
+            period: {
+                daysInMonth: 31,
+                employedDays: 15,
+                offsEntitled: 4,
+                offsTaken: 2,
+                encashUnusedOffs: true,
+            },
+            facts: { presentDays: 13, paidLeaveDays: 2, weeklyOffDays: 0 },
+        });
+        expect(item(result, 'off_encashment')).toBeUndefined();
+        expect(item(result, 'basic')?.amount).toBe(15000);
     });
 });

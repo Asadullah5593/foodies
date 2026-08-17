@@ -129,18 +129,45 @@ export function hourlyRate(
 /**
  * Basic pay, prorated for anyone who joined or left mid-period.
  *
- * A joiner on the 25th is not owed a full month. Proration is by DAYS EMPLOYED,
- * independent of attendance — absence is deducted separately, and doing both
- * from the same figure would charge twice for the same day.
+ * ⚠️ Prorated at the SAME daily rate used for deductions, then capped at the
+ * full basic — not by `employedDays / daysInMonth`. Those two differ: under the
+ * agreed `fixed_30` basis a day is worth basic/30, so 15 days must be 15 × that
+ * rate. Dividing by a 31-day month instead paid 14,516 where the rest of the
+ * payslip charges 1,000 a day, which is the kind of discrepancy an employee
+ * spots immediately and cannot be explained.
+ *
+ * Proration is by DAYS EMPLOYED and is independent of attendance — absence is
+ * deducted separately, and doing both from one figure would charge a mid-month
+ * joiner twice for the same day.
  */
 export function proratedBasic(
     basicAmount: number,
     employedDays: number,
     daysInMonth: number,
+    dailyRateForPeriod: number,
+): number {
+    if (daysInMonth <= 0 || basicAmount <= 0) return 0;
+    if (employedDays >= daysInMonth) return round2(basicAmount);
+    const days = Math.max(0, employedDays);
+    return round2(Math.min(basicAmount, days * dailyRateForPeriod));
+}
+
+/**
+ * Monthly off entitlement earned by a partial month.
+ *
+ * A leaver on the 15th has not earned four offs, and crediting them all four —
+ * then encashing the unused ones — pays for time never worked. Rounded to the
+ * nearest half day so it stays in the same units as leave itself.
+ */
+export function proratedOffEntitlement(
+    offsPerMonth: number,
+    employedDays: number,
+    daysInMonth: number,
 ): number {
     if (daysInMonth <= 0) return 0;
+    if (employedDays >= daysInMonth) return offsPerMonth;
     const ratio = Math.min(1, Math.max(0, employedDays / daysInMonth));
-    return round2(basicAmount * ratio);
+    return Math.round(offsPerMonth * ratio * 2) / 2;
 }
 
 /** Days of pay lost to absence, half days and unpaid leave. */
@@ -180,6 +207,7 @@ export function computePayrollLines(input: {
         salary.basicAmount,
         period.employedDays,
         period.daysInMonth,
+        daily,
     );
     items.push({
         componentKey: 'basic',
@@ -254,8 +282,15 @@ export function computePayrollLines(input: {
         });
     }
 
+    // Entitlement is prorated first: a mid-month leaver has not earned a full
+    // month of offs, and encashing all four would pay for time never worked.
+    const offsEarned = proratedOffEntitlement(
+        period.offsEntitled,
+        period.employedDays,
+        period.daysInMonth,
+    );
     const encashableOffs = period.encashUnusedOffs
-        ? Math.max(0, period.offsEntitled - period.offsTaken)
+        ? Math.max(0, offsEarned - period.offsTaken)
         : 0;
     if (encashableOffs > 0) {
         const amount = round2(encashableOffs * daily);
@@ -270,7 +305,9 @@ export function computePayrollLines(input: {
                 // Intentional client policy: offs are paid, do not carry
                 // forward, AND are encashed if unused.
                 offs_entitled: period.offsEntitled,
+                offs_earned: offsEarned,
                 offs_taken: period.offsTaken,
+                prorated: offsEarned < period.offsEntitled,
             },
         });
     }
