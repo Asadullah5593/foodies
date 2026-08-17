@@ -116,6 +116,9 @@ export interface EmployeeDetail {
   leaving_reason: string | null;
   rehire_eligible: boolean | null;
   has_pin: boolean;
+  /** Readable and reprintable; the PIN is hashed and is not. */
+  qr_token: string | null;
+  qr_token_issued_at: string | null;
   bank_name?: string | null;
   account_title?: string | null;
   account_number_iban?: string | null;
@@ -665,13 +668,20 @@ export const hrService = {
 
   computePayrollRun: async (
     id: number,
+    projectFullPeriod = false,
   ): Promise<{
     id: number;
     status: string;
     lines: number;
     skipped: Array<{ employee: string; reason: string }>;
+    as_of: string;
+    projected_full_period: boolean;
   }> => {
-    const { data } = await apiClient.post(`/admin/hr/payroll/runs/${id}/compute`);
+    const { data } = await apiClient.post(
+      `/admin/hr/payroll/runs/${id}/compute`,
+      {},
+      { params: projectFullPeriod ? { project_full_period: 1 } : {} },
+    );
     return data;
   },
 

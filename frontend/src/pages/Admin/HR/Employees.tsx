@@ -167,7 +167,7 @@ const Employees: React.FC = () => {
             <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
               <thead className="bg-gray-50 dark:bg-slate-800">
                 <tr>
-                  {['Code', 'Name', 'Designation', 'Branch', 'Brand', 'Joined', 'Status'].map((h) => (
+                  {['#', 'Code', 'Name', 'Designation', 'Branch', 'Brand', 'Joined', 'Status', ''].map((h) => (
                     <th
                       key={h}
                       className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400"
@@ -178,8 +178,13 @@ const Employees: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 bg-white dark:divide-slate-700 dark:bg-slate-900">
-                {rows.map((e) => (
+                {rows.map((e, idx) => (
                   <tr key={e.id} className="hover:bg-gray-50 dark:hover:bg-slate-800">
+                    {/* Running number across pages, so "the 27th row" means
+                        something when someone reads it out. */}
+                    <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-400">
+                      {(page - 1) * PAGE_SIZE + idx + 1}
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
                       {e.employee_code}
                     </td>
@@ -220,6 +225,16 @@ const Employees: React.FC = () => {
                     </td>
                     <td className="px-4 py-3">
                       <span className={statusBadgeClass(e.status)}>{statusLabel(e.status)}</span>
+                    </td>
+                    {/* An explicit action: relying on the name being a link is
+                        not discoverable, and this is where salary is set. */}
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      <Link
+                        to={`/admin/hr/employees/${e.id}`}
+                        className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-gray-300 dark:hover:bg-slate-800"
+                      >
+                        Open / salary
+                      </Link>
                     </td>
                   </tr>
                 ))}

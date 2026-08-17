@@ -9,6 +9,7 @@ import ChangeAssignmentModal from './ChangeAssignmentModal';
 import RecordExitModal from './RecordExitModal';
 import EmployeeSalarySection from './EmployeeSalarySection';
 import EmployeeCredentials from './EmployeeCredentials';
+import EmployeeEditModal from './EmployeeEditModal';
 import {
   CHANGE_REASON_LABELS,
   canSeeSalary,
@@ -55,6 +56,7 @@ const EmployeeDetail: React.FC = () => {
 
   const [showAssignment, setShowAssignment] = useState(false);
   const [showExit, setShowExit] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
 
   const { data: employee, isLoading, isError } = useQuery({
     queryKey: ['hr-employee', employeeId],
@@ -115,7 +117,16 @@ const EmployeeDetail: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => setShowEdit(true)}
+              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-gray-300 dark:hover:bg-slate-800"
+            >
+              Edit details
+            </button>
+          )}
           {canEdit && !hasLeft && (
             <button
               type="button"
@@ -313,7 +324,10 @@ const EmployeeDetail: React.FC = () => {
             <Section title="Attendance credentials">
               <EmployeeCredentials
                 employeeId={employeeId}
+                employeeName={employee.full_name}
+                employeeCode={employee.employee_code}
                 hasPin={employee.has_pin}
+                qrToken={employee.qr_token}
               />
             </Section>
           )}
@@ -353,6 +367,9 @@ const EmployeeDetail: React.FC = () => {
           designations={designations}
           onClose={() => setShowAssignment(false)}
         />
+      )}
+      {showEdit && (
+        <EmployeeEditModal employee={employee} onClose={() => setShowEdit(false)} />
       )}
       {showExit && (
         <RecordExitModal

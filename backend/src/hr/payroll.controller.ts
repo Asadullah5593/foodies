@@ -85,13 +85,18 @@ export class PayrollController {
     @ApiOperation({
         summary: 'Compute or recompute every line',
         description:
-            'Freely repeatable while the run is draft or computed. Lines are rebuilt from scratch so a recompute cannot leave stale figures behind.',
+            'Freely repeatable while the run is draft or computed; lines are rebuilt from scratch. By default pay is earned only up to TODAY, so a mid-month run shows what has been earned so far rather than a full month. Pass project_full_period=1 to project the whole period instead, for budgeting.',
     })
     compute(
         @CurrentUser() user: HrUser,
         @Param('id', ParseIntPipe) id: number,
+        @Query('project_full_period') projectFullPeriod?: string,
     ) {
-        return this.payroll.compute(user, id);
+        return this.payroll.compute(
+            user,
+            id,
+            projectFullPeriod === '1' || projectFullPeriod === 'true',
+        );
     }
 
     @Post('runs/:id/approve')

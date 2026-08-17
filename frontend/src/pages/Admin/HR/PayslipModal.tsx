@@ -112,7 +112,7 @@ const PayslipModal: React.FC<Props> = ({ lineId, onClose, onAdjusted }) => {
     'w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-gray-100';
 
   return (
-    <Modal isOpen onClose={onClose} title="Payslip" size="large">
+    <Modal isOpen onClose={onClose} title="Payslip" size="xlarge">
       {isLoading || !slip ? (
         <Loader />
       ) : (

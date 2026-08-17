@@ -226,16 +226,23 @@ export function computePayrollLines(input: {
     const { facts, salary, period } = input;
     const items: PayrollLineItem[] = [];
 
-    const daily = round2(
-        dailyRate(salary.basicAmount, salary.dailyRateBasis, period),
+    // Full precision for arithmetic; rounded only when displayed or totalled.
+    // Rounding the rate first and then multiplying produced 4 × 1666.67 =
+    // 6666.68 where the true figure is 6666.67 — a one-paisa drift that is
+    // exactly the kind of thing an employee notices and cannot be explained.
+    const dailyExact = dailyRate(
+        salary.basicAmount,
+        salary.dailyRateBasis,
+        period,
     );
+    const daily = round2(dailyExact);
 
     // --- earnings ---------------------------------------------------------
     const basic = proratedBasic(
         salary.basicAmount,
         period.employedDays,
         period.daysInMonth,
-        daily,
+        dailyExact,
     );
     items.push({
         componentKey: 'basic',
@@ -273,7 +280,7 @@ export function computePayrollLines(input: {
     }
 
     if (facts.approvedOvertimeMinutes > 0) {
-        const hourly = hourlyRate(daily, salary.scheduledMinutesPerDay);
+        const hourly = hourlyRate(dailyExact, salary.scheduledMinutesPerDay);
         const hours = facts.approvedOvertimeMinutes / 60;
         const amount = round2(hours * hourly * salary.overtimeRateMultiplier);
         items.push({
@@ -321,7 +328,7 @@ export function computePayrollLines(input: {
         ? Math.max(0, offsEarned - period.offsTaken)
         : 0;
     if (encashableOffs > 0) {
-        const amount = round2(encashableOffs * daily);
+        const amount = round2(encashableOffs * dailyExact);
         items.push({
             componentKey: 'off_encashment',
             componentName: 'Unused off encashment',
@@ -343,7 +350,7 @@ export function computePayrollLines(input: {
     // --- deductions --------------------------------------------------------
     const absenceDays = absenceDeductionDays(facts);
     if (absenceDays > 0) {
-        const amount = round2(absenceDays * daily);
+        const amount = round2(absenceDays * dailyExact);
         items.push({
             componentKey: 'absence',
             componentName: 'Absence & unpaid leave',
@@ -361,7 +368,7 @@ export function computePayrollLines(input: {
 
     const lateDays = cumulativeLateDeduction(facts.lateCount);
     if (lateDays > 0) {
-        const amount = round2(lateDays * daily);
+        const amount = round2(lateDays * dailyExact);
         items.push({
             componentKey: 'late',
             componentName: 'Late arrivals',

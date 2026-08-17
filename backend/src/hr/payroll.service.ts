@@ -125,18 +125,35 @@ export class PayrollService {
     }
 
     /**
-     * Compute (or recompute) every line in the run.
+     * Compute (or recompute) every line in the run. Freely repeatable while the
+     * run is draft or computed — nothing is final until approval.
      *
-     * Freely repeatable while the run is draft or computed — the whole point of
-     * the state machine is that nothing is final until approval.
+     * `projectFullPeriod` decides what a MID-MONTH run means:
+     *
+     *  - false (default): pay is earned only up to today. Running payroll on the
+     *    17th shows 17 days, not a full month — otherwise the screen states that
+     *    someone has earned salary for days they have not worked yet.
+     *  - true: project the whole period as if it were fully worked, for
+     *    budgeting "what will this month cost".
+     *
+     * Which one was used is written to `rule_snapshot`, so a payslip can always
+     * say what it was measuring.
      */
-    async compute(user: HrUser, runId: number) {
+    async compute(user: HrUser, runId: number, projectFullPeriod = false) {
         const run = await this.loadRun(user, runId);
         if (!['draft', 'computed'].includes(run.status)) {
             throw new BadRequestException(
                 `A ${run.status} run cannot be recomputed. Reverse it first.`,
             );
         }
+
+        const today = new Date().toISOString().slice(0, 10);
+        // The last day this run counts as earned.
+        const asOf = projectFullPeriod
+            ? run.periodTo
+            : run.periodTo < today
+              ? run.periodTo
+              : today;
 
         const employees = await this.employeesInScope(run);
         const otPolicy = await this.resolveOvertimePolicy(
@@ -205,11 +222,29 @@ export class PayrollService {
                 });
 
                 const daysInMonth = daysBetween(run.periodFrom, run.periodTo);
+                // Earned only up to `asOf`, so a mid-month run cannot show a
+                // full month's pay.
                 const employedDays = this.employedDaysInPeriod(
                     employee,
                     run.periodFrom,
-                    run.periodTo,
+                    asOf,
                 );
+
+                // Working days in the counted window with NO attendance record
+                // at all. Without this they are invisible and the employee is
+                // paid in full for days nobody recorded — the single easiest way
+                // for this module to overpay.
+                // Capped at TODAY even when projecting: a future day has no
+                // record because it has not happened, not because attendance was
+                // missed. Deducting it would make a projection meaningless.
+                const unrecordedUpTo = asOf < today ? asOf : today;
+                const unrecordedDays = await this.unrecordedWorkingDays(
+                    employee,
+                    run.periodFrom,
+                    unrecordedUpTo,
+                    facts,
+                );
+                facts.absentDays += unrecordedDays;
 
                 const result = computePayrollLines({
                     facts,
@@ -232,6 +267,9 @@ export class PayrollService {
                         overtimeRateMultiplier: Number(otPolicy.rateValue),
                     },
                     period: {
+                        // Proration and off entitlement are both measured
+                        // against the FULL period, so working half a month
+                        // yields half the pay and half the offs.
                         daysInMonth,
                         employedDays,
                         workingDaysInPeriod: Math.max(
@@ -291,12 +329,23 @@ export class PayrollService {
                         overtime_rate: Number(otPolicy.rateValue),
                         overtime_requires_approval: otPolicy.requiresApproval,
                         computed_by: user.id,
+                        // What this run measured, so a payslip can say whether
+                        // it is earned-to-date or a full-month projection.
+                        as_of: asOf,
+                        projected_full_period: projectFullPeriod,
                     },
                 },
             );
         });
 
-        return { id: runId, status: 'computed', lines: computed, skipped };
+        return {
+            id: runId,
+            status: 'computed',
+            lines: computed,
+            skipped,
+            as_of: asOf,
+            projected_full_period: projectFullPeriod,
+        };
     }
 
     /**
@@ -1353,6 +1402,67 @@ export class PayrollService {
                 isActive: true,
             })
         );
+    }
+
+    /**
+     * Working days in the window with no attendance record at all.
+     *
+     * An employee whose attendance was never captured has no rows, so every
+     * count is zero and the engine would pay them in full — the easiest way for
+     * this module to overpay. Those days are treated as absent, and reported so
+     * the reason is visible rather than mysterious.
+     *
+     * Weekly offs are excluded: a day nobody was expected to work is not a
+     * missing record.
+     */
+    private async unrecordedWorkingDays(
+        employee: Employee,
+        from: string,
+        to: string,
+        facts: AttendanceFacts,
+    ): Promise<number> {
+        const start =
+            employee.dateOfJoining > from ? employee.dateOfJoining : from;
+        const end =
+            employee.dateOfLeaving && employee.dateOfLeaving < to
+                ? employee.dateOfLeaving
+                : to;
+        if (end < start) return 0;
+
+        const windowDays = daysBetween(start, end);
+        const recorded =
+            facts.presentDays +
+            facts.halfDays +
+            facts.paidLeaveDays +
+            facts.unpaidLeaveDays +
+            facts.absentDays +
+            facts.weeklyOffDays +
+            facts.holidayDays;
+
+        // Expected weekly offs in the window, so an employee with no records at
+        // all is not charged for their rest days too.
+        const template = await this.templates.findOne({
+            where: {
+                tenantId: employee.tenantId,
+                isActive: true,
+                isDefault: true,
+            },
+            order: { id: 'ASC' },
+        });
+        const offDays: number[] = Array.isArray(template?.weeklyOffDays)
+            ? template.weeklyOffDays
+            : [];
+        let expectedOffs = 0;
+        if (offDays.length > 0) {
+            const cursor = new Date(`${start}T00:00:00Z`);
+            const last = new Date(`${end}T00:00:00Z`);
+            while (cursor <= last) {
+                if (offDays.includes(cursor.getUTCDay())) expectedOffs += 1;
+                cursor.setUTCDate(cursor.getUTCDate() + 1);
+            }
+        }
+
+        return Math.max(0, windowDays - expectedOffs - recorded);
     }
 
     /**

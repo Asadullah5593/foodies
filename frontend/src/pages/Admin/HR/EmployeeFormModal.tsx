@@ -79,8 +79,8 @@ const EmployeeFormModal: React.FC<Props> = ({ designations, branches, brands = [
   const label = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300';
 
   return (
-    <Modal isOpen onClose={onClose} title="Add employee">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+    <Modal isOpen onClose={onClose} title="Add employee" size="xlarge">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="sm:col-span-2">
           <label className={label}>Full name *</label>
           <input
@@ -144,18 +144,26 @@ const EmployeeFormModal: React.FC<Props> = ({ designations, branches, brands = [
 
         <div>
           <label className={label}>Brand</label>
+          {/* A brand only means something once a branch is chosen — brands are
+              linked to branches, so offering them first invites a combination
+              that does not exist. */}
           <SearchableSelect
+            disabled={form.branch_id === ''}
             value={form.brand_id === '' ? '' : String(form.brand_id)}
             onChange={(v) => set('brand_id')(v === '' ? '' : Number(v))}
             options={[
               { value: '', label: 'Shared — not tied to a brand' },
               ...brands.map((b) => ({ value: String(b.id), label: b.name })),
             ]}
-            placeholder="Shared — not tied to a brand"
+            placeholder={
+              form.branch_id === '' ? 'Pick a branch first' : 'Shared — not tied to a brand'
+            }
             searchPlaceholder="Search brands…"
           />
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
-            Leave blank for cleaners, security and other staff shared across brands.
+            {form.branch_id === ''
+              ? 'Choose a branch to pick a brand.'
+              : 'Leave blank for cleaners, security and other staff shared across brands.'}
           </p>
         </div>
 

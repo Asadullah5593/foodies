@@ -219,6 +219,14 @@ export class EmployeesService {
             leaving_reason: employee.leavingReason,
             rehire_eligible: employee.rehireEligible,
             has_pin: employee.pinHash != null,
+            /**
+             * The QR token IS readable, unlike the PIN. It is a device
+             * credential the admin has to be able to reprint — a lost card is
+             * revoked by reissuing, not by the token being secret from HR.
+             * The PIN is bcrypt-hashed and genuinely cannot be shown back.
+             */
+            qr_token: employee.qrToken,
+            qr_token_issued_at: employee.qrTokenIssuedAt,
         };
         if (canSeeSalary) {
             profile.bank_name = employee.bankName;
@@ -433,7 +441,29 @@ export class EmployeesService {
         const before = { ...employee } as unknown as Record<string, unknown>;
         // Explicit shape rather than Partial<Employee>: the entity's relation
         // and jsonb properties are not assignable to TypeORM's update payload.
+        // The code is what staff type at the station, so a typo must be
+        // fixable — but it stays unique per tenant, and a clash would otherwise
+        // surface as a raw constraint error.
+        if (
+            dto.employee_code != null &&
+            dto.employee_code.trim() !== employee.employeeCode
+        ) {
+            const clash = await this.employees.findOne({
+                where: {
+                    tenantId: employee.tenantId,
+                    employeeCode: dto.employee_code.trim(),
+                },
+                select: { id: true, fullName: true },
+            });
+            if (clash && clash.id !== id) {
+                throw new ConflictException(
+                    `Employee code ${dto.employee_code.trim()} is already used by ${clash.fullName}`,
+                );
+            }
+        }
+
         const patch: {
+            employeeCode?: string;
             fullName?: string;
             fatherName?: string | null;
             cnic?: string | null;
@@ -454,6 +484,7 @@ export class EmployeesService {
             paymentMethod?: string;
         } = {};
         const map: Array<[keyof UpdateEmployeeDto, keyof typeof patch]> = [
+            ['employee_code', 'employeeCode'],
             ['full_name', 'fullName'],
             ['father_name', 'fatherName'],
             ['cnic', 'cnic'],

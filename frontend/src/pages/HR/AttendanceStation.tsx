@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import apiClient from '../../utils/apiClient';
 import { MdBackspace, MdCheckCircle, MdLogin, MdLogout } from 'react-icons/md';
 import { hrService, PunchResult, PunchType } from '../../services/api/hrService';
 import { useAuth } from '../../contexts/AuthContext';
@@ -27,11 +28,37 @@ const AttendanceStation: React.FC = () => {
   // may cover a till with no webcam and a tablet that has one.
   const [photoEnabled, setPhotoEnabled] = useState(false);
 
+  /**
+   * Which branch this station belongs to.
+   *
+   * An owner or GM has `allowed_branch_ids === null` (all branches), so there is
+   * nothing to infer — they must pick, and the choice is remembered per device
+   * so a parked tablet does not ask again after a refresh.
+   */
+  const assigned = (user as { allowed_branch_ids?: number[] | null } | null)
+    ?.allowed_branch_ids;
+  const [pickedBranch, setPickedBranch] = useState<number | null>(() => {
+    const stored = localStorage.getItem('attendance_station_branch');
+    return stored ? Number(stored) : null;
+  });
+
+  const { data: branches = [] } = useQuery<Array<{ id: number; name: string }>>({
+    queryKey: ['attendance-station-branches'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/admin/branches');
+      return data ?? [];
+    },
+    // Only needed when the account is not pinned to a single branch.
+    enabled: assigned == null || assigned.length !== 1,
+  });
+
   const branchId =
-    (user as { branch_id?: number; allowed_branch_ids?: number[] } | null)
-      ?.branch_id ??
-    (user as { allowed_branch_ids?: number[] } | null)?.allowed_branch_ids?.[0] ??
-    null;
+    assigned != null && assigned.length === 1 ? assigned[0] : pickedBranch;
+
+  const chooseBranch = (id: number) => {
+    setPickedBranch(id);
+    localStorage.setItem('attendance_station_branch', String(id));
+  };
 
   // Clear the panel after a few seconds so the next person never sees — or
   // taps a punch onto — the previous person's session.
@@ -93,11 +120,28 @@ const AttendanceStation: React.FC = () => {
 
   if (branchId == null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-900 p-6">
-        <p className="max-w-md text-center text-slate-200">
-          This account is not tied to a branch, so it cannot run an attendance station.
-          Ask an administrator to assign a branch.
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-900 p-6 text-slate-100">
+        <h1 className="text-xl font-semibold">Which branch is this station at?</h1>
+        <p className="max-w-md text-center text-sm text-slate-400">
+          Your account covers more than one branch, so pick the one this device sits at. It
+          is remembered on this device.
         </p>
+        {branches.length === 0 ? (
+          <p className="text-sm text-slate-400">Loading branches…</p>
+        ) : (
+          <div className="flex w-full max-w-sm flex-col gap-2">
+            {branches.map((b) => (
+              <button
+                key={b.id}
+                type="button"
+                onClick={() => chooseBranch(b.id)}
+                className="rounded-lg bg-slate-800 px-4 py-3 text-left hover:bg-slate-700"
+              >
+                {b.name}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -227,6 +271,20 @@ const AttendanceStation: React.FC = () => {
           <MdBackspace className="text-xl" />
         </button>
       </div>
+
+      {/* Lets a shared device be moved without clearing storage by hand. */}
+      {(assigned == null || assigned.length !== 1) && (
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.removeItem('attendance_station_branch');
+            setPickedBranch(null);
+          }}
+          className="mb-4 text-xs text-slate-500 underline hover:text-slate-300"
+        >
+          Change branch
+        </button>
+      )}
 
       <div className="grid w-full max-w-sm grid-cols-2 gap-3">
         <button

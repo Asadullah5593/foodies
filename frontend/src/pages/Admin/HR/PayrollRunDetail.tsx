@@ -56,9 +56,14 @@ const PayrollRunDetail: React.FC = () => {
   });
 
   const compute = useMutation({
-    mutationFn: () => hrService.computePayrollRun(runId),
+    mutationFn: (projectFullPeriod: boolean) =>
+      hrService.computePayrollRun(runId, projectFullPeriod),
     onSuccess: (result) => {
-      toast.success(`Computed ${result.lines} payslip(s)`);
+      toast.success(
+        result.projected_full_period
+          ? `Projected the full period — ${result.lines} payslip(s)`
+          : `Computed to ${result.as_of} — ${result.lines} payslip(s)`,
+      );
       if (result.skipped.length > 0) {
         // Skipped employees are a data problem, not a success — name them.
         toast(
@@ -117,6 +122,12 @@ const PayrollRunDetail: React.FC = () => {
   }
 
   const editable = ['draft', 'computed'].includes(run.status);
+  const snapshot = (run.rule_snapshot ?? {}) as {
+    as_of?: string;
+    projected_full_period?: boolean;
+  };
+  const asOf = snapshot.as_of;
+  const projected = snapshot.projected_full_period === true;
 
   return (
     <div className="p-4 md:p-6">
@@ -143,18 +154,43 @@ const PayrollRunDetail: React.FC = () => {
             {run.lines.length} payslip(s) · gross {rupees(run.totals.gross)} · deductions{' '}
             {rupees(run.totals.deductions)} · net {rupees(run.totals.net)}
           </p>
+          {/* Saying WHAT was measured matters: the same run shows very different
+              figures earned-to-date versus projected. */}
+          {asOf && (
+            <p className="mt-1 text-xs font-medium text-blue-700 dark:text-blue-400">
+              {projected
+                ? 'Projected for the full period — not what has been earned yet'
+                : `Earned up to ${asOf}`}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-wrap gap-2">
           {canRun && editable && (
-            <button
-              type="button"
-              disabled={compute.isPending}
-              onClick={() => compute.mutate()}
-              className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-slate-600 dark:text-gray-300 dark:hover:bg-slate-800"
-            >
-              {compute.isPending ? 'Computing…' : run.status === 'draft' ? 'Compute' : 'Recompute'}
-            </button>
+            <>
+              <button
+                type="button"
+                disabled={compute.isPending}
+                onClick={() => compute.mutate(false)}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-slate-600 dark:text-gray-300 dark:hover:bg-slate-800"
+              >
+                {compute.isPending
+                  ? 'Computing…'
+                  : run.status === 'draft'
+                    ? 'Compute earned so far'
+                    : 'Recompute earned so far'}
+              </button>
+              {/* A mid-month run is only ever one of two questions: what has
+                  been earned so far, or what will the whole month cost. */}
+              <button
+                type="button"
+                disabled={compute.isPending}
+                onClick={() => compute.mutate(true)}
+                className="rounded-md border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-slate-600 dark:text-gray-300 dark:hover:bg-slate-800"
+              >
+                Project full month
+              </button>
+            </>
           )}
           {canApprove && run.status === 'computed' && (
             <button

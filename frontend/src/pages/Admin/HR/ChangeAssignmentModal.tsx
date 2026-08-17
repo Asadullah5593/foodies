@@ -110,7 +110,7 @@ const ChangeAssignmentModal: React.FC<Props> = ({
   const label = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300';
 
   return (
-    <Modal isOpen onClose={onClose} title="Promote / transfer">
+    <Modal isOpen onClose={onClose} title="Promote / transfer" size="large">
       <p className="mb-4 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
         The current assignment is closed the day before the effective date and a new one opens.
         Nothing is overwritten, so the employment history stays intact.
@@ -138,13 +138,27 @@ const ChangeAssignmentModal: React.FC<Props> = ({
 
         <div>
           <label className={label}>Designation</label>
+          {/* A promotion can only move up, so offering lower titles just
+              produces an error the user has to read. Demotions show only lower
+              ones for the same reason. */}
           <SearchableSelect
             value={String(designationId)}
             onChange={(v) => setDesignationId(Number(v))}
-            options={designations.map((d) => ({
-              value: String(d.id),
-              label: `${d.name} (level ${d.level})`,
-            }))}
+            options={designations
+              .filter((d) => {
+                if (reason === 'promotion') return d.level > currentLevel;
+                if (reason === 'demotion') return d.level < currentLevel;
+                return true;
+              })
+              .map((d) => ({
+                value: String(d.id),
+                label: `${d.name} (level ${d.level})`,
+              }))}
+            placeholder={
+              reason === 'promotion'
+                ? 'Select a more senior designation'
+                : 'Select a designation'
+            }
             searchPlaceholder="Search designations…"
           />
           {promotionGoesNowhere && (

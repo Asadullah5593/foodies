@@ -192,6 +192,16 @@ export class CreateEmployeeDto {
  * POST /employees/:id/assignment.
  */
 export class UpdateEmployeeDto {
+    @ApiPropertyOptional({
+        example: 'EMP-0007',
+        description:
+            'Editable — the code staff type at the attendance station, so admins need to be able to correct it. Still unique per tenant.',
+    })
+    @IsOptional()
+    @IsString()
+    @Length(1, 32)
+    employee_code?: string;
+
     @ApiPropertyOptional()
     @IsOptional()
     @IsString()
