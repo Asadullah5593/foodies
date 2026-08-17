@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Modal from '../../../components/Modal';
 import { Designation, hrService } from '../../../services/api/hrService';
+import SearchableSelect from '../../../components/SearchableSelect';
 
 type BranchOption = { id: number; name: string };
 type BrandOption = { id: number; name: string };
@@ -132,34 +133,27 @@ const EmployeeFormModal: React.FC<Props> = ({ designations, branches, brands = [
 
         <div>
           <label className={label}>Branch *</label>
-          <select
-            className={field}
-            value={form.branch_id}
-            onChange={(e) => set('branch_id')(e.target.value === '' ? '' : Number(e.target.value))}
-          >
-            <option value="">Select a branch</option>
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={form.branch_id === '' ? '' : String(form.branch_id)}
+            onChange={(v) => set('branch_id')(v === '' ? '' : Number(v))}
+            options={branches.map((b) => ({ value: String(b.id), label: b.name }))}
+            placeholder="Select a branch"
+            searchPlaceholder="Search branches…"
+          />
         </div>
 
         <div>
           <label className={label}>Brand</label>
-          <select
-            className={field}
-            value={form.brand_id}
-            onChange={(e) => set('brand_id')(e.target.value === '' ? '' : Number(e.target.value))}
-          >
-            <option value="">Shared — not tied to a brand</option>
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={form.brand_id === '' ? '' : String(form.brand_id)}
+            onChange={(v) => set('brand_id')(v === '' ? '' : Number(v))}
+            options={[
+              { value: '', label: 'Shared — not tied to a brand' },
+              ...brands.map((b) => ({ value: String(b.id), label: b.name })),
+            ]}
+            placeholder="Shared — not tied to a brand"
+            searchPlaceholder="Search brands…"
+          />
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Leave blank for cleaners, security and other staff shared across brands.
           </p>
@@ -167,34 +161,30 @@ const EmployeeFormModal: React.FC<Props> = ({ designations, branches, brands = [
 
         <div>
           <label className={label}>Designation *</label>
-          <select
-            className={field}
-            value={form.designation_id}
-            onChange={(e) =>
-              set('designation_id')(e.target.value === '' ? '' : Number(e.target.value))
-            }
-          >
-            <option value="">Select a designation</option>
-            {designations.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={form.designation_id === '' ? '' : String(form.designation_id)}
+            onChange={(v) => set('designation_id')(v === '' ? '' : Number(v))}
+            options={designations.map((d) => ({
+              value: String(d.id),
+              label: `${d.name} (level ${d.level})`,
+            }))}
+            placeholder="Select a designation"
+            searchPlaceholder="Search designations…"
+          />
         </div>
 
         <div>
           <label className={label}>Employment type</label>
-          <select
-            className={field}
+          <SearchableSelect
             value={form.employment_type}
-            onChange={(e) => set('employment_type')(e.target.value)}
-          >
-            <option value="full_time">Full time</option>
-            <option value="part_time">Part time</option>
-            <option value="contract">Contract</option>
-            <option value="probation">Probation</option>
-          </select>
+            onChange={(v) => set('employment_type')(v)}
+            options={[
+              { value: 'full_time', label: 'Full time' },
+              { value: 'part_time', label: 'Part time' },
+              { value: 'contract', label: 'Contract' },
+              { value: 'probation', label: 'Probation' },
+            ]}
+          />
         </div>
       </div>
 

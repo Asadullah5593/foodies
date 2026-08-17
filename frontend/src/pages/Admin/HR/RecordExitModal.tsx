@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Modal from '../../../components/Modal';
 import { RecordExitPayload, hrService } from '../../../services/api/hrService';
+import SearchableSelect from '../../../components/SearchableSelect';
 
 interface Props {
   employeeId: number;
@@ -82,21 +83,21 @@ const RecordExitModal: React.FC<Props> = ({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className={label}>Type *</label>
-          <select
-            className={field}
+          <SearchableSelect
             value={form.exit_type}
-            onChange={(e) =>
+            onChange={(v) =>
               setForm((f) => ({
                 ...f,
-                exit_type: e.target.value as RecordExitPayload['exit_type'],
+                exit_type: v as RecordExitPayload['exit_type'],
               }))
             }
-          >
-            <option value="resignation">Resignation</option>
-            <option value="termination">Termination</option>
-            <option value="end_of_contract">End of contract</option>
-            <option value="abandonment">Abandonment</option>
-          </select>
+            options={[
+              { value: 'resignation', label: 'Resignation' },
+              { value: 'termination', label: 'Termination' },
+              { value: 'end_of_contract', label: 'End of contract' },
+              { value: 'abandonment', label: 'Abandonment' },
+            ]}
+          />
         </div>
 
         <div>

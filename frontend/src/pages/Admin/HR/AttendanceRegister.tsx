@@ -5,6 +5,7 @@ import { hrService, RegisterRow } from '../../../services/api/hrService';
 import apiClient from '../../../utils/apiClient';
 import Loader from '../../../components/Loader';
 import { statusBadgeClass, statusLabel } from './hrShared';
+import SearchableSelect from '../../../components/SearchableSelect';
 
 const isoDaysAgo = (days: number) =>
   new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
@@ -68,12 +69,31 @@ const AttendanceRegister: React.FC = () => {
 
   return (
     <div className="p-4 md:p-6">
-      <div className="mb-5 flex items-center gap-2">
-        <MdOutlineFactCheck className="text-2xl text-gray-700 dark:text-gray-200" />
-        <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-          Attendance register
-        </h1>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <MdOutlineFactCheck className="text-2xl text-gray-700 dark:text-gray-200" />
+          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+            Attendance register
+          </h1>
+        </div>
+        {/* The station is a separate full-screen route so a tablet can sit on it
+            all day. Linking it here is how anyone finds it. */}
+        <a
+          href="/attendance"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-2 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          Open attendance station
+        </a>
       </div>
+
+      <p className="mb-5 text-sm text-gray-600 dark:text-gray-400">
+        Staff clock in and out on the <strong>attendance station</strong> — a full-screen
+        keypad where they type their employee code and PIN. Open it on a tablet at the staff
+        entrance, or on a POS terminal. Set each employee&apos;s PIN from their profile
+        (Employees → open → Attendance credentials).
+      </p>
 
       <div className="mb-5 flex flex-wrap gap-3">
         <input
@@ -88,18 +108,19 @@ const AttendanceRegister: React.FC = () => {
           value={dateTo}
           onChange={(e) => setDateTo(e.target.value)}
         />
-        <select
-          className={field}
-          value={branchId}
-          onChange={(e) => setBranchId(e.target.value === '' ? '' : Number(e.target.value))}
-        >
-          <option value="">All branches</option>
-          {branches.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
+        <div className="min-w-[200px]">
+          <SearchableSelect
+            ariaLabel="Branch"
+            value={branchId === '' ? '' : String(branchId)}
+            onChange={(v) => setBranchId(v === '' ? '' : Number(v))}
+            options={[
+              { value: '', label: 'All branches' },
+              ...branches.map((b) => ({ value: String(b.id), label: b.name })),
+            ]}
+            placeholder="All branches"
+            searchPlaceholder="Search branches…"
+          />
+        </div>
       </div>
 
       {report && (report.flagged_days.length > 0 || report.bursts.length > 0) && (

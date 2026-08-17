@@ -10,6 +10,7 @@ import {
   EmployeeAssignmentRow,
   hrService,
 } from '../../../services/api/hrService';
+import SearchableSelect from '../../../components/SearchableSelect';
 
 interface Props {
   employeeId: number;
@@ -118,17 +119,11 @@ const ChangeAssignmentModal: React.FC<Props> = ({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <label className={label}>Reason *</label>
-          <select
-            className={field}
+          <SearchableSelect
             value={reason}
-            onChange={(e) => setReason(e.target.value as ChangeAssignmentPayload['change_reason'])}
-          >
-            {REASONS.map((r) => (
-              <option key={r.value} value={r.value}>
-                {r.label}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setReason(v as ChangeAssignmentPayload['change_reason'])}
+            options={REASONS.map((r) => ({ value: r.value, label: r.label }))}
+          />
         </div>
 
         <div>
@@ -143,17 +138,15 @@ const ChangeAssignmentModal: React.FC<Props> = ({
 
         <div>
           <label className={label}>Designation</label>
-          <select
-            className={field}
-            value={designationId}
-            onChange={(e) => setDesignationId(Number(e.target.value))}
-          >
-            {designations.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name} (level {d.level})
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={String(designationId)}
+            onChange={(v) => setDesignationId(Number(v))}
+            options={designations.map((d) => ({
+              value: String(d.id),
+              label: `${d.name} (level ${d.level})`,
+            }))}
+            searchPlaceholder="Search designations…"
+          />
           {promotionGoesNowhere && (
             <p className="mt-1 text-xs text-red-600 dark:text-red-400">
               A promotion must move up the ladder. Level {targetLevel} is not senior to the current
@@ -164,33 +157,25 @@ const ChangeAssignmentModal: React.FC<Props> = ({
 
         <div>
           <label className={label}>Branch</label>
-          <select
-            className={field}
-            value={branchId}
-            onChange={(e) => setBranchId(Number(e.target.value))}
-          >
-            {branches.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={String(branchId)}
+            onChange={(v) => setBranchId(Number(v))}
+            options={branches.map((b) => ({ value: String(b.id), label: b.name }))}
+            searchPlaceholder="Search branches…"
+          />
         </div>
 
         <div>
           <label className={label}>Brand</label>
-          <select
-            className={field}
-            value={brandId}
-            onChange={(e) => setBrandId(e.target.value === '' ? '' : Number(e.target.value))}
-          >
-            <option value="">Shared — not tied to a brand</option>
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            value={brandId === '' ? '' : String(brandId)}
+            onChange={(v) => setBrandId(v === '' ? '' : Number(v))}
+            options={[
+              { value: '', label: 'Shared — not tied to a brand' },
+              ...brands.map((b) => ({ value: String(b.id), label: b.name })),
+            ]}
+            searchPlaceholder="Search brands…"
+          />
         </div>
 
         <div className="sm:col-span-2">

@@ -10,6 +10,7 @@ import PaginationBar from '../../../components/PaginationBar';
 import Loader from '../../../components/Loader';
 import EmployeeFormModal from './EmployeeFormModal';
 import { statusBadgeClass, statusLabel } from './hrShared';
+import SearchableSelect from '../../../components/SearchableSelect';
 
 const PAGE_SIZE = 25;
 
@@ -62,6 +63,14 @@ const Employees: React.FC = () => {
     },
   });
 
+  const { data: brands = [] } = useQuery<Array<{ id: number; name: string }>>({
+    queryKey: ['hr-brands'],
+    queryFn: async () => {
+      const { data } = await apiClient.get('/admin/brands');
+      return data ?? [];
+    },
+  });
+
   const rows = data?.data ?? [];
   const total = data?.meta.total ?? 0;
 
@@ -104,33 +113,29 @@ const Employees: React.FC = () => {
           />
         </div>
 
-        <select
-          value={branchId}
-          onChange={(e) => resetPageAnd(setBranchId)(e.target.value === '' ? '' : Number(e.target.value))}
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-gray-100"
-        >
-          <option value="">All branches</option>
-          {branches.map((b: { id: number; name: string }) => (
-            <option key={b.id} value={b.id}>
-              {b.name}
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          ariaLabel="Branch"
+          value={branchId === '' ? '' : String(branchId)}
+          onChange={(v) => resetPageAnd(setBranchId)(v === '' ? '' : Number(v))}
+          options={[
+            { value: '', label: 'All branches' },
+            ...branches.map((b) => ({ value: String(b.id), label: b.name })),
+          ]}
+          placeholder="All branches"
+          searchPlaceholder="Search branches…"
+        />
 
-        <select
-          value={designationId}
-          onChange={(e) =>
-            resetPageAnd(setDesignationId)(e.target.value === '' ? '' : Number(e.target.value))
-          }
-          className="rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-gray-100"
-        >
-          <option value="">All designations</option>
-          {designations.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+        <SearchableSelect
+          ariaLabel="Designation"
+          value={designationId === '' ? '' : String(designationId)}
+          onChange={(v) => resetPageAnd(setDesignationId)(v === '' ? '' : Number(v))}
+          options={[
+            { value: '', label: 'All designations' },
+            ...designations.map((d) => ({ value: String(d.id), label: d.name })),
+          ]}
+          placeholder="All designations"
+          searchPlaceholder="Search designations…"
+        />
 
         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <input
@@ -236,6 +241,7 @@ const Employees: React.FC = () => {
         <EmployeeFormModal
           designations={designations}
           branches={branches}
+          brands={brands}
           onClose={() => setShowCreate(false)}
         />
       )}

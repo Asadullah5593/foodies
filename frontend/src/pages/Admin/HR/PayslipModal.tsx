@@ -6,6 +6,7 @@ import { hrService, PayslipItem } from '../../../services/api/hrService';
 import { useHasPermission } from '../../../hooks/useHasPermission';
 import Loader from '../../../components/Loader';
 import { rupees } from './Payroll';
+import SearchableSelect from '../../../components/SearchableSelect';
 
 interface Props {
   lineId: number;
@@ -228,20 +229,17 @@ const PayslipModal: React.FC<Props> = ({ lineId, onClose, onAdjusted }) => {
                 stays visible beside your override. A reason is mandatory.
               </p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <select
-                  className={field}
+                <SearchableSelect
                   value={form.direction}
-                  onChange={(e) =>
-                    setForm((f) => ({
-                      ...f,
-                      direction: e.target.value as typeof f.direction,
-                    }))
+                  onChange={(v) =>
+                    setForm((f) => ({ ...f, direction: v as typeof f.direction }))
                   }
-                >
-                  <option value="waive">Waive a deduction</option>
-                  <option value="add_deduction">Add a deduction</option>
-                  <option value="add_earning">Add a payment</option>
-                </select>
+                  options={[
+                    { value: 'waive', label: 'Waive a deduction' },
+                    { value: 'add_deduction', label: 'Add a deduction' },
+                    { value: 'add_earning', label: 'Add a payment' },
+                  ]}
+                />
                 <input
                   type="number"
                   min={0.01}

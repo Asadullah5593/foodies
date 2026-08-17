@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Modal from '../../../components/Modal';
 import { hrService } from '../../../services/api/hrService';
+import SearchableSelect from '../../../components/SearchableSelect';
 
 interface Props {
   onClose: () => void;
@@ -84,45 +85,31 @@ const LeaveRequestModal: React.FC<Props> = ({ onClose, employeeId }) => {
         {employeeId == null && (
           <div className="sm:col-span-2">
             <label className={label}>Employee *</label>
-            <select
-              className={field}
-              value={form.employee_id}
-              onChange={(e) =>
-                setForm((f) => ({
-                  ...f,
-                  employee_id: e.target.value === '' ? '' : Number(e.target.value),
-                }))
+            <SearchableSelect
+              value={form.employee_id === '' ? '' : String(form.employee_id)}
+              onChange={(v) =>
+                setForm((f) => ({ ...f, employee_id: v === '' ? '' : Number(v) }))
               }
-            >
-              <option value="">Select an employee</option>
-              {(employees?.data ?? []).map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.full_name} ({e.employee_code})
-                </option>
-              ))}
-            </select>
+              options={(employees?.data ?? []).map((e) => ({
+                value: String(e.id),
+                label: `${e.full_name} (${e.employee_code})`,
+              }))}
+              placeholder="Select an employee"
+              searchPlaceholder="Search by name or code…"
+            />
           </div>
         )}
 
         <div className="sm:col-span-2">
           <label className={label}>Leave type *</label>
-          <select
-            className={field}
-            value={form.leave_type_id}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                leave_type_id: e.target.value === '' ? '' : Number(e.target.value),
-              }))
+          <SearchableSelect
+            value={form.leave_type_id === '' ? '' : String(form.leave_type_id)}
+            onChange={(v) =>
+              setForm((f) => ({ ...f, leave_type_id: v === '' ? '' : Number(v) }))
             }
-          >
-            <option value="">Select a type</option>
-            {types.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+            options={types.map((t) => ({ value: String(t.id), label: t.name }))}
+            placeholder="Select a type"
+          />
           {selectedBalance && (
             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
               {selectedBalance.available} day(s) available this month

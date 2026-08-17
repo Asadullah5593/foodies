@@ -225,6 +225,19 @@ const PayrollRunDetail: React.FC = () => {
           <p className="text-sm text-gray-600 dark:text-gray-400">
             No payslips yet — compute the run.
           </p>
+          {/* The commonest reason a computed run is empty: nobody has a salary
+              on file. Say where to fix it rather than leaving a blank table. */}
+          <p className="mx-auto mt-2 max-w-md text-xs text-gray-500 dark:text-gray-400">
+            An employee is skipped until a salary is set for them. Open{' '}
+            <Link
+              to="/admin/hr/employees"
+              className="text-blue-600 hover:underline dark:text-blue-400"
+            >
+              Employees
+            </Link>
+            , pick the person, and use the <strong>Salary</strong> section to set their
+            basic pay — then recompute.
+          </p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-700">

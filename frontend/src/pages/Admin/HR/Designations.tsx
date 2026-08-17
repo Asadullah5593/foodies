@@ -7,6 +7,7 @@ import { useHasPermission } from '../../../hooks/useHasPermission';
 import { confirmDialog } from '../../../utils/sweetAlert';
 import Loader from '../../../components/Loader';
 import Modal from '../../../components/Modal';
+import SearchableSelect from '../../../components/SearchableSelect';
 
 const DEPARTMENTS = [
   { value: 'kitchen', label: 'Kitchen' },
@@ -225,19 +226,13 @@ const Designations: React.FC = () => {
             </div>
             <div>
               <label className={label}>Department</label>
-              <select
-                className={field}
+              <SearchableSelect
                 value={form.department}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, department: e.target.value as DepartmentValue }))
+                onChange={(v) =>
+                  setForm((f) => ({ ...f, department: v as DepartmentValue }))
                 }
-              >
-                {DEPARTMENTS.map((d) => (
-                  <option key={d.value} value={d.value}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
+                options={DEPARTMENTS.map((d) => ({ value: d.value, label: d.label }))}
+              />
             </div>
             <div>
               <label className={label}>Level</label>

@@ -290,13 +290,22 @@ export class EmployeeHrmPhase3Leaves1760000000112 implements MigrationInterface 
             )
         `);
 
+        // Only what the client actually agreed: 4 monthly offs, used for
+        // whatever reason the employee has — sick, casual, personal. There are
+        // deliberately NO separate casual/sick types; inventing them would give
+        // staff entitlement nobody signed off, and the whole point of the
+        // monthly-off model is that one pot covers every reason.
+        //
+        // `unpaid` is mechanical, not an entitlement: days beyond the 4-off
+        // quota land here (holiday_policies.beyond_quota_treatment), and payroll
+        // needs a type to attribute them to.
+        //
+        // More types can be added in HR Settings if the client ever wants them.
         const leaveTypes: Array<
             [string, string, boolean, string, number, boolean, boolean]
         > = [
             // name, code, isPaid, accrual, quota, encashUnused, isMonthlyOff
             ['Monthly Off', 'monthly_off', true, 'monthly', 4, true, true],
-            ['Casual Leave', 'casual', true, 'monthly', 1, false, false],
-            ['Sick Leave', 'sick', true, 'annual', 8, false, false],
             ['Unpaid Leave', 'unpaid', false, 'none', 0, false, false],
         ];
         let sortOrder = 0;
