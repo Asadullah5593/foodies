@@ -154,6 +154,17 @@ export const PERMISSION_IMPLICATIONS: Record<string, string[]> = {
         Permissions.NOTIFICATIONS_VIEW,
         Permissions.NOTIFICATIONS_EDIT,
     ],
+    // Employee HRM. Writing an employee requires reading one — the list and the
+    // detail page are both guarded by employees:view, so an edit-only role
+    // would be able to save changes to a record it cannot open.
+    [Permissions.EMPLOYEES_CREATE]: [Permissions.EMPLOYEES_VIEW],
+    [Permissions.EMPLOYEES_EDIT]: [Permissions.EMPLOYEES_VIEW],
+    [Permissions.EMPLOYEES_TERMINATE]: [Permissions.EMPLOYEES_VIEW],
+    [Permissions.EMPLOYEE_DOCS_MANAGE]: [Permissions.EMPLOYEE_DOCS_VIEW],
+    // Deliberately absent: employees:view → salary:view. Pay visibility is
+    // never a side effect of being able to open a staff record (docs/HRM.md
+    // §14.2). salary:edit → salary:view is safe and follows the pattern above.
+    [Permissions.SALARY_EDIT]: [Permissions.SALARY_VIEW],
 };
 
 /**

@@ -308,6 +308,28 @@ export const Permissions = {
     // — Notifications (umbrella: notifications:manage) —
     NOTIFICATIONS_VIEW: 'notifications:view',
     NOTIFICATIONS_EDIT: 'notifications:edit',
+
+    // — Employee HRM (docs/HRM.md §14) —
+    // Distinct from Rider HRM above: that module is about dispatch and rider
+    // pay, this one is about people. Riders appear in both.
+    EMPLOYEES_VIEW: 'employees:view',
+    EMPLOYEES_CREATE: 'employees:create',
+    EMPLOYEES_EDIT: 'employees:edit',
+    EMPLOYEES_TERMINATE: 'employees:terminate',
+    EMPLOYEE_DOCS_VIEW: 'employee-docs:view',
+    EMPLOYEE_DOCS_MANAGE: 'employee-docs:manage',
+    EMPLOYEE_PIN_RESET: 'employee-pin:reset',
+    /**
+     * Salary figures and payslips. STANDALONE on purpose — not implied by
+     * employees:view, not implied by any umbrella, and not granted to branch
+     * managers by default. Easy to grant later; impossible to un-see once a
+     * branch has read everyone's pay.
+     */
+    SALARY_VIEW: 'salary:view',
+    SALARY_EDIT: 'salary:edit',
+    /** Settings that drive every calculation: designations, policies, rules. */
+    HR_SETTINGS_MANAGE: 'hr-settings:manage',
+    HR_AUDIT_VIEW: 'hr-audit:view',
 } as const;
 
 export type PermissionName = (typeof Permissions)[keyof typeof Permissions];

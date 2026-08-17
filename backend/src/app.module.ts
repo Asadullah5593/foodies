@@ -33,6 +33,7 @@ import { InventoryModule } from './inventory/inventory.module';
 import { ProcurementModule } from './procurement/procurement.module';
 import { RecipesModule } from './recipes/recipes.module';
 import { RiderHrmModule } from './rider-hrm/rider-hrm.module';
+import { HrModule } from './hr/hr.module';
 import { FirebaseModule } from './firebase/firebase.module';
 import { KioskModule } from './kiosk/kiosk.module';
 import { BannersModule } from './banners/banners.module';
@@ -102,6 +103,7 @@ import { PaymentsEpgModule } from './payments-epg/payments-epg.module';
         ProcurementModule,
         RecipesModule,
         RiderHrmModule,
+        HrModule,
         KioskModule,
         BannersModule,
         PromotionsModule,

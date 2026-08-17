@@ -242,6 +242,20 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
         prefix: '/admin/promotions',
         permissionNames: [Permissions.PROMOTIONS_MANAGE],
     },
+    {
+        // Employee HRM settings — designations and (from Phase 2) the policy
+        // tables every calculation reads. More specific than /admin/hr below.
+        prefix: '/admin/hr/settings',
+        permissionNames: [Permissions.HR_SETTINGS_MANAGE],
+    },
+    {
+        prefix: '/admin/hr/audit',
+        permissionNames: [Permissions.HR_AUDIT_VIEW],
+    },
+    {
+        prefix: '/admin/hr',
+        permissionNames: [Permissions.EMPLOYEES_VIEW],
+    },
     { prefix: '/pos', permissionNames: [Permissions.ORDERS_CREATE] },
     {
         prefix: '/kitchen/back',
