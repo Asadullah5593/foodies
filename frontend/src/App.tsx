@@ -91,6 +91,8 @@ import EmployeeDetail from './pages/Admin/HR/EmployeeDetail';
 import Designations from './pages/Admin/HR/Designations';
 import AttendanceRegister from './pages/Admin/HR/AttendanceRegister';
 import Leaves from './pages/Admin/HR/Leaves';
+import Payroll from './pages/Admin/HR/Payroll';
+import PayrollRunDetail from './pages/Admin/HR/PayrollRunDetail';
 import AttendanceStation from './pages/HR/AttendanceStation';
 import LoyaltySettings from './pages/Admin/LoyaltySettings';
 import DeliveryTiers from './pages/Admin/DeliveryTiers';
@@ -398,6 +400,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { path: '/admin/hr/employees', label: 'Employees' },
         { path: '/admin/hr/attendance', label: 'Attendance' },
         { path: '/admin/hr/leaves', label: 'Leaves' },
+        { path: '/admin/hr/payroll', label: 'Payroll' },
         { path: '/admin/hr/settings/designations', label: 'Designations' },
       ],
     },
@@ -1213,6 +1216,9 @@ const AppRoutes: React.FC = () => {
       <Route path="/admin/hr/employees" element={<ProtectedRoute><AdminOnlyRoute><Layout><Employees /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/attendance" element={<ProtectedRoute><AdminOnlyRoute><Layout><AttendanceRegister /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/leaves" element={<ProtectedRoute><AdminOnlyRoute><Layout><Leaves /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      {/* Detail before list so longest-prefix permission matching agrees either way. */}
+      <Route path="/admin/hr/payroll/:id" element={<ProtectedRoute><AdminOnlyRoute><Layout><PayrollRunDetail /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/payroll" element={<ProtectedRoute><AdminOnlyRoute><Layout><Payroll /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/settings/designations" element={<ProtectedRoute><AdminOnlyRoute><Layout><Designations /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       {/* Full-screen station for a tablet at the staff entrance — no admin
           chrome, and reachable by till staff who hold only attendance:punch. */}

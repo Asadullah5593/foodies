@@ -41,6 +41,7 @@ export class UploadController {
                         'misc',
                         'banners',
                         'promotions',
+                        'attendance',
                     ],
                 },
             },
@@ -71,10 +72,13 @@ export class UploadController {
             'misc',
             'banners',
             'promotions',
+            // Attendance punch photos. Purged after the retention window by
+            // AttendanceService.purgeExpiredPhotos().
+            'attendance',
         ]);
         if (!allowedFolders.has(folder)) {
             throw new BadRequestException(
-                'Invalid folder. Allowed: brands, menu-items, customer-profiles, misc, banners, promotions',
+                'Invalid folder. Allowed: brands, menu-items, customer-profiles, misc, banners, promotions, attendance',
             );
         }
         const result = await this.mediaStorage.uploadImage(file, folder);

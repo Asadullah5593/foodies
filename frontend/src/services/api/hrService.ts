@@ -209,6 +209,128 @@ export interface RecordExitPayload {
   rehire_eligible?: boolean;
 }
 
+export type PayrollStatus =
+  | 'draft'
+  | 'computed'
+  | 'pending_approval'
+  | 'approved'
+  | 'paid'
+  | 'reversed';
+
+export interface PayrollRunRow {
+  id: number;
+  periodFrom: string;
+  periodTo: string;
+  status: PayrollStatus;
+  computedAt: string | null;
+  approvedAt: string | null;
+  paidAt: string | null;
+  reversalReason: string | null;
+  branch: { id: number; name: string } | null;
+  approver: { id: number; name: string } | null;
+}
+
+export interface PayrollRunLine {
+  id: number;
+  employee: { id: number; full_name: string; employee_code: string };
+  present_days: number;
+  absent_days: number;
+  half_days: number;
+  paid_leave_days: number;
+  unpaid_leave_days: number;
+  late_count: number;
+  overtime_minutes: number;
+  delivered_orders: number;
+  gross_earnings: number;
+  total_deductions: number;
+  net_payable: number;
+  payment_status: string;
+}
+
+export interface PayrollRunDetail {
+  id: number;
+  period_from: string;
+  period_to: string;
+  status: PayrollStatus;
+  rule_snapshot: Record<string, unknown>;
+  reversal_reason: string | null;
+  totals: { gross: number; deductions: number; net: number };
+  lines: PayrollRunLine[];
+}
+
+export interface PayrollPreflight {
+  ready: boolean;
+  blockers: string[];
+  line_count: number;
+  total_net: number;
+}
+
+export interface PayslipItem {
+  component_key: string;
+  component_name: string;
+  kind: 'earning' | 'deduction' | 'waiver' | 'adjustment';
+  quantity: number;
+  rate: number;
+  amount: number;
+  /** The arithmetic behind the figure. */
+  calc_meta: Record<string, unknown>;
+}
+
+export interface Payslip {
+  id: number;
+  run: { id: number; period_from: string; period_to: string; status: PayrollStatus };
+  employee: { id: number; full_name: string; employee_code: string };
+  attendance: {
+    present_days: number;
+    half_days: number;
+    paid_leave_days: number;
+    unpaid_leave_days: number;
+    absent_days: number;
+    weekly_off_days: number;
+    holiday_days: number;
+    late_count: number;
+    overtime_minutes: number;
+  };
+  items: PayslipItem[];
+  gross_earnings: number;
+  total_deductions: number;
+  net_payable: number;
+  currency: string;
+}
+
+export interface SalaryStructureRow {
+  id: number;
+  effective_from: string;
+  effective_to: string | null;
+  is_current: boolean;
+  pay_type: string;
+  basic_amount: number;
+  daily_rate_basis: string;
+  per_delivered_order_amount: number;
+  change_reason: string | null;
+  set_by: { id: number; name: string } | null;
+  components: Array<{
+    component_key: string;
+    name: string;
+    kind: string;
+    calc_type: string;
+    amount: number;
+  }>;
+}
+
+export interface AdvanceRow {
+  id: number;
+  principalAmount: number;
+  installmentAmount: number;
+  installmentsTotal: number;
+  installmentsPaid: number;
+  outstandingAmount: number;
+  status: 'active' | 'settled' | 'written_off';
+  disbursedOn: string | null;
+  note: string | null;
+  employee: { id: number; fullName: string; employeeCode: string } | null;
+}
+
 export type DayPart = 'full' | 'first_half' | 'second_half';
 
 export interface LeaveTypeRow {
@@ -512,6 +634,167 @@ export const hrService = {
 
   deletePublicHoliday: async (id: number): Promise<{ deleted: boolean }> => {
     const { data } = await apiClient.delete(`/admin/hr/settings/public-holidays/${id}`);
+    return data;
+  },
+
+  // --- payroll ------------------------------------------------------------
+
+  listPayrollRuns: async (): Promise<PayrollRunRow[]> => {
+    const { data } = await apiClient.get('/admin/hr/payroll/runs');
+    return data;
+  },
+
+  getPayrollRun: async (id: number): Promise<PayrollRunDetail> => {
+    const { data } = await apiClient.get(`/admin/hr/payroll/runs/${id}`);
+    return data;
+  },
+
+  getPayrollPreflight: async (id: number): Promise<PayrollPreflight> => {
+    const { data } = await apiClient.get(`/admin/hr/payroll/runs/${id}/preflight`);
+    return data;
+  },
+
+  createPayrollRun: async (payload: {
+    period_from: string;
+    period_to: string;
+    branch_id?: number;
+  }): Promise<{ id: number; status: string }> => {
+    const { data } = await apiClient.post('/admin/hr/payroll/runs', payload);
+    return data;
+  },
+
+  computePayrollRun: async (
+    id: number,
+  ): Promise<{
+    id: number;
+    status: string;
+    lines: number;
+    skipped: Array<{ employee: string; reason: string }>;
+  }> => {
+    const { data } = await apiClient.post(`/admin/hr/payroll/runs/${id}/compute`);
+    return data;
+  },
+
+  approvePayrollRun: async (
+    id: number,
+    force = false,
+  ): Promise<{ id: number; status: string; exits_settled?: number }> => {
+    const { data } = await apiClient.post(`/admin/hr/payroll/runs/${id}/approve`, {
+      force,
+    });
+    return data;
+  },
+
+  reversePayrollRun: async (
+    id: number,
+    reason: string,
+  ): Promise<{ id: number; status: string }> => {
+    const { data } = await apiClient.post(`/admin/hr/payroll/runs/${id}/reverse`, {
+      reason,
+    });
+    return data;
+  },
+
+  markPayrollPaid: async (id: number): Promise<{ id: number; status: string }> => {
+    const { data } = await apiClient.post(`/admin/hr/payroll/runs/${id}/mark-paid`);
+    return data;
+  },
+
+  getPayslip: async (lineId: number): Promise<Payslip> => {
+    const { data } = await apiClient.get(`/admin/hr/payroll/payslips/${lineId}`);
+    return data;
+  },
+
+  addPayrollAdjustment: async (
+    lineId: number,
+    payload: {
+      direction: 'waive' | 'add_deduction' | 'add_earning';
+      amount: number;
+      reason: string;
+      target_component_key?: string;
+    },
+  ): Promise<{ id: number }> => {
+    const { data } = await apiClient.post(
+      `/admin/hr/payroll/payslips/${lineId}/adjustments`,
+      payload,
+    );
+    return data;
+  },
+
+  // --- salary & advances ---------------------------------------------------
+
+  getSalaryHistory: async (employeeId: number): Promise<SalaryStructureRow[]> => {
+    const { data } = await apiClient.get(`/admin/hr/employees/${employeeId}/salary`);
+    return data;
+  },
+
+  setSalary: async (
+    employeeId: number,
+    payload: {
+      effective_from: string;
+      basic_amount: number;
+      daily_rate_basis?: string;
+      per_delivered_order_amount?: number;
+      change_reason?: string;
+      components?: Array<{
+        component_key: string;
+        name: string;
+        kind: 'earning' | 'deduction';
+        calc_type: 'flat' | 'percent_of_basic';
+        amount: number;
+      }>;
+    },
+  ): Promise<{ id: number }> => {
+    const { data } = await apiClient.post(
+      `/admin/hr/employees/${employeeId}/salary`,
+      payload,
+    );
+    return data;
+  },
+
+  listAdvances: async (employeeId?: number): Promise<AdvanceRow[]> => {
+    const { data } = await apiClient.get('/admin/hr/advances', {
+      params: employeeId ? { employee_id: employeeId } : {},
+    });
+    return data;
+  },
+
+  createAdvance: async (payload: {
+    employee_id: number;
+    principal_amount: number;
+    installment_amount: number;
+    disbursed_on?: string;
+    note?: string;
+  }): Promise<{ id: number; outstanding: number }> => {
+    const { data } = await apiClient.post('/admin/hr/advances', payload);
+    return data;
+  },
+
+  writeOffAdvance: async (
+    id: number,
+    reason: string,
+  ): Promise<{ id: number; status: string }> => {
+    const { data } = await apiClient.post(`/admin/hr/advances/${id}/write-off`, {
+      reason,
+    });
+    return data;
+  },
+
+  // --- attendance credentials ---------------------------------------------
+
+  issueQrCard: async (
+    employeeId: number,
+  ): Promise<{ qr_token: string; employee_code: string }> => {
+    const { data } = await apiClient.post(
+      `/admin/hr/employees/${employeeId}/qr-card`,
+    );
+    return data;
+  },
+
+  revokeQrCard: async (employeeId: number): Promise<{ revoked: boolean }> => {
+    const { data } = await apiClient.delete(
+      `/admin/hr/employees/${employeeId}/qr-card`,
+    );
     return data;
   },
 

@@ -54,6 +54,8 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/hr/settings/designations': ['hr-settings:manage', 'employees:view'],
   '/admin/hr/attendance': ['attendance:view'],
   '/admin/hr/leaves': ['leaves:view'],
+  // Payroll is Owner / GM / HR only — branch managers hold none of these.
+  '/admin/hr/payroll': ['payroll:view'],
   // The station is reachable by till staff, who hold attendance:punch and
   // nothing else in HR — it must NOT sit behind employees:view.
   '/attendance': ['attendance:punch'],

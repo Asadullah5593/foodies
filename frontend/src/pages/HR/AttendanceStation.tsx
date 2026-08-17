@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { MdBackspace, MdCheckCircle, MdLogin, MdLogout } from 'react-icons/md';
 import { hrService, PunchResult, PunchType } from '../../services/api/hrService';
 import { useAuth } from '../../contexts/AuthContext';
+import { usePunchCamera } from './usePunchCamera';
 
 /**
  * The attendance station — a tablet parked at the staff entrance, or a POS tab.
@@ -22,6 +23,9 @@ const AttendanceStation: React.FC = () => {
   const [stage, setStage] = useState<'code' | 'pin'>('code');
   const [result, setResult] = useState<PunchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Opt-in per station rather than read from the branch policy: the same policy
+  // may cover a till with no webcam and a tablet that has one.
+  const [photoEnabled, setPhotoEnabled] = useState(false);
 
   const branchId =
     (user as { branch_id?: number; allowed_branch_ids?: number[] } | null)
@@ -43,14 +47,22 @@ const AttendanceStation: React.FC = () => {
     return () => clearTimeout(timer);
   }, [result, error]);
 
+  // Photo capture is best-effort: a missing or blocked camera must never stop
+  // someone clocking in. A photo-less punch is flagged in the exceptions report.
+  const { videoRef, ready: cameraReady, error: cameraError, capture } =
+    usePunchCamera(photoEnabled);
+
   const mutation = useMutation({
-    mutationFn: (punchType: PunchType) =>
-      hrService.punch({
+    mutationFn: async (punchType: PunchType) => {
+      const photoUrl = punchType === 'in' ? await capture() : null;
+      return hrService.punch({
         branch_id: branchId as number,
         punch_type: punchType,
         employee_code: code.trim(),
         pin,
-      }),
+        photo_url: photoUrl ?? undefined,
+      });
+    },
     onSuccess: (data) => {
       setResult(data);
       setError(null);
@@ -93,9 +105,38 @@ const AttendanceStation: React.FC = () => {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 p-6 text-slate-100">
       <h1 className="mb-1 text-2xl font-semibold">Attendance</h1>
-      <p className="mb-6 text-sm text-slate-400">
+      <p className="mb-4 text-sm text-slate-400">
         Enter your employee code, then your PIN
       </p>
+
+      <label className="mb-4 flex items-center gap-2 text-xs text-slate-400">
+        <input
+          type="checkbox"
+          checked={photoEnabled}
+          onChange={(e) => setPhotoEnabled(e.target.checked)}
+          className="h-4 w-4 rounded border-slate-600"
+        />
+        Take a photo on clock-in
+      </label>
+
+      {photoEnabled && (
+        <div className="mb-4 w-full max-w-sm">
+          {/* Muted + playsInline so autoplay is permitted on tablets. */}
+          <video
+            ref={videoRef}
+            muted
+            playsInline
+            className="h-32 w-full rounded-lg bg-slate-800 object-cover"
+          />
+          {cameraError ? (
+            <p className="mt-1 text-xs text-amber-400">{cameraError}</p>
+          ) : (
+            <p className="mt-1 text-xs text-slate-500">
+              {cameraReady ? 'Camera ready' : 'Starting camera…'}
+            </p>
+          )}
+        </div>
+      )}
 
       {result && (
         <div

@@ -7,6 +7,8 @@ import { useHasPermission } from '../../../hooks/useHasPermission';
 import Loader from '../../../components/Loader';
 import ChangeAssignmentModal from './ChangeAssignmentModal';
 import RecordExitModal from './RecordExitModal';
+import EmployeeSalarySection from './EmployeeSalarySection';
+import EmployeeCredentials from './EmployeeCredentials';
 import {
   CHANGE_REASON_LABELS,
   canSeeSalary,
@@ -164,14 +166,17 @@ const EmployeeDetail: React.FC = () => {
             to leak into the DOM for a branch manager to read.
           */}
           {showSalary ? (
-            <Section title="Payment details">
-              <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                <Field label="Method" value={employee.payment_method?.replace('_', ' ')} />
-                <Field label="Bank" value={employee.bank_name} />
-                <Field label="Account title" value={employee.account_title} />
-                <Field label="Account / IBAN" value={employee.account_number_iban} />
-              </dl>
-            </Section>
+            <>
+              <Section title="Payment details">
+                <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                  <Field label="Method" value={employee.payment_method?.replace('_', ' ')} />
+                  <Field label="Bank" value={employee.bank_name} />
+                  <Field label="Account title" value={employee.account_title} />
+                  <Field label="Account / IBAN" value={employee.account_number_iban} />
+                </dl>
+              </Section>
+              <EmployeeSalarySection employeeId={employeeId} />
+            </>
           ) : (
             <Section title="Payment details">
               <p className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
@@ -301,6 +306,15 @@ const EmployeeDetail: React.FC = () => {
                   </li>
                 ))}
               </ul>
+            </Section>
+          )}
+
+          {!hasLeft && (
+            <Section title="Attendance credentials">
+              <EmployeeCredentials
+                employeeId={employeeId}
+                hasPin={employee.has_pin}
+              />
             </Section>
           )}
 
