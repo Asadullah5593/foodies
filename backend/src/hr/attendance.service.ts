@@ -569,6 +569,110 @@ export class AttendanceService {
         }
     }
 
+    /**
+     * Admin correction of the recorded times.
+     *
+     * Punches stay immutable — this writes an already-APPROVED `adjustment`
+     * exception and recomputes, so the day shows the corrected figures while the
+     * original punches and who changed them both remain readable. Editing the
+     * punch rows directly would destroy the only evidence of what the machine
+     * actually saw.
+     *
+     * Requires attendance:approve, not merely :adjust — this IS the approval.
+     */
+    async correctDayTimes(
+        user: HrUser,
+        dayId: number,
+        dto: { first_in_at?: string; last_out_at?: string; reason: string },
+    ) {
+        if (!hasPermission(user, Permissions.ATTENDANCE_APPROVE)) {
+            throw new ForbiddenException(
+                'Correcting recorded times requires attendance:approve',
+            );
+        }
+        if (!dto.reason?.trim()) {
+            throw new BadRequestException('A reason is required');
+        }
+        if (!dto.first_in_at && !dto.last_out_at) {
+            throw new BadRequestException('Nothing to change');
+        }
+
+        const day = await this.loadDayScoped(user, dayId);
+        if (day.isLocked) {
+            throw new BadRequestException(
+                'Payroll is approved for this period — reverse the run first',
+            );
+        }
+
+        const firstIn = dto.first_in_at ? new Date(dto.first_in_at) : null;
+        const lastOut = dto.last_out_at ? new Date(dto.last_out_at) : null;
+        if (firstIn && Number.isNaN(firstIn.getTime())) {
+            throw new BadRequestException('Invalid clock-in time');
+        }
+        if (lastOut && Number.isNaN(lastOut.getTime())) {
+            throw new BadRequestException('Invalid clock-out time');
+        }
+        const effectiveIn = firstIn ?? day.firstInAt;
+        const effectiveOut = lastOut ?? day.lastOutAt;
+        if (effectiveIn && effectiveOut && effectiveOut < effectiveIn) {
+            throw new BadRequestException(
+                'The clock-out time cannot be before the clock-in time',
+            );
+        }
+
+        const newValue: Record<string, unknown> = {};
+        if (firstIn) newValue.first_in_at = firstIn.toISOString();
+        if (lastOut) newValue.last_out_at = lastOut.toISOString();
+
+        const record = await this.exceptions.save(
+            this.exceptions.create({
+                tenantId: day.tenantId,
+                attendanceDayId: day.id,
+                kind: 'adjustment',
+                subject: 'wrong_time',
+                oldValue: {
+                    first_in_at: day.firstInAt,
+                    last_out_at: day.lastOutAt,
+                    worked_minutes: day.workedMinutes,
+                    status: day.status,
+                },
+                newValue,
+                reason: dto.reason.trim(),
+                requestedBy: user.id,
+                // Applied immediately: the person doing it holds the approval
+                // right, so a separate approval step would be theatre.
+                approvedBy: user.id,
+                approvedAt: new Date(),
+                status: 'approved',
+            }),
+        );
+
+        const updated = await this.recompute.recomputeDay(
+            day.employeeId,
+            day.workDate,
+        );
+
+        await this.audit.record({
+            tenantId: day.tenantId,
+            actorUserId: user.id,
+            action: 'attendance.times.corrected',
+            entityTable: 'attendance_days',
+            entityId: day.id,
+            before: {
+                first_in_at: day.firstInAt,
+                last_out_at: day.lastOutAt,
+                worked_minutes: day.workedMinutes,
+            },
+            after: { ...newValue, reason: dto.reason.trim() },
+        });
+
+        return {
+            exception_id: record.id,
+            worked_minutes: updated?.workedMinutes ?? day.workedMinutes,
+            status: updated?.status ?? day.status,
+        };
+    }
+
     /** Every punch of a day, so an admin can see the full in/out history. */
     async dayPunches(user: HrUser, dayId: number) {
         const day = await this.loadDayScoped(user, dayId);

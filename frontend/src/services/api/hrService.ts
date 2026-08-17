@@ -570,6 +570,17 @@ export const hrService = {
     return data;
   },
 
+  correctDayTimes: async (
+    dayId: number,
+    payload: { first_in_at?: string; last_out_at?: string; reason: string },
+  ): Promise<{ exception_id: number; worked_minutes: number; status: string }> => {
+    const { data } = await apiClient.patch(
+      `/admin/hr/attendance/days/${dayId}/times`,
+      payload,
+    );
+    return data;
+  },
+
   createException: async (
     dayId: number,
     payload: {

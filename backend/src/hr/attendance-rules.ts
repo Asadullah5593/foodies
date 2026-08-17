@@ -285,13 +285,26 @@ export function computeStatus(input: {
     minMinutesFullDay: number;
     minMinutesHalfDay: number;
     halfDayAfterLateMinutes: number | null;
+    /**
+     * Did the employee punch at all? Client rule: someone who turned up is
+     * never marked absent, however late they were or however few hours they
+     * worked. `absent` means nobody came in.
+     */
+    hasPunches: boolean;
 }): AttendanceStatus {
-    const byHours: AttendanceStatus =
+    let byHours: AttendanceStatus =
         input.workedMinutes >= input.minMinutesFullDay
             ? 'present'
             : input.workedMinutes >= input.minMinutesHalfDay
               ? 'half_day'
               : 'absent';
+
+    // ⚠️ The floor for anyone who showed up is HALF DAY, never absent. Marking
+    // a person who clocked in as absent is a claim they did not come to work,
+    // and it is the accusation this module must never make by arithmetic.
+    if (input.hasPunches && byHours === 'absent') {
+        byHours = 'half_day';
+    }
 
     if (
         input.halfDayAfterLateMinutes != null &&

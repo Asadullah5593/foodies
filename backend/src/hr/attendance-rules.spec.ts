@@ -331,6 +331,7 @@ describe('computeStatus — severity is not undone by staying later', () => {
         minMinutesFullDay: 480,
         minMinutesHalfDay: 270,
         halfDayAfterLateMinutes: 120,
+        hasPunches: true,
     };
 
     it('slightly late, full hours → present', () => {
@@ -351,10 +352,10 @@ describe('computeStatus — severity is not undone by staying later', () => {
         ).toBe('half_day');
     });
 
-    it('5h late leaving on time → absent on hours', () => {
+    it('5h late leaving on time → half day, never absent, because they came in', () => {
         expect(
             computeStatus({ ...base, workedMinutes: 240, lateMinutes: 285 }),
-        ).toBe('absent');
+        ).toBe('half_day');
     });
 
     it('5h late but works a full day → half day, not present', () => {
@@ -363,10 +364,32 @@ describe('computeStatus — severity is not undone by staying later', () => {
         ).toBe('half_day');
     });
 
-    it('the late check can only make a day worse, never better', () => {
-        // Badly late AND barely worked: stays absent rather than being upgraded.
+    /**
+     * Client rule, overriding the original design: anyone who punched is never
+     * absent. Marking someone who clocked in as absent asserts they did not come
+     * to work — an accusation arithmetic must not make on its own.
+     */
+    it('badly late and barely worked is still half a day, not absent', () => {
         expect(
             computeStatus({ ...base, workedMinutes: 60, lateMinutes: 300 }),
+        ).toBe('half_day');
+    });
+
+    it('two minutes worked is half a day, not absent', () => {
+        // The reported case: in 1:52pm, out 1:54pm, 157 minutes late.
+        expect(
+            computeStatus({ ...base, workedMinutes: 2, lateMinutes: 157 }),
+        ).toBe('half_day');
+    });
+
+    it('absent means nobody punched at all', () => {
+        expect(
+            computeStatus({
+                ...base,
+                hasPunches: false,
+                workedMinutes: 0,
+                lateMinutes: 0,
+            }),
         ).toBe('absent');
     });
 

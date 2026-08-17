@@ -22,6 +22,7 @@ import { AttendanceService } from './attendance.service';
 import { AttendanceRecomputeService } from './attendance-recompute.service';
 import type { HrUser } from './employee-scope';
 import {
+    CorrectDayTimesDto,
     CreateExceptionDto,
     DecideExceptionDto,
     ManagerAttestDto,
@@ -120,6 +121,21 @@ export class AttendanceController {
         @Body() dto: DecideExceptionDto,
     ) {
         return this.attendance.decideException(user, id, dto.decision);
+    }
+
+    @Patch('days/:id/times')
+    @RequirePermission(Permissions.ATTENDANCE_APPROVE)
+    @ApiOperation({
+        summary: 'Correct the recorded clock-in / clock-out times',
+        description:
+            'Punches are never edited — this records an approved adjustment with a mandatory reason and recomputes the day, so the corrected figures and the original punches both stay readable.',
+    })
+    correctTimes(
+        @CurrentUser() user: HrUser,
+        @Param('id', ParseIntPipe) id: number,
+        @Body() dto: CorrectDayTimesDto,
+    ) {
+        return this.attendance.correctDayTimes(user, id, dto);
     }
 
     @Get('days/:id/punches')

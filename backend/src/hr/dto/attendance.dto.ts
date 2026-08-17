@@ -209,6 +209,31 @@ export class CreateExceptionDto {
     minutes_waived?: number;
 }
 
+/**
+ * PATCH /api/admin/hr/attendance/days/:id/times
+ *
+ * Corrects what the day SAYS, not what was punched. Punches stay immutable and
+ * the change is recorded as an approved adjustment with this reason.
+ */
+export class CorrectDayTimesDto {
+    @ApiPropertyOptional({ example: '2026-08-17T06:00:00.000Z' })
+    @IsOptional()
+    @IsDateString()
+    first_in_at?: string;
+
+    @ApiPropertyOptional({ example: '2026-08-17T15:00:00.000Z' })
+    @IsOptional()
+    @IsDateString()
+    last_out_at?: string;
+
+    @ApiProperty({
+        example: 'Forgot to clock out; verified with the branch manager',
+    })
+    @IsString()
+    @Length(3, 2000)
+    reason: string;
+}
+
 /** PATCH /api/admin/hr/attendance/exceptions/:id */
 export class DecideExceptionDto {
     @ApiProperty({ enum: ['approved', 'rejected'] })

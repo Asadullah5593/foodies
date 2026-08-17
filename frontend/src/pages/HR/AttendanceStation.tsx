@@ -43,8 +43,8 @@ const AttendanceStation: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [photoOverride, setPhotoOverride] = useState<boolean | null>(null);
 
+  const [mode, setMode] = useState<'pin' | 'card'>('pin');
   const [scan, setScan] = useState('');
-  const [scanDirection, setScanDirection] = useState<PunchType>('in');
   const codeRef = useRef<HTMLInputElement | null>(null);
   const pinRef = useRef<HTMLInputElement | null>(null);
   const scanRef = useRef<HTMLInputElement | null>(null);
@@ -59,6 +59,11 @@ const AttendanceStation: React.FC = () => {
   // The branch policy decides whether a photo is taken; the tick is only an
   // override for a device whose camera the policy does not know about.
   const photoRequired = context.data?.policy.require_photo === true;
+  // The branch's configured method decides which panel opens first; both stay
+  // reachable, since a card can be forgotten and a PIN can be.
+  useEffect(() => {
+    if (context.data?.policy.primary_method === 'qr_card') setMode('card');
+  }, [context.data?.policy.primary_method]);
   const photoEnabled = photoOverride ?? photoRequired;
 
   const { videoRef, ready: cameraReady, error: cameraError, capture } =
@@ -110,8 +115,10 @@ const AttendanceStation: React.FC = () => {
   // The scan field holds focus by default: a card reader is a keyboard, and it
   // types wherever the caret is. Anyone without a card just clicks the code box.
   useEffect(() => {
-    if (token && context.isSuccess) scanRef.current?.focus();
-  }, [token, context.isSuccess]);
+    if (!token || !context.isSuccess) return;
+    if (mode === 'card') scanRef.current?.focus();
+    else codeRef.current?.focus();
+  }, [token, context.isSuccess, mode]);
 
   const canPunch = code.trim().length > 0 && pin.length >= 4;
 
@@ -127,6 +134,15 @@ const AttendanceStation: React.FC = () => {
     else if (current.length < 12) setter(current + key);
     target.current?.focus();
   };
+
+  const submitScan = (punchType: PunchType) => {
+    const value = scan.trim();
+    if (value.length < 8 || mutation.isPending) return;
+    mutation.mutate({ punchType, qrToken: value });
+  };
+
+  const inputCls =
+    'w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-3 text-center font-mono text-xl tracking-widest text-slate-100 focus:border-blue-400 focus:outline-none';
 
   // ---- device not registered yet -----------------------------------------
 
@@ -170,9 +186,6 @@ const AttendanceStation: React.FC = () => {
 
   // ---- the station -------------------------------------------------------
 
-  const inputCls =
-    'w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-3 text-center font-mono text-xl tracking-widest text-slate-100 focus:border-blue-400 focus:outline-none';
-
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 p-6 text-slate-100">
       <h1 className="text-2xl font-semibold">Attendance</h1>
@@ -180,7 +193,9 @@ const AttendanceStation: React.FC = () => {
         {context.data?.branch.name ?? 'Branch'} · {context.data?.station.label}
       </p>
       <p className="mb-5 text-sm text-slate-500">
-        Type your employee code and PIN, then clock in or out
+        {mode === 'card'
+          ? 'Scan your card to clock in or out'
+          : 'Type your employee code and PIN, then clock in or out'}
       </p>
 
       {result && (
@@ -227,154 +242,182 @@ const AttendanceStation: React.FC = () => {
         </div>
       )}
 
-      {/* Card scanning. A reader behaves like a keyboard that ends with Enter,
-          so the field simply submits on Enter — no driver, no integration. The
-          direction toggle decides whether a scan clocks in or out, because a
-          card carries identity only. */}
-      <div className="mb-4 w-full max-w-sm rounded-lg border border-slate-700 bg-slate-800/50 p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <label htmlFor="station-scan" className="text-xs uppercase text-slate-400">
-            Scan card
-          </label>
-          <div className="flex gap-1">
-            {(['in', 'out'] as PunchType[]).map((d) => (
-              <button
-                key={d}
-                type="button"
-                onClick={() => setScanDirection(d)}
-                className={`rounded px-2 py-1 text-xs ${
-                  scanDirection === d
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-700 text-slate-300'
-                }`}
-              >
-                {d === 'in' ? 'Clock in' : 'Clock out'}
-              </button>
-            ))}
-          </div>
-        </div>
-        <input
-          id="station-scan"
-          ref={scanRef}
-          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-center text-sm text-slate-100 focus:border-blue-400 focus:outline-none"
-          placeholder="Scan your card…"
-          value={scan}
-          autoComplete="off"
-          onChange={(e) => setScan(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key !== 'Enter') return;
-            e.preventDefault();
-            const value = scan.trim();
-            if (value.length < 8 || mutation.isPending) return;
-            mutation.mutate({ punchType: scanDirection, qrToken: value });
-          }}
-        />
-      </div>
-
-      {/* Real inputs, so a keyboard, a barcode scanner and the on-screen keypad
-          all work. The earlier version used buttons as fields, which silently
-          made the whole screen unusable without a touchscreen. */}
-      <form
-        className="mb-4 w-full max-w-sm space-y-3"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (canPunch && !mutation.isPending) mutation.mutate({ punchType: 'in' });
-        }}
-      >
-        <div>
-          <label htmlFor="station-code" className="mb-1 block text-xs uppercase text-slate-400">
-            Employee code
-          </label>
-          <input
-            id="station-code"
-            ref={codeRef}
-            className={inputCls}
-            value={code}
-            autoComplete="off"
-            autoFocus
-            onChange={(e) => setCode(e.target.value)}
-            onKeyDown={(e) => {
-              // Enter moves on rather than submitting a half-filled form —
-              // and a card scanner that appends Enter lands on the PIN.
-              if (e.key === 'Enter' && pin.length < 4) {
-                e.preventDefault();
-                pinRef.current?.focus();
-              }
-            }}
-          />
-        </div>
-        <div>
-          <label htmlFor="station-pin" className="mb-1 block text-xs uppercase text-slate-400">
-            PIN
-          </label>
-          <input
-            id="station-pin"
-            ref={pinRef}
-            type="password"
-            inputMode="numeric"
-            maxLength={8}
-            className={inputCls}
-            value={pin}
-            autoComplete="off"
-            onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
-          />
-        </div>
-        <button type="submit" className="hidden" aria-hidden />
-      </form>
-
-      <div className="mb-5 grid w-full max-w-sm grid-cols-3 gap-2">
-        {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((k) => (
+      {/* Two distinct ways in, one at a time. Showing both at once made it
+          ambiguous which fields mattered and which button applied to what. */}
+      <div className="mb-4 flex w-full max-w-sm rounded-lg bg-slate-800 p-1">
+        {(['pin', 'card'] as const).map((m) => (
           <button
-            key={k}
+            key={m}
             type="button"
-            onClick={() => press(k)}
-            className="rounded-lg bg-slate-800 py-4 text-xl font-medium hover:bg-slate-700"
+            onClick={() => setMode(m)}
+            className={`flex-1 rounded-md py-2 text-sm font-medium ${
+              mode === m ? 'bg-blue-600 text-white' : 'text-slate-300'
+            }`}
           >
-            {k}
+            {m === 'pin' ? 'Code + PIN' : 'Scan card'}
           </button>
         ))}
-        <button
-          type="button"
-          onClick={() => press('clear')}
-          className="rounded-lg bg-slate-800 py-4 text-sm hover:bg-slate-700"
-        >
-          Clear
-        </button>
-        <button
-          type="button"
-          onClick={() => press('0')}
-          className="rounded-lg bg-slate-800 py-4 text-xl font-medium hover:bg-slate-700"
-        >
-          0
-        </button>
-        <button
-          type="button"
-          onClick={() => press('back')}
-          aria-label="Backspace"
-          className="flex items-center justify-center rounded-lg bg-slate-800 py-4 hover:bg-slate-700"
-        >
-          <MdBackspace className="text-xl" />
-        </button>
       </div>
 
-      <div className="grid w-full max-w-sm grid-cols-2 gap-3">
-        <button
-          type="button"
-          disabled={!canPunch || mutation.isPending}
-          onClick={() => mutation.mutate({ punchType: 'in' })}
-          className="flex items-center justify-center gap-2 rounded-lg bg-green-600 py-4 font-medium hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <MdLogin /> Clock in
-        </button>
-        <button
-          type="button"
-          disabled={!canPunch || mutation.isPending}
-          onClick={() => mutation.mutate({ punchType: 'out' })}
-          className="flex items-center justify-center gap-2 rounded-lg bg-slate-600 py-4 font-medium hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          <MdLogout /> Clock out
-        </button>
-      </div>
+      {mode === 'card' ? (
+        <div className="w-full max-w-sm">
+          <label
+            htmlFor="station-scan"
+            className="mb-1 block text-xs uppercase text-slate-400"
+          >
+            Scan your card
+          </label>
+          {/* A reader is a keyboard that ends with Enter, so the field simply
+              submits on Enter — no driver, no integration. A card carries
+              identity only, so the buttons choose in or out. */}
+          <input
+            id="station-scan"
+            ref={scanRef}
+            className={inputCls}
+            placeholder="Waiting for scan…"
+            value={scan}
+            autoComplete="off"
+            onChange={(e) => setScan(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              e.preventDefault();
+              submitScan('in');
+            }}
+          />
+          <p className="mt-2 text-xs text-slate-500">
+            Scanning clocks you in. To clock out, scan then press Clock out.
+          </p>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              disabled={scan.trim().length < 8 || mutation.isPending}
+              onClick={() => submitScan('in')}
+              className="flex items-center justify-center gap-2 rounded-lg bg-green-600 py-4 font-medium hover:bg-green-700 disabled:opacity-40"
+            >
+              <MdLogin /> Clock in
+            </button>
+            <button
+              type="button"
+              disabled={scan.trim().length < 8 || mutation.isPending}
+              onClick={() => submitScan('out')}
+              className="flex items-center justify-center gap-2 rounded-lg bg-slate-600 py-4 font-medium hover:bg-slate-700 disabled:opacity-40"
+            >
+              <MdLogout /> Clock out
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Real inputs, so a keyboard, a scanner and the keypad all work. */}
+          <form
+            className="mb-4 w-full max-w-sm space-y-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (canPunch && !mutation.isPending) {
+                mutation.mutate({ punchType: 'in' });
+              }
+            }}
+          >
+            <div>
+              <label
+                htmlFor="station-code"
+                className="mb-1 block text-xs uppercase text-slate-400"
+              >
+                Employee code
+              </label>
+              <input
+                id="station-code"
+                ref={codeRef}
+                className={inputCls}
+                value={code}
+                autoComplete="off"
+                onChange={(e) => setCode(e.target.value)}
+                onKeyDown={(e) => {
+                  // Enter moves on rather than submitting half a form.
+                  if (e.key === 'Enter' && pin.length < 4) {
+                    e.preventDefault();
+                    pinRef.current?.focus();
+                  }
+                }}
+              />
+            </div>
+            <div>
+              <label
+                htmlFor="station-pin"
+                className="mb-1 block text-xs uppercase text-slate-400"
+              >
+                PIN
+              </label>
+              <input
+                id="station-pin"
+                ref={pinRef}
+                type="password"
+                inputMode="numeric"
+                maxLength={8}
+                className={inputCls}
+                value={pin}
+                autoComplete="off"
+                onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+              />
+            </div>
+            <button type="submit" className="hidden" aria-hidden />
+          </form>
+
+          <div className="mb-5 grid w-full max-w-sm grid-cols-3 gap-2">
+            {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => press(k)}
+                className="rounded-lg bg-slate-800 py-4 text-xl font-medium hover:bg-slate-700"
+              >
+                {k}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => press('clear')}
+              className="rounded-lg bg-slate-800 py-4 text-sm hover:bg-slate-700"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={() => press('0')}
+              className="rounded-lg bg-slate-800 py-4 text-xl font-medium hover:bg-slate-700"
+            >
+              0
+            </button>
+            <button
+              type="button"
+              onClick={() => press('back')}
+              aria-label="Backspace"
+              className="flex items-center justify-center rounded-lg bg-slate-800 py-4 hover:bg-slate-700"
+            >
+              <MdBackspace className="text-xl" />
+            </button>
+          </div>
+
+          <div className="grid w-full max-w-sm grid-cols-2 gap-3">
+            <button
+              type="button"
+              disabled={!canPunch || mutation.isPending}
+              onClick={() => mutation.mutate({ punchType: 'in' })}
+              className="flex items-center justify-center gap-2 rounded-lg bg-green-600 py-4 font-medium hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <MdLogin /> Clock in
+            </button>
+            <button
+              type="button"
+              disabled={!canPunch || mutation.isPending}
+              onClick={() => mutation.mutate({ punchType: 'out' })}
+              className="flex items-center justify-center gap-2 rounded-lg bg-slate-600 py-4 font-medium hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <MdLogout /> Clock out
+            </button>
+          </div>
+        </>
+      )}
 
       <label className="mt-5 flex items-center gap-2 text-xs text-slate-500">
         <input

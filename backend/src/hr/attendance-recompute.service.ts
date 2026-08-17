@@ -319,6 +319,8 @@ export class AttendanceRecomputeService {
                 minMinutesFullDay: template.minMinutesFullDay,
                 minMinutesHalfDay: template.minMinutesHalfDay,
                 halfDayAfterLateMinutes: template.halfDayAfterLateMinutes,
+                // They punched, so the floor is half a day — never absent.
+                hasPunches: true,
             });
         } else if (dayPunches.length > 0) {
             // Punched with no schedule to judge against: present, flagged, and
