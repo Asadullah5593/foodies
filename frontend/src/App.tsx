@@ -89,6 +89,8 @@ import RiderSupervisor from './pages/Admin/RiderHRM/RiderSupervisor';
 import Employees from './pages/Admin/HR/Employees';
 import EmployeeDetail from './pages/Admin/HR/EmployeeDetail';
 import Designations from './pages/Admin/HR/Designations';
+import AttendanceRegister from './pages/Admin/HR/AttendanceRegister';
+import AttendanceStation from './pages/HR/AttendanceStation';
 import LoyaltySettings from './pages/Admin/LoyaltySettings';
 import DeliveryTiers from './pages/Admin/DeliveryTiers';
 import BusinessSettings from './pages/Admin/BusinessSettings';
@@ -393,6 +395,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       icon: MdOutlineBadge,
       children: [
         { path: '/admin/hr/employees', label: 'Employees' },
+        { path: '/admin/hr/attendance', label: 'Attendance' },
         { path: '/admin/hr/settings/designations', label: 'Designations' },
       ],
     },
@@ -1206,7 +1209,11 @@ const AppRoutes: React.FC = () => {
       {/* Employee HRM (docs/HRM.md) — people, as opposed to Rider HRM's dispatch. */}
       <Route path="/admin/hr/employees/:id" element={<ProtectedRoute><AdminOnlyRoute><Layout><EmployeeDetail /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/employees" element={<ProtectedRoute><AdminOnlyRoute><Layout><Employees /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/attendance" element={<ProtectedRoute><AdminOnlyRoute><Layout><AttendanceRegister /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/settings/designations" element={<ProtectedRoute><AdminOnlyRoute><Layout><Designations /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      {/* Full-screen station for a tablet at the staff entrance — no admin
+          chrome, and reachable by till staff who hold only attendance:punch. */}
+      <Route path="/attendance" element={<ProtectedRoute><AttendanceStation /></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/request-riders" element={<ProtectedRoute><AdminOnlyRoute><Layout><RequestRiders /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/attendance" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderAttendance /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/breaks" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderBreaks /></Layout></AdminOnlyRoute></ProtectedRoute>} />

@@ -330,6 +330,22 @@ export const Permissions = {
     /** Settings that drive every calculation: designations, policies, rules. */
     HR_SETTINGS_MANAGE: 'hr-settings:manage',
     HR_AUDIT_VIEW: 'hr-audit:view',
+
+    // — Attendance (Phase 2) —
+    ATTENDANCE_VIEW: 'attendance:view',
+    /** Operate the station. Held by till staff, who approve nothing. */
+    ATTENDANCE_PUNCH: 'attendance:punch',
+    ATTENDANCE_ATTEST: 'attendance:attest',
+    ATTENDANCE_ADJUST: 'attendance:adjust',
+    ATTENDANCE_APPROVE: 'attendance:approve',
+    /**
+     * Forgiving a deduction is its own right, separate from approving a
+     * correction: one fixes what happened, the other changes what it costs.
+     */
+    ATTENDANCE_WAIVER_APPROVE: 'attendance-waiver:approve',
+    ATTENDANCE_RECOMPUTE: 'attendance:recompute',
+    OVERTIME_VIEW: 'overtime:view',
+    OVERTIME_APPROVE: 'overtime:approve',
 } as const;
 
 export type PermissionName = (typeof Permissions)[keyof typeof Permissions];

@@ -209,6 +209,51 @@ export interface RecordExitPayload {
   rehire_eligible?: boolean;
 }
 
+export type PunchType = 'in' | 'out' | 'break_start' | 'break_end';
+
+export interface PunchResult {
+  duplicate: boolean;
+  punch_id: number;
+  employee: {
+    id: number;
+    full_name: string;
+    employee_code?: string;
+    photo_url?: string | null;
+  };
+  punch_type: PunchType;
+  punched_at: string;
+  work_date?: string | null;
+  /** True when no shift claimed the punch — recorded, but needs a manager. */
+  orphan?: boolean;
+}
+
+export interface RegisterRow {
+  id: number;
+  work_date: string;
+  employee: { id: number; full_name: string; employee_code: string };
+  branch_name: string | null;
+  status: string;
+  first_in_at: string | null;
+  last_out_at: string | null;
+  worked_minutes: number;
+  late_minutes: number;
+  early_leave_minutes: number;
+  overtime_pending: number;
+  overtime_approved: number;
+  flags: Record<string, unknown>;
+  is_locked: boolean;
+}
+
+export interface ExceptionsReport {
+  flagged_days: RegisterRow[];
+  bursts: Array<{
+    pos_user_id: number;
+    branch_id: number;
+    minute: string;
+    punch_count: number;
+  }>;
+}
+
 export const hrService = {
   listEmployees: async (params: EmployeeListParams = {}): Promise<EmployeeListResponse> => {
     const { data } = await apiClient.get('/admin/hr/employees', { params });
@@ -259,6 +304,80 @@ export const hrService = {
     payload: { warning_type: string; severity?: string; issued_on: string; reason: string; document_url?: string },
   ): Promise<{ id: number }> => {
     const { data } = await apiClient.post(`/admin/hr/employees/${id}/warnings`, payload);
+    return data;
+  },
+
+  // --- attendance ---------------------------------------------------------
+
+  punch: async (payload: {
+    branch_id: number;
+    punch_type: PunchType;
+    employee_code?: string;
+    pin?: string;
+    qr_token?: string;
+    photo_url?: string;
+  }): Promise<PunchResult> => {
+    const { data } = await apiClient.post('/admin/hr/attendance/punch', payload);
+    return data;
+  },
+
+  attest: async (payload: {
+    branch_id: number;
+    employee_id: number;
+    punch_type: PunchType;
+    note?: string;
+  }): Promise<{ punch_id: number; work_date: string | null }> => {
+    const { data } = await apiClient.post('/admin/hr/attendance/attest', payload);
+    return data;
+  },
+
+  getRegister: async (params: {
+    branch_id?: number;
+    date_from: string;
+    date_to: string;
+  }): Promise<RegisterRow[]> => {
+    const { data } = await apiClient.get('/admin/hr/attendance/register', { params });
+    return data;
+  },
+
+  getExceptionsReport: async (params: {
+    branch_id?: number;
+    date_from: string;
+    date_to: string;
+  }): Promise<ExceptionsReport> => {
+    const { data } = await apiClient.get('/admin/hr/attendance/exceptions-report', { params });
+    return data;
+  },
+
+  createException: async (
+    dayId: number,
+    payload: {
+      kind: 'adjustment' | 'waiver' | 'overtime_approval';
+      subject: string;
+      reason: string;
+      new_value?: Record<string, unknown>;
+      minutes_waived?: number;
+    },
+  ): Promise<{ id: number; status: string }> => {
+    const { data } = await apiClient.post(
+      `/admin/hr/attendance/days/${dayId}/exceptions`,
+      payload,
+    );
+    return data;
+  },
+
+  decideException: async (
+    id: number,
+    decision: 'approved' | 'rejected',
+  ): Promise<{ id: number; status: string }> => {
+    const { data } = await apiClient.patch(`/admin/hr/attendance/exceptions/${id}`, {
+      decision,
+    });
+    return data;
+  },
+
+  setPin: async (employeeId: number, pin: string): Promise<{ updated: boolean }> => {
+    const { data } = await apiClient.put(`/admin/hr/employees/${employeeId}/pin`, { pin });
     return data;
   },
 

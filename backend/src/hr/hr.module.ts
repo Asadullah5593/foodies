@@ -11,6 +11,18 @@ import { EmployeeClearanceItem } from '../entities/employee-clearance-item.entit
 import { Designation } from '../entities/designation.entity';
 import { HrAuditLog } from '../entities/hr-audit-log.entity';
 import { Branch } from '../entities/branch.entity';
+import { AttendancePunch } from '../entities/attendance-punch.entity';
+import { AttendanceDay } from '../entities/attendance-day.entity';
+import { AttendanceException } from '../entities/attendance-exception.entity';
+import { AttendanceCapturePolicy } from '../entities/attendance-capture-policy.entity';
+import { WorkScheduleTemplate } from '../entities/work-schedule-template.entity';
+import { EmployeeSchedule } from '../entities/employee-schedule.entity';
+import {
+    AttendanceController,
+    AttendancePinController,
+} from './attendance.controller';
+import { AttendanceService } from './attendance.service';
+import { AttendanceRecomputeService } from './attendance-recompute.service';
 import {
     EmployeeExitsController,
     EmployeesController,
@@ -45,6 +57,12 @@ import { HrAuditService } from './hr-audit.service';
             Designation,
             HrAuditLog,
             Branch,
+            AttendancePunch,
+            AttendanceDay,
+            AttendanceException,
+            AttendanceCapturePolicy,
+            WorkScheduleTemplate,
+            EmployeeSchedule,
         ]),
     ],
     controllers: [
@@ -52,13 +70,17 @@ import { HrAuditService } from './hr-audit.service';
         EmployeeExitsController,
         DesignationsController,
         HrAuditController,
+        AttendanceController,
+        AttendancePinController,
     ],
     providers: [
         EmployeesService,
         DesignationsService,
         EmployeeExitsService,
         HrAuditService,
+        AttendanceService,
+        AttendanceRecomputeService,
     ],
-    exports: [EmployeesService, HrAuditService],
+    exports: [EmployeesService, HrAuditService, AttendanceService],
 })
 export class HrModule {}

@@ -131,6 +131,13 @@ export class Employee {
     @Column({ type: 'timestamp', nullable: true })
     pinLockedUntil: Date | null;
 
+    /**
+     * Duty pattern when no roster row exists for the date. This is the live
+     * path at launch — everyone works fixed timings (docs/HRM.md §5.1).
+     */
+    @Column({ type: 'int', nullable: true })
+    defaultScheduleTemplateId: number | null;
+
     @Column({ type: 'varchar', length: 64, nullable: true })
     qrToken: string | null;
 

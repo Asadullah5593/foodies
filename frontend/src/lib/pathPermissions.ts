@@ -52,6 +52,10 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   // need only employees:view, which branch managers hold. Salary data inside the
   // 360 payload is gated separately server-side by salary:view.
   '/admin/hr/settings/designations': ['hr-settings:manage', 'employees:view'],
+  '/admin/hr/attendance': ['attendance:view'],
+  // The station is reachable by till staff, who hold attendance:punch and
+  // nothing else in HR — it must NOT sit behind employees:view.
+  '/attendance': ['attendance:punch'],
   '/admin/hr/audit': ['hr-audit:view'],
   '/admin/hr': ['employees:view'],
   '/admin/rider-ops': ['deliveries:view'],
