@@ -372,6 +372,21 @@ export const Permissions = {
      */
     PAYROLL_ADJUST: 'payroll:adjust',
     PAYROLL_EXPORT: 'payroll:export',
+
+    // — Reviews & training (Phase 5) —
+    REVIEWS_VIEW: 'reviews:view',
+    REVIEWS_CONDUCT: 'reviews:conduct',
+    /** Applying an outcome — a promotion or a raise — is its own right. */
+    REVIEWS_APPROVE: 'reviews:approve',
+    /**
+     * Raising an out-of-cycle review. Separate because it is freely available
+     * without touching the scheduled cadence, which the scheduler enforces by
+     * only reading cycles with origin='system'.
+     */
+    REVIEWS_INITIATE_ADHOC: 'reviews:initiate-adhoc',
+    TRAINING_VIEW: 'training:view',
+    TRAINING_MANAGE: 'training:manage',
+    TRAINING_RECORD: 'training:record',
 } as const;
 
 export type PermissionName = (typeof Permissions)[keyof typeof Permissions];

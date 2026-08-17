@@ -63,6 +63,16 @@ import { EmployeesService } from './employees.service';
 import { DesignationsService } from './designations.service';
 import { EmployeeExitsService } from './employee-exits.service';
 import { HrAuditService } from './hr-audit.service';
+import { ReviewCycle } from '../entities/review-cycle.entity';
+import { ReviewTemplate } from '../entities/review-template.entity';
+import { EmployeeReview } from '../entities/employee-review.entity';
+import { TrainingProgram } from '../entities/training-program.entity';
+import { EmployeeTraining } from '../entities/employee-training.entity';
+import { DesignationTrainingRequirement } from '../entities/designation-training-requirement.entity';
+import { ReviewsController, TrainingController } from './reviews.controller';
+import { ReviewsService } from './reviews.service';
+import { TrainingService } from './training.service';
+import { HrSchedulerService } from './hr-scheduler.service';
 
 /**
  * Employee HRM — Phase 1 (employee master, history spine, exits).
@@ -107,6 +117,12 @@ import { HrAuditService } from './hr-audit.service';
             PayrollLine,
             PayrollLineItem,
             PayrollAdjustment,
+            ReviewCycle,
+            ReviewTemplate,
+            EmployeeReview,
+            TrainingProgram,
+            EmployeeTraining,
+            DesignationTrainingRequirement,
         ]),
     ],
     controllers: [
@@ -123,6 +139,8 @@ import { HrAuditService } from './hr-audit.service';
         PayrollController,
         SalaryController,
         AdvancesController,
+        ReviewsController,
+        TrainingController,
     ],
     providers: [
         EmployeesService,
@@ -134,6 +152,9 @@ import { HrAuditService } from './hr-audit.service';
         StationAuthGuard,
         LeavesService,
         PayrollService,
+        ReviewsService,
+        TrainingService,
+        HrSchedulerService,
     ],
     exports: [EmployeesService, HrAuditService, AttendanceService],
 })
