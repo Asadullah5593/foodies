@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RoleAccessModule } from '../auth/role-access.module';
+import { MediaModule } from '../media/media.module';
 import { Employee } from '../entities/employee.entity';
 import { EmployeeAssignment } from '../entities/employee-assignment.entity';
 import { EmployeeDocument } from '../entities/employee-document.entity';
@@ -22,6 +23,12 @@ import {
     AttendancePinController,
 } from './attendance.controller';
 import { AttendanceService } from './attendance.service';
+import { AttendanceStation } from '../entities/attendance-station.entity';
+import { StationAuthGuard } from './station-auth.guard';
+import {
+    AttendanceStationAdminController,
+    PublicAttendanceStationController,
+} from './attendance-station.controller';
 import { AttendanceRecomputeService } from './attendance-recompute.service';
 import { LeaveType } from '../entities/leave-type.entity';
 import { LeaveBalance } from '../entities/leave-balance.entity';
@@ -67,6 +74,8 @@ import { HrAuditService } from './hr-audit.service';
 @Module({
     imports: [
         RoleAccessModule,
+        // Punch photos from an unauthenticated station.
+        MediaModule,
         TypeOrmModule.forFeature([
             Employee,
             EmployeeAssignment,
@@ -82,6 +91,7 @@ import { HrAuditService } from './hr-audit.service';
             AttendanceDay,
             AttendanceException,
             AttendanceCapturePolicy,
+            AttendanceStation,
             WorkScheduleTemplate,
             EmployeeSchedule,
             LeaveType,
@@ -106,6 +116,8 @@ import { HrAuditService } from './hr-audit.service';
         HrAuditController,
         AttendanceController,
         AttendancePinController,
+        PublicAttendanceStationController,
+        AttendanceStationAdminController,
         LeavesController,
         LeaveSettingsController,
         PayrollController,
@@ -119,6 +131,7 @@ import { HrAuditService } from './hr-audit.service';
         HrAuditService,
         AttendanceService,
         AttendanceRecomputeService,
+        StationAuthGuard,
         LeavesService,
         PayrollService,
     ],

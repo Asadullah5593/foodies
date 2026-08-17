@@ -5,6 +5,7 @@ import { hrService, RegisterRow } from '../../../services/api/hrService';
 import apiClient from '../../../utils/apiClient';
 import Loader from '../../../components/Loader';
 import { statusBadgeClass, statusLabel } from './hrShared';
+import AttendanceStations from './AttendanceStations';
 import SearchableSelect from '../../../components/SearchableSelect';
 
 const isoDaysAgo = (days: number) =>
@@ -12,6 +13,7 @@ const isoDaysAgo = (days: number) =>
 
 /** Flags are machine keys; these are what a manager should actually read. */
 const FLAG_LABELS: Record<string, string> = {
+  in_progress: 'On shift now',
   missing_out: 'No clock-out',
   manager_attested: 'Manager recorded',
   no_schedule: 'No shift set',
@@ -94,6 +96,8 @@ const AttendanceRegister: React.FC = () => {
         entrance, or on a POS terminal. Set each employee&apos;s PIN from their profile
         (Employees → open → Attendance credentials).
       </p>
+
+      <AttendanceStations />
 
       <div className="mb-5 flex flex-wrap gap-3">
         <input
@@ -190,7 +194,17 @@ const AttendanceRegister: React.FC = () => {
                     <div className="text-xs text-gray-500">{r.employee.employee_code}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={statusBadgeClass(r.status)}>{statusLabel(r.status)}</span>
+                    {/* Someone who has clocked in but not out yet is at work, not
+                        absent. Showing the raw status here reads as an accusation. */}
+                    {r.flags?.in_progress ? (
+                      <span className="inline-flex rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800 dark:bg-blue-900/30 dark:text-blue-300">
+                        Clocked in
+                      </span>
+                    ) : (
+                      <span className={statusBadgeClass(r.status)}>
+                        {statusLabel(r.status)}
+                      </span>
+                    )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
                     {r.first_in_at ? new Date(r.first_in_at).toLocaleTimeString() : '—'}

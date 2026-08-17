@@ -1186,8 +1186,15 @@ export class PayrollService {
             .andWhere('d.workDate BETWEEN :from AND :to', { from, to })
             .getMany();
 
+        // A day still in progress is neither present nor absent: the employee is
+        // at work but has not clocked out. Counting it absent would deduct a day
+        // from someone currently on shift.
+        const settled = rows.filter(
+            (r) => r.exceptionFlags?.in_progress !== true,
+        );
         const count = (status: string) =>
-            rows.filter((r) => r.status === status).length;
+            settled.filter((r) => r.status === status).length;
+        const inProgressDays = rows.length - settled.length;
 
         // Riders are paid per DELIVERED order, counted from the orders table —
         // the same fact the old rider payroll used, now feeding one engine.
@@ -1213,12 +1220,13 @@ export class PayrollService {
             absentDays: count('absent'),
             weeklyOffDays: count('weekly_off'),
             holidayDays: count('holiday'),
-            lateCount: rows.filter((r) => r.lateMinutes > 0).length,
-            approvedOvertimeMinutes: rows.reduce(
+            lateCount: settled.filter((r) => r.lateMinutes > 0).length,
+            approvedOvertimeMinutes: settled.reduce(
                 (s, r) => s + r.overtimeMinutesApproved,
                 0,
             ),
             deliveredOrders,
+            inProgressDays,
         };
     }
 
@@ -1431,6 +1439,7 @@ export class PayrollService {
 
         const windowDays = daysBetween(start, end);
         const recorded =
+            (facts.inProgressDays ?? 0) +
             facts.presentDays +
             facts.halfDays +
             facts.paidLeaveDays +

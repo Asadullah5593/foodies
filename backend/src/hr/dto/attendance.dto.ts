@@ -57,6 +57,54 @@ export class PunchDto {
     photo_url?: string;
 }
 
+/**
+ * POST /api/attendance-station/punch
+ *
+ * Same as PunchDto minus `branch_id`: the branch comes from the device token, so
+ * a station cannot record a punch at someone else's branch by asking.
+ */
+export class StationPunchDto {
+    @ApiProperty({ enum: PUNCH_TYPES })
+    @IsEnum(PUNCH_TYPES)
+    punch_type: (typeof PUNCH_TYPES)[number];
+
+    @ApiPropertyOptional({ example: 'EMP-0007' })
+    @IsOptional()
+    @IsString()
+    @Length(1, 32)
+    employee_code?: string;
+
+    @ApiPropertyOptional({ example: '482913' })
+    @IsOptional()
+    @IsString()
+    @Length(4, 8)
+    pin?: string;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    qr_token?: string;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    photo_url?: string;
+}
+
+/** POST /api/admin/hr/attendance-stations */
+export class CreateStationDto {
+    @ApiProperty({ example: 10 })
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    branch_id: number;
+
+    @ApiProperty({ example: 'Staff entrance tablet' })
+    @IsString()
+    @Length(2, 120)
+    label: string;
+}
+
 /** POST /api/admin/hr/attendance/attest — supervisor roll call. */
 export class ManagerAttestDto {
     @ApiProperty({ example: 10 })

@@ -346,6 +346,11 @@ export const Permissions = {
     ATTENDANCE_RECOMPUTE: 'attendance:recompute',
     OVERTIME_VIEW: 'overtime:view',
     OVERTIME_APPROVE: 'overtime:approve',
+    /**
+     * Register and revoke attendance devices. Holders can read station tokens,
+     * which is why it is separate from attendance:view.
+     */
+    ATTENDANCE_STATIONS_MANAGE: 'attendance-stations:manage',
 
     // — Leaves & holidays (Phase 3) —
     LEAVES_VIEW: 'leaves:view',

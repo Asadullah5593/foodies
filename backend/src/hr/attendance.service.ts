@@ -15,6 +15,7 @@ import { AttendancePunch } from '../entities/attendance-punch.entity';
 import { AttendanceDay } from '../entities/attendance-day.entity';
 import { AttendanceException } from '../entities/attendance-exception.entity';
 import { AttendanceCapturePolicy } from '../entities/attendance-capture-policy.entity';
+import { AttendanceStation } from '../entities/attendance-station.entity';
 import { Permissions } from '../roles/permissions.dto';
 import { AttendanceRecomputeService } from './attendance-recompute.service';
 import { HrAuditService } from './hr-audit.service';
@@ -39,6 +40,8 @@ export class AttendanceService {
         private readonly exceptions: Repository<AttendanceException>,
         @InjectRepository(AttendanceCapturePolicy)
         private readonly policies: Repository<AttendanceCapturePolicy>,
+        @InjectRepository(AttendanceStation)
+        private readonly stations: Repository<AttendanceStation>,
         private readonly recompute: AttendanceRecomputeService,
         private readonly audit: HrAuditService,
     ) {}
@@ -267,6 +270,207 @@ export class AttendanceService {
     }
 
     /**
+     * A punch from a registered device with NOBODY logged in.
+     *
+     * Identity still comes from the employee's own code + PIN or QR card — the
+     * device token only says "this is the Pine Avenue staff-entrance tablet". It
+     * grants nothing else, so leaving it on a shared screen exposes no data.
+     *
+     * Records `stationId` in place of `posUserId`, which is what burst detection
+     * groups by for station punches.
+     */
+    async stationPunch(
+        station: { id: number; tenantId: number; branchId: number },
+        dto: Omit<PunchDto, 'branch_id'>,
+    ) {
+        const policy = await this.resolvePolicy(
+            station.tenantId,
+            station.branchId,
+        );
+        const employee = await this.findByCredential(station.tenantId, {
+            ...dto,
+            branch_id: station.branchId,
+        });
+        await this.assertWorksAtBranch(employee.id, station.branchId);
+
+        if (policy.requirePhoto && dto.punch_type === 'in' && !dto.photo_url) {
+            throw new BadRequestException(
+                'A photo is required to clock in at this branch',
+            );
+        }
+
+        const now = new Date();
+        const recent = await this.punches.findOne({
+            where: { employeeId: employee.id, punchType: dto.punch_type },
+            order: { punchedAt: 'DESC' },
+        });
+        if (
+            recent &&
+            now.getTime() - recent.punchedAt.getTime() <
+                policy.duplicateWindowSeconds * 1000
+        ) {
+            return {
+                duplicate: true,
+                punch_id: recent.id,
+                employee: { id: employee.id, full_name: employee.fullName },
+                punch_type: recent.punchType,
+                punched_at: recent.punchedAt,
+            };
+        }
+
+        const { workDate } = await this.recompute.resolveWorkDate(
+            employee,
+            station.branchId,
+            now,
+        );
+
+        const punch = await this.punches.save(
+            this.punches.create({
+                tenantId: station.tenantId,
+                employeeId: employee.id,
+                branchId: station.branchId,
+                punchType: dto.punch_type,
+                punchedAt: now,
+                source: 'pos',
+                method: dto.qr_token ? 'qr_card' : 'pin',
+                posUserId: null,
+                stationId: station.id,
+                photoUrl: dto.photo_url ?? null,
+                workDate,
+            }),
+        );
+
+        await this.stations.update({ id: station.id }, { lastSeenAt: now });
+
+        if (workDate) await this.recompute.recomputeDay(employee.id, workDate);
+
+        return {
+            duplicate: false,
+            punch_id: punch.id,
+            employee: {
+                id: employee.id,
+                full_name: employee.fullName,
+                employee_code: employee.employeeCode,
+                photo_url: employee.photoUrl,
+            },
+            punch_type: punch.punchType,
+            punched_at: punch.punchedAt,
+            work_date: workDate,
+            orphan: workDate == null,
+        };
+    }
+
+    /** What a station needs to render itself: branch name and capture policy. */
+    async stationContext(station: {
+        id: number;
+        tenantId: number;
+        branchId: number;
+        label: string;
+    }) {
+        const policy = await this.resolvePolicy(
+            station.tenantId,
+            station.branchId,
+        );
+        const branch = await this.stations.findOne({
+            where: { id: station.id },
+            relations: ['branch'],
+        });
+        return {
+            station: { id: station.id, label: station.label },
+            branch: {
+                id: station.branchId,
+                name: branch?.branch?.name ?? null,
+            },
+            policy: {
+                primary_method: policy.primaryMethod,
+                require_photo: policy.requirePhoto,
+            },
+        };
+    }
+
+    // ------------------------------------------------------- station admin
+
+    async listStations(user: HrUser) {
+        const qb = this.stations
+            .createQueryBuilder('s')
+            .leftJoin('s.branch', 'br')
+            .select([
+                's.id',
+                's.label',
+                's.token',
+                's.isActive',
+                's.lastSeenAt',
+                's.branchId',
+                'br.name',
+            ])
+            .orderBy('s.id', 'DESC');
+        if (user.tenantId != null) {
+            qb.where('s.tenantId = :tenantId', { tenantId: user.tenantId });
+        }
+        if (user.allowedBranchIds != null) {
+            if (user.allowedBranchIds.length === 0) return [];
+            qb.andWhere('s.branchId IN (:...branchIds)', {
+                branchIds: user.allowedBranchIds,
+            });
+        }
+        return qb.getMany();
+    }
+
+    async createStation(
+        user: HrUser,
+        dto: { branch_id: number; label: string },
+    ) {
+        if (user.tenantId == null) {
+            throw new BadRequestException(
+                'Super admin must act within a tenant',
+            );
+        }
+        if (
+            user.allowedBranchIds != null &&
+            !user.allowedBranchIds.includes(dto.branch_id)
+        ) {
+            throw new ForbiddenException('You cannot register a device there');
+        }
+        const saved = await this.stations.save(
+            this.stations.create({
+                tenantId: user.tenantId,
+                branchId: dto.branch_id,
+                label: dto.label.trim(),
+                token: randomBytes(24).toString('base64url'),
+                isActive: true,
+                createdBy: user.id,
+            }),
+        );
+        await this.audit.record({
+            tenantId: user.tenantId,
+            actorUserId: user.id,
+            action: 'attendance.station.created',
+            entityTable: 'attendance_stations',
+            entityId: saved.id,
+            after: { branch_id: dto.branch_id, label: saved.label },
+        });
+        return { id: saved.id, token: saved.token };
+    }
+
+    /** Revoke a device. Its stored token stops working immediately. */
+    async revokeStation(user: HrUser, id: number) {
+        const station = await this.stations.findOne({ where: { id } });
+        if (!station) throw new NotFoundException('Station not found');
+        if (user.tenantId != null && station.tenantId !== user.tenantId) {
+            throw new NotFoundException('Station not found');
+        }
+        await this.stations.update({ id }, { isActive: false });
+        await this.audit.record({
+            tenantId: station.tenantId,
+            actorUserId: user.id,
+            action: 'attendance.station.revoked',
+            entityTable: 'attendance_stations',
+            entityId: id,
+        });
+        return { revoked: true };
+    }
+
+    /**
      * Roll call: a supervisor records attendance for someone else.
      *
      * Always tagged `manager_attestation` and always surfaced in the exceptions
@@ -427,6 +631,7 @@ export class AttendanceService {
         const qb = this.punches
             .createQueryBuilder('p')
             .select('p.posUserId', 'pos_user_id')
+            .addSelect('p.stationId', 'station_id')
             .addSelect('p.branchId', 'branch_id')
             .addSelect("date_trunc('minute', p.punched_at)", 'minute')
             .addSelect('COUNT(*)', 'count')
@@ -434,8 +639,9 @@ export class AttendanceService {
                 from: params.date_from,
                 to: params.date_to,
             })
-            .andWhere('p.posUserId IS NOT NULL')
+            .andWhere('(p.posUserId IS NOT NULL OR p.stationId IS NOT NULL)')
             .groupBy('p.posUserId')
+            .addGroupBy('p.stationId')
             .addGroupBy('p.branchId')
             .addGroupBy("date_trunc('minute', p.punched_at)")
             .having('COUNT(*) >= :threshold', { threshold: 5 });
@@ -450,7 +656,8 @@ export class AttendanceService {
         }
 
         const bursts = await qb.getRawMany<{
-            pos_user_id: number;
+            pos_user_id: number | null;
+            station_id: number | null;
             branch_id: number;
             minute: string;
             count: string;
@@ -460,6 +667,7 @@ export class AttendanceService {
             flagged_days: flagged,
             bursts: bursts.map((b) => ({
                 pos_user_id: b.pos_user_id,
+                station_id: b.station_id,
                 branch_id: b.branch_id,
                 minute: b.minute,
                 punch_count: Number(b.count),

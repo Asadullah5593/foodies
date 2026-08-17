@@ -43,6 +43,12 @@ export type AttendanceFacts = {
     approvedOvertimeMinutes: number;
     /** Riders only. */
     deliveredOrders: number;
+    /**
+     * Days where the employee has clocked in and is still on shift. Neither
+     * present nor absent — excluded from both so nobody is deducted a day they
+     * are currently working.
+     */
+    inProgressDays?: number;
 };
 
 /**

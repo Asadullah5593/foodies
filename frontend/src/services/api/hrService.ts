@@ -334,6 +334,17 @@ export interface AdvanceRow {
   employee: { id: number; fullName: string; employeeCode: string } | null;
 }
 
+export interface StationRow {
+  id: number;
+  label: string;
+  /** Readable so a replacement device can be set up without re-registering. */
+  token: string;
+  isActive: boolean;
+  lastSeenAt: string | null;
+  branchId: number;
+  branch: { name: string } | null;
+}
+
 export type DayPart = 'full' | 'first_half' | 'second_half';
 
 export interface LeaveTypeRow {
@@ -787,6 +798,26 @@ export const hrService = {
     const { data } = await apiClient.post(`/admin/hr/advances/${id}/write-off`, {
       reason,
     });
+    return data;
+  },
+
+  // --- attendance devices --------------------------------------------------
+
+  listStations: async (): Promise<StationRow[]> => {
+    const { data } = await apiClient.get('/admin/hr/attendance-stations');
+    return data;
+  },
+
+  createStation: async (payload: {
+    branch_id: number;
+    label: string;
+  }): Promise<{ id: number; token: string }> => {
+    const { data } = await apiClient.post('/admin/hr/attendance-stations', payload);
+    return data;
+  },
+
+  revokeStation: async (id: number): Promise<{ revoked: boolean }> => {
+    const { data } = await apiClient.delete(`/admin/hr/attendance-stations/${id}`);
     return data;
   },
 

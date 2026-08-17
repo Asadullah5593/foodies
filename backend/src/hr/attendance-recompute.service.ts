@@ -271,6 +271,15 @@ export class AttendanceRecomputeService {
             // Clocked in and never out: zero hours, flagged. Guessing an end
             // time would quietly manufacture pay.
             flags.missing_out = true;
+            // Still on shift right now, as opposed to having forgotten to clock
+            // out. The distinction matters: without it, everyone currently at
+            // work reads as ABSENT on the register and payroll would deduct
+            // today from someone standing behind the counter.
+            const shiftEnd = occurrence?.plannedEndUtc?.getTime();
+            if (shiftEnd == null || Date.now() < shiftEnd) {
+                flags.in_progress = true;
+                delete flags.missing_out;
+            }
         }
 
         if (dayPunches.some((p) => p.source === 'manager_attestation')) {

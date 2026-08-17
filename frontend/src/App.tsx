@@ -1220,9 +1220,11 @@ const AppRoutes: React.FC = () => {
       <Route path="/admin/hr/payroll/:id" element={<ProtectedRoute><AdminOnlyRoute><Layout><PayrollRunDetail /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/payroll" element={<ProtectedRoute><AdminOnlyRoute><Layout><Payroll /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/settings/designations" element={<ProtectedRoute><AdminOnlyRoute><Layout><Designations /></Layout></AdminOnlyRoute></ProtectedRoute>} />
-      {/* Full-screen station for a tablet at the staff entrance — no admin
-          chrome, and reachable by till staff who hold only attendance:punch. */}
-      <Route path="/attendance" element={<ProtectedRoute><AttendanceStation /></ProtectedRoute>} />
+      {/* Full-screen station, deliberately OUTSIDE ProtectedRoute: it runs on a
+          device token, with nobody logged in. Staff have no user accounts, and
+          keeping a manager signed in all day would leave an authenticated admin
+          session on a shared screen. */}
+      <Route path="/attendance" element={<AttendanceStation />} />
       <Route path="/admin/rider-hrm/request-riders" element={<ProtectedRoute><AdminOnlyRoute><Layout><RequestRiders /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/attendance" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderAttendance /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/rider-hrm/breaks" element={<ProtectedRoute><AdminOnlyRoute><Layout><RiderBreaks /></Layout></AdminOnlyRoute></ProtectedRoute>} />

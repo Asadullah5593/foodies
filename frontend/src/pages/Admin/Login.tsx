@@ -336,6 +336,24 @@ const Login: React.FC = () => {
             <p className="mt-6 text-center text-xs text-gray-400 dark:text-slate-500">
               Sign in to manage orders, menu, and reports.
             </p>
+
+            {/*
+              Staff attendance needs no login at all — the device carries its own
+              token and the employee identifies with a code and PIN. Reaching it
+              from here is the point: nobody should have to sign in as a manager
+              just so a cook can clock in.
+            */}
+            <div className="mt-6 border-t border-gray-200 pt-5 text-center dark:border-slate-700">
+              <a
+                href="/attendance"
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-300 px-5 py-3 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                Staff attendance
+              </a>
+              <p className="mt-2 text-xs text-gray-400 dark:text-slate-500">
+                Clock in or out with your employee code and PIN — no login needed.
+              </p>
+            </div>
           </motion.div>
         </motion.div>
       </div>

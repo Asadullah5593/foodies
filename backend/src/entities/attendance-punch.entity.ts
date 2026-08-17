@@ -58,6 +58,14 @@ export class AttendancePunch {
     @Column({ type: 'int', nullable: true })
     posUserId: number | null;
 
+    /**
+     * The registered device, when the punch came from an unauthenticated
+     * station. Station punches have no `posUserId`, so this is what burst
+     * detection groups by instead.
+     */
+    @Column({ type: 'int', nullable: true })
+    stationId: number | null;
+
     @Column({ type: 'text', nullable: true })
     photoUrl: string | null;
 

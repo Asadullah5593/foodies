@@ -1,89 +1,65 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import apiClient from '../../utils/apiClient';
 import { MdBackspace, MdCheckCircle, MdLogin, MdLogout } from 'react-icons/md';
-import { hrService, PunchResult, PunchType } from '../../services/api/hrService';
-import { useAuth } from '../../contexts/AuthContext';
+import {
+  stationService,
+  StationPunchResult,
+  PunchType,
+} from '../../services/api/stationService';
 import { usePunchCamera } from './usePunchCamera';
 
+const TOKEN_KEY = 'attendance_station_token';
+
 /**
- * The attendance station — a tablet parked at the staff entrance, or a POS tab.
+ * The attendance station — a tablet at the staff entrance, or a POS terminal.
  *
- * Employee code + PIN, because most staff have no login at all. There is no
- * biometric device: this deters substitution and leaves an audit trail, it does
- * not prove identity (docs/HRM.md §11).
+ * Runs with NOBODY logged in. Staff have no user accounts, and requiring a
+ * manager to stay signed in all day leaves an authenticated admin session on a
+ * shared screen. The device is identified by its own token; the employee still
+ * proves themselves with their code + PIN.
  *
- * Deliberately minimal: no employee list, no search. Showing who works here
- * would hand a stranger every valid employee code, and the server already
- * returns the same message whether the code or the PIN is wrong.
+ * There is no biometric device: the photo deters substitution and leaves an
+ * audit trail, it does not prove identity (docs/HRM.md §11).
+ *
+ * Deliberately minimal — no employee list, no search. Showing who works here
+ * would hand a stranger every valid employee code.
  */
 const AttendanceStation: React.FC = () => {
-  const { user } = useAuth();
+  const [token, setToken] = useState<string | null>(() => {
+    // A URL token lets an admin set a device up by opening one link.
+    const fromUrl = new URLSearchParams(window.location.search).get('token');
+    if (fromUrl) {
+      localStorage.setItem(TOKEN_KEY, fromUrl);
+      window.history.replaceState({}, '', window.location.pathname);
+      return fromUrl;
+    }
+    return localStorage.getItem(TOKEN_KEY);
+  });
+  const [tokenInput, setTokenInput] = useState('');
+
   const [code, setCode] = useState('');
   const [pin, setPin] = useState('');
-  const [stage, setStage] = useState<'code' | 'pin'>('code');
-  const [result, setResult] = useState<PunchResult | null>(null);
+  const [result, setResult] = useState<StationPunchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Opt-in per station rather than read from the branch policy: the same policy
-  // may cover a till with no webcam and a tablet that has one.
   const [photoEnabled, setPhotoEnabled] = useState(false);
 
-  /**
-   * Which branch this station belongs to.
-   *
-   * An owner or GM has `allowed_branch_ids === null` (all branches), so there is
-   * nothing to infer — they must pick, and the choice is remembered per device
-   * so a parked tablet does not ask again after a refresh.
-   */
-  const assigned = (user as { allowed_branch_ids?: number[] | null } | null)
-    ?.allowed_branch_ids;
-  const [pickedBranch, setPickedBranch] = useState<number | null>(() => {
-    const stored = localStorage.getItem('attendance_station_branch');
-    return stored ? Number(stored) : null;
-  });
+  const codeRef = useRef<HTMLInputElement | null>(null);
+  const pinRef = useRef<HTMLInputElement | null>(null);
 
-  const { data: branches = [] } = useQuery<Array<{ id: number; name: string }>>({
-    queryKey: ['attendance-station-branches'],
-    queryFn: async () => {
-      const { data } = await apiClient.get('/admin/branches');
-      return data ?? [];
-    },
-    // Only needed when the account is not pinned to a single branch.
-    enabled: assigned == null || assigned.length !== 1,
-  });
-
-  const branchId =
-    assigned != null && assigned.length === 1 ? assigned[0] : pickedBranch;
-
-  const chooseBranch = (id: number) => {
-    setPickedBranch(id);
-    localStorage.setItem('attendance_station_branch', String(id));
-  };
-
-  // Clear the panel after a few seconds so the next person never sees — or
-  // taps a punch onto — the previous person's session.
-  useEffect(() => {
-    if (!result && !error) return;
-    const timer = setTimeout(() => {
-      setResult(null);
-      setError(null);
-      setCode('');
-      setPin('');
-      setStage('code');
-    }, 4000);
-    return () => clearTimeout(timer);
-  }, [result, error]);
-
-  // Photo capture is best-effort: a missing or blocked camera must never stop
-  // someone clocking in. A photo-less punch is flagged in the exceptions report.
   const { videoRef, ready: cameraReady, error: cameraError, capture } =
-    usePunchCamera(photoEnabled);
+    usePunchCamera(photoEnabled, token);
+
+  const context = useQuery({
+    queryKey: ['station-context', token],
+    queryFn: () => stationService.context(token as string),
+    enabled: !!token,
+    retry: false,
+  });
 
   const mutation = useMutation({
     mutationFn: async (punchType: PunchType) => {
       const photoUrl = punchType === 'in' ? await capture() : null;
-      return hrService.punch({
-        branch_id: branchId as number,
+      return stationService.punch(token as string, {
         punch_type: punchType,
         employee_code: code.trim(),
         pin,
@@ -93,6 +69,9 @@ const AttendanceStation: React.FC = () => {
     onSuccess: (data) => {
       setResult(data);
       setError(null);
+      setCode('');
+      setPin('');
+      codeRef.current?.focus();
     },
     onError: (err: unknown) => {
       const message =
@@ -101,90 +80,98 @@ const AttendanceStation: React.FC = () => {
       setError(Array.isArray(message) ? message[0] : String(message));
       setResult(null);
       setPin('');
-      setStage('pin');
+      pinRef.current?.focus();
     },
   });
 
-  const active = stage === 'code' ? code : pin;
-  const setActive = (value: string) => (stage === 'code' ? setCode(value) : setPin(value));
+  // Clear the panel so the next person never sees — or taps a punch onto — the
+  // previous person's result.
+  useEffect(() => {
+    if (!result && !error) return;
+    const timer = setTimeout(() => {
+      setResult(null);
+      setError(null);
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [result, error]);
 
+  useEffect(() => {
+    if (token && context.isSuccess) codeRef.current?.focus();
+  }, [token, context.isSuccess]);
+
+  const canPunch = code.trim().length > 0 && pin.length >= 4;
+
+  /** On-screen keypad, for touch devices. Typing works regardless. */
   const press = (key: string) => {
     if (mutation.isPending) return;
-    if (key === 'back') return setActive(active.slice(0, -1));
-    if (key === 'clear') return setActive('');
-    if (active.length >= 12) return;
-    setActive(active + key);
+    const isPinFocused = document.activeElement === pinRef.current;
+    const target = isPinFocused ? pinRef : codeRef;
+    const setter = isPinFocused ? setPin : setCode;
+    const current = isPinFocused ? pin : code;
+    if (key === 'back') setter(current.slice(0, -1));
+    else if (key === 'clear') setter('');
+    else if (current.length < 12) setter(current + key);
+    target.current?.focus();
   };
 
-  const canPunch = code.trim().length > 0 && pin.length >= 4 && branchId != null;
+  // ---- device not registered yet -----------------------------------------
 
-  if (branchId == null) {
+  if (!token || context.isError) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-slate-900 p-6 text-slate-100">
-        <h1 className="text-xl font-semibold">Which branch is this station at?</h1>
+        <h1 className="text-xl font-semibold">Set up this device</h1>
         <p className="max-w-md text-center text-sm text-slate-400">
-          Your account covers more than one branch, so pick the one this device sits at. It
-          is remembered on this device.
+          {context.isError
+            ? 'This device token is not recognised — it may have been revoked. Paste a new one.'
+            : 'Paste the station token from Admin → HR → Attendance, or open the setup link on this device.'}
         </p>
-        {branches.length === 0 ? (
-          <p className="text-sm text-slate-400">Loading branches…</p>
-        ) : (
-          <div className="flex w-full max-w-sm flex-col gap-2">
-            {branches.map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                onClick={() => chooseBranch(b.id)}
-                className="rounded-lg bg-slate-800 px-4 py-3 text-left hover:bg-slate-700"
-              >
-                {b.name}
-              </button>
-            ))}
-          </div>
-        )}
+        <input
+          className="w-full max-w-md rounded-lg border border-slate-700 bg-slate-800 px-4 py-3 text-sm"
+          placeholder="Station token"
+          value={tokenInput}
+          onChange={(e) => setTokenInput(e.target.value.trim())}
+        />
+        <button
+          type="button"
+          disabled={tokenInput.length < 8}
+          onClick={() => {
+            localStorage.setItem(TOKEN_KEY, tokenInput);
+            setToken(tokenInput);
+          }}
+          className="rounded-lg bg-blue-600 px-5 py-3 font-medium hover:bg-blue-700 disabled:opacity-40"
+        >
+          Register device
+        </button>
       </div>
     );
   }
 
+  if (context.isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-900 text-slate-300">
+        Checking device…
+      </div>
+    );
+  }
+
+  // ---- the station -------------------------------------------------------
+
+  const inputCls =
+    'w-full rounded-lg border border-slate-700 bg-slate-800 px-4 py-3 text-center font-mono text-xl tracking-widest text-slate-100 focus:border-blue-400 focus:outline-none';
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-slate-900 p-6 text-slate-100">
-      <h1 className="mb-1 text-2xl font-semibold">Attendance</h1>
-      <p className="mb-4 text-sm text-slate-400">
-        Enter your employee code, then your PIN
+      <h1 className="text-2xl font-semibold">Attendance</h1>
+      <p className="mb-1 text-sm text-slate-400">
+        {context.data?.branch.name ?? 'Branch'} · {context.data?.station.label}
       </p>
-
-      <label className="mb-4 flex items-center gap-2 text-xs text-slate-400">
-        <input
-          type="checkbox"
-          checked={photoEnabled}
-          onChange={(e) => setPhotoEnabled(e.target.checked)}
-          className="h-4 w-4 rounded border-slate-600"
-        />
-        Take a photo on clock-in
-      </label>
-
-      {photoEnabled && (
-        <div className="mb-4 w-full max-w-sm">
-          {/* Muted + playsInline so autoplay is permitted on tablets. */}
-          <video
-            ref={videoRef}
-            muted
-            playsInline
-            className="h-32 w-full rounded-lg bg-slate-800 object-cover"
-          />
-          {cameraError ? (
-            <p className="mt-1 text-xs text-amber-400">{cameraError}</p>
-          ) : (
-            <p className="mt-1 text-xs text-slate-500">
-              {cameraReady ? 'Camera ready' : 'Starting camera…'}
-            </p>
-          )}
-        </div>
-      )}
+      <p className="mb-5 text-sm text-slate-500">
+        Type your employee code and PIN, then clock in or out
+      </p>
 
       {result && (
         <div
-          className="mb-6 flex w-full max-w-sm items-center gap-3 rounded-lg bg-green-600/20 px-4 py-3"
+          className="mb-5 flex w-full max-w-sm items-center gap-3 rounded-lg bg-green-600/20 px-4 py-3"
           role="status"
         >
           <MdCheckCircle className="text-2xl text-green-400" />
@@ -196,9 +183,6 @@ const AttendanceStation: React.FC = () => {
             </p>
             <p className="text-xs text-slate-300">
               {new Date(result.punched_at).toLocaleTimeString()}
-              {/* An orphan punch is saved but claimed by no shift.
-                Saying so beats a silent success the employee
-                will discover as an absence at month end. */}
               {result.orphan && ' · outside any rostered shift — see your manager'}
             </p>
           </div>
@@ -207,35 +191,78 @@ const AttendanceStation: React.FC = () => {
 
       {error && (
         <div
-          className="mb-6 w-full max-w-sm rounded-lg bg-red-600/20 px-4 py-3 text-sm text-red-200"
+          className="mb-5 w-full max-w-sm cursor-pointer rounded-lg bg-red-600/20 px-4 py-3 text-sm text-red-200"
           role="alert"
+          onClick={() => setError(null)}
         >
           {error}
         </div>
       )}
 
-      <div className="mb-4 w-full max-w-sm space-y-2">
-        <button
-          type="button"
-          onClick={() => setStage('code')}
-          className={`w-full rounded-lg border px-4 py-3 text-left ${
-            stage === 'code' ? 'border-blue-400 bg-slate-800' : 'border-slate-700'
-          }`}
-        >
-          <span className="block text-xs uppercase text-slate-400">Employee code</span>
-          <span className="font-mono text-lg">{code || '—'}</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setStage('pin')}
-          className={`w-full rounded-lg border px-4 py-3 text-left ${
-            stage === 'pin' ? 'border-blue-400 bg-slate-800' : 'border-slate-700'
-          }`}
-        >
-          <span className="block text-xs uppercase text-slate-400">PIN</span>
-          <span className="font-mono text-lg">{'•'.repeat(pin.length) || '—'}</span>
-        </button>
-      </div>
+      {photoEnabled && (
+        <div className="mb-4 w-full max-w-sm">
+          <video
+            ref={videoRef}
+            muted
+            playsInline
+            className="h-28 w-full rounded-lg bg-slate-800 object-cover"
+          />
+          <p className="mt-1 text-xs text-slate-500">
+            {cameraError ?? (cameraReady ? 'Camera ready' : 'Starting camera…')}
+          </p>
+        </div>
+      )}
+
+      {/* Real inputs, so a keyboard, a barcode scanner and the on-screen keypad
+          all work. The earlier version used buttons as fields, which silently
+          made the whole screen unusable without a touchscreen. */}
+      <form
+        className="mb-4 w-full max-w-sm space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canPunch && !mutation.isPending) mutation.mutate('in');
+        }}
+      >
+        <div>
+          <label htmlFor="station-code" className="mb-1 block text-xs uppercase text-slate-400">
+            Employee code
+          </label>
+          <input
+            id="station-code"
+            ref={codeRef}
+            className={inputCls}
+            value={code}
+            autoComplete="off"
+            autoFocus
+            onChange={(e) => setCode(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter moves on rather than submitting a half-filled form —
+              // and a card scanner that appends Enter lands on the PIN.
+              if (e.key === 'Enter' && pin.length < 4) {
+                e.preventDefault();
+                pinRef.current?.focus();
+              }
+            }}
+          />
+        </div>
+        <div>
+          <label htmlFor="station-pin" className="mb-1 block text-xs uppercase text-slate-400">
+            PIN
+          </label>
+          <input
+            id="station-pin"
+            ref={pinRef}
+            type="password"
+            inputMode="numeric"
+            maxLength={8}
+            className={inputCls}
+            value={pin}
+            autoComplete="off"
+            onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+          />
+        </div>
+        <button type="submit" className="hidden" aria-hidden />
+      </form>
 
       <div className="mb-5 grid w-full max-w-sm grid-cols-3 gap-2">
         {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((k) => (
@@ -272,20 +299,6 @@ const AttendanceStation: React.FC = () => {
         </button>
       </div>
 
-      {/* Lets a shared device be moved without clearing storage by hand. */}
-      {(assigned == null || assigned.length !== 1) && (
-        <button
-          type="button"
-          onClick={() => {
-            localStorage.removeItem('attendance_station_branch');
-            setPickedBranch(null);
-          }}
-          className="mb-4 text-xs text-slate-500 underline hover:text-slate-300"
-        >
-          Change branch
-        </button>
-      )}
-
       <div className="grid w-full max-w-sm grid-cols-2 gap-3">
         <button
           type="button"
@@ -304,6 +317,16 @@ const AttendanceStation: React.FC = () => {
           <MdLogout /> Clock out
         </button>
       </div>
+
+      <label className="mt-5 flex items-center gap-2 text-xs text-slate-500">
+        <input
+          type="checkbox"
+          checked={photoEnabled}
+          onChange={(e) => setPhotoEnabled(e.target.checked)}
+          className="h-4 w-4 rounded border-slate-600"
+        />
+        Take a photo on clock-in
+      </label>
     </div>
   );
 };

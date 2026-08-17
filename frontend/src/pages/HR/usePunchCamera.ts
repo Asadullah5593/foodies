@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import apiClient from '../../utils/apiClient';
+import { uploadStationPhoto } from '../../services/api/stationService';
 
 /**
  * Camera capture for the attendance station.
@@ -12,7 +12,7 @@ import apiClient from '../../utils/apiClient';
  * exceptions report — refusing to let someone clock in because a webcam is
  * unplugged would be a worse outcome than a gap in the evidence.
  */
-export function usePunchCamera(enabled: boolean) {
+export function usePunchCamera(enabled: boolean, stationToken?: string | null) {
     const videoRef = useRef<HTMLVideoElement | null>(null);
     const streamRef = useRef<MediaStream | null>(null);
     const [ready, setReady] = useState(false);
@@ -73,17 +73,14 @@ export function usePunchCamera(enabled: boolean) {
             );
             if (!blob) return null;
 
-            const form = new FormData();
-            form.append('file', blob, `punch-${Date.now()}.jpg`);
-            form.append('folder', 'attendance');
-            const { data } = await apiClient.post('/upload', form, {
-                headers: { 'Content-Type': 'multipart/form-data' },
-            });
-            return (data?.url as string) ?? null;
+            // Uploaded with the DEVICE token: the station has no user session,
+            // and the shared upload endpoint requires one.
+            if (!stationToken) return null;
+            return await uploadStationPhoto(stationToken, blob);
         } catch {
             return null;
         }
-    }, [enabled, ready]);
+    }, [enabled, ready, stationToken]);
 
     return { videoRef, ready, error, capture };
 }
