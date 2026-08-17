@@ -5,6 +5,7 @@ import {
     Param,
     ParseIntPipe,
     Post,
+    Query,
     UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -18,10 +19,12 @@ import { PayrollService } from './payroll.service';
 import type { HrUser } from './employee-scope';
 import {
     ApproveRunDto,
+    CreateAdvanceDto,
     CreatePayrollAdjustmentDto,
     CreateRunDto,
     ReverseRunDto,
     SalaryStructureDto,
+    WriteOffAdvanceDto,
 } from './dto/payroll.dto';
 
 @ApiTags('Admin – Payroll')
@@ -142,6 +145,52 @@ export class PayrollController {
         @Body() dto: CreatePayrollAdjustmentDto,
     ) {
         return this.payroll.addAdjustment(user, lineId, dto);
+    }
+}
+
+@ApiTags('Admin – Payroll')
+@ApiBearerAuth()
+@Controller('admin/hr/advances')
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
+export class AdvancesController {
+    constructor(private readonly payroll: PayrollService) {}
+
+    @Get()
+    @RequirePermission(Permissions.PAYROLL_VIEW)
+    list(
+        @CurrentUser() user: HrUser,
+        @Query('employee_id') employeeId?: string,
+    ) {
+        return this.payroll.listAdvances(
+            user,
+            employeeId ? Number(employeeId) : undefined,
+        );
+    }
+
+    @Post()
+    @RequirePermission(Permissions.PAYROLL_ADJUST)
+    @ApiOperation({
+        summary: 'Record a salary advance',
+        description:
+            'Recovered automatically by payroll: one instalment per approved run, or the whole outstanding balance on a leaver’s final payslip.',
+    })
+    create(@CurrentUser() user: HrUser, @Body() dto: CreateAdvanceDto) {
+        return this.payroll.createAdvance(user, dto);
+    }
+
+    @Post(':id/write-off')
+    @RequirePermission(Permissions.PAYROLL_ADJUST)
+    @ApiOperation({
+        summary: 'Write off the remaining balance',
+        description:
+            'A decision on the advance, not a payslip waiver — forgiving it inside payroll would hide that real money was given up.',
+    })
+    writeOff(
+        @CurrentUser() user: HrUser,
+        @Param('id', ParseIntPipe) id: number,
+        @Body() dto: WriteOffAdvanceDto,
+    ) {
+        return this.payroll.writeOffAdvance(user, id, dto.reason);
     }
 }
 

@@ -79,6 +79,57 @@ export class CreatePayrollAdjustmentDto {
     target_component_key?: string;
 }
 
+/** POST /api/admin/hr/advances */
+export class CreateAdvanceDto {
+    @ApiProperty({ example: 7 })
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    employee_id: number;
+
+    @ApiProperty({ example: 10000 })
+    @Type(() => Number)
+    @IsNumber()
+    @Min(0.01)
+    principal_amount: number;
+
+    @ApiProperty({
+        example: 2500,
+        description: 'Recovered per approved payroll run.',
+    })
+    @Type(() => Number)
+    @IsNumber()
+    @Min(0.01)
+    installment_amount: number;
+
+    @ApiPropertyOptional({
+        description: 'Derived from the amounts if omitted.',
+    })
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    installments_total?: number;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsDateString()
+    disbursed_on?: string;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    note?: string;
+}
+
+/** POST /api/admin/hr/advances/:id/write-off */
+export class WriteOffAdvanceDto {
+    @ApiProperty({ example: 'Balance forgiven on compassionate grounds' })
+    @IsString()
+    @Length(3, 2000)
+    reason: string;
+}
+
 /** POST / PUT /api/admin/hr/employees/:id/salary */
 export class SalaryStructureDto {
     @ApiProperty({ example: '2026-09-01' })

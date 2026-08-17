@@ -1,6 +1,7 @@
 import {
     Body,
     Controller,
+    Delete,
     Get,
     Param,
     ParseIntPipe,
@@ -153,5 +154,29 @@ export class AttendancePinController {
         @Body() dto: SetPinDto,
     ) {
         return this.attendance.setPin(user, id, dto);
+    }
+
+    @Post(':id/qr-card')
+    @RequirePermission(Permissions.EMPLOYEE_PIN_RESET)
+    @ApiOperation({
+        summary: 'Issue or reissue a QR employee card',
+        description:
+            'Returns the token ONCE, for printing — no read endpoint exposes it. Reissuing replaces the previous token, which is how a lost card is revoked.',
+    })
+    issueQr(
+        @CurrentUser() user: HrUser,
+        @Param('id', ParseIntPipe) id: number,
+    ) {
+        return this.attendance.issueQrToken(user, id);
+    }
+
+    @Delete(':id/qr-card')
+    @RequirePermission(Permissions.EMPLOYEE_PIN_RESET)
+    @ApiOperation({ summary: 'Revoke a QR card without issuing a new one' })
+    revokeQr(
+        @CurrentUser() user: HrUser,
+        @Param('id', ParseIntPipe) id: number,
+    ) {
+        return this.attendance.revokeQrToken(user, id);
     }
 }

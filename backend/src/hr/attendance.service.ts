@@ -8,6 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, IsNull, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { Employee } from '../entities/employee.entity';
 import { EmployeeAssignment } from '../entities/employee-assignment.entity';
 import { AttendancePunch } from '../entities/attendance-punch.entity';
@@ -109,6 +110,69 @@ export class AttendanceService {
             after: { pin_set: true },
         });
         return { updated: true };
+    }
+
+    /**
+     * Issue or rotate a QR employee card.
+     *
+     * The token is random and opaque — never derived from the employee code or
+     * id, or a lost card would let someone mint another. Reissuing replaces the
+     * old token, which is how a lost card is revoked.
+     */
+    async issueQrToken(user: HrUser, employeeId: number) {
+        const employee = await this.employees.findOne({
+            where: { id: employeeId },
+        });
+        if (!employee) throw new NotFoundException('Employee not found');
+        if (user.tenantId != null && employee.tenantId !== user.tenantId) {
+            throw new NotFoundException('Employee not found');
+        }
+        if (['resigned', 'terminated'].includes(employee.status)) {
+            throw new BadRequestException(
+                'This employee has left — a card cannot be issued',
+            );
+        }
+
+        const token = randomBytes(24).toString('base64url');
+        await this.employees.update(
+            { id: employeeId },
+            { qrToken: token, qrTokenIssuedAt: new Date() },
+        );
+
+        await this.audit.record({
+            tenantId: employee.tenantId,
+            actorUserId: user.id,
+            action: 'attendance.qr.issued',
+            entityTable: 'employees',
+            entityId: employeeId,
+            after: { reissued: employee.qrToken != null },
+        });
+
+        // Returned once, for printing. It is not exposed by any read endpoint.
+        return { qr_token: token, employee_code: employee.employeeCode };
+    }
+
+    /** Revoke a card without issuing a new one. */
+    async revokeQrToken(user: HrUser, employeeId: number) {
+        const employee = await this.employees.findOne({
+            where: { id: employeeId },
+        });
+        if (!employee) throw new NotFoundException('Employee not found');
+        if (user.tenantId != null && employee.tenantId !== user.tenantId) {
+            throw new NotFoundException('Employee not found');
+        }
+        await this.employees.update(
+            { id: employeeId },
+            { qrToken: null, qrTokenIssuedAt: null },
+        );
+        await this.audit.record({
+            tenantId: employee.tenantId,
+            actorUserId: user.id,
+            action: 'attendance.qr.revoked',
+            entityTable: 'employees',
+            entityId: employeeId,
+        });
+        return { revoked: true };
     }
 
     // ------------------------------------------------------------- punch

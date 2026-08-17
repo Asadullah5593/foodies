@@ -38,7 +38,11 @@ import { PayrollRun } from '../entities/payroll-run.entity';
 import { PayrollLine } from '../entities/payroll-line.entity';
 import { PayrollLineItem } from '../entities/payroll-line-item.entity';
 import { PayrollAdjustment } from '../entities/payroll-adjustment.entity';
-import { PayrollController, SalaryController } from './payroll.controller';
+import {
+    AdvancesController,
+    PayrollController,
+    SalaryController,
+} from './payroll.controller';
 import { PayrollService } from './payroll.service';
 import {
     EmployeeExitsController,
@@ -106,6 +110,7 @@ import { HrAuditService } from './hr-audit.service';
         LeaveSettingsController,
         PayrollController,
         SalaryController,
+        AdvancesController,
     ],
     providers: [
         EmployeesService,

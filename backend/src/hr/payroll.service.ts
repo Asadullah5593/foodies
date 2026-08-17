@@ -5,7 +5,15 @@ import {
     NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, LessThanOrEqual, Repository } from 'typeorm';
+import {
+    DataSource,
+    EntityManager,
+    IsNull,
+    LessThanOrEqual,
+    Repository,
+} from 'typeorm';
+import { EmployeeLoanAdvance } from '../entities/employee-loan-advance.entity';
+import { EmployeeExit } from '../entities/employee-exit.entity';
 import { PayrollRun } from '../entities/payroll-run.entity';
 import { PayrollLine } from '../entities/payroll-line.entity';
 import { PayrollLineItem } from '../entities/payroll-line-item.entity';
@@ -22,6 +30,7 @@ import { LeavesService } from './leaves.service';
 import { HrAuditService } from './hr-audit.service';
 import { hasPermission, HrUser } from './employee-scope';
 import {
+    AdvanceRecovery,
     AttendanceFacts,
     computePayrollLines,
     PayrollLineItem as ComputedItem,
@@ -61,6 +70,8 @@ export class PayrollService {
         private readonly employees: Repository<Employee>,
         @InjectRepository(WorkScheduleTemplate)
         private readonly templates: Repository<WorkScheduleTemplate>,
+        @InjectRepository(EmployeeLoanAdvance)
+        private readonly advances: Repository<EmployeeLoanAdvance>,
         private readonly leaves: LeavesService,
         private readonly audit: HrAuditService,
         private readonly dataSource: DataSource,
@@ -171,9 +182,14 @@ export class PayrollService {
                     run.periodFrom,
                     run.periodTo,
                 );
-                const assignment = await this.assignments.findOne({
-                    where: { employeeId: employee.id, effectiveTo: IsNull() },
-                });
+                // Not `effectiveTo IS NULL`: a leaver's assignment is already
+                // closed, and falling back to null here would lose their
+                // designation and branch on the very payslip that settles them.
+                const assignment = await this.assignmentForPeriod(
+                    employee.id,
+                    run.periodFrom,
+                    run.periodTo,
+                );
                 const policy = await this.leaves.resolveHolidayPolicy(
                     run.tenantId,
                     assignment?.branchId ?? null,
@@ -228,6 +244,11 @@ export class PayrollService {
                     },
                     waivers,
                     adjustments: [],
+                    advances: await this.advanceRecoveries(
+                        employee,
+                        run.periodFrom,
+                        run.periodTo,
+                    ),
                 });
 
                 const line = await manager.getRepository(PayrollLine).save(
@@ -356,6 +377,8 @@ export class PayrollService {
             );
         }
 
+        let settledExits = 0;
+
         await this.dataSource.transaction(async (manager) => {
             const qb = manager
                 .getRepository(AttendanceDay)
@@ -373,6 +396,16 @@ export class PayrollService {
                 });
             }
             await qb.execute();
+
+            // Ledger movements happen HERE, not at compute time, so a repeated
+            // recompute cannot recover the same instalment twice.
+            await this.recoverAdvancesForRun(manager, runId);
+            settledExits = await this.settleExitsForRun(
+                manager,
+                runId,
+                run.periodFrom,
+                run.periodTo,
+            );
 
             await manager.getRepository(PayrollRun).update(
                 { id: runId },
@@ -398,7 +431,12 @@ export class PayrollService {
             },
         });
 
-        return { id: runId, status: 'approved', attendance_locked: true };
+        return {
+            id: runId,
+            status: 'approved',
+            attendance_locked: true,
+            exits_settled: settledExits,
+        };
     }
 
     /** Reverse an approved run and unlock the period. Reason is mandatory. */
@@ -931,6 +969,135 @@ export class PayrollService {
         }));
     }
 
+    // ------------------------------------------------------ advances (loans)
+
+    async listAdvances(user: HrUser, employeeId?: number) {
+        const qb = this.advances
+            .createQueryBuilder('a')
+            .leftJoin('a.employee', 'emp')
+            .select([
+                'a.id',
+                'a.principalAmount',
+                'a.installmentAmount',
+                'a.installmentsTotal',
+                'a.installmentsPaid',
+                'a.outstandingAmount',
+                'a.status',
+                'a.disbursedOn',
+                'a.note',
+                'emp.id',
+                'emp.fullName',
+                'emp.employeeCode',
+            ])
+            .orderBy('a.id', 'DESC');
+        if (user.tenantId != null) {
+            qb.where('a.tenantId = :tenantId', { tenantId: user.tenantId });
+        }
+        if (employeeId) {
+            qb.andWhere('a.employeeId = :employeeId', { employeeId });
+        }
+        return qb.getMany();
+    }
+
+    async createAdvance(
+        user: HrUser,
+        dto: {
+            employee_id: number;
+            principal_amount: number;
+            installment_amount: number;
+            installments_total?: number;
+            disbursed_on?: string;
+            note?: string;
+        },
+    ) {
+        const tenantId = this.requireTenant(user);
+        const employee = await this.employees.findOne({
+            where: { id: dto.employee_id, tenantId },
+        });
+        if (!employee) throw new NotFoundException('Employee not found');
+        if (dto.installment_amount <= 0 || dto.principal_amount <= 0) {
+            throw new BadRequestException(
+                'Principal and instalment must both be greater than zero',
+            );
+        }
+        if (dto.installment_amount > dto.principal_amount) {
+            throw new BadRequestException(
+                'An instalment cannot exceed the principal',
+            );
+        }
+
+        const saved = await this.advances.save(
+            this.advances.create({
+                tenantId,
+                employeeId: dto.employee_id,
+                principalAmount: dto.principal_amount,
+                installmentAmount: dto.installment_amount,
+                installmentsTotal:
+                    dto.installments_total ??
+                    Math.ceil(dto.principal_amount / dto.installment_amount),
+                installmentsPaid: 0,
+                // Recovery starts from the full principal; payroll decrements it
+                // only when a run is approved.
+                outstandingAmount: dto.principal_amount,
+                status: 'active',
+                approvedBy: user.id,
+                disbursedOn: dto.disbursed_on ?? null,
+                note: dto.note ?? null,
+            }),
+        );
+
+        await this.audit.record({
+            tenantId,
+            actorUserId: user.id,
+            action: 'advance.created',
+            entityTable: 'employee_loans_advances',
+            entityId: saved.id,
+            after: {
+                employee_id: dto.employee_id,
+                principal: dto.principal_amount,
+                installment: dto.installment_amount,
+            },
+        });
+        return { id: saved.id, outstanding: dto.principal_amount };
+    }
+
+    /**
+     * Write off the remaining balance.
+     *
+     * Deliberately a decision on the ADVANCE, not a payslip waiver: forgiving it
+     * inside payroll would hide that real money was given up.
+     */
+    async writeOffAdvance(user: HrUser, id: number, reason: string) {
+        if (!reason?.trim()) {
+            throw new BadRequestException('A reason is required to write off');
+        }
+        const advance = await this.advances.findOne({ where: { id } });
+        if (!advance) throw new NotFoundException('Advance not found');
+        if (user.tenantId != null && advance.tenantId !== user.tenantId) {
+            throw new NotFoundException('Advance not found');
+        }
+        if (advance.status !== 'active') {
+            throw new BadRequestException(
+                `This advance is already ${advance.status}`,
+            );
+        }
+
+        await this.advances.update(
+            { id },
+            { status: 'written_off', note: reason.trim() },
+        );
+        await this.audit.record({
+            tenantId: advance.tenantId,
+            actorUserId: user.id,
+            action: 'advance.written_off',
+            entityTable: 'employee_loans_advances',
+            entityId: id,
+            before: { outstanding: Number(advance.outstandingAmount) },
+            after: { status: 'written_off', reason: reason.trim() },
+        });
+        return { id, status: 'written_off' };
+    }
+
     // -------------------------------------------------------------- helpers
 
     private async persistItems(
@@ -1006,6 +1173,122 @@ export class PayrollService {
         };
     }
 
+    /**
+     * Advances to recover this period.
+     *
+     * A leaver's last payslip recovers the WHOLE outstanding balance — it is the
+     * last chance to. `is_leaving` is decided from dateOfLeaving falling inside
+     * the period, which is what the exit flow sets.
+     *
+     * Balances are read, never written, here: compute() must stay idempotent, so
+     * the ledger is only advanced when the run is approved (see
+     * `recoverAdvancesForRun`).
+     */
+    private async advanceRecoveries(
+        employee: Employee,
+        from: string,
+        to: string,
+    ): Promise<AdvanceRecovery[]> {
+        const rows = await this.advances.find({
+            where: { employeeId: employee.id, status: 'active' },
+            order: { id: 'ASC' },
+        });
+        const isLeaving =
+            employee.dateOfLeaving != null &&
+            employee.dateOfLeaving >= from &&
+            employee.dateOfLeaving <= to;
+
+        return rows
+            .filter((a) => Number(a.outstandingAmount) > 0)
+            .map((a) => ({
+                advanceId: a.id,
+                outstandingAmount: Number(a.outstandingAmount),
+                installmentAmount: Number(a.installmentAmount),
+                recoverInFull: isLeaving,
+            }));
+    }
+
+    /**
+     * Advance the advance ledger, once, when a run is approved.
+     *
+     * Deliberately not done at compute time: recompute is repeatable, and
+     * decrementing there would recover the same instalment several times.
+     */
+    private async recoverAdvancesForRun(
+        manager: EntityManager,
+        runId: number,
+    ): Promise<void> {
+        const items = await manager
+            .getRepository(PayrollLineItem)
+            .createQueryBuilder('i')
+            .innerJoin(PayrollLine, 'l', 'l.id = i.payroll_line_id')
+            .where('l.run_id = :runId', { runId })
+            .andWhere("i.component_key LIKE 'advance_%'")
+            .getMany();
+
+        for (const item of items) {
+            const advanceId = Number(item.componentKey.replace('advance_', ''));
+            if (!Number.isFinite(advanceId)) continue;
+            const advance = await manager
+                .getRepository(EmployeeLoanAdvance)
+                .findOne({ where: { id: advanceId } });
+            if (!advance) continue;
+
+            const recovered = Number(item.amount);
+            const outstanding = Math.max(
+                0,
+                Number(advance.outstandingAmount) - recovered,
+            );
+            await manager.getRepository(EmployeeLoanAdvance).update(
+                { id: advanceId },
+                {
+                    outstandingAmount: outstanding,
+                    installmentsPaid: advance.installmentsPaid + 1,
+                    status: outstanding === 0 ? 'settled' : 'active',
+                },
+            );
+        }
+    }
+
+    /**
+     * Mark a leaver's exit settled against the payslip that paid them out.
+     *
+     * This is the link the exit record has been holding open since Phase 1:
+     * `settlement_payroll_line_id` finally points at the money.
+     */
+    private async settleExitsForRun(
+        manager: EntityManager,
+        runId: number,
+        periodFrom: string,
+        periodTo: string,
+    ): Promise<number> {
+        const lines = await manager
+            .getRepository(PayrollLine)
+            .find({ where: { runId }, relations: ['employee'] });
+
+        let settled = 0;
+        for (const line of lines) {
+            const leaving = line.employee?.dateOfLeaving;
+            if (!leaving || leaving < periodFrom || leaving > periodTo)
+                continue;
+
+            const exit = await manager.getRepository(EmployeeExit).findOne({
+                where: { employeeId: line.employeeId, settledAt: IsNull() },
+            });
+            if (!exit) continue;
+
+            await manager.getRepository(EmployeeExit).update(
+                { id: exit.id },
+                {
+                    settlementPayrollLineId: line.id,
+                    settledAt: new Date(),
+                },
+            );
+            settled += 1;
+        }
+        return settled;
+    }
+
     /** Approved waivers in the period, carried into payroll as offset lines. */
     private async waiversFor(
         employeeId: number,
@@ -1072,6 +1355,32 @@ export class PayrollService {
         );
     }
 
+    /**
+     * The assignment that governs this period — open if there is one, otherwise
+     * the latest that overlapped it. A leaver still has a designation and a
+     * branch on their final payslip.
+     */
+    private async assignmentForPeriod(
+        employeeId: number,
+        from: string,
+        to: string,
+    ): Promise<EmployeeAssignment | null> {
+        const open = await this.assignments.findOne({
+            where: { employeeId, effectiveTo: IsNull() },
+        });
+        if (open) return open;
+        return this.assignments
+            .createQueryBuilder('a')
+            .where('a.employeeId = :employeeId', { employeeId })
+            .andWhere('a.effective_from <= :to', { to })
+            .andWhere('(a.effective_to IS NULL OR a.effective_to >= :from)', {
+                from,
+            })
+            .orderBy('a.effective_from', 'DESC')
+            .addOrderBy('a.id', 'DESC')
+            .getOne();
+    }
+
     /** Days on the payroll, so joiners and leavers are prorated. */
     private employedDaysInPeriod(
         employee: Employee,
@@ -1088,20 +1397,39 @@ export class PayrollService {
         return daysBetween(start, end);
     }
 
+    /**
+     * Everyone who must appear in this run.
+     *
+     * ⚠️ Matches assignments that OVERLAP the period, not only open ones.
+     * Recording an exit closes the current assignment, so joining on
+     * `effectiveTo IS NULL` silently excluded every leaver — which meant the one
+     * payslip that matters most, the final settlement, was never produced.
+     *
+     * DISTINCT because someone promoted or transferred mid-period has two
+     * overlapping assignments and must still be paid exactly once.
+     */
     private async employeesInScope(run: PayrollRun): Promise<Employee[]> {
         const qb = this.employees
             .createQueryBuilder('emp')
-            .innerJoin('emp.assignments', 'cur', 'cur.effectiveTo IS NULL')
+            .distinct(true)
+            .innerJoin(
+                'emp.assignments',
+                'asg',
+                '(asg.effective_to IS NULL OR asg.effective_to >= :from) AND asg.effective_from <= :to',
+                { from: run.periodFrom, to: run.periodTo },
+            )
             .where('emp.tenantId = :tenantId', { tenantId: run.tenantId })
-            // Someone who left mid-period is still owed those days, so leavers
-            // are included and prorated rather than excluded.
+            // A leaver is still owed the days they worked, so they are included
+            // and prorated rather than dropped.
             .andWhere(
                 '(emp.dateOfLeaving IS NULL OR emp.dateOfLeaving >= :from)',
                 { from: run.periodFrom },
             )
             .andWhere('emp.dateOfJoining <= :to', { to: run.periodTo });
         if (run.branchId != null) {
-            qb.andWhere('cur.branchId = :branchId', { branchId: run.branchId });
+            qb.andWhere('asg.branch_id = :branchId', {
+                branchId: run.branchId,
+            });
         }
         return qb.getMany();
     }

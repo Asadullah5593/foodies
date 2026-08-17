@@ -1,5 +1,7 @@
 import {
     absenceDeductionDays,
+    AdvanceRecovery,
+    advanceRecoveryAmount,
     AttendanceFacts,
     computePayrollLines,
     dailyRate,
@@ -51,6 +53,7 @@ const run = (
         period?: Partial<PeriodConfig>;
         waivers?: Parameters<typeof computePayrollLines>[0]['waivers'];
         adjustments?: Parameters<typeof computePayrollLines>[0]['adjustments'];
+        advances?: AdvanceRecovery[];
     } = {},
 ) =>
     computePayrollLines({
@@ -59,6 +62,7 @@ const run = (
         period: period(over.period),
         waivers: over.waivers ?? [],
         adjustments: over.adjustments ?? [],
+        advances: over.advances ?? [],
     });
 
 const item = (result: ReturnType<typeof computePayrollLines>, key: string) =>
@@ -422,6 +426,116 @@ describe('computePayrollLines — riders', () => {
     it('ignores delivery earnings for non-riders', () => {
         const result = run({ facts: { deliveredOrders: 180 } });
         expect(item(result, 'per_delivered_order')).toBeUndefined();
+    });
+});
+
+describe('advanceRecoveryAmount', () => {
+    const advance = (over: Partial<AdvanceRecovery> = {}): AdvanceRecovery => ({
+        advanceId: 1,
+        outstandingAmount: 10000,
+        installmentAmount: 2500,
+        recoverInFull: false,
+        ...over,
+    });
+
+    it('recovers one instalment in a normal month', () => {
+        expect(advanceRecoveryAmount(advance())).toBe(2500);
+    });
+
+    /**
+     * Never more than what is owed. Over-recovering would turn a settled
+     * advance into a debt owed back to the employee.
+     */
+    it('never recovers more than the outstanding balance', () => {
+        expect(
+            advanceRecoveryAmount(advance({ outstandingAmount: 1000 })),
+        ).toBe(1000);
+    });
+
+    /** A leaver's final payslip is the last chance to recover. */
+    it('recovers the whole balance for a leaver', () => {
+        expect(advanceRecoveryAmount(advance({ recoverInFull: true }))).toBe(
+            10000,
+        );
+    });
+
+    it('recovers nothing on a settled advance', () => {
+        expect(advanceRecoveryAmount(advance({ outstandingAmount: 0 }))).toBe(
+            0,
+        );
+        expect(advanceRecoveryAmount(advance({ outstandingAmount: -50 }))).toBe(
+            0,
+        );
+    });
+});
+
+describe('computePayrollLines — advance recovery', () => {
+    const withAdvance = (over: Partial<AdvanceRecovery> = {}) =>
+        run({
+            advances: [
+                {
+                    advanceId: 4,
+                    outstandingAmount: 10000,
+                    installmentAmount: 2500,
+                    recoverInFull: false,
+                    ...over,
+                },
+            ],
+        });
+
+    it('deducts the instalment and shows the balance either side', () => {
+        const result = withAdvance();
+        const line = item(result, 'advance_4');
+        expect(line?.amount).toBe(2500);
+        expect(line?.calcMeta).toMatchObject({
+            outstanding_before: 10000,
+            outstanding_after: 7500,
+            recovered_in_full: false,
+        });
+        expect(result.netPayable).toBe(27500);
+    });
+
+    it("takes the whole balance on a leaver's final payslip", () => {
+        const result = withAdvance({ recoverInFull: true });
+        expect(item(result, 'advance_4')?.amount).toBe(10000);
+        expect(result.netPayable).toBe(20000);
+    });
+
+    /**
+     * Recovery must not be waivable from the payslip: forgiving it would write
+     * off money the employee actually received. Writing off is a decision on the
+     * advance itself.
+     */
+    it('is not cancelled by a waiver aimed at it', () => {
+        const result = run({
+            advances: [
+                {
+                    advanceId: 4,
+                    outstandingAmount: 10000,
+                    installmentAmount: 2500,
+                    recoverInFull: false,
+                },
+            ],
+            waivers: [
+                {
+                    subject: 'advance_4',
+                    reason: 'attempted forgiveness',
+                    approvedByName: 'HR',
+                    amount: null,
+                },
+            ],
+        });
+        // The waiver produces no offsetting line, so the deduction stands.
+        expect(item(result, 'advance_4_waiver')).toBeUndefined();
+        expect(result.totalDeductions).toBe(2500);
+    });
+
+    it('cannot push net pay below zero', () => {
+        const result = withAdvance({
+            outstandingAmount: 999999,
+            recoverInFull: true,
+        });
+        expect(result.netPayable).toBe(0);
     });
 });
 

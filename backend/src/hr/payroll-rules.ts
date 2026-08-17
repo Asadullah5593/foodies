@@ -45,6 +45,19 @@ export type AttendanceFacts = {
     deliveredOrders: number;
 };
 
+/**
+ * Recovery amount for one advance this period.
+ *
+ * Never more than what is still owed — over-recovering would turn a settled
+ * advance into a debt owed back to the employee.
+ */
+export function advanceRecoveryAmount(recovery: AdvanceRecovery): number {
+    const owed = Math.max(0, recovery.outstandingAmount);
+    if (owed === 0) return 0;
+    if (recovery.recoverInFull) return round2(owed);
+    return round2(Math.min(owed, Math.max(0, recovery.installmentAmount)));
+}
+
 export type SalaryConfig = {
     basicAmount: number;
     dailyRateBasis: DailyRateBasis;
@@ -80,6 +93,20 @@ export type Waiver = {
     approvedByName: string | null;
     /** Rupees forgiven; when null the whole matching deduction is forgiven. */
     amount: number | null;
+};
+
+/**
+ * Recovery of a salary advance.
+ *
+ * `recoverInFull` is set when the employee is leaving in this period: the last
+ * payslip is the last chance to recover, so the whole outstanding balance comes
+ * off rather than one instalment.
+ */
+export type AdvanceRecovery = {
+    advanceId: number;
+    outstandingAmount: number;
+    installmentAmount: number;
+    recoverInFull: boolean;
 };
 
 export type Adjustment = {
@@ -188,6 +215,7 @@ export function computePayrollLines(input: {
     period: PeriodConfig;
     waivers: Waiver[];
     adjustments: Adjustment[];
+    advances?: AdvanceRecovery[];
 }): {
     items: PayrollLineItem[];
     grossEarnings: number;
@@ -351,10 +379,41 @@ export function computePayrollLines(input: {
         });
     }
 
+    // Advance recovery sits with the deductions but is deliberately NOT
+    // waivable: forgiving it would write off money the employee actually
+    // received. Writing off an advance is a separate decision on the advance
+    // itself.
+    for (const advance of input.advances ?? []) {
+        const amount = advanceRecoveryAmount(advance);
+        if (amount <= 0) continue;
+        items.push({
+            componentKey: `advance_${advance.advanceId}`,
+            componentName: advance.recoverInFull
+                ? 'Advance recovered in full (final settlement)'
+                : 'Salary advance instalment',
+            kind: 'deduction',
+            quantity: 1,
+            rate: amount,
+            amount,
+            calcMeta: {
+                advance_id: advance.advanceId,
+                outstanding_before: round2(advance.outstandingAmount),
+                outstanding_after: round2(
+                    Math.max(0, advance.outstandingAmount - amount),
+                ),
+                recovered_in_full: advance.recoverInFull,
+            },
+        });
+    }
+
     // --- waivers ------------------------------------------------------------
     // A waiver never erases the deduction line above; it offsets it, so the
     // payslip shows what the machine decided AND who forgave it.
     for (const waiver of input.waivers) {
+        // Advance recovery is NOT waivable here. Forgiving it would write off
+        // money the employee actually received, bypassing the write-off flow
+        // and the audit entry that goes with it.
+        if (waiver.subject.startsWith('advance_')) continue;
         const target = items.find(
             (i) => i.kind === 'deduction' && i.componentKey === waiver.subject,
         );
