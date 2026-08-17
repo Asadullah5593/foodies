@@ -58,6 +58,9 @@ import {
 import {
     DesignationsController,
     HrAuditController,
+    HrAlertsController,
+    HrReportsController,
+    RosterController,
 } from './hr-settings.controller';
 import { EmployeesService } from './employees.service';
 import { DesignationsService } from './designations.service';
@@ -73,6 +76,11 @@ import { ReviewsController, TrainingController } from './reviews.controller';
 import { ReviewsService } from './reviews.service';
 import { TrainingService } from './training.service';
 import { HrSchedulerService } from './hr-scheduler.service';
+import { HrAlertsService } from './hr-alerts.service';
+import { LabourCostService } from './labour-cost.service';
+import { RosterService } from './roster.service';
+import { Order } from '../entities/order.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 /**
  * Employee HRM — Phase 1 (employee master, history spine, exits).
@@ -86,6 +94,8 @@ import { HrSchedulerService } from './hr-scheduler.service';
         RoleAccessModule,
         // Punch photos from an unauthenticated station.
         MediaModule,
+        // Document/training expiry and overdue reviews reach the admin bell.
+        NotificationsModule,
         TypeOrmModule.forFeature([
             Employee,
             EmployeeAssignment,
@@ -117,6 +127,7 @@ import { HrSchedulerService } from './hr-scheduler.service';
             PayrollLine,
             PayrollLineItem,
             PayrollAdjustment,
+            Order,
             ReviewCycle,
             ReviewTemplate,
             EmployeeReview,
@@ -130,6 +141,9 @@ import { HrSchedulerService } from './hr-scheduler.service';
         EmployeeExitsController,
         DesignationsController,
         HrAuditController,
+        HrAlertsController,
+        HrReportsController,
+        RosterController,
         AttendanceController,
         AttendancePinController,
         PublicAttendanceStationController,
@@ -155,6 +169,9 @@ import { HrSchedulerService } from './hr-scheduler.service';
         ReviewsService,
         TrainingService,
         HrSchedulerService,
+        HrAlertsService,
+        LabourCostService,
+        RosterService,
     ],
     exports: [EmployeesService, HrAuditService, AttendanceService],
 })

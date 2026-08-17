@@ -54,8 +54,14 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/hr/settings/designations': ['hr-settings:manage', 'employees:view'],
   '/admin/hr/attendance': ['attendance:view'],
   '/admin/hr/leaves': ['leaves:view'],
+  // Read with attendance:view; editing a cell needs hr-settings:manage
+  // (enforced server-side) since the roster is what attendance is judged against.
+  '/admin/hr/roster': ['attendance:view'],
   // Payroll is Owner / GM / HR only — branch managers hold none of these.
   '/admin/hr/payroll': ['payroll:view'],
+  '/admin/hr/advances': ['payroll:view'],
+  '/admin/hr/alerts': ['employees:view'],
+  '/admin/hr/labour-cost': ['payroll:view'],
   '/admin/hr/reviews': ['reviews:view'],
   '/admin/hr/training': ['training:view'],
   '/admin/hr/audit': ['hr-audit:view'],

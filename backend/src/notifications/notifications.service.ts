@@ -211,6 +211,33 @@ export class NotificationsService {
         return { opened, resolved };
     }
 
+    /**
+     * Distinct (tenant, branch) scopes that currently hold OPEN notifications of
+     * a system-managed type.
+     *
+     * A sweep driven only by today's conditions cannot resolve anything: a branch
+     * whose last alert just cleared produces no rows, so it would never be
+     * visited and its notification would stay open forever. Callers union this
+     * with the scopes their conditions produce.
+     */
+    async openAlertScopes(
+        type: string,
+    ): Promise<Array<{ tenantId: number; branchId: number }>> {
+        const rows = await this.notifRepo
+            .createQueryBuilder('n')
+            .select(
+                'DISTINCT n.tenant_id AS tenant_id, n.branch_id AS branch_id',
+            )
+            .where('n.type = :type', { type })
+            .andWhere("n.status = 'open'")
+            .andWhere('n.branch_id IS NOT NULL')
+            .getRawMany<{ tenant_id: number; branch_id: number }>();
+        return rows.map((r) => ({
+            tenantId: Number(r.tenant_id),
+            branchId: Number(r.branch_id),
+        }));
+    }
+
     // ---------------- Recipient / setting resolution ----------------
 
     private async resolveRecipients(

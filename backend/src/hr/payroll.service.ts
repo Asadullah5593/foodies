@@ -1042,6 +1042,19 @@ export class PayrollService {
         if (user.tenantId != null) {
             qb.where('a.tenantId = :tenantId', { tenantId: user.tenantId });
         }
+        // Branch scope, like every other HR list. `payroll:view` is an owner/GM/HR
+        // permission today, but a role can be edited at any time and an advance
+        // names a person and an amount.
+        if (user.allowedBranchIds != null) {
+            if (user.allowedBranchIds.length === 0) return [];
+            qb.innerJoin(
+                'employee_assignments',
+                'cur',
+                'cur.employee_id = emp.id AND cur.effective_to IS NULL',
+            ).andWhere('cur.branch_id IN (:...branchIds)', {
+                branchIds: user.allowedBranchIds,
+            });
+        }
         if (employeeId) {
             qb.andWhere('a.employeeId = :employeeId', { employeeId });
         }
@@ -1107,7 +1120,11 @@ export class PayrollService {
                 installment: dto.installment_amount,
             },
         });
-        return { id: saved.id, outstanding: dto.principal_amount };
+        return {
+            id: saved.id,
+            outstanding: dto.principal_amount,
+            installments_total: saved.installmentsTotal,
+        };
     }
 
     /**

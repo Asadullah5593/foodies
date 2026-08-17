@@ -323,11 +323,12 @@ export interface SalaryStructureRow {
 
 export interface AdvanceRow {
   id: number;
-  principalAmount: number;
-  installmentAmount: number;
+  /** Decimal columns arrive as strings from TypeORM — coerce before arithmetic. */
+  principalAmount: string | number;
+  installmentAmount: string | number;
   installmentsTotal: number;
   installmentsPaid: number;
-  outstandingAmount: number;
+  outstandingAmount: string | number;
   status: 'active' | 'settled' | 'written_off';
   disbursedOn: string | null;
   note: string | null;
@@ -428,6 +429,94 @@ export interface TrainingProgramRow {
   validityMonths: number | null;
   isMandatory: boolean;
   isActive: boolean;
+}
+
+export interface ScheduleTemplateRow {
+  id: number;
+  name: string;
+  startTime: string;
+  endTime: string;
+  crossesMidnight: boolean;
+  branchId: number | null;
+  graceMinutes: number;
+  isDefault: boolean;
+}
+
+export interface RosterCell {
+  id: number;
+  employee_id: number;
+  work_date: string;
+  template_id: number | null;
+  is_weekly_off: boolean;
+  is_holiday: boolean;
+  is_published: boolean;
+}
+
+export interface RosterGrid {
+  range: { from: string; to: string };
+  employees: Array<{
+    id: number;
+    full_name: string;
+    employee_code: string;
+    status: string;
+    designation_name: string | null;
+    brand_name: string | null;
+    /** What an empty cell falls back to. */
+    default_template_id: number | null;
+  }>;
+  cells: RosterCell[];
+}
+
+export interface LabourCostRow {
+  branch_id: number | null;
+  branch_name: string | null;
+  brand_id: number | null;
+  brand_name: string | null;
+  labour_cost: number;
+  net_sales: number;
+  revenue: number;
+  /** Null when there were no sales — that is not 0%. */
+  labour_percent: number | null;
+  headcount: number;
+}
+
+export interface LabourCostReport {
+  period: { from: string; to: string };
+  rows: LabourCostRow[];
+  totals: {
+    labour_cost: number;
+    net_sales: number;
+    revenue: number;
+    labour_percent: number | null;
+    headcount: number;
+  };
+  /** Runs straddling the range, excluded rather than pro-rated. */
+  excluded_partial_runs: Array<{
+    id: number;
+    period_from: string;
+    period_to: string;
+    branch_name: string | null;
+  }>;
+}
+
+export interface HrAlertRow {
+  kind: 'document_expiring' | 'training_expiring' | 'probation_ending' | 'review_overdue';
+  dedupeKey: string;
+  branchId: number;
+  employeeId: number;
+  employeeName: string;
+  employeeCode: string;
+  date: string;
+  label: string;
+  detail: string | null;
+  link: string;
+}
+
+export interface HrAlerts {
+  documents: HrAlertRow[];
+  trainings: HrAlertRow[];
+  probations: HrAlertRow[];
+  reviews: HrAlertRow[];
 }
 
 export interface TrainingRequirementRow {
@@ -915,7 +1004,11 @@ export const hrService = {
     installment_amount: number;
     disbursed_on?: string;
     note?: string;
-  }): Promise<{ id: number; outstanding: number }> => {
+  }): Promise<{
+    id: number;
+    outstanding: number;
+    installments_total: number;
+  }> => {
     const { data } = await apiClient.post('/admin/hr/advances', payload);
     return data;
   },
@@ -1117,6 +1210,55 @@ export const hrService = {
       program: { name: string } | null;
       employee: { id: number; fullName: string; employeeCode: string } | null;
     }>;
+  },
+
+  listScheduleTemplates: async (
+    branchId?: number,
+  ): Promise<ScheduleTemplateRow[]> => {
+    const { data } = await apiClient.get('/admin/hr/roster/templates', {
+      params: { branch_id: branchId },
+    });
+    return data;
+  },
+
+  getRoster: async (params: {
+    branch_id: number;
+    from: string;
+    to: string;
+  }): Promise<RosterGrid> => {
+    const { data } = await apiClient.get('/admin/hr/roster', { params });
+    return data;
+  },
+
+  saveRoster: async (payload: {
+    branch_id: number;
+    cells: Array<{
+      employee_id: number;
+      work_date: string;
+      template_id?: number | null;
+      is_weekly_off?: boolean;
+      is_holiday?: boolean;
+    }>;
+  }): Promise<{ written: number; cleared: number }> => {
+    const { data } = await apiClient.put('/admin/hr/roster', payload);
+    return data;
+  },
+
+  labourCostReport: async (params: {
+    from: string;
+    to: string;
+    branch_id?: number;
+    brand_id?: number;
+  }): Promise<LabourCostReport> => {
+    const { data } = await apiClient.get('/admin/hr/reports/labour-cost', {
+      params,
+    });
+    return data;
+  },
+
+  listHrAlerts: async (): Promise<HrAlerts> => {
+    const { data } = await apiClient.get('/admin/hr/alerts');
+    return data;
   },
 
   listTrainingRequirements: async (

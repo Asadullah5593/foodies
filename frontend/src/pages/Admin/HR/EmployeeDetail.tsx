@@ -12,6 +12,9 @@ import EmployeeCredentials from './EmployeeCredentials';
 import EmployeeEditModal from './EmployeeEditModal';
 import EmployeeTrainingSection from './EmployeeTrainingSection';
 import AdHocReviewModal from './AdHocReviewModal';
+import AdvanceModal from './AdvanceModal';
+import { advanceStatusClass, advanceStatusLabel, num } from './Advances';
+import { rupees } from './Payroll';
 import {
   CHANGE_REASON_LABELS,
   canSeeSalary,
@@ -59,11 +62,14 @@ const EmployeeDetail: React.FC = () => {
   const canViewReviews = useHasPermission('reviews:view');
   const canConductReviews = useHasPermission('reviews:conduct');
   const canInitiateAdHoc = useHasPermission('reviews:initiate-adhoc');
+  const canViewPayroll = useHasPermission('payroll:view');
+  const canAdjustPayroll = useHasPermission('payroll:adjust');
 
   const [showAssignment, setShowAssignment] = useState(false);
   const [showExit, setShowExit] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
   const [showAdHoc, setShowAdHoc] = useState(false);
+  const [showAdvance, setShowAdvance] = useState(false);
 
   const { data: employee, isLoading, isError } = useQuery({
     queryKey: ['hr-employee', employeeId],
@@ -80,6 +86,12 @@ const EmployeeDetail: React.FC = () => {
     queryKey: ['hr-employee-exit', employeeId],
     queryFn: () => hrService.getExit(employeeId),
     enabled: Number.isFinite(employeeId),
+  });
+
+  const { data: advances = [] } = useQuery({
+    queryKey: ['hr-advances', employeeId],
+    queryFn: () => hrService.listAdvances(employeeId),
+    enabled: Number.isFinite(employeeId) && canViewPayroll,
   });
 
   const { data: reviewCycles = [] } = useQuery({
@@ -339,6 +351,77 @@ const EmployeeDetail: React.FC = () => {
 
           <EmployeeTrainingSection employeeId={employeeId} />
 
+          {canViewPayroll && (
+            <Section
+              title="Advances"
+              action={
+                canAdjustPayroll && !hasLeft ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvance(true)}
+                    className="rounded-md border border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-slate-600 dark:text-gray-200 dark:hover:bg-slate-800"
+                  >
+                    Record an advance
+                  </button>
+                ) : undefined
+              }
+            >
+              {advances.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  No advances recorded.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs uppercase text-gray-500 dark:text-gray-400">
+                        <th className="py-2 pr-4">Disbursed</th>
+                        <th className="py-2 pr-4 text-right">Principal</th>
+                        <th className="py-2 pr-4 text-right">Instalment</th>
+                        <th className="py-2 pr-4">Recovered</th>
+                        <th className="py-2 pr-4 text-right">Outstanding</th>
+                        <th className="py-2 pr-4">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                      {advances.map((a) => (
+                        <tr key={a.id}>
+                          <td className="whitespace-nowrap py-2 pr-4 text-gray-700 dark:text-gray-300">
+                            {a.disbursedOn ?? '—'}
+                          </td>
+                          <td className="py-2 pr-4 text-right text-gray-800 dark:text-gray-200">
+                            {rupees(num(a.principalAmount))}
+                          </td>
+                          <td className="py-2 pr-4 text-right text-gray-800 dark:text-gray-200">
+                            {rupees(num(a.installmentAmount))}
+                          </td>
+                          <td className="py-2 pr-4 text-gray-600 dark:text-gray-400">
+                            {a.installmentsPaid} of {a.installmentsTotal}
+                          </td>
+                          <td className="py-2 pr-4 text-right font-medium text-gray-900 dark:text-gray-100">
+                            {rupees(num(a.outstandingAmount))}
+                          </td>
+                          <td className="py-2 pr-4">
+                            <span className={advanceStatusClass(a.status)}>
+                              {advanceStatusLabel(a.status)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {hasLeft &&
+                    advances.some((a) => a.status === 'active') && (
+                      <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                        An outstanding advance is netted off the final settlement, and it
+                        is one of the exit clearance items.
+                      </p>
+                    )}
+                </div>
+              )}
+            </Section>
+          )}
+
           {exit && (
             <Section title="Exit &amp; clearance">
               <dl className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -485,6 +568,9 @@ const EmployeeDetail: React.FC = () => {
       )}
       {showAdHoc && (
         <AdHocReviewModal employeeId={employeeId} onClose={() => setShowAdHoc(false)} />
+      )}
+      {showAdvance && (
+        <AdvanceModal employeeId={employeeId} onClose={() => setShowAdvance(false)} />
       )}
     </div>
   );

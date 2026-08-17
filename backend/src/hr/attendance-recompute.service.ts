@@ -226,6 +226,12 @@ export class AttendanceRecomputeService {
         if (!branchId) return null;
 
         const { tz } = await this.branchTimezone(branchId);
+        // The published roster row, if there is one. Nothing wrote these until
+        // the roster screen existed, so this stays inert for every employee on
+        // fixed timings.
+        const rostered = await this.schedules.findOne({
+            where: { employeeId, workDate, isPublished: true },
+        });
         const template = await this.resolveTemplate(
             employee,
             branchId,
@@ -326,6 +332,22 @@ export class AttendanceRecomputeService {
             // Punched with no schedule to judge against: present, flagged, and
             // left for a manager rather than scored as absent.
             status = 'present';
+        }
+
+        // A rostered off day or holiday, with nobody having punched, is neither
+        // present nor absent — payroll pays it and deducts nothing. Punches
+        // override it: somebody who came in on their off day worked, and saying
+        // otherwise would delete their hours. The overtime policy is what makes
+        // that day worth more, not the attendance status.
+        if (dayPunches.length === 0 && rostered) {
+            if (rostered.isHoliday) status = 'holiday';
+            else if (rostered.isWeeklyOff) status = 'weekly_off';
+        }
+        if (
+            dayPunches.length > 0 &&
+            (rostered?.isWeeklyOff || rostered?.isHoliday)
+        ) {
+            flags.worked_on_off_day = true;
         }
 
         const pendingOt =

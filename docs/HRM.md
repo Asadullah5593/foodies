@@ -1,6 +1,6 @@
 # Employee HRM — specification of record
 
-Status: **Phases 1–5 built (backend + admin UI) on `feat/employee-hrm`; Phase 6 not started.** Decisions here were agreed with the client on 2026-08-12. Anything not written down here is undecided; anything written down here is the reference implementation must match.
+Status: **Phases 1–6 built (backend + admin UI) on `feat/employee-hrm`.** Decisions here were agreed with the client on 2026-08-12. Anything not written down here is undecided; anything written down here is the reference implementation must match.
 
 Scope: employee master data, attendance capture without biometrics, leaves and holidays, overtime, payroll, employment history, reviews and promotion, training, and exit. Rider *dispatch* and rider *sharing* are out of scope; rider *pay* is in scope and converges into this module (see [Rider convergence](#12-rider-convergence)).
 
@@ -664,6 +664,8 @@ Employees follow the existing scoping model exactly: `tenantId` + `allowedBranch
 | **4** | Salary structures, deduction rules, OT policies + approval, waivers, payroll run state machine, adjustments, payslip PDF, **off encashment, exit settlement**, **rider convergence + migration** | ~2.5 weeks |
 | **5** | Training programs and records, review templates, cycle scheduler, review form, outcome application | ~1.5 weeks |
 | **6** | Loans/advances, document expiry alerts, labour-cost-vs-sales dashboard, roster calendar UI | ~1 week |
+
+Phase 6 notes: advance recovery shipped with Phase 4 and gained its screen here. Expiry alerts are one nightly sweep (`hr-alerts.service.ts`) reconciled against the notification store, so the alerts screen and the admin bell read the same rows. Labour cost counts **whole approved runs only** — a run straddling the range is named, not pro-rated — and staff with no brand form their own row rather than being spread across brands. The roster honours `is_weekly_off` / `is_holiday` in the attendance engine as of this phase; before it, those columns were written by nothing and read by nothing.
 
 **Total ≈ 8.5–9.5 weeks** for one developer. Phases 1–2 are independently shippable; nothing downstream blocks if 5–6 slip.
 

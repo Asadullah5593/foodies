@@ -9,7 +9,7 @@
  * stable event-type string).
  */
 
-export type NotificationCategory = 'order' | 'inventory';
+export type NotificationCategory = 'order' | 'inventory' | 'hr';
 
 /** Where the client renders this notification. */
 export type NotificationSurface = 'pos_stack' | 'admin_bell';
@@ -33,6 +33,7 @@ export interface NotificationActionDef {
         | 'order.reject'
         | 'order.view'
         | 'inventory.view'
+        | 'hr.view'
         | 'ack';
     style?: 'primary' | 'danger' | 'default';
     /** Whether invoking this action resolves the notification (terminal). */
@@ -140,6 +141,115 @@ export const NOTIFICATION_EVENTS = {
                 key: 'view',
                 label: 'View batch',
                 kind: 'inventory.view',
+                style: 'default',
+                resolves: false,
+            },
+        ],
+    },
+    'hr.document_expiring': {
+        type: 'hr.document_expiring',
+        label: 'Employee document expiring',
+        description:
+            'A CNIC, licence, medical or food-handler document on an employee file expires within 30 days. A lapsed one is a compliance problem, not an admin chore.',
+        category: 'hr',
+        surface: 'admin_bell',
+        severity: 'warning',
+        resolutionMode: 'system',
+        sound: false,
+        repeatSound: false,
+        // Both slug spellings: the live database uses the unseparated form.
+        defaultRoleSlugs: [
+            'hr_manager',
+            'hrmanager',
+            'branch_manager',
+            'branchmanager',
+        ],
+        actions: [
+            {
+                key: 'view',
+                label: 'Open employee',
+                kind: 'hr.view',
+                style: 'default',
+                resolves: false,
+            },
+        ],
+    },
+    'hr.training_expiring': {
+        type: 'hr.training_expiring',
+        label: 'Training certificate expiring',
+        description:
+            'A completed training certificate lapses within 30 days. Once it lapses it stops counting toward a promotion.',
+        category: 'hr',
+        surface: 'admin_bell',
+        severity: 'warning',
+        resolutionMode: 'system',
+        sound: false,
+        repeatSound: false,
+        defaultRoleSlugs: [
+            'hr_manager',
+            'hrmanager',
+            'branch_manager',
+            'branchmanager',
+        ],
+        actions: [
+            {
+                key: 'view',
+                label: 'Open employee',
+                kind: 'hr.view',
+                style: 'default',
+                resolves: false,
+            },
+        ],
+    },
+    'hr.probation_ending': {
+        type: 'hr.probation_ending',
+        label: 'Probation ending',
+        description:
+            'An employee’s probation ends within 14 days and they have not been confirmed. Left alone, someone stays on probation indefinitely.',
+        category: 'hr',
+        surface: 'admin_bell',
+        severity: 'info',
+        resolutionMode: 'system',
+        sound: false,
+        repeatSound: false,
+        defaultRoleSlugs: [
+            'hr_manager',
+            'hrmanager',
+            'branch_manager',
+            'branchmanager',
+        ],
+        actions: [
+            {
+                key: 'view',
+                label: 'Open employee',
+                kind: 'hr.view',
+                style: 'default',
+                resolves: false,
+            },
+        ],
+    },
+    'hr.review_overdue': {
+        type: 'hr.review_overdue',
+        label: 'Review overdue',
+        description:
+            'A SCHEDULED review cycle is past its due date. Ad-hoc reviews are never counted here — they are extra, and one being open says nothing about the cadence.',
+        category: 'hr',
+        surface: 'admin_bell',
+        severity: 'warning',
+        resolutionMode: 'system',
+        sound: false,
+        repeatSound: false,
+        defaultRoleSlugs: [
+            'hr_manager',
+            'hrmanager',
+            'branch_manager',
+            'branchmanager',
+        ],
+        actions: [
+            {
+                key: 'view',
+                label: 'Open review',
+                kind: 'hr.view',
                 style: 'default',
                 resolves: false,
             },

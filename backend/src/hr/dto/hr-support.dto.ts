@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+    IsArray,
     IsBoolean,
     IsDateString,
     IsEnum,
@@ -10,6 +11,7 @@ import {
     Length,
     MaxLength,
     Min,
+    ValidateNested,
 } from 'class-validator';
 
 export const DEPARTMENTS = [
@@ -188,4 +190,54 @@ export class EmployeeWarningDto {
     @IsOptional()
     @IsString()
     document_url?: string;
+}
+
+/** One roster cell. Empty (no template, neither flag) clears the cell. */
+export class RosterCellDto {
+    @ApiProperty({ example: 7 })
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    employee_id: number;
+
+    @ApiProperty({ example: '2026-08-20' })
+    @IsDateString()
+    work_date: string;
+
+    @ApiPropertyOptional({
+        description:
+            'Shift template for that date. Null or omitted falls back to the employee’s default.',
+    })
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    template_id?: number | null;
+
+    @ApiPropertyOptional({ description: 'A day off for this employee.' })
+    @IsOptional()
+    @IsBoolean()
+    is_weekly_off?: boolean;
+
+    @ApiPropertyOptional({
+        description: 'A branch-wide holiday. Wins over is_weekly_off.',
+    })
+    @IsOptional()
+    @IsBoolean()
+    is_holiday?: boolean;
+}
+
+/** PUT /api/admin/hr/roster */
+export class SaveRosterDto {
+    @ApiProperty({ example: 10 })
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    branch_id: number;
+
+    @ApiProperty({ type: [RosterCellDto] })
+    @IsArray()
+    @ValidateNested({ each: true })
+    @Type(() => RosterCellDto)
+    cells: RosterCellDto[];
 }

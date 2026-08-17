@@ -6,9 +6,9 @@ import { notificationsService } from '../../services/api/notificationsService';
 import type { ClientNotification } from '../../stores/notificationsStore';
 
 /**
- * Header bell showing inventory (admin) notifications with an unread badge and a
- * dropdown. Order notifications are intentionally excluded — those surface on the
- * POS/till screen as the actionable stack.
+ * Header bell showing admin-surface notifications (inventory, HR) with an unread
+ * badge and a dropdown. Order notifications are intentionally excluded — those
+ * surface on the POS/till screen as the actionable stack.
  */
 const NotificationBell: React.FC = () => {
   const items = useNotificationsStore((s) => s.items);
@@ -18,12 +18,13 @@ const NotificationBell: React.FC = () => {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
-  const inventory = useMemo(
-    () =>
-      items.filter((i) => i.category === 'inventory' && i.status === 'open'),
+  // Surface, not category: inventory and HR alerts both render here, and gating
+  // on category would silently hide every new bell category added later.
+  const bellItems = useMemo(
+    () => items.filter((i) => i.surface === 'admin_bell' && i.status === 'open'),
     [items],
   );
-  const unread = inventory.filter((i) => !i.readAt).length;
+  const unread = bellItems.filter((i) => !i.readAt).length;
 
   useEffect(() => {
     if (!open) return;
@@ -41,12 +42,19 @@ const NotificationBell: React.FC = () => {
       markReadLocal(n.id);
       notificationsService.markRead(n.id).catch(() => undefined);
     }
+    // Newer alert types carry their own destination; inventory keeps its
+    // historical behaviour so nothing that worked before changes.
+    const link = typeof n.data?.link === 'string' ? (n.data.link as string) : null;
     const branchId = (n.data?.branchId as number | undefined) ?? n.branchId;
-    navigate(
-      branchId
-        ? `/admin/inventory/on-hand?branch_id=${branchId}`
-        : '/admin/inventory/on-hand',
-    );
+    if (link) {
+      navigate(link);
+    } else {
+      navigate(
+        branchId
+          ? `/admin/inventory/on-hand?branch_id=${branchId}`
+          : '/admin/inventory/on-hand',
+      );
+    }
     setOpen(false);
   };
 
@@ -89,12 +97,12 @@ const NotificationBell: React.FC = () => {
             )}
           </div>
           <div className="max-h-96 overflow-y-auto">
-            {inventory.length === 0 ? (
+            {bellItems.length === 0 ? (
               <div className="px-4 py-8 text-center text-sm text-slate-400">
                 No alerts
               </div>
             ) : (
-              inventory.map((n) => (
+              bellItems.map((n) => (
                 <button
                   key={n.id}
                   type="button"

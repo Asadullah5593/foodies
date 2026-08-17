@@ -92,6 +92,10 @@ import Designations from './pages/Admin/HR/Designations';
 import Reviews from './pages/Admin/HR/Reviews';
 import ReviewDetail from './pages/Admin/HR/ReviewDetail';
 import Training from './pages/Admin/HR/Training';
+import Advances from './pages/Admin/HR/Advances';
+import HrAlerts from './pages/Admin/HR/Alerts';
+import LabourCost from './pages/Admin/HR/LabourCost';
+import Roster from './pages/Admin/HR/Roster';
 import AttendanceRegister from './pages/Admin/HR/AttendanceRegister';
 import Leaves from './pages/Admin/HR/Leaves';
 import Payroll from './pages/Admin/HR/Payroll';
@@ -401,9 +405,13 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       icon: MdOutlineBadge,
       children: [
         { path: '/admin/hr/employees', label: 'Employees' },
+        { path: '/admin/hr/alerts', label: 'Alerts' },
         { path: '/admin/hr/attendance', label: 'Attendance' },
         { path: '/admin/hr/leaves', label: 'Leaves' },
+        { path: '/admin/hr/roster', label: 'Roster' },
         { path: '/admin/hr/payroll', label: 'Payroll' },
+        { path: '/admin/hr/advances', label: 'Advances' },
+        { path: '/admin/hr/labour-cost', label: 'Labour cost' },
         { path: '/admin/hr/reviews', label: 'Reviews' },
         { path: '/admin/hr/training', label: 'Training' },
         { path: '/admin/hr/settings/designations', label: 'Designations' },
@@ -1224,6 +1232,10 @@ const AppRoutes: React.FC = () => {
       {/* Detail before list so longest-prefix permission matching agrees either way. */}
       <Route path="/admin/hr/payroll/:id" element={<ProtectedRoute><AdminOnlyRoute><Layout><PayrollRunDetail /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/payroll" element={<ProtectedRoute><AdminOnlyRoute><Layout><Payroll /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/roster" element={<ProtectedRoute><AdminOnlyRoute><Layout><Roster /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/labour-cost" element={<ProtectedRoute><AdminOnlyRoute><Layout><LabourCost /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/alerts" element={<ProtectedRoute><AdminOnlyRoute><Layout><HrAlerts /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/advances" element={<ProtectedRoute><AdminOnlyRoute><Layout><Advances /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/reviews/:id" element={<ProtectedRoute><AdminOnlyRoute><Layout><ReviewDetail /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/reviews" element={<ProtectedRoute><AdminOnlyRoute><Layout><Reviews /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/training" element={<ProtectedRoute><AdminOnlyRoute><Layout><Training /></Layout></AdminOnlyRoute></ProtectedRoute>} />

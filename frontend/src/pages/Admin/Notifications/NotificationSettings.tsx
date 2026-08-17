@@ -63,7 +63,7 @@ const GROUP_META: Record<
     tint: 'bg-amber-50 dark:bg-amber-950/40',
   },
 };
-const GROUP_ORDER = ['order', 'inventory'];
+const GROUP_ORDER = ['order', 'inventory', 'hr'];
 const groupMeta = (cat: string) =>
   GROUP_META[cat] ?? {
     label: cat.charAt(0).toUpperCase() + cat.slice(1),
