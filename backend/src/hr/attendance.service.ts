@@ -21,6 +21,7 @@ import { AttendanceRecomputeService } from './attendance-recompute.service';
 import { HrAuditService } from './hr-audit.service';
 import { hasPermission, HrUser } from './employee-scope';
 import { PunchDto, ManagerAttestDto, SetPinDto } from './dto/attendance.dto';
+import { canPunch, pairSessions } from './attendance-rules';
 
 const PIN_LOCK_MINUTES = 15;
 const PIN_MAX_ATTEMPTS = 5;
@@ -234,6 +235,7 @@ export class AttendanceService {
             dto.branch_id,
             now,
         );
+        await this.assertPunchAllowed(employee.id, dto.punch_type, workDate);
 
         const punch = await this.punches.save(
             this.punches.create({
@@ -323,6 +325,7 @@ export class AttendanceService {
             station.branchId,
             now,
         );
+        await this.assertPunchAllowed(employee.id, dto.punch_type, workDate);
 
         const punch = await this.punches.save(
             this.punches.create({
@@ -502,6 +505,7 @@ export class AttendanceService {
             dto.branch_id,
             now,
         );
+        await this.assertPunchAllowed(employee.id, dto.punch_type, workDate);
 
         const punch = await this.punches.save(
             this.punches.create({
@@ -536,6 +540,67 @@ export class AttendanceService {
         });
 
         return { punch_id: punch.id, work_date: workDate };
+    }
+
+    /**
+     * Refuse a punch that contradicts the last one — clocking in while already
+     * in, or out while already out. Several in/out PAIRS a day are expected
+     * (breaks, split shifts); repeating the SAME direction is always a mistake.
+     */
+    private async assertPunchAllowed(
+        employeeId: number,
+        punchType: string,
+        workDate: string | null,
+    ): Promise<void> {
+        const qb = this.punches
+            .createQueryBuilder('p')
+            .where('p.employeeId = :employeeId', { employeeId })
+            .andWhere("p.punchType IN ('in', 'out')")
+            .orderBy('p.punchedAt', 'DESC')
+            .limit(1);
+        // Scoped to the work date so yesterday's forgotten clock-out does not
+        // block today's clock-in.
+        if (workDate) qb.andWhere('p.workDate = :workDate', { workDate });
+        const last = await qb.getOne();
+
+        const verdict = canPunch(punchType, last?.punchType ?? null);
+        if (!verdict.allowed) {
+            throw new BadRequestException(verdict.reason);
+        }
+    }
+
+    /** Every punch of a day, so an admin can see the full in/out history. */
+    async dayPunches(user: HrUser, dayId: number) {
+        const day = await this.loadDayScoped(user, dayId);
+        const punches = await this.punches.find({
+            where: { employeeId: day.employeeId, workDate: day.workDate },
+            relations: ['posUser'],
+            order: { punchedAt: 'ASC' },
+        });
+        const paired = pairSessions(punches);
+        return {
+            work_date: day.workDate,
+            worked_minutes: day.workedMinutes,
+            sessions: paired.sessions.map((s) => ({
+                in_at: s.inAt,
+                out_at: s.outAt,
+                minutes: s.minutes,
+            })),
+            open_session: paired.openSession,
+            punches: punches.map((p) => ({
+                id: p.id,
+                punch_type: p.punchType,
+                punched_at: p.punchedAt,
+                source: p.source,
+                method: p.method,
+                station_id: p.stationId,
+                pos_user: p.posUser
+                    ? { id: p.posUser.id, name: p.posUser.name }
+                    : null,
+                photo_url: p.photoUrl,
+                note: p.note,
+            })),
+        };
     }
 
     // ------------------------------------------------------------ reads

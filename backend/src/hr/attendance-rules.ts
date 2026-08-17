@@ -159,6 +159,96 @@ export function attributePunch(
     );
 }
 
+export type RawPunch = { punchType: string; punchedAt: Date };
+
+/**
+ * Pair in/out punches into worked sessions and total them.
+ *
+ * ⚠️ NOT `lastOut − firstIn`. Someone who clocks out for lunch and back in has
+ * two sessions, and spanning the gap pays them for the break. Equally, three
+ * in/out pairs across a split shift must add up rather than being flattened.
+ *
+ * A trailing `in` with no `out` is an OPEN session: reported, never guessed at,
+ * because inventing an end time manufactures pay.
+ */
+export function pairSessions(punches: RawPunch[]): {
+    sessions: Array<{ inAt: Date; outAt: Date; minutes: number }>;
+    workedMinutes: number;
+    firstInAt: Date | null;
+    lastOutAt: Date | null;
+    openSession: boolean;
+    /** An `out` with no preceding `in` — a data problem worth surfacing. */
+    strayOut: boolean;
+} {
+    const ordered = [...punches]
+        .filter((p) => p.punchType === 'in' || p.punchType === 'out')
+        .sort((a, b) => a.punchedAt.getTime() - b.punchedAt.getTime());
+
+    const sessions: Array<{ inAt: Date; outAt: Date; minutes: number }> = [];
+    let openIn: Date | null = null;
+    let strayOut = false;
+
+    for (const p of ordered) {
+        if (p.punchType === 'in') {
+            // A second `in` without an `out` keeps the EARLIER one: the person
+            // has been at work since then, and moving the start forward would
+            // quietly shorten their day.
+            if (openIn == null) openIn = p.punchedAt;
+            continue;
+        }
+        if (openIn == null) {
+            strayOut = true;
+            continue;
+        }
+        const minutes = Math.max(
+            0,
+            Math.round((p.punchedAt.getTime() - openIn.getTime()) / MINUTE),
+        );
+        sessions.push({ inAt: openIn, outAt: p.punchedAt, minutes });
+        openIn = null;
+    }
+
+    return {
+        sessions,
+        workedMinutes: sessions.reduce((sum, s) => sum + s.minutes, 0),
+        firstInAt: ordered.find((p) => p.punchType === 'in')?.punchedAt ?? null,
+        lastOutAt:
+            [...ordered].reverse().find((p) => p.punchType === 'out')
+                ?.punchedAt ?? null,
+        openSession: openIn != null,
+        strayOut,
+    };
+}
+
+/**
+ * Is this punch type allowed given what came before it today?
+ *
+ * Clocking in twice without clocking out, or out twice in a row, is always a
+ * mistake — usually a double tap or someone who forgot they already punched.
+ * Several in/out PAIRS in a day are fine and expected (split shifts, breaks).
+ */
+export function canPunch(
+    punchType: string,
+    lastPunchType: string | null,
+): { allowed: boolean; reason?: string } {
+    if (punchType === 'in' && lastPunchType === 'in') {
+        return {
+            allowed: false,
+            reason: 'You are already clocked in — clock out first',
+        };
+    }
+    if (punchType === 'out' && lastPunchType !== 'in') {
+        return {
+            allowed: false,
+            reason:
+                lastPunchType === 'out'
+                    ? 'You are already clocked out'
+                    : 'You have not clocked in yet',
+        };
+    }
+    return { allowed: true };
+}
+
 /** Minutes late, counting the grace period as on time. */
 export function lateMinutes(
     firstInUtc: Date,

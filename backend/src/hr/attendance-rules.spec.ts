@@ -1,5 +1,7 @@
 import {
     attributePunch,
+    canPunch,
+    pairSessions,
     branchLocalDate,
     branchLocalToUtc,
     buildOccurrence,
@@ -172,6 +174,132 @@ describe('attributePunch — the midnight rule', () => {
         // 11:30 Tuesday is inside Monday's trail only if trail were longer; with
         // lead 6h it sits in Tuesday's window and Tuesday's start is nearer.
         expect(attribute('2026-08-18', '11:30')?.workDate).toBe('2026-08-18');
+    });
+});
+
+describe('pairSessions', () => {
+    const at = (t: string) => branchLocalToUtc('2026-08-17', t, KHI);
+    const p = (punchType: string, t: string) => ({
+        punchType,
+        punchedAt: at(t),
+    });
+
+    it('totals a single session', () => {
+        const r = pairSessions([p('in', '11:00'), p('out', '20:00')]);
+        expect(r.workedMinutes).toBe(540);
+        expect(r.sessions).toHaveLength(1);
+        expect(r.openSession).toBe(false);
+    });
+
+    /**
+     * The bug this replaces: `lastOut − firstIn` counts the lunch break as
+     * worked. Two sessions of 3h and 5h are 8h, not 9h.
+     */
+    it('does not pay for the gap between two sessions', () => {
+        const r = pairSessions([
+            p('in', '09:00'),
+            p('out', '12:00'),
+            p('in', '13:00'),
+            p('out', '18:00'),
+        ]);
+        expect(r.workedMinutes).toBe(480);
+        expect(r.sessions).toHaveLength(2);
+        // Naive first-in-to-last-out would have said 540.
+        expect(r.firstInAt).toEqual(at('09:00'));
+        expect(r.lastOutAt).toEqual(at('18:00'));
+    });
+
+    it('handles three pairs across a split shift', () => {
+        const r = pairSessions([
+            p('in', '08:00'),
+            p('out', '10:00'),
+            p('in', '12:00'),
+            p('out', '14:00'),
+            p('in', '18:00'),
+            p('out', '20:00'),
+        ]);
+        expect(r.workedMinutes).toBe(360);
+        expect(r.sessions).toHaveLength(3);
+    });
+
+    it('reports an unclosed final session without guessing an end', () => {
+        const r = pairSessions([
+            p('in', '09:00'),
+            p('out', '12:00'),
+            p('in', '13:00'),
+        ]);
+        expect(r.workedMinutes).toBe(180);
+        expect(r.openSession).toBe(true);
+    });
+
+    it('keeps the earlier start when an `in` repeats without an `out`', () => {
+        // The person has been at work since 09:00; moving the start to 09:30
+        // would quietly shorten their day.
+        const r = pairSessions([
+            p('in', '09:00'),
+            p('in', '09:30'),
+            p('out', '17:00'),
+        ]);
+        expect(r.workedMinutes).toBe(480);
+        expect(r.firstInAt).toEqual(at('09:00'));
+    });
+
+    it('flags an `out` with no `in` rather than counting it', () => {
+        const r = pairSessions([p('out', '17:00')]);
+        expect(r.workedMinutes).toBe(0);
+        expect(r.strayOut).toBe(true);
+    });
+
+    it('is order-independent', () => {
+        const r = pairSessions([
+            p('out', '18:00'),
+            p('in', '09:00'),
+            p('out', '12:00'),
+            p('in', '13:00'),
+        ]);
+        expect(r.workedMinutes).toBe(480);
+    });
+
+    it('ignores break punches, which are accounted separately', () => {
+        const r = pairSessions([
+            p('in', '09:00'),
+            p('break_start', '12:00'),
+            p('break_end', '12:30'),
+            p('out', '17:00'),
+        ]);
+        expect(r.sessions).toHaveLength(1);
+        expect(r.workedMinutes).toBe(480);
+    });
+});
+
+describe('canPunch', () => {
+    it('allows a first clock-in', () => {
+        expect(canPunch('in', null).allowed).toBe(true);
+    });
+
+    it('refuses clocking in twice', () => {
+        const r = canPunch('in', 'in');
+        expect(r.allowed).toBe(false);
+        expect(r.reason).toMatch(/already clocked in/i);
+    });
+
+    it('refuses clocking out twice', () => {
+        expect(canPunch('out', 'out').allowed).toBe(false);
+    });
+
+    it('refuses clocking out before clocking in', () => {
+        const r = canPunch('out', null);
+        expect(r.allowed).toBe(false);
+        expect(r.reason).toMatch(/not clocked in/i);
+    });
+
+    /** Several in/out PAIRS a day are expected — breaks, split shifts. */
+    it('allows clocking in again after clocking out', () => {
+        expect(canPunch('in', 'out').allowed).toBe(true);
+    });
+
+    it('allows clocking out after clocking in', () => {
+        expect(canPunch('out', 'in').allowed).toBe(true);
     });
 });
 

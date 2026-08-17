@@ -41,13 +41,13 @@ const AttendanceStation: React.FC = () => {
   const [pin, setPin] = useState('');
   const [result, setResult] = useState<StationPunchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [photoEnabled, setPhotoEnabled] = useState(false);
+  const [photoOverride, setPhotoOverride] = useState<boolean | null>(null);
 
+  const [scan, setScan] = useState('');
+  const [scanDirection, setScanDirection] = useState<PunchType>('in');
   const codeRef = useRef<HTMLInputElement | null>(null);
   const pinRef = useRef<HTMLInputElement | null>(null);
-
-  const { videoRef, ready: cameraReady, error: cameraError, capture } =
-    usePunchCamera(photoEnabled, token);
+  const scanRef = useRef<HTMLInputElement | null>(null);
 
   const context = useQuery({
     queryKey: ['station-context', token],
@@ -56,13 +56,23 @@ const AttendanceStation: React.FC = () => {
     retry: false,
   });
 
+  // The branch policy decides whether a photo is taken; the tick is only an
+  // override for a device whose camera the policy does not know about.
+  const photoRequired = context.data?.policy.require_photo === true;
+  const photoEnabled = photoOverride ?? photoRequired;
+
+  const { videoRef, ready: cameraReady, error: cameraError, capture } =
+    usePunchCamera(photoEnabled, token);
+
   const mutation = useMutation({
-    mutationFn: async (punchType: PunchType) => {
-      const photoUrl = punchType === 'in' ? await capture() : null;
+    mutationFn: async (args: { punchType: PunchType; qrToken?: string }) => {
+      const photoUrl = args.punchType === 'in' ? await capture() : null;
       return stationService.punch(token as string, {
-        punch_type: punchType,
-        employee_code: code.trim(),
-        pin,
+        punch_type: args.punchType,
+        // A scanned card replaces code + PIN entirely.
+        ...(args.qrToken
+          ? { qr_token: args.qrToken }
+          : { employee_code: code.trim(), pin }),
         photo_url: photoUrl ?? undefined,
       });
     },
@@ -71,7 +81,8 @@ const AttendanceStation: React.FC = () => {
       setError(null);
       setCode('');
       setPin('');
-      codeRef.current?.focus();
+      setScan('');
+      scanRef.current?.focus();
     },
     onError: (err: unknown) => {
       const message =
@@ -80,7 +91,8 @@ const AttendanceStation: React.FC = () => {
       setError(Array.isArray(message) ? message[0] : String(message));
       setResult(null);
       setPin('');
-      pinRef.current?.focus();
+      setScan('');
+      scanRef.current?.focus();
     },
   });
 
@@ -95,8 +107,10 @@ const AttendanceStation: React.FC = () => {
     return () => clearTimeout(timer);
   }, [result, error]);
 
+  // The scan field holds focus by default: a card reader is a keyboard, and it
+  // types wherever the caret is. Anyone without a card just clicks the code box.
   useEffect(() => {
-    if (token && context.isSuccess) codeRef.current?.focus();
+    if (token && context.isSuccess) scanRef.current?.focus();
   }, [token, context.isSuccess]);
 
   const canPunch = code.trim().length > 0 && pin.length >= 4;
@@ -213,6 +227,50 @@ const AttendanceStation: React.FC = () => {
         </div>
       )}
 
+      {/* Card scanning. A reader behaves like a keyboard that ends with Enter,
+          so the field simply submits on Enter — no driver, no integration. The
+          direction toggle decides whether a scan clocks in or out, because a
+          card carries identity only. */}
+      <div className="mb-4 w-full max-w-sm rounded-lg border border-slate-700 bg-slate-800/50 p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <label htmlFor="station-scan" className="text-xs uppercase text-slate-400">
+            Scan card
+          </label>
+          <div className="flex gap-1">
+            {(['in', 'out'] as PunchType[]).map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => setScanDirection(d)}
+                className={`rounded px-2 py-1 text-xs ${
+                  scanDirection === d
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-slate-700 text-slate-300'
+                }`}
+              >
+                {d === 'in' ? 'Clock in' : 'Clock out'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <input
+          id="station-scan"
+          ref={scanRef}
+          className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-center text-sm text-slate-100 focus:border-blue-400 focus:outline-none"
+          placeholder="Scan your card…"
+          value={scan}
+          autoComplete="off"
+          onChange={(e) => setScan(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key !== 'Enter') return;
+            e.preventDefault();
+            const value = scan.trim();
+            if (value.length < 8 || mutation.isPending) return;
+            mutation.mutate({ punchType: scanDirection, qrToken: value });
+          }}
+        />
+      </div>
+
       {/* Real inputs, so a keyboard, a barcode scanner and the on-screen keypad
           all work. The earlier version used buttons as fields, which silently
           made the whole screen unusable without a touchscreen. */}
@@ -220,7 +278,7 @@ const AttendanceStation: React.FC = () => {
         className="mb-4 w-full max-w-sm space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
-          if (canPunch && !mutation.isPending) mutation.mutate('in');
+          if (canPunch && !mutation.isPending) mutation.mutate({ punchType: 'in' });
         }}
       >
         <div>
@@ -303,7 +361,7 @@ const AttendanceStation: React.FC = () => {
         <button
           type="button"
           disabled={!canPunch || mutation.isPending}
-          onClick={() => mutation.mutate('in')}
+          onClick={() => mutation.mutate({ punchType: 'in' })}
           className="flex items-center justify-center gap-2 rounded-lg bg-green-600 py-4 font-medium hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <MdLogin /> Clock in
@@ -311,7 +369,7 @@ const AttendanceStation: React.FC = () => {
         <button
           type="button"
           disabled={!canPunch || mutation.isPending}
-          onClick={() => mutation.mutate('out')}
+          onClick={() => mutation.mutate({ punchType: 'out' })}
           className="flex items-center justify-center gap-2 rounded-lg bg-slate-600 py-4 font-medium hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
           <MdLogout /> Clock out
@@ -322,10 +380,12 @@ const AttendanceStation: React.FC = () => {
         <input
           type="checkbox"
           checked={photoEnabled}
-          onChange={(e) => setPhotoEnabled(e.target.checked)}
+          disabled={photoRequired}
+          onChange={(e) => setPhotoOverride(e.target.checked)}
           className="h-4 w-4 rounded border-slate-600"
         />
         Take a photo on clock-in
+        {photoRequired && ' (required at this branch)'}
       </label>
     </div>
   );

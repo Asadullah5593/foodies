@@ -122,6 +122,20 @@ export class AttendanceController {
         return this.attendance.decideException(user, id, dto.decision);
     }
 
+    @Get('days/:id/punches')
+    @RequirePermission(Permissions.ATTENDANCE_VIEW)
+    @ApiOperation({
+        summary: 'Full punch history for one day',
+        description:
+            'Every in/out with its source, device and method, plus the paired sessions. Several pairs a day are normal — this is how an admin sees them.',
+    })
+    dayPunches(
+        @CurrentUser() user: HrUser,
+        @Param('id', ParseIntPipe) id: number,
+    ) {
+        return this.attendance.dayPunches(user, id);
+    }
+
     @Post('recompute')
     @RequirePermission(Permissions.ATTENDANCE_RECOMPUTE)
     @ApiOperation({

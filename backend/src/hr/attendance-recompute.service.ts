@@ -16,6 +16,7 @@ import {
     lateMinutes,
     Occurrence,
     overtimeMinutes,
+    pairSessions,
     ScheduleTemplate,
 } from './attendance-rules';
 
@@ -237,10 +238,15 @@ export class AttendanceRecomputeService {
         const flags: Record<string, unknown> = {};
         if (!template) flags.no_schedule = true;
 
-        const ins = dayPunches.filter((p) => p.punchType === 'in');
-        const outs = dayPunches.filter((p) => p.punchType === 'out');
-        const firstIn = ins[0]?.punchedAt ?? null;
-        const lastOut = outs.length ? outs[outs.length - 1].punchedAt : null;
+        // Sessions, not first-in-to-last-out: someone who clocks out for lunch
+        // and back in has two, and spanning the gap would pay for the break.
+        const paired = pairSessions(dayPunches);
+        const firstIn = paired.firstInAt;
+        const lastOut = paired.lastOutAt;
+        if (paired.strayOut) flags.stray_out = true;
+        if (paired.sessions.length > 1) {
+            flags.sessions = paired.sessions.length;
+        }
 
         // Paired break intervals; an unpaired break_start is ignored rather
         // than assumed to run to the end of the shift.
@@ -260,21 +266,17 @@ export class AttendanceRecomputeService {
         }
         if (openBreak) flags.unclosed_break = true;
 
-        let workedMinutes = 0;
-        if (firstIn && lastOut) {
-            workedMinutes = Math.max(
-                0,
-                Math.round((lastOut.getTime() - firstIn.getTime()) / MINUTE) -
-                    breakMinutes,
-            );
-        } else if (firstIn && !lastOut) {
+        const workedMinutes = Math.max(0, paired.workedMinutes - breakMinutes);
+        if (paired.openSession) {
             // Clocked in and never out: zero hours, flagged. Guessing an end
             // time would quietly manufacture pay.
+            // An unclosed final session contributes nothing — guessing an end
+            // time manufactures pay. Earlier CLOSED sessions still count, so a
+            // split shift is not wiped out by forgetting the last clock-out.
             flags.missing_out = true;
-            // Still on shift right now, as opposed to having forgotten to clock
-            // out. The distinction matters: without it, everyone currently at
-            // work reads as ABSENT on the register and payroll would deduct
-            // today from someone standing behind the counter.
+            // Still on shift right now, as opposed to having forgotten. Without
+            // this, everyone currently at work reads as ABSENT on the register
+            // and payroll would deduct today from someone behind the counter.
             const shiftEnd = occurrence?.plannedEndUtc?.getTime();
             if (shiftEnd == null || Date.now() < shiftEnd) {
                 flags.in_progress = true;

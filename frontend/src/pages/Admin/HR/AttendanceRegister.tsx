@@ -6,6 +6,7 @@ import apiClient from '../../../utils/apiClient';
 import Loader from '../../../components/Loader';
 import { statusBadgeClass, statusLabel } from './hrShared';
 import AttendanceStations from './AttendanceStations';
+import DayPunchesModal from './DayPunchesModal';
 import SearchableSelect from '../../../components/SearchableSelect';
 
 const isoDaysAgo = (days: number) =>
@@ -14,6 +15,7 @@ const isoDaysAgo = (days: number) =>
 /** Flags are machine keys; these are what a manager should actually read. */
 const FLAG_LABELS: Record<string, string> = {
   in_progress: 'On shift now',
+  stray_out: 'Clock-out with no clock-in',
   missing_out: 'No clock-out',
   manager_attested: 'Manager recorded',
   no_schedule: 'No shift set',
@@ -32,6 +34,7 @@ const minutesLabel = (m: number) =>
  * a table, and without a biometric device the flags are the control.
  */
 const AttendanceRegister: React.FC = () => {
+  const [punchesDayId, setPunchesDayId] = useState<number | null>(null);
   const [dateFrom, setDateFrom] = useState(isoDaysAgo(6));
   const [dateTo, setDateTo] = useState(isoDaysAgo(0));
   const [branchId, setBranchId] = useState<number | ''>('');
@@ -169,7 +172,18 @@ const AttendanceRegister: React.FC = () => {
           <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
             <thead className="bg-gray-50 dark:bg-slate-800">
               <tr>
-                {['Date', 'Employee', 'Status', 'In', 'Out', 'Worked', 'Late', 'OT', 'Flags'].map(
+                {[
+                  'Date',
+                  'Employee',
+                  'Status',
+                  'In',
+                  'Out',
+                  'Worked',
+                  'Late',
+                  'OT',
+                  'Flags',
+                  '',
+                ].map(
                   (h) => (
                     <th
                       key={h}
@@ -205,6 +219,17 @@ const AttendanceRegister: React.FC = () => {
                         {statusLabel(r.status)}
                       </span>
                     )}
+                    {/* WHY it is absent or half a day. Without this the status
+                        looks like a judgement about lateness, when it is
+                        actually about hours worked. */}
+                    {(r.status === 'absent' || r.status === 'half_day') &&
+                      !r.flags?.in_progress && (
+                        <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+                          {r.worked_minutes > 0
+                            ? `only ${minutesLabel(r.worked_minutes)} worked`
+                            : 'no hours recorded'}
+                        </div>
+                      )}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
                     {r.first_in_at ? new Date(r.first_in_at).toLocaleTimeString() : '—'}
@@ -244,11 +269,23 @@ const AttendanceRegister: React.FC = () => {
                       ))}
                     </div>
                   </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
+                    <button
+                      type="button"
+                      onClick={() => setPunchesDayId(r.id)}
+                      className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+                    >
+                      Punches
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+      {punchesDayId != null && (
+        <DayPunchesModal dayId={punchesDayId} onClose={() => setPunchesDayId(null)} />
       )}
     </div>
   );

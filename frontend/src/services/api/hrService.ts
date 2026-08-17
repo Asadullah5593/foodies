@@ -547,6 +547,29 @@ export const hrService = {
     return data;
   },
 
+  getDayPunches: async (
+    dayId: number,
+  ): Promise<{
+    work_date: string;
+    worked_minutes: number;
+    sessions: Array<{ in_at: string; out_at: string; minutes: number }>;
+    open_session: boolean;
+    punches: Array<{
+      id: number;
+      punch_type: string;
+      punched_at: string;
+      source: string;
+      method: string;
+      station_id: number | null;
+      pos_user: { id: number; name: string } | null;
+      photo_url: string | null;
+      note: string | null;
+    }>;
+  }> => {
+    const { data } = await apiClient.get(`/admin/hr/attendance/days/${dayId}/punches`);
+    return data;
+  },
+
   createException: async (
     dayId: number,
     payload: {
