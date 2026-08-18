@@ -522,6 +522,21 @@ Riders punch on the POS like everyone else (decision #5). This creates two recor
 
 **Pay:** the new payroll engine is the only engine. Rider-specific facts (completed deliveries, timely deliveries, average rating) are supplied by a **rider fact-provider** to the same component calculation, so a rider's basic + per-delivered-order pay is one payslip alongside everyone else's.
 
+### After the merge — what each module owns
+
+| | Owns | Where |
+|---|---|---|
+| **HR & Payroll** | Everyone's pay, attendance, leave, reviews, training — riders included | `/admin/hr/*` |
+| **Rider Ops** | Dispatch only: supervisor view, rider pool & sharing, rider profiles | `/admin/rider-hrm/*` |
+
+The sidebar group was renamed from "Rider HRM" to **Rider Ops** for exactly this
+reason — two groups called HRM left a standing question about which one paid
+people. The rider profile screen keeps its base-salary column but it is now
+READ-ONLY and labelled legacy: payroll reads `employee_salary_structures`, so an
+edit there would change a number nobody is paid from. Compensation plans and
+rider payroll runs stay routed (history must stay readable) but are deliberately
+not returning to the menu.
+
 ### Production runbook — merging rider pay (no data loss)
 
 `npm run merge:rider-hrm` moves rider PAY onto the employee payroll engine. It

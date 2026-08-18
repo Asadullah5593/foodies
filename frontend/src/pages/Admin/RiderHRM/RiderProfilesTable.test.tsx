@@ -64,55 +64,31 @@ beforeEach(() => {
   upsertRiderProfile.mockResolvedValue({});
 });
 
-describe('RiderProfilesTable — base salary CRUD', () => {
-  it('lists every rider, with the saved salary or "not set"', async () => {
+describe('RiderProfilesTable — legacy pay, read-only since the HR merge', () => {
+  it('lists every rider with the legacy figure, and offers no way to edit it', async () => {
     renderPage();
     expect(await screen.findByText('fireaway rider 1')).toBeTruthy();
     expect(screen.getByText('loranzo rider 2')).toBeTruthy();
     expect(screen.getByText(/10,?000/)).toBeTruthy();
     expect(screen.getByText('not set')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Set salary' })).toBeTruthy();
+    // Editing here would write a number payroll no longer reads: rider pay is
+    // an employee salary structure now.
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Set salary' })).toBeNull();
   });
 
-  it('Edit opens the dialog prefilled with the current salary', async () => {
+  it('says where pay actually lives and links there', async () => {
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
-    const input = screen.getByRole('spinbutton') as HTMLInputElement;
-    expect(input.value).toBe('10000');
+    await screen.findByText('fireaway rider 1');
+    expect(screen.getByText(/Rider pay moved to HR/)).toBeTruthy();
+    const link = screen.getByRole('link', { name: /Open HR/ });
+    expect(link.getAttribute('href')).toBe('/admin/hr/employees');
   });
 
-  it('saves ONLY user_id + base_salary (never the other HR fields)', async () => {
+  it('never writes a rider profile, whatever the permission says', async () => {
+    canEdit = true;
     renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
-    const input = screen.getByRole('spinbutton');
-    fireEvent.change(input, { target: { value: '12500' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() =>
-      expect(upsertRiderProfile).toHaveBeenCalledWith({ user_id: 41, base_salary: 12500 }),
-    );
-    expect(upsertRiderProfile).toHaveBeenCalledTimes(1);
-  });
-
-  it('a rider without a profile starts empty and saves the typed value', async () => {
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Set salary' }));
-    const input = screen.getByRole('spinbutton') as HTMLInputElement;
-    expect(input.value).toBe('');
-    expect(screen.getByText('No salary saved for this rider yet.')).toBeTruthy();
-    fireEvent.change(input, { target: { value: '8500' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-    await waitFor(() =>
-      expect(upsertRiderProfile).toHaveBeenCalledWith({ user_id: 42, base_salary: 8500 }),
-    );
-  });
-
-  it('Save is disabled while the input is empty — an existing salary cannot be wiped to 0 by accident', async () => {
-    renderPage();
-    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
-    const input = screen.getByRole('spinbutton');
-    fireEvent.change(input, { target: { value: '' } });
-    expect((screen.getByRole('button', { name: 'Save' }) as HTMLButtonElement).disabled).toBe(true);
+    await screen.findByText('fireaway rider 1');
     expect(upsertRiderProfile).not.toHaveBeenCalled();
   });
 
@@ -124,7 +100,7 @@ describe('RiderProfilesTable — base salary CRUD', () => {
     expect(screen.getByText('loranzo rider 2')).toBeTruthy();
   });
 
-  it('a saved salary whose rider is deactivated/unlinked still shows as an "inactive rider" row', async () => {
+  it('still shows a legacy salary whose rider is deactivated or unlinked', async () => {
     getRiderProfiles.mockResolvedValue([
       ...PROFILES,
       {
@@ -144,18 +120,13 @@ describe('RiderProfilesTable — base salary CRUD', () => {
     expect(await screen.findByText('departed rider')).toBeTruthy();
     expect(screen.getByText('inactive rider')).toBeTruthy();
     expect(screen.getByText(/25,?000/)).toBeTruthy();
-    // Still editable — the salary keeps feeding payroll.
-    const editButtons = screen.getAllByRole('button', { name: 'Edit' });
-    expect(editButtons.length).toBe(2);
   });
 
-  it('a failed profiles load shows an error instead of an editable "not set" table', async () => {
+  it('a failed profiles load shows an error instead of a false "not set" table', async () => {
     getRiderProfiles.mockRejectedValue(new Error('boom'));
     renderPage();
     expect(await screen.findByText("Couldn't load the saved salaries.")).toBeTruthy();
     expect(screen.queryByText('not set')).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Set salary' })).toBeNull();
   });
 
   it('a failed riders load shows an error instead of the false empty state', async () => {
@@ -163,13 +134,5 @@ describe('RiderProfilesTable — base salary CRUD', () => {
     renderPage();
     expect(await screen.findByText("Couldn't load the rider list.")).toBeTruthy();
     expect(screen.queryByText(/No riders yet/)).toBeNull();
-  });
-
-  it('without rider-profiles:edit the table is read-only', async () => {
-    canEdit = false;
-    renderPage();
-    await screen.findByText('fireaway rider 1');
-    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Set salary' })).toBeNull();
   });
 });

@@ -5,10 +5,10 @@ import Card from '../../../components/Card';
 import Button from '../../../components/Button';
 import Modal from '../../../components/Modal';
 import Loader from '../../../components/Loader';
-import { useHasPermission } from '../../../hooks/useHasPermission';
 import { adminService } from '../../../services/api/adminService';
 import { RiderProfile } from '../../../types';
 import { formatCurrency } from '../../../utils/currency';
+import { Link } from 'react-router-dom';
 import RiderHrmHeader from './RiderHrmHeader';
 import { inputClass, useRiders } from './shared';
 
@@ -38,7 +38,11 @@ const dialogInputClass =
 
 const RiderProfilesTable: React.FC = () => {
   const queryClient = useQueryClient();
-  const canEdit = useHasPermission('rider-profiles:edit');
+  // Rider PAY moved to HR → Employees (docs/HRM.md §12). This screen keeps the
+  // legacy figure visible for reference but must not offer to edit it: payroll
+  // reads `employee_salary_structures`, so a save here would change a number
+  // nobody is paid from — the worst kind of working button.
+  const canEdit = false;
 
   const {
     data: riders,
@@ -142,7 +146,7 @@ const RiderProfilesTable: React.FC = () => {
       <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         <RiderHrmHeader
           title="Rider Profiles"
-          subtitle="Each rider's base salary — use Edit to set or change it."
+          subtitle="Legacy base salary, read-only — rider pay now lives in HR → Employees."
         />
         <Card className="dark:bg-slate-800 dark:border-slate-700">
           <div className="py-8 text-center space-y-3">
@@ -174,8 +178,23 @@ const RiderProfilesTable: React.FC = () => {
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
       <RiderHrmHeader
         title="Rider Profiles"
-        subtitle="Each rider's base salary — use Edit to set or change it."
+        subtitle="Legacy base salary, read-only — rider pay now lives in HR → Employees."
       />
+
+      <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+        <p>
+          <strong>Rider pay moved to HR.</strong> Riders are paid by the same payroll
+          engine as everyone else — a basic plus an amount per delivered order — set on
+          the employee&apos;s record. The figures below are the old rider-module values,
+          kept for reference; changing one would not change anyone&apos;s pay.
+        </p>
+        <Link
+          to="/admin/hr/employees"
+          className="mt-2 inline-block font-medium underline"
+        >
+          Open HR → Employees
+        </Link>
+      </div>
 
       <Card className="dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">

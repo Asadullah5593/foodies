@@ -370,10 +370,14 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     { path: '/admin/roles', label: 'Roles', icon: MdOutlineLock },
     { path: '/admin/notification-settings', label: 'Notifications', icon: MdOutlineNotificationsActive },
     {
+      // NOT "Rider HRM" any more: rider PAY lives in HR with everyone else's
+      // (docs/HRM.md §12), so two groups both called HRM was a standing
+      // question about which one paid people. What is left here is dispatch —
+      // who is on shift, who has the order, who is sharing riders with whom.
       type: 'group',
       id: 'rider-hrm',
-      label: 'Rider HRM',
-      icon: MdOutlineBadge,
+      label: 'Rider Ops',
+      icon: MdOutlineDeliveryDining,
       children: [
         // Read-only supervisor surface (recent delivery orders + live rider
         // roster with attendance and base salary). Own permission: rider-supervisor:view.
@@ -382,12 +386,15 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         ...(isTenantUser && (user?.allowed_brand_ids == null)
           ? [{ path: '/admin/rider-hrm/pool-sharing', label: 'Rider pool & sharing' }]
           : []),
-        // Base-salary CRUD (RiderProfilesTable): rider table + prefilled edit
-        // dialog; save needs rider-profiles:edit. The old form/list pages are
-        // kept unrouted in RiderProfiles.tsx / RiderProfilesList.tsx.
+        // Dispatch details plus the LEGACY base salary, read-only since rider
+        // pay moved to HR → Employees.
         { path: '/admin/rider-hrm/profiles', label: 'Rider profiles' },
         // Hidden from the nav (routes, pages and backend are all retained).
-        // Re-add any line below to restore that Rider HRM sub-module to the menu:
+        // Compensation plans and Payroll runs are deliberately NOT coming back:
+        // riders are paid by the HR engine now, and those screens would be a
+        // second place to set a number nobody is paid from. They stay routed so
+        // historical rider payroll runs remain readable.
+        // Re-add any line below to restore that sub-module to the menu:
         // ...(Array.isArray(user?.allowed_brand_ids) && (user?.allowed_brand_ids?.length ?? 0) > 0
         //   ? [{ path: '/admin/rider-hrm/request-riders', label: 'Request riders' }]
         //   : []),
@@ -403,7 +410,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       // above; riders appear in both until Phase 4 folds rider pay in here.
       type: 'group',
       id: 'hr',
-      label: 'HR',
+      label: 'HR & Payroll',
       icon: MdOutlineBadge,
       children: [
         { path: '/admin/hr/employees', label: 'Employees' },
