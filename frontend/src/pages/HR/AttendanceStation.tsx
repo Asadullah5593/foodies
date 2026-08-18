@@ -66,12 +66,28 @@ const AttendanceStation: React.FC = () => {
   }, [context.data?.policy.primary_method]);
   const photoEnabled = photoOverride ?? photoRequired;
 
-  const { videoRef, ready: cameraReady, error: cameraError, capture } =
+  const { videoRef, status: cameraStatus, error: cameraError, capture } =
     usePunchCamera(photoEnabled, token);
+  // What happened to the LAST photo. Shown beside the punch result, because a
+  // missing photo is otherwise invisible until somebody audits the register.
+  const [photoNote, setPhotoNote] = useState<string | null>(null);
 
   const mutation = useMutation({
     mutationFn: async (args: { punchType: PunchType; qrToken?: string }) => {
-      const photoUrl = args.punchType === 'in' ? await capture() : null;
+      const shot =
+        args.punchType === 'in'
+          ? await capture()
+          : { url: null as string | null, reason: null as string | null };
+      setPhotoNote(
+        args.punchType !== 'in'
+          ? null
+          : shot.url
+            ? 'Photo saved'
+            : photoEnabled
+              ? `No photo — ${shot.reason ?? 'unknown reason'}`
+              : null,
+      );
+      const photoUrl = shot.url;
       return stationService.punch(token as string, {
         punch_type: args.punchType,
         // A scanned card replaces code + PIN entirely.
@@ -108,6 +124,7 @@ const AttendanceStation: React.FC = () => {
     const timer = setTimeout(() => {
       setResult(null);
       setError(null);
+      setPhotoNote(null);
     }, 5000);
     return () => clearTimeout(timer);
   }, [result, error]);
@@ -214,6 +231,15 @@ const AttendanceStation: React.FC = () => {
               {new Date(result.punched_at).toLocaleTimeString()}
               {result.orphan && ' · outside any rostered shift — see your manager'}
             </p>
+            {photoNote && (
+              <p
+                className={`text-xs ${
+                  photoNote === 'Photo saved' ? 'text-slate-400' : 'text-amber-300'
+                }`}
+              >
+                {photoNote}
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -234,10 +260,19 @@ const AttendanceStation: React.FC = () => {
             ref={videoRef}
             muted
             playsInline
-            className="h-28 w-full rounded-lg bg-slate-800 object-cover"
+            // Large enough to see who is standing there: the whole point of the
+            // photo is that a substitution is visible.
+            className="aspect-[4/3] w-full rounded-lg bg-slate-800 object-cover"
           />
           <p className="mt-1 text-xs text-slate-500">
-            {cameraError ?? (cameraReady ? 'Camera ready' : 'Starting camera…')}
+            {cameraError ??
+              (cameraStatus === 'capturing'
+                ? 'Taking photo…'
+                : cameraStatus === 'uploading'
+                  ? 'Saving photo…'
+                  : cameraStatus === 'ready'
+                    ? 'Camera ready'
+                    : 'Starting camera…')}
           </p>
         </div>
       )}

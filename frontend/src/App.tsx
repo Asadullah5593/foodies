@@ -24,6 +24,7 @@ import {
   MdOutlineVolunteerActivism,
   MdOutlineLock,
   MdOutlineReceiptLong,
+  MdOutlineFingerprint,
   MdOutlineDeliveryDining,
   MdOutlineBadge,
   MdOutlineSchedule,
@@ -855,6 +856,21 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 >
                   <MdOutlineReceiptLong className="h-5 w-5" />
                 </Link>
+              )}
+              {/* The attendance station opens in its own tab and keeps working
+                  with nobody logged in — a manager sets it up from a POS
+                  terminal and hands the tablet to the staff entrance. */}
+              {canAccessPath(user, '/admin/hr/attendance') && (
+                <a
+                  href="/attendance"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                  title="Attendance station"
+                  aria-label="Open the attendance station"
+                >
+                  <MdOutlineFingerprint className="h-5 w-5" />
+                </a>
               )}
               <NotificationBell />
               <button

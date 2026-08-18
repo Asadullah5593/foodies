@@ -73,15 +73,23 @@ export const stationService = {
 export async function uploadStationPhoto(
   token: string,
   blob: Blob,
-): Promise<string | null> {
+): Promise<{ url: string | null; reason: string | null }> {
   try {
     const form = new FormData();
     form.append('file', blob, `punch-${Date.now()}.jpg`);
     const { data } = await stationClient.post('/attendance-station/photo', form, {
       headers: { 'x-station-token': token, 'Content-Type': 'multipart/form-data' },
     });
-    return (data?.url as string) ?? null;
-  } catch {
-    return null;
+    const url = (data?.url as string) ?? null;
+    return { url, reason: url ? null : 'server returned no URL' };
+  } catch (err) {
+    // Reported rather than swallowed: a punch still records without a photo,
+    // but somebody has to be able to see WHY the photos stopped arriving.
+    const res = (err as { response?: { status?: number; data?: { message?: string } } })
+      .response;
+    return {
+      url: null,
+      reason: res?.data?.message ?? (res?.status ? `upload failed (${res.status})` : 'upload failed'),
+    };
   }
 }

@@ -522,6 +522,38 @@ Riders punch on the POS like everyone else (decision #5). This creates two recor
 
 **Pay:** the new payroll engine is the only engine. Rider-specific facts (completed deliveries, timely deliveries, average rating) are supplied by a **rider fact-provider** to the same component calculation, so a rider's basic + per-delivered-order pay is one payslip alongside everyone else's.
 
+### Production runbook — merging rider pay (no data loss)
+
+`npm run merge:rider-hrm` moves rider PAY onto the employee payroll engine. It
+is written to be run against production:
+
+1. **Deploy the code first.** The script only reads and inserts; it needs no
+   schema change beyond what the HRM migrations already applied.
+2. **Dry run:** `npm run merge:rider-hrm`. It prints one row per rider — the pay
+   it found, where it came from (an active comp plan, or the rider profile's
+   `base_salary` / `default_per_ride_commission`), and every rider it will SKIP
+   with the reason. Nothing is written.
+3. **Read the skips.** Common ones: the rider already has an open salary
+   structure (already merged), the tenant has no rider/delivery designation, or
+   the rider is on no branch. Fix those first if they matter; the script can be
+   re-run.
+4. **Apply:** `npm run merge:rider-hrm -- --apply`. One transaction — a failure
+   leaves the database exactly as it was.
+5. **Check** HR → Employees, then run payroll for the period and compare a
+   rider's payslip against their last rider payroll run.
+
+What it never does: delete or modify a `rider_profile`, a `rider_comp_plan`, or
+any `rider_payroll_run / line / line_item`. Rider payroll history stays intact
+and readable. Re-running is safe — a rider with an open salary structure is
+skipped, not duplicated.
+
+Salary structures are opened effective the **1st of the current month**, never
+back-dated: back-dating into a closed period would change a payslip somebody has
+already been paid against.
+
+Dispatch is deliberately NOT merged. Rider profiles, availability, the assignment
+ledger, break sessions, live locations and pool sharing are operations, not HR.
+
 **Migration (Phase 4):** `rider_comp_plans` and their components migrate into `employee_salary_structures` + `employee_salary_components`, with `per_delivered_order_amount` carrying the per-ride rate. `rider_payroll_runs / lines / line_items` are frozen read-only so historical runs stay viewable. The existing `payroll.utils.ts` `per_ride` calc basis becomes `per_delivered_order` in the new engine.
 
 ---

@@ -1,5 +1,6 @@
 import {
     BadRequestException,
+    Logger,
     Body,
     Controller,
     Delete,
@@ -42,6 +43,10 @@ import { StationPunchDto, CreateStationDto } from './dto/attendance.dto';
 @Controller('attendance-station')
 @UseGuards(StationAuthGuard)
 export class PublicAttendanceStationController {
+    private readonly logger = new Logger(
+        PublicAttendanceStationController.name,
+    );
+
     constructor(
         private readonly attendance: AttendanceService,
         private readonly mediaStorage: MediaStorageService,
@@ -90,8 +95,23 @@ export class PublicAttendanceStationController {
         if (!/^image\/(png|jpeg|jpg|webp)$/i.test(file.mimetype || '')) {
             throw new BadRequestException('Only image files are allowed');
         }
-        const result = await this.mediaStorage.uploadImage(file, 'attendance');
-        return { url: result.url };
+        try {
+            const result = await this.mediaStorage.uploadImage(
+                file,
+                'attendance',
+            );
+            return { url: result.url };
+        } catch (e) {
+            // A half-written frame from a flaky webcam is a bad request, not a
+            // server fault — and the station shows this message on screen, so
+            // it has to say something a manager can act on.
+            this.logger.warn(
+                `Punch photo rejected: ${e instanceof Error ? e.message : String(e)}`,
+            );
+            throw new BadRequestException(
+                'That image could not be processed — the punch was still recorded',
+            );
+        }
     }
 }
 
