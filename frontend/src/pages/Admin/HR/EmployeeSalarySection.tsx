@@ -10,6 +10,16 @@ interface Props {
   employeeId: number;
 }
 
+/** The earliest a revision may start: the day after the current structure. */
+const nextValidFrom = (currentFrom?: string) => {
+  const base = currentFrom ? new Date(`${currentFrom}T00:00:00`) : new Date();
+  base.setDate(base.getDate() + 1);
+  const today = new Date();
+  // Never offer a past date for a raise nobody has given yet.
+  const pick = base > today ? base : today;
+  return pick.toISOString().slice(0, 10);
+};
+
 const tomorrow = () => {
   const d = new Date();
   d.setDate(d.getDate() + 1);
@@ -28,6 +38,10 @@ const EmployeeSalarySection: React.FC<Props> = ({ employeeId }) => {
   const queryClient = useQueryClient();
   const canView = useHasPermission('salary:view');
   const canEdit = useHasPermission('salary:edit');
+  // Correcting a figure and revising it later are different acts, and the form
+  // needs to know which one it is: a correction keeps the same start date and
+  // overwrites, a revision opens a new period.
+  const [mode, setMode] = useState<'revise' | 'correct'>('revise');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
     effective_from: tomorrow(),
@@ -54,7 +68,7 @@ const EmployeeSalarySection: React.FC<Props> = ({ employeeId }) => {
         change_reason: form.change_reason.trim() || undefined,
       }),
     onSuccess: () => {
-      toast.success('Salary recorded');
+      toast.success(mode === 'correct' ? 'Salary corrected' : 'Salary recorded');
       queryClient.invalidateQueries({ queryKey: ['hr-salary', employeeId] });
       queryClient.invalidateQueries({ queryKey: ['hr-employee', employeeId] });
       setShowForm(false);
@@ -81,13 +95,43 @@ const EmployeeSalarySection: React.FC<Props> = ({ employeeId }) => {
           Salary
         </h2>
         {canEdit && (
-          <button
-            type="button"
-            onClick={() => setShowForm(true)}
-            className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-          >
-            {current ? 'Revise' : 'Set salary'}
-          </button>
+          <div className="flex items-center gap-3">
+            {current && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('correct');
+                  setForm({
+                    effective_from: current.effective_from,
+                    basic_amount: current.basic_amount,
+                    per_delivered_order_amount:
+                      current.per_delivered_order_amount || '',
+                    change_reason: '',
+                  });
+                  setShowForm(true);
+                }}
+                className="text-sm text-gray-600 hover:underline dark:text-gray-300"
+              >
+                Correct
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setMode('revise');
+                setForm({
+                  effective_from: nextValidFrom(current?.effective_from),
+                  basic_amount: '',
+                  per_delivered_order_amount: '',
+                  change_reason: '',
+                });
+                setShowForm(true);
+              }}
+              className="text-sm text-blue-600 hover:underline dark:text-blue-400"
+            >
+              {current ? 'Revise' : 'Set salary'}
+            </button>
+          </div>
         )}
       </div>
 
@@ -138,14 +182,28 @@ const EmployeeSalarySection: React.FC<Props> = ({ employeeId }) => {
         <Modal
           isOpen
           onClose={() => setShowForm(false)}
-          title={current ? 'Revise salary' : 'Set salary'}
+          title={
+            !current
+              ? 'Set salary'
+              : mode === 'correct'
+                ? 'Correct the current salary'
+                : 'Revise salary'
+          }
           size="large"
         >
-          {current && (
+          {current && mode === 'revise' && (
             <p className="mb-3 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
               The current structure ({rupees(current.basic_amount)} from{' '}
               {current.effective_from}) is closed the day before the new one starts. Nothing is
               overwritten.
+            </p>
+          )}
+          {current && mode === 'correct' && (
+            <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:bg-amber-900/20 dark:text-amber-200">
+              Fixing a figure that was entered wrong. It overwrites{' '}
+              {rupees(current.basic_amount)} from {current.effective_from} rather than
+              starting a new period — use Revise for an actual raise. Refused once
+              payroll has been approved for that period.
             </p>
           )}
           <div className="space-y-3">
@@ -155,10 +213,23 @@ const EmployeeSalarySection: React.FC<Props> = ({ employeeId }) => {
                 type="date"
                 className={field}
                 value={form.effective_from}
+                disabled={mode === 'correct'}
+                // A revision cannot start on or before the current structure,
+                // so the picker will not offer those days at all.
+                min={
+                  mode === 'revise' && current
+                    ? nextValidFrom(current.effective_from)
+                    : undefined
+                }
                 onChange={(e) =>
                   setForm((f) => ({ ...f, effective_from: e.target.value }))
                 }
               />
+              {mode === 'correct' && (
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  A correction keeps the original start date.
+                </p>
+              )}
             </div>
             <div>
               <label className={label}>Basic (monthly) *</label>

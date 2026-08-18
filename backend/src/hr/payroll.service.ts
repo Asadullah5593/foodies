@@ -892,6 +892,108 @@ export class PayrollService {
      * dated trail, because payroll, reviews and exit settlements all ask what
      * someone was paid *at the time*.
      */
+    /**
+     * Has an approved or paid payroll run already used this structure?
+     *
+     * Returns the period so the refusal can name it. Anything still in draft or
+     * computed does not count — those are recomputed from scratch anyway.
+     */
+    private async paidAgainstStructure(
+        employeeId: number,
+        structure: EmployeeSalaryStructure,
+    ): Promise<string | null> {
+        const rows = await this.lines
+            .createQueryBuilder('l')
+            .innerJoin('l.run', 'r')
+            .select(['r.periodFrom AS period_from', 'r.periodTo AS period_to'])
+            .where('l.employeeId = :employeeId', { employeeId })
+            .andWhere("r.status IN ('approved', 'paid')")
+            .andWhere('r.periodTo >= :from', { from: structure.effectiveFrom })
+            .andWhere(
+                structure.effectiveTo
+                    ? 'r.periodFrom <= :to'
+                    : 'r.periodFrom IS NOT NULL',
+                structure.effectiveTo ? { to: structure.effectiveTo } : {},
+            )
+            .orderBy('r.periodFrom', 'DESC')
+            .limit(1)
+            .getRawMany<{ period_from: string; period_to: string }>();
+
+        const hit = rows[0];
+        return hit ? `${hit.period_from} → ${hit.period_to}` : null;
+    }
+
+    /**
+     * Overwrite the open structure in place.
+     *
+     * No new row: a correction is a statement that the old figure was never
+     * true, so leaving it in the history would be a lie about what the employee
+     * was on. The timeline still records that it happened, and by whom.
+     */
+    private async correctSalary(
+        user: HrUser,
+        employee: Employee,
+        current: EmployeeSalaryStructure,
+        dto: {
+            effective_from: string;
+            basic_amount: number;
+            pay_type?: string;
+            daily_rate_basis?: string;
+            per_delivered_order_amount?: number;
+            change_reason?: string;
+        },
+    ) {
+        const before = {
+            basic_amount: Number(current.basicAmount),
+            per_delivered_order_amount: Number(
+                current.perDeliveredOrderAmount ?? 0,
+            ),
+        };
+
+        await this.structures.update(
+            { id: current.id },
+            {
+                basicAmount: dto.basic_amount,
+                payType: dto.pay_type ?? current.payType,
+                dailyRateBasis: dto.daily_rate_basis ?? current.dailyRateBasis,
+                perDeliveredOrderAmount: dto.per_delivered_order_amount ?? 0,
+                changeReason: dto.change_reason ?? 'correction',
+            },
+        );
+
+        await this.audit.record({
+            tenantId: employee.tenantId,
+            actorUserId: user.id,
+            action: 'salary.corrected',
+            entityTable: 'employee_salary_structures',
+            entityId: current.id,
+            before,
+            after: {
+                basic_amount: dto.basic_amount,
+                per_delivered_order_amount: dto.per_delivered_order_amount ?? 0,
+            },
+        });
+
+        await this.dataSource.query(
+            `INSERT INTO employee_events
+                (tenant_id, employee_id, event_type, event_date, title, description,
+                 ref_table, ref_id, payload, created_by)
+             VALUES ($1, $2, 'salary_changed', $3, 'Salary corrected', $4,
+                     'employee_salary_structures', $5, $6::jsonb, $7)`,
+            [
+                employee.tenantId,
+                employee.id,
+                current.effectiveFrom,
+                `Corrected from ${before.basic_amount} to ${dto.basic_amount}`,
+                current.id,
+                JSON.stringify({ before, after: { basic: dto.basic_amount } }),
+                user.id,
+            ],
+        );
+
+        return { id: current.id, corrected: true };
+    }
+
     async setSalary(
         user: HrUser,
         employeeId: number,
@@ -935,9 +1037,26 @@ export class PayrollService {
         const current = await this.structures.findOne({
             where: { employeeId, effectiveTo: IsNull() },
         });
-        if (current && dto.effective_from <= current.effectiveFrom) {
+
+        // Correcting the figure you just typed is a different act from revising
+        // it later, and the module used to offer only the second — a salary
+        // entered wrong could never be put right, only superseded from a later
+        // date, leaving the wrong number in the history as though it had been
+        // real. Same start date means CORRECT: overwrite in place, but only
+        // while nobody has been paid against it.
+        if (current && dto.effective_from === current.effectiveFrom) {
+            const paid = await this.paidAgainstStructure(employeeId, current);
+            if (paid) {
+                throw new BadRequestException(
+                    `This salary has already been paid (payroll approved for ${paid}). Revise it from a later date instead — a paid payslip must stay explainable.`,
+                );
+            }
+            return this.correctSalary(user, employee, current, dto);
+        }
+
+        if (current && dto.effective_from < current.effectiveFrom) {
             throw new BadRequestException(
-                `The effective date must be after the current structure started (${current.effectiveFrom})`,
+                `A revision must start after the current structure (${current.effectiveFrom}), or use the same date to correct it.`,
             );
         }
 

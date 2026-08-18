@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useId, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Modal from '../../../components/Modal';
@@ -22,6 +22,52 @@ interface Props {
  * them otherwise, so showing them to everyone would just produce a confusing
  * failure on save.
  */
+const field =
+  'w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-gray-100';
+const label = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300';
+
+/**
+ * One labelled field.
+ *
+ * Deliberately at module scope. Defined inside the modal — as it was — this is a
+ * different component type on every render, so React throws the input away and
+ * mounts a new one after each keystroke: focus is lost after one character and
+ * an open date picker closes the moment you change month.
+ */
+const Text: React.FC<{
+  title: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  placeholder?: string;
+  /** Phone-style field: digits only, and a numeric keypad on a tablet. */
+  numeric?: boolean;
+  hint?: string;
+}> = ({ title, value, onChange, type = 'text', placeholder, numeric, hint }) => {
+  const id = useId();
+  return (
+  <div>
+    <label className={label} htmlFor={id}>
+      {title}
+    </label>
+    <input
+      id={id}
+      type={type}
+      className={field}
+      value={value}
+      placeholder={placeholder}
+      inputMode={numeric ? 'numeric' : undefined}
+      // Stripped rather than refused: a pasted "+92 300 1234567" becomes the
+      // number instead of silently doing nothing.
+      onChange={(e) =>
+        onChange(numeric ? e.target.value.replace(/[^\d]/g, '') : e.target.value)
+      }
+    />
+    {hint && <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{hint}</p>}
+  </div>
+  );
+};
+
 const EmployeeEditModal: React.FC<Props> = ({ employee, onClose }) => {
   const queryClient = useQueryClient();
   const canEditSalary = useHasPermission('salary:edit');
@@ -91,39 +137,17 @@ const EmployeeEditModal: React.FC<Props> = ({ employee, onClose }) => {
     },
   });
 
-  const field =
-    'w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800 dark:text-gray-100';
-  const label = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300';
-
-  const Text: React.FC<{
-    k: keyof typeof form;
-    title: string;
-    type?: string;
-    placeholder?: string;
-  }> = ({ k, title, type = 'text', placeholder }) => (
-    <div>
-      <label className={label}>{title}</label>
-      <input
-        type={type}
-        className={field}
-        value={form[k]}
-        placeholder={placeholder}
-        onChange={(e) => set(k)(e.target.value)}
-      />
-    </div>
-  );
-
   return (
     <Modal isOpen onClose={onClose} title={`Edit ${employee.full_name}`} size="xlarge">
       <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
         Identity
       </h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Text k="employee_code" title="Employee code *" />
-        <Text k="full_name" title="Full name *" />
-        <Text k="father_name" title="Father's name" />
-        <Text k="cnic" title="CNIC" placeholder="35202-1234567-1" />
-        <Text k="date_of_birth" title="Date of birth" type="date" />
+        <Text value={form.employee_code} onChange={set('employee_code')} title="Employee code *" />
+        <Text value={form.full_name} onChange={set('full_name')} title="Full name *" />
+        <Text value={form.father_name} onChange={set('father_name')} title="Father's name" />
+        <Text value={form.cnic} onChange={set('cnic')} title="CNIC" placeholder="35202-1234567-1" />
+        <Text value={form.date_of_birth} onChange={set('date_of_birth')} title="Date of birth" type="date" />
         <div>
           <label className={label}>Gender</label>
           <SearchableSelect
@@ -143,9 +167,14 @@ const EmployeeEditModal: React.FC<Props> = ({ employee, onClose }) => {
         Contact
       </h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Text k="phone" title="Phone" placeholder="03001234567" />
-        <Text k="emergency_contact_name" title="Emergency contact" />
-        <Text k="emergency_contact_phone" title="Emergency phone" />
+        <Text value={form.phone} onChange={set('phone')} title="Phone" placeholder="03001234567" numeric />
+        <Text
+          value={form.emergency_contact_name}
+          onChange={set('emergency_contact_name')}
+          title="Emergency contact name"
+        />
+        <Text value={form.emergency_contact_phone} onChange={set('emergency_contact_phone')} title="Emergency phone"
+          placeholder="03001234567" numeric />
         <div className="sm:col-span-2 lg:col-span-3">
           <label className={label}>Address</label>
           <textarea
@@ -161,8 +190,8 @@ const EmployeeEditModal: React.FC<Props> = ({ employee, onClose }) => {
         Employment
       </h3>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Text k="probation_end_date" title="Probation ends" type="date" />
-        <Text k="confirmation_date" title="Confirmed on" type="date" />
+        <Text value={form.probation_end_date} onChange={set('probation_end_date')} title="Probation ends" type="date" />
+        <Text value={form.confirmation_date} onChange={set('confirmation_date')} title="Confirmed on" type="date" />
         <div>
           <label className={label}>Status</label>
           <SearchableSelect
@@ -197,9 +226,13 @@ const EmployeeEditModal: React.FC<Props> = ({ employee, onClose }) => {
                 ]}
               />
             </div>
-            <Text k="bank_name" title="Bank" />
-            <Text k="account_title" title="Account title" />
-            <Text k="account_number_iban" title="Account / IBAN" />
+            <Text value={form.bank_name} onChange={set('bank_name')} title="Bank" />
+            <Text value={form.account_title} onChange={set('account_title')} title="Account title" />
+            <Text
+              value={form.account_number_iban}
+              onChange={set('account_number_iban')}
+              title="Account / IBAN"
+            />
           </div>
         </>
       )}
