@@ -105,3 +105,88 @@ describe('Attendance station photos', () => {
     expect(capture).not.toHaveBeenCalled();
   });
 });
+
+describe('Attendance station failures', () => {
+  const reject = (message: string, status = 401) => {
+    const err = Object.assign(new Error(message), {
+      response: { status, data: { message } },
+    });
+    return Promise.reject(err);
+  };
+
+  it('shows a rejected PIN instead of failing silently', async () => {
+    // The bug: the network tab showed 401 "Incorrect code or PIN" and the
+    // screen showed nothing, because the message cleared on the same 5-second
+    // timer as a success.
+    punch.mockImplementation(() => reject('Incorrect code or PIN'));
+    renderStation();
+
+    await waitFor(() => expect(screen.getByLabelText('Scan your card')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Scan your card'), {
+      target: { value: 'card-token-12345678' },
+    });
+    fireEvent.click(screen.getByText('Clock in'));
+
+    await waitFor(() =>
+      expect(screen.getByText('Incorrect code or PIN')).toBeInTheDocument(),
+    );
+  });
+
+  it('keeps the error on screen well past the success timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      punch.mockImplementation(() => reject('Incorrect code or PIN'));
+      renderStation();
+      await vi.advanceTimersByTimeAsync(10);
+
+      fireEvent.change(screen.getByLabelText('Scan your card'), {
+        target: { value: 'card-token-12345678' },
+      });
+      fireEvent.click(screen.getByText('Clock in'));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(screen.getByText('Incorrect code or PIN')).toBeInTheDocument();
+
+      // A success would have cleared by now; a failure must not.
+      await vi.advanceTimersByTimeAsync(15000);
+      expect(screen.getByText('Incorrect code or PIN')).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('dismisses the error when it is tapped', async () => {
+    punch.mockImplementation(() => reject('Incorrect code or PIN'));
+    renderStation();
+
+    await waitFor(() => expect(screen.getByLabelText('Scan your card')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Scan your card'), {
+      target: { value: 'card-token-12345678' },
+    });
+    fireEvent.click(screen.getByText('Clock in'));
+
+    const banner = await screen.findByText('Incorrect code or PIN');
+    fireEvent.click(banner);
+    await waitFor(() =>
+      expect(screen.queryByText('Incorrect code or PIN')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('surfaces a locked PIN, not just a wrong one', async () => {
+    punch.mockImplementation(() =>
+      reject('Too many wrong attempts — locked for 15 minutes'),
+    );
+    renderStation();
+
+    await waitFor(() => expect(screen.getByLabelText('Scan your card')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Scan your card'), {
+      target: { value: 'card-token-12345678' },
+    });
+    fireEvent.click(screen.getByText('Clock in'));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText('Too many wrong attempts — locked for 15 minutes'),
+      ).toBeInTheDocument(),
+    );
+  });
+});

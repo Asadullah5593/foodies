@@ -1,6 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { MdBackspace, MdCheckCircle, MdLogin, MdLogout } from 'react-icons/md';
+import {
+  MdBackspace,
+  MdCheckCircle,
+  MdErrorOutline,
+  MdLogin,
+  MdLogout,
+} from 'react-icons/md';
 import {
   stationService,
   StationPunchResult,
@@ -72,6 +78,12 @@ const AttendanceStation: React.FC = () => {
   // missing photo is otherwise invisible until somebody audits the register.
   const [photoNote, setPhotoNote] = useState<string | null>(null);
 
+  /** Put the caret back where this mode expects it. */
+  const refocus = () => {
+    if (mode === 'card') scanRef.current?.focus();
+    else pinRef.current?.focus();
+  };
+
   const mutation = useMutation({
     mutationFn: async (args: { punchType: PunchType; qrToken?: string }) => {
       const shot =
@@ -103,7 +115,7 @@ const AttendanceStation: React.FC = () => {
       setCode('');
       setPin('');
       setScan('');
-      scanRef.current?.focus();
+      refocus();
     },
     onError: (err: unknown) => {
       const message =
@@ -113,21 +125,23 @@ const AttendanceStation: React.FC = () => {
       setResult(null);
       setPin('');
       setScan('');
-      scanRef.current?.focus();
+      refocus();
     },
   });
 
-  // Clear the panel so the next person never sees — or taps a punch onto — the
-  // previous person's result.
+  // A SUCCESS clears itself so the next person never sees — or taps a punch
+  // onto — the previous person's result. A FAILURE stays until it is dismissed
+  // or the next attempt replaces it: an error that vanishes on a timer is
+  // indistinguishable from nothing having happened, which is exactly how a
+  // rejected PIN came to look like a dead screen.
   useEffect(() => {
-    if (!result && !error) return;
+    if (!result) return;
     const timer = setTimeout(() => {
       setResult(null);
-      setError(null);
       setPhotoNote(null);
     }, 5000);
     return () => clearTimeout(timer);
-  }, [result, error]);
+  }, [result]);
 
   // The scan field holds focus by default: a card reader is a keyboard, and it
   // types wherever the caret is. Anyone without a card just clicks the code box.
@@ -146,6 +160,7 @@ const AttendanceStation: React.FC = () => {
     const target = isPinFocused ? pinRef : codeRef;
     const setter = isPinFocused ? setPin : setCode;
     const current = isPinFocused ? pin : code;
+    if (error) setError(null);
     if (key === 'back') setter(current.slice(0, -1));
     else if (key === 'clear') setter('');
     else if (current.length < 12) setter(current + key);
@@ -245,13 +260,21 @@ const AttendanceStation: React.FC = () => {
       )}
 
       {error && (
-        <div
-          className="mb-5 w-full max-w-sm cursor-pointer rounded-lg bg-red-600/20 px-4 py-3 text-sm text-red-200"
-          role="alert"
-          onClick={() => setError(null)}
+        <button
+          type="button"
+          className="mb-5 flex w-full max-w-sm items-start gap-3 rounded-lg bg-red-600 px-4 py-3 text-left text-white shadow-lg"
+          aria-live="assertive"
+          onClick={() => {
+            setError(null);
+            refocus();
+          }}
         >
-          {error}
-        </div>
+          <MdErrorOutline className="mt-0.5 shrink-0 text-2xl" />
+          <span>
+            <span className="block font-semibold">{error}</span>
+            <span className="block text-xs text-red-100">Tap to dismiss and try again</span>
+          </span>
+        </button>
       )}
 
       {photoEnabled && (
@@ -312,7 +335,10 @@ const AttendanceStation: React.FC = () => {
             placeholder="Waiting for scan…"
             value={scan}
             autoComplete="off"
-            onChange={(e) => setScan(e.target.value)}
+            onChange={(e) => {
+              if (error) setError(null);
+              setScan(e.target.value);
+            }}
             onKeyDown={(e) => {
               if (e.key !== 'Enter') return;
               e.preventDefault();
@@ -366,7 +392,10 @@ const AttendanceStation: React.FC = () => {
                 className={inputCls}
                 value={code}
                 autoComplete="off"
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => {
+                  if (error) setError(null);
+                  setCode(e.target.value);
+                }}
                 onKeyDown={(e) => {
                   // Enter moves on rather than submitting half a form.
                   if (e.key === 'Enter' && pin.length < 4) {
@@ -392,7 +421,10 @@ const AttendanceStation: React.FC = () => {
                 className={inputCls}
                 value={pin}
                 autoComplete="off"
-                onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+                onChange={(e) => {
+                  if (error) setError(null);
+                  setPin(e.target.value.replace(/\D/g, ''));
+                }}
               />
             </div>
             <button type="submit" className="hidden" aria-hidden />
