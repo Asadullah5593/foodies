@@ -83,7 +83,7 @@ const DayPunchesModal: React.FC<Props> = ({ dayId, onClose }) => {
   };
 
   return (
-    <Modal isOpen onClose={onClose} title="Punch history" size="large">
+    <Modal isOpen onClose={onClose} title="Punch history" size="xlarge">
       {isLoading || !data ? (
         <Loader />
       ) : (

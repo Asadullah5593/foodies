@@ -212,7 +212,7 @@ const Designations: React.FC = () => {
           isOpen
           onClose={close}
           title={editing ? `Edit ${editing.name}` : 'Add designation'}
-          size="small"
+          size="large"
         >
           <div className="space-y-4">
             <div>

@@ -176,7 +176,7 @@ const LeaveTypesTab: React.FC = () => {
           isOpen
           onClose={() => setEditing(null)}
           title={editing.id ? 'Edit leave type' : 'New leave type'}
-          size="large"
+          size="xlarge"
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>

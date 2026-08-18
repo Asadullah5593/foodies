@@ -247,8 +247,18 @@ export class AttendanceRecomputeService {
         // Sessions, not first-in-to-last-out: someone who clocks out for lunch
         // and back in has two, and spanning the gap would pay for the break.
         const paired = pairSessions(dayPunches);
-        const firstIn = paired.firstInAt;
-        const lastOut = paired.lastOutAt;
+
+        // An admin's corrected times are an INPUT to this computation, not a
+        // patch applied after it. Patching afterwards is how a corrected day
+        // ended up reading "half day — only 19h23m worked" with zero overtime:
+        // the hours came from the correction while the status, lateness and
+        // overtime still came from the punches nobody kept.
+        const correction = await this.approvedTimeCorrection(existing?.id);
+        const firstIn = correction.firstInAt ?? paired.firstInAt;
+        const lastOut = correction.lastOutAt ?? paired.lastOutAt;
+        if (correction.firstInAt || correction.lastOutAt) {
+            flags.adjusted = true;
+        }
         if (paired.strayOut) flags.stray_out = true;
         if (paired.sessions.length > 1) {
             flags.sessions = paired.sessions.length;
@@ -272,8 +282,20 @@ export class AttendanceRecomputeService {
         }
         if (openBreak) flags.unclosed_break = true;
 
-        const workedMinutes = Math.max(0, paired.workedMinutes - breakMinutes);
-        if (paired.openSession) {
+        const correctedSpan =
+            (correction.firstInAt || correction.lastOutAt) && firstIn && lastOut
+                ? Math.max(
+                      0,
+                      Math.round(
+                          (lastOut.getTime() - firstIn.getTime()) / MINUTE,
+                      ),
+                  )
+                : null;
+        const workedMinutes = Math.max(
+            0,
+            (correctedSpan ?? paired.workedMinutes) - breakMinutes,
+        );
+        if (correctedSpan == null && paired.openSession) {
             // Clocked in and never out: zero hours, flagged. Guessing an end
             // time would quietly manufacture pay.
             // An unclosed final session contributes nothing — guessing an end
@@ -334,6 +356,17 @@ export class AttendanceRecomputeService {
             status = 'present';
         }
 
+        // WHY it is half a day. Somebody who worked 19 hours but arrived four
+        // hours late is a half day because of the lateness, and a register that
+        // says "only 19h worked" reads as a bug rather than a policy.
+        if (status === 'half_day' && template) {
+            flags.half_day_reason =
+                template.halfDayAfterLateMinutes != null &&
+                late > template.halfDayAfterLateMinutes
+                    ? 'late'
+                    : 'hours';
+        }
+
         // A rostered off day or holiday, with nobody having punched, is neither
         // present nor absent — payroll pays it and deducts nothing. Punches
         // override it: somebody who came in on their off day worked, and saying
@@ -389,6 +422,55 @@ export class AttendanceRecomputeService {
         return this.days.findOne({ where: { id: saved.id } });
     }
 
+    /**
+     * An admin's approved correction to the clock-in / clock-out times.
+     *
+     * Read BEFORE the day is computed so lateness, status and overtime all
+     * follow the corrected times. The latest approved correction wins: a second
+     * correction is a fix to the first, not an addition to it.
+     */
+    private async approvedTimeCorrection(dayId: number | undefined): Promise<{
+        firstInAt: Date | null;
+        lastOutAt: Date | null;
+    }> {
+        if (!dayId) return { firstInAt: null, lastOutAt: null };
+        const approved = await this.exceptions.find({
+            where: {
+                attendanceDayId: dayId,
+                status: 'approved',
+                kind: 'adjustment',
+                subject: In(['missed_punch', 'wrong_time']),
+            },
+            order: { approvedAt: 'ASC', id: 'ASC' },
+        });
+
+        let firstInAt: Date | null = null;
+        let lastOutAt: Date | null = null;
+        for (const ex of approved) {
+            // `newValue` is free-form jsonb, so every read is narrowed rather
+            // than coerced — a stray object would otherwise stringify to
+            // "[object Object]" and be written straight into the day.
+            const asDate = (v: unknown): Date | null => {
+                if (typeof v !== 'string' || v.trim() === '') return null;
+                const d = new Date(v);
+                return Number.isNaN(d.getTime()) ? null : d;
+            };
+            firstInAt = asDate(ex.newValue?.first_in_at) ?? firstInAt;
+            lastOutAt = asDate(ex.newValue?.last_out_at) ?? lastOutAt;
+        }
+        return { firstInAt, lastOutAt };
+    }
+
+    /**
+     * The two exception kinds that apply AFTER the day is computed.
+     *
+     * A status override is an explicit decision that beats the machine, and an
+     * overtime approval moves pending minutes into approved. Time corrections
+     * are deliberately not here — they feed the computation instead, so a
+     * corrected day is scored as though it had been punched that way. Waivers
+     * change nothing here at all: they are carried into payroll so the payslip
+     * shows both the deduction and its forgiveness.
+     */
     private async applyApprovedExceptions(day: AttendanceDay): Promise<void> {
         const approved = await this.exceptions.find({
             where: {
@@ -400,16 +482,9 @@ export class AttendanceRecomputeService {
         });
         if (approved.length === 0) return;
 
-        // Explicit shape rather than Partial<AttendanceDay>: the entity's
-        // relation and jsonb properties are not assignable to TypeORM's update
-        // payload type.
         const patch: {
             status?: string;
-            firstInAt?: Date;
-            lastOutAt?: Date;
-            workedMinutes?: number;
             overtimeMinutesApproved?: number;
-            exceptionFlags?: Record<string, unknown>;
         } = {};
         for (const ex of approved) {
             if (ex.kind === 'overtime_approval') {
@@ -419,50 +494,16 @@ export class AttendanceRecomputeService {
                 );
                 continue;
             }
-            // `newValue` is free-form jsonb, so every read is narrowed rather
-            // than coerced — a stray object would otherwise stringify to
-            // "[object Object]" and be written straight into the day.
-            const asString = (v: unknown): string | null =>
-                typeof v === 'string' && v.trim() !== '' ? v : null;
-            const asDate = (v: unknown): Date | null => {
-                const s = asString(v);
-                if (!s) return null;
-                const d = new Date(s);
-                return Number.isNaN(d.getTime()) ? null : d;
-            };
-
             if (ex.subject === 'status_override') {
-                const status = asString(ex.newValue?.status);
-                if (status) patch.status = status;
-            }
-            if (ex.subject === 'missed_punch' || ex.subject === 'wrong_time') {
-                const firstIn = asDate(ex.newValue?.first_in_at);
-                const lastOut = asDate(ex.newValue?.last_out_at);
-                if (firstIn) patch.firstInAt = firstIn;
-                if (lastOut) patch.lastOutAt = lastOut;
-            }
-        }
-
-        if (patch.firstInAt || patch.lastOutAt) {
-            const firstIn = patch.firstInAt ?? day.firstInAt;
-            const lastOut = patch.lastOutAt ?? day.lastOutAt;
-            if (firstIn && lastOut) {
-                patch.workedMinutes = Math.max(
-                    0,
-                    Math.round(
-                        (lastOut.getTime() - firstIn.getTime()) / MINUTE,
-                    ) - day.breakMinutes,
-                );
-                const flags = { ...day.exceptionFlags };
-                delete flags.missing_out;
-                patch.exceptionFlags = { ...flags, adjusted: true };
+                const status = ex.newValue?.status;
+                if (typeof status === 'string' && status.trim() !== '') {
+                    patch.status = status;
+                }
             }
         }
 
         if (Object.keys(patch).length > 0) {
-            // save() rather than update(): its DeepPartial accepts the jsonb
-            // `exceptionFlags` that update()'s payload type rejects.
-            await this.days.save({ id: day.id, ...patch });
+            await this.days.update({ id: day.id }, patch);
         }
     }
 

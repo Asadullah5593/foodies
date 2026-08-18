@@ -74,7 +74,7 @@ const RecordExitModal: React.FC<Props> = ({
   const label = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300';
 
   return (
-    <Modal isOpen onClose={onClose} title={`Record exit — ${employeeName}`}>
+    <Modal isOpen onClose={onClose} title={`Record exit — ${employeeName}`} size="large">
       <p className="mb-4 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
         This closes the current assignment on the last working day and revokes the attendance PIN.
         Final settlement is calculated with payroll (Phase 4).

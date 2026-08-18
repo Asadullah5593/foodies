@@ -110,7 +110,7 @@ const ChangeAssignmentModal: React.FC<Props> = ({
   const label = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300';
 
   return (
-    <Modal isOpen onClose={onClose} title="Promote / transfer" size="large">
+    <Modal isOpen onClose={onClose} title="Promote / transfer" size="xlarge">
       <p className="mb-4 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">
         The current assignment is closed the day before the effective date and a new one opens.
         Nothing is overwritten, so the employment history stays intact.

@@ -452,3 +452,66 @@ describe('overtimeMinutes', () => {
         expect(overtimeMinutes(400, 540, opts)).toBe(0);
     });
 });
+
+/**
+ * A corrected day must be scored as though it had been punched that way.
+ *
+ * The bug this guards: an admin fixed a clock-out, the worked minutes followed
+ * the correction, but status, lateness and overtime were still computed from
+ * the punches nobody kept — so a 19-hour day showed zero overtime and read as
+ * "half day — only 19h23m worked".
+ */
+describe('corrected times drive every derived value', () => {
+    const template = {
+        minMinutesFullDay: 480,
+        minMinutesHalfDay: 270,
+        halfDayAfterLateMinutes: 120,
+        graceMinutes: 15,
+    };
+
+    // 11:00–23:00 shift, worked 11:08 → 06:31 next day after a correction.
+    const scheduledMinutes = 720;
+    const workedMinutes = 1163;
+    const lateMinutes = 270;
+
+    it('pays overtime on the corrected hours', () => {
+        expect(
+            overtimeMinutes(workedMinutes, scheduledMinutes, {
+                minMinutesToQualify: 30,
+                roundingMinutes: 15,
+                dailyCapMinutes: 240,
+            }),
+        ).toBe(240);
+    });
+
+    it('still calls it a half day, but because of the lateness', () => {
+        const status = computeStatus({
+            workedMinutes,
+            lateMinutes,
+            ...template,
+            hasPunches: true,
+        });
+        expect(status).toBe('half_day');
+        // Hours alone would have made this a full present day…
+        expect(
+            computeStatus({
+                workedMinutes,
+                lateMinutes: 0,
+                ...template,
+                hasPunches: true,
+            }),
+        ).toBe('present');
+        // …so the reason shown to a manager must be the lateness, not the hours.
+        expect(lateMinutes).toBeGreaterThan(template.halfDayAfterLateMinutes);
+    });
+
+    it('earns no overtime when the correction shortens the day', () => {
+        expect(
+            overtimeMinutes(600, scheduledMinutes, {
+                minMinutesToQualify: 30,
+                roundingMinutes: 15,
+                dailyCapMinutes: 240,
+            }),
+        ).toBe(0);
+    });
+});

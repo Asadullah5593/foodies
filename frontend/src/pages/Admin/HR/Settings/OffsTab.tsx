@@ -306,7 +306,7 @@ const OffsTab: React.FC = () => {
           isOpen
           onClose={() => setEditing(null)}
           title={editing.id ? 'Edit offs policy' : 'New offs policy'}
-          size="large"
+          size="xlarge"
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <ScopeFields
@@ -414,7 +414,7 @@ const OffsTab: React.FC = () => {
       )}
 
       {holiday && (
-        <Modal isOpen onClose={() => setHoliday(null)} title="Add a public holiday">
+        <Modal isOpen onClose={() => setHoliday(null)} title="Add a public holiday" size="large">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label className={labelClass}>Date *</label>

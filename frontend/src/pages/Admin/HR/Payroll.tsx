@@ -152,7 +152,7 @@ const Payroll: React.FC = () => {
       )}
 
       {showCreate && (
-        <Modal isOpen onClose={() => setShowCreate(false)} title="New payroll run" size="small">
+        <Modal isOpen onClose={() => setShowCreate(false)} title="New payroll run" size="medium">
           <label className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">
             Month
           </label>

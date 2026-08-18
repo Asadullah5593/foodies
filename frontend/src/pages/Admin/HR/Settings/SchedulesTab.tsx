@@ -240,7 +240,7 @@ const SchedulesTab: React.FC = () => {
           isOpen
           onClose={() => setEditing(null)}
           title={editing.id ? 'Edit shift template' : 'New shift template'}
-          size="large"
+          size="xlarge"
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">

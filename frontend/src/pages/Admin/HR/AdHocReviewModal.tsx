@@ -73,7 +73,7 @@ const AdHocReviewModal: React.FC<Props> = ({ onClose, employeeId }) => {
   const label = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300';
 
   return (
-    <Modal isOpen onClose={onClose} title="Start a review" size="large">
+    <Modal isOpen onClose={onClose} title="Start a review" size="xlarge">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {employeeId == null && (
           <div className="sm:col-span-2">

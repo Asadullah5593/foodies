@@ -80,7 +80,7 @@ const LeaveRequestModal: React.FC<Props> = ({ onClose, employeeId }) => {
   const label = 'mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300';
 
   return (
-    <Modal isOpen onClose={onClose} title="New leave request">
+    <Modal isOpen onClose={onClose} title="New leave request" size="large">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         {employeeId == null && (
           <div className="sm:col-span-2">

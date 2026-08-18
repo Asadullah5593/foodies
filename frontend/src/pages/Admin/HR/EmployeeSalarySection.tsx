@@ -139,7 +139,7 @@ const EmployeeSalarySection: React.FC<Props> = ({ employeeId }) => {
           isOpen
           onClose={() => setShowForm(false)}
           title={current ? 'Revise salary' : 'Set salary'}
-          size="small"
+          size="large"
         >
           {current && (
             <p className="mb-3 rounded-md bg-blue-50 px-3 py-2 text-xs text-blue-800 dark:bg-blue-900/20 dark:text-blue-300">

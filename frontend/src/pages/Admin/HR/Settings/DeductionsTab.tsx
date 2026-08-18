@@ -235,7 +235,7 @@ const DeductionsTab: React.FC = () => {
           isOpen
           onClose={() => setEditing(null)}
           title={editing.id ? 'Edit deduction rule' : 'New deduction rule'}
-          size="large"
+          size="xlarge"
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>

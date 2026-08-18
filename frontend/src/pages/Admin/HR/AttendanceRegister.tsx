@@ -219,15 +219,18 @@ const AttendanceRegister: React.FC = () => {
                         {statusLabel(r.status)}
                       </span>
                     )}
-                    {/* WHY it is absent or half a day. Without this the status
-                        looks like a judgement about lateness, when it is
-                        actually about hours worked. */}
+                    {/* WHY it is absent or half a day. The reason comes from
+                        the engine: somebody who worked 19 hours but arrived
+                        four hours late is a half day because of the lateness,
+                        and "only 19h worked" would read as a bug. */}
                     {(r.status === 'absent' || r.status === 'half_day') &&
                       !r.flags?.in_progress && (
                         <div className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
-                          {r.worked_minutes > 0
-                            ? `only ${minutesLabel(r.worked_minutes)} worked`
-                            : 'no hours recorded'}
+                          {r.flags?.half_day_reason === 'late'
+                            ? `${minutesLabel(r.late_minutes)} late`
+                            : r.worked_minutes > 0
+                              ? `only ${minutesLabel(r.worked_minutes)} worked`
+                              : 'no hours recorded'}
                         </div>
                       )}
                   </td>

@@ -367,7 +367,7 @@ const PayrollRunDetail: React.FC = () => {
           isOpen
           onClose={() => setShowReverse(false)}
           title="Reverse this payroll run"
-          size="small"
+          size="medium"
         >
           <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
             This unlocks the attendance period so it can be corrected. The run stays on record

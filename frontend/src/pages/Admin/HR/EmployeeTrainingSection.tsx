@@ -219,7 +219,7 @@ const EmployeeTrainingSection: React.FC<Props> = ({ employeeId }) => {
       )}
 
       {assigning && (
-        <Modal isOpen onClose={() => setAssigning(false)} title="Assign a training program">
+        <Modal isOpen onClose={() => setAssigning(false)} title="Assign a training program" size="large">
           <label className={labelClass}>Program *</label>
           <SearchableSelect
             value={programId === '' ? '' : String(programId)}
@@ -255,7 +255,7 @@ const EmployeeTrainingSection: React.FC<Props> = ({ employeeId }) => {
         <Modal
           isOpen
           onClose={() => setRecording(null)}
-          title={`Record — ${recording.program.name ?? 'training'}`}
+          title={`Record — ${recording.program.name ?? 'training'}`} size="large"
         >
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">

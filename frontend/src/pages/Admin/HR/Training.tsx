@@ -60,7 +60,7 @@ const ProgramModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   });
 
   return (
-    <Modal isOpen onClose={onClose} title="New training program" size="large">
+    <Modal isOpen onClose={onClose} title="New training program" size="xlarge">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <label className={labelClass}>Name *</label>
