@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
-import { MdContentCopy, MdTabletMac } from 'react-icons/md';
+import { MdContentCopy } from 'react-icons/md';
 import { hrService } from '../../../services/api/hrService';
 import { useHasPermission } from '../../../hooks/useHasPermission';
 import SearchableSelect from '../../../components/SearchableSelect';
@@ -77,17 +77,6 @@ const AttendanceStations: React.FC = () => {
 
   return (
     <section className="mb-6 rounded-lg border border-gray-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-      <div className="mb-2 flex items-center gap-2">
-        <MdTabletMac className="text-xl text-gray-700 dark:text-gray-200" />
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">
-          Attendance devices
-        </h2>
-      </div>
-      <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
-        Register the tablet or terminal that staff clock in on. Open its setup link on that
-        device once — after that it works with nobody logged in.
-      </p>
-
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <div className="min-w-[200px]">
           <label className="mb-1 block text-xs uppercase text-gray-500">Branch</label>

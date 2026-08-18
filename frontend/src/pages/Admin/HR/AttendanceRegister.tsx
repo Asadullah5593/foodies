@@ -1,11 +1,11 @@
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { MdOutlineFactCheck, MdWarningAmber } from 'react-icons/md';
 import { hrService, RegisterRow } from '../../../services/api/hrService';
 import apiClient from '../../../utils/apiClient';
 import Loader from '../../../components/Loader';
 import { statusBadgeClass, statusLabel } from './hrShared';
-import AttendanceStations from './AttendanceStations';
 import DayPunchesModal from './DayPunchesModal';
 import SearchableSelect from '../../../components/SearchableSelect';
 
@@ -94,13 +94,15 @@ const AttendanceRegister: React.FC = () => {
       </div>
 
       <p className="mb-5 text-sm text-gray-600 dark:text-gray-400">
-        Staff clock in and out on the <strong>attendance station</strong> — a full-screen
-        keypad where they type their employee code and PIN. Open it on a tablet at the staff
-        entrance, or on a POS terminal. Set each employee&apos;s PIN from their profile
-        (Employees → open → Attendance credentials).
+        What actually happened, day by day. Staff clock in and out on the{' '}
+        <strong>attendance station</strong>; set each employee&apos;s PIN from their
+        profile (Employees → open → Attendance credentials), and register the tablets
+        under{' '}
+        <Link to="/admin/hr/attendance/devices" className="text-blue-600 hover:underline">
+          Attendance devices
+        </Link>
+        .
       </p>
-
-      <AttendanceStations />
 
       <div className="mb-5 flex flex-wrap gap-3">
         <input

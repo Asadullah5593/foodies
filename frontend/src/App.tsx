@@ -97,6 +97,7 @@ import Advances from './pages/Admin/HR/Advances';
 import HrAlerts from './pages/Admin/HR/Alerts';
 import LabourCost from './pages/Admin/HR/LabourCost';
 import Roster from './pages/Admin/HR/Roster';
+import AttendanceDevices from './pages/Admin/HR/AttendanceDevices';
 import HrSettings from './pages/Admin/HR/Settings/HrSettings';
 import AttendanceRegister from './pages/Admin/HR/AttendanceRegister';
 import Leaves from './pages/Admin/HR/Leaves';
@@ -416,6 +417,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { path: '/admin/hr/employees', label: 'Employees' },
         { path: '/admin/hr/alerts', label: 'Alerts' },
         { path: '/admin/hr/attendance', label: 'Attendance' },
+        { path: '/admin/hr/attendance/devices', label: 'Attendance devices' },
         { path: '/admin/hr/leaves', label: 'Leaves' },
         { path: '/admin/hr/roster', label: 'Roster' },
         { path: '/admin/hr/payroll', label: 'Payroll' },
@@ -1252,6 +1254,7 @@ const AppRoutes: React.FC = () => {
       {/* Employee HRM (docs/HRM.md) — people, as opposed to Rider HRM's dispatch. */}
       <Route path="/admin/hr/employees/:id" element={<ProtectedRoute><AdminOnlyRoute><Layout><EmployeeDetail /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/employees" element={<ProtectedRoute><AdminOnlyRoute><Layout><Employees /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/attendance/devices" element={<ProtectedRoute><AdminOnlyRoute><Layout><AttendanceDevices /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/attendance" element={<ProtectedRoute><AdminOnlyRoute><Layout><AttendanceRegister /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/leaves" element={<ProtectedRoute><AdminOnlyRoute><Layout><Leaves /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       {/* Detail before list so longest-prefix permission matching agrees either way. */}

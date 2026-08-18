@@ -55,6 +55,9 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   // Reading the rules you work under is enough; editing is gated server-side.
   '/admin/hr/settings': ['hr-settings:view', 'hr-settings:manage'],
   '/admin/hr/attendance': ['attendance:view'],
+  // Registering a tablet is a setup job of its own, not part of reading the
+  // register (longest-prefix match wins over /admin/hr/attendance).
+  '/admin/hr/attendance/devices': ['attendance-stations:manage'],
   '/admin/hr/leaves': ['leaves:view'],
   // Read with attendance:view; editing a cell needs hr-settings:manage
   // (enforced server-side) since the roster is what attendance is judged against.

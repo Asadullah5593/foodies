@@ -686,7 +686,8 @@ Employees follow the existing scoping model exactly: `tenantId` + `allowedBranch
 |---|---|
 | Employees | List, filters (branch, brand, designation, status), create/edit, PIN reset, QR card issue |
 | Employee 360 | ⭐ One page: profile, current assignment, `employee_events` timeline, salary history (gated), attendance summary, leave balances, training, reviews, documents, warnings |
-| Attendance Station | POS tab + `/attendance` — code + PIN, optional photo/QR, manager roll-call |
+| Attendance Station | `/attendance` — code + PIN or QR card, optional photo, manager roll-call. Opens from the top bar or its own tab; works with nobody logged in |
+| Attendance Devices | Registering the tablets/terminals. Its OWN screen: registering a device is a one-off setup job and does not belong above the daily register |
 | Daily Register | Branch × date grid, statuses, inline adjustment requests |
 | Exceptions | §11.3 |
 | Leaves | Requests, approvals, balances |
