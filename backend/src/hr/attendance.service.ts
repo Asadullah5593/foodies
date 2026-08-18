@@ -20,6 +20,7 @@ import { AttendanceStation } from '../entities/attendance-station.entity';
 import { Permissions } from '../roles/permissions.dto';
 import { AttendanceRecomputeService } from './attendance-recompute.service';
 import { HrAuditService } from './hr-audit.service';
+import { HrSettingsService } from './hr-settings.service';
 import { MediaStorageService } from '../media/media-storage.service';
 import { hasPermission, HrUser } from './employee-scope';
 import { PunchDto, ManagerAttestDto, SetPinDto } from './dto/attendance.dto';
@@ -49,6 +50,7 @@ export class AttendanceService {
         private readonly stations: Repository<AttendanceStation>,
         private readonly recompute: AttendanceRecomputeService,
         private readonly audit: HrAuditService,
+        private readonly settings: HrSettingsService,
         private readonly mediaStorage: MediaStorageService,
     ) {}
 
@@ -921,6 +923,28 @@ export class AttendanceService {
                 `This request was already ${record.status}`,
             );
         }
+
+        // Configured thresholds sit ON TOP of the permission above: "a branch
+        // manager may waive up to 2,000" is a row, not a code change. With no
+        // rules configured this is a no-op.
+        await this.settings.assertApproval(
+            user,
+            record.kind === 'overtime_approval'
+                ? 'overtime'
+                : 'attendance_waiver',
+            {
+                tenantId: day.tenantId,
+                branchId: day.branchId,
+                onDate: day.workDate,
+            },
+            {
+                amount:
+                    record.amountWaived != null
+                        ? Number(record.amountWaived)
+                        : 0,
+                minutes: record.minutesWaived ?? 0,
+            },
+        );
 
         await this.exceptions.update(
             { id: exceptionId },

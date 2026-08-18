@@ -52,6 +52,8 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   // need only employees:view, which branch managers hold. Salary data inside the
   // 360 payload is gated separately server-side by salary:view.
   '/admin/hr/settings/designations': ['hr-settings:manage', 'employees:view'],
+  // Reading the rules you work under is enough; editing is gated server-side.
+  '/admin/hr/settings': ['hr-settings:view', 'hr-settings:manage'],
   '/admin/hr/attendance': ['attendance:view'],
   '/admin/hr/leaves': ['leaves:view'],
   // Read with attendance:view; editing a cell needs hr-settings:manage

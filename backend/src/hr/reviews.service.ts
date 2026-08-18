@@ -18,6 +18,7 @@ import { Permissions } from '../roles/permissions.dto';
 import { EmployeesService } from './employees.service';
 import { TrainingService } from './training.service';
 import { HrAuditService } from './hr-audit.service';
+import { HrSettingsService } from './hr-settings.service';
 import { hasPermission, HrUser } from './employee-scope';
 import {
     isOverdue,
@@ -60,6 +61,7 @@ export class ReviewsService {
         private readonly employeesService: EmployeesService,
         private readonly training: TrainingService,
         private readonly audit: HrAuditService,
+        private readonly settings: HrSettingsService,
         private readonly dataSource: DataSource,
     ) {}
 
@@ -523,7 +525,26 @@ export class ReviewsService {
         });
         if (!employee) throw new NotFoundException('Employee not found');
 
+        // A promotion with a raise can need a bigger signature than a review
+        // approval on its own. Configured per tenant; nothing by default.
         const effects = outcomeEffects(review.outcome ?? 'no_promotion');
+        if (effects.changesDesignation || effects.changesSalary) {
+            await this.settings.assertApproval(
+                user,
+                'promotion',
+                {
+                    tenantId: employee.tenantId,
+                    branchId: employee.primaryBranchId ?? null,
+                    onDate: review.effectiveFrom ?? cycle.dueDate,
+                },
+                {
+                    amount:
+                        review.newBasicAmount != null
+                            ? Number(review.newBasicAmount)
+                            : 0,
+                },
+            );
+        }
         const effectiveFrom =
             review.effectiveFrom ?? new Date().toISOString().slice(0, 10);
         const applied: string[] = [];

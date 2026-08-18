@@ -1,4 +1,8 @@
-import { cumulativeLateDeduction } from './attendance-rules';
+import {
+    DEFAULT_DEDUCTION_CONFIG,
+    DeductionConfig,
+    cumulativeLadderDeduction,
+} from './settings-rules';
 
 /**
  * Payroll computation — pure, no database, no clock reads.
@@ -49,6 +53,13 @@ export type AttendanceFacts = {
      * are currently working.
      */
     inProgressDays?: number;
+    /**
+     * Days flagged as left-early / missing a clock-out. Both deduct nothing
+     * unless a tenant configures a rule for them, so they are counted here and
+     * charged only on request.
+     */
+    earlyLeaveDays?: number;
+    missedPunchDays?: number;
 };
 
 /**
@@ -204,8 +215,16 @@ export function proratedOffEntitlement(
 }
 
 /** Days of pay lost to absence, half days and unpaid leave. */
-export function absenceDeductionDays(facts: AttendanceFacts): number {
-    return facts.absentDays + facts.halfDays * 0.5 + facts.unpaidLeaveDays;
+export function absenceDeductionDays(
+    facts: AttendanceFacts,
+    config: DeductionConfig = DEFAULT_DEDUCTION_CONFIG,
+): number {
+    const days =
+        facts.absentDays * config.absentDays +
+        facts.halfDays * config.halfDayDays +
+        facts.unpaidLeaveDays * config.unpaidLeaveDays;
+    // Half-day steps make floating point visible surprisingly fast.
+    return Math.round(days * 100) / 100;
 }
 
 /**
@@ -222,6 +241,8 @@ export function computePayrollLines(input: {
     waivers: Waiver[];
     adjustments: Adjustment[];
     advances?: AdvanceRecovery[];
+    /** Resolved from `deduction_rules`; the shipped constants when absent. */
+    deduction?: DeductionConfig;
 }): {
     items: PayrollLineItem[];
     grossEarnings: number;
@@ -230,6 +251,7 @@ export function computePayrollLines(input: {
     dailyRate: number;
 } {
     const { facts, salary, period } = input;
+    const deduction = input.deduction ?? DEFAULT_DEDUCTION_CONFIG;
     const items: PayrollLineItem[] = [];
 
     // Full precision for arithmetic; rounded only when displayed or totalled.
@@ -354,7 +376,7 @@ export function computePayrollLines(input: {
     }
 
     // --- deductions --------------------------------------------------------
-    const absenceDays = absenceDeductionDays(facts);
+    const absenceDays = absenceDeductionDays(facts, deduction);
     if (absenceDays > 0) {
         const amount = round2(absenceDays * dailyExact);
         items.push({
@@ -368,11 +390,17 @@ export function computePayrollLines(input: {
                 absent_days: facts.absentDays,
                 half_days: facts.halfDays,
                 unpaid_leave_days: facts.unpaidLeaveDays,
+                days_per_absence: deduction.absentDays,
+                days_per_half_day: deduction.halfDayDays,
+                days_per_unpaid_leave: deduction.unpaidLeaveDays,
             },
         });
     }
 
-    const lateDays = cumulativeLateDeduction(facts.lateCount);
+    const lateDays = cumulativeLadderDeduction(
+        deduction.lateLadder,
+        facts.lateCount,
+    );
     if (lateDays > 0) {
         const amount = round2(lateDays * dailyExact);
         items.push({
@@ -384,10 +412,48 @@ export function computePayrollLines(input: {
             amount,
             calcMeta: {
                 late_count: facts.lateCount,
-                // 1st free, 2nd costs half a day, 3rd another half; restarts
-                // every three lates.
-                ladder: '1st free, 2nd ½ day, 3rd full day, restarts every 3',
+                // The ladder as configured, so a payslip can be checked against
+                // the rule that produced it rather than against a sentence.
+                ladder: deduction.lateLadder,
                 days_deducted: lateDays,
+            },
+        });
+    }
+
+    // Opt-in deductions. Both are zero unless a tenant wrote a rule, so this
+    // block does nothing at all on a default configuration.
+    const optIn: Array<{
+        key: string;
+        name: string;
+        count: number;
+        perDay: number;
+    }> = [
+        {
+            key: 'early_leave',
+            name: 'Early departures',
+            count: facts.earlyLeaveDays ?? 0,
+            perDay: deduction.earlyLeaveDays,
+        },
+        {
+            key: 'missed_punch',
+            name: 'Missing clock-outs',
+            count: facts.missedPunchDays ?? 0,
+            perDay: deduction.missedPunchDays,
+        },
+    ];
+    for (const rule of optIn) {
+        const days = Math.round(rule.count * rule.perDay * 100) / 100;
+        if (days <= 0) continue;
+        items.push({
+            componentKey: rule.key,
+            componentName: rule.name,
+            kind: 'deduction',
+            quantity: days,
+            rate: daily,
+            amount: round2(days * dailyExact),
+            calcMeta: {
+                days_flagged: rule.count,
+                days_per_occurrence: rule.perDay,
             },
         });
     }

@@ -96,6 +96,7 @@ import Advances from './pages/Admin/HR/Advances';
 import HrAlerts from './pages/Admin/HR/Alerts';
 import LabourCost from './pages/Admin/HR/LabourCost';
 import Roster from './pages/Admin/HR/Roster';
+import HrSettings from './pages/Admin/HR/Settings/HrSettings';
 import AttendanceRegister from './pages/Admin/HR/AttendanceRegister';
 import Leaves from './pages/Admin/HR/Leaves';
 import Payroll from './pages/Admin/HR/Payroll';
@@ -414,6 +415,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { path: '/admin/hr/labour-cost', label: 'Labour cost' },
         { path: '/admin/hr/reviews', label: 'Reviews' },
         { path: '/admin/hr/training', label: 'Training' },
+        { path: '/admin/hr/settings', label: 'Settings' },
         { path: '/admin/hr/settings/designations', label: 'Designations' },
       ],
     },
@@ -1239,6 +1241,7 @@ const AppRoutes: React.FC = () => {
       <Route path="/admin/hr/reviews/:id" element={<ProtectedRoute><AdminOnlyRoute><Layout><ReviewDetail /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/reviews" element={<ProtectedRoute><AdminOnlyRoute><Layout><Reviews /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/training" element={<ProtectedRoute><AdminOnlyRoute><Layout><Training /></Layout></AdminOnlyRoute></ProtectedRoute>} />
+      <Route path="/admin/hr/settings" element={<ProtectedRoute><AdminOnlyRoute><Layout><HrSettings /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       <Route path="/admin/hr/settings/designations" element={<ProtectedRoute><AdminOnlyRoute><Layout><Designations /></Layout></AdminOnlyRoute></ProtectedRoute>} />
       {/* Full-screen station, deliberately OUTSIDE ProtectedRoute: it runs on a
           device token, with nobody logged in. Staff have no user accounts, and

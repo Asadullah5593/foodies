@@ -28,6 +28,7 @@ import { WorkScheduleTemplate } from '../entities/work-schedule-template.entity'
 import { Permissions } from '../roles/permissions.dto';
 import { LeavesService } from './leaves.service';
 import { HrAuditService } from './hr-audit.service';
+import { HrSettingsService } from './hr-settings.service';
 import { hasPermission, HrUser } from './employee-scope';
 import {
     AdvanceRecovery,
@@ -36,6 +37,7 @@ import {
     PayrollLineItem as ComputedItem,
     Waiver,
 } from './payroll-rules';
+import { deductionConfigFrom } from './settings-rules';
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -74,6 +76,7 @@ export class PayrollService {
         private readonly advances: Repository<EmployeeLoanAdvance>,
         private readonly leaves: LeavesService,
         private readonly audit: HrAuditService,
+        private readonly settings: HrSettingsService,
         private readonly dataSource: DataSource,
     ) {}
 
@@ -160,6 +163,11 @@ export class PayrollService {
             run.tenantId,
             run.branchId,
         );
+        // Loaded once: a query per employee would turn a 200-person run into
+        // 200 round trips for data that cannot change mid-run.
+        const deductionRules = await this.settings.loadDeductionRules(
+            run.tenantId,
+        );
 
         let computed = 0;
         const skipped: Array<{ employee: string; reason: string }> = [];
@@ -207,6 +215,13 @@ export class PayrollService {
                     run.periodFrom,
                     run.periodTo,
                 );
+                // Resolved per employee from rules loaded once for the run:
+                // branch and designation can each override the tenant default.
+                const deduction = deductionConfigFrom(deductionRules, {
+                    branchId: assignment?.branchId ?? null,
+                    designationId: assignment?.designationId ?? null,
+                    onDate: run.periodTo,
+                });
                 const policy = await this.leaves.resolveHolidayPolicy(
                     run.tenantId,
                     assignment?.branchId ?? null,
@@ -248,6 +263,7 @@ export class PayrollService {
 
                 const result = computePayrollLines({
                     facts,
+                    deduction,
                     salary: {
                         basicAmount: Number(structure.basicAmount),
                         dailyRateBasis: structure.dailyRateBasis as 'fixed_30',
@@ -426,6 +442,19 @@ export class PayrollService {
             );
         }
 
+        // A configured ceiling on what one person may sign off. No rules
+        // configured means no extra check, which is how this behaved before.
+        await this.settings.assertApproval(
+            user,
+            'payroll_run',
+            {
+                tenantId: run.tenantId,
+                branchId: run.branchId,
+                onDate: run.periodTo,
+            },
+            { amount: check.total_net },
+        );
+
         let settledExits = 0;
 
         await this.dataSource.transaction(async (manager) => {
@@ -597,6 +626,16 @@ export class PayrollService {
         if (user.tenantId != null && line.run.tenantId !== user.tenantId) {
             throw new NotFoundException('Payslip not found');
         }
+        await this.settings.assertApproval(
+            user,
+            'payroll_adjustment',
+            {
+                tenantId: line.run.tenantId,
+                branchId: line.run.branchId,
+                onDate: line.run.periodTo,
+            },
+            { amount: dto.amount },
+        );
         if (line.run.status === 'reversed') {
             throw new BadRequestException('This run has been reversed');
         }
@@ -879,6 +918,16 @@ export class PayrollService {
             where: { id: employeeId },
         });
         if (!employee) throw new NotFoundException('Employee not found');
+        await this.settings.assertApproval(
+            user,
+            'salary_change',
+            {
+                tenantId: employee.tenantId,
+                branchId: employee.primaryBranchId ?? null,
+                onDate: dto.effective_from,
+            },
+            { amount: dto.basic_amount },
+        );
         if (user.tenantId != null && employee.tenantId !== user.tenantId) {
             throw new NotFoundException('Employee not found');
         }
@@ -1238,6 +1287,12 @@ export class PayrollService {
             weeklyOffDays: count('weekly_off'),
             holidayDays: count('holiday'),
             lateCount: settled.filter((r) => r.lateMinutes > 0).length,
+            // Counted always, charged only if a tenant wrote a rule for them.
+            earlyLeaveDays: settled.filter((r) => r.earlyLeaveMinutes > 0)
+                .length,
+            missedPunchDays: settled.filter(
+                (r) => r.exceptionFlags?.missing_out === true,
+            ).length,
             approvedOvertimeMinutes: settled.reduce(
                 (s, r) => s + r.overtimeMinutesApproved,
                 0,

@@ -16,6 +16,7 @@ import { WorkScheduleTemplate } from '../entities/work-schedule-template.entity'
 import { EmployeesService } from './employees.service';
 import { AttendanceRecomputeService } from './attendance-recompute.service';
 import { HrAuditService } from './hr-audit.service';
+import { HrSettingsService } from './hr-settings.service';
 import { HrUser } from './employee-scope';
 import {
     allocateAgainstBalance,
@@ -47,6 +48,7 @@ export class LeavesService {
         private readonly employeesService: EmployeesService,
         private readonly recompute: AttendanceRecomputeService,
         private readonly audit: HrAuditService,
+        private readonly settings: HrSettingsService,
         private readonly dataSource: DataSource,
     ) {}
 
@@ -310,6 +312,24 @@ export class LeavesService {
         if (request.status !== 'pending') {
             throw new BadRequestException(
                 `This request was already ${request.status}`,
+            );
+        }
+
+        // Length-based sign-off, if the tenant configured one. Checked before
+        // the rejection path too would be wrong: refusing leave is never the
+        // decision anyone escalates.
+        if (decision === 'approved') {
+            await this.settings.assertApproval(
+                user,
+                'leave_request',
+                {
+                    tenantId: employee.tenantId,
+                    // Leave requests carry no branch; the rule is scoped by
+                    // where the employee currently works.
+                    branchId: employee.primaryBranchId ?? null,
+                    onDate: request.fromDate,
+                },
+                { days: Number(request.totalDays ?? 0) },
             );
         }
 

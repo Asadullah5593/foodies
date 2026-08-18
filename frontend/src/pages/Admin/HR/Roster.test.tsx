@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -89,16 +89,52 @@ beforeEach(() => {
   saveRoster.mockResolvedValue({ written: 1, cleared: 0 });
 });
 
+/** Pick the value from the "Set selected cells to" dropdown. */
+const chooseValue = (label: string) => {
+  // The trigger shows the current selection, not the placeholder, so it is
+  // addressed by its accessible name.
+  fireEvent.click(screen.getByRole('button', { name: /Value to apply/ }));
+  // Scoped to the open list: the trigger shows the same label as the selected
+  // option, so an unscoped query matches twice.
+  fireEvent.mouseDown(within(screen.getByRole('listbox')).getByText(label));
+};
+
+const dayCells = () =>
+  screen.getAllByRole('button').filter((b) => b.hasAttribute('aria-pressed'));
+
 describe('Roster', () => {
   it('shows an unset cell as Default rather than as a gap', async () => {
     getRoster.mockResolvedValue(grid());
     renderPage();
 
     await waitFor(() => expect(screen.getByText('Bilal Ahmed')).toBeInTheDocument());
-    const selects = screen.getAllByRole('combobox');
-    // 7 day cells; the branch picker is not a native select.
-    expect(selects).toHaveLength(7);
-    expect((selects[0] as HTMLSelectElement).value).toBe('');
+    const cells = dayCells();
+    expect(cells).toHaveLength(7);
+    expect(cells[0]).toHaveTextContent('Default');
+  });
+
+  it('applies one value to every selected cell at once', async () => {
+    getRoster.mockResolvedValue(grid());
+    renderPage();
+
+    await waitFor(() => expect(screen.getByText('Bilal Ahmed')).toBeInTheDocument());
+    // Selecting the whole column is one click on the day heading.
+    fireEvent.click(screen.getAllByTitle('Select this whole day')[3]);
+    chooseValue('Day off');
+    fireEvent.click(screen.getByText('Apply to 1 cell'));
+    fireEvent.click(screen.getByText('Save 1 change'));
+
+    await waitFor(() => expect(saveRoster).toHaveBeenCalled());
+    const payload = saveRoster.mock.calls[0][0];
+    expect(payload.cells).toEqual([
+      {
+        employee_id: 7,
+        work_date: dayOfWeek(3),
+        template_id: null,
+        is_weekly_off: true,
+        is_holiday: false,
+      },
+    ]);
   });
 
   it('sends a cleared cell as an empty cell so the server deletes the row', async () => {
@@ -118,10 +154,11 @@ describe('Roster', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByText('Bilal Ahmed')).toBeInTheDocument());
-    const first = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
-    expect(first.value).toBe('off');
+    expect(dayCells()[0]).toHaveTextContent('Day off');
 
-    fireEvent.change(first, { target: { value: '' } });
+    fireEvent.click(dayCells()[0]);
+    chooseValue('Default shift (clears the cell)');
+    fireEvent.click(screen.getByText('Apply to 1 cell'));
     fireEvent.click(screen.getByText('Save 1 change'));
 
     await waitFor(() => expect(saveRoster).toHaveBeenCalled());
@@ -156,10 +193,14 @@ describe('Roster', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByText('Bilal Ahmed')).toBeInTheDocument());
-    const first = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
-    fireEvent.change(first, { target: { value: '' } });
+    fireEvent.click(dayCells()[0]);
+    chooseValue('Default shift (clears the cell)');
+    fireEvent.click(screen.getByText('Apply to 1 cell'));
     expect(screen.getByText('Save 1 change')).toBeInTheDocument();
-    fireEvent.change(first, { target: { value: 'off' } });
+
+    fireEvent.click(dayCells()[0]);
+    chooseValue('Day off');
+    fireEvent.click(screen.getByText('Apply to 1 cell'));
     expect(screen.getByText('No changes')).toBeInTheDocument();
   });
 
@@ -168,7 +209,9 @@ describe('Roster', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getByText('Bilal Ahmed')).toBeInTheDocument());
-    fireEvent.change(screen.getAllByRole('combobox')[2], { target: { value: '2' } });
+    fireEvent.click(dayCells()[2]);
+    chooseValue('Morning (11:00–23:00)');
+    fireEvent.click(screen.getByText('Apply to 1 cell'));
     fireEvent.click(screen.getByText('Save 1 change'));
 
     await waitFor(() => expect(saveRoster).toHaveBeenCalled());
@@ -184,6 +227,7 @@ describe('Roster', () => {
 
     await waitFor(() => expect(screen.getByText('Bilal Ahmed')).toBeInTheDocument());
     expect(screen.queryByText('No changes')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('combobox')[0]).toBeDisabled();
+    expect(screen.queryByText('Set selected cells to')).not.toBeInTheDocument();
+    expect(dayCells()[0]).toBeDisabled();
   });
 });

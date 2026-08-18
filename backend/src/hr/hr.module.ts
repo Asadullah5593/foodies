@@ -61,6 +61,7 @@ import {
     HrAlertsController,
     HrReportsController,
     RosterController,
+    HrConfigController,
 } from './hr-settings.controller';
 import { EmployeesService } from './employees.service';
 import { DesignationsService } from './designations.service';
@@ -79,6 +80,9 @@ import { HrSchedulerService } from './hr-scheduler.service';
 import { HrAlertsService } from './hr-alerts.service';
 import { LabourCostService } from './labour-cost.service';
 import { RosterService } from './roster.service';
+import { HrSettingsService } from './hr-settings.service';
+import { DeductionRule } from '../entities/deduction-rule.entity';
+import { HrApprovalRule } from '../entities/hr-approval-rule.entity';
 import { Order } from '../entities/order.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 
@@ -127,6 +131,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
             PayrollLine,
             PayrollLineItem,
             PayrollAdjustment,
+            DeductionRule,
+            HrApprovalRule,
             Order,
             ReviewCycle,
             ReviewTemplate,
@@ -144,6 +150,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
         HrAlertsController,
         HrReportsController,
         RosterController,
+        HrConfigController,
         AttendanceController,
         AttendancePinController,
         PublicAttendanceStationController,
@@ -172,6 +179,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
         HrAlertsService,
         LabourCostService,
         RosterService,
+        HrSettingsService,
     ],
     exports: [EmployeesService, HrAuditService, AttendanceService],
 })

@@ -328,6 +328,7 @@ export const Permissions = {
     SALARY_VIEW: 'salary:view',
     SALARY_EDIT: 'salary:edit',
     /** Settings that drive every calculation: designations, policies, rules. */
+    HR_SETTINGS_VIEW: 'hr-settings:view',
     HR_SETTINGS_MANAGE: 'hr-settings:manage',
     HR_AUDIT_VIEW: 'hr-audit:view',
 

@@ -431,6 +431,89 @@ export interface TrainingProgramRow {
   isActive: boolean;
 }
 
+export interface CapturePolicyRow {
+  id: number;
+  branchId: number | null;
+  primaryMethod: 'pin' | 'qr' | 'photo' | 'attestation';
+  requirePhoto: boolean;
+  allowManagerAttestation: boolean;
+  duplicateWindowSeconds: number;
+  photoRetentionDays: number;
+  isActive: boolean;
+}
+
+export interface OvertimePolicyRow {
+  id: number;
+  branchId: number | null;
+  designationId: number | null;
+  isEnabled: boolean;
+  minMinutesToQualify: number;
+  roundingMinutes: number;
+  rateType: 'multiplier_of_hourly' | 'flat_per_hour';
+  rateValue: string | number;
+  weeklyOffMultiplier: string | number;
+  holidayMultiplier: string | number;
+  dailyCapMinutes: number | null;
+  monthlyCapMinutes: number | null;
+  requiresApproval: boolean;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  isActive: boolean;
+}
+
+export interface OffsPolicyRow {
+  id: number;
+  branchId: number | null;
+  designationId: number | null;
+  offsPerMonth: number;
+  offsArePaid: boolean;
+  carryForward: boolean;
+  encashUnused: boolean;
+  offSelection: 'floating' | 'fixed_weekday';
+  beyondQuotaTreatment: 'unpaid' | 'refuse';
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  isActive: boolean;
+}
+
+export interface DeductionRuleRow {
+  id: number;
+  branchId: number | null;
+  designationId: number | null;
+  trigger:
+    | 'late'
+    | 'absent'
+    | 'half_day'
+    | 'early_leave'
+    | 'missed_punch'
+    | 'unapproved_leave';
+  condition: Record<string, unknown>;
+  effectType: 'deduct_days' | 'deduct_amount' | 'deduct_percent_of_daily';
+  effectValue: string | number;
+  priority: number;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  isActive: boolean;
+}
+
+export interface ApprovalRuleRow {
+  id: number;
+  branchId: number | null;
+  subject:
+    | 'attendance_waiver'
+    | 'leave_request'
+    | 'overtime'
+    | 'payroll_run'
+    | 'salary_change'
+    | 'promotion'
+    | 'payroll_adjustment';
+  condition: Record<string, unknown>;
+  requiredPermission: string;
+  escalateToPermission: string | null;
+  priority: number;
+  isActive: boolean;
+}
+
 export interface ScheduleTemplateRow {
   id: number;
   name: string;
@@ -440,6 +523,18 @@ export interface ScheduleTemplateRow {
   branchId: number | null;
   graceMinutes: number;
   isDefault: boolean;
+}
+
+export interface ScheduleTemplateFull extends ScheduleTemplateRow {
+  designationId: number | null;
+  breakMinutes: number;
+  halfDayAfterLateMinutes: number | null;
+  minMinutesFullDay: number;
+  minMinutesHalfDay: number;
+  overtimeAfterMinutes: number;
+  attributionLeadHours: number;
+  attributionTrailHours: number;
+  isActive: boolean;
 }
 
 export interface RosterCell {
@@ -536,10 +631,16 @@ export interface LeaveTypeRow {
   name: string;
   code: string;
   isPaid: boolean;
-  quotaPerPeriod: number;
+  /** Decimal column: a string over the wire. */
+  quotaPerPeriod: string | number;
   encashUnused: boolean;
   isMonthlyOff: boolean;
   isActive: boolean;
+  // Present on the settings endpoint, absent from the leave-request picker.
+  carryForward?: boolean;
+  maxConsecutiveDays?: number | null;
+  requiresDocument?: boolean;
+  sortOrder?: number;
 }
 
 export interface LeaveRequestRow {
@@ -1210,6 +1311,39 @@ export const hrService = {
       program: { name: string } | null;
       employee: { id: number; fullName: string; employeeCode: string } | null;
     }>;
+  },
+
+  // --- settings -------------------------------------------------------------
+
+  settingsList: async <T,>(
+    resource: string,
+    includeInactive = false,
+  ): Promise<T[]> => {
+    const { data } = await apiClient.get(`/admin/hr/settings/${resource}`, {
+      params: { include_inactive: includeInactive ? 1 : undefined },
+    });
+    return data;
+  },
+
+  settingsSave: async (
+    resource: string,
+    payload: Record<string, unknown>,
+  ): Promise<{ id: number; updated: boolean }> => {
+    const { data } = await apiClient.post(
+      `/admin/hr/settings/${resource}`,
+      payload,
+    );
+    return data;
+  },
+
+  settingsRemove: async (
+    resource: string,
+    id: number,
+  ): Promise<{ deleted?: boolean; deactivated?: boolean }> => {
+    const { data } = await apiClient.delete(
+      `/admin/hr/settings/${resource}/${id}`,
+    );
+    return data;
   },
 
   listScheduleTemplates: async (

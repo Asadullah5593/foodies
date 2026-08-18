@@ -20,9 +20,19 @@ import { Permissions } from '../roles/permissions.dto';
 import { DesignationsService } from './designations.service';
 import { HrAuditService } from './hr-audit.service';
 import { HrAlertsService } from './hr-alerts.service';
+import { HrSettingsService } from './hr-settings.service';
 import { LabourCostService } from './labour-cost.service';
 import { RosterService } from './roster.service';
 import { DesignationDto, SaveRosterDto } from './dto/hr-support.dto';
+import {
+    ApprovalRuleDto,
+    CapturePolicyDto,
+    DeductionRuleDto,
+    HolidayPolicyDto,
+    LeaveTypeDto,
+    OvertimePolicyDto,
+    ScheduleTemplateDto,
+} from './dto/hr-settings.dto';
 import type { HrUser } from './employee-scope';
 
 @ApiTags('Admin – Employee HRM')
@@ -69,6 +79,270 @@ export class DesignationsController {
     })
     remove(@CurrentUser() user: HrUser, @Param('id', ParseIntPipe) id: number) {
         return this.designations.remove(user, id);
+    }
+}
+
+/**
+ * HR → Settings.
+ *
+ * Reading the rules you work under is `hr-settings:view`; changing them is
+ * `hr-settings:manage`. Every write lands in the HR audit log with a named
+ * actor, because "who shortened the grace period" is exactly the question these
+ * screens create.
+ */
+@ApiTags('Admin – Employee HRM')
+@ApiBearerAuth()
+@Controller('admin/hr/settings')
+@UseGuards(JwtAuthGuard, RoleAccessGuard, RequirePermissionGuard)
+export class HrConfigController {
+    constructor(private readonly settings: HrSettingsService) {}
+
+    // ---------------------------------------------------- schedule templates
+
+    @Get('schedule-templates')
+    @RequirePermission(Permissions.HR_SETTINGS_VIEW)
+    @ApiOperation({
+        summary: 'Shift templates',
+        description:
+            'What attendance is judged against: start, end, grace, the half-day-after-late threshold, and the punch attribution window for shifts crossing midnight.',
+    })
+    listTemplates(
+        @CurrentUser() user: HrUser,
+        @Query('include_inactive') inc?: string,
+    ) {
+        return this.settings.listTemplates(user, inc === '1' || inc === 'true');
+    }
+
+    @Post('schedule-templates')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    @ApiOperation({
+        summary: 'Create or update a shift template',
+        description:
+            '`crossesMidnight` is DERIVED from the times, never taken from the request — a shift wrongly flagged as crossing midnight computes a 33-hour day and zeroes overtime.',
+    })
+    saveTemplate(
+        @CurrentUser() user: HrUser,
+        @Body() dto: ScheduleTemplateDto,
+    ) {
+        return this.settings.saveTemplate(user, dto);
+    }
+
+    @Delete('schedule-templates/:id')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    @ApiOperation({
+        summary: 'Deactivate a shift template',
+        description:
+            'Deactivated, never deleted: days already computed against it must stay explainable.',
+    })
+    deactivateTemplate(
+        @CurrentUser() user: HrUser,
+        @Param('id', ParseIntPipe) id: number,
+    ) {
+        return this.settings.deactivateTemplate(user, id);
+    }
+
+    // ------------------------------------------------------ capture policies
+
+    @Get('capture-policies')
+    @RequirePermission(Permissions.HR_SETTINGS_VIEW)
+    @ApiOperation({
+        summary: 'How attendance may be recorded',
+        description:
+            'PIN, QR, photo or manager attestation, per branch with a tenant default. A branch row wins over the tenant one.',
+    })
+    listCapturePolicies(@CurrentUser() user: HrUser) {
+        return this.settings.listCapturePolicies(user);
+    }
+
+    @Post('capture-policies')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    saveCapturePolicy(
+        @CurrentUser() user: HrUser,
+        @Body() dto: CapturePolicyDto,
+    ) {
+        return this.settings.saveCapturePolicy(user, dto);
+    }
+
+    @Delete('capture-policies/:id')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    deleteCapturePolicy(
+        @CurrentUser() user: HrUser,
+        @Param('id', ParseIntPipe) id: number,
+    ) {
+        return this.settings.deleteCapturePolicy(user, id);
+    }
+
+    // ----------------------------------------------------- overtime policies
+
+    @Get('overtime-policies')
+    @RequirePermission(Permissions.HR_SETTINGS_VIEW)
+    listOvertimePolicies(
+        @CurrentUser() user: HrUser,
+        @Query('include_inactive') inc?: string,
+    ) {
+        return this.settings.listOvertimePolicies(
+            user,
+            inc === '1' || inc === 'true',
+        );
+    }
+
+    @Post('overtime-policies')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    @ApiOperation({
+        summary: 'Create or update an overtime policy',
+        description:
+            'Branch-specific and role-specific, as the client asked. Overtime still accrues as pending and needs confirming before payroll locks.',
+    })
+    saveOvertimePolicy(
+        @CurrentUser() user: HrUser,
+        @Body() dto: OvertimePolicyDto,
+    ) {
+        return this.settings.saveOvertimePolicy(user, dto);
+    }
+
+    @Delete('overtime-policies/:id')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    deactivateOvertimePolicy(
+        @CurrentUser() user: HrUser,
+        @Param('id', ParseIntPipe) id: number,
+    ) {
+        return this.settings.deactivateOvertimePolicy(user, id);
+    }
+
+    // --------------------------------------------------------- offs policies
+
+    @Get('offs-policies')
+    @RequirePermission(Permissions.HR_SETTINGS_VIEW)
+    @ApiOperation({
+        summary: 'Monthly offs entitlement',
+        description:
+            'The 4-offs-per-month policy: how many, paid or not, carried forward or encashed.',
+    })
+    listHolidayPolicies(
+        @CurrentUser() user: HrUser,
+        @Query('include_inactive') inc?: string,
+    ) {
+        return this.settings.listHolidayPolicies(
+            user,
+            inc === '1' || inc === 'true',
+        );
+    }
+
+    @Post('offs-policies')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    saveHolidayPolicy(
+        @CurrentUser() user: HrUser,
+        @Body() dto: HolidayPolicyDto,
+    ) {
+        return this.settings.saveHolidayPolicy(user, dto);
+    }
+
+    @Delete('offs-policies/:id')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    deactivateHolidayPolicy(
+        @CurrentUser() user: HrUser,
+        @Param('id', ParseIntPipe) id: number,
+    ) {
+        return this.settings.deactivateHolidayPolicy(user, id);
+    }
+
+    // ----------------------------------------------------------- leave types
+
+    @Get('leave-types/manage')
+    @RequirePermission(Permissions.HR_SETTINGS_VIEW)
+    listLeaveTypes(
+        @CurrentUser() user: HrUser,
+        @Query('include_inactive') inc?: string,
+    ) {
+        return this.settings.listLeaveTypes(
+            user,
+            inc === '1' || inc === 'true',
+        );
+    }
+
+    @Post('leave-types')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    @ApiOperation({
+        summary: 'Create or update a leave type',
+        description:
+            'The monthly-off flag is fixed once created: balances and encashment are computed from exactly one type, and moving that flag would detach what everyone has accrued.',
+    })
+    saveLeaveType(@CurrentUser() user: HrUser, @Body() dto: LeaveTypeDto) {
+        return this.settings.saveLeaveType(user, dto);
+    }
+
+    // ------------------------------------------------------- deduction rules
+
+    @Get('deduction-rules')
+    @RequirePermission(Permissions.HR_SETTINGS_VIEW)
+    @ApiOperation({
+        summary: 'Deduction rules',
+        description:
+            'The late ladder and the per-day deductions payroll applies. A tenant with no rules is charged on the shipped defaults, so an empty list is not a disabled one.',
+    })
+    listDeductionRules(
+        @CurrentUser() user: HrUser,
+        @Query('include_inactive') inc?: string,
+    ) {
+        return this.settings.listDeductionRules(
+            user,
+            inc === '1' || inc === 'true',
+        );
+    }
+
+    @Post('deduction-rules')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    saveDeductionRule(
+        @CurrentUser() user: HrUser,
+        @Body() dto: DeductionRuleDto,
+    ) {
+        return this.settings.saveDeductionRule(user, dto);
+    }
+
+    @Delete('deduction-rules/:id')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    deactivateDeductionRule(
+        @CurrentUser() user: HrUser,
+        @Param('id', ParseIntPipe) id: number,
+    ) {
+        return this.settings.deactivateDeductionRule(user, id);
+    }
+
+    // -------------------------------------------------------- approval rules
+
+    @Get('approval-rules')
+    @RequirePermission(Permissions.HR_SETTINGS_VIEW)
+    @ApiOperation({
+        summary: 'Approval thresholds',
+        description:
+            '"A branch manager may waive up to 2,000; above that needs the GM" as a row. A rule only ADDS a requirement, so an empty list means the endpoint permissions are the only check.',
+    })
+    listApprovalRules(
+        @CurrentUser() user: HrUser,
+        @Query('include_inactive') inc?: string,
+    ) {
+        return this.settings.listApprovalRules(
+            user,
+            inc === '1' || inc === 'true',
+        );
+    }
+
+    @Post('approval-rules')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    saveApprovalRule(
+        @CurrentUser() user: HrUser,
+        @Body() dto: ApprovalRuleDto,
+    ) {
+        return this.settings.saveApprovalRule(user, dto);
+    }
+
+    @Delete('approval-rules/:id')
+    @RequirePermission(Permissions.HR_SETTINGS_MANAGE)
+    deactivateApprovalRule(
+        @CurrentUser() user: HrUser,
+        @Param('id', ParseIntPipe) id: number,
+    ) {
+        return this.settings.deactivateApprovalRule(user, id);
     }
 }
 

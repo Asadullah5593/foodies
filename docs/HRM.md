@@ -1,6 +1,6 @@
 # Employee HRM — specification of record
 
-Status: **Phases 1–6 built (backend + admin UI) on `feat/employee-hrm`.** Decisions here were agreed with the client on 2026-08-12. Anything not written down here is undecided; anything written down here is the reference implementation must match.
+Status: **Complete — Phases 1–7 built (backend + admin UI) on `feat/employee-hrm`.** Decisions here were agreed with the client on 2026-08-12. Anything not written down here is undecided; anything written down here is the reference implementation must match.
 
 Scope: employee master data, attendance capture without biometrics, leaves and holidays, overtime, payroll, employment history, reviews and promotion, training, and exit. Rider *dispatch* and rider *sharing* are out of scope; rider *pay* is in scope and converges into this module (see [Rider convergence](#12-rider-convergence)).
 
@@ -177,6 +177,8 @@ Both are declarative and effective-dated so a payroll run can be recomputed and,
 `subject` ∈ `attendance_waiver | leave_request | overtime | payroll_run | salary_change | promotion | payroll_adjustment`
 
 So "a Branch Manager may waive up to PKR 2,000 per employee per month; above that needs GM sign-off" is a row, not a code change.
+
+**Both tables shipped in Phase 7.** `deduction_rules` is seeded per tenant with rows that reproduce the shipped arithmetic exactly (verified against the database: the seeded rows resolve to the same config as the hard-coded constants), and the engine falls back to those constants when a tenant has no rows — so an empty table is not a disabled one. Payroll reads `deduct_days` effects; `deduct_amount` and `deduct_percent_of_daily` are stored but not yet applied, and the settings screen says so rather than pretending. `hr_approval_rules` ships EMPTY: a rule only ever ADDS a requirement on top of the endpoint's own `@RequirePermission`, so no rules means the behaviour the module has always had. Enforced in seven places: waiver approval, overtime confirmation, leave approval, payroll run approval, payslip adjustment, salary change and promotion approval.
 
 ### 3.6 Payroll
 
@@ -645,7 +647,11 @@ Employees follow the existing scoping model exactly: `tenantId` + `allowedBranch
 | Reviews | Due/overdue queue, review form, outcome application |
 | Training | Programs, assignment, completion recording, expiry |
 | Exits | Exit records, clearance checklists, settlement |
-| HR Settings | Designations, schedules, holiday policy, deduction rules, OT policies, approval rules, capture policy |
+| HR Settings | ⭐ One page, tabbed: shift templates, attendance capture, overtime, offs & public holidays, leave types, deduction rules, approval rules. Designations keep their own screen. Every write goes through the HR audit log |
+| Roster | Weekly grid per branch: select cells, apply a shift / day off / holiday. An empty cell means the employee's default template |
+| Advances | Salary advances, instalment recovery, write-offs |
+| Alerts | Expiring documents and certificates, probations ending, overdue scheduled reviews — the same rows the admin bell shows |
+| Labour cost | Labour as a percentage of sales, per branch and per brand |
 
 **Reporting:** daily register, monthly muster roll, late/absent summary, overtime report, headcount and attrition, payroll register. Plus **labour cost as a percentage of sales, per branch and per brand** — sales already exist in `reports/`, so this is nearly free once payroll lands, and it is the number the owner will actually look at.
 
@@ -664,6 +670,7 @@ Employees follow the existing scoping model exactly: `tenantId` + `allowedBranch
 | **4** | Salary structures, deduction rules, OT policies + approval, waivers, payroll run state machine, adjustments, payslip PDF, **off encashment, exit settlement**, **rider convergence + migration** | ~2.5 weeks |
 | **5** | Training programs and records, review templates, cycle scheduler, review form, outcome application | ~1.5 weeks |
 | **6** | Loans/advances, document expiry alerts, labour-cost-vs-sales dashboard, roster calendar UI | ~1 week |
+| **7** | HR Settings screens (shifts, capture, overtime, offs, leave types), `deduction_rules` + `hr_approval_rules` built and wired, roster bulk editing | ~1 week |
 
 Phase 6 notes: advance recovery shipped with Phase 4 and gained its screen here. Expiry alerts are one nightly sweep (`hr-alerts.service.ts`) reconciled against the notification store, so the alerts screen and the admin bell read the same rows. Labour cost counts **whole approved runs only** — a run straddling the range is named, not pro-rated — and staff with no brand form their own row rather than being spread across brands. The roster honours `is_weekly_off` / `is_holiday` in the attendance engine as of this phase; before it, those columns were written by nothing and read by nothing.
 
