@@ -11,6 +11,7 @@ import { RiderProfile } from '../../../types';
 import { formatCurrency } from '../../../utils/currency';
 import RiderHrmHeader from './RiderHrmHeader';
 import { inputClass, useRiders } from './shared';
+import { useSensitivePageView } from '../../../hooks/useSensitivePageView';
 
 /**
  * One-page base-salary CRUD: every rider in a table with their current salary,
@@ -37,6 +38,8 @@ const dialogInputClass =
   'w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-red-500';
 
 const RiderProfilesTable: React.FC = () => {
+  // Opening this screen is itself worth recording — see the hook.
+  useSensitivePageView('rider-profiles');
   const queryClient = useQueryClient();
   const canEdit = useHasPermission('rider-profiles:edit');
 

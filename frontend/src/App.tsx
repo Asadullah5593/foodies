@@ -23,6 +23,7 @@ import {
   MdOutlineStarBorder,
   MdOutlineVolunteerActivism,
   MdOutlineLock,
+  MdOutlineHistory,
   MdOutlineReceiptLong,
   MdOutlineDeliveryDining,
   MdOutlineBadge,
@@ -74,6 +75,7 @@ import RoleForm from './pages/Admin/RoleForm';
 import Shifts from './pages/Admin/Shifts';
 import Reports from './pages/Admin/Reports';
 import ProductSales from './pages/Admin/ProductSales';
+import ActivityLog from './pages/Admin/ActivityLog';
 import Orders from './pages/Admin/Orders';
 import OrderDetail from './pages/Admin/OrderDetail';
 import Deliveries from './pages/Admin/Deliveries';
@@ -351,6 +353,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     ...(isTenantUser ? [{ path: '/admin/invoice-templates', label: 'Invoice Templates', icon: MdOutlineReceiptLong }] : []),
     { path: '/admin/delivery-tiers', label: 'Delivery Tiers', icon: MdOutlineDeliveryDining },
     { path: '/admin/roles', label: 'Roles', icon: MdOutlineLock },
+    { path: '/admin/activity-logs', label: 'Activity Log', icon: MdOutlineHistory },
     { path: '/admin/notification-settings', label: 'Notifications', icon: MdOutlineNotificationsActive },
     {
       type: 'group',
@@ -459,7 +462,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       procurement: location.pathname.startsWith('/admin/procurement') ? true : prev.procurement,
       recipes: location.pathname.startsWith('/admin/recipes') ? true : prev.recipes,
       'rider-hrm': location.pathname.startsWith('/admin/rider-hrm') ? true : prev['rider-hrm'],
-      reports: location.pathname.startsWith('/admin/reports') ? true : prev.reports,
+      reports: location.pathname.startsWith('/admin/reports')
+        ? true
+        : prev.reports,
       cms: location.pathname.startsWith('/admin/banners') || location.pathname.startsWith('/admin/promotions') ? true : prev.cms,
     }));
   }, [location.pathname]);
@@ -1207,6 +1212,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><ProductSales /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/activity-logs"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><ActivityLog /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />

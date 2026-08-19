@@ -13,6 +13,7 @@ import { InventoryBatch } from '../entities/inventory-batch.entity';
 import { InventoryItem } from '../entities/inventory-item.entity';
 import { InventoryService } from './inventory.service';
 import { transitionStatus } from '../common/db-concurrency';
+import { ActivityContext } from '../activity-log/activity-context';
 
 type TenantContextUser = {
     id: number;
@@ -219,7 +220,26 @@ export class InventoryAdjustmentService {
             adjustment.status = 'posted';
             adjustment.postedBy = user.id;
             adjustment.postedAt = postedAt;
-            return manager.getRepository(InventoryAdjustment).save(adjustment);
+            const saved = await manager
+                .getRepository(InventoryAdjustment)
+                .save(adjustment);
+            // A posted adjustment moves stock without a purchase or a sale
+            // behind it, which is exactly the shape shrinkage takes. Recorded
+            // as an addition (no "before" — posting is not an edit).
+            ActivityContext.setScope({ branchId: adjustment.branchId });
+            ActivityContext.recordChange(
+                'inventory_adjustment',
+                saved.id,
+                null,
+                {
+                    adjustment_type: adjustment.adjustmentType,
+                    reason_code: adjustment.reasonCode,
+                    line_count: movements.length,
+                    status: 'posted',
+                },
+                `Adjustment #${saved.id}`,
+            );
+            return saved;
         });
     }
 

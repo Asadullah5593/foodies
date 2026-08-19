@@ -11,6 +11,7 @@ import { Shift } from '../entities/shift.entity';
 import { Order } from '../entities/order.entity';
 import { Payment } from '../entities/payment.entity';
 import { BranchBrand } from '../entities/branch-brand.entity';
+import { ActivityContext } from '../activity-log/activity-context';
 
 /**
  * Round to whole paisa. The module used to only ADD already-2dp figures, so it
@@ -699,6 +700,28 @@ export class ShiftsService {
             relations: ['user', 'branch', 'closer', 'brand'],
         });
         if (!loaded) throw new NotFoundException('Shift not found');
+        // The till's reconciliation is the most disputed number in the system:
+        // expected vs counted, and who signed it off. Recorded as a diff so the
+        // variance is visible without recomputing it from orders months later.
+        ActivityContext.setScope({
+            branchId: loaded.branchId,
+            brandId: loaded.brandId ?? null,
+        });
+        ActivityContext.recordChange(
+            'shift',
+            id,
+            { status: 'open', closing_cash: null, expected_cash: null },
+            {
+                status: 'closed',
+                closing_cash: loaded.closingCash,
+                expected_cash: loaded.expectedCash,
+                variance:
+                    Number(loaded.closingCash ?? 0) -
+                    Number(loaded.expectedCash ?? 0),
+                closed_by_user_id: closedByUserId ?? null,
+            },
+            `Shift #${id}`,
+        );
         return this.toResponse(
             loaded,
             undefined,
@@ -754,6 +777,15 @@ export class ShiftsService {
                 ],
             );
         });
+        // Cash leaving the drawer mid-shift. There is no "before" — this is an
+        // addition, not an edit — so the diff records the movement itself.
+        ActivityContext.recordChange(
+            'shift_cash_out',
+            shiftId,
+            null,
+            { amount, note: dto.note?.trim() || null },
+            `Shift #${shiftId}`,
+        );
         return this.listCashOuts(
             shiftId,
             tenantId,
@@ -793,6 +825,16 @@ export class ShiftsService {
                 throw new ConflictException(
                     'This shift is closed — its cash-outs can no longer be changed.',
                 );
+            // Money coming back onto the till's expected figure. Recorded as
+            // a reversal so it reads differently from the cash-out itself —
+            // "was voided" is a distinct event from "was recorded".
+            ActivityContext.recordChange(
+                'shift_cash_out',
+                cashOutId,
+                { voided: false },
+                { voided: true, void_reason: dto.reason?.trim() || null },
+                `Cash-out #${cashOutId} on shift #${shiftId}`,
+            );
             // Checked then updated inside the shift's row lock, so a
             // double-click cannot re-void (and rewrite the voider of) an entry
             // someone already voided.

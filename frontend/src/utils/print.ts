@@ -1,3 +1,14 @@
+import { recordBeacon } from './activityBeacon';
+
+/** What is being printed, for the audit trail. */
+export interface PrintAudit {
+  subject: 'invoice' | 'kot' | 'z-report' | 'shift-report' | 'order';
+  /** 'auto' when the app printed without anyone asking. */
+  trigger?: 'user' | 'auto';
+  entityId?: number;
+  label?: string;
+}
+
 /**
  * Opens a new window with the given HTML content and triggers the browser print dialog.
  * The window is closed after printing (or when the user cancels).
@@ -5,7 +16,25 @@
  * `extraCss` appends template-specific styles (e.g. an invoice template's paper
  * size / thermal width) after the base stylesheet.
  */
-export function printContent(html: string, title = 'Print', extraCss = ''): void {
+export function printContent(
+  html: string,
+  title = 'Print',
+  extraCss = '',
+  audit?: PrintAudit,
+): void {
+  // Printing never reaches the server, so this is the only place it can be
+  // recorded. `trigger` matters: CustomerInvoiceModal prints an invoice AND a
+  // KOT automatically on open, and logging those as deliberate would drown the
+  // handful of prints a person actually chose to make.
+  if (audit) {
+    recordBeacon({
+      action: 'client.print',
+      subject: audit.subject,
+      trigger: audit.trigger ?? 'user',
+      entity_id: audit.entityId,
+      label: audit.label ?? title,
+    });
+  }
   const printWindow = window.open('', '_blank');
   if (!printWindow) {
     window.alert('Please allow pop-ups to print.');

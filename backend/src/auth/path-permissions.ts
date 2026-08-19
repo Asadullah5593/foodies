@@ -10,6 +10,12 @@ export const PATH_REQUIRED_PERMISSIONS: Array<{
     permissionNames: string[];
 }> = [
     {
+        // Reading the audit trail is its own right, granted to owner/super
+        // admin by the migration. Widen it from the Roles UI if needed.
+        prefix: '/admin/activity-logs',
+        permissionNames: [Permissions.ACTIVITY_LOG_VIEW],
+    },
+    {
         prefix: '/admin/dashboard',
         permissionNames: [Permissions.DASHBOARD_VIEW],
     },

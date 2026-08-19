@@ -27,6 +27,7 @@ import { InventoryItemCost } from '../entities/inventory-item-cost.entity';
 import { Stocktake } from '../entities/stocktake.entity';
 import { StocktakeLine } from '../entities/stocktake-line.entity';
 import { BranchBrand } from '../entities/branch-brand.entity';
+import { ActivityContext } from '../activity-log/activity-context';
 
 type TenantContextUser = {
     id: number;
@@ -1135,6 +1136,21 @@ export class InventoryService {
                 ],
             });
 
+            // Wastage is stock written off. Same shape as an adjustment: an
+            // addition, so there is no meaningful "before".
+            ActivityContext.setScope({ branchId: args.branchId });
+            ActivityContext.recordChange(
+                'wastage_event',
+                wastage.id,
+                null,
+                {
+                    inventory_item_id: args.inventoryItemId,
+                    qty: args.qty,
+                    reason: args.reason,
+                    notes: args.notes ?? null,
+                },
+                `Wastage #${wastage.id}`,
+            );
             return wastage;
         });
     }
