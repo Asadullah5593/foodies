@@ -20,6 +20,7 @@ import { MenuItem } from './entities/menu-item.entity';
 import { BranchMenuItem } from './entities/branch-menu-item.entity';
 import { Permission } from './entities/permission.entity';
 import { Role } from './entities/role.entity';
+import { restrictionExclusionSql } from './roles/restriction-permissions';
 
 dotenvConfig({ path: join(process.cwd(), '.env') });
 
@@ -356,11 +357,14 @@ async function seed() {
         }),
     );
 
+    // "Everything" deliberately excludes the narrowing permissions — see
+    // restriction-permissions.ts. Granting orders:create:delivery-only to the
+    // owner would restrict the owner, which is the opposite of the intent.
     await dataSource.query(
-        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${superAdminRole.id}, id FROM permissions`,
+        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${superAdminRole.id}, id FROM permissions WHERE ${restrictionExclusionSql()}`,
     );
     await dataSource.query(
-        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${ownerRole.id}, id FROM permissions`,
+        `INSERT INTO role_permissions (role_id, permission_id) SELECT ${ownerRole.id}, id FROM permissions WHERE ${restrictionExclusionSql()}`,
     );
     await dataSource.query(
         `INSERT INTO role_permissions (role_id, permission_id) SELECT ${managerRole.id}, id FROM permissions WHERE name IN ('dashboard:view', 'orders:create', 'orders:view', 'discounts:apply', 'branches:manage')`,
