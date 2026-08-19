@@ -60,6 +60,19 @@ export class ReportsService {
     ) {}
 
     /**
+     * Which clock a query keys on:
+     *  - MONEY (revenue, tax, discounts, top items, sales by brand/branch,
+     *    payments, completed-only product sales) → `completed_at`. A sale is
+     *    realized when the order completes; this is the clock shifts already
+     *    reconcile on, so a delivery placed late and delivered next morning
+     *    lands on the day the money was actually taken — the same day on
+     *    every screen.
+     *  - INTAKE / OPS (orders by status/type/source, delivery ops, ratings,
+     *    recent orders, order series) → `placed_at`. These count orders that
+     *    may never complete and so have no completed_at.
+     */
+
+    /**
      * Build the reporting window from a date (YYYY-MM-DD) plus an optional
      * time-of-day (HH:mm), both read in the SERVER's local clock — which is the
      * branch clock (all branches are Asia/Karachi).
@@ -249,7 +262,7 @@ export class ReportsService {
         const qb = this.orderRepo
             .createQueryBuilder('o')
             .where("o.status = 'completed'")
-            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', range)
+            .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', range)
             .select('COUNT(*)', 'completed_orders')
             .addSelect('COALESCE(SUM(o.totalAmount), 0)', 'total_revenue')
             .addSelect('COALESCE(SUM(o.subtotal), 0)', 'total_sales')
@@ -617,7 +630,7 @@ export class ReportsService {
         const qb = this.orderRepo
             .createQueryBuilder('o')
             .where('o.status = :status', { status: 'completed' })
-            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+            .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', {
                 dateFrom,
                 dateTo,
             });
@@ -714,7 +727,7 @@ export class ReportsService {
             .innerJoin('oi.order', 'o')
             .leftJoin('oi.menuItem', 'mi')
             .andWhere('o.status = :status', { status: 'completed' })
-            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+            .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', {
                 dateFrom,
                 dateTo,
             })
@@ -837,15 +850,24 @@ export class ReportsService {
             return qb;
         };
 
+        // Completed-only (the default) is a money report, so it keys on the
+        // completion clock like the KPI tiles, payments and shifts. The
+        // "all" / "excluding cancelled" modes include orders that never
+        // completed, which have no completed_at — they key on placement.
+        const completedOnly =
+            filters.status !== 'all' &&
+            filters.status !== 'excluding_cancelled';
         const scoped = (): SelectQueryBuilder<OrderItem> => {
             const qb = this.orderItemRepo
                 .createQueryBuilder('oi')
                 .innerJoin('oi.order', 'o')
                 .leftJoin('oi.menuItem', 'mi')
-                .where('o.placedAt BETWEEN :dateFrom AND :dateTo', {
-                    dateFrom,
-                    dateTo,
-                });
+                .where(
+                    completedOnly
+                        ? 'o.completedAt BETWEEN :dateFrom AND :dateTo'
+                        : 'o.placedAt BETWEEN :dateFrom AND :dateTo',
+                    { dateFrom, dateTo },
+                );
             if (filters.status === 'all') {
                 // no status predicate
             } else if (filters.status === 'excluding_cancelled') {
@@ -1347,7 +1369,7 @@ export class ReportsService {
             .createQueryBuilder('o')
             .innerJoin(BankCard, 'bc', 'bc.id = o.bankCardId')
             .where("o.status = 'completed'")
-            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', range)
+            .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', range)
             .andWhere('o.bankCardId IS NOT NULL')
             .select('bc.id', 'card_id')
             .addSelect('bc.name', 'card_name')
@@ -1386,7 +1408,7 @@ export class ReportsService {
             .createQueryBuilder('o')
             .innerJoin(User, 'u', 'u.id = o.staffDiscountBy')
             .where("o.status = 'completed'")
-            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', range)
+            .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', range)
             .andWhere('o.staffDiscountAmount > 0')
             .select('u.id', 'user_id')
             .addSelect('u.name', 'user_name')
@@ -1419,7 +1441,7 @@ export class ReportsService {
             .createQueryBuilder('o')
             .leftJoin(StaffDiscount, 'sd', 'sd.id = o.staffDiscountId')
             .where("o.status = 'completed'")
-            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', range)
+            .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', range)
             .andWhere('o.staffDiscountAmount > 0')
             .select('o.staffDiscountId', 'preset_id')
             .addSelect('sd.name', 'preset_name')
@@ -1455,7 +1477,7 @@ export class ReportsService {
             .leftJoin(Discount, 'mo', 'mo.id = o.manualOfferId')
             .leftJoin(User, 'mu', 'mu.id = o.manualOfferBy')
             .where("o.status = 'completed'")
-            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', range)
+            .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', range)
             .andWhere('o.manualOfferId IS NOT NULL')
             .select('o.manualOfferId', 'offer_id')
             .addSelect('mo.name', 'offer_name')
@@ -1634,7 +1656,7 @@ export class ReportsService {
             this.orderRepo
                 .createQueryBuilder('o')
                 .innerJoin('o.brand', 'sbb')
-                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', {
                     dateFrom,
                     dateTo,
                 })
@@ -1665,7 +1687,7 @@ export class ReportsService {
             this.orderRepo
                 .createQueryBuilder('o')
                 .innerJoin('o.branch', 'sbr')
-                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', {
                     dateFrom,
                     dateTo,
                 })
@@ -1753,8 +1775,12 @@ export class ReportsService {
             brandId,
         ).getRawMany<{ method: string; amount: string; count: string }>();
 
-        // 6. Daily time-series
-        const timeSeriesP = scope(
+        // 6. Daily time-series. Intake (orders placed, gross value) is bucketed
+        // by placement day; realized money (completed orders/revenue) by
+        // completion day — the same clock the KPI tiles, payments and shifts
+        // use, so a delivery placed late and delivered next morning lands on
+        // the day the money was actually taken.
+        const timeSeriesIntakeP = scope(
             this.orderRepo
                 .createQueryBuilder('o')
                 .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
@@ -1764,20 +1790,27 @@ export class ReportsService {
                 .select("TO_CHAR(o.placedAt, 'YYYY-MM-DD')", 'day')
                 .addSelect('COUNT(*)', 'orders')
                 .addSelect('COALESCE(SUM(o.totalAmount), 0)', 'revenue')
+                .groupBy("TO_CHAR(o.placedAt, 'YYYY-MM-DD')")
+                .orderBy('day', 'ASC'),
+        ).getRawMany<{ day: string; orders: string; revenue: string }>();
+        const timeSeriesCompletedP = scope(
+            this.orderRepo
+                .createQueryBuilder('o')
+                .andWhere("o.status = 'completed'")
+                .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select("TO_CHAR(o.completedAt, 'YYYY-MM-DD')", 'day')
                 .addSelect(
-                    "COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.totalAmount ELSE 0 END), 0)",
+                    'COALESCE(SUM(o.totalAmount), 0)',
                     'completed_revenue',
                 )
-                .addSelect(
-                    "SUM(CASE WHEN o.status = 'completed' THEN 1 ELSE 0 END)",
-                    'completed_orders',
-                )
-                .groupBy("TO_CHAR(o.placedAt, 'YYYY-MM-DD')")
+                .addSelect('COUNT(*)', 'completed_orders')
+                .groupBy("TO_CHAR(o.completedAt, 'YYYY-MM-DD')")
                 .orderBy('day', 'ASC'),
         ).getRawMany<{
             day: string;
-            orders: string;
-            revenue: string;
             completed_revenue: string;
             completed_orders: string;
         }>();
@@ -1789,7 +1822,7 @@ export class ReportsService {
                 .innerJoin('oi.order', 'o')
                 .leftJoin('oi.menuItem', 'mi')
                 .andWhere("o.status = 'completed'")
-                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', {
                     dateFrom,
                     dateTo,
                 })
@@ -1998,7 +2031,8 @@ export class ReportsService {
             ordersByTypeRaw,
             ordersBySourceRaw,
             paymentsByMethodRaw,
-            timeSeriesRaw,
+            timeSeriesIntakeRaw,
+            timeSeriesCompletedRaw,
             topItemsRaw,
             deliveryByStatusRaw,
             presence,
@@ -2017,7 +2051,8 @@ export class ReportsService {
             ordersByTypeP,
             ordersBySourceP,
             paymentsByMethodP,
-            timeSeriesP,
+            timeSeriesIntakeP,
+            timeSeriesCompletedP,
             topItemsP,
             deliveryByStatusP,
             presenceP,
@@ -2038,7 +2073,10 @@ export class ReportsService {
         // Dense, zero-filled daily series for a continuous chart axis. Iterate
         // in UTC over calendar-date strings so the keys line up exactly with
         // the SQL TO_CHAR(...) day strings (no local-vs-UTC drift).
-        const seriesMap = new Map(timeSeriesRaw.map((r) => [r.day, r]));
+        const intakeMap = new Map(timeSeriesIntakeRaw.map((r) => [r.day, r]));
+        const completedMap = new Map(
+            timeSeriesCompletedRaw.map((r) => [r.day, r]),
+        );
         const time_series: Array<{
             day: string;
             orders: number;
@@ -2052,13 +2090,14 @@ export class ReportsService {
         // Cap the fill to avoid pathological ranges.
         for (let i = 0; i < 400; i++) {
             const day = cursor.toISOString().slice(0, 10);
-            const row = seriesMap.get(day);
+            const intake = intakeMap.get(day);
+            const done = completedMap.get(day);
             time_series.push({
                 day,
-                orders: Number(row?.orders ?? 0),
-                revenue: Number(row?.revenue ?? 0),
-                completed_revenue: Number(row?.completed_revenue ?? 0),
-                completed_orders: Number(row?.completed_orders ?? 0),
+                orders: Number(intake?.orders ?? 0),
+                revenue: Number(intake?.revenue ?? 0),
+                completed_revenue: Number(done?.completed_revenue ?? 0),
+                completed_orders: Number(done?.completed_orders ?? 0),
             });
             if (day === lastDay) break;
             cursor.setUTCDate(cursor.getUTCDate() + 1);
