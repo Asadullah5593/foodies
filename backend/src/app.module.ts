@@ -42,6 +42,7 @@ import { CouponsModule } from './coupons/coupons.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { FbrModule } from './fbr/fbr.module';
+import { PaymentsEpgModule } from './payments-epg/payments-epg.module';
 @Module({
     imports: [
         ConfigModule.forRoot({
@@ -110,6 +111,7 @@ import { FbrModule } from './fbr/fbr.module';
         CampaignsModule,
         NotificationsModule,
         FbrModule,
+        PaymentsEpgModule,
     ],
     controllers: [AppController],
     providers: [AppService],

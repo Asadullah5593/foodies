@@ -416,8 +416,12 @@ export class FbrService {
                 .filter((p) => p.status === 'completed')
                 .map((p) => (p.paymentMethod || '').toLowerCase()),
         );
-        const hasCash = methods.has('cash');
-        const hasNonCash = [...methods].some((m) => m && m !== 'cash');
+        // COD is rider-collected cash — its own method for reporting, but
+        // fiscally it is cash.
+        const hasCash = methods.has('cash') || methods.has('cod');
+        const hasNonCash = [...methods].some(
+            (m) => m && m !== 'cash' && m !== 'cod',
+        );
         if (hasCash && hasNonCash) return PAYMENT_MODE.MIXED;
         if (hasNonCash) return PAYMENT_MODE.CARD;
         return PAYMENT_MODE.CASH;

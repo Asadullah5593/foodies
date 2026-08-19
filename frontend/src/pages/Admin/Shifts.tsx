@@ -6,6 +6,7 @@ import { adminService } from '../../services/api/adminService';
 import { Shift, Branch, Brand } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import Loader from '../../components/Loader';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import { printContent } from '../../utils/print';
 import Button from '../../components/Button';
 import { useHasPermission } from '../../hooks/useHasPermission';
@@ -78,9 +79,9 @@ export const drawerVariance = (s: Shift): number | null => {
     : Number(s.actual_cash) - expectedInDrawer(s);
 };
 
-/** Total takings (drawer expectation + card, which never reaches the till). */
+/** Total takings: drawer expectation + card + online transfer (the latter two never reach the till). */
 export const expectedTotal = (s: Shift): number =>
-  expectedInDrawer(s) + Number(s.card_collected ?? 0);
+  expectedInDrawer(s) + Number(s.card_collected ?? 0) + Number(s.online_transfer_collected ?? 0);
 
 /** Payment chip colors for the close-modal order rows: cash teal, card/mixed blue. */
 const payChip = (method: string | null | undefined) => {
@@ -283,7 +284,7 @@ const Shifts: React.FC = () => {
   // so its window matches the client's business-date math exactly) and always
   // returns open shifts; status / branch / search still filter client-side.
   // keepPreviousData: changing dates swaps data in place, no full-page loader.
-  const { data: shifts, isLoading } = useQuery({
+  const { data: shifts, isLoading, isPlaceholderData } = useQuery({
     queryKey: ['shifts', fromDate, toDate],
     queryFn: () =>
       adminService.getShifts(undefined, undefined, undefined, {
@@ -582,6 +583,7 @@ const Shifts: React.FC = () => {
         ${row('Opening float', fmtMoney(s.opening_cash))}
         ${row('Cash sales', fmtMoney(s.cash_collected ?? 0))}
         ${row('Card sales', fmtMoney(s.card_collected ?? 0))}
+        ${row('Online transfer sales', fmtMoney(s.online_transfer_collected ?? 0))}
         ${row('Expected total', fmtMoney(expectedTotal(s)))}
         ${cashOutTotal(s) > 0 ? row('Cash taken out', `− ${fmtMoney(cashOutTotal(s))}`) : ''}
         ${row('Expected in drawer', fmtMoney(expectedInDrawer(s)))}
@@ -784,7 +786,10 @@ const Shifts: React.FC = () => {
         </div>
       </div>
 
-      {/* Shift cards */}
+      {/* Shift cards. While a date-range change is fetching, the previous
+          results stay mounted and a soft veil fades in over them
+          (keepPreviousData ⇒ isPlaceholderData). */}
+      <FetchingOverlay active={isPlaceholderData} label="Updating shifts…" className="rounded-[14px]">
       {filtered.length === 0 ? (
         <div className="rounded-[14px] border border-[#ECEDF0] bg-white py-12 text-center text-sm text-[#8A92A0] shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800">
           No shifts for the selected day and filters.
@@ -894,6 +899,7 @@ const Shifts: React.FC = () => {
           })}
         </div>
       )}
+      </FetchingOverlay>
 
       {/* ------------------------------------------------ Shift Detail modal */}
       {detailShiftId != null && (
@@ -988,6 +994,19 @@ const Shifts: React.FC = () => {
                         Card sales
                       </span>
                       <span className="text-sm font-bold tabular-nums text-[#1A1D24] dark:text-slate-100">{fmtMoney(detail.card_collected ?? 0)}</span>
+                    </div>
+                    {/* Its own line: an online transfer is taxed like a card but
+                        settles into a bank account, not the drawer or a terminal. */}
+                    <div className="flex items-center justify-between gap-2.5 border-b border-[#F4F5F7] px-4 py-3 dark:border-slate-700">
+                      <span className="inline-flex items-center gap-[9px] text-[13.5px] text-[#4B5563] dark:text-slate-300">
+                        <span className="flex h-[26px] w-[26px] items-center justify-center rounded-[7px] bg-[#EDE9FE] text-[#7C3AED]">
+                          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.6}>
+                            <path d="M3 6.5h10M3 9.5h10M6 3.5 3 6.5l3 3M10 12.5l3-3-3-3" />
+                          </svg>
+                        </span>
+                        Online transfer
+                      </span>
+                      <span className="text-sm font-bold tabular-nums text-[#1A1D24] dark:text-slate-100">{fmtMoney(detail.online_transfer_collected ?? 0)}</span>
                     </div>
                     <div className="flex items-center justify-between gap-2.5 bg-[#FBFBFC] px-4 py-3.5 dark:bg-slate-900/40">
                       <span className="text-[13.5px] font-extrabold text-[#1A1D24] dark:text-slate-100">Expected total</span>

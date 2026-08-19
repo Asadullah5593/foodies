@@ -6,6 +6,7 @@ import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
 import { Order, Branch } from '../../types';
 import Loader from '../../components/Loader';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import { formatCurrency } from '../../utils/currency';
 import { formatOrderType } from '../../utils/format';
 import AssignRiderModal from '../../components/AssignRiderModal';
@@ -32,6 +33,18 @@ type OrderRow = Omit<Order, 'payments' | 'creator'> & {
   orderNumber?: string;
   total_amount?: number;
   totalAmount?: number;
+  // The discount split, in both casings — /admin/orders returns raw entities.
+  discountAmount?: number | string;
+  promo_discount_amount?: number | string;
+  promoDiscountAmount?: number | string;
+  order_discount_amount?: number | string;
+  orderDiscountAmount?: number | string;
+  coupon_discount_amount?: number | string;
+  couponDiscountAmount?: number | string;
+  card_discount_amount?: number | string;
+  cardDiscountAmount?: number | string;
+  staff_discount_amount?: number | string;
+  staffDiscountAmount?: number | string;
   order_group_id?: string | null;
   orderGroupId?: string | null;
   branch?: { id: number; name: string; code: string };
@@ -72,6 +85,14 @@ function normalizeOrder(o: OrderRow): OrderRow {
     ...o,
     order_number: o.order_number ?? o.orderNumber,
     total_amount: o.total_amount ?? o.totalAmount ?? 0,
+    // /admin/orders returns raw entities, so the discount split arrives
+    // camelCase. Normalised here so the column reads one shape.
+    discount_amount: Number(o.discount_amount ?? row.discountAmount ?? 0),
+    promo_discount_amount: Number(o.promo_discount_amount ?? row.promoDiscountAmount ?? 0),
+    order_discount_amount: Number(o.order_discount_amount ?? row.orderDiscountAmount ?? 0),
+    coupon_discount_amount: Number(o.coupon_discount_amount ?? row.couponDiscountAmount ?? 0),
+    card_discount_amount: Number(o.card_discount_amount ?? row.cardDiscountAmount ?? 0),
+    staff_discount_amount: Number(o.staff_discount_amount ?? row.staffDiscountAmount ?? 0),
     order_group_id: o.order_group_id ?? o.orderGroupId ?? null,
     order_type: o.order_type ?? o.orderType,
     // /admin/orders returns raw entities (camelCase + nested brand), never brand_id.
@@ -147,7 +168,7 @@ const TYPE_META: Record<string, { bg: string; color: string; short: string; icon
   },
 };
 
-const PAYMENT_METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', other: 'Other', online: 'Online' };
+const PAYMENT_METHOD_LABEL: Record<string, string> = { cash: 'Cash', card: 'Card', online_transfer: 'Online transfer', cod: 'COD', other: 'Other', online: 'Online' };
 
 /** Rows-per-page choices. Capped at 1000 — the server's ceiling, and beyond that
  *  a single page drags too many joined rows to render comfortably. */
@@ -209,6 +230,37 @@ function paymentMethodText(o: OrderRow): string {
   return methods.map((m) => PAYMENT_METHOD_LABEL[m] ?? m).join(' + ');
 }
 
+/**
+ * Which kinds of discount made up an order's total reduction.
+ *
+ * The stored split (promo / order / coupon / card / staff) is what the invoice
+ * itemises, so a single "Discount: 120" column would hide the thing people
+ * actually ask about — whether the money came out of the merchant's margin or
+ * the bank's.
+ */
+const DISCOUNT_KINDS: Array<{
+  key: keyof OrderRow;
+  /** Column label — kept short, several share one cell. */
+  label: string;
+  /** `discount` query value; matches the server's whitelist. */
+  filter: string;
+  /** Filter-dropdown label, where there is room to be unambiguous. */
+  long: string;
+}> = [
+  { key: 'promo_discount_amount' as keyof OrderRow, label: 'Promo', filter: 'promo', long: 'Promotion only' },
+  { key: 'order_discount_amount' as keyof OrderRow, label: 'Discount', filter: 'order', long: 'Order discount only' },
+  { key: 'coupon_discount_amount' as keyof OrderRow, label: 'Coupon', filter: 'coupon', long: 'Coupon only' },
+  { key: 'card_discount_amount' as keyof OrderRow, label: 'Card', filter: 'card', long: 'Card offer only' },
+  { key: 'staff_discount_amount' as keyof OrderRow, label: 'Staff', filter: 'staff', long: 'Staff discount only' },
+];
+
+function discountKinds(o: OrderRow): Array<{ label: string; amount: number }> {
+  return DISCOUNT_KINDS.map(({ key, label }) => ({
+    label,
+    amount: Number((o as unknown as Record<string, unknown>)[key] ?? 0),
+  })).filter((d) => d.amount > 0);
+}
+
 function paymentState(o: OrderRow): 'paid' | 'partial' | 'unpaid' {
   const done = (o.payments ?? []).filter((p) => (p.status ?? '') === 'completed');
   const paid = done.reduce((s, p) => s + Number(p.amount ?? 0), 0);
@@ -254,6 +306,7 @@ const Orders: React.FC = () => {
   const canFilterStatus = useHasPermission('orders:filter:status');
   const canFilterSearch = useHasPermission('orders:filter:search');
   const canFilterPayment = useHasPermission('orders:filter:payment');
+  const canFilterDiscount = useHasPermission('orders:filter:discount');
   /**
    * Changing the kitchen status is its own right. Without it the pill must be
    * inert text, not a menu button — order-taking tablets read status, they do
@@ -343,6 +396,7 @@ const Orders: React.FC = () => {
   const orderType = searchParams.get('order_type') || '';
   const source = searchParams.get('source') || '';
   const paymentMethod = searchParams.get('payment_method') || '';
+  const discount = searchParams.get('discount') || '';
   const defaultToday = localDateYYYYMMDD();
   const dateFrom = searchParams.get('date_from') || defaultToday;
   const dateTo = searchParams.get('date_to') || defaultToday;
@@ -353,6 +407,7 @@ const Orders: React.FC = () => {
     ...(orderType && { order_type: orderType }),
     ...(source && { source }),
     ...(paymentMethod && { payment_method: paymentMethod }),
+    ...(discount && { discount }),
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo && { date_to: dateTo }),
   };
@@ -373,6 +428,7 @@ const Orders: React.FC = () => {
     if (baseParams.order_type) sp.append('order_type', baseParams.order_type);
     if (baseParams.source) sp.append('source', baseParams.source);
     if (baseParams.payment_method) sp.append('payment_method', baseParams.payment_method);
+    if (baseParams.discount) sp.append('discount', baseParams.discount);
     if (baseParams.date_from) sp.append('date_from', baseParams.date_from);
     if (baseParams.date_to) sp.append('date_to', baseParams.date_to);
     if (debouncedSearch) sp.append('search', debouncedSearch);
@@ -386,7 +442,7 @@ const Orders: React.FC = () => {
   // One server-paginated query. status_counts (every tile, over the full filtered
   // set) come back with each page, so there is no separate counting query and no
   // row cap — pagination scales to 100k+ orders.
-  const { data: envelope, isLoading } = useQuery({
+  const { data: envelope, isLoading, isPlaceholderData } = useQuery({
     queryKey: ['admin-orders', baseParams, status, debouncedSearch, ordersPage, pageSize],
     queryFn: fetchOrders,
     placeholderData: keepPreviousData,
@@ -786,6 +842,21 @@ const Orders: React.FC = () => {
         <div className="text-right text-[14.5px] font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
           {formatCurrency(Number(o.total_amount ?? 0))}
         </div>
+        {/* Discount — total, with the kinds that produced it underneath */}
+        <div className="text-right">
+          {Number(o.discount_amount ?? 0) > 0 ? (
+            <>
+              <div className="text-[14px] font-bold tabular-nums text-amber-700 dark:text-amber-400">
+                −{formatCurrency(Number(o.discount_amount ?? 0))}
+              </div>
+              <div className="mt-0.5 truncate text-[11px] text-gray-400 dark:text-slate-500">
+                {discountKinds(o).map((d) => d.label).join(', ') || 'Discount'}
+              </div>
+            </>
+          ) : (
+            <span className="text-[13.5px] text-gray-300 dark:text-slate-600">—</span>
+          )}
+        </div>
         {/* Payment */}
         <div>
           <div className="text-[13.5px] font-semibold text-gray-700 dark:text-slate-200">{paymentMethodText(o)}</div>
@@ -864,8 +935,19 @@ const Orders: React.FC = () => {
             </Link>
             <span className="truncate text-[12.5px] text-gray-400 dark:text-slate-500">· {o.brand?.name ?? o.brand_name ?? '—'}</span>
           </div>
-          <span className="flex-none text-[15px] font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
-            {formatCurrency(Number(o.total_amount ?? 0))}
+          <span className="flex-none text-right">
+            <span className="block text-[15px] font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
+              {formatCurrency(Number(o.total_amount ?? 0))}
+            </span>
+            {Number(o.discount_amount ?? 0) > 0 && (
+              <span className="block text-[11px] font-bold tabular-nums text-amber-700 dark:text-amber-400">
+                −{formatCurrency(Number(o.discount_amount ?? 0))}
+                {' '}
+                <span className="font-medium text-gray-400 dark:text-slate-500">
+                  {discountKinds(o).map((d) => d.label).join(', ')}
+                </span>
+              </span>
+            )}
           </span>
         </div>
         {/* customer + source */}
@@ -1090,6 +1172,14 @@ const Orders: React.FC = () => {
           <option value="">All payments</option>
           <option value="cash">Cash</option>
           <option value="card">Card</option>
+          <option value="online_transfer">Online transfer</option>
+          <option value="cod">COD</option>
+        </select>}
+        {canFilterDiscount && <select value={discount} onChange={(e) => setFilter('discount', e.target.value)} className={selectCls} aria-label="Discount">
+          <option value="">All discounts</option>
+          <option value="any">Discounted only</option>
+          <option value="none">Full price only</option>
+          {DISCOUNT_KINDS.map((k) => <option key={k.filter} value={k.filter}>{k.long}</option>)}
         </select>}
         <input type="date" min={minDate} value={dateFrom} onChange={(e) => setFilter('date_from', e.target.value)} className={selectCls} aria-label="Date from" />
         <input type="date" min={minDate} value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />
@@ -1134,7 +1224,10 @@ const Orders: React.FC = () => {
         })}
       </div>}
 
-      {/* Table: data grid on xl+, stacked cards below */}
+      {/* Table: data grid on xl+, stacked cards below. While a filter/page
+          change is fetching, the previous results stay mounted and a soft
+          veil fades in over them (keepPreviousData ⇒ isPlaceholderData). */}
+      <FetchingOverlay active={isPlaceholderData} label="Updating orders…" className="rounded-2xl">
       <div ref={setTableEl} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
         {/* Wide enough for all 13 columns: data grid. overflow-x-auto is kept as a
             backstop only — at this width nothing should actually need to scroll. */}
@@ -1154,6 +1247,7 @@ const Orders: React.FC = () => {
                 <span className={`${cellHead} text-center`}>Items</span>
                 <span className={cellHead}>Placed</span>
                 <span className={`${cellHead} text-right`}>Total</span>
+                <span className={`${cellHead} text-right`}>Discount</span>
                 <span className={cellHead}>Payment</span>
                 <span className={cellHead}>Kitchen</span>
                 <span className={cellHead}>Delivery</span>
@@ -1227,6 +1321,7 @@ const Orders: React.FC = () => {
           </span>
         </div>
       </div>
+      </FetchingOverlay>
 
       <div className="mt-3">
         <PaginationBar

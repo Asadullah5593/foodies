@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
 import Loader from '../../components/Loader';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
@@ -186,10 +187,11 @@ const MenuItems: React.FC = () => {
     enabled: !!formBrandId,
   });
 
-  const { data: menuItems, isLoading } = useQuery({
+  const { data: menuItems, isLoading, isPlaceholderData } = useQuery({
     queryKey: ['menuItems', filterParams],
     queryFn: () => adminService.getMenuItems(Object.keys(filterParams).length ? filterParams : undefined),
     enabled: true,
+    placeholderData: keepPreviousData,
   });
 
   const filteredMenuItems = useMemo(() => {
@@ -1514,6 +1516,7 @@ const MenuItems: React.FC = () => {
         </form>
       </Modal>
 
+      <FetchingOverlay active={isPlaceholderData} label="Updating menu items…" className="rounded-xl">
       <div className="w-full space-y-3">
         {(!menuItems || menuItems.length === 0) ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">
@@ -1627,6 +1630,7 @@ const MenuItems: React.FC = () => {
           </>
         )}
       </div>
+      </FetchingOverlay>
     </div>
   );
 };

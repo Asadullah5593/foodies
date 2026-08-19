@@ -41,17 +41,26 @@ export interface CreateOrderRequest {
   discount_code?: string;
   loyalty_points_to_redeem?: number;
   /** Tender split for per-tender GST (cash vs card). */
-  payment_split?: { cash_amount?: number; card_amount?: number };
+  payment_split?: {
+    cash_amount?: number;
+    card_amount?: number;
+    /** Digital transfer: taxed at the card rate, recorded as its own method. */
+    online_transfer_amount?: number;
+  };
   /** Selected bank card (id) for card-linked discounts. */
   bank_card_id?: number | null;
   /** Staff discount preset the cashier granted (staff_discounts id). */
   staff_discount_id?: number | null;
+  /** Till-activated offer switched on for this cart (discounts id). */
+  manual_offer_id?: number | null;
 }
 
 export interface ProcessPaymentRequest {
-  payment_method: 'cash' | 'card' | 'other';
+  payment_method: 'cash' | 'card' | 'online_transfer' | 'other';
   amount: number;
   reference_number?: string;
+  /** Optional key so a retried/double-submitted tender is recorded once. */
+  idempotency_key?: string;
 }
 
 export interface OrderQuoteLineBreakdown {
@@ -81,6 +90,12 @@ export interface OrderQuoteResponse {
   staff_discount_name?: string | null;
   /** Why a requested preset wasn't applied (over ceiling, inactive, out of scope). */
   staff_discount_error?: string | null;
+  manual_offer_amount?: number;
+  manual_offer_id?: number | null;
+  manual_offer_name?: string | null;
+  /** False when the activated offer produced nothing — lost, or cart doesn't qualify. */
+  manual_offer_applied?: boolean;
+  manual_offer_error?: string | null;
   discount_code: string | null;
   loyalty_discount?: number;
   loyalty_points_redeemed?: number;
@@ -103,11 +118,18 @@ export type OrderQuoteRequest = {
   customer_phone?: string;
   loyalty_points_to_redeem?: number;
   /** Tender split for per-tender GST (cash vs card). */
-  payment_split?: { cash_amount?: number; card_amount?: number };
+  payment_split?: {
+    cash_amount?: number;
+    card_amount?: number;
+    /** Digital transfer: taxed at the card rate, recorded as its own method. */
+    online_transfer_amount?: number;
+  };
   /** Selected bank card (id) for card-linked discounts. */
   bank_card_id?: number | null;
   /** Staff discount preset the cashier granted (staff_discounts id). */
   staff_discount_id?: number | null;
+  /** Till-activated offer switched on for this cart (discounts id). */
+  manual_offer_id?: number | null;
 };
 
 export const orderService = {
@@ -196,5 +218,8 @@ export interface KioskLookupResponse {
 export interface KioskFinalizeRequest {
   branch_id: number;
   order?: CreateOrderRequest;
-  payments: Array<{ method: 'cash' | 'card'; amount: number }>;
+  payments: Array<{
+    method: 'cash' | 'card' | 'online_transfer';
+    amount: number;
+  }>;
 }

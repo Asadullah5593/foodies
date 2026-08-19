@@ -2,11 +2,12 @@ import React, { useMemo, useState } from 'react';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
 import Loader from '../../components/Loader';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
@@ -59,10 +60,10 @@ const Categories: React.FC = () => {
     return p;
   }, [filterBrandId, filterActive, debouncedFilterSearch]);
 
-  const { data: categories, isLoading, isFetching } = useQuery({
+  const { data: categories, isLoading, isFetching, isPlaceholderData } = useQuery({
     queryKey: ['categories', queryParams],
     queryFn: () => adminService.getCategories(queryParams),
-    placeholderData: (prev) => prev,
+    placeholderData: keepPreviousData,
   });
 
   const suggestionOptions = React.useMemo(
@@ -362,6 +363,7 @@ const Categories: React.FC = () => {
         </form>
       </Modal>
 
+      <FetchingOverlay active={isPlaceholderData} label="Updating categories…" className="rounded-xl">
       <div className="w-full space-y-3">
         {categoryList.length === 0 ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">
@@ -424,6 +426,7 @@ const Categories: React.FC = () => {
           </>
         )}
       </div>
+      </FetchingOverlay>
     </div>
   );
 };

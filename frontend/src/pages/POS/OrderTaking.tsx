@@ -13,6 +13,7 @@ import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import { placesConfigured, ResolvedPlace } from '../../utils/googlePlaces';
 import { bogoDealTotal } from '../../utils/bogoPricing';
+import { allocateTenders } from './allocateTenders';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import SearchableSelect from '../../components/SearchableSelect';
@@ -38,7 +39,12 @@ import type { KioskFinalizeRequest } from '../../services/api/orderService';
 import { defaultVariantIdForItem } from './components/types';
 import { isMenuItemAvailableForOrderType } from '../../utils/menu-order-type';
 import { useRegisterPOSOrderType } from '../../contexts/POSOrderTypeContext';
-import { cartLineSupportsOrderType } from './orderTypeSupport';
+import {
+  cartLineSupportsOrderType,
+  restrictOrderTypeOptions,
+  DELIVERY_ONLY_PERMISSION,
+} from './orderTypeSupport';
+import { useHasPermission } from '../../hooks/useHasPermission';
 import { canPlaceOrder } from './checkoutGuards';
 import { computeModifiersPrice, resolveMinSelect, resolveMaxSelect, sizeKeyForSelection } from '../../utils/modifierPricing';
 
@@ -53,6 +59,8 @@ const OrderTaking: React.FC = () => {
   const [discountCode, setDiscountCode] = useState('');
   /** Staff discount preset the cashier granted (staff_discounts id), or null. */
   const [staffDiscountId, setStaffDiscountId] = useState<number | null>(null);
+  /** Till-activated offer switched on for this cart (discounts id), or null. */
+  const [manualOfferId, setManualOfferId] = useState<number | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -85,7 +93,7 @@ const OrderTaking: React.FC = () => {
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [posSearch, setPosSearch] = useState('');
   const debouncedPosSearch = useDebouncedValue(posSearch, 300);
-  const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'multipay'>('cash');
+  const [paymentMode, setPaymentMode] = useState<'cash' | 'card' | 'online_transfer' | 'multipay'>('cash');
   const [paymentCashAmount, setPaymentCashAmount] = useState<string>('');
   const [paymentCardAmount, setPaymentCardAmount] = useState<string>('');
   // Selected bank card (for card-linked discounts); only meaningful when paying fully by card.
@@ -139,14 +147,26 @@ const OrderTaking: React.FC = () => {
   const brands = branchMenu?.brands ?? [];
   const branchId = branchMenu?.branch_id ?? null;
 
+  /**
+   * Marker permission for call-centre desks: this account may punch delivery
+   * orders only. It narrows the option list below, and because every order-type
+   * control on this page reads that list, dine-in and takeaway vanish from the
+   * whole POS at once. The server enforces the same rule on quote and order.
+   */
+  const deliveryOnly = useHasPermission(DELIVERY_ONLY_PERMISSION);
+
   const orderTypeOptions = React.useMemo((): { value: OrderTypeOption; label: string }[] => {
     const list: { value: OrderTypeOption; label: string }[] = [];
     if (branchMenu?.supports_dine_in === true) list.push({ value: 'dine_in', label: 'Dine In' });
     if (branchMenu?.supports_takeaway === true)
       list.push({ value: 'takeaway', label: 'Takeaway' });
     if (branchMenu?.supports_delivery === true) list.push({ value: 'delivery', label: 'Delivery' });
-    return list.length ? list : [{ value: 'dine_in', label: 'Dine In' }];
-  }, [branchMenu?.supports_dine_in, branchMenu?.supports_takeaway, branchMenu?.supports_delivery]);
+    // The dine-in fallback exists for a branch with no channel flags set at all.
+    // It must NOT apply to a delivery-only account — that would offer the one
+    // thing the permission forbids — so restrict AFTER the fallback.
+    const withFallback = list.length ? list : [{ value: 'dine_in' as const, label: 'Dine In' }];
+    return restrictOrderTypeOptions(withFallback, deliveryOnly);
+  }, [branchMenu?.supports_dine_in, branchMenu?.supports_takeaway, branchMenu?.supports_delivery, deliveryOnly]);
 
   const effectiveOrderType: OrderTypeOption | null =
     orderType != null && orderTypeOptions.some((o) => o.value === orderType) ? orderType : null;
@@ -271,6 +291,22 @@ const OrderTaking: React.FC = () => {
     retry: false,
   });
 
+  /**
+   * Offers the cashier may switch on for one cart. Server-filtered by
+   * permission and by branch/brand; a till without the right gets [] and the
+   * control never renders.
+   */
+  const { data: manualOffers } = useQuery({
+    queryKey: ['pos-manual-offers', branchId, cartBrandId],
+    queryFn: () =>
+      adminService.getManualOffersForTill({
+        branch_id: branchId,
+        brand_id: cartBrandId,
+      }),
+    enabled: branchId != null,
+    retry: false,
+  });
+
   const getBrandName = (brandId: number | null | undefined): string | null =>
     brandId != null ? (brands.find((b) => b.id === brandId)?.name ?? null) : null;
 
@@ -337,7 +373,12 @@ const OrderTaking: React.FC = () => {
   const paymentSplit =
     paymentMode === 'card'
       ? { cash_amount: 0, card_amount: 1 }
-      : paymentMode === 'multipay'
+      : // Online transfer is taxed at the CARD rate, so it goes in the card
+        // weight here. It stays a distinct method on the payment row, which is
+        // what keeps it separate in shifts, reports and filters.
+        paymentMode === 'online_transfer'
+        ? { cash_amount: 0, card_amount: 0, online_transfer_amount: 1 }
+        : paymentMode === 'multipay'
         ? {
             cash_amount: parseFloat(paymentCashAmount || '0') || 0,
             card_amount: parseFloat(paymentCardAmount || '0') || 0,
@@ -377,12 +418,13 @@ const OrderTaking: React.FC = () => {
         }),
         discount_code: discountCode.trim() || undefined,
         staff_discount_id: staffDiscountId ?? undefined,
+        manual_offer_id: manualOfferId ?? undefined,
         customer_phone: customerPhone.trim() || undefined,
         loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
       }
     : null;
 
-  const { data: quoteData } = useQuery({
+  const { data: quoteData, isFetching: quoteIsFetching } = useQuery({
     queryKey: ['pos-quote', quotePayload],
     queryFn: () => orderService.getQuote(quotePayload!),
     enabled: quotePayload != null,
@@ -496,30 +538,32 @@ const OrderTaking: React.FC = () => {
   const createOrderMutation = useMutation({
     mutationFn: async (arg: {
       order: CreateOrderRequest;
-      payments: Array<{ method: 'cash' | 'card'; amount: number }>;
+      payments: Array<{
+        method: 'cash' | 'card' | 'online_transfer';
+        amount: number;
+      }>;
     }) => orderService.createOrder(arg.order),
     onSuccess: async (
       data: { order_group_id: string; orders: Array<{ id: number; order_number: string; total_amount?: number }> },
-      variables: { order: CreateOrderRequest; payments: Array<{ method: 'cash' | 'card'; amount: number }> }
+      variables: {
+        order: CreateOrderRequest;
+        payments: Array<{
+          method: 'cash' | 'card' | 'online_transfer';
+          amount: number;
+        }>;
+      }
     ) => {
       const orders = data?.orders ?? [];
       const payments = variables?.payments ?? [];
-      const grandTotal = orders.reduce((sum, o) => sum + Number(o?.total_amount ?? 0), 0);
-      if (orders.length > 0 && payments.length > 0 && grandTotal > 0) {
-        for (const order of orders) {
-          const orderTotal = Number(order.total_amount ?? 0);
-          if (orderTotal <= 0) continue;
-          const ratio = orderTotal / grandTotal;
-          for (const p of payments) {
-            const amount = Math.round(p.amount * ratio * 100) / 100;
-            if (amount > 0) {
-              await orderService.processPayment(order.id, {
-                payment_method: p.method,
-                amount,
-              });
-            }
-          }
-        }
+      // Tender the SERVER totals, not the on-screen quote: the cart can re-price
+      // at placement (checkout-page discounts), and recording the stale client
+      // amount is how payments drift above the bill.
+      for (const t of allocateTenders(orders, payments)) {
+        await orderService.processPayment(t.orderId, {
+          payment_method: t.method,
+          amount: t.amount,
+          idempotency_key: `pos:${data?.order_group_id ?? 'grp'}:${t.orderId}:${t.method}`,
+        });
       }
       const grossTotal = orders.reduce((sum, o) => sum + Number(o?.total_amount ?? 0), 0);
       const groupId = data?.order_group_id ?? '';
@@ -543,6 +587,7 @@ const OrderTaking: React.FC = () => {
       setTableNumber('');
       setDiscountCode('');
       setStaffDiscountId(null);
+      setManualOfferId(null);
       setCustomerName('');
       setCustomerPhone('');
       setDeliveryAddress('');
@@ -583,6 +628,7 @@ const OrderTaking: React.FC = () => {
       setTableNumber('');
       setDiscountCode('');
       setStaffDiscountId(null);
+      setManualOfferId(null);
       setCustomerName('');
       setCustomerPhone('');
       setDeliveryAddress('');
@@ -1026,6 +1072,12 @@ const OrderTaking: React.FC = () => {
       toast.error('No shift is open for this branch. Open a shift in Admin → Shifts before placing orders.');
       return;
     }
+    // A discount toggled at checkout re-prices the cart; placing against the
+    // held previous quote would show (and tender) a stale total.
+    if (quoteIsFetching) {
+      toast.error('Prices are updating — tap Place Order again in a moment');
+      return;
+    }
     const orderTotal = Number(quote?.total_amount ?? total ?? 0);
     if (
       !canPlaceOrder({
@@ -1038,11 +1090,16 @@ const OrderTaking: React.FC = () => {
       toast.error('Order total must be greater than zero');
       return;
     }
-    const payments: Array<{ method: 'cash' | 'card'; amount: number }> = [];
+    const payments: Array<{
+      method: 'cash' | 'card' | 'online_transfer';
+      amount: number;
+    }> = [];
     if (paymentMode === 'cash') {
       payments.push({ method: 'cash', amount: orderTotal });
     } else if (paymentMode === 'card') {
       payments.push({ method: 'card', amount: orderTotal });
+    } else if (paymentMode === 'online_transfer') {
+      payments.push({ method: 'online_transfer', amount: orderTotal });
     } else {
       const cash = parseFloat(paymentCashAmount || '0') || 0;
       const card = parseFloat(paymentCardAmount || '0') || 0;
@@ -1077,6 +1134,7 @@ const OrderTaking: React.FC = () => {
       longitude: effectiveOrderType === 'delivery' ? deliveryPlace?.longitude : undefined,
       discount_code: discountCode.trim() || undefined,
       staff_discount_id: staffDiscountId ?? undefined,
+      manual_offer_id: manualOfferId ?? undefined,
       loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
       items: selectedItems.map((item) => {
         if (item.dealId != null && item.components?.length) {
@@ -1263,6 +1321,12 @@ const OrderTaking: React.FC = () => {
       toast.error('Please enter a table number for dine-in orders');
       return;
     }
+    // A discount toggled at checkout re-prices the cart; finalizing against the
+    // held previous quote would show (and tender) a stale total.
+    if (quoteIsFetching) {
+      toast.error('Prices are updating — tap Place Order again in a moment');
+      return;
+    }
     const orderTotal = Number(quote?.total_amount ?? total ?? 0);
     if (
       !canPlaceOrder({
@@ -1275,11 +1339,16 @@ const OrderTaking: React.FC = () => {
       toast.error('Order total must be greater than zero');
       return;
     }
-    const payments: Array<{ method: 'cash' | 'card'; amount: number }> = [];
+    const payments: Array<{
+      method: 'cash' | 'card' | 'online_transfer';
+      amount: number;
+    }> = [];
     if (paymentMode === 'cash') {
       payments.push({ method: 'cash', amount: orderTotal });
     } else if (paymentMode === 'card') {
       payments.push({ method: 'card', amount: orderTotal });
+    } else if (paymentMode === 'online_transfer') {
+      payments.push({ method: 'online_transfer', amount: orderTotal });
     } else {
       const cash = parseFloat(paymentCashAmount || '0') || 0;
       const card = parseFloat(paymentCardAmount || '0') || 0;
@@ -1312,6 +1381,7 @@ const OrderTaking: React.FC = () => {
       customer_phone: customerPhone.trim(),
       discount_code: discountCode.trim() || undefined,
       staff_discount_id: staffDiscountId ?? undefined,
+      manual_offer_id: manualOfferId ?? undefined,
       items: selectedItems.map((item) => {
         if (item.dealId != null && item.components?.length) {
           return {
@@ -1889,6 +1959,9 @@ const OrderTaking: React.FC = () => {
               staffDiscounts={staffDiscounts ?? []}
               staffDiscountId={staffDiscountId}
               onStaffDiscountChange={setStaffDiscountId}
+              manualOffers={manualOffers ?? []}
+              manualOfferId={manualOfferId}
+              onManualOfferChange={setManualOfferId}
               orderNotes={orderNotes}
               onOrderNotesChange={setOrderNotes}
               quote={quote}
@@ -1911,7 +1984,7 @@ const OrderTaking: React.FC = () => {
               onBankCardChange={setBankCardId}
               branchId={branchId}
               onCreateOrder={activeKioskCode ? handleFinalizeKiosk : handleCreateOrder}
-              isSubmitting={isSubmittingOrder}
+              isSubmitting={isSubmittingOrder || quoteIsFetching}
               itemCount={selectedItems.length}
             />
             <div className="flex justify-end mt-3">

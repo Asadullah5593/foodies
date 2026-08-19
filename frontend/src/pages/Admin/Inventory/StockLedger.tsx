@@ -1,9 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { LuPackage, LuSlidersHorizontal, LuUtensils, LuTruck, LuTrash2, LuRotateCcw, LuArrowUp, LuArrowDown, LuDownload, LuExternalLink } from 'react-icons/lu';
 import Loader from '../../../components/Loader';
 import SearchableSelect from '../../../components/SearchableSelect';
+import FetchingOverlay from '../../../components/FetchingOverlay';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { recordBeacon } from '../../../utils/activityBeacon';
@@ -70,6 +71,7 @@ const StockLedger: React.FC = () => {
       return { items, total, capped: items.length < total };
     },
     enabled: activeBranchId != null,
+    placeholderData: keepPreviousData,
   });
   const allRows: any[] = ledgerQ.data?.items ?? [];
   const serverTotal: number = ledgerQ.data?.total ?? allRows.length;
@@ -184,6 +186,7 @@ const StockLedger: React.FC = () => {
         </div>
 
         {loading ? <div className="p-10"><Loader /></div> : (
+          <FetchingOverlay active={ledgerQ.isPlaceholderData} label="Updating movements…" className="rounded-b-xl">
           <div className="overflow-x-auto">
             <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1020px]" style={{ gridTemplateColumns: '150px minmax(180px,1.3fr) 130px 140px minmax(150px,1fr) 110px 120px 110px' }}>
               <div>Time</div><div>Type</div><div>Item</div><div>Location</div><div>Lot / Expiry</div><div className="text-right pr-2">Qty Δ</div><div className="pl-3">Reference</div><div>By</div>
@@ -246,6 +249,7 @@ const StockLedger: React.FC = () => {
               </div>
             </div>
           </div>
+          </FetchingOverlay>
         )}
       </div>
       {capped && <div className="text-xs text-amber-600 -mt-2">Showing the latest {fmtNum(allRows.length)} of {fmtNum(serverTotal)} movements — the cards and counts above cover only this subset. Narrow the date range to include the rest.</div>}

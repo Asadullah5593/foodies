@@ -1,11 +1,52 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import apiClient from '../../utils/apiClient';
 import SearchableSelect from '../../components/SearchableSelect';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import { Branch } from '../../types';
 import { recordBeacon } from '../../utils/activityBeacon';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
+
+/**
+ * The discount stages the pricing engine runs, each carrying this row's
+ * pro-rata slice of it. They sum to `discount`, so the report can say which
+ * kind of discount gave the money away, not just how much went.
+ */
+interface DiscountBreakdown {
+  promo: number;
+  order: number;
+  coupon: number;
+  card: number;
+  staff: number;
+}
+
+type DiscountKind = keyof DiscountBreakdown;
+
+/** Short label for the table, long one for the summary strip and print. */
+const DISCOUNT_TYPES: Array<{ key: DiscountKind; short: string; long: string }> = [
+  { key: 'promo', short: 'Promo', long: 'Product promotion' },
+  { key: 'order', short: 'Order', long: 'Order discount' },
+  { key: 'coupon', short: 'Coupon', long: 'Coupon' },
+  { key: 'card', short: 'Card', long: 'Bank card offer' },
+  { key: 'staff', short: 'Staff', long: 'Staff discount' },
+];
+
+const EMPTY_BREAKDOWN: DiscountBreakdown = {
+  promo: 0,
+  order: 0,
+  coupon: 0,
+  card: 0,
+  staff: 0,
+};
+
+/** The stages that actually contributed, biggest first. */
+const kindsOf = (
+  b: DiscountBreakdown | undefined
+): Array<{ key: DiscountKind; short: string; long: string; amount: number }> =>
+  DISCOUNT_TYPES.map((t) => ({ ...t, amount: b?.[t.key] ?? 0 }))
+    .filter((t) => t.amount > 0)
+    .sort((x, y) => y.amount - x.amount);
 
 /** One split row under a product: a variant, a branch or a brand. */
 interface ProductSalesChild {
@@ -15,6 +56,7 @@ interface ProductSalesChild {
   orders: number;
   gross_sales: number;
   discount: number;
+  discount_breakdown: DiscountBreakdown;
   net_sales: number;
 }
 
@@ -32,6 +74,7 @@ interface ProductSalesRow {
   orders: number;
   gross_sales: number;
   discount: number;
+  discount_breakdown: DiscountBreakdown;
   net_sales: number;
   children: ProductSalesChild[];
 }
@@ -47,6 +90,7 @@ interface ProductSalesReportData {
     orders: number;
     gross_sales: number;
     discount: number;
+    discount_breakdown: DiscountBreakdown;
     net_sales: number;
   };
   rows: ProductSalesRow[];
@@ -61,6 +105,18 @@ const STATUS_OPTIONS = [
   { value: 'all', label: 'All orders' },
 ];
 
+/**
+ * Discount filter. It narrows the ORDERS the report reads, not the product
+ * rows: "what sold on coupon orders" is the question worth asking, and a given
+ * product on such an order may still carry a zero share of that coupon.
+ */
+const DISCOUNT_FILTER_OPTIONS = [
+  { value: '', label: 'All orders' },
+  { value: 'any', label: 'Discounted only' },
+  { value: 'none', label: 'Full price only' },
+  ...DISCOUNT_TYPES.map((t) => ({ value: t.key as string, label: `${t.long} only` })),
+];
+
 // Branch and brand are columns on every row now, so splitting by them here
 // would only repeat what the table already says.
 const SPLIT_OPTIONS: Array<{ value: SplitBy; label: string }> = [
@@ -71,7 +127,7 @@ const SPLIT_OPTIONS: Array<{ value: SplitBy; label: string }> = [
 const PAGE_SIZES = [10, 25, 50, 100, 0]; // 0 ⇒ show everything
 
 /** Column widths shared by the head, every row and the totals strip. */
-const GRID = '44px minmax(220px,2.1fr) 1.3fr 1fr 1fr 64px 74px 118px 126px 130px';
+const GRID = '44px minmax(220px,2.1fr) 1.3fr 1fr 1fr 64px 74px 118px 152px 130px';
 
 const money = (n: number): string =>
   `Rs. ${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -138,6 +194,9 @@ const PRINT_CSS = `
   #ps-print-root .psp-child td { color: #555; background: #FAFAFB; }
   #ps-print-root .psp-child .psp-cname { padding-left: 6mm; }
   #ps-print-root tfoot td { font-weight: 800; border-top: 1pt solid #111; border-bottom: none; padding-top: 2mm; }
+  #ps-print-root .psp-dk { display: block; font-size: 6.5pt; letter-spacing: 0.02em; text-transform: uppercase; color: #8A6A2F; }
+  #ps-print-root .psp-dsum { margin: 0 0 3mm; font-size: 8pt; color: #4A5160; border: 0.5pt solid #E6D9BF; background: #FCF8F0; border-radius: 1.5mm; padding: 2mm 3mm; }
+  #ps-print-root .psp-dsum b { color: #8A6A2F; }
   #ps-print-root .psp-foot { margin-top: 4mm; font-size: 7.5pt; color: #666; border-top: 0.5pt solid #DDE0E5; padding-top: 2mm; }
 }
 `;
@@ -160,6 +219,7 @@ const ProductSales: React.FC = () => {
   const [dateFrom, setDateFrom] = useState(today);
   const [dateTo, setDateTo] = useState(today);
   const [status, setStatus] = useState('completed');
+  const [discountFilter, setDiscountFilter] = useState('');
   const [splitBy, setSplitBy] = useState<SplitBy>('variant');
   const [sortBy, setSortBy] = useState<SortBy>('net_sales');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -213,7 +273,7 @@ const ProductSales: React.FC = () => {
     },
   });
 
-  const { data, isLoading, isError } = useQuery<ProductSalesReportData>({
+  const { data, isLoading, isError, isPlaceholderData } = useQuery<ProductSalesReportData>({
     queryKey: [
       'productSales',
       selectedBranch,
@@ -222,6 +282,7 @@ const ProductSales: React.FC = () => {
       dateFrom,
       dateTo,
       status,
+      discountFilter,
       splitBy,
       sortBy,
       sortDir,
@@ -234,6 +295,7 @@ const ProductSales: React.FC = () => {
       params.append('date_from', dateFrom);
       params.append('date_to', dateTo);
       params.append('status', status);
+      if (discountFilter) params.append('discount', discountFilter);
       params.append('split_by', splitBy);
       params.append('sort_by', sortBy);
       params.append('sort_dir', sortDir);
@@ -242,6 +304,7 @@ const ProductSales: React.FC = () => {
       );
       return response.data;
     },
+    placeholderData: keepPreviousData,
   });
 
   const rows = useMemo(() => {
@@ -267,15 +330,27 @@ const ProductSales: React.FC = () => {
         acc.gross_sales += r.gross_sales;
         acc.discount += r.discount;
         acc.net_sales += r.net_sales;
+        for (const type of DISCOUNT_TYPES)
+          acc.discount_breakdown[type.key] += r.discount_breakdown?.[type.key] ?? 0;
         return acc;
       },
-      { quantity: 0, gross_sales: 0, discount: 0, net_sales: 0 }
+      {
+        quantity: 0,
+        gross_sales: 0,
+        discount: 0,
+        discount_breakdown: { ...EMPTY_BREAKDOWN },
+        net_sales: 0,
+      }
     );
     const filtered = search.trim().length > 0;
     return {
       quantity: t.quantity,
       gross_sales: round2(t.gross_sales),
       discount: round2(t.discount),
+      discount_breakdown: DISCOUNT_TYPES.reduce(
+        (acc, type) => ({ ...acc, [type.key]: round2(t.discount_breakdown[type.key]) }),
+        { ...EMPTY_BREAKDOWN }
+      ),
       net_sales: round2(t.net_sales),
       orders: filtered
         ? rows.reduce((a, r) => a + r.orders, 0)
@@ -335,6 +410,7 @@ const ProductSales: React.FC = () => {
     setCategoryId(null);
     setSearch('');
     setStatus('completed');
+    setDiscountFilter('');
     setDateFrom(today);
     setDateTo(today);
     resetPage();
@@ -355,6 +431,7 @@ const ProductSales: React.FC = () => {
       'Orders',
       'Gross sales',
       'Discount',
+      ...DISCOUNT_TYPES.map((t) => t.long),
       'Net sales',
     ].filter(Boolean);
     const cell = (v: string | number) => {
@@ -366,7 +443,15 @@ const ProductSales: React.FC = () => {
       const base = [r.name, r.category_name ?? '', r.brand_name ?? '', branchLabel(r)];
       if (splitBy !== 'none') base.push('');
       lines.push(
-        [...base, r.quantity, r.orders, r.gross_sales, r.discount, r.net_sales]
+        [
+          ...base,
+          r.quantity,
+          r.orders,
+          r.gross_sales,
+          r.discount,
+          ...DISCOUNT_TYPES.map((t) => r.discount_breakdown?.[t.key] ?? 0),
+          r.net_sales,
+        ]
           .map(cell)
           .join(',')
       );
@@ -383,6 +468,7 @@ const ProductSales: React.FC = () => {
               c.orders,
               c.gross_sales,
               c.discount,
+              ...DISCOUNT_TYPES.map((t) => c.discount_breakdown?.[t.key] ?? 0),
               c.net_sales,
             ]
               .map(cell)
@@ -406,6 +492,8 @@ const ProductSales: React.FC = () => {
   const sortArrow = (column: SortBy) =>
     sortBy === column ? (sortDir === 'desc' ? ' ▾' : ' ▴') : '';
 
+  const discountKindsTotal = kindsOf(totals.discount_breakdown);
+
   const kpis = [
     {
       label: 'Items sold',
@@ -424,7 +512,11 @@ const ProductSales: React.FC = () => {
     {
       label: 'Discount',
       value: money(totals.discount),
-      sub: `${totals.gross_sales ? ((totals.discount / totals.gross_sales) * 100).toFixed(1) : '0.0'}% of gross`,
+      sub: discountKindsTotal.length
+        ? `${discountKindsTotal.length === 1 ? discountKindsTotal[0].long : `${discountKindsTotal.length} types`} · ${
+            totals.gross_sales ? ((totals.discount / totals.gross_sales) * 100).toFixed(1) : '0.0'
+          }% of gross`
+        : 'none given',
       accent: '#E0932B',
       valueColor: '#B45309',
     },
@@ -440,6 +532,11 @@ const ProductSales: React.FC = () => {
   const statusLabel = STATUS_OPTIONS.find((s) => s.value === status)?.label ?? status;
   const categoryLabel = categories?.find((c) => c.id === categoryId)?.name ?? 'All categories';
   const splitLabel = SPLIT_OPTIONS.find((s) => s.value === splitBy)?.label ?? '—';
+  // Only named on paper when it is actually narrowing something — an unfiltered
+  // report should not claim a filter it did not apply.
+  const discountFilterLabel = discountFilter
+    ? (DISCOUNT_FILTER_OPTIONS.find((o) => o.value === discountFilter)?.label ?? null)
+    : null;
 
   /**
    * Print report: the WHOLE filtered selection, not the page on screen, and
@@ -456,7 +553,8 @@ const ProductSales: React.FC = () => {
             {rangeText} · {scopeText}
           </p>
           <p className="psp-meta">
-            {categoryLabel} · {statusLabel} · Breakdown: {splitLabel}
+            {categoryLabel} · {statusLabel}
+            {discountFilterLabel ? ` · ${discountFilterLabel}` : ''} · Breakdown: {splitLabel}
             {search.trim() ? ` · Search: “${search.trim()}”` : ''} · {rows.length}{' '}
             {rows.length === 1 ? 'product' : 'products'} · Generated{' '}
             {new Date().toLocaleString('en-GB', {
@@ -478,6 +576,18 @@ const ProductSales: React.FC = () => {
             </div>
           ))}
         </div>
+
+        {discountKindsTotal.length > 0 && (
+          <p className="psp-dsum">
+            Discount by type —{' '}
+            {discountKindsTotal.map((k, i) => (
+              <React.Fragment key={k.key}>
+                {i > 0 ? ' · ' : ''}
+                {k.long}: <b>−{money(k.amount)}</b>
+              </React.Fragment>
+            ))}
+          </p>
+        )}
 
         <table>
           <thead>
@@ -506,7 +616,16 @@ const ProductSales: React.FC = () => {
                   <td className="psp-r">{r.quantity}</td>
                   <td className="psp-r">{r.orders}</td>
                   <td className="psp-r">{money(r.gross_sales)}</td>
-                  <td className="psp-r">{r.discount > 0 ? `−${money(r.discount)}` : '—'}</td>
+                  <td className="psp-r">
+                    {r.discount > 0 ? `−${money(r.discount)}` : '—'}
+                    {r.discount > 0 && (
+                      <span className="psp-dk">
+                        {kindsOf(r.discount_breakdown)
+                          .map((k) => k.short)
+                          .join(' · ')}
+                      </span>
+                    )}
+                  </td>
                   <td className="psp-r">{money(r.net_sales)}</td>
                 </tr>
                 {splitBy !== 'none' &&
@@ -521,7 +640,16 @@ const ProductSales: React.FC = () => {
                       <td className="psp-r">{c.quantity}</td>
                       <td className="psp-r">{c.orders}</td>
                       <td className="psp-r">{money(c.gross_sales)}</td>
-                      <td className="psp-r">{c.discount > 0 ? `−${money(c.discount)}` : '—'}</td>
+                      <td className="psp-r">
+                        {c.discount > 0 ? `−${money(c.discount)}` : '—'}
+                        {c.discount > 0 && (
+                          <span className="psp-dk">
+                            {kindsOf(c.discount_breakdown)
+                              .map((k) => k.short)
+                              .join(' · ')}
+                          </span>
+                        )}
+                      </td>
                       <td className="psp-r">{money(c.net_sales)}</td>
                     </tr>
                   ))}
@@ -676,6 +804,19 @@ const ProductSales: React.FC = () => {
             }}
             options={STATUS_OPTIONS}
           />
+          <SearchableSelect
+            ariaLabel="Discount"
+            searchPlaceholder="Search…"
+            triggerClassName={selectTrigger}
+            minWidth="min-w-[168px]"
+            className="flex-none"
+            value={discountFilter}
+            onChange={(v) => {
+              setDiscountFilter(v);
+              resetPage();
+            }}
+            options={DISCOUNT_FILTER_OPTIONS}
+          />
           {/* Date range and Clear travel together so Clear never drops to a line
               of its own when the bar wraps. */}
           <div className="flex flex-none items-center gap-2">
@@ -758,6 +899,10 @@ const ProductSales: React.FC = () => {
         </div>
       </div>
 
+      {/* Report body: while a filter change is fetching, the previous results
+          stay mounted and a soft veil fades in over them
+          (keepPreviousData ⇒ isPlaceholderData). */}
+      <FetchingOverlay active={isPlaceholderData} label="Updating report…" className="rounded-2xl">
       {/* KPIs */}
       <div className="mb-[18px] grid grid-cols-2 gap-3.5 lg:grid-cols-4">
         {kpis.map((k) => (
@@ -780,6 +925,27 @@ const ProductSales: React.FC = () => {
         ))}
       </div>
 
+      {/* Discount by type — the headline "Discount" tile only says how much;
+          this says which of the system's discount kinds it came out of. */}
+      {discountKindsTotal.length > 0 && (
+        <div className="mb-[18px] flex flex-wrap items-center gap-2.5 rounded-[14px] border border-[#F2E4CC] bg-[#FFFBF3] px-[18px] py-3.5">
+          <span className="text-[11.5px] font-bold uppercase tracking-[0.06em] text-[#B45309]">
+            Discount by type
+          </span>
+          {discountKindsTotal.map((k) => (
+            <span
+              key={k.key}
+              className="inline-flex items-baseline gap-1.5 rounded-full border border-[#F0DDBE] bg-white px-3 py-1"
+            >
+              <span className="text-[12px] font-semibold text-[#6B7280]">{k.long}</span>
+              <span className="text-[13px] font-extrabold tabular-nums text-[#B45309]">
+                −{money(k.amount)}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* Table */}
       <div className="overflow-hidden rounded-2xl border border-[#ECEDF0] bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
         <div className="flex items-center justify-between gap-3 border-b border-[#F1F2F5] px-5 py-3.5">
@@ -796,7 +962,7 @@ const ProductSales: React.FC = () => {
         </div>
 
         <div className="overflow-x-auto">
-          <div className="min-w-[1180px]">
+          <div className="min-w-[1206px]">
             <div
               style={{ gridTemplateColumns: GRID }}
               className="grid gap-3 border-b border-[#F1F2F5] bg-[#FBFBFC] px-5 py-[11px]"
@@ -883,8 +1049,16 @@ const ProductSales: React.FC = () => {
                         )}
                         <span className="truncate text-sm font-bold text-[#20242C]">{r.name}</span>
                         {r.discount > 0 && (
-                          <span className="flex-none rounded-md bg-[#FFF6E6] px-[7px] py-0.5 text-[10px] font-extrabold text-[#B45309]">
-                            Discounted
+                          <span
+                            title={kindsOf(r.discount_breakdown)
+                              .map((k) => `${k.long}: −${money(k.amount)}`)
+                              .join('\n')}
+                            className="flex-none rounded-md bg-[#FFF6E6] px-[7px] py-0.5 text-[10px] font-extrabold text-[#B45309]"
+                          >
+                            {kindsOf(r.discount_breakdown)[0]?.short ?? 'Discounted'}
+                            {kindsOf(r.discount_breakdown).length > 1
+                              ? ` +${kindsOf(r.discount_breakdown).length - 1}`
+                              : ''}
                           </span>
                         )}
                       </div>
@@ -904,12 +1078,26 @@ const ProductSales: React.FC = () => {
                       <span className="text-right text-[13.5px] tabular-nums text-[#374151]">
                         {money(r.gross_sales)}
                       </span>
-                      <span
-                        className={`text-right text-[13.5px] tabular-nums ${
-                          r.discount > 0 ? 'font-bold text-[#B45309]' : 'text-[#C0C5CD]'
-                        }`}
-                      >
-                        {r.discount > 0 ? `−${money(r.discount)}` : '—'}
+                      <span className="min-w-0 text-right">
+                        <span
+                          className={`block text-[13.5px] tabular-nums ${
+                            r.discount > 0 ? 'font-bold text-[#B45309]' : 'text-[#C0C5CD]'
+                          }`}
+                        >
+                          {r.discount > 0 ? `−${money(r.discount)}` : '—'}
+                        </span>
+                        {r.discount > 0 && (
+                          <span
+                            title={kindsOf(r.discount_breakdown)
+                              .map((k) => `${k.long}: −${money(k.amount)}`)
+                              .join('\n')}
+                            className="block truncate text-[10.5px] font-semibold uppercase tracking-[0.04em] text-[#B99A63]"
+                          >
+                            {kindsOf(r.discount_breakdown)
+                              .map((k) => k.short)
+                              .join(' · ')}
+                          </span>
+                        )}
                       </span>
                       <span className="text-right text-[14.5px] font-extrabold tabular-nums text-[#20242C]">
                         {money(r.net_sales)}
@@ -942,12 +1130,26 @@ const ProductSales: React.FC = () => {
                           <span className="text-right text-[12.5px] tabular-nums text-[#5A6473]">
                             {money(c.gross_sales)}
                           </span>
-                          <span
-                            className={`text-right text-[12.5px] tabular-nums ${
-                              c.discount > 0 ? 'text-[#B45309]' : 'text-[#C0C5CD]'
-                            }`}
-                          >
-                            {c.discount > 0 ? `−${money(c.discount)}` : '—'}
+                          <span className="min-w-0 text-right">
+                            <span
+                              className={`block text-[12.5px] tabular-nums ${
+                                c.discount > 0 ? 'text-[#B45309]' : 'text-[#C0C5CD]'
+                              }`}
+                            >
+                              {c.discount > 0 ? `−${money(c.discount)}` : '—'}
+                            </span>
+                            {c.discount > 0 && (
+                              <span
+                                title={kindsOf(c.discount_breakdown)
+                                  .map((k) => `${k.long}: −${money(k.amount)}`)
+                                  .join('\n')}
+                                className="block truncate text-[10px] font-semibold uppercase tracking-[0.04em] text-[#C2A672]"
+                              >
+                                {kindsOf(c.discount_breakdown)
+                                  .map((k) => k.short)
+                                  .join(' · ')}
+                              </span>
+                            )}
                           </span>
                           <span className="text-right text-[13px] font-bold tabular-nums text-[#374151]">
                             {money(c.net_sales)}
@@ -1059,6 +1261,7 @@ const ProductSales: React.FC = () => {
           </div>
         </div>
       </div>
+      </FetchingOverlay>
     </div>
     {printing && createPortal(printReport, document.body)}
     </>

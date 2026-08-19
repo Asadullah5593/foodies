@@ -56,6 +56,8 @@ const Discounts: React.FC = () => {
     min_order_amount: '',
     max_discount_amount: '',
     requires_code: true,
+    /** 'auto' fires for every qualifying cart; 'manual' only when the till switches it on. */
+    activation: 'auto' as 'auto' | 'manual',
     application_scope: 'whole_order' as 'whole_order' | 'category' | 'products',
     application_scope_ids: [] as number[],
     eligibility_branch_ids: [] as number[],
@@ -154,6 +156,7 @@ const Discounts: React.FC = () => {
       min_order_amount: '',
       max_discount_amount: '',
       requires_code: true,
+      activation: 'auto',
       application_scope: 'whole_order',
       application_scope_ids: [],
       eligibility_branch_ids: [],
@@ -182,6 +185,7 @@ const Discounts: React.FC = () => {
       min_order_amount: discount.min_order_amount?.toString() || '',
       max_discount_amount: discount.max_discount_amount?.toString() || '',
       requires_code: discount.requires_code ?? true,
+      activation: (discount as { activation?: 'auto' | 'manual' }).activation ?? 'auto',
       application_scope: (discount.application_scope ?? 'whole_order') as
         | 'whole_order'
         | 'category'
@@ -239,6 +243,7 @@ const Discounts: React.FC = () => {
               return Number.isFinite(n) ? n : null;
             })(),
       requires_code: false,
+      activation: formData.activation,
       application_scope: formData.application_scope,
       application_scope_ids:
         formData.application_scope === 'whole_order'
@@ -324,9 +329,24 @@ const Discounts: React.FC = () => {
         }
         footer={
           <>
-            <div className="flex items-center gap-2.5">
-              <SegToggle on={formData.is_active} onChange={(v) => setFormData({ ...formData, is_active: v })} ariaLabel="Active" />
-              <span className="text-[13.5px] font-semibold text-gray-700">Active</span>
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2.5">
+              <div className="flex items-center gap-2.5">
+                <SegToggle on={formData.is_active} onChange={(v) => setFormData({ ...formData, is_active: v })} ariaLabel="Active" />
+                <span className="text-[13.5px] font-semibold text-gray-700">Active</span>
+              </div>
+              {/* Till-activated: the offer stops applying by itself and only
+                  counts when a cashier switches it on for that one order — how
+                  one customer gets a BOGO and the next does not. */}
+              <div className="flex items-center gap-2.5">
+                <SegToggle
+                  on={formData.activation === 'manual'}
+                  onChange={(v) => setFormData({ ...formData, activation: v ? 'manual' : 'auto' })}
+                  ariaLabel="Till-activated"
+                />
+                <span className="text-[13.5px] font-semibold text-gray-700" title="The offer never applies on its own. A cashier switches it on per order — so one customer can get it and the next not. Online orders can never receive it.">
+                  Till-activated only
+                </span>
+              </div>
             </div>
             <div className="flex gap-3">
               <button type="button" onClick={() => { setShowForm(false); setEditingDiscount(null); }} className="rounded-[11px] border-[1.5px] border-gray-300 bg-white px-5 py-[11px] text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50">Cancel</button>

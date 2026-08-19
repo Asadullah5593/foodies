@@ -4,6 +4,7 @@ import { ObjectLiteral, Repository, SelectQueryBuilder } from 'typeorm';
 import { Order } from '../entities/order.entity';
 import { BankCard } from '../entities/bank-card.entity';
 import { StaffDiscount } from '../entities/staff-discount.entity';
+import { Discount } from '../entities/discount.entity';
 import { User } from '../entities/user.entity';
 import { OrderItem } from '../entities/order-item.entity';
 import { Shift } from '../entities/shift.entity';
@@ -13,6 +14,30 @@ import { RiderOrderRating } from '../entities/rider-order-rating.entity';
 import { RiderPresence } from '../entities/rider-presence.entity';
 import { InventoryOnHand } from '../entities/inventory-on-hand.entity';
 import { WastageEvent } from '../entities/wastage-event.entity';
+import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
+
+/**
+ * Nudges a per-stage discount split so it adds up to the total exactly.
+ *
+ * Each stage's share is rounded on its own, so five roundings can drift a
+ * paisa or two away from the total printed beside them — and a breakdown that
+ * does not sum to its own total reads as a bug to whoever is reconciling it.
+ * The drift lands on the largest stage, where it is proportionally smallest.
+ */
+export function reconcileDiscountBreakdown<K extends string>(
+    parts: Record<K, number>,
+    total: number,
+): Record<K, number> {
+    const round2 = (n: number): number => Math.round(n * 100) / 100;
+    const keys = Object.keys(parts) as K[];
+    if (keys.length === 0) return parts;
+    const out = { ...parts };
+    const drift = round2(total - keys.reduce((n, k) => n + out[k], 0));
+    if (drift === 0) return out;
+    const biggest = keys.reduce((a, b) => (out[a] >= out[b] ? a : b));
+    out[biggest] = round2(out[biggest] + drift);
+    return out;
+}
 
 @Injectable()
 export class ReportsService {
@@ -752,6 +777,13 @@ export class ReportsService {
             time_to?: string;
             /** completed (default) | all | excluding_cancelled */
             status?: string;
+            /**
+             * Restrict to orders that were discounted: any | none, or one
+             * stage (promo | order | coupon | card | staff). Filters the
+             * ORDERS, not the product rows — "what sold on coupon orders" is
+             * the question, and a product's own share may still be zero.
+             */
+            discount?: string;
             /** child rows under each product */
             split_by?: 'variant' | 'branch' | 'brand' | 'none';
             sort_by?:
@@ -775,8 +807,35 @@ export class ReportsService {
         // Each line's slice of its order's discount, weighted by subtotal share.
         // A zero-subtotal order (fully-comped, or a data oddity) divides by
         // nothing rather than blowing up.
-        const discountExpr =
-            'COALESCE(SUM(oi.subtotal * (CASE WHEN o.subtotal > 0 THEN o.discountAmount / o.subtotal ELSE 0 END)), 0)';
+        const shareOf = (column: string): string =>
+            `COALESCE(SUM(oi.subtotal * (CASE WHEN o.subtotal > 0 THEN o.${column} / o.subtotal ELSE 0 END)), 0)`;
+        const discountExpr = shareOf('discountAmount');
+
+        /**
+         * The same pro-rata slice, taken per discount stage. The five stages sum
+         * to discountAmount on the order, so their shares sum to `discount` here
+         * (bar rounding, which is reconciled below) — which is what lets the
+         * report answer "which kind of discount did this product give away?"
+         * rather than just "how much".
+         */
+        const DISCOUNT_STAGES = [
+            { key: 'promo', column: 'promoDiscountAmount' },
+            { key: 'order', column: 'orderDiscountAmount' },
+            { key: 'coupon', column: 'couponDiscountAmount' },
+            { key: 'card', column: 'cardDiscountAmount' },
+            { key: 'staff', column: 'staffDiscountAmount' },
+        ] as const;
+        type StageKey = (typeof DISCOUNT_STAGES)[number]['key'];
+        type Breakdown = Record<StageKey, number>;
+
+        const addDiscountSelects = <T extends ObjectLiteral>(
+            qb: SelectQueryBuilder<T>,
+        ): SelectQueryBuilder<T> => {
+            qb.addSelect(discountExpr, 'discount');
+            for (const stage of DISCOUNT_STAGES)
+                qb.addSelect(shareOf(stage.column), `discount_${stage.key}`);
+            return qb;
+        };
 
         const scoped = (): SelectQueryBuilder<OrderItem> => {
             const qb = this.orderItemRepo
@@ -803,6 +862,10 @@ export class ReportsService {
                 allowedBrandIds,
                 filters.brand_id,
             );
+            if (isDiscountFilter(filters.discount)) {
+                const predicate = discountFilterSql(filters.discount, 'o');
+                if (predicate) qb.andWhere(predicate);
+            }
             if (filters.category_id)
                 qb.andWhere('mi.categoryId = :psCategoryId', {
                     psCategoryId: filters.category_id,
@@ -829,8 +892,8 @@ export class ReportsService {
             .addSelect('COALESCE(SUM(oi.quantity), 0)', 'quantity')
             .addSelect('COUNT(DISTINCT o.id)', 'orders')
             .addSelect('COALESCE(SUM(oi.subtotal), 0)', 'gross_sales')
-            .addSelect(discountExpr, 'discount')
             .groupBy('oi.menuItemId');
+        addDiscountSelects(rowsQb);
 
         const childQb =
             splitBy === 'none'
@@ -847,7 +910,6 @@ export class ReportsService {
                             'COALESCE(SUM(oi.subtotal), 0)',
                             'gross_sales',
                         )
-                        .addSelect(discountExpr, 'discount')
                         .groupBy('oi.menuItemId')
                         .addGroupBy('o.branchId')
                   : splitBy === 'brand'
@@ -865,7 +927,6 @@ export class ReportsService {
                               'COALESCE(SUM(oi.subtotal), 0)',
                               'gross_sales',
                           )
-                          .addSelect(discountExpr, 'discount')
                           .groupBy('oi.menuItemId')
                           .addGroupBy('o.brandId')
                     : scoped()
@@ -882,9 +943,10 @@ export class ReportsService {
                               'COALESCE(SUM(oi.subtotal), 0)',
                               'gross_sales',
                           )
-                          .addSelect(discountExpr, 'discount')
                           .groupBy('oi.menuItemId')
                           .addGroupBy('oi.variantId');
+
+        if (childQb) addDiscountSelects(childQb);
 
         const [rawRows, rawChildren] = await Promise.all([
             rowsQb.getRawMany<Record<string, string | number | null>>(),
@@ -897,6 +959,20 @@ export class ReportsService {
         const toMoney = (v: string | number | null | undefined): number =>
             round2(Number(v ?? 0));
 
+        const breakdownOf = (
+            raw: Record<string, string | number | null>,
+            discount: number,
+        ): Breakdown =>
+            reconcileDiscountBreakdown(
+                Object.fromEntries(
+                    DISCOUNT_STAGES.map((stage) => [
+                        stage.key,
+                        toMoney(raw[`discount_${stage.key}`]),
+                    ]),
+                ) as Breakdown,
+                discount,
+            );
+
         const childrenByItem = new Map<
             number,
             Array<{
@@ -906,6 +982,7 @@ export class ReportsService {
                 orders: number;
                 gross_sales: number;
                 discount: number;
+                discount_breakdown: Breakdown;
                 net_sales: number;
             }>
         >();
@@ -923,6 +1000,7 @@ export class ReportsService {
                 orders: Number(c.orders ?? 0),
                 gross_sales: gross,
                 discount,
+                discount_breakdown: breakdownOf(c, discount),
                 net_sales: round2(gross - discount),
             });
             childrenByItem.set(itemId, list);
@@ -948,6 +1026,7 @@ export class ReportsService {
                 orders: Number(r.orders ?? 0),
                 gross_sales: gross,
                 discount,
+                discount_breakdown: breakdownOf(r, discount),
                 net_sales: round2(gross - discount),
                 children: childrenByItem.get(menuItemId) ?? [],
             };
@@ -959,6 +1038,9 @@ export class ReportsService {
                 acc.gross_sales += r.gross_sales;
                 acc.discount += r.discount;
                 acc.net_sales += r.net_sales;
+                for (const stage of DISCOUNT_STAGES)
+                    acc.discount_breakdown[stage.key] +=
+                        r.discount_breakdown[stage.key];
                 return acc;
             },
             {
@@ -966,12 +1048,19 @@ export class ReportsService {
                 orders: 0,
                 gross_sales: 0,
                 discount: 0,
+                discount_breakdown: Object.fromEntries(
+                    DISCOUNT_STAGES.map((s) => [s.key, 0]),
+                ) as Breakdown,
                 net_sales: 0,
             },
         );
         totals.gross_sales = round2(totals.gross_sales);
         totals.discount = round2(totals.discount);
         totals.net_sales = round2(totals.net_sales);
+        for (const stage of DISCOUNT_STAGES)
+            totals.discount_breakdown[stage.key] = round2(
+                totals.discount_breakdown[stage.key],
+            );
         // Order count is per-order, not per-line: summing the row counts would
         // count an order once for every distinct product on it.
         totals.orders = await scoped()
@@ -997,6 +1086,9 @@ export class ReportsService {
         return {
             split_by: splitBy,
             status: filters.status ?? 'completed',
+            discount: isDiscountFilter(filters.discount)
+                ? filters.discount
+                : null,
             date_from: localDay(dateFrom),
             date_to: localDay(dateTo),
             totals,
@@ -1355,6 +1447,49 @@ export class ReportsService {
         const presetRows =
             await presetQb.getRawMany<Record<string, string | null>>();
 
+        // Till-activated offers: which offer, who switched it on, and what it
+        // actually produced. Grouped by both because "which BOGO is being used"
+        // and "which cashier is handing it out" are different questions.
+        const manualQb = this.orderRepo
+            .createQueryBuilder('o')
+            .leftJoin(Discount, 'mo', 'mo.id = o.manualOfferId')
+            .leftJoin(User, 'mu', 'mu.id = o.manualOfferBy')
+            .where("o.status = 'completed'")
+            .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', range)
+            .andWhere('o.manualOfferId IS NOT NULL')
+            .select('o.manualOfferId', 'offer_id')
+            .addSelect('mo.name', 'offer_name')
+            .addSelect('mu.id', 'user_id')
+            .addSelect('mu.name', 'user_name')
+            .addSelect('COUNT(*)', 'orders')
+            // Switched on but worth nothing — the cart didn't qualify, or a
+            // better automatic offer won. High numbers here mean the cashiers
+            // are pressing a button that does nothing.
+            .addSelect(
+                'COUNT(*) FILTER (WHERE o.manual_offer_amount = 0)',
+                'applied_nothing',
+            )
+            .addSelect(
+                'COALESCE(SUM(o.manualOfferAmount), 0)',
+                'total_discount',
+            )
+            .groupBy('o.manualOfferId')
+            .addGroupBy('mo.name')
+            .addGroupBy('mu.id')
+            .addGroupBy('mu.name')
+            .orderBy('SUM(o.manualOfferAmount)', 'DESC');
+        this.applyOrderScope(
+            manualQb,
+            'o',
+            tenantId,
+            allowedBranchIds,
+            filters.branch_id,
+            allowedBrandIds,
+            filters.brand_id,
+        );
+        const manualRows =
+            await manualQb.getRawMany<Record<string, string | null>>();
+
         const merchantFunded =
             totals.promo_discounts +
             totals.order_discounts +
@@ -1393,6 +1528,21 @@ export class ReportsService {
                             ? Math.round((total / subtotal) * 10000) / 100
                             : 0,
                     largest_discount: Number(r.largest_discount ?? 0),
+                };
+            }),
+            /** Till-activated offers, by offer and by the cashier who applied them. */
+            manual_offers: manualRows.map((r) => {
+                const orders = Number(r.orders ?? 0);
+                const nothing = Number(r.applied_nothing ?? 0);
+                return {
+                    offer_id: r.offer_id != null ? Number(r.offer_id) : null,
+                    offer_name: r.offer_name,
+                    user_id: r.user_id != null ? Number(r.user_id) : null,
+                    user_name: r.user_name,
+                    orders,
+                    /** Switched on but produced nothing. */
+                    applied_nothing: nothing,
+                    total_discount: Number(r.total_discount ?? 0),
                 };
             }),
             /** Staff give-aways by preset — the "why", when presets are named for it. */
