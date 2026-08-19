@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import {
   DndContext,
@@ -22,6 +22,7 @@ import { adminService, ModifierGroupResponse, ModifierResponse } from '../../ser
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import Loader from '../../components/Loader';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
@@ -245,7 +246,7 @@ const Modifiers: React.FC = () => {
   const effectiveBrandId = filters.brand_id ? +filters.brand_id : null;
   const effectiveMenuItemId = filters.menu_item_id ? +filters.menu_item_id : null;
 
-  const { data: modifierGroups, isLoading } = useQuery({
+  const { data: modifierGroups, isLoading, isPlaceholderData } = useQuery({
     queryKey: ['modifierGroups', effectiveBrandId, effectiveMenuItemId],
     queryFn: () =>
       adminService.getModifierGroups(
@@ -254,6 +255,7 @@ const Modifiers: React.FC = () => {
           : undefined,
       ),
     enabled: true,
+    placeholderData: keepPreviousData,
   });
 
   const { data: menuItemsForFilter } = useQuery({
@@ -1007,6 +1009,7 @@ const Modifiers: React.FC = () => {
         )}
       </Modal>
 
+      <FetchingOverlay active={isPlaceholderData} label="Updating modifier groups…" className="rounded-xl">
       <div className="w-full space-y-3">
         {filteredGroups.length === 0 ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">
@@ -1102,6 +1105,7 @@ const Modifiers: React.FC = () => {
           </>
         )}
       </div>
+      </FetchingOverlay>
     </div>
   );
 };

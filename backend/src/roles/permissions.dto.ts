@@ -14,6 +14,8 @@ export const Permissions = {
     // their POS orders are tagged source=call_centre and alert the till. Held by
     // the Call Centre Agent role; not implied by any umbrella.
     ORDERS_PLACE_CALL_CENTER: 'orders:place:call-center',
+    /** Marker: the account may punch delivery orders only (dine-in/takeaway refused). */
+    ORDERS_CREATE_DELIVERY_ONLY: 'orders:create:delivery-only',
     // Discounts (apply at POS vs manage in admin)
     DISCOUNTS_APPLY: 'discounts:apply',
     DISCOUNTS_MANAGE: 'discounts:manage',
@@ -308,6 +310,86 @@ export const Permissions = {
     // — Notifications (umbrella: notifications:manage) —
     NOTIFICATIONS_VIEW: 'notifications:view',
     NOTIFICATIONS_EDIT: 'notifications:edit',
+
+    // — Employee HRM (docs/HRM.md §14) —
+    // Distinct from Rider HRM above: that module is about dispatch and rider
+    // pay, this one is about people. Riders appear in both.
+    EMPLOYEES_VIEW: 'employees:view',
+    EMPLOYEES_CREATE: 'employees:create',
+    EMPLOYEES_EDIT: 'employees:edit',
+    EMPLOYEES_TERMINATE: 'employees:terminate',
+    EMPLOYEE_DOCS_VIEW: 'employee-docs:view',
+    EMPLOYEE_DOCS_MANAGE: 'employee-docs:manage',
+    EMPLOYEE_PIN_RESET: 'employee-pin:reset',
+    /**
+     * Salary figures and payslips. STANDALONE on purpose — not implied by
+     * employees:view, not implied by any umbrella, and not granted to branch
+     * managers by default. Easy to grant later; impossible to un-see once a
+     * branch has read everyone's pay.
+     */
+    SALARY_VIEW: 'salary:view',
+    SALARY_EDIT: 'salary:edit',
+    /** Settings that drive every calculation: designations, policies, rules. */
+    HR_SETTINGS_VIEW: 'hr-settings:view',
+    HR_SETTINGS_MANAGE: 'hr-settings:manage',
+    HR_AUDIT_VIEW: 'hr-audit:view',
+
+    // — Attendance (Phase 2) —
+    ATTENDANCE_VIEW: 'attendance:view',
+    /** Operate the station. Held by till staff, who approve nothing. */
+    ATTENDANCE_PUNCH: 'attendance:punch',
+    ATTENDANCE_ATTEST: 'attendance:attest',
+    ATTENDANCE_ADJUST: 'attendance:adjust',
+    ATTENDANCE_APPROVE: 'attendance:approve',
+    /**
+     * Forgiving a deduction is its own right, separate from approving a
+     * correction: one fixes what happened, the other changes what it costs.
+     */
+    ATTENDANCE_WAIVER_APPROVE: 'attendance-waiver:approve',
+    ATTENDANCE_RECOMPUTE: 'attendance:recompute',
+    OVERTIME_VIEW: 'overtime:view',
+    OVERTIME_APPROVE: 'overtime:approve',
+    /**
+     * Register and revoke attendance devices. Holders can read station tokens,
+     * which is why it is separate from attendance:view.
+     */
+    ATTENDANCE_STATIONS_MANAGE: 'attendance-stations:manage',
+
+    // — Leaves & holidays (Phase 3) —
+    LEAVES_VIEW: 'leaves:view',
+    LEAVES_REQUEST: 'leaves:request',
+    LEAVES_APPROVE: 'leaves:approve',
+    /** Leave types, holiday policy and the public holiday calendar. */
+    HOLIDAYS_MANAGE: 'holidays:manage',
+
+    // — Payroll (Phase 4). Owner / GM / HR only; branch managers get none. —
+    PAYROLL_VIEW: 'payroll:view',
+    PAYROLL_RUN: 'payroll:run',
+    /** Approving locks the attendance period. */
+    PAYROLL_APPROVE: 'payroll:approve',
+    PAYROLL_REVERSE: 'payroll:reverse',
+    /**
+     * Waive or add a deduction on a payslip, with a mandatory reason
+     * (decision #9). Separate from :approve — signing off a run and rewriting
+     * one person's pay are different acts.
+     */
+    PAYROLL_ADJUST: 'payroll:adjust',
+    PAYROLL_EXPORT: 'payroll:export',
+
+    // — Reviews & training (Phase 5) —
+    REVIEWS_VIEW: 'reviews:view',
+    REVIEWS_CONDUCT: 'reviews:conduct',
+    /** Applying an outcome — a promotion or a raise — is its own right. */
+    REVIEWS_APPROVE: 'reviews:approve',
+    /**
+     * Raising an out-of-cycle review. Separate because it is freely available
+     * without touching the scheduled cadence, which the scheduler enforces by
+     * only reading cycles with origin='system'.
+     */
+    REVIEWS_INITIATE_ADHOC: 'reviews:initiate-adhoc',
+    TRAINING_VIEW: 'training:view',
+    TRAINING_MANAGE: 'training:manage',
+    TRAINING_RECORD: 'training:record',
 } as const;
 
 export type PermissionName = (typeof Permissions)[keyof typeof Permissions];

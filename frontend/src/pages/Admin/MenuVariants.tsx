@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
@@ -8,6 +8,7 @@ import { Brand, MenuVariant } from '../../types';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import Loader from '../../components/Loader';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
@@ -63,11 +64,12 @@ const MenuVariants: React.FC = () => {
     enabled: true,
   });
 
-  const { data: variants, isLoading } = useQuery({
+  const { data: variants, isLoading, isPlaceholderData } = useQuery({
     queryKey: ['variants', selectedMenuItem, filterBrandId],
     queryFn: () =>
       adminService.getVariants(selectedMenuItem ?? undefined, filterBrandId ?? undefined),
     enabled: true,
+    placeholderData: keepPreviousData,
   });
 
   const debouncedSearchVariant = useDebouncedValue(searchVariant, 300);
@@ -456,6 +458,7 @@ const MenuVariants: React.FC = () => {
         )}
       </Modal>
 
+      <FetchingOverlay active={isPlaceholderData} label="Updating variants…" className="rounded-xl">
       <div className="w-full space-y-3">
         {(!filteredVariants || filteredVariants.length === 0) ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">
@@ -513,6 +516,7 @@ const MenuVariants: React.FC = () => {
           </>
         )}
       </div>
+      </FetchingOverlay>
     </div>
   );
 };

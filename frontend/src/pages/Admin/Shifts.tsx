@@ -6,6 +6,7 @@ import { adminService } from '../../services/api/adminService';
 import { Shift, Branch, Brand } from '../../types';
 import { useAuth } from '../../contexts/AuthContext';
 import Loader from '../../components/Loader';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import { printContent } from '../../utils/print';
 import Button from '../../components/Button';
 import { useHasPermission } from '../../hooks/useHasPermission';
@@ -279,7 +280,7 @@ const Shifts: React.FC = () => {
   // so its window matches the client's business-date math exactly) and always
   // returns open shifts; status / branch / search still filter client-side.
   // keepPreviousData: changing dates swaps data in place, no full-page loader.
-  const { data: shifts, isLoading } = useQuery({
+  const { data: shifts, isLoading, isPlaceholderData } = useQuery({
     queryKey: ['shifts', fromDate, toDate],
     queryFn: () =>
       adminService.getShifts(undefined, undefined, undefined, {
@@ -777,7 +778,10 @@ const Shifts: React.FC = () => {
         </div>
       </div>
 
-      {/* Shift cards */}
+      {/* Shift cards. While a date-range change is fetching, the previous
+          results stay mounted and a soft veil fades in over them
+          (keepPreviousData ⇒ isPlaceholderData). */}
+      <FetchingOverlay active={isPlaceholderData} label="Updating shifts…" className="rounded-[14px]">
       {filtered.length === 0 ? (
         <div className="rounded-[14px] border border-[#ECEDF0] bg-white py-12 text-center text-sm text-[#8A92A0] shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800">
           No shifts for the selected day and filters.
@@ -887,6 +891,7 @@ const Shifts: React.FC = () => {
           })}
         </div>
       )}
+      </FetchingOverlay>
 
       {/* ------------------------------------------------ Shift Detail modal */}
       {detailShiftId != null && (

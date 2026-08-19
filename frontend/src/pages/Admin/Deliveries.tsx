@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { adminService } from '../../services/api/adminService';
 import Loader from '../../components/Loader';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import Card from '../../components/Card';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
@@ -70,7 +71,7 @@ const Deliveries: React.FC = () => {
     [dateFrom, dateTo]
   );
 
-  const { data: ordersRaw, isLoading } = useQuery({
+  const { data: ordersRaw, isLoading, isPlaceholderData } = useQuery({
     queryKey: ['admin-orders-deliveries', params],
     queryFn: async () => {
       const data = await adminService.getOrders({
@@ -80,6 +81,7 @@ const Deliveries: React.FC = () => {
       });
       return (Array.isArray(data) ? data : []).map(normalizeOrder) as OrderRow[];
     },
+    placeholderData: keepPreviousData,
     refetchInterval: ORDER_POLL_INTERVAL_MS,
     refetchIntervalInBackground: true,
   });
@@ -193,6 +195,9 @@ const Deliveries: React.FC = () => {
         </div>
       </Card>
 
+      {/* While a filter change is fetching, the previous results stay mounted
+          and a soft veil fades in over them (keepPreviousData ⇒ isPlaceholderData). */}
+      <FetchingOverlay active={isPlaceholderData} label="Updating deliveries…" className="rounded-xl">
       {byRider.length === 0 ? (
         <Card className="dark:bg-slate-800 dark:border-slate-700">
           <p className="text-center text-gray-500 dark:text-slate-300 py-12">No deliveries assigned to riders yet.</p>
@@ -272,6 +277,7 @@ const Deliveries: React.FC = () => {
           <PaginationBar totalCount={byRider.length} page={page} pageSize={DEFAULT_PAGE_SIZE} onPageChange={setPage} itemLabel="riders" />
         </>
       )}
+      </FetchingOverlay>
     </div>
   );
 };

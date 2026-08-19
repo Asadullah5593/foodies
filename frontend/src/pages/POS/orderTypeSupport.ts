@@ -32,3 +32,28 @@ export function cartLineSupportsOrderType(
     isMenuItemAvailableForOrderType(c.menuItem.available_for_order_types ?? null, type),
   );
 }
+
+/** Marker permission: this account may punch delivery orders only. */
+export const DELIVERY_ONLY_PERMISSION = 'orders:create:delivery-only';
+
+/**
+ * Narrow the branch's order-type options for a delivery-only account.
+ *
+ * `orderTypeOptions` is the POS's single source of truth — the nav tabs, the
+ * checkout selector, `effectiveOrderType` and the menu filter all derive from
+ * it — so restricting here restricts everything, and the cashier is never
+ * offered a type the server (assertOrderTypeAllowed) would refuse.
+ *
+ * Deliberately returns [] rather than any fallback when the branch does not
+ * offer delivery: an empty list means "cannot order here", which is the truth
+ * for a delivery-only account at a collection-only branch. Falling back to
+ * dine-in — as the unrestricted path does — would offer the very thing the
+ * permission forbids.
+ */
+export function restrictOrderTypeOptions<T extends { value: OrderTypeOption }>(
+  options: T[],
+  deliveryOnly: boolean,
+): T[] {
+  if (!deliveryOnly) return options;
+  return options.filter((o) => o.value === 'delivery');
+}

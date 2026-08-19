@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import apiClient from '../../utils/apiClient';
 import SearchableSelect from '../../components/SearchableSelect';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import { Branch } from '../../types';
 
 /**
@@ -268,7 +269,7 @@ const ProductSales: React.FC = () => {
     },
   });
 
-  const { data, isLoading, isError } = useQuery<ProductSalesReportData>({
+  const { data, isLoading, isError, isPlaceholderData } = useQuery<ProductSalesReportData>({
     queryKey: [
       'productSales',
       selectedBranch,
@@ -299,6 +300,7 @@ const ProductSales: React.FC = () => {
       );
       return response.data;
     },
+    placeholderData: keepPreviousData,
   });
 
   const rows = useMemo(() => {
@@ -890,6 +892,10 @@ const ProductSales: React.FC = () => {
         </div>
       </div>
 
+      {/* Report body: while a filter change is fetching, the previous results
+          stay mounted and a soft veil fades in over them
+          (keepPreviousData ⇒ isPlaceholderData). */}
+      <FetchingOverlay active={isPlaceholderData} label="Updating report…" className="rounded-2xl">
       {/* KPIs */}
       <div className="mb-[18px] grid grid-cols-2 gap-3.5 lg:grid-cols-4">
         {kpis.map((k) => (
@@ -1248,6 +1254,7 @@ const ProductSales: React.FC = () => {
           </div>
         </div>
       </div>
+      </FetchingOverlay>
     </div>
     {printing && createPortal(printReport, document.body)}
     </>
