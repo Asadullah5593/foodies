@@ -16,6 +16,7 @@ import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequirePermission } from '../roles/require-permission.decorator';
 import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { assertStatusChangeAllowed } from './order-status-restriction';
 import { Permissions } from '../roles/permissions.dto';
 
 @ApiTags('Admin – Orders')
@@ -190,7 +191,12 @@ export class AdminOrdersController {
     }
 
     @Put(':id/status')
-    @RequirePermission(Permissions.ORDERS_UPDATE_STATUS)
+    // Any-of: the no-cancel permission grants the status flow on its own, so an
+    // account can be given it INSTEAD of the broader orders:update-status.
+    @RequirePermission(
+        Permissions.ORDERS_UPDATE_STATUS,
+        Permissions.ORDERS_UPDATE_STATUS_NO_CANCEL,
+    )
     updateStatus(
         @Param('id') id: string,
         @CurrentUser()
@@ -199,9 +205,15 @@ export class AdminOrdersController {
             tenantId: number | null;
             allowedBranchIds?: number[] | null;
             allowedBrandIds?: number[] | null;
+            permissions?: string[];
         },
         @Body() body: { status: string },
     ) {
+        // Every user-facing cancel — dropdown, order detail, the notification
+        // toast's Reject — comes through here, so this single gate covers them
+        // all. Checked after the guard so it also catches an account holding
+        // BOTH permissions: the restriction wins.
+        assertStatusChangeAllowed(user, body.status);
         return this.service.updateStatus(
             +id,
             user.tenantId,

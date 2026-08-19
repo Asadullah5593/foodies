@@ -12,6 +12,8 @@ import {
   type NotificationAction,
 } from '../../stores/notificationsStore';
 import { notificationsService } from '../../services/api/notificationsService';
+import { useHasRestriction } from '../../hooks/useHasPermission';
+import { NO_CANCEL_PERMISSION } from '../../lib/orderStatusPermissions';
 
 /**
  * Persistent, stacked, actionable order notifications. Mounted globally (in
@@ -22,6 +24,16 @@ import { notificationsService } from '../../services/api/notificationsService';
  * repeating chime.
  */
 const OrderNotificationStack: React.FC = () => {
+  // This stack floats over every screen, so its Reject button is a cancel
+  // surface like any other: "Reject and cancel this order?" sets status
+  // 'cancelled' through the same admin route. A no-cancel account must not be
+  // offered it here either — the server would refuse, and a button that only
+  // ever 403s is worse than no button.
+  const noCancel = useHasRestriction(NO_CANCEL_PERMISSION);
+  const actionAllowed = React.useCallback(
+    (action: { kind: string }) => !(noCancel && action.kind === 'order.reject'),
+    [noCancel],
+  );
   const items = useNotificationsStore((s) => s.items);
   const removeLocal = useNotificationsStore((s) => s.remove);
   const muted = useNotificationsStore((s) => s.muted);
@@ -115,7 +127,7 @@ const OrderNotificationStack: React.FC = () => {
             </p>
           )}
           <div className="mt-2.5 flex flex-wrap gap-2">
-            {n.actions.map((action) => (
+            {n.actions.filter(actionAllowed).map((action) => (
               <button
                 key={action.key}
                 type="button"
