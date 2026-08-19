@@ -12,6 +12,7 @@ import { User } from '../entities/user.entity';
 import { TenantUser } from '../entities/tenant-user.entity';
 import { BranchUser } from '../entities/branch-user.entity';
 import { RolesService } from '../roles/roles.service';
+import { ActivityContext } from '../activity-log/activity-context';
 
 @Injectable()
 export class UsersService {
@@ -435,6 +436,18 @@ export class UsersService {
             }
         }
         const user = tenantUser.user;
+        // Snapshot before the assignments. `password` is captured only so the
+        // diff can say THAT it changed — the redaction layer replaces both
+        // sides with [changed], so no hash is ever stored.
+        const before = {
+            name: user.name,
+            email: user.email,
+            phone: user.phone,
+            status: user.status,
+            password: user.password,
+            role_id: tenantUser.roleId ?? null,
+            role: tenantUser.role?.name ?? null,
+        };
         if (dto.password) user.password = await bcrypt.hash(dto.password, 10);
         Object.assign(user, {
             ...(dto.name && { name: dto.name }),
@@ -448,6 +461,25 @@ export class UsersService {
             tenantUser.roleId = dto.role_id;
             await this.tenantUserRepo.save(tenantUser);
         }
+        const fresh = await this.tenantUserRepo.findOne({
+            where: { userId: id, tenantId },
+            relations: ['user', 'role'],
+        });
+        ActivityContext.recordChange(
+            'user',
+            id,
+            before,
+            {
+                name: fresh?.user?.name ?? user.name,
+                email: fresh?.user?.email ?? user.email,
+                phone: fresh?.user?.phone ?? user.phone,
+                status: fresh?.user?.status ?? user.status,
+                password: user.password,
+                role_id: fresh?.roleId ?? null,
+                role: fresh?.role?.name ?? null,
+            },
+            user.name,
+        );
         return this.findOne(id, tenantId);
     }
 

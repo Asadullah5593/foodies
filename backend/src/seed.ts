@@ -120,6 +120,34 @@ async function seed() {
             description: 'Apply discounts',
         },
         {
+            name: 'activity-log:view',
+            resource: 'activity-log',
+            action: 'view',
+            description:
+                'View the activity log (who did what, when, from where) and the before/after changes on a record',
+        },
+        {
+            name: 'activity-log:export',
+            resource: 'activity-log',
+            action: 'export',
+            description:
+                'Download activity log entries and archived log files; the download is itself logged',
+        },
+        {
+            name: 'activity-log:purge',
+            resource: 'activity-log',
+            action: 'purge',
+            description:
+                'Archive and purge whole past months of the activity log; requires re-entering your password and can never reach the last 90 days',
+        },
+        {
+            name: 'activity-log:configure',
+            resource: 'activity-log',
+            action: 'configure',
+            description:
+                'Change what the activity log captures and how long it is kept; every change is itself logged before it takes effect',
+        },
+        {
             name: 'reports:view',
             resource: 'reports',
             action: 'view',

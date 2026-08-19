@@ -18,6 +18,7 @@ import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
+import RecordHistoryLink from '../../components/RecordHistoryLink';
 
 interface RoleOption {
   id: number;
@@ -474,6 +475,8 @@ const Users: React.FC = () => {
                     ) : (
                       <>
                         {canEdit && <Button size="small" variant="edit" onClick={() => openEdit(u)}>Edit</Button>}
+                        {/* Hidden without activity-log:view; the endpoint enforces it too. */}
+                        <RecordHistoryLink module="access" entityType="user" entityId={u.id} label={u.name} />
                         {canDelete && <Button
                           size="small"
                           variant="danger"

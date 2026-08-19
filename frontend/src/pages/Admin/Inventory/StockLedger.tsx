@@ -7,6 +7,7 @@ import SearchableSelect from '../../../components/SearchableSelect';
 import FetchingOverlay from '../../../components/FetchingOverlay';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
+import { recordBeacon } from '../../../utils/activityBeacon';
 
 const card = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl';
 const fieldBox = 'flex items-center gap-2 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm';
@@ -120,6 +121,9 @@ const StockLedger: React.FC = () => {
       lines.push([r.createdAt ? new Date(r.createdAt).toLocaleString() : '', r.eventType ?? '', it?.name ?? `Item #${r.inventoryItemId}`, it?.code ?? '', bucket, r.inventoryBatchId ?? '', r.inventoryBatch?.lotCode ?? '', r.inventoryBatch?.expiryDate ?? '', Number(r.qtyDelta ?? 0), unitCode(Number(r.inventoryItemId)), refMeta(r).label, r.creator?.name ?? (r.createdBy != null ? `User #${r.createdBy}` : 'System'), r.notes ?? ''].map(esc).join(','));
     }
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    // A download never reaches the server, so this is the only place it can
+    // be recorded. Exporting data is the step before it leaves the building.
+    recordBeacon({ action: 'client.export', subject: 'inventory-ledger' });
     const url = URL.createObjectURL(blob); const a = document.createElement('a');
     a.href = url; a.download = `ledger-${activeBranchId}-${from || 'all'}-to-${to || 'all'}.csv`;
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);

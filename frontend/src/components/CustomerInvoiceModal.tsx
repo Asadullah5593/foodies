@@ -297,7 +297,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
    * PRINT ONLY: render the printout from the tenant's configured invoice template
    * (selectable schema + field toggles). The on-screen view below is unchanged.
    */
-  const handlePrint = () => {
+  const handlePrint = (trigger: 'user' | 'auto' = 'user') => {
     const printData: InvoiceVM | null = hasGroup
       ? ((mainInvoice as unknown as InvoiceVM) ?? null)
       : singleInvoice
@@ -310,7 +310,12 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
     const baseCfg = printData.template?.config ?? null;
     const cfg = deviceFeed != null ? { ...(baseCfg ?? {}), bottomFeedMm: deviceFeed } : baseCfg;
     const { html, css } = renderInvoiceHtml(printData, layout, cfg);
-    printContent(html, 'Customer invoice', css);
+    printContent(html, 'Customer invoice', css, {
+      subject: 'invoice',
+      trigger,
+      entityId: Number(invoiceData?.order_group_id) || undefined,
+      label: `Invoice ${invoiceData?.order_group_id ?? ''}`.trim(),
+    });
   };
 
   /**
@@ -319,7 +324,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
    * this modal already holds), then render through the same engine. Group
    * invoices print one kitchen ticket per order.
    */
-  const handlePrintKot = async () => {
+  const handlePrintKot = async (trigger: 'user' | 'auto' = 'user') => {
     const orderIds = (invoiceData?.orders ?? []).map((o) => o.order_id);
     if (!orderIds.length) return;
     for (const oid of orderIds) {
@@ -336,7 +341,12 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
           showFbrInvoice: false,
         };
         const { html, css } = renderInvoiceHtml(printData, layout, cfg);
-        printContent(html, `KOT ${(data.order_number as string) ?? String(oid)}`, css);
+        printContent(html, `KOT ${(data.order_number as string) ?? String(oid)}`, css, {
+          subject: 'kot',
+          trigger,
+          entityId: Number(oid) || undefined,
+          label: `KOT ${(data.order_number as string) ?? String(oid)}`,
+        });
       } catch {
         toast.error('Failed to print kitchen invoice');
       }
@@ -356,8 +366,10 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
     const key = invoiceData.order_group_id;
     if (autoPrintedFor.current === key) return;
     autoPrintedFor.current = key;
-    handlePrint();
-    void handlePrintKot();
+    // Fires on open with no user interaction, and prints TWO documents.
+    // Marked 'auto' so the print trail still means "someone chose to print".
+    handlePrint('auto');
+    void handlePrintKot('auto');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, autoPrintOnOpen, autoPrintEnabled, invoiceData]);
 
@@ -574,7 +586,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
               <span className="text-gray-400">mm</span>
             </label>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={handlePrint}>
+              <Button variant="outline" onClick={() => handlePrint()}>
                 Print
               </Button>
               <Button variant="outline" onClick={() => void handlePrintKot()}>

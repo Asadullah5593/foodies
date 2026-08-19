@@ -205,7 +205,11 @@ const KDS: React.FC = () => {
         showFbrInvoice: false,
       };
       const { html, css } = renderInvoiceHtml(printData, layout, cfg);
-      printContent(html, `KOT ${(data.order_number as string) ?? String(orderId)}`, css);
+      printContent(html, `KOT ${(data.order_number as string) ?? String(orderId)}`, css, {
+        subject: 'kot',
+        entityId: Number(orderId) || undefined,
+        label: `KOT ${(data.order_number as string) ?? String(orderId)}`,
+      });
     } catch (e) {
       toast.error('Failed to load KOT');
     }

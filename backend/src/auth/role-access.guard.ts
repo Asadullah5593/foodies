@@ -7,6 +7,7 @@ import {
 import { DataSource } from 'typeorm';
 import { PATH_REQUIRED_PERMISSIONS } from './path-permissions';
 import { expandPermissions } from '../roles/permission-implications';
+import { isEnabled as isActivityLogEnabled } from '../activity-log/activity-log.config';
 
 const ALL_BRANCHES_ACCESS = 'all-branches:access';
 
@@ -40,6 +41,7 @@ export class RoleAccessGuard implements CanActivate {
                     maxPercent: number | null;
                     maxAmount: number | null;
                 };
+                roles?: Array<{ slug: string; name: string }>;
             };
             path?: string;
             url?: string;
@@ -83,6 +85,13 @@ export class RoleAccessGuard implements CanActivate {
             user.id,
             user.tenantId,
         );
+        // Roles held RIGHT NOW, snapshotted onto the row by the activity log.
+        // Roles get edited, so resolving them at read time would answer "what
+        // can they do today" when the question is "what could they do then".
+        // Skipped entirely when the log is off, so the auth path pays nothing.
+        if (isActivityLogEnabled()) {
+            user.roles = await this.getUserRoles(user.id, user.tenantId);
+        }
 
         // Tenant users cannot access tenants module (super admin only)
         if (path.startsWith('/admin/tenants')) {
@@ -122,6 +131,30 @@ export class RoleAccessGuard implements CanActivate {
             );
         }
         return true;
+    }
+
+    /** Role slug + name for the audit snapshot. One indexed lookup on ≤3 ids. */
+    private async getUserRoles(
+        userId: number,
+        tenantId: number,
+    ): Promise<Array<{ slug: string; name: string }>> {
+        try {
+            const rows = (await this.dataSource.query(
+                `SELECT DISTINCT r.slug, r.name
+                 FROM roles r
+                 WHERE r.id IN (
+                     SELECT role_id FROM tenant_users
+                     WHERE user_id = $1 AND tenant_id = $2 AND role_id IS NOT NULL
+                     UNION
+                     SELECT role_id FROM branch_users WHERE user_id = $1
+                 )`,
+                [userId, tenantId],
+            )) as unknown as Array<{ slug: string; name: string }>;
+            return rows;
+        } catch {
+            // Never let an audit nicety break authentication.
+            return [];
+        }
     }
 
     private async getUserPermissionNames(
