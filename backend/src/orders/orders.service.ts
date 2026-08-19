@@ -110,6 +110,7 @@ import {
 } from './offer-engine';
 import { resolveOfferSettings, OfferSettings } from './offer-settings';
 import { ORDER_SOURCES } from './order-sources';
+import { isOrderPaymentMethodFilter } from './payment-methods';
 import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
 import { StaffDiscount } from '../entities/staff-discount.entity';
 import { assertOrderTypeAllowed } from './order-type-restriction';
@@ -3738,9 +3739,7 @@ export class OrdersService {
             // method, so a cash+card split shows under both views.
             if (
                 filters.payment_method &&
-                ['cash', 'card', 'online_transfer'].includes(
-                    filters.payment_method,
-                )
+                isOrderPaymentMethodFilter(filters.payment_method)
             )
                 qb.andWhere(
                     'EXISTS (SELECT 1 FROM payments pm WHERE pm.order_id = o.id AND pm.payment_method = :pmMethod)',
