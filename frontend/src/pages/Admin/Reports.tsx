@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import apiClient from '../../utils/apiClient';
 import { Branch } from '../../types';
 import Loader from '../../components/Loader';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import Card from '../../components/Card';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
@@ -67,31 +68,34 @@ const Reports: React.FC = () => {
   };
 
   // Fetch sales summary
-  const { data: salesSummary, isLoading: loadingSales } = useQuery({
+  const { data: salesSummary, isLoading: loadingSales, isPlaceholderData: summaryIsPlaceholder } = useQuery({
     queryKey: ['salesSummary', selectedBranch, selectedBrand, dateFrom, dateTo],
     queryFn: async () => {
       const response = await apiClient.get(`/admin/reports/sales-summary?${reportParams()}`);
       return response.data;
     },
+    placeholderData: keepPreviousData,
     enabled: true,
   });
 
   // Fetch top items
-  const { data: topItems, isLoading: loadingTopItems } = useQuery({
+  const { data: topItems, isLoading: loadingTopItems, isPlaceholderData: topItemsIsPlaceholder } = useQuery({
     queryKey: ['topItems', selectedBranch, selectedBrand, dateFrom, dateTo],
     queryFn: async () => {
       const response = await apiClient.get(`/admin/reports/top-items?${reportParams()}`);
       return response.data;
     },
+    placeholderData: keepPreviousData,
     enabled: true,
   });
 
-  const { data: discounts } = useQuery<DiscountsReport>({
+  const { data: discounts, isPlaceholderData: discountsIsPlaceholder } = useQuery<DiscountsReport>({
     queryKey: ['discountsReport', selectedBranch, selectedBrand, dateFrom, dateTo],
     queryFn: async () => {
       const response = await apiClient.get<DiscountsReport>(`/admin/reports/discounts?${reportParams()}`);
       return response.data;
     },
+    placeholderData: keepPreviousData,
   });
 
   if (loadingSales || loadingTopItems) return <Loader fullScreen text="Loading reports..." />;
@@ -160,6 +164,7 @@ const Reports: React.FC = () => {
         </div>
       </Card>
 
+      <FetchingOverlay active={summaryIsPlaceholder} label="Updating sales summary…">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <Card>
           <h3 className="text-sm font-medium text-gray-500 mb-2">Total Sales</h3>
@@ -203,9 +208,11 @@ const Reports: React.FC = () => {
           </p>
         </Card>
       </div>
+      </FetchingOverlay>
 
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-gray-800 mb-4">Discounts</h2>
+        <FetchingOverlay active={discountsIsPlaceholder} label="Updating discounts…">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <Card>
             <h3 className="text-sm font-medium text-gray-500 mb-2">Out of your margin</h3>
@@ -279,10 +286,12 @@ const Reports: React.FC = () => {
             </div>
           </Card>
         )}
+        </FetchingOverlay>
       </div>
 
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-gray-800 mb-4">Top Selling Items</h2>
+        <FetchingOverlay active={topItemsIsPlaceholder} label="Updating top items…">
         {topItems && topItems.length === 0 ? (
           <Card>
             <p className="text-center text-gray-500 py-8">No data available</p>
@@ -310,6 +319,7 @@ const Reports: React.FC = () => {
             ))}
           </div>
         )}
+        </FetchingOverlay>
       </div>
     </div>
   );

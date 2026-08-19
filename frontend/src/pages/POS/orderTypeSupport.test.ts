@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cartLineSupportsOrderType } from './orderTypeSupport';
+import { cartLineSupportsOrderType, restrictOrderTypeOptions } from './orderTypeSupport';
 import { CartLine } from './components/types';
 import { MenuItem } from '../../types';
 
@@ -79,5 +79,30 @@ describe('cartLineSupportsOrderType — deals', () => {
 
   it('allows a deal with no components chosen yet', () => {
     expect(cartLineSupportsOrderType(deal(900, []), 'delivery', rawMenu)).toBe(true);
+  });
+});
+
+describe('restrictOrderTypeOptions', () => {
+  const all = [
+    { value: 'dine_in' as const, label: 'Dine In' },
+    { value: 'takeaway' as const, label: 'Takeaway' },
+    { value: 'delivery' as const, label: 'Delivery' },
+  ];
+
+  it('leaves an unrestricted account with every option the branch offers', () => {
+    expect(restrictOrderTypeOptions(all, false)).toEqual(all);
+  });
+
+  it('narrows a delivery-only account to delivery alone', () => {
+    // The nav tabs, checkout selector and menu filter all read this list, so
+    // dine-in and takeaway disappear from the whole POS at once.
+    expect(restrictOrderTypeOptions(all, true)).toEqual([all[2]]);
+  });
+
+  it('yields nothing — not a fallback — where the branch has no delivery', () => {
+    // A collection-only branch: the honest answer for a delivery-only account
+    // is "cannot order here". Falling back to dine-in would offer the very
+    // thing the permission forbids.
+    expect(restrictOrderTypeOptions(all.slice(0, 2), true)).toEqual([]);
   });
 });
