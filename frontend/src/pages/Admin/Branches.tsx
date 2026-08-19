@@ -17,6 +17,7 @@ import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
+import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 
 const Branches: React.FC = () => {
   const navigate = useNavigate();
@@ -38,8 +39,9 @@ const Branches: React.FC = () => {
     },
   });
 
-  const { data: branches, isLoading, isPlaceholderData } = useQuery({
-    queryKey: ['branches', filterBrandId || null],
+  const branchesKey = ['branches', filterBrandId || null];
+  const { data: branches, isLoading, isFetching } = useQuery({
+    queryKey: branchesKey,
     queryFn: async () => {
       const params = filterBrandId ? { brand_id: filterBrandId } : {};
       const response = await apiClient.get<Branch[]>('/admin/branches', { params });
@@ -47,6 +49,7 @@ const Branches: React.FC = () => {
     },
     placeholderData: keepPreviousData,
   });
+  const branchesRefreshing = useResultsRefreshing(branchesKey, isFetching);
 
   const filteredBranches = React.useMemo(() => {
     if (!branches) return [];
@@ -191,8 +194,8 @@ const Branches: React.FC = () => {
       </Card>
 
       {/* While the brand filter is fetching, the previous results stay mounted
-          and a soft veil fades in over them (keepPreviousData ⇒ isPlaceholderData). */}
-      <FetchingOverlay active={isPlaceholderData} label="Updating branches…" className="rounded-xl">
+          and a soft veil fades in over them (see useResultsRefreshing — background polls stay silent). */}
+      <FetchingOverlay active={branchesRefreshing} label="Updating branches…" className="rounded-xl">
       <div className="w-full space-y-3">
         {branches && branches.length === 0 ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">

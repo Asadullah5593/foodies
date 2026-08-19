@@ -20,6 +20,7 @@ import { AccentedList, AccentedListRow } from '../../components/AccentedListRow'
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { confirmDialog } from '../../utils/sweetAlert';
 import { useHasPermission } from '../../hooks/useHasPermission';
+import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 
 const MenuVariants: React.FC = () => {
   const queryClient = useQueryClient();
@@ -64,13 +65,15 @@ const MenuVariants: React.FC = () => {
     enabled: true,
   });
 
-  const { data: variants, isLoading, isPlaceholderData } = useQuery({
-    queryKey: ['variants', selectedMenuItem, filterBrandId],
+  const variantsKey = ['variants', selectedMenuItem, filterBrandId];
+  const { data: variants, isLoading, isFetching } = useQuery({
+    queryKey: variantsKey,
     queryFn: () =>
       adminService.getVariants(selectedMenuItem ?? undefined, filterBrandId ?? undefined),
     enabled: true,
     placeholderData: keepPreviousData,
   });
+  const variantsRefreshing = useResultsRefreshing(variantsKey, isFetching);
 
   const debouncedSearchVariant = useDebouncedValue(searchVariant, 300);
   const variantList = Array.isArray(variants) ? variants : [];
@@ -458,7 +461,7 @@ const MenuVariants: React.FC = () => {
         )}
       </Modal>
 
-      <FetchingOverlay active={isPlaceholderData} label="Updating variants…" className="rounded-xl">
+      <FetchingOverlay active={variantsRefreshing} label="Updating variants…" className="rounded-xl">
       <div className="w-full space-y-3">
         {(!filteredVariants || filteredVariants.length === 0) ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">
