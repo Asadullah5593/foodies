@@ -11,8 +11,8 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * The env var stays the hard override: an emergency brake must not depend on
  * the database being reachable.
  */
-export class ActivityLogSettings1760000000108 implements MigrationInterface {
-    name = 'ActivityLogSettings1760000000108';
+export class ActivityLogSettings1760000000118 implements MigrationInterface {
+    name = 'ActivityLogSettings1760000000118';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`SET LOCAL lock_timeout = '3s'`);

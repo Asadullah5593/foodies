@@ -12,10 +12,10 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * filtering is an indexed equality check rather than a new taxonomy to keep in
  * sync with the one that exists.
  */
-export class ActivityLogModulePermissions1760000000109
+export class ActivityLogModulePermissions1760000000119
     implements MigrationInterface
 {
-    name = 'ActivityLogModulePermissions1760000000109';
+    name = 'ActivityLogModulePermissions1760000000119';
 
     private readonly permissions = [
         ['activity-log:view:access', 'Roles, users and branch assignments'],
