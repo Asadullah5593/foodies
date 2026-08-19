@@ -14,6 +14,8 @@ export const Permissions = {
     // their POS orders are tagged source=call_centre and alert the till. Held by
     // the Call Centre Agent role; not implied by any umbrella.
     ORDERS_PLACE_CALL_CENTER: 'orders:place:call-center',
+    /** Marker: the account may punch delivery orders only (dine-in/takeaway refused). */
+    ORDERS_CREATE_DELIVERY_ONLY: 'orders:create:delivery-only',
     // Discounts (apply at POS vs manage in admin)
     DISCOUNTS_APPLY: 'discounts:apply',
     DISCOUNTS_MANAGE: 'discounts:manage',

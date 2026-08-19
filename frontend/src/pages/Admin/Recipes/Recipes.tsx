@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import {
   LuConciergeBell,
@@ -12,6 +12,7 @@ import {
 } from 'react-icons/lu';
 import Loader from '../../../components/Loader';
 import SearchableSelect from '../../../components/SearchableSelect';
+import FetchingOverlay from '../../../components/FetchingOverlay';
 import apiClient from '../../../utils/apiClient';
 import { recipesService } from '../../../services/api/recipesService';
 import { inventoryService } from '../../../services/api/inventoryService';
@@ -91,6 +92,7 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
       return Promise.resolve([]);
     },
     enabled: targetReady,
+    placeholderData: keepPreviousData,
   });
   const recipesForTarget = useMemo(() => (recipesQ.data ?? []).filter((r: any) => {
     if (targetType === 'dish') return Number(r.menuItemId) === Number(selItem) && (r.variantId ?? null) === selVariantNum;
@@ -287,7 +289,7 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
               </div>
               <p className="text-sm text-slate-500 dark:text-slate-400 ml-10 mb-4">Add the ingredients and quantities used in this recipe.</p>
 
-              {recipesQ.isLoading ? <Loader /> : !liveRecipe && !draftRecipe ? (
+              {recipesQ.isLoading ? <Loader /> : <FetchingOverlay active={recipesQ.isPlaceholderData} label="Updating recipe…" className="rounded-lg">{!liveRecipe && !draftRecipe ? (
                 <div className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 p-8 text-center">
                   <LuSoup className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600" />
                   <div className="mt-2 font-medium text-slate-700 dark:text-slate-200">No recipe yet</div>
@@ -371,7 +373,7 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
                     canEditRecipe && <button onClick={() => editLiveM.mutate()} disabled={editLiveM.isPending} className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">Edit ingredients</button>
                   )}
                 </div>
-              )}
+              )}</FetchingOverlay>}
             </div>
           )}
 

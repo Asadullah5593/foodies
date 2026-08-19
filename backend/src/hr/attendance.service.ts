@@ -766,6 +766,12 @@ export class AttendanceService {
         }
 
         const rows = await qb.getMany();
+
+        // Which of these days already have an overtime decision on record. A
+        // rejected day matters as much as an approved one: both are answered,
+        // and payroll must stop asking about either.
+        const decided = await this.decidedOvertimeDayIds(rows.map((d) => d.id));
+
         return rows.map((d) => ({
             id: d.id,
             work_date: d.workDate,
@@ -783,9 +789,162 @@ export class AttendanceService {
             early_leave_minutes: d.earlyLeaveMinutes,
             overtime_pending: d.overtimeMinutesPending,
             overtime_approved: d.overtimeMinutesApproved,
+            /** Answered — approved or rejected — so nothing is still waiting. */
+            overtime_decided: decided.has(d.id),
             flags: d.exceptionFlags,
             is_locked: d.isLocked,
         }));
+    }
+
+    /** Day ids carrying a decided (approved or rejected) overtime request. */
+    async decidedOvertimeDayIds(dayIds: number[]): Promise<Set<number>> {
+        if (dayIds.length === 0) return new Set();
+        const rows = await this.exceptions
+            .createQueryBuilder('e')
+            .select('DISTINCT e.attendance_day_id AS day_id')
+            .where('e.attendanceDayId IN (:...dayIds)', { dayIds })
+            .andWhere("e.kind = 'overtime_approval'")
+            .andWhere("e.status IN ('approved', 'rejected')")
+            .getRawMany<{ day_id: number }>();
+        return new Set(rows.map((r) => Number(r.day_id)));
+    }
+
+    /**
+     * Approve or reject the overtime on one day, in a single step.
+     *
+     * Overtime accrues as PENDING and is never paid until a manager confirms it
+     * (decision #11) — but the module shipped with no way to confirm, so every
+     * payroll run blocked on overtime nobody could approve and the honest choice
+     * was to force past it, silently underpaying whoever earned the hours.
+     *
+     * The decision is written as an attendance exception, already decided, so it
+     * carries the same audit trail as one that was requested first.
+     */
+    async decideOvertime(
+        user: HrUser,
+        dayId: number,
+        dto: { approve: boolean; minutes?: number; reason?: string },
+    ) {
+        if (!hasPermission(user, Permissions.OVERTIME_APPROVE)) {
+            throw new ForbiddenException(
+                `This decision requires ${Permissions.OVERTIME_APPROVE}`,
+            );
+        }
+        const day = await this.loadDayScoped(user, dayId);
+        if (day.isLocked) {
+            throw new BadRequestException(
+                'Payroll is approved for this period — reverse the run to change it',
+            );
+        }
+        if (day.overtimeMinutesPending <= 0) {
+            throw new BadRequestException('This day has no overtime to decide');
+        }
+
+        const minutes = Math.min(
+            day.overtimeMinutesPending,
+            dto.minutes ?? day.overtimeMinutesPending,
+        );
+        if (minutes < 0) {
+            throw new BadRequestException('Minutes cannot be negative');
+        }
+
+        // A configured ceiling on how much one person may sign off, if the
+        // tenant set one. No rules means no extra check.
+        await this.settings.assertApproval(
+            user,
+            'overtime',
+            {
+                tenantId: day.tenantId,
+                branchId: day.branchId,
+                onDate: day.workDate,
+            },
+            { minutes },
+        );
+
+        await this.exceptions.save(
+            this.exceptions.create({
+                tenantId: day.tenantId,
+                attendanceDayId: day.id,
+                kind: 'overtime_approval',
+                subject: 'overtime',
+                oldValue: { pending_minutes: day.overtimeMinutesPending },
+                newValue: { minutes: dto.approve ? minutes : 0 },
+                minutesWaived: null,
+                amountWaived: null,
+                reason:
+                    dto.reason?.trim() ||
+                    (dto.approve ? 'Overtime approved' : 'Overtime rejected'),
+                requestedBy: user.id,
+                status: dto.approve ? 'approved' : 'rejected',
+                approvedBy: user.id,
+                approvedAt: new Date(),
+            }),
+        );
+
+        await this.recompute.recomputeDay(day.employeeId, day.workDate);
+
+        await this.audit.record({
+            tenantId: day.tenantId,
+            actorUserId: user.id,
+            action: `attendance.overtime.${dto.approve ? 'approved' : 'rejected'}`,
+            entityTable: 'attendance_days',
+            entityId: day.id,
+            before: { pending_minutes: day.overtimeMinutesPending },
+            after: { approved_minutes: dto.approve ? minutes : 0 },
+        });
+
+        return {
+            id: day.id,
+            approved_minutes: dto.approve ? minutes : 0,
+            status: dto.approve ? 'approved' : 'rejected',
+        };
+    }
+
+    /**
+     * Decide every outstanding day in one go.
+     *
+     * A month of overtime is dozens of rows, and a queue that can only be
+     * cleared one click at a time is a queue that gets force-approved past.
+     */
+    async decideOvertimeBulk(
+        user: HrUser,
+        params: {
+            date_from: string;
+            date_to: string;
+            branch_id?: number;
+            approve: boolean;
+            reason?: string;
+        },
+    ) {
+        const rows = await this.register(user, {
+            branch_id: params.branch_id,
+            date_from: params.date_from,
+            date_to: params.date_to,
+        });
+
+        const outstanding = rows.filter(
+            (r) =>
+                r.overtime_pending > 0 && !r.overtime_decided && !r.is_locked,
+        );
+
+        let decided = 0;
+        const skipped: Array<{ day: number; reason: string }> = [];
+        for (const row of outstanding) {
+            try {
+                await this.decideOvertime(user, row.id, {
+                    approve: params.approve,
+                    reason: params.reason,
+                });
+                decided += 1;
+            } catch (e) {
+                // One day above somebody's limit must not stop the rest.
+                skipped.push({
+                    day: row.id,
+                    reason: e instanceof Error ? e.message : String(e),
+                });
+            }
+        }
+        return { decided, skipped };
     }
 
     /**

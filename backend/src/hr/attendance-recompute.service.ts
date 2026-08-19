@@ -408,6 +408,11 @@ export class AttendanceRecomputeService {
             lateMinutes: late,
             earlyLeaveMinutes: earlyLeave,
             overtimeMinutesPending: pendingOt,
+            // Reset, not carried over. Approved minutes are DERIVED from an
+            // approved exception, and the spread above would otherwise preserve
+            // a stale approval — so overtime that was later rejected, or whose
+            // approval was withdrawn, went on being paid.
+            overtimeMinutesApproved: 0,
             status,
             exceptionFlags: flags,
             computedAt: new Date(),

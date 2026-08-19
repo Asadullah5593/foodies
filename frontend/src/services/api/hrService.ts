@@ -723,6 +723,8 @@ export interface RegisterRow {
   early_leave_minutes: number;
   overtime_pending: number;
   overtime_approved: number;
+  /** Answered — approved or rejected — so nothing is still waiting. */
+  overtime_decided: boolean;
   flags: Record<string, unknown>;
   is_locked: boolean;
 }
@@ -861,6 +863,31 @@ export const hrService = {
   ): Promise<{ exception_id: number; worked_minutes: number; status: string }> => {
     const { data } = await apiClient.patch(
       `/admin/hr/attendance/days/${dayId}/times`,
+      payload,
+    );
+    return data;
+  },
+
+  decideOvertime: async (
+    dayId: number,
+    payload: { approve: boolean; minutes?: number; reason?: string },
+  ): Promise<{ id: number; approved_minutes: number; status: string }> => {
+    const { data } = await apiClient.post(
+      `/admin/hr/attendance/days/${dayId}/overtime`,
+      payload,
+    );
+    return data;
+  },
+
+  decideOvertimeBulk: async (payload: {
+    date_from: string;
+    date_to: string;
+    branch_id?: number;
+    approve: boolean;
+    reason?: string;
+  }): Promise<{ decided: number; skipped: Array<{ day: number; reason: string }> }> => {
+    const { data } = await apiClient.post(
+      '/admin/hr/attendance/overtime/decide-all',
       payload,
     );
     return data;

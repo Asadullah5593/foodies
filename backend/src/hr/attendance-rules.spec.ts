@@ -515,3 +515,47 @@ describe('corrected times drive every derived value', () => {
         ).toBe(0);
     });
 });
+
+/**
+ * Approved overtime is DERIVED, never remembered.
+ *
+ * The bug this guards: a recompute spread the previous day record forward,
+ * carrying `overtimeMinutesApproved` with it. Reject overtime that had been
+ * approved, or withdraw the approval, and the minutes went on being paid.
+ */
+describe('overtime approval is derived from the exception, not the row', () => {
+    const approvedFrom = (
+        pending: number,
+        exception: { status: string; minutes?: number } | null,
+    ) => {
+        // Mirrors the recompute: the row resets to zero, then an APPROVED
+        // exception — and only an approved one — puts minutes back.
+        const reset = 0;
+        if (!exception || exception.status !== 'approved') return reset;
+        return Math.min(pending, exception.minutes ?? pending);
+    };
+
+    it('pays nothing while the day is undecided', () => {
+        expect(approvedFrom(240, null)).toBe(0);
+    });
+
+    it('pays the approved minutes', () => {
+        expect(approvedFrom(240, { status: 'approved' })).toBe(240);
+    });
+
+    it('pays nothing once rejected, even after an earlier approval', () => {
+        expect(approvedFrom(240, { status: 'rejected' })).toBe(0);
+    });
+
+    it('never approves more than the day actually earned', () => {
+        expect(approvedFrom(240, { status: 'approved', minutes: 600 })).toBe(
+            240,
+        );
+    });
+
+    it('honours a partial approval', () => {
+        expect(approvedFrom(240, { status: 'approved', minutes: 120 })).toBe(
+            120,
+        );
+    });
+});

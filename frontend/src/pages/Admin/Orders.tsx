@@ -6,6 +6,7 @@ import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
 import { Order, Branch } from '../../types';
 import Loader from '../../components/Loader';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import { formatCurrency } from '../../utils/currency';
 import { formatOrderType } from '../../utils/format';
 import AssignRiderModal from '../../components/AssignRiderModal';
@@ -441,7 +442,7 @@ const Orders: React.FC = () => {
   // One server-paginated query. status_counts (every tile, over the full filtered
   // set) come back with each page, so there is no separate counting query and no
   // row cap — pagination scales to 100k+ orders.
-  const { data: envelope, isLoading } = useQuery({
+  const { data: envelope, isLoading, isPlaceholderData } = useQuery({
     queryKey: ['admin-orders', baseParams, status, debouncedSearch, ordersPage, pageSize],
     queryFn: fetchOrders,
     placeholderData: keepPreviousData,
@@ -1223,7 +1224,10 @@ const Orders: React.FC = () => {
         })}
       </div>}
 
-      {/* Table: data grid on xl+, stacked cards below */}
+      {/* Table: data grid on xl+, stacked cards below. While a filter/page
+          change is fetching, the previous results stay mounted and a soft
+          veil fades in over them (keepPreviousData ⇒ isPlaceholderData). */}
+      <FetchingOverlay active={isPlaceholderData} label="Updating orders…" className="rounded-2xl">
       <div ref={setTableEl} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
         {/* Wide enough for all 13 columns: data grid. overflow-x-auto is kept as a
             backstop only — at this width nothing should actually need to scroll. */}
@@ -1317,6 +1321,7 @@ const Orders: React.FC = () => {
           </span>
         </div>
       </div>
+      </FetchingOverlay>
 
       <div className="mt-3">
         <PaginationBar

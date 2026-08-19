@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { MdOutlinePriceCheck, MdWarningAmber } from 'react-icons/md';
 import apiClient from '../../../utils/apiClient';
 import { hrService, LabourCostRow } from '../../../services/api/hrService';
 import Loader from '../../../components/Loader';
 import SearchableSelect from '../../../components/SearchableSelect';
+import FetchingOverlay from '../../../components/FetchingOverlay';
 import { rupees } from './Payroll';
 
 const monthStart = () => {
@@ -63,7 +64,7 @@ const LabourCost: React.FC = () => {
     },
   });
 
-  const { data, isLoading, error } = useQuery({
+  const { data, isLoading, error, isPlaceholderData } = useQuery({
     queryKey: ['hr-labour-cost', filters],
     queryFn: () =>
       hrService.labourCostReport({
@@ -72,6 +73,7 @@ const LabourCost: React.FC = () => {
         branch_id: filters.branch_id === '' ? undefined : Number(filters.branch_id),
       }),
     enabled: filters.from <= filters.to,
+    placeholderData: keepPreviousData,
   });
 
   return (
@@ -132,7 +134,7 @@ const LabourCost: React.FC = () => {
           Could not load the report.
         </p>
       ) : !data ? null : (
-        <>
+        <FetchingOverlay active={isPlaceholderData} label="Updating labour cost…" className="rounded-lg">
           <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               { label: 'Labour cost', value: rupees(data.totals.labour_cost) },
@@ -251,7 +253,7 @@ const LabourCost: React.FC = () => {
             matching the sales reports. Staff with no brand are their own row rather than
             spread across brands.
           </p>
-        </>
+        </FetchingOverlay>
       )}
     </div>
   );

@@ -370,6 +370,21 @@ export class PayrollService {
      * Pending overtime is the important one: unapproved minutes are never paid,
      * so approving with some still pending silently underpays whoever earned it.
      */
+    /** Day ids carrying a decided (approved or rejected) overtime request. */
+    private async decidedOvertimeDayIds(
+        dayIds: number[],
+    ): Promise<Set<number>> {
+        if (dayIds.length === 0) return new Set();
+        const rows = await this.exceptions
+            .createQueryBuilder('e')
+            .select('DISTINCT e.attendance_day_id AS day_id')
+            .where('e.attendanceDayId IN (:...dayIds)', { dayIds })
+            .andWhere("e.kind = 'overtime_approval'")
+            .andWhere("e.status IN ('approved', 'rejected')")
+            .getRawMany<{ day_id: number }>();
+        return new Set(rows.map((r) => Number(r.day_id)));
+    }
+
     async preflight(user: HrUser, runId: number) {
         const run = await this.loadRun(user, runId);
         const scope = { from: run.periodFrom, to: run.periodTo };
@@ -384,7 +399,18 @@ export class PayrollService {
         }
         const days = await qb.getMany();
 
-        const pendingOt = days.filter((d) => d.overtimeMinutesPending > 0);
+        // Outstanding, not merely present: `overtimeMinutesPending` keeps the
+        // minutes the day earned even after a decision, so testing it alone
+        // meant the blocker never cleared — approve every hour and payroll
+        // still refused, which is how it came to be force-approved instead.
+        const decidedOt = await this.decidedOvertimeDayIds(
+            days.map((d) => d.id),
+        );
+        const pendingOt = days.filter(
+            (d) =>
+                d.overtimeMinutesPending > d.overtimeMinutesApproved &&
+                !decidedOt.has(d.id),
+        );
         const missingOut = days.filter((d) => d.exceptionFlags?.missing_out);
         const pendingExceptions = await this.exceptions.count({
             where: { tenantId: run.tenantId, status: 'pending' },

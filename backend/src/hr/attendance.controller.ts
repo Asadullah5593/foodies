@@ -29,6 +29,8 @@ import {
     PunchDto,
     RegisterQueryDto,
     SetPinDto,
+    DecideOvertimeDto,
+    DecideOvertimeBulkDto,
 } from './dto/attendance.dto';
 
 @ApiTags('Admin – Attendance')
@@ -106,6 +108,35 @@ export class AttendanceController {
         @Body() dto: CreateExceptionDto,
     ) {
         return this.attendance.requestException(user, id, dto);
+    }
+
+    @Post('days/:id/overtime')
+    @RequirePermission(Permissions.OVERTIME_APPROVE)
+    @ApiOperation({
+        summary: 'Approve or reject the overtime on one day',
+        description:
+            'Overtime accrues as pending and is never paid until it is confirmed. Recorded as a decided attendance exception, so it carries the same audit trail as a requested one, and the day is recomputed immediately.',
+    })
+    decideOvertime(
+        @CurrentUser() user: HrUser,
+        @Param('id', ParseIntPipe) id: number,
+        @Body() dto: DecideOvertimeDto,
+    ) {
+        return this.attendance.decideOvertime(user, id, dto);
+    }
+
+    @Post('overtime/decide-all')
+    @RequirePermission(Permissions.OVERTIME_APPROVE)
+    @ApiOperation({
+        summary: 'Decide every outstanding day in a range',
+        description:
+            'Same decision applied to each day still waiting. A day that fails — locked, or above the caller’s approval limit — is skipped and named rather than stopping the rest.',
+    })
+    decideOvertimeBulk(
+        @CurrentUser() user: HrUser,
+        @Body() dto: DecideOvertimeBulkDto,
+    ) {
+        return this.attendance.decideOvertimeBulk(user, dto);
     }
 
     @Patch('exceptions/:id')

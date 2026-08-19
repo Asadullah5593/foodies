@@ -1,6 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
 import { MdOutlineFactCheck, MdWarningAmber } from 'react-icons/md';
 import { hrService, RegisterRow } from '../../../services/api/hrService';
 import apiClient from '../../../utils/apiClient';
@@ -8,6 +14,8 @@ import Loader from '../../../components/Loader';
 import { statusBadgeClass, statusLabel } from './hrShared';
 import DayPunchesModal from './DayPunchesModal';
 import SearchableSelect from '../../../components/SearchableSelect';
+import { useHasPermission } from '../../../hooks/useHasPermission';
+import FetchingOverlay from '../../../components/FetchingOverlay';
 
 const isoDaysAgo = (days: number) =>
   new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
@@ -48,14 +56,19 @@ const AttendanceRegister: React.FC = () => {
     [dateFrom, dateTo, branchId],
   );
 
-  const { data: rows = [], isLoading } = useQuery({
+  const queryClient = useQueryClient();
+  const canApproveOt = useHasPermission('overtime:approve');
+
+  const { data: rows = [], isLoading, isPlaceholderData: isRegisterPlaceholder } = useQuery({
     queryKey: ['hr-attendance-register', params],
     queryFn: () => hrService.getRegister(params),
+    placeholderData: keepPreviousData,
   });
 
-  const { data: report } = useQuery({
+  const { data: report, isPlaceholderData: isReportPlaceholder } = useQuery({
     queryKey: ['hr-attendance-exceptions', params],
     queryFn: () => hrService.getExceptionsReport(params),
+    placeholderData: keepPreviousData,
   });
 
   const { data: branches = [] } = useQuery<Array<{ id: number; name: string }>>({
@@ -65,6 +78,57 @@ const AttendanceRegister: React.FC = () => {
       return data ?? [];
     },
   });
+
+  const onDecided = (label: string) => {
+    toast.success(label);
+    queryClient.invalidateQueries({ queryKey: ['hr-attendance-register'] });
+    queryClient.invalidateQueries({ queryKey: ['hr-attendance-exceptions'] });
+  };
+
+  const failed = (fallback: string) => (err: unknown) => {
+    const message =
+      (err as { response?: { data?: { message?: string | string[] } } })?.response?.data
+        ?.message ?? fallback;
+    toast.error(Array.isArray(message) ? message[0] : message);
+  };
+
+  const decide = useMutation({
+    mutationFn: ({ dayId, approve }: { dayId: number; approve: boolean }) =>
+      hrService.decideOvertime(dayId, { approve }),
+    onSuccess: (r) =>
+      onDecided(
+        r.status === 'approved'
+          ? `${r.approved_minutes}m overtime approved`
+          : 'Overtime rejected',
+      ),
+    onError: failed('Could not record that decision'),
+  });
+
+  const decideAll = useMutation({
+    mutationFn: (approve: boolean) =>
+      hrService.decideOvertimeBulk({ ...params, approve }),
+    onSuccess: (r) => {
+      onDecided(
+        r.decided === 0
+          ? 'Nothing was waiting'
+          : `${r.decided} day(s) decided`,
+      );
+      if (r.skipped.length > 0) {
+        // Never silently: a day that could not be decided is one somebody still
+        // has to look at.
+        toast(`${r.skipped.length} day(s) skipped — ${r.skipped[0].reason}`, {
+          icon: '⚠️',
+          duration: 6000,
+        });
+      }
+    },
+    onError: failed('Could not decide those days'),
+  });
+
+  /** Days still waiting on somebody, inside the current filter. */
+  const waitingOt = rows.filter(
+    (r) => r.overtime_pending > 0 && !r.overtime_decided && !r.is_locked,
+  );
 
   const flagsOf = (row: RegisterRow) =>
     Object.keys(row.flags ?? {}).filter((k) => row.flags[k]);
@@ -132,7 +196,45 @@ const AttendanceRegister: React.FC = () => {
         </div>
       </div>
 
+      {waitingOt.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
+          <div>
+            <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
+              <MdWarningAmber className="text-lg" />
+              Overtime waiting
+            </h2>
+            <p className="mt-1 text-sm text-amber-900 dark:text-amber-200">
+              {waitingOt.length} day(s) totalling{' '}
+              {waitingOt.reduce((sum, r) => sum + r.overtime_pending, 0)} minutes.
+              Payroll will not pay any of it, and will not let the run be approved,
+              until each day is answered.
+            </p>
+          </div>
+          {canApproveOt && (
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => decideAll.mutate(true)}
+                disabled={decideAll.isPending}
+                className="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:opacity-60"
+              >
+                {decideAll.isPending ? 'Working…' : 'Approve all'}
+              </button>
+              <button
+                type="button"
+                onClick={() => decideAll.mutate(false)}
+                disabled={decideAll.isPending}
+                className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-slate-600 dark:bg-slate-800 dark:text-gray-200"
+              >
+                Reject all
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {report && (report.flagged_days.length > 0 || report.bursts.length > 0) && (
+        <FetchingOverlay active={isReportPlaceholder} label="Updating exceptions…" className="rounded-lg">
         <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
           <div className="mb-2 flex items-center gap-2 text-amber-800 dark:text-amber-300">
             <MdWarningAmber className="text-lg" />
@@ -159,6 +261,7 @@ const AttendanceRegister: React.FC = () => {
             </ul>
           )}
         </div>
+        </FetchingOverlay>
       )}
 
       {isLoading ? (
@@ -170,6 +273,7 @@ const AttendanceRegister: React.FC = () => {
           </p>
         </div>
       ) : (
+        <FetchingOverlay active={isRegisterPlaceholder} label="Updating register…" className="rounded-lg">
         <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-700">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
             <thead className="bg-gray-50 dark:bg-slate-800">
@@ -255,12 +359,50 @@ const AttendanceRegister: React.FC = () => {
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
-                    {/* Pending OT is reported but never paid until approved. */}
-                    {r.overtime_approved > 0
-                      ? `${r.overtime_approved}m`
-                      : r.overtime_pending > 0
-                        ? `${r.overtime_pending}m pending`
-                        : '—'}
+                    {/* Overtime is never paid until somebody confirms it, so the
+                        decision belongs on the row where the day already is —
+                        not on a screen nobody visits. */}
+                    {r.overtime_approved > 0 ? (
+                      <span className="font-medium text-green-700 dark:text-green-400">
+                        {r.overtime_approved}m approved
+                      </span>
+                    ) : r.overtime_pending > 0 && r.overtime_decided ? (
+                      <span className="text-gray-500 dark:text-gray-400">
+                        {r.overtime_pending}m rejected
+                      </span>
+                    ) : r.overtime_pending > 0 ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-amber-700 dark:text-amber-400">
+                          {r.overtime_pending}m waiting
+                        </span>
+                        {canApproveOt && !r.is_locked && (
+                          <span className="flex gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                decide.mutate({ dayId: r.id, approve: true })
+                              }
+                              disabled={decide.isPending}
+                              className="rounded border border-green-600 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-50 dark:text-green-400 dark:hover:bg-green-900/20"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                decide.mutate({ dayId: r.id, approve: false })
+                              }
+                              disabled={decide.isPending}
+                              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-slate-600 dark:text-gray-300 dark:hover:bg-slate-700"
+                            >
+                              Reject
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      '—'
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex flex-wrap gap-1">
@@ -288,6 +430,7 @@ const AttendanceRegister: React.FC = () => {
             </tbody>
           </table>
         </div>
+        </FetchingOverlay>
       )}
       {punchesDayId != null && (
         <DayPunchesModal dayId={punchesDayId} onClose={() => setPunchesDayId(null)} />

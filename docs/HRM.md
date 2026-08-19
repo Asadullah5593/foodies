@@ -37,7 +37,7 @@ This codebase already uses two of these words for something else. Using them loo
 | 8 | Late rule | 15 min grace (configurable). 1st late free, 2nd = ½ day, 3rd = full day. Ladder restarts every 3 lates. Counter resets each payroll period |
 | 9 | Deduction override | Admin + HR Manager may waive any deduction or add one, with mandatory reason logging |
 | 10 | Monthly offs | 4/month, paid, no carry-forward, unused offs **encashed at `basic ÷ 30`** |
-| 11 | Overtime | Accrues as *pending*; a manager confirms it before payroll locks |
+| 11 | Overtime | Accrues as *pending*; a manager confirms it before payroll locks. Approved or rejected from the attendance register — per day, or all at once for the filtered range |
 | 12 | Payroll cycle | Configurable; default calendar month |
 | 13 | Payslip | Manager downloads / prints a PDF at the branch |
 | 14 | Exit | Record + clearance in Phase 1; settlement arithmetic lands with payroll in Phase 4 |

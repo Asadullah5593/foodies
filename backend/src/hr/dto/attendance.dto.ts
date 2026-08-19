@@ -1,12 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+    IsBoolean,
     IsDateString,
     IsEnum,
     IsInt,
     IsOptional,
     IsString,
     Length,
+    MaxLength,
     Min,
 } from 'class-validator';
 
@@ -239,4 +241,55 @@ export class DecideExceptionDto {
     @ApiProperty({ enum: ['approved', 'rejected'] })
     @IsEnum(['approved', 'rejected'])
     decision: 'approved' | 'rejected';
+}
+
+/** POST /api/admin/hr/attendance/days/:id/overtime */
+export class DecideOvertimeDto {
+    @ApiProperty({ example: true, description: 'False rejects it.' })
+    @IsBoolean()
+    approve: boolean;
+
+    @ApiPropertyOptional({
+        description:
+            'Approve fewer minutes than were earned. Never more — the ceiling is what the day actually accrued.',
+    })
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt()
+    @Min(0)
+    minutes?: number;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    @MaxLength(2000)
+    reason?: string;
+}
+
+/** POST /api/admin/hr/attendance/overtime/decide-all */
+export class DecideOvertimeBulkDto {
+    @ApiProperty({ example: '2026-08-01' })
+    @IsDateString()
+    date_from: string;
+
+    @ApiProperty({ example: '2026-08-31' })
+    @IsDateString()
+    date_to: string;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @Type(() => Number)
+    @IsInt()
+    @Min(1)
+    branch_id?: number;
+
+    @ApiProperty({ example: true })
+    @IsBoolean()
+    approve: boolean;
+
+    @ApiPropertyOptional()
+    @IsOptional()
+    @IsString()
+    @MaxLength(2000)
+    reason?: string;
 }

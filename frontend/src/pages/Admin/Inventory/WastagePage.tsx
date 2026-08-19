@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { LuPlus, LuSearch, LuTrash2 } from 'react-icons/lu';
 import Modal from '../../../components/Modal';
 import Loader from '../../../components/Loader';
 import SearchableSelect from '../../../components/SearchableSelect';
+import FetchingOverlay from '../../../components/FetchingOverlay';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { useHasPermission } from '../../../hooks/useHasPermission';
@@ -32,7 +33,7 @@ const WastagePage: React.FC = () => {
   const activeBranchId = branchId ?? (branches[0]?.id ?? null);
   const itemsQ = useQuery({ queryKey: ['inventory-items'], queryFn: inventoryService.listItems });
   const uomsQ = useQuery({ queryKey: ['inventory-uoms'], queryFn: inventoryService.listUoms });
-  const wastageQ = useQuery({ queryKey: ['wastage', activeBranchId, from, to], queryFn: () => inventoryService.listWastage(activeBranchId as number, { from: from || undefined, to: to || undefined, page: 1, page_size: 200 }), enabled: activeBranchId != null });
+  const wastageQ = useQuery({ queryKey: ['wastage', activeBranchId, from, to], queryFn: () => inventoryService.listWastage(activeBranchId as number, { from: from || undefined, to: to || undefined, page: 1, page_size: 200 }), enabled: activeBranchId != null, placeholderData: keepPreviousData });
 
   const itemById = useMemo(() => { const m = new Map<number, any>(); for (const it of itemsQ.data ?? []) m.set(Number(it.id), it); return m; }, [itemsQ.data]);
   const uomById = useMemo(() => { const m = new Map<number, any>(); for (const u of uomsQ.data ?? []) m.set(Number(u.id), u); return m; }, [uomsQ.data]);
@@ -99,6 +100,7 @@ const WastagePage: React.FC = () => {
           <div className="relative flex-1 min-w-[200px] max-w-[320px] ml-auto"><LuSearch className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item, reason or notes…" className={`${field} pl-9`} /></div>
         </div>
         {wastageQ.isLoading ? <div className="p-10"><Loader /></div> : (
+          <FetchingOverlay active={wastageQ.isPlaceholderData} label="Updating wastage…" className="rounded-b-xl">
           <div className="overflow-x-auto"><table className="min-w-full text-sm">
             <thead className="bg-slate-50/70 dark:bg-slate-900/40 text-left text-[11.5px] font-bold uppercase tracking-wide text-slate-400"><tr><th className="py-3 px-4">Date</th><th className="py-3 px-4">Item</th><th className="py-3 px-4 text-right">Qty</th><th className="py-3 px-4">Reason</th><th className="py-3 px-4">By</th><th className="py-3 px-4">Notes</th></tr></thead>
             <tbody className="text-slate-700 dark:text-slate-200">
@@ -117,6 +119,7 @@ const WastagePage: React.FC = () => {
               })}
             </tbody>
           </table></div>
+          </FetchingOverlay>
         )}
       </div>
 

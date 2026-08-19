@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { MdOutlineBadge, MdOutlineSearch, MdPersonAddAlt1 } from 'react-icons/md';
 import { hrService, EmployeeListParams } from '../../../services/api/hrService';
@@ -11,6 +11,7 @@ import Loader from '../../../components/Loader';
 import EmployeeFormModal from './EmployeeFormModal';
 import { statusBadgeClass, statusLabel } from './hrShared';
 import SearchableSelect from '../../../components/SearchableSelect';
+import FetchingOverlay from '../../../components/FetchingOverlay';
 
 const PAGE_SIZE = 25;
 
@@ -45,9 +46,10 @@ const Employees: React.FC = () => {
     [debouncedSearch, branchId, designationId, includeInactive, page],
   );
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, isPlaceholderData } = useQuery({
     queryKey: ['hr-employees', params],
     queryFn: () => hrService.listEmployees(params),
+    placeholderData: keepPreviousData,
   });
 
   const { data: designations = [] } = useQuery({
@@ -163,6 +165,7 @@ const Employees: React.FC = () => {
         </div>
       ) : (
         <>
+          <FetchingOverlay active={isPlaceholderData} label="Updating employees…" className="rounded-lg">
           <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-700">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
               <thead className="bg-gray-50 dark:bg-slate-800">
@@ -241,6 +244,7 @@ const Employees: React.FC = () => {
               </tbody>
             </table>
           </div>
+          </FetchingOverlay>
 
           <PaginationBar
             page={page}

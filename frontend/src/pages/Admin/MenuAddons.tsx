@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
@@ -9,6 +9,7 @@ import { MenuAddon } from '../../types';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import Loader from '../../components/Loader';
+import FetchingOverlay from '../../components/FetchingOverlay';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
@@ -65,11 +66,11 @@ const MenuAddons: React.FC = () => {
     return p;
   }, [effectiveBrandId, filters.status, debouncedAddonSearch]);
 
-  const { data: addons, isLoading, isFetching } = useQuery({
+  const { data: addons, isLoading, isFetching, isPlaceholderData } = useQuery({
     queryKey: ['addons', filterParams],
     queryFn: () => adminService.getAddons(Object.keys(filterParams).length ? filterParams : undefined),
     enabled: true,
-    placeholderData: (prev) => prev,
+    placeholderData: keepPreviousData,
   });
 
   const addonList = addons ?? [];
@@ -338,6 +339,7 @@ const MenuAddons: React.FC = () => {
         </form>
       </Modal>
 
+      <FetchingOverlay active={isPlaceholderData} label="Updating addons…" className="rounded-xl">
       <div className="w-full space-y-3">
         {addonList.length === 0 ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">
@@ -399,6 +401,7 @@ const MenuAddons: React.FC = () => {
           </>
         )}
       </div>
+      </FetchingOverlay>
     </div>
   );
 };
