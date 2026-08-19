@@ -14,6 +14,7 @@ import SearchableSelect from '../../components/SearchableSelect';
 import Modal from '../../components/Modal';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 import RecordHistoryLink from '../../components/RecordHistoryLink';
+import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 
 /* ------------------------------------------------------------- helpers --- */
 
@@ -284,8 +285,9 @@ const Shifts: React.FC = () => {
   // so its window matches the client's business-date math exactly) and always
   // returns open shifts; status / branch / search still filter client-side.
   // keepPreviousData: changing dates swaps data in place, no full-page loader.
-  const { data: shifts, isLoading, isPlaceholderData } = useQuery({
-    queryKey: ['shifts', fromDate, toDate],
+  const shiftsKey = ['shifts', fromDate, toDate];
+  const { data: shifts, isLoading, isFetching } = useQuery({
+    queryKey: shiftsKey,
     queryFn: () =>
       adminService.getShifts(undefined, undefined, undefined, {
         from: new Date(`${fromDate}T00:00:00`).toISOString(),
@@ -293,6 +295,7 @@ const Shifts: React.FC = () => {
       }),
     placeholderData: keepPreviousData,
   });
+  const shiftsRefreshing = useResultsRefreshing(shiftsKey, isFetching);
 
   // Detect a shift already open for the branch + brand chosen in the Open
   // form — one open shift per brand per branch.
@@ -788,8 +791,8 @@ const Shifts: React.FC = () => {
 
       {/* Shift cards. While a date-range change is fetching, the previous
           results stay mounted and a soft veil fades in over them
-          (keepPreviousData ⇒ isPlaceholderData). */}
-      <FetchingOverlay active={isPlaceholderData} label="Updating shifts…" className="rounded-[14px]">
+          (see useResultsRefreshing — background polls stay silent). */}
+      <FetchingOverlay active={shiftsRefreshing} label="Updating shifts…" className="rounded-[14px]">
       {filtered.length === 0 ? (
         <div className="rounded-[14px] border border-[#ECEDF0] bg-white py-12 text-center text-sm text-[#8A92A0] shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800">
           No shifts for the selected day and filters.

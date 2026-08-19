@@ -12,6 +12,7 @@ import { AccentedList, AccentedListRow } from '../../components/AccentedListRow'
 import { formatCurrency } from '../../utils/currency';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { deliveryStatusLabel } from '../../lib/deliveryStatus';
+import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 
 type OrderRow = {
   id: number;
@@ -71,8 +72,9 @@ const Deliveries: React.FC = () => {
     [dateFrom, dateTo]
   );
 
-  const { data: ordersRaw, isLoading, isPlaceholderData } = useQuery({
-    queryKey: ['admin-orders-deliveries', params],
+  const deliveriesKey = ['admin-orders-deliveries', params];
+  const { data: ordersRaw, isLoading, isFetching } = useQuery({
+    queryKey: deliveriesKey,
     queryFn: async () => {
       const data = await adminService.getOrders({
         has_rider: true,
@@ -85,6 +87,7 @@ const Deliveries: React.FC = () => {
     refetchInterval: ORDER_POLL_INTERVAL_MS,
     refetchIntervalInBackground: true,
   });
+  const deliveriesRefreshing = useResultsRefreshing(deliveriesKey, isFetching);
 
   const { data: riders } = useQuery({
     queryKey: ['admin-riders'],
@@ -196,8 +199,8 @@ const Deliveries: React.FC = () => {
       </Card>
 
       {/* While a filter change is fetching, the previous results stay mounted
-          and a soft veil fades in over them (keepPreviousData ⇒ isPlaceholderData). */}
-      <FetchingOverlay active={isPlaceholderData} label="Updating deliveries…" className="rounded-xl">
+          and a soft veil fades in over them (see useResultsRefreshing — background polls stay silent). */}
+      <FetchingOverlay active={deliveriesRefreshing} label="Updating deliveries…" className="rounded-xl">
       {byRider.length === 0 ? (
         <Card className="dark:bg-slate-800 dark:border-slate-700">
           <p className="text-center text-gray-500 dark:text-slate-300 py-12">No deliveries assigned to riders yet.</p>
