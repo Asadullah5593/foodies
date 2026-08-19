@@ -112,6 +112,7 @@ import { resolveOfferSettings, OfferSettings } from './offer-settings';
 import { ORDER_SOURCES } from './order-sources';
 import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
 import { StaffDiscount } from '../entities/staff-discount.entity';
+import { assertOrderTypeAllowed } from './order-type-restriction';
 import {
     staffDiscountToOffer,
     staffDiscountRawAmount,
@@ -200,6 +201,48 @@ export class OrdersService {
         private fbrService: FbrService,
         private paymentsService: PaymentsService,
     ) {}
+
+    /**
+     * Money a consumer-app order settles in cash on completion — at the door for
+     * a delivery, at the counter for a pickup — has no tender path of its own,
+     * so it is recorded here as a 'cod' tender: the order reads Paid and payment
+     * reports include it, while shift reconciliation (which only buckets cash /
+     * card / online_transfer) keeps ignoring money that never passed through the
+     * till. Restricted to consumer_app because every other source tenders at
+     * placement (POS, kiosk finalize) or via the gateway (EPG), and it fires
+     * only when nothing was tendered yet, so a card-paid app order is left
+     * alone. The idempotency key makes a racing retry record once, and a
+     * failure never fails the completion — the zero-tender audit surfaces any
+     * straggler.
+     */
+    private async recordCodTenderIfUntendered(order: {
+        id: number;
+        source?: string | null;
+        totalAmount: number | string;
+    }): Promise<void> {
+        if (order.source !== 'consumer_app') return;
+        if (!(Number(order.totalAmount) > 0)) return;
+        const tendered: unknown[] = await this.dataSource.query(
+            `SELECT 1 FROM payments WHERE order_id = $1 LIMIT 1`,
+            [order.id],
+        );
+        if (tendered.length) return;
+        try {
+            await this.paymentsService.processPayment(
+                order.id,
+                'cod',
+                Number(order.totalAmount),
+                undefined,
+                `cod:order:${order.id}`,
+            );
+        } catch (err) {
+            this.logger.error(
+                `COD tender failed for order ${order.id}: ${
+                    err instanceof Error ? err.message : String(err)
+                }`,
+            );
+        }
+    }
 
     /**
      * Notify the till/cashier (per role-targeting config) that a remotely-placed
@@ -1320,6 +1363,10 @@ export class OrdersService {
             where: { id: tenantId },
         });
         if (!tenant) throw new NotFoundException('Tenant not found');
+
+        // A delivery-only account (marker permission) may not punch anything
+        // else. Checked first: it is the cheapest gate and needs no data.
+        assertOrderTypeAllowed(actor, dto.order_type);
 
         // Idempotent placement: a retried / double-tapped request carrying a key that
         // already produced an order group returns that group instead of creating a
@@ -3300,6 +3347,9 @@ export class OrdersService {
                 await this.loyaltyService.earnOnOrderComplete(id);
                 // Shift cash is derived from the order's tenders when the shift
                 // is read or closed — nothing to accrue here.
+                // A consumer-app pickup collected at the counter (or a delivery
+                // completed from the till) has no tender path either.
+                await this.recordCodTenderIfUntendered(order);
             } else if (status === 'cancelled') {
                 // Reverse inventory consumption allocations (if any).
                 try {
@@ -4617,38 +4667,7 @@ export class OrdersService {
             order.status = 'completed';
             if (prevStatus !== null) {
                 await this.loyaltyService.earnOnOrderComplete(order.id);
-                // Money settled at the door is recorded as its own 'cod' tender:
-                // the order reads Paid and payment reports include it, while
-                // shift reconciliation (which only buckets cash / card /
-                // online_transfer) keeps ignoring money that never passed
-                // through the till. Only fires when nothing was tendered yet —
-                // a POS delivery order is paid up front and must not log a
-                // clamped duplicate. The idempotency key makes a racing retry
-                // of the same delivered event record once.
-                const tendered: unknown[] = await this.dataSource.query(
-                    `SELECT 1 FROM payments WHERE order_id = $1 LIMIT 1`,
-                    [order.id],
-                );
-                if (!tendered.length && Number(order.totalAmount) > 0) {
-                    try {
-                        await this.paymentsService.processPayment(
-                            order.id,
-                            'cod',
-                            Number(order.totalAmount),
-                            undefined,
-                            `cod:order:${order.id}`,
-                        );
-                    } catch (err) {
-                        // The rider's delivery confirmation must never fail over
-                        // the tender record; the zero-tender audit query surfaces
-                        // any straggler this leaves behind.
-                        this.logger.error(
-                            `COD tender failed for order ${order.id}: ${
-                                err instanceof Error ? err.message : String(err)
-                            }`,
-                        );
-                    }
-                }
+                await this.recordCodTenderIfUntendered(order);
             }
         }
         if (
@@ -4722,6 +4741,10 @@ export class OrdersService {
             staffDiscountCeiling?: StaffDiscountCeiling | null;
         } | null = null,
     ) {
+        // Same gate as createOrder, and deliberately hard on quote too: an
+        // order type this account may not place is the wrong request, not a
+        // partial state to price around.
+        assertOrderTypeAllowed(actor, dto.order_type);
         const branch = await this.branchRepo.findOne({
             where: { id: dto.branch_id },
             relations: ['branchBrands', 'branchBrands.brand'],
