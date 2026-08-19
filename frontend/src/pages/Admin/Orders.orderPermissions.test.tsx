@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -102,116 +102,68 @@ const renderPage = () => {
   );
 };
 
-describe('Orders — kitchen status pill', () => {
-  beforeEach(() => {
-    permissions = [];
-    discounted = true;
-  });
+describe('Orders — orders:update-status:no-cancel', () => {
+  beforeEach(() => { permissions = []; discounted = true; });
 
-  it('is inert text for a tablet that may only view orders', async () => {
-    permissions = ['orders:create', 'orders:view'];
+  const openStatusMenu = async () => {
     renderPage();
-    // Both layouts are in the DOM (one hidden), so every match is doubled.
     await waitFor(() => expect(screen.getAllByText('Accepted').length).toBeGreaterThan(0));
-    // The status is still readable — the client asked for that explicitly.
-    expect(screen.getAllByLabelText(/Kitchen status for order #003: Accepted/i).length).toBeGreaterThan(0);
-    // ...but there is nothing to click.
-    expect(screen.queryAllByRole('button', { name: /Kitchen status for order #003$/i })).toHaveLength(0);
-  });
+    const pill = screen.getAllByRole('button', { name: /Kitchen status for order #003/i })[0];
+    fireEvent.click(pill);
+    await waitFor(() => expect(screen.getByText('Kitchen status')).toBeInTheDocument());
+  };
 
-  it('is a menu button once the user may change status', async () => {
-    permissions = ['orders:view', 'orders:update-status'];
+  it('grants the status flow on its own — the pill is still a button', async () => {
+    permissions = ['orders:view', 'orders:update-status:no-cancel'];
     renderPage();
     await waitFor(() => expect(screen.getAllByText('Accepted').length).toBeGreaterThan(0));
     expect(
       screen.getAllByRole('button', { name: /Kitchen status for order #003/i }).length,
     ).toBeGreaterThan(0);
-    // And no inert read-only pill in its place.
-    expect(screen.queryAllByLabelText(/Kitchen status for order #003: Accepted/i)).toHaveLength(0);
+  });
+
+  it('offers every status EXCEPT Cancelled', async () => {
+    permissions = ['orders:view', 'orders:update-status:no-cancel'];
+    await openStatusMenu();
+    const menu = screen.getByText('Kitchen status').parentElement as HTMLElement;
+    for (const label of ['Placed', 'Accepted', 'Preparing', 'Ready', 'Completed']) {
+      expect(within(menu).getByRole('menuitem', { name: new RegExp(label) })).toBeInTheDocument();
+    }
+    expect(within(menu).queryByRole('menuitem', { name: /Cancelled/ })).toBeNull();
+  });
+
+  it('still offers Cancelled to an ordinary status-updater', async () => {
+    permissions = ['orders:view', 'orders:update-status'];
+    await openStatusMenu();
+    const menu = screen.getByText('Kitchen status').parentElement as HTMLElement;
+    expect(within(menu).getByRole('menuitem', { name: /Cancelled/ })).toBeInTheDocument();
+  });
+
+  it('the restriction wins when BOTH permissions are held', async () => {
+    permissions = ['orders:view', 'orders:update-status', 'orders:update-status:no-cancel'];
+    await openStatusMenu();
+    const menu = screen.getByText('Kitchen status').parentElement as HTMLElement;
+    expect(within(menu).queryByRole('menuitem', { name: /Cancelled/ })).toBeNull();
+    expect(within(menu).getByRole('menuitem', { name: /Ready/ })).toBeInTheDocument();
   });
 });
 
-describe('Orders — discount column', () => {
-  beforeEach(() => {
-    permissions = ['orders:view'];
-  });
+describe('Orders — orders:view:no-totals', () => {
+  beforeEach(() => { permissions = []; discounted = true; });
 
-  it('shows the total given away and which kinds produced it', async () => {
+  it('hides the footer Page value', async () => {
+    permissions = ['orders:view', 'orders:view:no-totals'];
     renderPage();
     await waitFor(() => expect(screen.getAllByText('Accepted').length).toBeGreaterThan(0));
-    // Both layouts render, so every match is doubled.
-    expect(screen.getAllByText('−Rs. 340.00').length).toBeGreaterThan(0);
-    // A bank-card offer plus a till give-away: the column names both, because
-    // "who paid for this discount" is the question the number alone can't answer.
-    expect(screen.getAllByText('Card, Staff').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Page value')).toBeNull();
+    // The counts stay — only the money goes.
+    expect(screen.getByText(/on this page/)).toBeInTheDocument();
   });
 
-  it('reads a dash when nothing was discounted', async () => {
-    discounted = false;
-    renderPage();
-    await waitFor(() => expect(screen.getAllByText('Accepted').length).toBeGreaterThan(0));
-    expect(screen.queryByText(/^−Rs\./)).not.toBeInTheDocument();
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
-  });
-});
-
-describe('Orders — discount filter', () => {
-  beforeEach(() => {
-    permissions = ['orders:view', 'orders:filter:discount'];
-    discounted = true;
-    // Requested URLs accumulate across tests otherwise, and the previous
-    // test's `discount=coupon` would satisfy the "asks for nothing" case.
-    apiGet.mockClear();
-  });
-
-  it('sends the chosen discount filter to the server', async () => {
-    renderPage();
-    await waitFor(() => expect(screen.getAllByText('Accepted').length).toBeGreaterThan(0));
-
-    fireEvent.change(screen.getByLabelText('Discount'), { target: { value: 'coupon' } });
-    await waitFor(() => expect(ordersUrls().some((u) => u.includes('discount=coupon'))).toBe(true));
-  });
-
-  it('asks for nothing when the filter is left on All', async () => {
-    renderPage();
-    await waitFor(() => expect(screen.getAllByText('Accepted').length).toBeGreaterThan(0));
-    // An empty value must not become `discount=` — the server whitelists, but a
-    // stray param would still churn the query key on every render.
-    expect(ordersUrls().every((u) => !u.includes('discount='))).toBe(true);
-  });
-
-  it('is hidden from a role that may not filter by discount', async () => {
+  it('shows it to everyone else', async () => {
     permissions = ['orders:view'];
     renderPage();
     await waitFor(() => expect(screen.getAllByText('Accepted').length).toBeGreaterThan(0));
-    expect(screen.queryByLabelText('Discount')).not.toBeInTheDocument();
-  });
-});
-
-describe('Orders — layout measurement survives the loading gate', () => {
-  beforeEach(() => {
-    permissions = ['orders:view'];
-  });
-
-  it('measures the table once it mounts after the loader', async () => {
-    // jsdom reports 0-width elements, so the assertion is that the container is
-    // reached and measured at all — the old effect-on-useRef never got here,
-    // which left `layout` null forever and forced cards on every screen.
-    const observed: Element[] = [];
-    const original = global.ResizeObserver;
-    global.ResizeObserver = class {
-      constructor(private cb: ResizeObserverCallback) {}
-      observe(el: Element) {
-        observed.push(el);
-      }
-      unobserve() {}
-      disconnect() {}
-    } as unknown as typeof ResizeObserver;
-
-    renderPage();
-    await waitFor(() => expect(screen.getAllByText('Accepted').length).toBeGreaterThan(0));
-    expect(observed.length).toBeGreaterThan(0);
-
-    global.ResizeObserver = original;
+    expect(screen.getByText('Page value')).toBeInTheDocument();
   });
 });

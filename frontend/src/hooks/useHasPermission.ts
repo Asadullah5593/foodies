@@ -29,3 +29,26 @@ export function useHasPermission(permission?: string | string[]): boolean {
   const { user } = useAuth();
   return hasPermission(user, permission);
 }
+
+/**
+ * Membership check for a NARROWING permission — one whose presence takes
+ * something away (`orders:update-status:no-cancel`, `orders:view:no-totals`).
+ *
+ * Deliberately NOT `hasPermission`: that returns true for a super admin on every
+ * check, which is right for "may they do X" and exactly backwards here — it
+ * would strip cancel from the one account that is meant to be unrestricted, and
+ * the server (which never enriches a super admin's permissions) would disagree
+ * with the UI. A restriction applies only when it was literally assigned.
+ */
+export function hasRestriction(
+  user: { permissions?: string[] } | null,
+  permission: string,
+): boolean {
+  return (user?.permissions ?? []).includes(permission);
+}
+
+/** Hook form: `const noCancel = useHasRestriction(NO_CANCEL_PERMISSION)`. */
+export function useHasRestriction(permission: string): boolean {
+  const { user } = useAuth();
+  return hasRestriction(user, permission);
+}
