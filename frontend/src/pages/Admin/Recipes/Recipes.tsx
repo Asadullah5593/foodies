@@ -17,6 +17,7 @@ import apiClient from '../../../utils/apiClient';
 import { recipesService } from '../../../services/api/recipesService';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { useHasPermission } from '../../../hooks/useHasPermission';
+import { useResultsRefreshing } from '../../../components/useResultsRefreshing';
 
 export type RecipesTabKey = 'manage' | 'costing';
 type TargetType = 'dish' | 'addon' | 'modifier';
@@ -83,8 +84,9 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
     const m = allModifiers.find((x: any) => Number(x.id) === Number(selModifier)); return m ? `${m.groupName} → ${m.name}` : '';
   };
 
+  const recipesKey = ['recipes', targetType, selItem || null, selAddon || null, selModifier || null];
   const recipesQ = useQuery({
-    queryKey: ['recipes', targetType, selItem || null, selAddon || null, selModifier || null],
+    queryKey: recipesKey,
     queryFn: () => {
       if (targetType === 'dish' && selItem) return recipesService.listRecipes({ menu_item_id: Number(selItem) });
       if (targetType === 'addon' && selAddon) return recipesService.listRecipes({ addon_id: Number(selAddon) });
@@ -94,6 +96,7 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
     enabled: targetReady,
     placeholderData: keepPreviousData,
   });
+  const recipesRefreshing = useResultsRefreshing(recipesKey, recipesQ.isFetching);
   const recipesForTarget = useMemo(() => (recipesQ.data ?? []).filter((r: any) => {
     if (targetType === 'dish') return Number(r.menuItemId) === Number(selItem) && (r.variantId ?? null) === selVariantNum;
     if (targetType === 'addon') return Number(r.addonId) === Number(selAddon);
@@ -289,7 +292,7 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
               </div>
               <p className="text-sm text-slate-500 dark:text-slate-400 ml-10 mb-4">Add the ingredients and quantities used in this recipe.</p>
 
-              {recipesQ.isLoading ? <Loader /> : <FetchingOverlay active={recipesQ.isPlaceholderData} label="Updating recipe…" className="rounded-lg">{!liveRecipe && !draftRecipe ? (
+              {recipesQ.isLoading ? <Loader /> : <FetchingOverlay active={recipesRefreshing} label="Updating recipe…" className="rounded-lg">{!liveRecipe && !draftRecipe ? (
                 <div className="rounded-lg border border-dashed border-slate-300 dark:border-slate-600 p-8 text-center">
                   <LuSoup className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600" />
                   <div className="mt-2 font-medium text-slate-700 dark:text-slate-200">No recipe yet</div>
