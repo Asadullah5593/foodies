@@ -110,8 +110,10 @@ import {
 } from './offer-engine';
 import { resolveOfferSettings, OfferSettings } from './offer-settings';
 import { ORDER_SOURCES } from './order-sources';
+import { isOrderPaymentMethodFilter } from './payment-methods';
 import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
 import { StaffDiscount } from '../entities/staff-discount.entity';
+import { assertOrderTypeAllowed } from './order-type-restriction';
 import {
     staffDiscountToOffer,
     staffDiscountRawAmount,
@@ -1362,6 +1364,10 @@ export class OrdersService {
             where: { id: tenantId },
         });
         if (!tenant) throw new NotFoundException('Tenant not found');
+
+        // A delivery-only account (marker permission) may not punch anything
+        // else. Checked first: it is the cheapest gate and needs no data.
+        assertOrderTypeAllowed(actor, dto.order_type);
 
         // Idempotent placement: a retried / double-tapped request carrying a key that
         // already produced an order group returns that group instead of creating a
@@ -3733,9 +3739,7 @@ export class OrdersService {
             // method, so a cash+card split shows under both views.
             if (
                 filters.payment_method &&
-                ['cash', 'card', 'online_transfer'].includes(
-                    filters.payment_method,
-                )
+                isOrderPaymentMethodFilter(filters.payment_method)
             )
                 qb.andWhere(
                     'EXISTS (SELECT 1 FROM payments pm WHERE pm.order_id = o.id AND pm.payment_method = :pmMethod)',
@@ -4736,6 +4740,10 @@ export class OrdersService {
             staffDiscountCeiling?: StaffDiscountCeiling | null;
         } | null = null,
     ) {
+        // Same gate as createOrder, and deliberately hard on quote too: an
+        // order type this account may not place is the wrong request, not a
+        // partial state to price around.
+        assertOrderTypeAllowed(actor, dto.order_type);
         const branch = await this.branchRepo.findOne({
             where: { id: dto.branch_id },
             relations: ['branchBrands', 'branchBrands.brand'],

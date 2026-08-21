@@ -163,6 +163,26 @@ export const Permissions = {
     // sees the entries read-only; only holders may add or void one.
     SHIFTS_CASH_OUT: 'shifts:cash-out',
 
+    // — Activity / audit log (no umbrella: each right is granted deliberately) —
+    ACTIVITY_LOG_VIEW: 'activity-log:view',
+    ACTIVITY_LOG_EXPORT: 'activity-log:export',
+    // Reading the log and being able to destroy or silence it are different
+    // powers, so purge and configure are separate from view and from each
+    // other. Both additionally require a password re-entry at the call site.
+    ACTIVITY_LOG_PURGE: 'activity-log:purge',
+    ACTIVITY_LOG_CONFIGURE: 'activity-log:configure',
+    // Narrow read rights. activity-log:view is the umbrella and implies them
+    // all; grant these individually to give someone history for their own area
+    // without exposing users, money or sign-ins.
+    ACTIVITY_LOG_VIEW_ACCESS: 'activity-log:view:access',
+    ACTIVITY_LOG_VIEW_MENU: 'activity-log:view:menu',
+    ACTIVITY_LOG_VIEW_OFFERS: 'activity-log:view:offers',
+    ACTIVITY_LOG_VIEW_SHIFTS: 'activity-log:view:shifts',
+    ACTIVITY_LOG_VIEW_INVENTORY: 'activity-log:view:inventory',
+    ACTIVITY_LOG_VIEW_ORDERS: 'activity-log:view:orders',
+    ACTIVITY_LOG_VIEW_AUTH: 'activity-log:view:auth',
+    ACTIVITY_LOG_VIEW_SYSTEM: 'activity-log:view:system',
+
     // — Business settings (umbrella: business-settings:access) —
     BUSINESS_SETTINGS_EDIT: 'business-settings:edit',
 
@@ -236,7 +256,23 @@ export const Permissions = {
 
     // — Orders (granular admin actions; backfilled from orders:view) —
     ORDERS_UPDATE_STATUS: 'orders:update-status',
+    /**
+     * Status changes WITHOUT cancel. Grants the same placed→…→completed moves
+     * as `orders:update-status`, in any direction, but refuses `cancelled`.
+     *
+     * Deliberately BOTH a grant and a restriction: holding it is enough to work
+     * the status flow on its own, and it denies cancel even when the broader
+     * `orders:update-status` is also held, so a second role cannot quietly hand
+     * the ability back.
+     */
+    ORDERS_UPDATE_STATUS_NO_CANCEL: 'orders:update-status:no-cancel',
     ORDERS_ASSIGN_RIDER: 'orders:assign-rider',
+    /**
+     * Marker: hide the Orders page money summary (the "Page value" figure in the
+     * footer). Holding it grants nothing — it takes the aggregate away from an
+     * account that may still work the list.
+     */
+    ORDERS_VIEW_NO_TOTALS: 'orders:view:no-totals',
 
     /*
      * Order-history filter controls. Without these the Orders page still shows

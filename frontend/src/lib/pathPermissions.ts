@@ -74,6 +74,8 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/rider-ops': ['deliveries:view'],
   '/admin/shifts': ['shifts:manage', 'shifts:view'],
   '/admin/reports': ['reports:view'],
+  // Reading the audit trail is its own right, not implied by reports:view.
+  '/admin/activity-logs': ['activity-log:view'],
   '/admin/inventory': [
     'inventory:view',
     'inventory:receive',

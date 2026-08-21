@@ -25,6 +25,8 @@ vi.mock('../../hooks/useHasPermission', () => ({
     const list = Array.isArray(need) ? need : [need];
     return list.some((p) => permissions.includes(p));
   },
+  // A restriction applies only when literally assigned — no super-admin bypass.
+  useHasRestriction: (need: string) => permissions.includes(need),
 }));
 vi.mock('../../contexts/AuthContext', () => ({
   useAuth: () => ({ user: { is_super_admin: false, allowed_brand_ids: null, permissions } }),

@@ -13,7 +13,13 @@ import AssignRiderModal from '../../components/AssignRiderModal';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
 import PaginationBar from '../../components/PaginationBar';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
-import { useHasPermission } from '../../hooks/useHasPermission';
+import { useHasPermission, useHasRestriction } from '../../hooks/useHasPermission';
+import {
+  NO_CANCEL_PERMISSION,
+  NO_TOTALS_PERMISSION,
+  STATUS_CHANGE_PERMISSIONS,
+  selectableStatuses,
+} from '../../lib/orderStatusPermissions';
 import { canAccessPath } from '../../lib/pathPermissions';
 import {
   ORDERS_GRID_MIN_PX,
@@ -25,6 +31,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { ORDER_SOURCES, ORDER_SOURCE_LABEL, orderSourceLabel } from '../../utils/orderSources';
 import { deliveryStatusLabel } from '../../lib/deliveryStatus';
+import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 
 type OrderPayment = { paymentMethod?: string; payment_method?: string; status?: string; amount?: number | string };
 
@@ -313,7 +320,11 @@ const Orders: React.FC = () => {
    * not drive the kitchen. The server guards the mutation too; this stops the
    * UI offering an action that would be refused.
    */
-  const canUpdateStatus = useHasPermission('orders:update-status');
+  // Either permission works the status flow; the no-cancel one simply cannot
+  // reach 'cancelled' (filtered below, and refused server-side).
+  const canUpdateStatus = useHasPermission(STATUS_CHANGE_PERMISSIONS);
+  const noCancel = useHasRestriction(NO_CANCEL_PERMISSION);
+  const hideOrderTotals = useHasRestriction(NO_TOTALS_PERMISSION);
   // Gate the rider-ops banner + auto-assign pill on the routes they link to, so
   // a user with orders:view but no rider-HRM / branch access never sees
   // dead-end buttons or the auto-assign status they cannot act on.
@@ -442,13 +453,15 @@ const Orders: React.FC = () => {
   // One server-paginated query. status_counts (every tile, over the full filtered
   // set) come back with each page, so there is no separate counting query and no
   // row cap — pagination scales to 100k+ orders.
-  const { data: envelope, isLoading, isPlaceholderData } = useQuery({
-    queryKey: ['admin-orders', baseParams, status, debouncedSearch, ordersPage, pageSize],
+  const ordersKey = ['admin-orders', baseParams, status, debouncedSearch, ordersPage, pageSize];
+  const { data: envelope, isLoading, isFetching } = useQuery({
+    queryKey: ordersKey,
     queryFn: fetchOrders,
     placeholderData: keepPreviousData,
     refetchInterval: ORDER_POLL_INTERVAL_MS,
     refetchIntervalInBackground: true,
   });
+  const ordersRefreshing = useResultsRefreshing(ordersKey, isFetching);
 
   const { data: branches } = useQuery({
     queryKey: ['branches'],
@@ -1226,8 +1239,8 @@ const Orders: React.FC = () => {
 
       {/* Table: data grid on xl+, stacked cards below. While a filter/page
           change is fetching, the previous results stay mounted and a soft
-          veil fades in over them (keepPreviousData ⇒ isPlaceholderData). */}
-      <FetchingOverlay active={isPlaceholderData} label="Updating orders…" className="rounded-2xl">
+          veil fades in over them (see useResultsRefreshing — background polls stay silent). */}
+      <FetchingOverlay active={ordersRefreshing} label="Updating orders…" className="rounded-2xl">
       <div ref={setTableEl} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
         {/* Wide enough for all 13 columns: data grid. overflow-x-auto is kept as a
             backstop only — at this width nothing should actually need to scroll. */}
@@ -1315,10 +1328,12 @@ const Orders: React.FC = () => {
           <span className="text-[14px] font-bold text-gray-500 dark:text-slate-400">
             {visibleOrders.length} on this page · {totalCount} total
           </span>
+          {!hideOrderTotals && (
           <span className="text-[14px] text-gray-400 dark:text-slate-500">
             Page value
             <span className="ml-2 text-[17px] font-black tabular-nums text-gray-800 dark:text-slate-100">{formatCurrency(visibleTotal)}</span>
           </span>
+          )}
         </div>
       </div>
       </FetchingOverlay>
@@ -1355,7 +1370,8 @@ const Orders: React.FC = () => {
             <div className="px-2.5 pb-1 pt-1.5 text-[10.5px] font-bold uppercase tracking-[.08em] text-gray-400 dark:text-slate-500">
               Kitchen status
             </div>
-            {Object.entries(ORDER_STATUS_LABELS).map(([value, label]) => {
+            {selectableStatuses(Object.keys(ORDER_STATUS_LABELS), noCancel).map((value) => {
+              const label = ORDER_STATUS_LABELS[value];
               const m = STATUS_META[value] ?? STATUS_META.placed;
               const isCurrent = statusMenu.current === value;
               return (

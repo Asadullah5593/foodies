@@ -21,6 +21,7 @@ import { AccentedList, AccentedListRow } from '../../components/AccentedListRow'
 import { confirmDialog } from '../../utils/sweetAlert';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { useHasPermission } from '../../hooks/useHasPermission';
+import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 
 const MenuAddons: React.FC = () => {
   const { user } = useAuth();
@@ -66,12 +67,14 @@ const MenuAddons: React.FC = () => {
     return p;
   }, [effectiveBrandId, filters.status, debouncedAddonSearch]);
 
-  const { data: addons, isLoading, isFetching, isPlaceholderData } = useQuery({
-    queryKey: ['addons', filterParams],
+  const addonsKey = ['addons', filterParams];
+  const { data: addons, isLoading, isFetching } = useQuery({
+    queryKey: addonsKey,
     queryFn: () => adminService.getAddons(Object.keys(filterParams).length ? filterParams : undefined),
     enabled: true,
     placeholderData: keepPreviousData,
   });
+  const addonsRefreshing = useResultsRefreshing(addonsKey, isFetching);
 
   const addonList = addons ?? [];
   const addonSearchTypeahead = useTypeaheadSuggestions({
@@ -339,7 +342,7 @@ const MenuAddons: React.FC = () => {
         </form>
       </Modal>
 
-      <FetchingOverlay active={isPlaceholderData} label="Updating addons…" className="rounded-xl">
+      <FetchingOverlay active={addonsRefreshing} label="Updating addons…" className="rounded-xl">
       <div className="w-full space-y-3">
         {addonList.length === 0 ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">

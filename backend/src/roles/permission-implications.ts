@@ -13,6 +13,17 @@ import { Permissions } from './permissions.dto';
  * so we never permanently tie "view implies write".
  */
 export const PERMISSION_IMPLICATIONS: Record<string, string[]> = {
+    // Holding the umbrella means holding every per-module read.
+    'activity-log:view': [
+        'activity-log:view:access',
+        'activity-log:view:menu',
+        'activity-log:view:offers',
+        'activity-log:view:shifts',
+        'activity-log:view:inventory',
+        'activity-log:view:orders',
+        'activity-log:view:auth',
+        'activity-log:view:system',
+    ],
     [Permissions.MENU_MANAGE]: [
         Permissions.MENU_VIEW,
         Permissions.MENU_CREATE,

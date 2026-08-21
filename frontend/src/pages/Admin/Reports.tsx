@@ -8,6 +8,7 @@ import Card from '../../components/Card';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
 import { formatCurrency } from '../../utils/currency';
+import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 
 /** GET /admin/reports/discounts — where the discounts went. */
 interface DiscountsReport {
@@ -68,8 +69,9 @@ const Reports: React.FC = () => {
   };
 
   // Fetch sales summary
-  const { data: salesSummary, isLoading: loadingSales, isPlaceholderData: summaryIsPlaceholder } = useQuery({
-    queryKey: ['salesSummary', selectedBranch, selectedBrand, dateFrom, dateTo],
+  const salesSummaryKey = ['salesSummary', selectedBranch, selectedBrand, dateFrom, dateTo];
+  const { data: salesSummary, isLoading: loadingSales, isFetching: summaryIsFetching } = useQuery({
+    queryKey: salesSummaryKey,
     queryFn: async () => {
       const response = await apiClient.get(`/admin/reports/sales-summary?${reportParams()}`);
       return response.data;
@@ -77,10 +79,12 @@ const Reports: React.FC = () => {
     placeholderData: keepPreviousData,
     enabled: true,
   });
+  const summaryRefreshing = useResultsRefreshing(salesSummaryKey, summaryIsFetching);
 
   // Fetch top items
-  const { data: topItems, isLoading: loadingTopItems, isPlaceholderData: topItemsIsPlaceholder } = useQuery({
-    queryKey: ['topItems', selectedBranch, selectedBrand, dateFrom, dateTo],
+  const topItemsKey = ['topItems', selectedBranch, selectedBrand, dateFrom, dateTo];
+  const { data: topItems, isLoading: loadingTopItems, isFetching: topItemsIsFetching } = useQuery({
+    queryKey: topItemsKey,
     queryFn: async () => {
       const response = await apiClient.get(`/admin/reports/top-items?${reportParams()}`);
       return response.data;
@@ -88,15 +92,18 @@ const Reports: React.FC = () => {
     placeholderData: keepPreviousData,
     enabled: true,
   });
+  const topItemsRefreshing = useResultsRefreshing(topItemsKey, topItemsIsFetching);
 
-  const { data: discounts, isPlaceholderData: discountsIsPlaceholder } = useQuery<DiscountsReport>({
-    queryKey: ['discountsReport', selectedBranch, selectedBrand, dateFrom, dateTo],
+  const discountsReportKey = ['discountsReport', selectedBranch, selectedBrand, dateFrom, dateTo];
+  const { data: discounts, isFetching: discountsIsFetching } = useQuery<DiscountsReport>({
+    queryKey: discountsReportKey,
     queryFn: async () => {
       const response = await apiClient.get<DiscountsReport>(`/admin/reports/discounts?${reportParams()}`);
       return response.data;
     },
     placeholderData: keepPreviousData,
   });
+  const discountsRefreshing = useResultsRefreshing(discountsReportKey, discountsIsFetching);
 
   if (loadingSales || loadingTopItems) return <Loader fullScreen text="Loading reports..." />;
 
@@ -164,7 +171,7 @@ const Reports: React.FC = () => {
         </div>
       </Card>
 
-      <FetchingOverlay active={summaryIsPlaceholder} label="Updating sales summary…">
+      <FetchingOverlay active={summaryRefreshing} label="Updating sales summary…">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
         <Card>
           <h3 className="text-sm font-medium text-gray-500 mb-2">Total Sales</h3>
@@ -212,7 +219,7 @@ const Reports: React.FC = () => {
 
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-gray-800 mb-4">Discounts</h2>
-        <FetchingOverlay active={discountsIsPlaceholder} label="Updating discounts…">
+        <FetchingOverlay active={discountsRefreshing} label="Updating discounts…">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
           <Card>
             <h3 className="text-sm font-medium text-gray-500 mb-2">Out of your margin</h3>
@@ -291,7 +298,7 @@ const Reports: React.FC = () => {
 
       <div className="mb-6">
         <h2 className="text-xl font-semibold text-gray-800 mb-4">Top Selling Items</h2>
-        <FetchingOverlay active={topItemsIsPlaceholder} label="Updating top items…">
+        <FetchingOverlay active={topItemsRefreshing} label="Updating top items…">
         {topItems && topItems.length === 0 ? (
           <Card>
             <p className="text-center text-gray-500 py-8">No data available</p>

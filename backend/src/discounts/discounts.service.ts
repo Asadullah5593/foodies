@@ -21,6 +21,7 @@ import {
     isVisibleToBrands,
     manageScopeFor,
 } from './offer-brand-scope.util';
+import { ActivityContext } from '../activity-log/activity-context';
 
 /** Accept 'HH:mm' / 'HH:mm:ss' (Postgres time); empty/invalid → null. */
 function normalizeDiscountTime(
@@ -540,6 +541,9 @@ export class DiscountsService {
     ) {
         const d = await this.repo.findOne({ where: { id, tenantId } });
         if (!d) throw new NotFoundException('Discount not found');
+        // Money given away. Snapshot before the field-by-field assignment below,
+        // and keep it to the terms that decide what a customer pays.
+        const auditBefore = this.auditSnapshot(d);
         this.assertDiscountManageable(
             d,
             allowedBrandIds,
@@ -681,6 +685,13 @@ export class DiscountsService {
             if (dto.funding !== undefined)
                 d.funding = dto.funding === 'bank' ? 'bank' : 'merchant';
             await this.repo.save(d);
+            ActivityContext.recordChange(
+                'discount',
+                d.id,
+                auditBefore,
+                this.auditSnapshot(d),
+                d.name,
+            );
             return this.toResponse(d);
         } catch (err: unknown) {
             const e = err as {
@@ -850,6 +861,35 @@ export class DiscountsService {
                 (d as { globalLimit?: number | null }).globalLimit ?? null,
             priority: (d as { priority?: number }).priority ?? 0,
             funding: (d as { funding?: string }).funding ?? 'merchant',
+        };
+    }
+
+    /** The terms of a discount that decide what a customer actually pays. */
+    private auditSnapshot(d: {
+        name?: string;
+        code?: string | null;
+        type?: string;
+        value?: number | string | null;
+        isActive?: boolean;
+        minOrderAmount?: number | string | null;
+        maxDiscountAmount?: number | string | null;
+        startsAt?: Date | null;
+        endsAt?: Date | null;
+        funding?: string;
+        globalLimit?: number | null;
+    }): Record<string, unknown> {
+        return {
+            name: d.name ?? null,
+            code: d.code ?? null,
+            type: d.type ?? null,
+            value: d.value ?? null,
+            is_active: d.isActive ?? null,
+            min_order_amount: d.minOrderAmount ?? null,
+            max_discount_amount: d.maxDiscountAmount ?? null,
+            starts_at: d.startsAt ?? null,
+            ends_at: d.endsAt ?? null,
+            funding: d.funding ?? null,
+            global_limit: d.globalLimit ?? null,
         };
     }
 }

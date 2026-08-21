@@ -11,6 +11,7 @@ import { formatCurrency } from '../../../utils/currency';
 import { Link } from 'react-router-dom';
 import RiderHrmHeader from './RiderHrmHeader';
 import { inputClass, useRiders } from './shared';
+import { useSensitivePageView } from '../../../hooks/useSensitivePageView';
 
 /**
  * One-page base-salary CRUD: every rider in a table with their current salary,
@@ -37,6 +38,8 @@ const dialogInputClass =
   'w-full px-3 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-red-500';
 
 const RiderProfilesTable: React.FC = () => {
+  // Opening this screen is itself worth recording — see the hook.
+  useSensitivePageView('rider-profiles');
   const queryClient = useQueryClient();
   // Rider PAY moved to HR → Employees (docs/HRM.md §12). This screen keeps the
   // legacy figure visible for reference but must not offer to edit it: payroll

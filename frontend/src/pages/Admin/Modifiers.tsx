@@ -34,6 +34,7 @@ import { confirmDialog } from '../../utils/sweetAlert';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import SizeMapEditor from '../../components/SizeMapEditor';
+import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 
 interface SortableModifierRowProps {
   modifier: ModifierResponse;
@@ -246,8 +247,9 @@ const Modifiers: React.FC = () => {
   const effectiveBrandId = filters.brand_id ? +filters.brand_id : null;
   const effectiveMenuItemId = filters.menu_item_id ? +filters.menu_item_id : null;
 
-  const { data: modifierGroups, isLoading, isPlaceholderData } = useQuery({
-    queryKey: ['modifierGroups', effectiveBrandId, effectiveMenuItemId],
+  const modifierGroupsKey = ['modifierGroups', effectiveBrandId, effectiveMenuItemId];
+  const { data: modifierGroups, isLoading, isFetching } = useQuery({
+    queryKey: modifierGroupsKey,
     queryFn: () =>
       adminService.getModifierGroups(
         effectiveBrandId != null
@@ -257,6 +259,7 @@ const Modifiers: React.FC = () => {
     enabled: true,
     placeholderData: keepPreviousData,
   });
+  const modifiersRefreshing = useResultsRefreshing(modifierGroupsKey, isFetching);
 
   const { data: menuItemsForFilter } = useQuery({
     queryKey: ['menuItemsForModifierFilter', effectiveBrandId],
@@ -1009,7 +1012,7 @@ const Modifiers: React.FC = () => {
         )}
       </Modal>
 
-      <FetchingOverlay active={isPlaceholderData} label="Updating modifier groups…" className="rounded-xl">
+      <FetchingOverlay active={modifiersRefreshing} label="Updating modifier groups…" className="rounded-xl">
       <div className="w-full space-y-3">
         {filteredGroups.length === 0 ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">

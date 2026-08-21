@@ -17,6 +17,7 @@ import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { confirmDialog } from '../../utils/sweetAlert';
 import { useHasPermission } from '../../hooks/useHasPermission';
+import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 
 export interface CategoryItem {
   id: number;
@@ -60,11 +61,13 @@ const Categories: React.FC = () => {
     return p;
   }, [filterBrandId, filterActive, debouncedFilterSearch]);
 
-  const { data: categories, isLoading, isFetching, isPlaceholderData } = useQuery({
-    queryKey: ['categories', queryParams],
+  const categoriesKey = ['categories', queryParams];
+  const { data: categories, isLoading, isFetching } = useQuery({
+    queryKey: categoriesKey,
     queryFn: () => adminService.getCategories(queryParams),
     placeholderData: keepPreviousData,
   });
+  const categoriesRefreshing = useResultsRefreshing(categoriesKey, isFetching);
 
   const suggestionOptions = React.useMemo(
     () =>
@@ -363,7 +366,7 @@ const Categories: React.FC = () => {
         </form>
       </Modal>
 
-      <FetchingOverlay active={isPlaceholderData} label="Updating categories…" className="rounded-xl">
+      <FetchingOverlay active={categoriesRefreshing} label="Updating categories…" className="rounded-xl">
       <div className="w-full space-y-3">
         {categoryList.length === 0 ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">

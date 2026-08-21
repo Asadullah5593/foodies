@@ -5,6 +5,9 @@ import apiClient from '../../utils/apiClient';
 import SearchableSelect from '../../components/SearchableSelect';
 import FetchingOverlay from '../../components/FetchingOverlay';
 import { Branch } from '../../types';
+import { recordBeacon } from '../../utils/activityBeacon';
+import { useSensitivePageView } from '../../hooks/useSensitivePageView';
+import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 
 /**
  * The discount stages the pricing engine runs, each carrying this row's
@@ -208,6 +211,8 @@ const PRINT_CSS = `
  * ReportsService.productSales.
  */
 const ProductSales: React.FC = () => {
+  // Opening this screen is itself worth recording — see the hook.
+  useSensitivePageView('reports');
   const today = new Date().toISOString().split('T')[0];
   const [selectedBranch, setSelectedBranch] = useState<number | null>(null);
   const [selectedBrand, setSelectedBrand] = useState<number | null>(null);
@@ -269,8 +274,7 @@ const ProductSales: React.FC = () => {
     },
   });
 
-  const { data, isLoading, isError, isPlaceholderData } = useQuery<ProductSalesReportData>({
-    queryKey: [
+  const productSalesKey = [
       'productSales',
       selectedBranch,
       selectedBrand,
@@ -282,7 +286,9 @@ const ProductSales: React.FC = () => {
       splitBy,
       sortBy,
       sortDir,
-    ],
+    ];
+  const { data, isLoading, isError, isFetching } = useQuery<ProductSalesReportData>({
+    queryKey: productSalesKey,
     queryFn: async () => {
       const params = new URLSearchParams();
       if (selectedBranch) params.append('branch_id', String(selectedBranch));
@@ -302,6 +308,7 @@ const ProductSales: React.FC = () => {
     },
     placeholderData: keepPreviousData,
   });
+  const productSalesRefreshing = useResultsRefreshing(productSalesKey, isFetching);
 
   const rows = useMemo(() => {
     const all = data?.rows ?? [];
@@ -474,6 +481,9 @@ const ProductSales: React.FC = () => {
       }
     }
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    // A download never reaches the server, so this is the only place it can
+    // be recorded. Exporting data is the step before it leaves the building.
+    recordBeacon({ action: 'client.export', subject: 'product-sales' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -894,8 +904,8 @@ const ProductSales: React.FC = () => {
 
       {/* Report body: while a filter change is fetching, the previous results
           stay mounted and a soft veil fades in over them
-          (keepPreviousData ⇒ isPlaceholderData). */}
-      <FetchingOverlay active={isPlaceholderData} label="Updating report…" className="rounded-2xl">
+          (see useResultsRefreshing — background polls stay silent). */}
+      <FetchingOverlay active={productSalesRefreshing} label="Updating report…" className="rounded-2xl">
       {/* KPIs */}
       <div className="mb-[18px] grid grid-cols-2 gap-3.5 lg:grid-cols-4">
         {kpis.map((k) => (

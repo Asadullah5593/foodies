@@ -20,6 +20,8 @@ import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { confirmDialog } from '../../utils/sweetAlert';
 import { useHasPermission } from '../../hooks/useHasPermission';
+import RecordHistoryLink from '../../components/RecordHistoryLink';
+import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 
 interface MenuItemAddon {
   id: number;
@@ -186,12 +188,14 @@ const MenuItems: React.FC = () => {
     enabled: !!formBrandId,
   });
 
-  const { data: menuItems, isLoading, isPlaceholderData } = useQuery({
-    queryKey: ['menuItems', filterParams],
+  const menuItemsKey = ['menuItems', filterParams];
+  const { data: menuItems, isLoading, isFetching } = useQuery({
+    queryKey: menuItemsKey,
     queryFn: () => adminService.getMenuItems(Object.keys(filterParams).length ? filterParams : undefined),
     enabled: true,
     placeholderData: keepPreviousData,
   });
+  const menuItemsRefreshing = useResultsRefreshing(menuItemsKey, isFetching);
 
   const filteredMenuItems = useMemo(() => {
     const items = menuItems ?? [];
@@ -1515,7 +1519,7 @@ const MenuItems: React.FC = () => {
         </form>
       </Modal>
 
-      <FetchingOverlay active={isPlaceholderData} label="Updating menu items…" className="rounded-xl">
+      <FetchingOverlay active={menuItemsRefreshing} label="Updating menu items…" className="rounded-xl">
       <div className="w-full space-y-3">
         {(!menuItems || menuItems.length === 0) ? (
           <Card className="dark:bg-slate-800 dark:border-slate-700">
@@ -1590,6 +1594,8 @@ const MenuItems: React.FC = () => {
                     actions={
                       <>
                         {canEdit && <Button size="small" variant="edit" onClick={() => setEditingItem(item)}>Edit</Button>}
+                        {/* "Who changed this price?", answered where it is asked. */}
+                        <RecordHistoryLink module="menu" entityType="menu_item" entityId={item.id} label={item.name} />
                         {canEdit && <Button
                           size="small"
                           variant={item.is_active ? 'outline' : 'primary'}

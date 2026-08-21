@@ -11,7 +11,11 @@ import { formatOrderType } from '../../utils/format';
 import { printContent } from '../../utils/print';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import Button from '../../components/Button';
-import { useHasPermission } from '../../hooks/useHasPermission';
+import { useHasPermission, useHasRestriction } from '../../hooks/useHasPermission';
+import {
+  NO_CANCEL_PERMISSION,
+  STATUS_CHANGE_PERMISSIONS,
+} from '../../lib/orderStatusPermissions';
 import Card from '../../components/Card';
 import { deliveryStatusLabel, deliveryStatusTone, isDeliveryFailed } from '../../lib/deliveryStatus';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
@@ -100,7 +104,8 @@ function formatOrderSourceLabel(source: string | null | undefined): string {
 const OrderDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const canUpdateStatus = useHasPermission('orders:update-status');
+  const canUpdateStatus = useHasPermission(STATUS_CHANGE_PERMISSIONS);
+  const noCancel = useHasRestriction(NO_CANCEL_PERMISSION);
   const queryClient = useQueryClient();
   const [showCustomerInvoice, setShowCustomerInvoice] = useState(false);
 
@@ -200,7 +205,11 @@ const OrderDetail: React.FC = () => {
       ${(o.loyalty_points_redeemed ?? 0) > 0 ? `<p class="py-2 text-gray-600">Points redeemed: ${o.loyalty_points_redeemed}</p>` : ''}
       <p class="py-2 border-t total-row">Total: ${formatCurrency(totalAmount)}</p>
     `;
-    printContent(html, `Order ${orderNum}`);
+    printContent(html, `Order ${orderNum}`, '', {
+      subject: 'order',
+      entityId: Number(id) || undefined,
+      label: `Order ${orderNum}`,
+    });
   };
 
   return (
@@ -308,7 +317,7 @@ const OrderDetail: React.FC = () => {
             <option value="preparing">Preparing</option>
             <option value="ready">Ready</option>
             <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
+            {!noCancel && <option value="cancelled">Cancelled</option>}
           </select>
         </div>}
       </Card>

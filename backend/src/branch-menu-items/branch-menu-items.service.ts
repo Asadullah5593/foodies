@@ -10,6 +10,7 @@ import { Branch } from '../entities/branch.entity';
 import { MenuItem } from '../entities/menu-item.entity';
 import { MenuVariant } from '../entities/menu-variant.entity';
 import { MenuAddon } from '../entities/menu-addon.entity';
+import { ActivityContext } from '../activity-log/activity-context';
 
 @Injectable()
 export class BranchMenuItemsService {
@@ -327,6 +328,14 @@ export class BranchMenuItemsService {
                 'You do not have access to this brand',
             );
         }
+        // Per-branch price overrides are where a till's prices actually come
+        // from, so a change here matters as much as the brand-level price.
+        const auditBefore = {
+            price_override: item.priceOverride,
+            // The column is isAvailable; the API calls it is_enabled.
+            is_enabled: item.isAvailable,
+            is_hidden_online: item.isHiddenOnline,
+        };
         if (dto.price_override !== undefined)
             item.priceOverride =
                 dto.price_override != null ? Number(dto.price_override) : null;
@@ -334,6 +343,17 @@ export class BranchMenuItemsService {
         if (dto.is_hidden_online !== undefined)
             item.isHiddenOnline = dto.is_hidden_online;
         await this.repo.save(item);
+        ActivityContext.recordChange(
+            'branch_menu_item',
+            item.id,
+            auditBefore,
+            {
+                price_override: item.priceOverride,
+                is_enabled: item.isAvailable,
+                is_hidden_online: item.isHiddenOnline,
+            },
+            item.menuItem?.name ?? null,
+        );
         return {
             id: item.id,
             branch_id: item.branchId,

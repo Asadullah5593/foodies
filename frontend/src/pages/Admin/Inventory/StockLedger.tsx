@@ -7,6 +7,8 @@ import SearchableSelect from '../../../components/SearchableSelect';
 import FetchingOverlay from '../../../components/FetchingOverlay';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
+import { recordBeacon } from '../../../utils/activityBeacon';
+import { useResultsRefreshing } from '../../../components/useResultsRefreshing';
 
 const card = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl';
 const fieldBox = 'flex items-center gap-2 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm';
@@ -54,8 +56,9 @@ const StockLedger: React.FC = () => {
   // to a safety cap, so KPIs / direction filter / pagination reflect the full set
   // rather than just the latest 200. `capped` flags the rare >cap case.
   const FETCH_CAP_PAGES = 25; // 25 × 200 = 5000 rows
+  const ledgerKey = ['ledger', activeBranchId, from, to, eventType, itemId];
   const ledgerQ = useQuery({
-    queryKey: ['ledger', activeBranchId, from, to, eventType, itemId],
+    queryKey: ledgerKey,
     queryFn: async () => {
       const items: any[] = [];
       let total = 0, pg = 1;
@@ -72,6 +75,7 @@ const StockLedger: React.FC = () => {
     enabled: activeBranchId != null,
     placeholderData: keepPreviousData,
   });
+  const ledgerRefreshing = useResultsRefreshing(ledgerKey, ledgerQ.isFetching);
   const allRows: any[] = ledgerQ.data?.items ?? [];
   const serverTotal: number = ledgerQ.data?.total ?? allRows.length;
   const capped: boolean = !!ledgerQ.data?.capped;
@@ -120,6 +124,9 @@ const StockLedger: React.FC = () => {
       lines.push([r.createdAt ? new Date(r.createdAt).toLocaleString() : '', r.eventType ?? '', it?.name ?? `Item #${r.inventoryItemId}`, it?.code ?? '', bucket, r.inventoryBatchId ?? '', r.inventoryBatch?.lotCode ?? '', r.inventoryBatch?.expiryDate ?? '', Number(r.qtyDelta ?? 0), unitCode(Number(r.inventoryItemId)), refMeta(r).label, r.creator?.name ?? (r.createdBy != null ? `User #${r.createdBy}` : 'System'), r.notes ?? ''].map(esc).join(','));
     }
     const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    // A download never reaches the server, so this is the only place it can
+    // be recorded. Exporting data is the step before it leaves the building.
+    recordBeacon({ action: 'client.export', subject: 'inventory-ledger' });
     const url = URL.createObjectURL(blob); const a = document.createElement('a');
     a.href = url; a.download = `ledger-${activeBranchId}-${from || 'all'}-to-${to || 'all'}.csv`;
     document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
@@ -182,7 +189,7 @@ const StockLedger: React.FC = () => {
         </div>
 
         {loading ? <div className="p-10"><Loader /></div> : (
-          <FetchingOverlay active={ledgerQ.isPlaceholderData} label="Updating movements…" className="rounded-b-xl">
+          <FetchingOverlay active={ledgerRefreshing} label="Updating movements…" className="rounded-b-xl">
           <div className="overflow-x-auto">
             <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1020px]" style={{ gridTemplateColumns: '150px minmax(180px,1.3fr) 130px 140px minmax(150px,1fr) 110px 120px 110px' }}>
               <div>Time</div><div>Type</div><div>Item</div><div>Location</div><div>Lot / Expiry</div><div className="text-right pr-2">Qty Δ</div><div className="pl-3">Reference</div><div>By</div>
