@@ -4,6 +4,7 @@ import { ReviewsService } from './reviews.service';
 import { TrainingService } from './training.service';
 import { AttendanceService } from './attendance.service';
 import { HrAlertsService } from './hr-alerts.service';
+import { EmployeeExitsService } from './employee-exits.service';
 
 /**
  * The HR module's unattended work.
@@ -25,6 +26,7 @@ export class HrSchedulerService {
         private readonly training: TrainingService,
         private readonly attendance: AttendanceService,
         private readonly alerts: HrAlertsService,
+        private readonly exits: EmployeeExitsService,
     ) {}
 
     /**
@@ -43,12 +45,16 @@ export class HrSchedulerService {
             // Runs last: it reads the review cycles and training expiries the
             // steps above just wrote, so a certificate that lapsed tonight is
             // alerted tonight rather than tomorrow.
+            // Before the alert sweep: somebody whose notice ended last night
+            // should not be reported as an overdue review this morning.
+            const settled = await this.exits.settleDueNoticePeriods();
             const alerts = await this.alerts.sweep();
             this.logger.log(
                 `HR nightly: ${cycles.created} review cycle(s) created across ` +
                     `${cycles.employees} employee(s), ${expired} training(s) expired, ` +
-                    `${photos} punch photo(s) purged, ${alerts.opened} alert(s) opened ` +
-                    `and ${alerts.resolved} resolved`,
+                    `${photos} punch photo(s) purged, ${settled} notice period(s) ` +
+                    `settled, ${alerts.opened} alert(s) opened and ` +
+                    `${alerts.resolved} resolved`,
             );
         } catch (err) {
             // Never let a scheduled job take the process down.

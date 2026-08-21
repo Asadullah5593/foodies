@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'react-hot-toast';
 import { MdArrowBack, MdOutlineHistory, MdOutlineLock } from 'react-icons/md';
 import { hrService } from '../../../services/api/hrService';
 import { useHasPermission } from '../../../hooks/useHasPermission';
@@ -57,6 +58,7 @@ const EmployeeDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const employeeId = Number(id);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const canEdit = useHasPermission('employees:edit');
   const canTerminate = useHasPermission('employees:terminate');
   const canViewReviews = useHasPermission('reviews:view');
@@ -93,6 +95,34 @@ const EmployeeDetail: React.FC = () => {
     queryFn: () => hrService.listAdvances(employeeId),
     enabled: Number.isFinite(employeeId) && canViewPayroll,
   });
+
+  const clearItem = useMutation({
+    mutationFn: (vars: { itemId: number; status: string; note?: string }) =>
+      hrService.updateClearanceItem(exit!.id, vars.itemId, {
+        status: vars.status,
+        note: vars.note,
+      }),
+    onSuccess: (r) => {
+      toast.success(`Clearance ${r.clearance_status.replace('_', ' ')}`);
+      queryClient.invalidateQueries({ queryKey: ['hr-employee-exit', employeeId] });
+      queryClient.invalidateQueries({ queryKey: ['hr-employee', employeeId] });
+    },
+    onError: (err: unknown) => {
+      const message =
+        (err as { response?: { data?: { message?: string | string[] } } })?.response?.data
+          ?.message ?? 'Could not update that item';
+      toast.error(Array.isArray(message) ? message[0] : message);
+    },
+  });
+
+  /** Withholding is a claim against somebody, so it needs a reason. */
+  const onWithhold = (itemId: number) => {
+    const note = window.prompt(
+      'Why is this being withheld? (recorded on the exit record)',
+    );
+    if (!note || note.trim().length < 3) return;
+    clearItem.mutate({ itemId, status: 'withheld', note: note.trim() });
+  };
 
   const { data: reviewCycles = [] } = useQuery({
     queryKey: ['hr-review-cycles', employeeId],
@@ -434,28 +464,73 @@ const EmployeeDetail: React.FC = () => {
                 {exit.clearance_items.map((item) => (
                   <li
                     key={item.id}
-                    className="flex items-center justify-between rounded border border-gray-200 px-3 py-2 text-sm dark:border-slate-700"
+                    className="flex flex-wrap items-center justify-between gap-2 rounded border border-gray-200 px-3 py-2 text-sm dark:border-slate-700"
                   >
                     <span className="text-gray-800 dark:text-gray-200">{item.description}</span>
-                    <span
-                      className={
-                        item.status === 'cleared'
-                          ? 'text-green-600 dark:text-green-400'
-                          : item.status === 'withheld'
-                            ? 'text-red-600 dark:text-red-400'
-                            : 'text-gray-500 dark:text-gray-400'
-                      }
-                    >
-                      {item.status.replace('_', ' ')}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={
+                          item.status === 'cleared'
+                            ? 'text-green-600 dark:text-green-400'
+                            : item.status === 'withheld'
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-gray-500 dark:text-gray-400'
+                        }
+                      >
+                        {item.status.replace('_', ' ')}
+                      </span>
+                      {/* The checklist was read-only, so nothing could ever be
+                          ticked off and every exit stayed "pending" for ever. */}
+                      {canTerminate && exit.settled_at == null && (
+                        <div className="flex gap-1">
+                          {item.status !== 'cleared' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                clearItem.mutate({ itemId: item.id, status: 'cleared' })
+                              }
+                              disabled={clearItem.isPending}
+                              className="rounded border border-green-600 px-2 py-0.5 text-xs font-medium text-green-700 hover:bg-green-50 disabled:opacity-50 dark:text-green-400 dark:hover:bg-green-900/20"
+                            >
+                              Cleared
+                            </button>
+                          )}
+                          {item.status !== 'withheld' && (
+                            <button
+                              type="button"
+                              onClick={() => onWithhold(item.id)}
+                              disabled={clearItem.isPending}
+                              className="rounded border border-red-300 px-2 py-0.5 text-xs text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-800 dark:text-red-400 dark:hover:bg-red-900/20"
+                            >
+                              Withhold
+                            </button>
+                          )}
+                          {item.status !== 'not_applicable' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                clearItem.mutate({
+                                  itemId: item.id,
+                                  status: 'not_applicable',
+                                })
+                              }
+                              disabled={clearItem.isPending}
+                              className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-slate-600 dark:text-gray-300 dark:hover:bg-slate-700"
+                            >
+                              N/A
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>
-              {exit.settled_at == null && (
-                <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                  Final settlement is calculated with payroll (Phase 4) and is still pending.
-                </p>
-              )}
+              <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                {exit.settled_at
+                  ? `Final settlement was paid on ${new Date(exit.settled_at).toLocaleDateString()}.`
+                  : 'Final settlement is paid by the payroll run covering the last working day — it settles when that run is approved. Clearance is tracked separately: withholding an item does not stop the run, it records what is outstanding.'}
+              </p>
             </Section>
           )}
         </div>

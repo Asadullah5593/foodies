@@ -54,15 +54,99 @@ export class EmployeesService {
 
     // ---------------------------------------------------------------- reads
 
+    /**
+     * System logins that could belong to an employee record.
+     *
+     * Only users with NO employee row: a login already linked is not a
+     * candidate, and offering it would produce a conflict at save time. This is
+     * the missing half of "does this person already exist in the system" —
+     * without it, adding a cashier who already logs into the POS silently
+     * creates a second, unlinked identity for the same human, and their shifts
+     * never join up with their attendance.
+     */
+    async linkableUsers(user: HrUser, search?: string) {
+        const qb = this.employees.manager
+            .createQueryBuilder()
+            .select([
+                'u.id AS id',
+                'u.name AS name',
+                'u.email AS email',
+                'u.phone AS phone',
+                'r.name AS role_name',
+            ])
+            .from('users', 'u')
+            .innerJoin('tenant_users', 'tu', 'tu.user_id = u.id')
+            .leftJoin('branch_users', 'bu', 'bu.user_id = u.id')
+            .leftJoin('roles', 'r', 'r.id = bu.role_id')
+            .where(
+                'NOT EXISTS (SELECT 1 FROM employees e WHERE e.user_id = u.id)',
+            )
+            .orderBy('u.name', 'ASC')
+            .limit(50);
+
+        if (user.tenantId != null) {
+            qb.andWhere('tu.tenant_id = :tenantId', {
+                tenantId: user.tenantId,
+            });
+        }
+        if (user.allowedBranchIds != null) {
+            if (user.allowedBranchIds.length === 0) return [];
+            qb.andWhere('bu.branch_id IN (:...branchIds)', {
+                branchIds: user.allowedBranchIds,
+            });
+        }
+        if (search?.trim()) {
+            const term = `%${search.trim().toLowerCase()}%`;
+            qb.andWhere(
+                '(LOWER(u.name) LIKE :term OR LOWER(u.email) LIKE :term OR u.phone LIKE :term)',
+                { term },
+            );
+        }
+
+        const rows = await qb.distinct(true).getRawMany<{
+            id: number;
+            name: string;
+            email: string | null;
+            phone: string | null;
+            role_name: string | null;
+        }>();
+
+        return rows.map((r) => ({
+            id: Number(r.id),
+            name: r.name,
+            email: r.email,
+            phone: r.phone,
+            role_name: r.role_name,
+        }));
+    }
+
     async list(user: HrUser, query: EmployeeQueryDto) {
         const page = Math.max(1, query.page ?? 1);
         const limit = Math.min(Math.max(1, query.limit ?? 25), 200);
 
         const qb = this.employees
             .createQueryBuilder('emp')
-            // INNER join: an employee with no open assignment is a data bug,
-            // and silently listing them unscoped would leak across branches.
-            .innerJoin('emp.assignments', 'cur', 'cur.effectiveTo IS NULL')
+            // The LATEST assignment, not merely an OPEN one. Recording an exit
+            // closes the assignment, so joining on `effective_to IS NULL` made
+            // every leaver vanish: "Include past employees" could never show
+            // anybody, and filtering by Resigned returned nothing while resigned
+            // staff existed. A leaver now appears under the branch and brand
+            // they left from.
+            //
+            // Still an INNER join, and still scoped on `cur`: an employee with
+            // no assignment at all is a data bug, and listing them unscoped
+            // would leak across branches.
+            .innerJoin(
+                'emp.assignments',
+                'cur',
+                `cur.id = (
+                    SELECT a2.id FROM employee_assignments a2
+                     WHERE a2.employee_id = emp.id
+                     ORDER BY (a2.effective_to IS NULL) DESC,
+                              a2.effective_from DESC, a2.id DESC
+                     LIMIT 1
+                )`,
+            )
             .leftJoin('cur.designation', 'des')
             .leftJoin('cur.branch', 'br')
             .leftJoin('cur.brand', 'bnd')
@@ -88,9 +172,16 @@ export class EmployeesService {
 
         applyEmployeeScope(qb, user, 'emp', 'cur');
 
-        if (!query.include_inactive) {
+        const goneStatuses = ['resigned', 'terminated'];
+        // Asking for resigned staff IS asking to see past employees. Without
+        // this the two filters cancel out and the list comes back empty, which
+        // reads as "there are none" rather than "you excluded them".
+        const wantsGone =
+            query.include_inactive === true ||
+            (query.status != null && goneStatuses.includes(query.status));
+        if (!wantsGone) {
             qb.andWhere('emp.status NOT IN (:...goneStatuses)', {
-                goneStatuses: ['resigned', 'terminated'],
+                goneStatuses,
             });
         }
         if (query.status) {
@@ -100,6 +191,11 @@ export class EmployeesService {
             qb.andWhere('cur.branchId = :branchFilter', {
                 branchFilter: query.branch_id,
             });
+        }
+        if (query.unassigned_brand) {
+            // The list shows these as "Shared"; without this there is no way to
+            // pull them up, because a null cannot be matched by an id.
+            qb.andWhere('cur.brandId IS NULL');
         }
         if (query.brand_id) {
             qb.andWhere('cur.brandId = :brandFilter', {

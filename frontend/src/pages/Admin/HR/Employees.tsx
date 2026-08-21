@@ -28,6 +28,9 @@ const Employees: React.FC = () => {
   const [search, setSearch] = useState('');
   const [branchId, setBranchId] = useState<number | ''>('');
   const [designationId, setDesignationId] = useState<number | ''>('');
+  // '' = every brand, 'shared' = the ones with no brand at all.
+  const [brandId, setBrandId] = useState<number | '' | 'shared'>('');
+  const [status, setStatus] = useState('');
   const [includeInactive, setIncludeInactive] = useState(false);
   const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
@@ -38,12 +41,24 @@ const Employees: React.FC = () => {
     () => ({
       search: debouncedSearch.trim() || undefined,
       branch_id: branchId === '' ? undefined : Number(branchId),
+      brand_id:
+        brandId === '' || brandId === 'shared' ? undefined : Number(brandId),
+      unassigned_brand: brandId === 'shared' || undefined,
       designation_id: designationId === '' ? undefined : Number(designationId),
+      status: status || undefined,
       include_inactive: includeInactive || undefined,
       page,
       limit: PAGE_SIZE,
     }),
-    [debouncedSearch, branchId, designationId, includeInactive, page],
+    [
+      debouncedSearch,
+      branchId,
+      brandId,
+      designationId,
+      status,
+      includeInactive,
+      page,
+    ],
   );
 
   const { data, isLoading, isError, isPlaceholderData } = useQuery({
@@ -103,7 +118,7 @@ const Employees: React.FC = () => {
         )}
       </div>
 
-      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <div className="relative">
           <MdOutlineSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -128,6 +143,25 @@ const Employees: React.FC = () => {
         />
 
         <SearchableSelect
+          ariaLabel="Brand"
+          value={brandId === '' ? '' : String(brandId)}
+          onChange={(v) =>
+            resetPageAnd(setBrandId)(
+              v === '' ? '' : v === 'shared' ? 'shared' : Number(v),
+            )
+          }
+          options={[
+            { value: '', label: 'All brands' },
+            ...brands.map((b) => ({ value: String(b.id), label: b.name })),
+            // Cleaners, guards, anyone who works for the branch rather than one
+            // brand. They show as "Shared" in the table.
+            { value: 'shared', label: 'Shared (no brand)' },
+          ]}
+          placeholder="All brands"
+          searchPlaceholder="Search brands…"
+        />
+
+        <SearchableSelect
           ariaLabel="Designation"
           value={designationId === '' ? '' : String(designationId)}
           onChange={(v) => resetPageAnd(setDesignationId)(v === '' ? '' : Number(v))}
@@ -139,6 +173,25 @@ const Employees: React.FC = () => {
           searchPlaceholder="Search designations…"
         />
 
+        <SearchableSelect
+          ariaLabel="Status"
+          value={status}
+          onChange={(v) => resetPageAnd(setStatus)(v)}
+          options={[
+            { value: '', label: 'All statuses' },
+            { value: 'active', label: 'Active' },
+            // `on_leave` and `suspended` are omitted on purpose: nothing in the
+            // system ever sets them. Approving leave writes attendance days and
+            // leaves the employee active, and there is no suspension flow at
+            // all — so offering them would filter on a state that never occurs.
+            { value: 'notice_period', label: 'Serving notice' },
+            { value: 'resigned', label: 'Resigned' },
+            { value: 'terminated', label: 'Terminated' },
+          ]}
+          placeholder="All statuses"
+          searchPlaceholder="Search statuses…"
+        />
+
         <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
           <input
             type="checkbox"
@@ -147,6 +200,11 @@ const Employees: React.FC = () => {
             className="h-4 w-4 rounded border-gray-300"
           />
           Include past employees
+          {['resigned', 'terminated'].includes(status) && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              (already shown by this status)
+            </span>
+          )}
         </label>
       </div>
 

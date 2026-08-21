@@ -379,6 +379,15 @@ export class EmployeeQueryDto {
     @IsInt()
     brand_id?: number;
 
+    @ApiPropertyOptional({
+        description:
+            'Only staff with NO brand — cleaners, guards, anyone shared across brands. `brand_id` cannot express this, since the column is null.',
+    })
+    @IsOptional()
+    @IsBoolean()
+    @Type(() => Boolean)
+    unassigned_brand?: boolean;
+
     @ApiPropertyOptional()
     @IsOptional()
     @Type(() => Number)

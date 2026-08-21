@@ -155,10 +155,20 @@ export interface EmployeeExitDetail {
   }>;
 }
 
+export interface LinkableUser {
+  id: number;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  role_name: string | null;
+}
+
 export interface EmployeeListParams {
   search?: string;
   branch_id?: number;
   brand_id?: number;
+  /** Only staff with no brand — the ones the list shows as "Shared". */
+  unassigned_brand?: boolean;
   designation_id?: number;
   status?: string;
   include_inactive?: boolean;
@@ -1456,6 +1466,13 @@ export const hrService = {
     const { data } = await apiClient.get(
       `/admin/hr/training/readiness/${employeeId}/${designationId}`,
     );
+    return data;
+  },
+
+  listLinkableUsers: async (search?: string): Promise<LinkableUser[]> => {
+    const { data } = await apiClient.get('/admin/hr/employees/linkable-users', {
+      params: { search: search || undefined },
+    });
     return data;
   },
 

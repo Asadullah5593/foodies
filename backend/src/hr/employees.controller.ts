@@ -55,6 +55,20 @@ export class EmployeesController {
         return this.employees.list(user, query);
     }
 
+    @Get('linkable-users')
+    @RequirePermission(Permissions.EMPLOYEES_CREATE)
+    @ApiOperation({
+        summary: 'System logins not yet attached to an employee',
+        description:
+            'Answers "does this person already exist in the system" when adding somebody. A login already linked to an employee is excluded — it cannot be attached twice.',
+    })
+    linkableUsers(
+        @CurrentUser() user: HrUser,
+        @Query('search') search?: string,
+    ) {
+        return this.employees.linkableUsers(user, search);
+    }
+
     @Get(':id')
     @RequirePermission(Permissions.EMPLOYEES_VIEW)
     @ApiOperation({

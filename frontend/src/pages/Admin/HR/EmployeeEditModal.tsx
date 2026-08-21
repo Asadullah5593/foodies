@@ -197,11 +197,10 @@ const EmployeeEditModal: React.FC<Props> = ({ employee, onClose }) => {
           <SearchableSelect
             value={form.status}
             onChange={set('status')}
-            options={[
-              { value: 'active', label: 'Active' },
-              { value: 'on_leave', label: 'On leave' },
-              { value: 'suspended', label: 'Suspended' },
-            ]}
+            // Only the state a human should set by hand. Leaving and returning
+            // are recorded through Leaves, and an exit sets its own status —
+            // a hand-set "on leave" would just drift from the leave records.
+            options={[{ value: 'active', label: 'Active' }]}
           />
           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
             Resignations and terminations are recorded through &ldquo;Record exit&rdquo;.

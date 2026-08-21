@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import React, { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Modal from '../../../components/Modal';
 import { Designation, hrService } from '../../../services/api/hrService';
@@ -38,7 +38,31 @@ const EmployeeFormModal: React.FC<Props> = ({ designations, branches, brands = [
     designation_id: '' as number | '',
     employment_type: 'full_time',
     date_of_joining: today(),
+    user_id: '' as number | '',
   });
+
+  // Logins that belong to nobody yet. Without this the form had no way to say
+  // "this person already exists in the system", so adding a cashier who already
+  // logs into the POS created a second identity for the same human — their
+  // shifts on one record, their attendance and pay on another.
+  const { data: linkableUsers = [] } = useQuery({
+    queryKey: ['hr-linkable-users'],
+    queryFn: () => hrService.listLinkableUsers(),
+  });
+
+  /** A login whose name looks like the one being typed. */
+  const likelyMatch = useMemo(() => {
+    const typed = form.full_name.trim().toLowerCase();
+    if (typed.length < 3 || form.user_id !== '') return null;
+    return (
+      linkableUsers.find(
+        (u) =>
+          u.name.toLowerCase() === typed ||
+          u.name.toLowerCase().includes(typed) ||
+          typed.includes(u.name.toLowerCase()),
+      ) ?? null
+    );
+  }, [form.full_name, form.user_id, linkableUsers]);
 
   const set = (key: keyof typeof form) => (value: string | number) =>
     setForm((f) => ({ ...f, [key]: value }));
@@ -55,6 +79,7 @@ const EmployeeFormModal: React.FC<Props> = ({ designations, branches, brands = [
         designation_id: Number(form.designation_id),
         employment_type: form.employment_type,
         date_of_joining: form.date_of_joining,
+        user_id: form.user_id === '' ? undefined : Number(form.user_id),
       }),
     onSuccess: (result) => {
       toast.success(`Employee ${result.employee_code} created`);
@@ -193,6 +218,47 @@ const EmployeeFormModal: React.FC<Props> = ({ designations, branches, brands = [
               { value: 'probation', label: 'Probation' },
             ]}
           />
+        </div>
+
+        <div className="sm:col-span-2 lg:col-span-3">
+          <label className={label}>System login</label>
+          <SearchableSelect
+            ariaLabel="System login"
+            value={form.user_id === '' ? '' : String(form.user_id)}
+            onChange={(v) => set('user_id')(v === '' ? '' : Number(v))}
+            options={[
+              { value: '', label: 'No login — HR record only' },
+              ...linkableUsers.map((u) => ({
+                value: String(u.id),
+                label: `${u.name}${u.email ? ` · ${u.email}` : ''}${
+                  u.role_name ? ` · ${u.role_name}` : ''
+                }`,
+              })),
+            ]}
+            placeholder="No login — HR record only"
+            searchPlaceholder="Search by name, email or phone…"
+          />
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            Link this person to their POS or admin account, so their till shifts
+            and their attendance belong to one record. Most staff — cooks,
+            cleaners, guards — have no login, and that is normal. Only accounts
+            not already attached to somebody are listed.
+          </p>
+          {likelyMatch && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200">
+              <span>
+                <strong>{likelyMatch.name}</strong> already has a login
+                {likelyMatch.email ? ` (${likelyMatch.email})` : ''}. Same person?
+              </span>
+              <button
+                type="button"
+                onClick={() => set('user_id')(likelyMatch.id)}
+                className="rounded border border-amber-500 px-2 py-0.5 font-medium hover:bg-amber-100 dark:hover:bg-amber-900/40"
+              >
+                Link it
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

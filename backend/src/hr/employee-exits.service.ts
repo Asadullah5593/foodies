@@ -73,6 +73,57 @@ export class EmployeeExitsService {
     ) {}
 
     /**
+     * Finish exits whose last working day has passed.
+     *
+     * Recording an exit dated in the future sets `notice_period`, deliberately,
+     * so the person keeps working and being paid until they actually leave.
+     * Nothing moved them on afterwards, though — they served notice forever,
+     * and since only `resigned` and `terminated` count as gone they went on
+     * showing up as current staff. Runs nightly; idempotent.
+     */
+    async settleDueNoticePeriods(): Promise<number> {
+        const today = new Date().toISOString().slice(0, 10);
+        const due = await this.dataSource.query<
+            Array<{ employee_id: number; exit_type: string }>
+        >(
+            `SELECT e.id AS employee_id,
+                    COALESCE(x.exit_type, 'resignation') AS exit_type
+               FROM employees e
+               LEFT JOIN LATERAL (
+                    SELECT ex.exit_type FROM employee_exits ex
+                     WHERE ex.employee_id = e.id
+                     ORDER BY ex.id DESC LIMIT 1
+                  ) x ON TRUE
+              WHERE e.status = 'notice_period'
+                AND e.date_of_leaving IS NOT NULL
+                AND e.date_of_leaving < $1`,
+            [today],
+        );
+
+        for (const row of due) {
+            const status =
+                row.exit_type === 'termination' ? 'terminated' : 'resigned';
+            await this.dataSource.query(
+                `UPDATE employees SET status = $1 WHERE id = $2`,
+                [status, row.employee_id],
+            );
+            await this.dataSource.query(
+                `INSERT INTO employee_events
+                    (tenant_id, employee_id, event_type, event_date, title, description)
+                 SELECT e.tenant_id, e.id, $1, CURRENT_DATE, $2,
+                        'Last working day has passed'
+                   FROM employees e WHERE e.id = $3`,
+                [
+                    status,
+                    status === 'terminated' ? 'Terminated' : 'Resigned',
+                    row.employee_id,
+                ],
+            );
+        }
+        return due.length;
+    }
+
+    /**
      * Record a resignation or termination.
      *
      * Phase 1 does the part that matters operationally: it closes the current

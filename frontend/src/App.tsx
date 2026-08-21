@@ -419,14 +419,23 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { path: '/admin/hr/attendance', label: 'Attendance' },
         { path: '/admin/hr/attendance/devices', label: 'Attendance devices' },
         { path: '/admin/hr/leaves', label: 'Leaves' },
-        { path: '/admin/hr/roster', label: 'Roster' },
         { path: '/admin/hr/payroll', label: 'Payroll' },
         { path: '/admin/hr/advances', label: 'Advances' },
-        { path: '/admin/hr/labour-cost', label: 'Labour cost' },
         { path: '/admin/hr/reviews', label: 'Reviews' },
         { path: '/admin/hr/training', label: 'Training' },
         { path: '/admin/hr/settings', label: 'Settings' },
         { path: '/admin/hr/settings/designations', label: 'Designations' },
+        // Hidden from the menu at the client's request — not removed. Routes,
+        // pages, permissions and backend are all intact, so the URLs still work
+        // and nothing else changes:
+        //   /admin/hr/roster       — everyone is on fixed timings, so the
+        //                            roster has nothing to say yet. Attendance
+        //                            already falls back to each employee's
+        //                            default shift when no roster row exists.
+        //   /admin/hr/labour-cost  — a read-only report; nothing reads from it.
+        // Re-add either line to bring it back.
+        // { path: '/admin/hr/roster', label: 'Roster' },
+        // { path: '/admin/hr/labour-cost', label: 'Labour cost' },
       ],
     },
     {
