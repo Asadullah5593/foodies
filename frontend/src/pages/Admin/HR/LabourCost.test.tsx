@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -115,5 +115,49 @@ describe('Labour cost vs sales', () => {
     renderPage();
 
     await waitFor(() => expect(screen.getAllByText('30%').length).toBe(2));
+  });
+});
+
+describe('LabourCost — the loading overlay', () => {
+  /**
+   * Regression: the overlay was driven by `isPlaceholderData`, which React Query
+   * only reports when the incoming key has NOTHING cached. Changing the range
+   * back to one already viewed served the stale rows instantly with no overlay,
+   * then quietly rewrote them when the refetch landed. The signal is now
+   * useResultsRefreshing — armed by the key change, not by cache luck.
+   */
+  const veil = () => screen.queryByRole('status', { name: /Updating labour cost/i });
+  const fromInput = () => document.querySelector('input[type="date"]') as HTMLInputElement;
+
+  const settle = (name: string) => report([row({ branch_name: name })]);
+
+  it('veils the results whenever the range changes — cached or not', async () => {
+    const pending: Array<(v: unknown) => void> = [];
+    labourCostReport.mockImplementation(
+      () => new Promise((res) => pending.push(res as (v: unknown) => void)),
+    );
+
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <LabourCost />
+      </QueryClientProvider>,
+    );
+    await act(async () => { pending.shift()?.(settle('Emporium')); });
+    await waitFor(() => expect(screen.getByText('Emporium')).toBeInTheDocument());
+    expect(veil()).toBeNull();
+
+    // 1. A range never requested before.
+    await act(async () => { fireEvent.change(fromInput(), { target: { value: '2026-07-01' } }); });
+    expect(veil()).not.toBeNull();
+    await act(async () => { pending.shift()?.(settle('Pine Avenue')); });
+    await waitFor(() => expect(veil()).toBeNull());
+
+    // 2. Back to the FIRST range — already in cache. This is the case the old
+    //    isPlaceholderData signal missed entirely: rows swapped with no veil.
+    await act(async () => { fireEvent.change(fromInput(), { target: { value: '2026-08-01' } }); });
+    expect(veil()).not.toBeNull();
+
+    await act(async () => { pending.shift()?.(settle('Emporium')); });
+    await waitFor(() => expect(veil()).toBeNull());
   });
 });

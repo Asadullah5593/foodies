@@ -12,6 +12,7 @@ import EmployeeFormModal from './EmployeeFormModal';
 import { statusBadgeClass, statusLabel } from './hrShared';
 import SearchableSelect from '../../../components/SearchableSelect';
 import FetchingOverlay from '../../../components/FetchingOverlay';
+import { useResultsRefreshing } from '../../../components/useResultsRefreshing';
 
 const PAGE_SIZE = 25;
 
@@ -61,11 +62,13 @@ const Employees: React.FC = () => {
     ],
   );
 
-  const { data, isLoading, isError, isPlaceholderData } = useQuery({
-    queryKey: ['hr-employees', params],
+  const employeesKey = ['hr-employees', params];
+  const { data, isLoading, isError, isFetching } = useQuery({
+    queryKey: employeesKey,
     queryFn: () => hrService.listEmployees(params),
     placeholderData: keepPreviousData,
   });
+  const employeesRefreshing = useResultsRefreshing(employeesKey, isFetching);
 
   const { data: designations = [] } = useQuery({
     queryKey: ['hr-designations'],
@@ -223,7 +226,7 @@ const Employees: React.FC = () => {
         </div>
       ) : (
         <>
-          <FetchingOverlay active={isPlaceholderData} label="Updating employees…" className="rounded-lg">
+          <FetchingOverlay active={employeesRefreshing} label="Updating employees…" className="rounded-lg">
           <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-700">
             <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
               <thead className="bg-gray-50 dark:bg-slate-800">

@@ -16,6 +16,7 @@ import DayPunchesModal from './DayPunchesModal';
 import SearchableSelect from '../../../components/SearchableSelect';
 import { useHasPermission } from '../../../hooks/useHasPermission';
 import FetchingOverlay from '../../../components/FetchingOverlay';
+import { useResultsRefreshing } from '../../../components/useResultsRefreshing';
 
 const isoDaysAgo = (days: number) =>
   new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10);
@@ -59,17 +60,21 @@ const AttendanceRegister: React.FC = () => {
   const queryClient = useQueryClient();
   const canApproveOt = useHasPermission('overtime:approve');
 
-  const { data: rows = [], isLoading, isPlaceholderData: isRegisterPlaceholder } = useQuery({
-    queryKey: ['hr-attendance-register', params],
+  const registerKey = ['hr-attendance-register', params];
+  const { data: rows = [], isLoading, isFetching: isRegisterFetching } = useQuery({
+    queryKey: registerKey,
     queryFn: () => hrService.getRegister(params),
     placeholderData: keepPreviousData,
   });
+  const registerRefreshing = useResultsRefreshing(registerKey, isRegisterFetching);
 
-  const { data: report, isPlaceholderData: isReportPlaceholder } = useQuery({
-    queryKey: ['hr-attendance-exceptions', params],
+  const exceptionsKey = ['hr-attendance-exceptions', params];
+  const { data: report, isFetching: isReportFetching } = useQuery({
+    queryKey: exceptionsKey,
     queryFn: () => hrService.getExceptionsReport(params),
     placeholderData: keepPreviousData,
   });
+  const exceptionsRefreshing = useResultsRefreshing(exceptionsKey, isReportFetching);
 
   const { data: branches = [] } = useQuery<Array<{ id: number; name: string }>>({
     queryKey: ['hr-branches'],
@@ -234,7 +239,7 @@ const AttendanceRegister: React.FC = () => {
       )}
 
       {report && (report.flagged_days.length > 0 || report.bursts.length > 0) && (
-        <FetchingOverlay active={isReportPlaceholder} label="Updating exceptions…" className="rounded-lg">
+        <FetchingOverlay active={exceptionsRefreshing} label="Updating exceptions…" className="rounded-lg">
         <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20">
           <div className="mb-2 flex items-center gap-2 text-amber-800 dark:text-amber-300">
             <MdWarningAmber className="text-lg" />
@@ -273,7 +278,7 @@ const AttendanceRegister: React.FC = () => {
           </p>
         </div>
       ) : (
-        <FetchingOverlay active={isRegisterPlaceholder} label="Updating register…" className="rounded-lg">
+        <FetchingOverlay active={registerRefreshing} label="Updating register…" className="rounded-lg">
         <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-slate-700">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
             <thead className="bg-gray-50 dark:bg-slate-800">

@@ -7,6 +7,7 @@ import Loader from '../../../components/Loader';
 import SearchableSelect from '../../../components/SearchableSelect';
 import FetchingOverlay from '../../../components/FetchingOverlay';
 import { rupees } from './Payroll';
+import { useResultsRefreshing } from '../../../components/useResultsRefreshing';
 
 const monthStart = () => {
   const d = new Date();
@@ -64,8 +65,9 @@ const LabourCost: React.FC = () => {
     },
   });
 
-  const { data, isLoading, error, isPlaceholderData } = useQuery({
-    queryKey: ['hr-labour-cost', filters],
+  const labourCostKey = ['hr-labour-cost', filters];
+  const { data, isLoading, error, isFetching } = useQuery({
+    queryKey: labourCostKey,
     queryFn: () =>
       hrService.labourCostReport({
         from: filters.from,
@@ -75,6 +77,7 @@ const LabourCost: React.FC = () => {
     enabled: filters.from <= filters.to,
     placeholderData: keepPreviousData,
   });
+  const labourCostRefreshing = useResultsRefreshing(labourCostKey, isFetching);
 
   return (
     <div className="p-4 md:p-6">
@@ -134,7 +137,7 @@ const LabourCost: React.FC = () => {
           Could not load the report.
         </p>
       ) : !data ? null : (
-        <FetchingOverlay active={isPlaceholderData} label="Updating labour cost…" className="rounded-lg">
+        <FetchingOverlay active={labourCostRefreshing} label="Updating labour cost…" className="rounded-lg">
           <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {[
               { label: 'Labour cost', value: rupees(data.totals.labour_cost) },
