@@ -1,5 +1,6 @@
 import { AppConfigService, APP_CONFIG_DEFAULTS } from './app-config.service';
 import { AppConfig } from '../entities/app-config.entity';
+import { AppConfigController } from './app-config.controller';
 
 /**
  * The endpoint is a lock on every customer's app, so the only thing it must
@@ -70,5 +71,33 @@ describe('AppConfigService', () => {
             APP_CONFIG_DEFAULTS.store_url_android,
         );
         expect(res.store_url_ios).toBe(APP_CONFIG_DEFAULTS.store_url_ios);
+    });
+});
+
+describe('AppConfigController routing', () => {
+    /**
+     * The shipped v1.2.4 build hard-codes `/api/app-config` and cannot be
+     * changed without a store release, so the unprefixed alias is load-bearing
+     * until that build is gone. Deleting it looks like harmless tidying and
+     * would brick every phone still on 1.2.4 — hence a test that fails loudly.
+     */
+    const paths = Reflect.getMetadata('path', AppConfigController) as
+        | string
+        | string[];
+    const registered = Array.isArray(paths) ? paths : [paths];
+
+    it('serves the canonical public path', () => {
+        expect(registered).toContain('public/app-config');
+    });
+
+    it('still serves the legacy unprefixed alias for the shipped v1.2.4 build', () => {
+        expect(registered).toContain('app-config');
+    });
+
+    it('registers exactly these two paths and no others', () => {
+        expect([...registered].sort()).toEqual([
+            'app-config',
+            'public/app-config',
+        ]);
     });
 });
