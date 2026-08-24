@@ -39,6 +39,69 @@ export function reconcileDiscountBreakdown<K extends string>(
     return out;
 }
 
+/**
+ * Merge the two clocks of a sales breakdown row: money figures (completed in
+ * range) and intake figures (placed in range) arrive from separate queries and
+ * need not cover the same ids — a brand can have intake but no completions in
+ * the window, or complete overnight orders placed before it.
+ */
+function mergeBreakdown(
+    money: Array<{
+        id: number;
+        name: string;
+        completed_orders: number;
+        revenue: number;
+    }>,
+    intake: Array<{
+        id: number;
+        name: string;
+        orders: number;
+        cancelled_orders: number;
+    }>,
+): Array<{
+    id: number;
+    name: string;
+    orders: number;
+    cancelled_orders: number;
+    completed_orders: number;
+    revenue: number;
+}> {
+    const byId = new Map<
+        number,
+        {
+            id: number;
+            name: string;
+            orders: number;
+            cancelled_orders: number;
+            completed_orders: number;
+            revenue: number;
+        }
+    >();
+    for (const m of money)
+        byId.set(m.id, {
+            ...m,
+            orders: 0,
+            cancelled_orders: 0,
+        });
+    for (const i of intake) {
+        const row = byId.get(i.id);
+        if (row) {
+            row.orders = i.orders;
+            row.cancelled_orders = i.cancelled_orders;
+        } else {
+            byId.set(i.id, {
+                id: i.id,
+                name: i.name,
+                orders: i.orders,
+                cancelled_orders: i.cancelled_orders,
+                completed_orders: 0,
+                revenue: 0,
+            });
+        }
+    }
+    return [...byId.values()].sort((a, b) => b.revenue - a.revenue);
+}
+
 @Injectable()
 export class ReportsService {
     constructor(
@@ -1652,64 +1715,99 @@ export class ReportsService {
 
         // 1b. Per-brand sales breakdown (orders are single-brand): the owner
         // sees what each brand is selling; brand-locked users see their own.
+        // Two clocks on purpose, each matching the KPI card it breaks down:
+        // orders/cancelled are intake (placed in range, any status), while
+        // completed/revenue are money (completed in range) — so the row reads
+        // "N came in, C of them died, M completed for Rs X".
         const salesByBrandP = scope(
             this.orderRepo
                 .createQueryBuilder('o')
                 .innerJoin('o.brand', 'sbb')
+                .andWhere("o.status = 'completed'")
                 .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', {
                     dateFrom,
                     dateTo,
                 })
                 .select('o.brandId', 'brand_id')
                 .addSelect('MAX(sbb.name)', 'brand_name')
-                .addSelect('COUNT(*)', 'orders')
-                .addSelect(
-                    "SUM(CASE WHEN o.status = 'completed' THEN 1 ELSE 0 END)",
-                    'completed_orders',
-                )
-                .addSelect(
-                    "COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.totalAmount ELSE 0 END), 0)",
-                    'revenue',
-                )
+                .addSelect('COUNT(*)', 'completed_orders')
+                .addSelect('COALESCE(SUM(o.totalAmount), 0)', 'revenue')
                 .groupBy('o.brandId')
                 .orderBy('revenue', 'DESC'),
         ).getRawMany<{
             brand_id: number;
             brand_name: string;
-            orders: string;
             completed_orders: string;
             revenue: string;
+        }>();
+        const salesByBrandIntakeP = scope(
+            this.orderRepo
+                .createQueryBuilder('o')
+                .innerJoin('o.brand', 'sbbi')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('o.brandId', 'brand_id')
+                .addSelect('MAX(sbbi.name)', 'brand_name')
+                .addSelect('COUNT(*)', 'orders')
+                .addSelect(
+                    "SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END)",
+                    'cancelled_orders',
+                )
+                .groupBy('o.brandId'),
+        ).getRawMany<{
+            brand_id: number;
+            brand_name: string;
+            orders: string;
+            cancelled_orders: string;
         }>();
 
         // 1c. Per-branch sales breakdown: used by brand-specific dashboards
         // (one brand across multiple branches) in place of the per-brand table.
+        // Same two-clock split as 1b.
         const salesByBranchP = scope(
             this.orderRepo
                 .createQueryBuilder('o')
                 .innerJoin('o.branch', 'sbr')
+                .andWhere("o.status = 'completed'")
                 .andWhere('o.completedAt BETWEEN :dateFrom AND :dateTo', {
                     dateFrom,
                     dateTo,
                 })
                 .select('o.branchId', 'branch_id')
                 .addSelect('MAX(sbr.name)', 'branch_name')
-                .addSelect('COUNT(*)', 'orders')
-                .addSelect(
-                    "SUM(CASE WHEN o.status = 'completed' THEN 1 ELSE 0 END)",
-                    'completed_orders',
-                )
-                .addSelect(
-                    "COALESCE(SUM(CASE WHEN o.status = 'completed' THEN o.totalAmount ELSE 0 END), 0)",
-                    'revenue',
-                )
+                .addSelect('COUNT(*)', 'completed_orders')
+                .addSelect('COALESCE(SUM(o.totalAmount), 0)', 'revenue')
                 .groupBy('o.branchId')
                 .orderBy('revenue', 'DESC'),
         ).getRawMany<{
             branch_id: number;
             branch_name: string;
-            orders: string;
             completed_orders: string;
             revenue: string;
+        }>();
+        const salesByBranchIntakeP = scope(
+            this.orderRepo
+                .createQueryBuilder('o')
+                .innerJoin('o.branch', 'sbri')
+                .andWhere('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                    dateFrom,
+                    dateTo,
+                })
+                .select('o.branchId', 'branch_id')
+                .addSelect('MAX(sbri.name)', 'branch_name')
+                .addSelect('COUNT(*)', 'orders')
+                .addSelect(
+                    "SUM(CASE WHEN o.status = 'cancelled' THEN 1 ELSE 0 END)",
+                    'cancelled_orders',
+                )
+                .groupBy('o.branchId'),
+        ).getRawMany<{
+            branch_id: number;
+            branch_name: string;
+            orders: string;
+            cancelled_orders: string;
         }>();
 
         // 2. Orders by status (all statuses, in range)
@@ -2026,7 +2124,9 @@ export class ReportsService {
             kpiCurrent,
             kpiPrev,
             salesByBrandRaw,
+            salesByBrandIntakeRaw,
             salesByBranchRaw,
+            salesByBranchIntakeRaw,
             ordersByStatusRaw,
             ordersByTypeRaw,
             ordersBySourceRaw,
@@ -2046,7 +2146,9 @@ export class ReportsService {
             kpiCurrentP,
             kpiPrevP,
             salesByBrandP,
+            salesByBrandIntakeP,
             salesByBranchP,
+            salesByBranchIntakeP,
             ordersByStatusP,
             ordersByTypeP,
             ordersBySourceP,
@@ -2135,19 +2237,47 @@ export class ReportsService {
             date_to: filters.date_to ?? this.formatDay(dateTo),
             branch_id: branchId ?? null,
             brand_id: brandId ?? null,
-            sales_by_brand: salesByBrandRaw.map((r) => ({
-                brand_id: r.brand_id,
-                brand_name: r.brand_name,
-                orders: Number(r.orders),
-                completed_orders: Number(r.completed_orders),
-                revenue: Number(r.revenue),
+            sales_by_brand: mergeBreakdown(
+                salesByBrandRaw.map((r) => ({
+                    id: r.brand_id,
+                    name: r.brand_name,
+                    completed_orders: Number(r.completed_orders),
+                    revenue: Number(r.revenue),
+                })),
+                salesByBrandIntakeRaw.map((r) => ({
+                    id: r.brand_id,
+                    name: r.brand_name,
+                    orders: Number(r.orders),
+                    cancelled_orders: Number(r.cancelled_orders),
+                })),
+            ).map((r) => ({
+                brand_id: r.id,
+                brand_name: r.name,
+                orders: r.orders,
+                cancelled_orders: r.cancelled_orders,
+                completed_orders: r.completed_orders,
+                revenue: r.revenue,
             })),
-            sales_by_branch: salesByBranchRaw.map((r) => ({
-                branch_id: r.branch_id,
-                branch_name: r.branch_name,
-                orders: Number(r.orders),
-                completed_orders: Number(r.completed_orders),
-                revenue: Number(r.revenue),
+            sales_by_branch: mergeBreakdown(
+                salesByBranchRaw.map((r) => ({
+                    id: r.branch_id,
+                    name: r.branch_name,
+                    completed_orders: Number(r.completed_orders),
+                    revenue: Number(r.revenue),
+                })),
+                salesByBranchIntakeRaw.map((r) => ({
+                    id: r.branch_id,
+                    name: r.branch_name,
+                    orders: Number(r.orders),
+                    cancelled_orders: Number(r.cancelled_orders),
+                })),
+            ).map((r) => ({
+                branch_id: r.id,
+                branch_name: r.name,
+                orders: r.orders,
+                cancelled_orders: r.cancelled_orders,
+                completed_orders: r.completed_orders,
+                revenue: r.revenue,
             })),
             kpis: {
                 total_revenue: kpiCurrent.total_revenue,
