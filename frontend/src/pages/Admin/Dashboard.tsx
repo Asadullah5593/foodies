@@ -24,6 +24,8 @@ import {
   InventoryAlertsPanel,
 } from './dashboard/panels';
 import { defaultRange, matchPreset, presetRanges } from './dashboard/dateRanges';
+import { dashboardCsv, dashboardReportHtml, downloadFile } from './dashboard/exportReport';
+import { printContent } from '../../utils/print';
 import type { DashboardSummary, OrderSeriesResponse, RecentOrder, InventoryAlerts } from './dashboard/types';
 
 const BREAKDOWN_HEAD =
@@ -34,6 +36,9 @@ const FILTER_INPUT =
   'rounded-[10px] border-[1.5px] border-gray-200 bg-white px-2.5 py-2 text-[12.5px] text-gray-700 outline-none transition-colors focus:border-foodies-cta dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200';
 
 /** The whole-day bounds — sending these is identical to sending no time at all. */
+const EXPORT_BUTTON =
+  'rounded-full border-[1.5px] border-gray-200 bg-white px-4 py-2 text-[13px] font-bold text-gray-600 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700';
+
 const DAY_START = '00:00';
 const DAY_END = '23:59';
 
@@ -220,6 +225,7 @@ const Dashboard: React.FC = () => {
         id: r.branch_id,
         name: r.branch_name,
         orders: r.orders,
+        cancelled: r.cancelled_orders,
         completed: r.completed_orders,
         revenue: r.revenue,
         color: CHART_COLORS[i % CHART_COLORS.length],
@@ -230,6 +236,7 @@ const Dashboard: React.FC = () => {
       id: r.brand_id,
       name: r.brand_name,
       orders: r.orders,
+      cancelled: r.cancelled_orders,
       completed: r.completed_orders,
       revenue: r.revenue,
       color: brandColor(r.brand_id, brands, i),
@@ -237,6 +244,34 @@ const Dashboard: React.FC = () => {
   }, [breakdownMode, summary, brands]);
 
   const k = summary?.kpis;
+
+  const exportLabels = () => ({
+    branch:
+      branchId != null
+        ? (relevantBranches.find((b) => b.id === branchId)?.name ?? String(branchId))
+        : 'All branches',
+    brand:
+      brandId != null
+        ? ((brands ?? []).find((b) => b.id === brandId)?.name ?? String(brandId))
+        : 'All brands',
+  });
+  const handleExportCsv = () => {
+    if (!summary) return;
+    downloadFile(
+      dashboardCsv(summary, exportLabels()),
+      `dashboard-report_${summary.date_from}_${summary.date_to}.csv`,
+      'text/csv;charset=utf-8',
+    );
+  };
+  const handleExportPdf = () => {
+    if (!summary) return;
+    // Print window: the browser's Save-as-PDF is the PDF export — no client-side
+    // PDF library, matching how X/Z-reports already print.
+    printContent(
+      dashboardReportHtml(summary, exportLabels()),
+      `Dashboard report ${summary.date_from} - ${summary.date_to}`,
+    );
+  };
 
   const kpiCards = useMemo(
     () => [
@@ -364,18 +399,36 @@ const Dashboard: React.FC = () => {
               {p.label}
             </button>
           ))}
-          {timeNarrowed && (
+          <div className="ml-auto flex items-center gap-2.5">
+            {timeNarrowed && (
+              <button
+                type="button"
+                onClick={() => {
+                  setTimeFrom(DAY_START);
+                  setTimeTo(DAY_END);
+                }}
+                className="text-[12.5px] font-semibold text-foodies-cta hover:underline"
+              >
+                Clear time
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => {
-                setTimeFrom(DAY_START);
-                setTimeTo(DAY_END);
-              }}
-              className="ml-auto text-[12.5px] font-semibold text-foodies-cta hover:underline"
+              onClick={handleExportCsv}
+              disabled={!summary || summaryLoading}
+              className={EXPORT_BUTTON}
             >
-              Clear time
+              Export CSV
             </button>
-          )}
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              disabled={!summary || summaryLoading}
+              className={EXPORT_BUTTON}
+            >
+              Export PDF
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 xl:grid-cols-[1fr_1fr_1.3fr_1.3fr]">
           {showBranchFilter && (
@@ -474,6 +527,7 @@ const Dashboard: React.FC = () => {
                   <tr className="border-b border-gray-100 dark:border-slate-700">
                     <th className={`${BREAKDOWN_HEAD} text-left`}>{breakdownMode === 'branch' ? 'Branch' : 'Brand'}</th>
                     <th className={`${BREAKDOWN_HEAD} text-right`}>Orders</th>
+                    <th className={`${BREAKDOWN_HEAD} text-right`}>Cancelled</th>
                     <th className={`${BREAKDOWN_HEAD} text-right`}>Completed</th>
                     <th className={`${BREAKDOWN_HEAD} text-right`}>Revenue</th>
                   </tr>
@@ -489,6 +543,9 @@ const Dashboard: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-3 text-right text-[13.5px] tabular-nums text-gray-600 dark:text-slate-300">{row.orders}</td>
+                      <td className={`py-3 text-right text-[13.5px] tabular-nums ${row.cancelled > 0 ? 'font-semibold text-red-500' : 'text-gray-600 dark:text-slate-300'}`}>
+                        {row.cancelled > 0 ? row.cancelled : '—'}
+                      </td>
                       <td className="py-3 text-right text-[13.5px] tabular-nums text-gray-600 dark:text-slate-300">{row.completed}</td>
                       <td className="py-3 text-right text-sm font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
                         {formatCurrency(row.revenue)}
