@@ -35,6 +35,7 @@ import { ProcurementModule } from './procurement/procurement.module';
 import { RecipesModule } from './recipes/recipes.module';
 import { RiderHrmModule } from './rider-hrm/rider-hrm.module';
 import { FirebaseModule } from './firebase/firebase.module';
+import { AppConfigModule } from './app-config/app-config.module';
 import { KioskModule } from './kiosk/kiosk.module';
 import { BannersModule } from './banners/banners.module';
 import { PromotionsModule } from './promotions/promotions.module';
@@ -104,6 +105,7 @@ import { PaymentsEpgModule } from './payments-epg/payments-epg.module';
         ProcurementModule,
         RecipesModule,
         RiderHrmModule,
+        AppConfigModule,
         KioskModule,
         BannersModule,
         PromotionsModule,
