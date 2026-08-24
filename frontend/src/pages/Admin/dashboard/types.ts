@@ -9,7 +9,11 @@ export interface DashboardSummary {
   sales_by_brand: Array<{
     brand_id: number;
     brand_name: string;
+    /** Placed in range (intake), any status. */
     orders: number;
+    /** Placed in range, now cancelled. */
+    cancelled_orders: number;
+    /** Completed in range (money clock, matches the revenue KPI). */
     completed_orders: number;
     revenue: number;
   }>;
@@ -18,6 +22,7 @@ export interface DashboardSummary {
     branch_id: number;
     branch_name: string;
     orders: number;
+    cancelled_orders: number;
     completed_orders: number;
     revenue: number;
   }>;
