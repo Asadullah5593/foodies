@@ -25,7 +25,8 @@ understand, **let the customer in**. Never block on a network error.
 ## 1. Endpoint
 
 ```
-GET /api/public/app-config
+GET /api/public/app-config[?platform=android|ios]
+GET /api/app-config          ← legacy alias, same handler (see §4)
 ```
 
 - **No authentication.** The app reads this before anyone has logged in, and an
@@ -39,6 +40,9 @@ GET /api/public/app-config
 
 ```json
 {
+  "force_update": false,
+  "min_required_version": "1.0.0",
+  "store_url": "https://apps.apple.com/app/foodies/id6769331907",
   "force_update_android": false,
   "force_update_ios": false,
   "min_required_version_android": "1.0.0",
@@ -55,6 +59,7 @@ GET /api/public/app-config
 | `min_required_version_android` / `_ios` | string | Semver. Block builds **below** this. |
 | `update_message` | string | Show this text verbatim — it is how the business explains the block. |
 | `store_url_android` / `_ios` | string | Where the "Update" button goes. |
+| `force_update`, `min_required_version`, `store_url` | — | **Legacy, derived, never stored.** See §4. New clients must NOT read these. |
 
 ---
 
@@ -85,3 +90,36 @@ migration `1760000000121-AppConfig`. Editing is a direct DB update today; there
 is no admin screen yet. If the row is missing the endpoint serves the defaults
 above, so an unseeded environment behaves as "no force update" rather than
 failing.
+
+---
+
+## 4. The legacy unsuffixed keys
+
+Builds shipped before the per-platform keys existed (**v1.2.3 / build 125**)
+read `force_update`, `min_required_version` and `store_url`. Those three are
+**derived on the way out, never stored**, so they cannot drift from the
+per-platform values — the suffixed keys are always authoritative.
+
+**If you are writing new code, ignore them and read the suffixed keys.**
+
+Pass `?platform=android` or `?platform=ios` and the generic keys describe that
+platform exactly. The value is trimmed and case-insensitive; anything
+unrecognised is treated as absent rather than rejected — this endpoint never
+errors.
+
+Without `platform` the request carries nothing identifying which store the
+caller came from, so it falls back **iOS-then-Android**, as the mobile team
+specified. That means **a legacy Android build with no `?platform=` reads the
+iOS version and is sent to the App Store.** Send the parameter, or ship a build
+that reads the suffixed keys.
+
+One asymmetry worth knowing: `force_update` in the no-platform fallback is
+`ios OR android`, so forcing an update on **either** platform raises the flag
+for **all** legacy clients that did not send `?platform=`. They are still gated
+by `min_required_version` (iOS's), so a client already above that version will
+not be blocked — but it is why the version and the flag must be set together,
+never the flag alone.
+
+`/api/app-config` (no `public/` prefix) is a second **alias** for the same
+handler, kept because **v1.2.4** hard-codes it. Both paths are pinned by tests.
+Retire the alias once the access log shows no live build calling it.

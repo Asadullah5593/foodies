@@ -1,4 +1,8 @@
-import { AppConfigService, APP_CONFIG_DEFAULTS } from './app-config.service';
+import {
+    AppConfigService,
+    APP_CONFIG_DEFAULTS,
+    withGenericKeys,
+} from './app-config.service';
 import { AppConfig } from '../entities/app-config.entity';
 import { AppConfigController } from './app-config.controller';
 
@@ -24,6 +28,10 @@ describe('AppConfigService', () => {
         };
         const svc = make(jest.fn().mockResolvedValue(row));
         await expect(svc.getPublicConfig()).resolves.toEqual({
+            // Legacy unsuffixed keys, derived: iOS-then-Android.
+            force_update: true,
+            min_required_version: '2.3.1',
+            store_url: 'https://apps.example/app',
             force_update_android: true,
             force_update_ios: false,
             min_required_version_android: '2.4.0',
@@ -37,7 +45,7 @@ describe('AppConfigService', () => {
     it('serves safe defaults when the row is missing', async () => {
         const svc = make(jest.fn().mockResolvedValue(null));
         await expect(svc.getPublicConfig()).resolves.toEqual(
-            APP_CONFIG_DEFAULTS,
+            withGenericKeys(APP_CONFIG_DEFAULTS),
         );
     });
 
@@ -46,9 +54,11 @@ describe('AppConfigService', () => {
             jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
         );
         const res = await svc.getPublicConfig();
-        expect(res).toEqual(APP_CONFIG_DEFAULTS);
+        expect(res).toEqual(withGenericKeys(APP_CONFIG_DEFAULTS));
         expect(res.force_update_android).toBe(false);
         expect(res.force_update_ios).toBe(false);
+        // The legacy key must fail open too — an old build reads only this one.
+        expect(res.force_update).toBe(false);
     });
 
     it('falls back per-field when nullable columns are empty', async () => {
@@ -71,6 +81,65 @@ describe('AppConfigService', () => {
             APP_CONFIG_DEFAULTS.store_url_android,
         );
         expect(res.store_url_ios).toBe(APP_CONFIG_DEFAULTS.store_url_ios);
+    });
+
+    it('derives the legacy keys per platform when the caller says which it is', async () => {
+        const row = {
+            id: 1,
+            forceUpdateAndroid: false,
+            forceUpdateIos: true,
+            minRequiredVersionAndroid: '1.0.0',
+            minRequiredVersionIos: '1.2.4',
+            updateMessage: 'Please update.',
+            storeUrlAndroid: 'https://play.example/app',
+            storeUrlIos: 'https://apps.example/app',
+        };
+        const svc = make(jest.fn().mockResolvedValue(row));
+
+        const android = await svc.getPublicConfig('android');
+        expect(android.force_update).toBe(false);
+        expect(android.min_required_version).toBe('1.0.0');
+        expect(android.store_url).toBe('https://play.example/app');
+
+        const ios = await svc.getPublicConfig('ios');
+        expect(ios.force_update).toBe(true);
+        expect(ios.min_required_version).toBe('1.2.4');
+        expect(ios.store_url).toBe('https://apps.example/app');
+    });
+
+    it("matches the mobile team's iOS-then-Android fallback when platform is unknown", () => {
+        // Their worked example: iOS forced, Android not.
+        const res = withGenericKeys({
+            force_update_android: false,
+            force_update_ios: true,
+            min_required_version_android: '1.0.0',
+            min_required_version_ios: '1.2.4',
+            update_message: 'A new version of Foodies is available.',
+            store_url_android: 'https://play.example/app',
+            store_url_ios: 'https://apps.example/app',
+        });
+        expect(res.force_update).toBe(true);
+        expect(res.min_required_version).toBe('1.2.4');
+        expect(res.store_url).toBe('https://apps.example/app');
+    });
+
+    it('keeps the per-platform keys authoritative — generic keys never overwrite them', () => {
+        const res = withGenericKeys(
+            {
+                force_update_android: false,
+                force_update_ios: true,
+                min_required_version_android: '1.0.0',
+                min_required_version_ios: '1.2.4',
+                update_message: 'msg',
+                store_url_android: 'https://play.example/app',
+                store_url_ios: 'https://apps.example/app',
+            },
+            'ios',
+        );
+        expect(res.force_update_android).toBe(false);
+        expect(res.force_update_ios).toBe(true);
+        expect(res.min_required_version_android).toBe('1.0.0');
+        expect(res.store_url_android).toBe('https://play.example/app');
     });
 });
 
