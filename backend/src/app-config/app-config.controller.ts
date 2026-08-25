@@ -37,7 +37,8 @@ export class AppConfigController {
         description:
             'Only affects the legacy unsuffixed keys (force_update, ' +
             'min_required_version, store_url): with it they describe the ' +
-            "caller's platform, without it they fall back to iOS-then-Android.",
+            "caller's platform, without it they describe Android (the only " +
+            'platform with builds still reading them).',
     })
     get(@Query('platform') platform?: string): Promise<AppConfigResponse> {
         const p = (platform ?? '').trim().toLowerCase();
