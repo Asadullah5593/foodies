@@ -19,8 +19,9 @@ export interface AppConfigPlatformValues {
 
 /**
  * The wire shape (snake_case, stable). The three unsuffixed keys exist only for
- * builds shipped before the per-platform keys did (v1.2.3 / build 125) — they
- * are derived, never stored, and new clients must read the suffixed keys.
+ * the Android builds shipped before the per-platform keys did (v1.2.3 / build
+ * 125) — derived from the Android values, never stored. Every current client
+ * reads the suffixed keys.
  */
 export interface AppConfigResponse extends AppConfigPlatformValues {
     force_update: boolean;
@@ -48,36 +49,31 @@ export const APP_CONFIG_DEFAULTS: AppConfigPlatformValues = {
 /**
  * Add the legacy unsuffixed keys a pre-per-platform build reads.
  *
- * With `platform` known the answer is exact. Without it the request carries
- * nothing that identifies the store the caller came from, so it falls back to
- * iOS-then-Android as the mobile team specified — which means a legacy ANDROID
- * build reads the iOS flag, version and store URL. Pass `?platform=` (or ship a
- * build that reads the suffixed keys) to avoid that.
+ * They resolve to ANDROID unless the caller names its platform: the only builds
+ * still reading them are Android (1.2.3 / build 125), since iOS from 1.2.4 reads
+ * the suffixed keys directly. Mapping them to iOS instead is what sent blocked
+ * Android users to the Apple App Store — a dead end they could not update from.
+ * These keys can only ever be correct for ONE platform; they belong to whichever
+ * still has builds depending on them.
  */
 export function withGenericKeys(
     v: AppConfigPlatformValues,
     platform?: ClientPlatform,
 ): AppConfigResponse {
     const generic =
-        platform === 'android'
+        platform === 'ios'
             ? {
+                  force_update: v.force_update_ios,
+                  min_required_version: v.min_required_version_ios,
+                  store_url: v.store_url_ios,
+              }
+            : {
                   force_update: v.force_update_android,
                   min_required_version: v.min_required_version_android,
                   store_url: v.store_url_android,
-              }
-            : platform === 'ios'
-              ? {
-                    force_update: v.force_update_ios,
-                    min_required_version: v.min_required_version_ios,
-                    store_url: v.store_url_ios,
-                }
-              : {
-                    force_update: v.force_update_ios || v.force_update_android,
-                    min_required_version:
-                        v.min_required_version_ios ||
-                        v.min_required_version_android,
-                    store_url: v.store_url_ios || v.store_url_android,
-                };
+              };
+    // Spread order matters: the per-platform keys are authoritative and must
+    // never be shadowed by the derived ones.
     return { ...generic, ...v };
 }
 
