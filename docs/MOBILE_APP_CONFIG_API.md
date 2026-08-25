@@ -25,7 +25,8 @@ understand, **let the customer in**. Never block on a network error.
 ## 1. Endpoint
 
 ```
-GET /api/public/app-config
+GET /api/public/app-config[?platform=android|ios]
+GET /api/app-config          ← legacy alias, same handler (see §4)
 ```
 
 - **No authentication.** The app reads this before anyone has logged in, and an
@@ -39,6 +40,9 @@ GET /api/public/app-config
 
 ```json
 {
+  "force_update": false,
+  "min_required_version": "1.0.0",
+  "store_url": "https://apps.apple.com/app/foodies/id6769331907",
   "force_update_android": false,
   "force_update_ios": false,
   "min_required_version_android": "1.0.0",
@@ -55,6 +59,7 @@ GET /api/public/app-config
 | `min_required_version_android` / `_ios` | string | Semver. Block builds **below** this. |
 | `update_message` | string | Show this text verbatim — it is how the business explains the block. |
 | `store_url_android` / `_ios` | string | Where the "Update" button goes. |
+| `force_update`, `min_required_version`, `store_url` | — | **Legacy, derived, never stored.** See §4. New clients must NOT read these. |
 
 ---
 
@@ -85,3 +90,41 @@ migration `1760000000121-AppConfig`. Editing is a direct DB update today; there
 is no admin screen yet. If the row is missing the endpoint serves the defaults
 above, so an unseeded environment behaves as "no force update" rather than
 failing.
+
+---
+
+## 4. The legacy unsuffixed keys
+
+Builds shipped before the per-platform keys existed read `force_update`,
+`min_required_version` and `store_url` without a suffix. Those three are
+**derived on the way out, never stored**, so they cannot drift from the
+per-platform values — the suffixed keys are always authoritative.
+
+**If you are writing new code, ignore them and read the suffixed keys.**
+
+### They resolve to ANDROID by default
+
+The only builds still reading the unsuffixed keys are **Android v1.2.3 /
+build 125**; iOS has read the suffixed keys since 1.2.4. So an unidentified
+caller gets the **Android** values.
+
+This matters more than it looks. These three keys can only ever be correct for
+*one* platform, and pointing them at iOS is what sent blocked Android users to
+the Apple App Store — a dead end they could not update from, on the one screen
+they could not dismiss. They belong to whichever platform still has builds
+depending on them, which today is Android.
+
+Pass `?platform=android` or `?platform=ios` to make the answer explicit. The
+value is trimmed and case-insensitive; anything unrecognised is treated as
+absent rather than rejected, because this endpoint never errors.
+
+```
+GET /api/app-config                  → Android values in the generic keys
+GET /api/public/app-config?platform=ios  → iOS values in the generic keys
+```
+
+### Alias
+
+`/api/app-config` (no `public/` prefix) is a second path to the same handler,
+kept because **v1.2.4** hard-codes it. Both paths are pinned by tests. Retire
+the alias once the access log shows no live build calling it.
