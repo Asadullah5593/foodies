@@ -1484,6 +1484,60 @@ export class ConsumerController {
                                 },
                             },
                             notes: { type: 'string' },
+                            deal_menu_item_id: {
+                                type: 'number',
+                                description:
+                                    'DEAL lines only. Send this INSTEAD of menu_item_id when the ' +
+                                    'menu item carries a "deal" object, together with one ' +
+                                    'components entry per slot. A deal sent as a plain ' +
+                                    'menu_item_id is rejected: it records none of the ' +
+                                    "customer's choices, so it cannot be prepared.",
+                            },
+                            components: {
+                                type: 'array',
+                                description:
+                                    "DEAL lines only. One entry per slot of the menu item's " +
+                                    '"deal".slots — slot_index from the slot, menu_item_id the ' +
+                                    "choice made in it (for a fixed slot, that slot's own item).",
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        slot_index: { type: 'number' },
+                                        menu_item_id: { type: 'number' },
+                                        quantity: { type: 'number' },
+                                        variant_id: { type: 'number' },
+                                        addons: {
+                                            type: 'array',
+                                            items: {
+                                                type: 'object',
+                                                properties: {
+                                                    addon_id: {
+                                                        type: 'number',
+                                                    },
+                                                    quantity: {
+                                                        type: 'number',
+                                                    },
+                                                },
+                                            },
+                                        },
+                                        modifiers: {
+                                            type: 'array',
+                                            items: {
+                                                type: 'object',
+                                                properties: {
+                                                    modifier_id: {
+                                                        type: 'number',
+                                                    },
+                                                    quantity: {
+                                                        type: 'number',
+                                                    },
+                                                },
+                                            },
+                                        },
+                                        notes: { type: 'string' },
+                                    },
+                                },
+                            },
                         },
                     },
                 },
@@ -1538,6 +1592,18 @@ export class ConsumerController {
                         modifiers: [{ modifier_id: 7, quantity: 1 }],
                         notes: 'No onions',
                     },
+                    {
+                        // A DEAL: no menu_item_id — one component per slot of
+                        // the item's "deal".slots (slot 0 fixed, slots 1-2 the
+                        // customer's picks).
+                        deal_menu_item_id: 2586,
+                        quantity: 1,
+                        components: [
+                            { slot_index: 0, menu_item_id: 2515, quantity: 1 },
+                            { slot_index: 1, menu_item_id: 2601, quantity: 1 },
+                            { slot_index: 2, menu_item_id: 2773, quantity: 1 },
+                        ],
+                    },
                 ],
                 notes: '',
                 discount_code: 'SAVE10',
@@ -1558,14 +1624,39 @@ export class ConsumerController {
             customer_name?: string;
             customer_phone?: string;
             delivery_address?: string;
-            items: {
-                menu_item_id: number;
-                quantity: number;
-                variant_id?: number;
-                addons?: { addon_id: number; quantity?: number }[];
-                modifiers?: { modifier_id: number; quantity?: number }[];
-                notes?: string;
-            }[];
+            /**
+             * A line is EITHER a plain menu item OR a deal. The plain shape is
+             * unchanged; a deal sends `deal_menu_item_id` plus one `components`
+             * entry per slot of the item's published `deal` object, and is
+             * rejected if sent as a plain `menu_item_id` (it would record none
+             * of the customer's choices).
+             */
+            items: Array<
+                | {
+                      menu_item_id: number;
+                      quantity: number;
+                      variant_id?: number;
+                      addons?: { addon_id: number; quantity?: number }[];
+                      modifiers?: { modifier_id: number; quantity?: number }[];
+                      notes?: string;
+                  }
+                | {
+                      deal_menu_item_id: number;
+                      quantity: number;
+                      components: Array<{
+                          slot_index: number;
+                          menu_item_id: number;
+                          quantity: number;
+                          variant_id?: number;
+                          addons?: { addon_id: number; quantity?: number }[];
+                          modifiers?: {
+                              modifier_id: number;
+                              quantity?: number;
+                          }[];
+                          notes?: string;
+                      }>;
+                  }
+            >;
             notes?: string;
             discount_code?: string;
             loyalty_points_to_redeem?: number;

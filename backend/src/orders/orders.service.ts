@@ -5176,6 +5176,36 @@ export class OrdersService {
             source_index?: number;
         }> = [];
         const branchClockCache = new Map<number, BranchClock>();
+        // Which of the PLAIN lines name a deal root. A deal ordered as a plain
+        // menu_item_id carries none of the customer's slot choices, so the
+        // kitchen has nothing to make and the receipt has nothing to print —
+        // the order is unfulfillable the moment it is accepted. One batched
+        // lookup keeps this off the per-line path; non-deal items never match,
+        // so ordinary lines behave exactly as before.
+        const plainMenuItemIds = Array.from(
+            new Set(
+                items
+                    .filter(
+                        (l) =>
+                            (l as { deal_menu_item_id?: number })
+                                .deal_menu_item_id == null,
+                    )
+                    .map((l) =>
+                        Number((l as { menu_item_id?: number }).menu_item_id),
+                    )
+                    .filter((id) => Number.isFinite(id)),
+            ),
+        );
+        const dealRootIds = new Set<number>();
+        if (plainMenuItemIds.length) {
+            const rows: Array<{ menu_item_id: number }> =
+                await this.dataSource.query(
+                    `SELECT DISTINCT menu_item_id FROM deal_components
+                      WHERE menu_item_id = ANY($1::int[])`,
+                    [plainMenuItemIds],
+                );
+            for (const r of rows) dealRootIds.add(Number(r.menu_item_id));
+        }
         for (const [sourceIndex, line] of items.entries()) {
             const raw = line as {
                 deal_menu_item_id?: number;
@@ -5484,6 +5514,18 @@ export class OrdersService {
                     notes?: string;
                     branch_id?: number;
                 };
+                // Refuse the unfulfillable order at placement rather than
+                // discovering it on a kitchen ticket that cannot be cooked.
+                // The message names the payload the client must send; the
+                // slots themselves are already published on the menu item's
+                // read-only `deal` object.
+                if (dealRootIds.has(Number(normal.menu_item_id))) {
+                    throw new BadRequestException(
+                        `Menu item ${normal.menu_item_id} is a deal and cannot be ordered as a plain item: ` +
+                            `send { deal_menu_item_id: ${normal.menu_item_id}, quantity, components: [{ slot_index, menu_item_id }] } ` +
+                            `with one component per slot. The slots are in the menu response under this item's "deal" field.`,
+                    );
+                }
                 expanded.push({
                     menu_item_id: normal.menu_item_id,
                     quantity: normal.quantity ?? 1,
