@@ -1406,6 +1406,94 @@ export class ConsumerController {
         summary:
             'Quote an order before placing it. For delivery, returns delivery_options[] (Saver/Standard/Priority with fee + ETA). Returns 422 if the drop-off is outside the branch delivery radius.',
     })
+    // Without this the endpoint renders as "No parameters" in Swagger and its
+    // Execute button posts an empty body — which is how it looked broken.
+    @ApiBody({
+        schema: {
+            type: 'object',
+            required: ['branch_id', 'order_type', 'items'],
+            properties: {
+                branch_id: { type: 'number' },
+                order_type: {
+                    type: 'string',
+                    enum: ['delivery', 'pickup', 'takeaway', 'dine_in'],
+                },
+                items: {
+                    type: 'array',
+                    description:
+                        'A PLAIN line sends menu_item_id. A DEAL line sends ' +
+                        'deal_menu_item_id plus one components entry per slot ' +
+                        '— never menu_item_id, which is refused.',
+                    items: {
+                        type: 'object',
+                        properties: {
+                            menu_item_id: { type: 'number' },
+                            deal_menu_item_id: { type: 'number' },
+                            quantity: { type: 'number' },
+                            variant_id: { type: 'number' },
+                            components: {
+                                type: 'array',
+                                items: {
+                                    type: 'object',
+                                    properties: {
+                                        slot_index: { type: 'number' },
+                                        menu_item_id: { type: 'number' },
+                                        variant_id: { type: 'number' },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+                discount_code: { type: 'string' },
+                customer_phone: { type: 'string' },
+                loyalty_points_to_redeem: { type: 'number' },
+                latitude: { type: 'number' },
+                longitude: { type: 'number' },
+                delivery_tier: { type: 'string' },
+            },
+        },
+        examples: {
+            plain: {
+                summary: 'Two ordinary items',
+                value: {
+                    branch_id: 10,
+                    order_type: 'pickup',
+                    items: [
+                        { menu_item_id: 2422, variant_id: 1537, quantity: 1 },
+                    ],
+                },
+            },
+            deal: {
+                summary: 'A deal (BOGO) — one component per slot',
+                description:
+                    'A deal has no price of its own; this is what returns the ' +
+                    'real figure to show in the cart.',
+                value: {
+                    branch_id: 10,
+                    order_type: 'pickup',
+                    items: [
+                        {
+                            deal_menu_item_id: 2514,
+                            quantity: 1,
+                            components: [
+                                {
+                                    slot_index: 0,
+                                    menu_item_id: 2422,
+                                    variant_id: 1537,
+                                },
+                                {
+                                    slot_index: 1,
+                                    menu_item_id: 2423,
+                                    variant_id: 1538,
+                                },
+                            ],
+                        },
+                    ],
+                },
+            },
+        },
+    })
     async quoteOrder(
         @Req()
         req: {
@@ -1417,7 +1505,14 @@ export class ConsumerController {
             branch_id: number;
             order_type: string;
             items: {
-                menu_item_id: number;
+                menu_item_id?: number;
+                deal_menu_item_id?: number;
+                components?: {
+                    slot_index: number;
+                    menu_item_id: number;
+                    variant_id?: number;
+                    quantity?: number;
+                }[];
                 quantity: number;
                 variant_id?: number;
                 addons?: { addon_id: number; quantity?: number }[];
@@ -1431,6 +1526,21 @@ export class ConsumerController {
             delivery_tier?: string;
         },
     ) {
+        // An empty POST used to reach getTenantIdFromBranch(undefined) and come
+        // back as a bare 500 — which is exactly what Swagger's Execute sends.
+        // Name what is missing instead; every other failure here already does.
+        const missing = (['branch_id', 'order_type', 'items'] as const).filter(
+            (k) => dto?.[k] == null,
+        );
+        if (missing.length) {
+            throw new BadRequestException(
+                `Missing required field(s): ${missing.join(', ')}. ` +
+                    `Send { branch_id, order_type, items: [...] }.`,
+            );
+        }
+        if (!Array.isArray(dto.items) || dto.items.length === 0) {
+            throw new BadRequestException('items must be a non-empty array.');
+        }
         const tenantId = await this.getTenantIdFromBranch(dto.branch_id);
         const source = this.resolveOrderSourceFromRequest(req);
         return this.ordersService.quote(dto, tenantId, source);
