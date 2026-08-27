@@ -103,6 +103,15 @@ export interface InvoiceTemplateConfig {
    * are omitted from the receipt entirely.
    */
   showFreeItems: boolean;
+  /**
+   * Where a deal's zero-priced components print. Off → they are zero-total
+   * lines like any other, so `showFreeItems` decides whether they appear in
+   * the "Free items" section or vanish. On → they stay nested under their
+   * deal header (priced per `dealPriceDisplay`) and never reach that section:
+   * a side or drink chosen inside a deal is part of what the customer paid
+   * for, not a giveaway, and the kitchen needs it listed with its deal.
+   */
+  nestDealComponents: boolean;
 
   showSubtotal: boolean;
   showTax: boolean;
@@ -184,6 +193,9 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   dealPriceDisplay: 'both',
   zeroAmountDisplay: 'zero',
   showFreeItems: true,
+  // Off by default: existing templates keep printing exactly what they print
+  // today until someone switches this on.
+  nestDealComponents: false,
 
   showSubtotal: true,
   showTax: true,
@@ -245,6 +257,10 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
       { key: 'showModifierPlus', label: 'Show “+” before modifiers / add-ons' },
       { key: 'showUnitPrice', label: 'Show unit price' },
       { key: 'showFreeItems', label: 'Show free items (zero-priced lines)' },
+      {
+        key: 'nestDealComponents',
+        label: 'Show deal components under their deal (not in “Free items”)',
+      },
       { key: 'showLineNotes', label: 'Show item notes' },
     ],
   },

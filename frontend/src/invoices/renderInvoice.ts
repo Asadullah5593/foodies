@@ -190,16 +190,27 @@ function addonAmount(a: NonNullable<InvoiceLineVM['addons']>[number]): number {
 
 /**
  * Free/paid separation: free = lines that bill nothing — zero-total standalone
- * lines (BOGO freebies, 100%-off items) AND zero-priced deal components. Deal
- * grouping is stripped from the free lines so they list flat under the "Free
- * items" heading; the deal keeps its priced header with the paid items. The
- * showFreeItems toggle decides whether the free lines print at all.
+ * lines (BOGO freebies, 100%-off items) AND, by default, zero-priced deal
+ * components. Deal grouping is stripped from the free lines so they list flat
+ * under the "Free items" heading; the deal keeps its priced header with the
+ * paid items. The showFreeItems toggle decides whether the free lines print.
+ *
+ * `nestDealComponents` opts a template out for deal components only: a side or
+ * drink chosen inside a deal bills nothing because its price is absorbed into
+ * the deal header, not because it was given away, so it stays grouped under
+ * that header and never reaches the "Free items" section. Genuine freebies are
+ * unaffected either way.
  */
-function splitFreeLines(items: InvoiceLineVM[]): { paid: InvoiceLineVM[]; free: InvoiceLineVM[] } {
+function splitFreeLines(
+  items: InvoiceLineVM[],
+  cfg: InvoiceTemplateConfig,
+): { paid: InvoiceLineVM[]; free: InvoiceLineVM[] } {
   const paid: InvoiceLineVM[] = [];
   const free: InvoiceLineVM[] = [];
   for (const l of items ?? []) {
-    if (Number(l.subtotal) === 0) free.push({ ...l, deal_id: null, deal_slot_index: null, deal_name: null });
+    const keepWithDeal = cfg.nestDealComponents && l.deal_id != null;
+    if (Number(l.subtotal) === 0 && !keepWithDeal)
+      free.push({ ...l, deal_id: null, deal_slot_index: null, deal_name: null });
     else paid.push(l);
   }
   return { paid, free };
@@ -316,7 +327,7 @@ function itemsHtml(
         })
         .join('');
   };
-  const { paid, free } = splitFreeLines(order.items ?? []);
+  const { paid, free } = splitFreeLines(order.items ?? [], cfg);
   const paidHtml = groupItemsForReceipt(paid).map(renderGroup).join('');
   const freeHtml =
     cfg.showFreeItems && free.length
@@ -457,7 +468,7 @@ function itemsTableHtml(
         })
         .join('');
   };
-  const { paid, free } = splitFreeLines(order.items ?? []);
+  const { paid, free } = splitFreeLines(order.items ?? [], cfg);
   const colCount = showRate ? 4 : 3;
   // Order-level note as the last row, spanning every column so it reads as a
   // full-width line where the items end — just above the totals.
