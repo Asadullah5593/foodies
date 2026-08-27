@@ -1093,3 +1093,60 @@ describe('tableNumberDisplay — table number prominence', () => {
     }
   });
 });
+
+describe('nestDealComponents — a deal component is not a giveaway', () => {
+  const rich = (over: Partial<InvoiceTemplateConfig>, layout: InvoiceLayout = 'thermal_classic') =>
+    renderInvoiceHtml(richSampleInvoice(), layout, cfg(over)).html;
+  // Zero-priced components of "Family Feast Deal" in the rich fixture.
+  const COMPONENTS = ['Garlic Bread', '1.5L Soft Drink'];
+  const freeSection = (html: string) => /freelabel|freehead/.test(html);
+
+  it('off (default): today\'s behaviour is untouched — components fall into "Free items"', () => {
+    const html = rich({ nestDealComponents: false, showFreeItems: true });
+    expect(freeSection(html)).toBe(true);
+    for (const c of COMPONENTS) expect(html).toContain(c);
+  });
+
+  it('off + free items hidden: the components vanish (the bug being opted out of)', () => {
+    const html = rich({ nestDealComponents: false, showFreeItems: false });
+    expect(freeSection(html)).toBe(false);
+    for (const c of COMPONENTS) expect(html).not.toContain(c);
+  });
+
+  it('on + free items hidden: components print with no "Free items" section', () => {
+    const html = rich({ nestDealComponents: true, showFreeItems: false });
+    expect(freeSection(html)).toBe(false);
+    for (const c of COMPONENTS) expect(html).toContain(c);
+  });
+
+  it('on: components render under their deal header, not after it as a separate list', () => {
+    const html = rich({ nestDealComponents: true, showFreeItems: false });
+    const deal = html.indexOf('Family Feast Deal');
+    expect(deal).toBeGreaterThan(-1);
+    for (const c of COMPONENTS) expect(html.indexOf(c)).toBeGreaterThan(deal);
+  });
+
+  it('on: a genuine standalone freebie still goes to "Free items"', () => {
+    const data = richSampleInvoice();
+    data.orders[0].items.push({
+      name_snapshot: 'Complimentary Brownie',
+      quantity: 1,
+      unit_price: 0,
+      subtotal: 0,
+    } as InvoiceLineVM);
+    const html = renderInvoiceHtml(data, 'thermal_classic', cfg({
+      nestDealComponents: true,
+      showFreeItems: true,
+    })).html;
+    expect(freeSection(html)).toBe(true);
+    expect(html).toContain('Complimentary Brownie');
+  });
+
+  it('works in every layout (row-based and column-table renderers alike)', () => {
+    for (const layout of ALL_LAYOUTS) {
+      const html = rich({ nestDealComponents: true, showFreeItems: false }, layout);
+      for (const c of COMPONENTS) expect(html, layout).toContain(c);
+      expect(freeSection(html), layout).toBe(false);
+    }
+  });
+});
