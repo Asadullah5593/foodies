@@ -36,6 +36,7 @@ import { LoyaltyService } from '../loyalty/loyalty.service';
 import { CustomersService } from '../customers/customers.service';
 import { PaymentsService } from '../payments/payments.service';
 import { BankCardsService } from '../bank-cards/bank-cards.service';
+import { normalizeOrderBody } from '../orders/legacy-deal-payload';
 import { CustomerJwtAuthGuard } from '../auth/customer-jwt-auth.guard';
 import { OptionalCustomerJwtAuthGuard } from '../auth/optional-customer-jwt-auth.guard';
 import { OtpService } from '../otp/otp.service';
@@ -1541,6 +1542,9 @@ export class ConsumerController {
         if (!Array.isArray(dto.items) || dto.items.length === 0) {
             throw new BadRequestException('items must be a non-empty array.');
         }
+        // The shipped app sends deals as `deal_items`; translate before
+        // anything reads dto.items. See legacy-deal-payload.ts.
+        normalizeOrderBody(dto, '/public/consumer/orders/quote');
         const tenantId = await this.getTenantIdFromBranch(dto.branch_id);
         const source = this.resolveOrderSourceFromRequest(req);
         return this.ordersService.quote(dto, tenantId, source);
@@ -1781,6 +1785,10 @@ export class ConsumerController {
             idempotency_key?: string;
         },
     ) {
+        // Same shim as quote: the shipped app sends deals as `deal_items`.
+        // Placement matters more than the quote — without this the deal is
+        // refused by the plain-deal guard, or worse, priced at zero.
+        normalizeOrderBody(dto, '/public/consumer/orders');
         const tenantId = await this.getTenantIdFromBranch(dto.branch_id);
         const source = this.resolveOrderSourceFromRequest(req);
         return this.ordersService.createOrder(
