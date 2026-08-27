@@ -4697,8 +4697,19 @@ export class OrdersService {
         dto: {
             branch_id: number;
             order_type: string;
+            // A line is EITHER plain (menu_item_id) or a deal
+            // (deal_menu_item_id + one component per slot). expandLines has
+            // always accepted both; the signature said otherwise, so callers
+            // could not pass a deal line without a cast.
             items: {
-                menu_item_id: number;
+                menu_item_id?: number;
+                deal_menu_item_id?: number;
+                components?: {
+                    slot_index: number;
+                    menu_item_id: number;
+                    variant_id?: number;
+                    quantity?: number;
+                }[];
                 quantity: number;
                 variant_id?: number;
                 addons?: { addon_id: number; quantity?: number }[];
