@@ -11,8 +11,15 @@ import {
     UseGuards,
     NotFoundException,
     ForbiddenException,
+    BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiBody, ApiOperation } from '@nestjs/swagger';
+import {
+    ApiTags,
+    ApiBearerAuth,
+    ApiBody,
+    ApiOperation,
+    ApiQuery,
+} from '@nestjs/swagger';
 import { MenuService } from './menu.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
@@ -166,6 +173,61 @@ export class MenuController {
         });
     }
 
+    @Get('items/sort-order-map')
+    @RequirePermission(Permissions.MENU_EDIT)
+    @ApiOperation({
+        summary: 'Sort orders already used in a brand + category',
+        description:
+            'Feeds the admin hint "1-5 taken · suggested 6". `taken` excludes 0, which means "not yet numbered".',
+    })
+    @ApiQuery({ name: 'brand_id', required: true, example: '1' })
+    @ApiQuery({ name: 'category_id', required: true, example: '4' })
+    async getItemSortOrderMap(
+        @CurrentUser() user: MenuUser,
+        @Query('brand_id') brandIdParam: string,
+        @Query('category_id') categoryIdParam: string,
+    ) {
+        const brandId = brandIdParam ? +brandIdParam : NaN;
+        const categoryId = categoryIdParam ? +categoryIdParam : NaN;
+        if (!Number.isFinite(brandId) || !Number.isFinite(categoryId)) {
+            throw new BadRequestException(
+                'brand_id and category_id are required',
+            );
+        }
+        this.resolveBrandScope(user, brandId);
+        if (user.tenantId != null)
+            await this.service.assertBrandBelongsToTenant(
+                brandId,
+                user.tenantId,
+            );
+        return this.service.getItemSortOrderMap(brandId, categoryId);
+    }
+
+    @Patch('items/reorder')
+    @RequirePermission(Permissions.MENU_EDIT)
+    @ApiOperation({
+        summary: 'Reorder menu items within a brand + category',
+        description:
+            'Rewrites the category to a contiguous 1..N in the order given. Ids outside this brand+category are ignored.',
+    })
+    async reorderItems(
+        @CurrentUser() user: MenuUser,
+        @Body()
+        body: { brand_id: number; category_id: number; ordered_ids: number[] },
+    ) {
+        this.resolveBrandScope(user, body.brand_id);
+        if (user.tenantId != null)
+            await this.service.assertBrandBelongsToTenant(
+                body.brand_id,
+                user.tenantId,
+            );
+        return this.service.reorderItems(
+            body.brand_id,
+            body.category_id,
+            body.ordered_ids ?? [],
+        );
+    }
+
     @Post('items')
     @RequirePermission(Permissions.MENU_CREATE)
     @ApiOperation({
@@ -193,6 +255,12 @@ export class MenuController {
                         'Optional extra photos (max 12, unique URLs). Consumer website: gallery/slider below the main image. POS/menu grids: main thumbnail only (`image_url`).',
                 },
                 deal_only: { type: 'boolean' },
+                sort_order: {
+                    type: 'integer',
+                    minimum: 0,
+                    description:
+                        'Manual position within the category (1 = first). 0 means not yet numbered, and sorts last. Unique within brand + category; a clash returns 409.',
+                },
                 available_for_order_types: {
                     type: 'array',
                     items: {
@@ -226,6 +294,7 @@ export class MenuController {
             available_time_start?: string | null;
             available_time_end?: string | null;
             available_days_of_week?: number[] | null;
+            sort_order?: number | null;
         },
     ) {
         this.resolveBrandScope(user, dto.brand_id);
@@ -263,6 +332,12 @@ export class MenuController {
                         'Replaces the full gallery list (max 12). Send [] to clear. Omit to leave gallery unchanged.',
                 },
                 deal_only: { type: 'boolean' },
+                sort_order: {
+                    type: 'integer',
+                    minimum: 0,
+                    description:
+                        'Manual position within the category (1 = first). 0 means not yet numbered, and sorts last. Unique within brand + category; a clash returns 409.',
+                },
                 available_for_order_types: {
                     type: 'array',
                     items: {
@@ -297,6 +372,7 @@ export class MenuController {
             available_time_start?: string | null;
             available_time_end?: string | null;
             available_days_of_week?: number[] | null;
+            sort_order?: number | null;
         },
     ) {
         await this.assertEntityBrand(user, 'item', +id);

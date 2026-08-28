@@ -123,6 +123,8 @@ export const adminService = {
     is_active?: boolean;
     deal_only?: boolean;
     description?: string;
+    /** Manual position within the category (1 = first). 0/omitted = not numbered yet. */
+    sort_order?: number;
   }) => {
     const response = await apiClient.post('/admin/menu/items', data);
     return response.data;
@@ -142,10 +144,31 @@ export const adminService = {
       deal_only?: boolean;
       /** Subset of delivery, pickup, dine_in. Omit or null = all channels. */
       available_for_order_types?: string[] | null;
+      /** Manual position within the category (1 = first). 0 = not numbered yet. */
+      sort_order?: number;
     },
   ) => {
     const response = await apiClient.put(`/admin/menu/items/${id}`, data);
     return response.data;
+  },
+
+  /** Which sort numbers are already used in a brand+category, and what to offer next. */
+  getMenuItemSortOrderMap: async (brandId: number, categoryId: number): Promise<{ taken: number[]; suggested: number }> => {
+    const response = await apiClient.get(`/admin/menu/items/sort-order-map?brand_id=${brandId}&category_id=${categoryId}`);
+    return response.data;
+  },
+  /** Drag-and-drop: rewrite a category to a contiguous 1..N in the given order. */
+  reorderMenuItems: async (brandId: number, categoryId: number, orderedIds: number[]): Promise<void> => {
+    await apiClient.patch('/admin/menu/items/reorder', { brand_id: brandId, category_id: categoryId, ordered_ids: orderedIds });
+  },
+  /** Which sort numbers are already used by a brand's categories, and what to offer next. */
+  getCategorySortOrderMap: async (brandId: number): Promise<{ taken: number[]; suggested: number }> => {
+    const response = await apiClient.get(`/admin/categories/sort-order-map?brand_id=${brandId}`);
+    return response.data;
+  },
+  /** Drag-and-drop: rewrite a brand's categories to a contiguous 1..N in the given order. */
+  reorderCategories: async (brandId: number, orderedIds: number[]): Promise<void> => {
+    await apiClient.patch('/admin/categories/reorder', { brand_id: brandId, ordered_ids: orderedIds });
   },
 
   // Deals (menu items with deal_components)

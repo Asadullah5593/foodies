@@ -9,6 +9,12 @@ import { Repository } from 'typeorm';
 import { MenuCategory } from '../entities/menu-category.entity';
 import { Brand } from '../entities/brand.entity';
 import { MediaCleanupService } from '../media/media-cleanup.service';
+import {
+    assertSortOrderAvailable,
+    normalizeSortOrder,
+    sortRank,
+    summarizeSortOrders,
+} from '../menu/sort-order.util';
 
 export interface CategoryFilters {
     brand_id?: number;
@@ -132,6 +138,18 @@ export class CategoriesService {
         }
 
         const list = await qb.getMany();
+        if (sort === 'sort_order') {
+            // Unset-last in memory, not SQL: a dotted CASE in orderBy() is a
+            // known trap in this codebase, and this list is never DB-paginated.
+            // Admin-only surface — the consumer category list is untouched.
+            const dir = order === 'DESC' ? -1 : 1;
+            list.sort(
+                (a, b) =>
+                    dir * (sortRank(a.sortOrder) - sortRank(b.sortOrder)) ||
+                    a.name.localeCompare(b.name) ||
+                    a.id - b.id,
+            );
+        }
         return list.map((c) => this.toResponse(c));
     }
 
@@ -151,6 +169,51 @@ export class CategoriesService {
         if (allowedBrandIds != null && !allowedBrandIds.includes(cat.brandId))
             throw new ForbiddenException('Category not found or access denied');
         return this.toResponse(cat);
+    }
+
+    /**
+     * Rows competing for a sort slot. Categories are numbered per BRAND — the
+     * brand's menu is one list of sections, so the whole brand shares a
+     * sequence (items, by contrast, are numbered per brand+category).
+     */
+    private async sortPeersForBrand(brandId: number) {
+        const rows = await this.repo.find({
+            where: { brandId },
+            select: ['id', 'sortOrder'],
+        });
+        return rows.map((r) => ({ id: r.id, sortOrder: r.sortOrder ?? 0 }));
+    }
+
+    /** Powers the admin hint: "1-5 taken · suggested 6". */
+    async sortOrderMap(brandId: number, tenantId: number | null) {
+        if (tenantId != null) await this.assertBrandAccess(brandId, tenantId);
+        return summarizeSortOrders(await this.sortPeersForBrand(brandId));
+    }
+
+    /**
+     * Drag-and-drop reorder: rewrites the brand to a contiguous 1..N, which is
+     * also how leftover 0s get cleaned up. Updates are scoped by brand, so an
+     * id from another brand matches nothing rather than renumbering it.
+     */
+    async reorder(
+        brandId: number,
+        orderedIds: number[],
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+    ): Promise<{ message: string }> {
+        if (allowedBrandIds != null && !allowedBrandIds.includes(brandId)) {
+            throw new ForbiddenException(
+                'You can only reorder categories for your own brand',
+            );
+        }
+        if (tenantId != null) await this.assertBrandAccess(brandId, tenantId);
+        for (let i = 0; i < orderedIds.length; i++) {
+            await this.repo.update(
+                { id: orderedIds[i], brandId },
+                { sortOrder: i + 1 },
+            );
+        }
+        return { message: 'Category order updated' };
     }
 
     async create(
@@ -177,13 +240,19 @@ export class CategoriesService {
             await this.assertBrandAccess(dto.brand_id, tenantId);
         const name = String(dto.name ?? '').trim();
         if (!name) throw new BadRequestException('Name is required');
+        const sortOrder = normalizeSortOrder(dto.sort_order);
+        assertSortOrderAvailable(
+            sortOrder,
+            await this.sortPeersForBrand(dto.brand_id),
+            { label: 'category in this brand' },
+        );
         const cat = await this.repo.save(
             this.repo.create({
                 brandId: dto.brand_id,
                 name,
                 description: normalizeText(dto.description),
                 imageUrl: normalizeText(dto.image_url),
-                sortOrder: dto.sort_order ?? 0,
+                sortOrder: sortOrder ?? 0,
                 isActive: dto.is_active ?? true,
             }),
         );
@@ -216,7 +285,15 @@ export class CategoriesService {
             cat.name = name;
         }
         if (dto.is_active !== undefined) cat.isActive = dto.is_active;
-        if (dto.sort_order !== undefined) cat.sortOrder = dto.sort_order;
+        const sortOrder = normalizeSortOrder(dto.sort_order);
+        if (sortOrder !== undefined) {
+            assertSortOrderAvailable(
+                sortOrder,
+                await this.sortPeersForBrand(cat.brandId),
+                { excludeId: cat.id, label: 'category in this brand' },
+            );
+            cat.sortOrder = sortOrder;
+        }
         if (dto.description !== undefined)
             cat.description = normalizeText(dto.description);
         if (dto.image_url !== undefined)
