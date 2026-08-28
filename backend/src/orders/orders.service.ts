@@ -159,6 +159,18 @@ function invoicePaymentMethod(
         : null;
 }
 
+/**
+ * Staff-placed till sources. The call centre is a POS replica operated by a
+ * different agency (delivery orders only, enforced per-account by the
+ * `orders:create:delivery-only` marker): every rule that reads "POS" applies to
+ * it identically. Only two things differ on purpose — the `source` tag itself
+ * (reporting), and the new-order till notification, which POS skips because the
+ * till placed the order while a call-centre agent sells against a branch they
+ * are not standing at.
+ */
+const isStaffTill = (source: string): boolean =>
+    source === 'pos' || source === 'call_centre';
+
 /** Internal signal: a concurrent placement with the same idempotency key already
  * created this group, so createOrder should return it instead of a fresh order. */
 class IdempotentReplay extends Error {
@@ -1436,7 +1448,7 @@ export class OrdersService {
         let customerPhoneNormalized: string | null = null;
         let explicitCustomerId: number | null = null;
 
-        if (source === 'pos') {
+        if (isStaffTill(source)) {
             // Customer requirements depend on order type: dine-in is fully
             // optional; takeaway & delivery require a name + phone (delivery
             // also needs a delivery address).
@@ -1585,7 +1597,7 @@ export class OrdersService {
             // Brand online open/close is online-only (POS is exempt). Re-check it at
             // commit so an order can't slip through for a brand just taken offline.
             if (
-                source !== 'pos' &&
+                !isStaffTill(source) &&
                 branchInfo.closedBrandIds.has(menuItemBrandId)
             ) {
                 throw new BadRequestException(
@@ -1683,7 +1695,7 @@ export class OrdersService {
         if (
             (source === 'kiosk' ||
                 source === 'consumer_app' ||
-                source === 'pos') &&
+                isStaffTill(source)) &&
             itemBrandIds.size > 1
         ) {
             throw new BadRequestException(
@@ -1693,9 +1705,14 @@ export class OrdersService {
         const orderBrandId =
             itemBrandIds.size === 1 ? [...itemBrandIds][0] : null;
 
-        // POS orders require the brand's shift to be open at each branch
-        // (shifts are per brand per branch).
-        if (source === 'pos') {
+        // Staff-placed orders require the brand's shift to be open at each
+        // branch (shifts are per brand per branch). The call centre places
+        // through this same till endpoint and its food is cooked at that
+        // branch, so it is gated exactly like the POS: without this it was
+        // gated by nothing at all and agents could sell at 1am with every till
+        // closed, since `source` is 'call_centre' rather than 'pos' whenever
+        // the agent holds the call-centre marker permission.
+        if (isStaffTill(source)) {
             const branchBrandPairs = new Set(
                 lineDetails.map((l) => `${l.branchId}-${l.brandId}`),
             );
@@ -1708,7 +1725,7 @@ export class OrdersService {
                     );
                 if (!openShift) {
                     throw new ForbiddenException(
-                        `No shift is open for this brand at branch ID ${bid}. Open the brand's shift before placing POS orders.`,
+                        `No shift is open for this brand at branch ID ${bid}. Open the brand's shift before placing orders.`,
                     );
                 }
             }
@@ -1883,7 +1900,7 @@ export class OrdersService {
             Math.round((firstOrderSubtotal - firstOrderLineDiscount) * 100) /
             100;
         if (
-            (source === 'pos' || source === 'consumer_app') &&
+            (isStaffTill(source) || source === 'consumer_app') &&
             dto.customer_phone?.trim() &&
             (dto.loyalty_points_to_redeem ?? 0) > 0
         ) {
@@ -4819,7 +4836,7 @@ export class OrdersService {
         if (
             (source === 'kiosk' ||
                 source === 'consumer_app' ||
-                source === 'pos') &&
+                isStaffTill(source)) &&
             quotedBrandIds.size > 1
         ) {
             throw new BadRequestException(
@@ -4908,7 +4925,7 @@ export class OrdersService {
         let loyaltyDiscount = 0;
         let loyaltyPointsRedeemed = 0;
         if (
-            (source === 'pos' || source === 'consumer_app') &&
+            (isStaffTill(source) || source === 'consumer_app') &&
             dto.customer_phone?.trim() &&
             (dto.loyalty_points_to_redeem ?? 0) > 0
         ) {
@@ -6807,7 +6824,7 @@ export class OrdersService {
                 Number(discount.minOrderAmount) > subtotal
             )
                 continue;
-            if (discount.posOnly && source !== 'pos') continue;
+            if (discount.posOnly && !isStaffTill(source)) continue;
             // Card-linked offer: applies only when the WHOLE bill is paid by an eligible card.
             if (discount.requiresCard) {
                 if (!fullCardPayment || bankCardId == null) continue;
@@ -6981,7 +6998,7 @@ export class OrdersService {
             Number(discount.minOrderAmount) > baseAmount
         )
             return empty;
-        if (discount.posOnly && source !== 'pos') return empty;
+        if (discount.posOnly && !isStaffTill(source)) return empty;
         // Card-linked offer: applies only when the WHOLE bill is paid by an eligible card.
         if (discount.requiresCard) {
             if (!fullCardPayment || bankCardId == null) return empty;
