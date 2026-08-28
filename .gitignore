@@ -50,3 +50,6 @@ USER_CREDENTIALS.md
 
 # Postman collection + its load-test script: local API tooling, not source.
 postman/
+
+# per-environment menu-switch manifests (operational records, never shared between DBs)
+backend/menu-switch-manifests/

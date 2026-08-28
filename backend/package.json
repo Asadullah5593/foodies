@@ -35,6 +35,8 @@
     "seed:delivery-manager": "ts-node -r tsconfig-paths/register src/seed-delivery-manager.ts",
     "seed:invoice-templates": "ts-node -r tsconfig-paths/register src/seed-invoice-templates.ts",
     "seed:reset-password": "ts-node -r tsconfig-paths/register src/reset-demo-password.ts",
+    "menu-switch:apply": "ts-node -r tsconfig-paths/register src/menu-switch/apply.ts",
+    "menu-switch:revert": "ts-node -r tsconfig-paths/register src/menu-switch/revert.ts",
     "epg:smoke": "ts-node -r tsconfig-paths/register src/scripts/epg-smoke-test.ts",
     "typeorm": "node --loader ts-node/esm ./node_modules/typeorm/cli.js -d src/data-source.ts",
     "migration:run": "npm run build && node ./node_modules/typeorm/cli.js migration:run -d dist/data-source.js",
