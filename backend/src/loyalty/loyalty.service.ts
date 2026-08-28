@@ -36,12 +36,14 @@ export interface BrandLoyaltySettings {
 
 /**
  * Maps an order's `source` to the wallet it earns/redeems against.
- *  - 'pos'          -> brand-scoped POS wallet
- *  - 'consumer_app' -> shared APP wallet
+ *  - 'pos' / 'call_centre' -> brand-scoped POS wallet (the call centre is a
+ *    POS replica: the customer on the phone is the same customer at the same
+ *    brand, so their points live in the same wallet)
+ *  - 'consumer_app'        -> shared APP wallet
  *  - 'kiosk' / 'consumer_web' / anything else -> null (no loyalty at all)
  */
 export function mapSourceToWalletType(source: string): WalletType | null {
-    if (source === 'pos') return 'pos';
+    if (source === 'pos' || source === 'call_centre') return 'pos';
     if (source === 'consumer_app') return 'app';
     return null;
 }

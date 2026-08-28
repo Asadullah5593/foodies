@@ -5,6 +5,10 @@ describe('mapSourceToWalletType (wallet routing)', () => {
         expect(mapSourceToWalletType('pos')).toBe('pos');
     });
 
+    it('routes call-centre orders to the POS wallet (POS replica: same customer, same brand)', () => {
+        expect(mapSourceToWalletType('call_centre')).toBe('pos');
+    });
+
     it('routes mobile-app orders to the shared APP wallet', () => {
         expect(mapSourceToWalletType('consumer_app')).toBe('app');
     });
