@@ -190,6 +190,13 @@ const PEPERICO: FlyerBrand = {
                 { name: 'Add Fries & Drink', price: 350 },
             ],
         },
+        // Kids Meal drink is a single option — "Slice Juice" (client, 2026-08-28);
+        // the live group listed Apple / Orange / Mango juice flavours.
+        {
+            match: 'Choose Drink',
+            modifiers: [{ name: 'Slice Juice' }],
+            cfg: { minSelect: 1, maxSelect: 1 },
+        },
         // Flyer: "Wraps come with lettuce, onion, tomatos, jalapeno, chipotle sauce."
         {
             match: 'Remove a Filling',
