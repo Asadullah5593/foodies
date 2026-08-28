@@ -10,6 +10,7 @@ import {
   Role,
   SUPER_ADMIN_SLUG,
   groupByResource,
+  nestPermissions,
   resourceLabel,
   ceilingFieldValues,
 } from './roleShared';
@@ -344,23 +345,48 @@ const RoleForm: React.FC = () => {
                     )}
                   </div>
                   <div className="space-y-4">
-                    {perms.map((p) => (
-                      <label
-                        key={p.id}
-                        title={p.name}
-                        className="flex items-start gap-3 cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={permissionIds.includes(p.id)}
-                          onChange={() => togglePermission(p.id)}
-                          disabled={isViewOnly}
-                          className="mt-0.5 h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                        />
-                        <span className="text-[15px] leading-6 text-slate-600 dark:text-slate-300">
-                          {p.description || p.name}
-                        </span>
-                      </label>
+                    {nestPermissions(perms).map(({ permission: p, children }) => (
+                      <div key={p.id} className="space-y-3">
+                        <label
+                          title={p.name}
+                          className="flex items-start gap-3 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={permissionIds.includes(p.id)}
+                            onChange={() => togglePermission(p.id)}
+                            disabled={isViewOnly}
+                            className="mt-0.5 h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span className="text-[15px] leading-6 text-slate-600 dark:text-slate-300">
+                            {p.description || p.name}
+                          </span>
+                        </label>
+                        {/* Narrowing permissions read as qualifiers of the one
+                            above them, so they sit indented beneath it. */}
+                        {children.length > 0 && (
+                          <div className="ml-8 space-y-3 border-l border-gray-200 pl-4 dark:border-slate-700">
+                            {children.map((c) => (
+                              <label
+                                key={c.id}
+                                title={c.name}
+                                className="flex items-start gap-3 cursor-pointer"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={permissionIds.includes(c.id)}
+                                  onChange={() => togglePermission(c.id)}
+                                  disabled={isViewOnly}
+                                  className="mt-0.5 h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <span className="text-[14px] leading-6 text-slate-500 dark:text-slate-400">
+                                  {c.description || c.name}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>

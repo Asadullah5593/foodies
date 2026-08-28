@@ -102,3 +102,44 @@ export function ceilingFieldValues(role: Role | null | undefined): {
     amount: toField(role?.maxStaffDiscountAmount),
   };
 }
+
+/**
+ * A permission and the permissions that NARROW it. `orders:view:own-pos-only`
+ * only means anything alongside `orders:view`, so the form reads far better
+ * with it indented under its parent than sorted alphabetically among peers.
+ *
+ * Parentage is derived from the name, not a hand-kept list: a permission whose
+ * name is another's plus one `:segment` is that one's child. New markers nest
+ * themselves.
+ */
+export interface PermissionNode {
+  permission: Permission;
+  children: Permission[];
+}
+
+export function nestPermissions(perms: Permission[]): PermissionNode[] {
+  const byName = new Map(perms.map((p) => [p.name, p]));
+  const parentOf = (p: Permission): Permission | null => {
+    const cut = p.name.lastIndexOf(':');
+    if (cut <= 0) return null;
+    return byName.get(p.name.slice(0, cut)) ?? null;
+  };
+  const nodes: PermissionNode[] = [];
+  const index = new Map<string, PermissionNode>();
+  for (const p of perms) {
+    if (parentOf(p)) continue;
+    const node = { permission: p, children: [] as Permission[] };
+    nodes.push(node);
+    index.set(p.name, node);
+  }
+  for (const p of perms) {
+    const parent = parentOf(p);
+    if (!parent) continue;
+    // An orphan (parent not granted to this catalog view) stays top-level so it
+    // can never become unreachable.
+    const node = index.get(parent.name);
+    if (node) node.children.push(p);
+    else nodes.push({ permission: p, children: [] });
+  }
+  return nodes;
+}
