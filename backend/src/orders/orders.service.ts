@@ -3418,6 +3418,8 @@ export class OrdersService {
         allowedBrandIds?: number[] | null,
         /** Days of history the caller may read; null/undefined = unlimited. */
         orderHistoryDays?: number | null,
+        /** Sources the caller may read (orders:view:own-* markers); null = all. */
+        restrictedSources?: string[] | null,
     ) {
         const order = await this.orderRepo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
@@ -3469,6 +3471,15 @@ export class OrdersService {
             throw new ForbiddenException(
                 `Your role can only access the last ${Math.floor(orderHistoryDays)} days of order history`,
             );
+        }
+        // orders:view:own-* markers: an order outside the caller's channels
+        // reads as not-found — the restriction must not confirm it exists.
+        if (
+            order &&
+            restrictedSources?.length &&
+            !restrictedSources.includes(order.source)
+        ) {
+            throw new NotFoundException('Order not found');
         }
         if (!order) throw new NotFoundException('Order not found');
         return {
@@ -3665,6 +3676,8 @@ export class OrdersService {
         allowedBrandIds?: number[] | null,
         /** Days of history the caller may read; null/undefined = unlimited. */
         orderHistoryDays?: number | null,
+        /** Sources the caller may read (orders:view:own-* markers); null = all. */
+        restrictedSources?: string[] | null,
     ) {
         if (
             allowedBranchIds != null &&
@@ -3752,6 +3765,13 @@ export class OrdersService {
             // silently match nothing rather than filtering.
             if (filters.source && ORDER_SOURCES.includes(filters.source))
                 qb.andWhere('o.source = :source', { source: filters.source });
+            // orders:view:own-* markers: a hard filter on top of whatever was
+            // requested — an explicit filter for a source outside the allowed
+            // set simply finds nothing rather than erroring.
+            if (restrictedSources?.length)
+                qb.andWhere('o.source IN (:...restrictedSources)', {
+                    restrictedSources,
+                });
             // Tender-type filter: the order has at least one tender of this
             // method, so a cash+card split shows under both views.
             if (
