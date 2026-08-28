@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tansta
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
+import SortOrderField from '../../components/SortOrderField';
+import ReorderModal from '../../components/ReorderModal';
 import Loader from '../../components/Loader';
 import FetchingOverlay from '../../components/FetchingOverlay';
 import { formatCurrency } from '../../utils/currency';
@@ -37,6 +39,8 @@ interface MenuItem {
   description?: string;
   base_price: number;
   is_active: boolean;
+  /** Manual position within its category (1 = first); 0 = not numbered yet, sorts last. */
+  sort_order?: number;
   deal_only?: boolean;
   image_url?: string | null;
   gallery_image_urls?: string[];
@@ -140,7 +144,11 @@ const MenuItems: React.FC = () => {
     available_time_start: '',
     available_time_end: '',
     available_days_of_week: [] as number[],
+    sort_order: '',
   });
+  const [sortOrderError, setSortOrderError] = useState<string | null>(null);
+  const [showReorder, setShowReorder] = useState(false);
+  const [editSortOrderError, setEditSortOrderError] = useState<string | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
   const [galleryUploading, setGalleryUploading] = useState(false);
   const [editImageUploading, setEditImageUploading] = useState(false);
@@ -263,6 +271,7 @@ const MenuItems: React.FC = () => {
     available_time_start: '',
     available_time_end: '',
     available_days_of_week: [] as number[],
+    sort_order: '',
   });
   useEffect(() => {
     if (editingItem) {
@@ -286,7 +295,9 @@ const MenuItems: React.FC = () => {
         available_time_start: editingItem.available_time_start ?? '',
         available_time_end: editingItem.available_time_end ?? '',
         available_days_of_week: editingItem.available_days_of_week ?? [],
+        sort_order: editingItem.sort_order ? String(editingItem.sort_order) : '',
       });
+      setEditSortOrderError(null);
     }
   }, [editingItem]);
 
@@ -333,6 +344,7 @@ const MenuItems: React.FC = () => {
         available_time_start?: string | null;
         available_time_end?: string | null;
         available_days_of_week?: number[] | null;
+        sort_order?: number;
       };
     }) => adminService.updateMenuItem(id, data),
     onSuccess: (_updated: unknown, variables) => {
@@ -355,7 +367,9 @@ const MenuItems: React.FC = () => {
       toast.success('Menu item updated!');
     },
     onError: (error: any) => {
-      toast.error(error.response?.data?.message || 'Failed to update menu item');
+      const msg = error.response?.data?.message;
+      if (error.response?.status === 409) setEditSortOrderError(msg ?? 'That sort order is taken');
+      toast.error(msg || 'Failed to update menu item');
     },
   });
 
@@ -480,6 +494,35 @@ const MenuItems: React.FC = () => {
     e.target.value = '';
   };
 
+  // Items are numbered per brand+category, so reordering needs BOTH picked and
+  // needs the complete list for that pair — the page's query is narrowed by
+  // status/search and paginated, and renumbering a fragment would scramble the
+  // rest of the category.
+  const canReorder = effectiveBrandId != null && !!filters.category_id;
+  const { data: itemsForReorder, isLoading: reorderListLoading } = useQuery({
+    queryKey: ['menuItems', 'reorder-scope', effectiveBrandId, filters.category_id],
+    queryFn: () =>
+      adminService.getMenuItems({
+        brand_id: effectiveBrandId as number,
+        category_id: +filters.category_id,
+      }),
+    enabled: showReorder && canReorder,
+  });
+
+  const reorderMutation = useMutation({
+    mutationFn: ({ orderedIds }: { orderedIds: number[] }) =>
+      adminService.reorderMenuItems(effectiveBrandId as number, +filters.category_id, orderedIds),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['menuItems'] });
+      queryClient.invalidateQueries({ queryKey: ['sort-order-map'] });
+      setShowReorder(false);
+      toast.success('Menu item order updated!');
+    },
+    onError: (error: any) => {
+      toast.error(error.response?.data?.message || 'Failed to reorder menu items');
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: async (data: {
       brand_id: string;
@@ -500,6 +543,7 @@ const MenuItems: React.FC = () => {
       available_time_start?: string;
       available_time_end?: string;
       available_days_of_week?: number[];
+      sort_order?: string;
     }) => {
       if (!data.brand_id || !data.category_id) throw new Error('Select a brand and category');
       const channels = buildOrderChannelsPayload(
@@ -525,6 +569,8 @@ const MenuItems: React.FC = () => {
         available_time_start: data.available_time_start || null,
         available_time_end: data.available_time_end || null,
         available_days_of_week: data.available_days_of_week?.length ? data.available_days_of_week : null,
+        // Empty box = leave it unnumbered (0), which sorts last.
+        sort_order: data.sort_order?.trim() ? parseInt(data.sort_order, 10) : 0,
       };
       if (data.gallery_image_urls?.length) {
         payload.gallery_image_urls = data.gallery_image_urls;
@@ -556,12 +602,17 @@ const MenuItems: React.FC = () => {
         available_time_start: '',
         available_time_end: '',
         available_days_of_week: [] as number[],
+        sort_order: '',
       });
+      setSortOrderError(null);
       toast.success('Menu item created successfully!');
     },
     onError: (error: any) => {
       console.error('Error creating menu item:', error);
       console.error('Error response:', error.response?.data);
+      if (error.response?.status === 409) {
+        setSortOrderError(error.response?.data?.message ?? 'That sort order is taken');
+      }
       
       let errorMessage = 'Failed to create menu item';
       
@@ -633,6 +684,16 @@ const MenuItems: React.FC = () => {
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Menu Items</h1>
         <div className="flex gap-2">
           {canCreateCategory && <Button variant="secondary" onClick={() => setShowCategoryForm(true)}>+ New Category</Button>}
+          {canEdit && (
+            <Button
+              variant="outline"
+              disabled={!canReorder}
+              title={canReorder ? 'Drag items into order' : 'Filter to one brand and category to reorder'}
+              onClick={() => setShowReorder(true)}
+            >
+              Reorder
+            </Button>
+          )}
           {canCreate && <Button variant="primary" onClick={() => setShowForm(!showForm)}>{showForm ? 'Cancel' : 'Add Menu Item'}</Button>}
         </div>
       </div>
@@ -787,6 +848,20 @@ const MenuItems: React.FC = () => {
           </form>
         </Card>
       )}
+      <ReorderModal
+        isOpen={showReorder}
+        onClose={() => setShowReorder(false)}
+        title="Reorder menu items"
+        note="Drag items into the order customers should see them in this category. Saving numbers them 1 upwards."
+        rows={(itemsForReorder ?? []).map((it: MenuItem) => ({
+          id: it.id,
+          name: it.name,
+          hint: it.is_active ? undefined : 'inactive',
+        }))}
+        isSaving={reorderMutation.isPending || reorderListLoading}
+        onSave={(orderedIds) => reorderMutation.mutate({ orderedIds })}
+      />
+
 
       <Modal
         isOpen={!!manageAddonsItem}
@@ -951,6 +1026,21 @@ const MenuItems: React.FC = () => {
                 ))}
               </select>
             </div>
+            <SortOrderField
+              label="Sort order (position in its category)"
+              value={editFormData.sort_order}
+              onChange={(v) => { setEditFormData((f) => ({ ...f, sort_order: v })); setEditSortOrderError(null); }}
+              scopeKey={
+                editFormBrandId != null && editFormData.category_id
+                  ? `item-${editFormBrandId}-${editFormData.category_id}`
+                  : null
+              }
+              fetchMap={() =>
+                adminService.getMenuItemSortOrderMap(editFormBrandId as number, parseInt(editFormData.category_id, 10))
+              }
+              ownSortOrder={editingItem?.sort_order ?? null}
+              error={editSortOrderError}
+            />
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Item Name *</label>
               <input
@@ -1260,6 +1350,21 @@ const MenuItems: React.FC = () => {
               ))}
             </select>
           </div>
+
+          <SortOrderField
+            label="Sort order (position in its category)"
+            value={formData.sort_order}
+            onChange={(v) => { setFormData({ ...formData, sort_order: v }); setSortOrderError(null); }}
+            scopeKey={
+              formBrandId != null && formData.category_id
+                ? `item-${formBrandId}-${formData.category_id}`
+                : null
+            }
+            fetchMap={() =>
+              adminService.getMenuItemSortOrderMap(formBrandId as number, parseInt(formData.category_id, 10))
+            }
+            error={sortOrderError}
+          />
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Item Name: *</label>
