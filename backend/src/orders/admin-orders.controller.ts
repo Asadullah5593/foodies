@@ -13,6 +13,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { OrdersService } from './orders.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
+import { restrictedOrderSources } from './order-source-restriction';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { RequirePermission } from '../roles/require-permission.decorator';
 import { RequirePermissionGuard } from '../roles/require-permission.guard';
@@ -130,6 +131,7 @@ export class AdminOrdersController {
             allowedBranchIds?: number[] | null;
             allowedBrandIds?: number[] | null;
             orderHistoryDays?: number | null;
+            permissions?: string[] | null;
         },
         @Query('branch_id') branchId: string,
         @Query('brand_id') brandId: string,
@@ -166,6 +168,7 @@ export class AdminOrdersController {
             user.allowedBranchIds,
             user.allowedBrandIds,
             user.orderHistoryDays,
+            restrictedOrderSources(user),
         );
     }
 
@@ -179,6 +182,7 @@ export class AdminOrdersController {
             allowedBranchIds?: number[] | null;
             allowedBrandIds?: number[] | null;
             orderHistoryDays?: number | null;
+            permissions?: string[] | null;
         },
     ) {
         return this.service.findForAdmin(
@@ -187,6 +191,7 @@ export class AdminOrdersController {
             user.allowedBranchIds,
             user.allowedBrandIds,
             user.orderHistoryDays,
+            restrictedOrderSources(user),
         );
     }
 
