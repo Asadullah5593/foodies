@@ -36,6 +36,12 @@ import {
     normalizePriceTiers,
 } from './modifier-pricing';
 import { restrictDealChoiceItemsForConsumer } from './deal-consumer-shaping';
+import {
+    assertSortOrderAvailable,
+    normalizeSortOrder,
+    sortRank,
+    summarizeSortOrders,
+} from './sort-order.util';
 import { getBranchClock, isWithinSchedule } from '../utils/branch-schedule';
 import { ActivityContext } from '../activity-log/activity-context';
 
@@ -446,6 +452,15 @@ export class MenuService {
         }
 
         const items = await qb.getMany();
+        // Unset-last is applied here rather than in SQL: a dotted CASE inside
+        // orderBy() has bitten this file before (see searchTenantMenu), and the
+        // admin list is never DB-paginated, so an in-memory sort is exact.
+        // Admin-only surface — the consumer menu keeps its old order until the
+        // ordering flip ships.
+        items.sort(
+            (a, b) =>
+                sortRank(a.sortOrder) - sortRank(b.sortOrder) || a.id - b.id,
+        );
         return items.map((i) => ({
             id: i.id,
             brand_id: i.brandId,
@@ -457,6 +472,7 @@ export class MenuService {
             gallery_image_urls: galleryUrlsForApi(i),
             base_price: Number(i.basePrice),
             is_active: i.isActive,
+            sort_order: i.sortOrder ?? 0,
             deal_only: i.dealOnly ?? false,
             available_for_order_types: effectiveMenuOrderChannels(
                 i.availableForOrderTypes,
@@ -487,6 +503,47 @@ export class MenuService {
         }));
     }
 
+    /**
+     * Rows competing for a sort slot: same brand AND same category. Sort order
+     * is unique per (brand, category) — a menu renders category by category, so
+     * numbering each one independently means adding a category never forces a
+     * renumber of everything after it.
+     */
+    private async sortPeersForCategory(brandId: number, categoryId: number) {
+        const rows = await this.itemRepo.find({
+            where: { brandId, categoryId },
+            select: ['id', 'sortOrder'],
+        });
+        return rows.map((r) => ({ id: r.id, sortOrder: r.sortOrder ?? 0 }));
+    }
+
+    /** Powers the admin hint: "1-5 taken · suggested 6". */
+    async getItemSortOrderMap(brandId: number, categoryId: number) {
+        return summarizeSortOrders(
+            await this.sortPeersForCategory(brandId, categoryId),
+        );
+    }
+
+    /**
+     * Drag-and-drop reorder. Rewrites the whole category to a contiguous 1..N,
+     * which is also how stray 0s get cleaned up. Each update is scoped by
+     * brand+category, so an id from elsewhere silently matches nothing rather
+     * than renumbering another category.
+     */
+    async reorderItems(
+        brandId: number,
+        categoryId: number,
+        orderedIds: number[],
+    ): Promise<{ message: string }> {
+        for (let i = 0; i < orderedIds.length; i++) {
+            await this.itemRepo.update(
+                { id: orderedIds[i], brandId, categoryId },
+                { sortOrder: i + 1 },
+            );
+        }
+        return { message: 'Menu item order updated' };
+    }
+
     async createItem(dto: {
         brand_id: number;
         category_id: number;
@@ -505,11 +562,18 @@ export class MenuService {
         available_time_start?: string | null;
         available_time_end?: string | null;
         available_days_of_week?: number[] | null;
+        sort_order?: number | null;
     }) {
         const slug = dto.name
             .toLowerCase()
             .replace(/\s+/g, '-')
             .replace(/[^a-z0-9-]/g, '');
+        const sortOrder = normalizeSortOrder(dto.sort_order);
+        assertSortOrderAvailable(
+            sortOrder,
+            await this.sortPeersForCategory(dto.brand_id, dto.category_id),
+            { label: 'menu item in this category' },
+        );
         return this.itemRepo.save(
             this.itemRepo.create({
                 brandId: dto.brand_id,
@@ -523,6 +587,7 @@ export class MenuService {
                 ),
                 basePrice: dto.base_price,
                 isActive: dto.is_active ?? true,
+                sortOrder: sortOrder ?? 0,
                 dealOnly: dto.deal_only ?? false,
                 availableForOrderTypes:
                     dto.available_for_order_types != null
@@ -563,6 +628,7 @@ export class MenuService {
             available_time_start?: string | null;
             available_time_end?: string | null;
             available_days_of_week?: number[] | null;
+            sort_order?: number | null;
         },
     ) {
         const item = await this.itemRepo.findOne({ where: { id } });
@@ -579,6 +645,24 @@ export class MenuService {
             category_id: item.categoryId,
             deal_only: item.dealOnly,
         };
+
+        // Validate the sort slot against the category the item is landing in,
+        // not the one it is leaving: moving an item to another category can
+        // collide there even when its number was free where it came from.
+        const sortOrder = normalizeSortOrder(dto.sort_order);
+        if (sortOrder !== undefined) {
+            const targetBrandId = dto.brand_id ?? item.brandId;
+            const targetCategoryId = dto.category_id ?? item.categoryId;
+            assertSortOrderAvailable(
+                sortOrder,
+                await this.sortPeersForCategory(
+                    targetBrandId,
+                    targetCategoryId,
+                ),
+                { excludeId: id, label: 'menu item in this category' },
+            );
+            item.sortOrder = sortOrder;
+        }
 
         if (dto.brand_id !== undefined) item.brandId = dto.brand_id;
         if (dto.category_id !== undefined) item.categoryId = dto.category_id;
@@ -1478,6 +1562,11 @@ export class MenuService {
                 ),
                 category: item?.category?.name,
                 category_id: item?.categoryId ?? item?.category?.id ?? null,
+                // Manual menu ordering for the mobile app. 0 = not yet numbered.
+                // `category_sort_order` saves the app joining against
+                // /public/consumer/categories just to order its sections.
+                sort_order: item?.sortOrder ?? 0,
+                category_sort_order: item?.category?.sortOrder ?? 0,
                 brand_id:
                     item?.brandId ??
                     (item?.brand as { id: number } | undefined)?.id ??
@@ -2288,6 +2377,8 @@ export class MenuService {
             ),
             category: item.category?.name ?? null,
             category_id: item.categoryId ?? item.category?.id ?? null,
+            sort_order: item.sortOrder ?? 0,
+            category_sort_order: item.category?.sortOrder ?? 0,
             brand_id:
                 item.brandId ??
                 (item as { brand?: { id: number } }).brand?.id ??

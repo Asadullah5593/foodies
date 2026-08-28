@@ -7,10 +7,17 @@ import {
     Body,
     Param,
     Query,
+    Patch,
     UseGuards,
     ForbiddenException,
+    BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
+import {
+    ApiTags,
+    ApiBearerAuth,
+    ApiOperation,
+    ApiQuery,
+} from '@nestjs/swagger';
 import { CategoriesService, CategoryFilters } from './categories.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
@@ -57,6 +64,53 @@ export class CategoriesController {
             user.tenantId,
             Object.keys(filters).length ? filters : undefined,
             user.allowedBrandIds,
+        );
+    }
+
+    // Declared above @Get(':id') — otherwise the param route swallows it.
+    @Get('sort-order-map')
+    @RequirePermission(Permissions.CATEGORIES_EDIT)
+    @ApiOperation({
+        summary: "Sort orders already used in a brand's categories",
+        description:
+            'Feeds the admin hint "1-5 taken · suggested 6". `taken` excludes 0, which means "not yet numbered".',
+    })
+    @ApiQuery({ name: 'brand_id', required: true, example: '1' })
+    sortOrderMap(
+        @CurrentUser() user: CategoriesUser,
+        @Query('brand_id') brandIdParam?: string,
+    ) {
+        const brandId = brandIdParam ? parseInt(brandIdParam, 10) : NaN;
+        if (!Number.isFinite(brandId)) {
+            throw new BadRequestException('brand_id is required');
+        }
+        if (
+            user.allowedBrandIds != null &&
+            !user.allowedBrandIds.includes(brandId)
+        ) {
+            throw new ForbiddenException(
+                'You do not have access to this brand',
+            );
+        }
+        return this.service.sortOrderMap(brandId, user.tenantId);
+    }
+
+    @Patch('reorder')
+    @RequirePermission(Permissions.CATEGORIES_EDIT)
+    @ApiOperation({
+        summary: "Reorder a brand's categories",
+        description:
+            'Rewrites the brand to a contiguous 1..N in the order given. Ids from other brands are ignored.',
+    })
+    reorder(
+        @CurrentUser() user: CategoriesUser,
+        @Body() body: { brand_id: number; ordered_ids: number[] },
+    ) {
+        return this.service.reorder(
+            body.brand_id,
+            body.ordered_ids ?? [],
+            user.tenantId,
+            user.allowedBrandIds ?? null,
         );
     }
 
