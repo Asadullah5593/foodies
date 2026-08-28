@@ -310,6 +310,16 @@ const Orders: React.FC = () => {
   const canFilterBrand = useHasPermission('orders:filter:brand');
   const canFilterOrderType = useHasPermission('orders:filter:order-type');
   const canFilterSource = useHasPermission('orders:filter:source');
+  // Channel-restricted accounts (orders:view:own-* markers) see a fixed set of
+  // sources, enforced server-side; the picker's other options would only ever
+  // narrow to nothing.
+  // Each call is unconditional and in fixed order — a hook cannot live behind
+  // .some(), which short-circuits.
+  const ownChannelOnly = useHasRestriction('orders:view:own-source-only');
+  const posOnly = useHasRestriction('orders:view:own-pos-only');
+  const mobileAppOnly = useHasRestriction('orders:view:own-mobile-app-only');
+  const kioskOnly = useHasRestriction('orders:view:own-kiosk-only');
+  const ownSourceOnly = ownChannelOnly || posOnly || mobileAppOnly || kioskOnly;
   const canFilterStatus = useHasPermission('orders:filter:status');
   const canFilterSearch = useHasPermission('orders:filter:search');
   const canFilterPayment = useHasPermission('orders:filter:payment');
@@ -1177,7 +1187,7 @@ const Orders: React.FC = () => {
           <option value="dine_in">Dine in</option>
           <option value="takeaway">Takeaway</option>
         </select>}
-        {canFilterSource && <select value={source} onChange={(e) => setFilter('source', e.target.value)} className={selectCls} aria-label="Source">
+        {canFilterSource && !ownSourceOnly && <select value={source} onChange={(e) => setFilter('source', e.target.value)} className={selectCls} aria-label="Source">
           <option value="">All sources</option>
           {ORDER_SOURCES.map((s) => <option key={s} value={s}>{ORDER_SOURCE_LABEL[s]}</option>)}
         </select>}

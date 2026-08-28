@@ -3,6 +3,7 @@ import {
   Permission,
   Role,
   groupByResource,
+  nestPermissions,
   resourceGroupKey,
   resourceLabel,
   ceilingFieldValues,
@@ -133,5 +134,68 @@ describe('ceilingFieldValues', () => {
 
   it('survives a role that has not loaded yet', () => {
     expect(ceilingFieldValues(undefined)).toEqual({ percent: '', amount: '' });
+  });
+});
+
+describe('nestPermissions', () => {
+  const p = (id: number, name: string): Permission => ({
+    id,
+    name,
+    resource: 'orders',
+    action: name.split(':').slice(1).join(':'),
+  });
+
+  it('nests a narrowing permission under the one it qualifies', () => {
+    const nodes = nestPermissions([
+      p(1, 'orders:view'),
+      p(2, 'orders:view:own-pos-only'),
+      p(3, 'orders:view:no-totals'),
+    ]);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].permission.name).toBe('orders:view');
+    expect(nodes[0].children.map((c) => c.name)).toEqual([
+      'orders:view:own-pos-only',
+      'orders:view:no-totals',
+    ]);
+  });
+
+  it('nests each family under its own parent', () => {
+    const nodes = nestPermissions([
+      p(1, 'orders:view'),
+      p(2, 'orders:view:own-kiosk-only'),
+      p(3, 'orders:update-status'),
+      p(4, 'orders:update-status:no-cancel'),
+    ]);
+    expect(nodes.map((n) => n.permission.name)).toEqual([
+      'orders:view',
+      'orders:update-status',
+    ]);
+    expect(nodes[0].children.map((c) => c.name)).toEqual([
+      'orders:view:own-kiosk-only',
+    ]);
+    expect(nodes[1].children.map((c) => c.name)).toEqual([
+      'orders:update-status:no-cancel',
+    ]);
+  });
+
+  it('keeps a child visible when its parent is absent from the catalog', () => {
+    const nodes = nestPermissions([p(2, 'orders:view:own-pos-only')]);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].permission.name).toBe('orders:view:own-pos-only');
+    expect(nodes[0].children).toEqual([]);
+  });
+
+  it('leaves unrelated permissions top-level and preserves their order', () => {
+    const nodes = nestPermissions([
+      p(1, 'orders:create'),
+      p(2, 'orders:void'),
+      p(3, 'orders:view'),
+    ]);
+    expect(nodes.map((n) => n.permission.name)).toEqual([
+      'orders:create',
+      'orders:void',
+      'orders:view',
+    ]);
+    expect(nodes.every((n) => n.children.length === 0)).toBe(true);
   });
 });
