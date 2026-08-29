@@ -114,6 +114,7 @@ import { isOrderPaymentMethodFilter } from './payment-methods';
 import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
 import { StaffDiscount } from '../entities/staff-discount.entity';
 import { assertOrderTypeAllowed } from './order-type-restriction';
+import { assertBranchesAllowed } from './branch-scope';
 import {
     staffDiscountToOffer,
     staffDiscountRawAmount,
@@ -1370,6 +1371,8 @@ export class OrdersService {
         actor: {
             permissions?: string[] | null;
             staffDiscountCeiling?: StaffDiscountCeiling | null;
+            /** From RoleAccessGuard; null = every branch. See branch-scope.ts. */
+            allowedBranchIds?: number[] | null;
         } | null = null,
     ) {
         const tenant = await this.tenantRepo.findOne({
@@ -1401,6 +1404,8 @@ export class OrdersService {
                 (line as { branch_id?: number }).branch_id ?? dto.branch_id,
         );
         const uniqueBranchIds = [...new Set(lineBranchIds)];
+        // A till may only sell at branches it is assigned to (null = all).
+        assertBranchesAllowed(actor, uniqueBranchIds);
         const branches = await this.branchRepo.find({
             where: uniqueBranchIds.map((id) => ({ id })),
             relations: ['branchBrands', 'branchBrands.brand'],
@@ -4786,12 +4791,17 @@ export class OrdersService {
         actor: {
             permissions?: string[] | null;
             staffDiscountCeiling?: StaffDiscountCeiling | null;
+            /** From RoleAccessGuard; null = every branch. See branch-scope.ts. */
+            allowedBranchIds?: number[] | null;
         } | null = null,
     ) {
         // Same gate as createOrder, and deliberately hard on quote too: an
         // order type this account may not place is the wrong request, not a
         // partial state to price around.
         assertOrderTypeAllowed(actor, dto.order_type);
+        // Same gate as createOrder: refuse a quote for a branch the till is
+        // not assigned to rather than pricing an order it can never place.
+        assertBranchesAllowed(actor, [dto.branch_id]);
         const branch = await this.branchRepo.findOne({
             where: { id: dto.branch_id },
             relations: ['branchBrands', 'branchBrands.brand'],

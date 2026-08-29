@@ -70,6 +70,7 @@ export class PosOrdersController {
             tenantId: number | null;
             isSuperAdmin?: boolean;
             allowedBrandIds?: number[] | null;
+            allowedBranchIds?: number[] | null;
             permissions?: string[];
             staffDiscountCeiling?: {
                 maxPercent: number | null;
@@ -114,6 +115,7 @@ export class PosOrdersController {
             tenantId: number | null;
             isSuperAdmin?: boolean;
             allowedBrandIds?: number[] | null;
+            allowedBranchIds?: number[] | null;
             permissions?: string[];
             staffDiscountCeiling?: {
                 maxPercent: number | null;
