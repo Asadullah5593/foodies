@@ -11,6 +11,23 @@ import { In, Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { Branch } from '../entities/branch.entity';
 
+/**
+ * Active branches first, then by name.
+ *
+ * The POS defaults to the first entry of this list, so ordering is not
+ * cosmetic: sorting by name alone hands the till a branch that takes no
+ * orders the moment an inactive one sorts earlier. Inactive branches stay in
+ * the list — the operator can still select one deliberately and gets the
+ * "branch is inactive" screen — they just stop being the default.
+ */
+export function byActiveThenName(
+    a: { name: string; is_active: boolean },
+    b: { name: string; is_active: boolean },
+): number {
+    if (a.is_active !== b.is_active) return a.is_active ? -1 : 1;
+    return a.name.localeCompare(b.name);
+}
+
 @ApiTags('POS – Menu')
 @ApiBearerAuth()
 @Controller('pos')
@@ -33,7 +50,9 @@ export class PosMenuController {
             tenantId: number | null;
             isSuperAdmin?: boolean;
         },
-    ): Promise<{ id: number; name: string; code: string }[]> {
+    ): Promise<
+        { id: number; name: string; code: string; is_active: boolean }[]
+    > {
         const openBranchIds =
             await this.shiftsService.findBranchIdsWithOpenShift();
         if (openBranchIds.length === 0) return [];
@@ -41,13 +60,17 @@ export class PosMenuController {
         if (user.isSuperAdmin === true) {
             const branches = await this.branchRepo.find({
                 where: { id: In(openBranchIds) },
-                select: ['id', 'name', 'code'],
-                order: { name: 'ASC' },
+                select: ['id', 'name', 'code', 'isActive'],
+                // Active first: the POS takes posBranches[0] as its default, so
+                // a plain name sort hands the till a branch that refuses orders
+                // whenever an inactive one happens to sort earlier.
+                order: { isActive: 'DESC', name: 'ASC' },
             });
             return branches.map((b) => ({
                 id: b.id,
                 name: b.name,
                 code: b.code,
+                is_active: b.isActive !== false,
             }));
         }
 
@@ -58,8 +81,13 @@ export class PosMenuController {
             const openSet = new Set(openBranchIds);
             return tenantBranches
                 .filter((b) => openSet.has(b.id))
-                .map((b) => ({ id: b.id, name: b.name, code: b.code }))
-                .sort((a, b) => a.name.localeCompare(b.name));
+                .map((b) => ({
+                    id: b.id,
+                    name: b.name,
+                    code: b.code,
+                    is_active: b.is_active !== false,
+                }))
+                .sort(byActiveThenName);
         }
 
         const dbUser = await this.userRepo.findOne({
@@ -68,7 +96,12 @@ export class PosMenuController {
         });
         if (!dbUser?.branchUsers?.length) return [];
         const branchIds = new Set<number>();
-        const list: { id: number; name: string; code: string }[] = [];
+        const list: {
+            id: number;
+            name: string;
+            code: string;
+            is_active: boolean;
+        }[] = [];
         const openSet = new Set(openBranchIds);
         for (const bu of dbUser.branchUsers) {
             const branch = (bu as { branch?: Branch }).branch;
@@ -78,10 +111,11 @@ export class PosMenuController {
                     id: branch.id,
                     name: branch.name,
                     code: branch.code,
+                    is_active: branch.isActive !== false,
                 });
             }
         }
-        return list.sort((a, b) => a.name.localeCompare(b.name));
+        return list.sort(byActiveThenName);
     }
 
     @Get('menu')
