@@ -21,7 +21,13 @@ export type BranchMenuResponse = {
   message?: string;
 };
 
-export type PosBranch = { id: number; name: string; code: string };
+export type PosBranch = {
+  id: number;
+  name: string;
+  code: string;
+  /** Inactive branches take no orders; the API sorts them last so they are never the default. */
+  is_active?: boolean;
+};
 
 export const menuService = {
   /** Branches the current user is assigned to (for POS branch selector). */
