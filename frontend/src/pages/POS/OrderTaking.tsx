@@ -1595,7 +1595,9 @@ const OrderTaking: React.FC = () => {
               onChange={(v) => filtersProps.onBranchChange(v === '' ? null : Number(v))}
               options={(posBranches ?? []).map((b) => ({
                 value: String(b.id),
-                label: `${b.name} (${b.code})`,
+                // Say so in the label: an inactive branch is still selectable
+                // (it just is not the default), and looked identical before.
+                label: `${b.name} (${b.code})${b.is_active === false ? ' — inactive' : ''}`,
               }))}
               placeholder="Select branch"
               className="w-full"
@@ -1647,7 +1649,9 @@ const OrderTaking: React.FC = () => {
               onChange={(v) => filtersProps.onBranchChange(v === '' ? null : Number(v))}
               options={(posBranches ?? []).map((b) => ({
                 value: String(b.id),
-                label: `${b.name} (${b.code})`,
+                // Say so in the label: an inactive branch is still selectable
+                // (it just is not the default), and looked identical before.
+                label: `${b.name} (${b.code})${b.is_active === false ? ' — inactive' : ''}`,
               }))}
               placeholder="Select branch"
               className="w-full"
