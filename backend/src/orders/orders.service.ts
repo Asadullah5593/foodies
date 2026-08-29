@@ -114,6 +114,7 @@ import { isOrderPaymentMethodFilter } from './payment-methods';
 import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
 import { StaffDiscount } from '../entities/staff-discount.entity';
 import { assertOrderTypeAllowed } from './order-type-restriction';
+import { assertBranchesAllowed } from './branch-scope';
 import {
     staffDiscountToOffer,
     staffDiscountRawAmount,
@@ -1370,6 +1371,8 @@ export class OrdersService {
         actor: {
             permissions?: string[] | null;
             staffDiscountCeiling?: StaffDiscountCeiling | null;
+            /** From RoleAccessGuard; null = every branch. See branch-scope.ts. */
+            allowedBranchIds?: number[] | null;
         } | null = null,
     ) {
         const tenant = await this.tenantRepo.findOne({
@@ -1401,6 +1404,8 @@ export class OrdersService {
                 (line as { branch_id?: number }).branch_id ?? dto.branch_id,
         );
         const uniqueBranchIds = [...new Set(lineBranchIds)];
+        // A till may only sell at branches it is assigned to (null = all).
+        assertBranchesAllowed(actor, uniqueBranchIds);
         const branches = await this.branchRepo.find({
             where: uniqueBranchIds.map((id) => ({ id })),
             relations: ['branchBrands', 'branchBrands.brand'],
@@ -1533,6 +1538,8 @@ export class OrdersService {
             itemSubtotal: number;
             quantity?: number;
             sizeKey?: string | null;
+            isDeal?: boolean;
+            unitCost?: number | null;
         }[] = [];
         const itemBrandIds = new Set<number>();
         let subtotal = 0;
@@ -1605,61 +1612,16 @@ export class OrdersService {
                 );
             }
 
-            let unitPrice: number;
-            if (line.deal_unit_price !== undefined) {
-                unitPrice = line.deal_unit_price;
-            } else {
-                unitPrice = await this.menuService.getEffectiveUnitPrice(
-                    lineBranchId,
-                    line.menu_item_id,
-                );
-            }
-            let lineSizeKey: string | null = null;
-            if (line.variant_id) {
-                const variant = menuItem.variants?.find(
-                    (v) => v.id === line.variant_id,
-                );
-                if (variant) {
-                    // Deal lines carry a fully-resolved deal_unit_price (the variant/size
-                    // price is already baked in by expandDealItems), so don't re-add the
-                    // variant modifier here — this mirrors the quote path
-                    // (computeSubtotalAndLinesWithBrands) and keeps the charged total equal
-                    // to the quoted total. Still record sizeKey for size-aware modifier pricing.
-                    if (line.deal_unit_price === undefined)
-                        unitPrice += Number(variant.priceModifier);
-                    lineSizeKey = variant.sizeKey ?? null;
-                }
-            }
-            const quantity = line.quantity ?? 1;
-            // A deal line carries one fully-resolved deal_unit_price per emitted unit and the
-            // quote path (computeSubtotalAndLinesWithBrands) uses it UN-scaled by quantity, so
-            // match that here — otherwise a deal component with quantity>1 would be charged
-            // more than it was quoted. Non-deal lines scale by quantity as usual.
-            let itemSubtotal =
-                line.deal_unit_price !== undefined
-                    ? unitPrice
-                    : unitPrice * quantity;
+            // Same pricing rule as the quote — see priceOrderLine.
+            const {
+                unitPrice,
+                itemSubtotal,
+                lineSizeKey,
+                modifierPricing,
+                isDeal,
+                unitCost,
+            } = await this.priceOrderLine(lineBranchId, line, menuItem);
             const itemName = menuItem.name;
-            if (line.addons?.length) {
-                for (const addonLine of line.addons) {
-                    const addon = menuItem.addons?.find(
-                        (a) => a.id === addonLine.addon_id,
-                    );
-                    if (addon)
-                        itemSubtotal +=
-                            Number(addon.price) * (addonLine.quantity ?? 1);
-                }
-            }
-            // Size-aware modifier pricing (per-size surcharge + "first N free"); see modifier-pricing.ts.
-            // Modifier cost is added once per line (matches prior behaviour, not scaled by line qty).
-            const modifierPricing = priceModifiersForLine({
-                modifierGroups: (
-                    menuItem as { modifierGroups?: PricingModifierGroup[] }
-                ).modifierGroups,
-                selections: line.modifiers,
-                sizeKey: lineSizeKey,
-            });
-            itemSubtotal += modifierPricing.total;
 
             lineDetails.push({
                 menuItemId: menuItem.id,
@@ -1669,6 +1631,8 @@ export class OrdersService {
                 itemSubtotal,
                 quantity: line.quantity ?? 1,
                 sizeKey: lineSizeKey,
+                isDeal,
+                unitCost,
             });
             itemBrandIds.add(menuItemBrandId);
             subtotal += itemSubtotal;
@@ -4786,12 +4750,17 @@ export class OrdersService {
         actor: {
             permissions?: string[] | null;
             staffDiscountCeiling?: StaffDiscountCeiling | null;
+            /** From RoleAccessGuard; null = every branch. See branch-scope.ts. */
+            allowedBranchIds?: number[] | null;
         } | null = null,
     ) {
         // Same gate as createOrder, and deliberately hard on quote too: an
         // order type this account may not place is the wrong request, not a
         // partial state to price around.
         assertOrderTypeAllowed(actor, dto.order_type);
+        // Same gate as createOrder: refuse a quote for a branch the till is
+        // not assigned to rather than pricing an order it can never place.
+        assertBranchesAllowed(actor, [dto.branch_id]);
         const branch = await this.branchRepo.findOne({
             where: { id: dto.branch_id },
             relations: ['branchBrands', 'branchBrands.brand'],
@@ -5590,6 +5559,108 @@ export class OrdersService {
     }
 
     /** Compute subtotal and line details; derive orderBrandId from items (single brand or null for multi-brand). */
+    /**
+     * THE pricing rule for one order line — quote and createOrder both call
+     * this, so a cart can no longer price one way on screen and another way
+     * when placed. It carries everything the offer engine needs to treat the
+     * line correctly, in particular `isDeal`: createOrder used to build its
+     * lines by hand without it, so deal lines that the quote (rightly)
+     * excluded from offers under "allow offers on deals = off" were
+     * discounted anyway at placement. The order then showed a staff discount
+     * the cashier had never been quoted, and the tendered amount exceeded the
+     * bill by exactly that discount.
+     *
+     * Deal lines carry a fully-resolved deal_unit_price from expandDealItems:
+     * the variant/size price is already baked in (so it is not re-added) and
+     * it is one price per emitted unit (so it is not scaled by quantity).
+     * Add-ons and modifiers are added for deal and non-deal lines alike.
+     */
+    private async priceOrderLine(
+        branchId: number,
+        line: {
+            menu_item_id: number;
+            quantity?: number;
+            variant_id?: number;
+            addons?: { addon_id: number; quantity?: number }[];
+            modifiers?: { modifier_id: number; quantity?: number }[];
+            deal_unit_price?: number;
+        },
+        menuItem: {
+            variants?: Array<{
+                id: number;
+                priceModifier: number | string;
+                sizeKey?: string | null;
+                costPrice?: number | null;
+            }>;
+            addons?: Array<{ id: number; price: number | string }>;
+            modifierGroups?: PricingModifierGroup[];
+            costPrice?: number | null;
+        },
+    ): Promise<{
+        unitPrice: number;
+        itemSubtotal: number;
+        lineSizeKey: string | null;
+        modifierPricing: ReturnType<typeof priceModifiersForLine>;
+        isDeal: boolean;
+        unitCost: number | null;
+    }> {
+        const isDeal = line.deal_unit_price !== undefined;
+        let unitPrice = isDeal
+            ? (line.deal_unit_price as number)
+            : await this.menuService.getEffectiveUnitPrice(
+                  branchId,
+                  line.menu_item_id,
+              );
+        let lineSizeKey: string | null = null;
+        let lineUnitCost: number | null =
+            menuItem.costPrice != null ? Number(menuItem.costPrice) : null;
+        if (line.variant_id && menuItem.variants?.length) {
+            const variant = menuItem.variants.find(
+                (v) => v.id === line.variant_id,
+            );
+            if (variant) {
+                if (!isDeal) unitPrice += Number(variant.priceModifier);
+                // Size is resolved for deal lines too, so a component's
+                // toppings (a 12" pizza inside a deal) price per size.
+                lineSizeKey = variant.sizeKey ?? null;
+                if (variant.costPrice != null)
+                    lineUnitCost =
+                        (lineUnitCost ?? 0) + Number(variant.costPrice);
+            }
+        }
+        let itemSubtotal = isDeal
+            ? unitPrice
+            : unitPrice * (line.quantity ?? 1);
+        if (line.addons?.length) {
+            for (const addonLine of line.addons) {
+                const addon = menuItem.addons?.find(
+                    (a) => a.id === addonLine.addon_id,
+                );
+                if (addon)
+                    itemSubtotal +=
+                        Number(addon.price) * (addonLine.quantity ?? 1);
+            }
+        }
+        // Size-aware modifier pricing (per-size surcharge + "first N free");
+        // added once per line, not scaled by line quantity.
+        const modifierPricing = priceModifiersForLine({
+            modifierGroups: menuItem.modifierGroups,
+            selections: line.modifiers,
+            sizeKey: lineSizeKey,
+        });
+        itemSubtotal += modifierPricing.total;
+        return {
+            unitPrice,
+            itemSubtotal,
+            lineSizeKey,
+            modifierPricing,
+            isDeal,
+            // A deal line's cost is not meaningful per component (its price is
+            // the bundle's), so the cost floor does not apply to it.
+            unitCost: isDeal ? null : lineUnitCost,
+        };
+    }
+
     private async computeSubtotalAndLinesWithBrands(
         branchId: number,
         items: Array<{
@@ -5665,83 +5736,17 @@ export class OrdersService {
             if (!Number.isFinite(brandId) || !branchBrandIds.has(brandId))
                 continue;
             itemBrandIds.add(brandId);
-            let unitPrice: number;
-            if (
-                (line as { deal_unit_price?: number }).deal_unit_price !==
-                undefined
-            ) {
-                unitPrice = (line as { deal_unit_price: number })
-                    .deal_unit_price;
-            } else {
-                unitPrice = await this.menuService.getEffectiveUnitPrice(
-                    branchId,
-                    line.menu_item_id,
-                );
-            }
-            const isDealPriceLine =
-                (line as { deal_unit_price?: number }).deal_unit_price !==
-                undefined;
-            // Resolve the variant size for both deal and non-deal lines so deal
-            // component toppings (e.g. a 12" pizza inside a deal) price per size.
-            let lineSizeKey: string | null = null;
-            const baseCost =
-                (menuItem as { costPrice?: number | null }).costPrice != null
-                    ? Number(
-                          (menuItem as { costPrice?: number | null }).costPrice,
-                      )
-                    : null;
-            let lineUnitCost: number | null = baseCost;
-            if (line.variant_id && menuItem.variants?.length) {
-                const variant = menuItem.variants.find(
-                    (v) => v.id === line.variant_id,
-                );
-                if (variant) {
-                    if (!isDealPriceLine)
-                        unitPrice += Number(variant.priceModifier);
-                    lineSizeKey = variant.sizeKey ?? null;
-                    const vc = (variant as { costPrice?: number | null })
-                        .costPrice;
-                    if (vc != null)
-                        lineUnitCost = (lineUnitCost ?? 0) + Number(vc);
-                }
-            }
-            let itemSubtotalForDetail: number;
-            if (isDealPriceLine) {
-                // Deal line: base is the fixed deal price (one deal unit); still add addons and modifiers for this component.
-                itemSubtotalForDetail = (line as { deal_unit_price: number })
-                    .deal_unit_price;
-            } else {
-                const quantity = line.quantity ?? 1;
-                itemSubtotalForDetail = unitPrice * quantity;
-            }
-            // Add addons and modifiers for both deal and non-deal lines (deal components can have addons e.g. extra dip).
-            if (line.addons?.length) {
-                for (const addonLine of line.addons) {
-                    const addon = menuItem.addons?.find(
-                        (a) => a.id === addonLine.addon_id,
-                    );
-                    if (addon)
-                        itemSubtotalForDetail +=
-                            Number(addon.price) * (addonLine.quantity ?? 1);
-                }
-            }
-            itemSubtotalForDetail += priceModifiersForLine({
-                modifierGroups: (
-                    menuItem as { modifierGroups?: PricingModifierGroup[] }
-                ).modifierGroups,
-                selections: line.modifiers,
-                sizeKey: lineSizeKey,
-            }).total;
-            subtotal += itemSubtotalForDetail;
+            const priced = await this.priceOrderLine(branchId, line, menuItem);
+            subtotal += priced.itemSubtotal;
             lineDetails.push({
                 menuItemId: menuItem.id,
                 categoryId: menuItem.categoryId,
                 brandId,
-                itemSubtotal: itemSubtotalForDetail,
+                itemSubtotal: priced.itemSubtotal,
                 quantity: line.quantity ?? 1,
-                sizeKey: lineSizeKey,
-                isDeal: isDealPriceLine,
-                unitCost: isDealPriceLine ? null : lineUnitCost,
+                sizeKey: priced.lineSizeKey,
+                isDeal: priced.isDeal,
+                unitCost: priced.unitCost,
                 sourceIndex: line.source_index,
             });
         }

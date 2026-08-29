@@ -6,9 +6,9 @@ import { BranchesService } from '../branches/branches.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { scopeBranchIds } from './branch-scope';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { User } from '../entities/user.entity';
 import { Branch } from '../entities/branch.entity';
 
 /**
@@ -37,11 +37,17 @@ export class PosMenuController {
         private menuService: MenuService,
         private shiftsService: ShiftsService,
         private branchesService: BranchesService,
-        @InjectRepository(User) private userRepo: Repository<User>,
         @InjectRepository(Branch) private branchRepo: Repository<Branch>,
     ) {}
 
-    /** Branches the current user can use for POS: super admin = all branches with open shift; tenant user = tenant's branches with open shift (incl. not assigned). */
+    /**
+     * Branches the current user may sell at that currently have an open shift.
+     * Scope comes from RoleAccessGuard's `allowedBranchIds` (null = every
+     * branch, for all-branches:access holders and the super admin) — the
+     * same value the admin order history is scoped by. This used to hand a
+     * tenant user every branch in the tenant "(incl. not assigned)", which is
+     * how a cashier assigned to one branch could switch the till to another.
+     */
     @Get('branches')
     async branches(
         @CurrentUser()
@@ -49,12 +55,15 @@ export class PosMenuController {
             id: number;
             tenantId: number | null;
             isSuperAdmin?: boolean;
+            allowedBranchIds?: number[] | null;
         },
     ): Promise<
         { id: number; name: string; code: string; is_active: boolean }[]
     > {
-        const openBranchIds =
-            await this.shiftsService.findBranchIdsWithOpenShift();
+        const openBranchIds = scopeBranchIds(
+            user,
+            await this.shiftsService.findBranchIdsWithOpenShift(),
+        );
         if (openBranchIds.length === 0) return [];
 
         if (user.isSuperAdmin === true) {
@@ -74,48 +83,20 @@ export class PosMenuController {
             }));
         }
 
-        if (user.tenantId != null) {
-            const tenantBranches = await this.branchesService.findAllForAdmin(
-                user.tenantId,
-            );
-            const openSet = new Set(openBranchIds);
-            return tenantBranches
-                .filter((b) => openSet.has(b.id))
-                .map((b) => ({
-                    id: b.id,
-                    name: b.name,
-                    code: b.code,
-                    is_active: b.is_active !== false,
-                }))
-                .sort(byActiveThenName);
-        }
-
-        const dbUser = await this.userRepo.findOne({
-            where: { id: user.id },
-            relations: ['branchUsers', 'branchUsers.branch'],
-        });
-        if (!dbUser?.branchUsers?.length) return [];
-        const branchIds = new Set<number>();
-        const list: {
-            id: number;
-            name: string;
-            code: string;
-            is_active: boolean;
-        }[] = [];
+        if (user.tenantId == null) return [];
+        const tenantBranches = await this.branchesService.findAllForAdmin(
+            user.tenantId,
+        );
         const openSet = new Set(openBranchIds);
-        for (const bu of dbUser.branchUsers) {
-            const branch = (bu as { branch?: Branch }).branch;
-            if (branch && !branchIds.has(branch.id) && openSet.has(branch.id)) {
-                branchIds.add(branch.id);
-                list.push({
-                    id: branch.id,
-                    name: branch.name,
-                    code: branch.code,
-                    is_active: branch.isActive !== false,
-                });
-            }
-        }
-        return list.sort(byActiveThenName);
+        return tenantBranches
+            .filter((b) => openSet.has(b.id))
+            .map((b) => ({
+                id: b.id,
+                name: b.name,
+                code: b.code,
+                is_active: b.is_active !== false,
+            }))
+            .sort(byActiveThenName);
     }
 
     @Get('menu')
@@ -132,27 +113,16 @@ export class PosMenuController {
             tenantId: number | null;
             isSuperAdmin?: boolean;
             allowedBrandIds?: number[] | null;
+            allowedBranchIds?: number[] | null;
         },
         @Query('branch_id') branchIdParam: string,
         @Query('order_type') orderTypeParam: string,
     ) {
-        let allowedBranchIds: number[] | null = null;
-        if (user.isSuperAdmin === true) {
-            allowedBranchIds = null;
-        } else if (user.tenantId != null) {
-            const tenantBranches = await this.branchesService.findAllForAdmin(
-                user.tenantId,
-            );
-            allowedBranchIds = tenantBranches.map((b) => b.id);
-        } else {
-            const dbUser = await this.userRepo.findOne({
-                where: { id: user.id },
-                relations: ['branchUsers'],
-            });
-            allowedBranchIds = dbUser?.branchUsers?.length
-                ? dbUser.branchUsers.map((bu) => bu.branchId)
-                : [];
-        }
+        // The guard's scope, not a recomputation: null = every branch. The
+        // old derivation listed every tenant branch as "allowed", which made
+        // the "not assigned to this branch" refusal below unreachable.
+        const allowedBranchIds: number[] | null =
+            user.isSuperAdmin === true ? null : (user.allowedBranchIds ?? null);
 
         let branchId = branchIdParam ? +branchIdParam : null;
         if (!branchId && allowedBranchIds != null && allowedBranchIds.length)
