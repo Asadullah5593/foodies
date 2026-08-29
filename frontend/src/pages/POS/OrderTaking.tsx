@@ -43,6 +43,9 @@ import {
   cartLineSupportsOrderType,
   restrictOrderTypeOptions,
   DELIVERY_ONLY_PERMISSION,
+  TAKEAWAY_ONLY_PERMISSION,
+  DINE_IN_ONLY_PERMISSION,
+  allowedOrderTypes,
 } from './orderTypeSupport';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import { canPlaceOrder } from './checkoutGuards';
@@ -148,12 +151,20 @@ const OrderTaking: React.FC = () => {
   const branchId = branchMenu?.branch_id ?? null;
 
   /**
-   * Marker permission for call-centre desks: this account may punch delivery
-   * orders only. It narrows the option list below, and because every order-type
-   * control on this page reads that list, dine-in and takeaway vanish from the
-   * whole POS at once. The server enforces the same rule on quote and order.
+   * Order-type marker permissions (delivery-only for call-centre desks, and
+   * the takeaway / dine-in ones that add up with it). They narrow the option
+   * list below, and because every order-type control on this page reads that
+   * list, the disallowed types vanish from the whole POS at once. The server
+   * enforces the same rule on quote and order. Each hook call is unconditional
+   * and in fixed order.
    */
   const deliveryOnly = useHasPermission(DELIVERY_ONLY_PERMISSION);
+  const takeawayOnly = useHasPermission(TAKEAWAY_ONLY_PERMISSION);
+  const dineInOnly = useHasPermission(DINE_IN_ONLY_PERMISSION);
+  const allowedTypes = React.useMemo(
+    () => allowedOrderTypes({ deliveryOnly, takeawayOnly, dineInOnly }),
+    [deliveryOnly, takeawayOnly, dineInOnly],
+  );
 
   const orderTypeOptions = React.useMemo((): { value: OrderTypeOption; label: string }[] => {
     const list: { value: OrderTypeOption; label: string }[] = [];
@@ -162,11 +173,11 @@ const OrderTaking: React.FC = () => {
       list.push({ value: 'takeaway', label: 'Takeaway' });
     if (branchMenu?.supports_delivery === true) list.push({ value: 'delivery', label: 'Delivery' });
     // The dine-in fallback exists for a branch with no channel flags set at all.
-    // It must NOT apply to a delivery-only account — that would offer the one
+    // It must NOT apply to a restricted account — that would offer the one
     // thing the permission forbids — so restrict AFTER the fallback.
     const withFallback = list.length ? list : [{ value: 'dine_in' as const, label: 'Dine In' }];
-    return restrictOrderTypeOptions(withFallback, deliveryOnly);
-  }, [branchMenu?.supports_dine_in, branchMenu?.supports_takeaway, branchMenu?.supports_delivery, deliveryOnly]);
+    return restrictOrderTypeOptions(withFallback, allowedTypes);
+  }, [branchMenu?.supports_dine_in, branchMenu?.supports_takeaway, branchMenu?.supports_delivery, allowedTypes]);
 
   const effectiveOrderType: OrderTypeOption | null =
     orderType != null && orderTypeOptions.some((o) => o.value === orderType) ? orderType : null;
