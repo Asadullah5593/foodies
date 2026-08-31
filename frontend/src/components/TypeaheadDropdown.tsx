@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { TypeaheadOption } from '../hooks/useTypeaheadSuggestions';
+import InactiveBadge from './InactiveBadge';
 
 export default function TypeaheadDropdown({
   open,
@@ -49,13 +50,14 @@ export default function TypeaheadDropdown({
               }}
             >
               <span
-                className={`flex w-full px-3 py-2 text-left text-sm truncate ${
+                className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${
                   idx === activeIndex
                     ? 'bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 font-medium'
                     : 'text-gray-800 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700'
                 }`}
               >
-                {opt.label}
+                <span className="min-w-0 flex-1 truncate">{opt.label}</span>
+                {opt.inactive && <InactiveBadge />}
               </span>
             </button>
           </li>

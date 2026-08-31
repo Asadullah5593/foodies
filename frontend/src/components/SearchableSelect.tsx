@@ -81,7 +81,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   }, [options, debouncedSearch]);
 
   const typeaheadOptions = useMemo(
-    () => options.map((o) => ({ id: o.value, label: o.label })),
+    () => options.map((o) => ({ id: o.value, label: o.label, inactive: o.inactive })),
     [options],
   );
   const { open: sugOpen, setOpen: setSugOpen, suggestions, activeIndex, setActiveIndex } =
