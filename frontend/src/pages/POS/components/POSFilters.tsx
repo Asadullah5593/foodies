@@ -4,6 +4,7 @@ import SearchableSelect from '../../../components/SearchableSelect';
 import type { OrderTypeOption } from './types';
 import TypeaheadDropdown from '../../../components/TypeaheadDropdown';
 import type { TypeaheadOption } from '../../../hooks/useTypeaheadSuggestions';
+import { isEntityInactive } from '../../../utils/entityStatus';
 
 type Brand = { id: number; name: string };
 type Branch = { id: number; name: string; code: string };
@@ -113,7 +114,7 @@ const POSFilters: React.FC<POSFiltersProps> = ({
           onChange={(v) => onBrandChange(v === '' ? null : Number(v))}
           options={[
             { value: '', label: 'All brands' },
-            ...brands.map((b) => ({ value: String(b.id), label: b.name })),
+            ...brands.map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
           ]}
           placeholder="All brands"
           minWidth="min-w-[120px]"
@@ -126,7 +127,7 @@ const POSFilters: React.FC<POSFiltersProps> = ({
           onChange={(v) => onCategoryChange(v === '' ? null : Number(v))}
           options={[
             { value: '', label: 'All categories' },
-            ...categories.map((c) => ({ value: String(c.id), label: c.name })),
+            ...categories.map((c) => ({ value: String(c.id), label: c.name, inactive: isEntityInactive(c) })),
           ]}
           placeholder="All categories"
           minWidth="min-w-[120px]"

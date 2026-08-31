@@ -8,6 +8,7 @@ import Button from '../../components/Button';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import Card from '../../components/Card';
 import SearchableSelect from '../../components/SearchableSelect';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 const inputClass =
   'w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-red-500/50 focus:border-red-500 transition-colors';
@@ -177,7 +178,7 @@ const DeliveryTiers: React.FC = () => {
             label="Brand"
             value={effectiveBrandId != null ? String(effectiveBrandId) : ''}
             onChange={(v) => setSelectedBrandId(v ? +v : null)}
-            options={brands.map((b) => ({ value: String(b.id), label: b.name }))}
+            options={brands.map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) }))}
             placeholder="Select brand"
             minWidth="min-w-[200px]"
           />

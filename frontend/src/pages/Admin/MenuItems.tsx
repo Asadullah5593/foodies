@@ -24,6 +24,8 @@ import { confirmDialog } from '../../utils/sweetAlert';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import RecordHistoryLink from '../../components/RecordHistoryLink';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
+import InactiveBadge from '../../components/InactiveBadge';
 
 interface MenuItemAddon {
   id: number;
@@ -225,7 +227,7 @@ const MenuItems: React.FC = () => {
 
   const menuItemSearchTypeahead = useTypeaheadSuggestions({
     query: debouncedMenuItemSearch,
-    options: (menuItems ?? []).map((i: any) => ({ id: String(i.id), label: i.name ?? '' })),
+    options: (menuItems ?? []).map((i: any) => ({ id: String(i.id), label: labelWithStatus(i.name ?? '', i) })),
     minChars: 2,
     limit: 8,
   });
@@ -722,7 +724,7 @@ const MenuItems: React.FC = () => {
               { value: '', label: 'All categories' },
               ...categoriesForFilter.map((c: { id: number; name: string }) => ({
                 value: String(c.id),
-                label: c.name,
+                label: c.name, inactive: isEntityInactive(c),
               })),
             ]}
             placeholder="All categories"
@@ -896,6 +898,7 @@ const MenuItems: React.FC = () => {
                         className="h-4 w-4 text-blue-600 rounded border-gray-300"
                       />
                       <span className="font-medium">{addon.name}</span>
+                      {isEntityInactive(addon) && <InactiveBadge />}
                       <span className="text-green-600">{formatCurrency(Number(addon.price ?? 0))}</span>
                     </label>
                   );
@@ -1022,7 +1025,7 @@ const MenuItems: React.FC = () => {
               >
                 <option value="">Select category</option>
                 {(categoriesForEdit ?? []).map((c: { id: number; name: string }) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>{labelWithStatus(c.name, c)}</option>
                 ))}
               </select>
             </div>
@@ -1346,7 +1349,7 @@ const MenuItems: React.FC = () => {
                     : 'Select Category'}
               </option>
               {(categoriesForForm ?? []).map((category: { id: number; name: string }) => (
-                <option key={category.id} value={category.id}>{category.name}</option>
+                <option key={category.id} value={category.id}>{labelWithStatus(category.name, category)}</option>
               ))}
             </select>
           </div>

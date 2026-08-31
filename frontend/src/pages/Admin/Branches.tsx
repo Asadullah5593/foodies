@@ -18,6 +18,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
+import { labelWithStatus } from '../../utils/entityStatus';
 
 const Branches: React.FC = () => {
   const navigate = useNavigate();
@@ -71,7 +72,7 @@ const Branches: React.FC = () => {
 
   const branchSearchTypeahead = useTypeaheadSuggestions({
     query: debouncedFilterSearch,
-    options: (branches ?? []).map((b: any) => ({ id: String(b.id), label: b.name ?? '' })),
+    options: (branches ?? []).map((b: any) => ({ id: String(b.id), label: labelWithStatus(b.name ?? '', b) })),
     minChars: 2,
     limit: 8,
   });

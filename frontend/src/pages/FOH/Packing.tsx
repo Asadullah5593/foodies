@@ -16,6 +16,7 @@ import ScrollToTopButton from '../../components/ScrollToTopButton';
 import { formatOrderType } from '../../utils/format';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { groupOrderItems } from '../../utils/orderItemGrouping';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -373,7 +374,7 @@ const FOHPacking: React.FC = () => {
                   { value: '', label: 'Select branch' },
                   ...(branches ?? []).map((b: { id: number; name: string }) => ({
                     value: String(b.id),
-                    label: b.name,
+                    label: b.name, inactive: isEntityInactive(b),
                   })),
                 ]}
                 placeholder="Select branch"

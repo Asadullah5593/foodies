@@ -19,6 +19,7 @@ import { formatOrderType } from '../../utils/format';
 import { groupOrderItems } from '../../utils/orderItemGrouping';
 import ScrollToTopButton from '../../components/ScrollToTopButton';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -413,7 +414,7 @@ const KDS: React.FC = () => {
                   { value: '', label: 'Select branch' },
                   ...(branches ?? []).map((b: { id: number; name: string }) => ({
                     value: String(b.id),
-                    label: b.name,
+                    label: b.name, inactive: isEntityInactive(b),
                   })),
                 ]}
                 placeholder="Select branch"
@@ -428,7 +429,7 @@ const KDS: React.FC = () => {
                   { value: '', label: 'All brands' },
                   ...brands.map((b: { id: number; name: string }) => ({
                     value: String(b.id),
-                    label: b.name,
+                    label: b.name, inactive: isEntityInactive(b),
                   })),
                 ]}
                 placeholder="All brands"

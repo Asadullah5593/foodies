@@ -20,6 +20,7 @@ import { useHasPermission } from '../../hooks/useHasPermission';
 import apiClient from '../../utils/apiClient';
 import { confirmDialog } from '../../utils/sweetAlert';
 import { StaffDiscount } from '../../types';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 const emptyForm = {
   name: '',
@@ -64,7 +65,7 @@ const StaffDiscounts: React.FC = () => {
     },
   });
 
-  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name }));
+  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name, inactive: isEntityInactive(b) }));
   const brandNameById = useMemo(
     () => new Map((brands ?? []).map((b) => [b.id, b.name])),
     [brands],
