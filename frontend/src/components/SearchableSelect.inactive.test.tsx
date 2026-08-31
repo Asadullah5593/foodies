@@ -38,6 +38,19 @@ describe('SearchableSelect — inactive options', () => {
     expect(screen.getByText('Inactive')).toBeTruthy();
   });
 
+  it('marks an inactive record in the SUGGESTION overlay too (2+ chars)', async () => {
+    render(<SearchableSelect value="" onChange={() => {}} options={options} />);
+    open();
+    // Typing >=2 chars opens the typeahead overlay, a separate render path
+    // from the list below it — the status must survive into it.
+    fireEvent.change(screen.getByPlaceholderText('Search...'), { target: { value: 'fi' } });
+    await new Promise((r) => setTimeout(r, 400)); // debounce
+    // Two marks: the row in the list AND the row in the suggestion overlay.
+    // >=2 is what fails if the flag is dropped when suggestions are rebuilt.
+    expect(screen.getAllByText('Inactive').length).toBe(2);
+    expect(screen.getAllByText('Fireaway').length).toBe(2);
+  });
+
   it('keeps an inactive option selectable', () => {
     const onChange = vi.fn();
     render(<SearchableSelect value="" onChange={onChange} options={options} />);

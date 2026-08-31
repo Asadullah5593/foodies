@@ -58,7 +58,12 @@ const SearchableMultiSelect: React.FC<SearchableMultiSelectProps> = ({
   }, [options, debouncedSearch]);
 
   const typeaheadOptions = useMemo(
-    () => options.map((o) => ({ id: String(o.id), label: getOptionLabel(o) })),
+    () =>
+      options.map((o) => ({
+        id: String(o.id),
+        label: getOptionLabel(o),
+        inactive: o.inactive ?? isEntityInactive(o),
+      })),
     [options, getOptionLabel],
   );
   const { open: sugOpen, setOpen: setSugOpen, suggestions, activeIndex, setActiveIndex } =
