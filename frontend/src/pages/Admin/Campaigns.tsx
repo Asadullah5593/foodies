@@ -27,6 +27,7 @@ import {
   removeLabel,
 } from '../../components/OfferBrandScope';
 import { useHasPermission } from '../../hooks/useHasPermission';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 const emptyCampaign = { name: '', description: '', is_active: true, eligibility_brand_ids: [] as number[], ...emptyValidity };
 const emptyItem = {
@@ -88,7 +89,7 @@ const Campaigns: React.FC = () => {
   const offerOpts: Opt[] = allOffers.map((o) => ({ value: String(o.id), label: `[${KIND_LABEL[o.offer_kind ?? 'discount'] ?? o.offer_kind}] ${o.name}` }));
   const destOptionsFor = (t: string): Opt[] =>
     t === 'product' ? productOpts : t === 'deal' ? dealOpts : t === 'category' ? categoryOpts : t === 'brand' ? brandOpts : t === 'branch' ? branchOpts : [];
-  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name }));
+  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name, inactive: isEntityInactive(b) }));
   const brandNameById = useMemo(() => new Map((brands ?? []).map((b) => [b.id, b.name])), [brands]);
 
   const paginated = useMemo(() => list.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [list, page]);

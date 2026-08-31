@@ -35,6 +35,7 @@ import { useHasPermission } from '../../hooks/useHasPermission';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import SizeMapEditor from '../../components/SizeMapEditor';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 
 interface SortableModifierRowProps {
   modifier: ModifierResponse;
@@ -309,8 +310,8 @@ const Modifiers: React.FC = () => {
   const modifierSearchTypeahead = useTypeaheadSuggestions({
     query: debouncedModifierSearch,
     options: (modifierGroups ?? []).flatMap((g: any) => [
-      { id: `g-${g.id}`, label: g.name ?? '' },
-      ...((g.modifiers ?? []).map((m: any) => ({ id: `m-${m.id}`, label: m.name ?? '' }))),
+      { id: `g-${g.id}`, label: labelWithStatus(g.name ?? '', g) },
+      ...((g.modifiers ?? []).map((m: any) => ({ id: `m-${m.id}`, label: labelWithStatus(m.name ?? '', m) }))),
     ]),
     minChars: 2,
     limit: 8,
@@ -525,7 +526,7 @@ const Modifiers: React.FC = () => {
                 { value: '', label: 'All items' },
                 ...(menuItemsForFilter ?? []).map((mi: { id: number; name: string }) => ({
                   value: String(mi.id),
-                  label: mi.name,
+                  label: mi.name, inactive: isEntityInactive(mi),
                 })),
               ]}
               placeholder="All items"
@@ -618,7 +619,7 @@ const Modifiers: React.FC = () => {
             >
               <option value="">Select brand</option>
               {brands?.map((b) => (
-                <option key={b.id} value={b.id}>{b.name}</option>
+                <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>
               ))}
             </select>
           </div>

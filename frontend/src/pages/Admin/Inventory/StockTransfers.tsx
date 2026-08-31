@@ -20,6 +20,7 @@ import PaginationBar from '../../../components/PaginationBar';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { useHasPermission } from '../../../hooks/useHasPermission';
+import { isEntityInactive, labelWithStatus } from '../../../utils/entityStatus';
 
 const card = 'bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm';
 const field = 'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400';
@@ -78,7 +79,7 @@ const StockTransfers: React.FC = () => {
     queryClient.invalidateQueries({ queryKey: ['transfer-orders'] });
   };
 
-  const brandOptions = useMemo(() => [{ value: '', label: 'Branch pool (shared)' }, ...(brandsQ.data ?? []).map((b: any) => ({ value: String(b.id), label: b.name }))], [brandsQ.data]);
+  const brandOptions = useMemo(() => [{ value: '', label: 'Branch pool (shared)' }, ...(brandsQ.data ?? []).map((b: any) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) }))], [brandsQ.data]);
 
   const bucketLabel = (branchId: number, brandId: number | null) =>
     brandId != null ? brandById.get(Number(brandId))?.name ?? `Brand #${brandId}` : branchById.get(Number(branchId))?.name ?? `Branch #${branchId}`;
@@ -281,7 +282,7 @@ const StockTransfers: React.FC = () => {
           </select>
           <select className={`${field} w-auto`} value={branchFilter} onChange={(e) => { setBranchFilter(e.target.value); setPage(1); }}>
             <option value="">All branches</option>
-            {(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            {(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>)}
           </select>
           {(search || typeFilter || branchFilter) && (
             <button onClick={() => { setSearch(''); setTypeFilter(''); setBranchFilter(''); setPage(1); }} className="text-sm text-slate-500 hover:text-slate-700 px-2">Clear</button>
@@ -341,13 +342,13 @@ const StockTransfers: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div><div className="text-xs font-medium text-slate-500 mb-1">Source branch</div>
               <select className={field} value={nf.sb ?? ''} onChange={(e) => setNf({ ...nf, sb: e.target.value })}>
-                <option value="">Select branch…</option>{(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                <option value="">Select branch…</option>{(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>)}
               </select></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Source brand bucket</div>
               <select className={field} value={nf.sbr ?? ''} onChange={(e) => setNf({ ...nf, sbr: e.target.value })}>{brandOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Destination branch</div>
               <select className={field} value={nf.db ?? ''} onChange={(e) => setNf({ ...nf, db: e.target.value })}>
-                <option value="">Select branch…</option>{(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                <option value="">Select branch…</option>{(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>)}
               </select></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Destination brand bucket</div>
               <select className={field} value={nf.dbr ?? ''} onChange={(e) => setNf({ ...nf, dbr: e.target.value })}>{brandOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>

@@ -15,6 +15,7 @@ import Modal from '../../components/Modal';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 import RecordHistoryLink from '../../components/RecordHistoryLink';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 /* ------------------------------------------------------------- helpers --- */
 
@@ -1290,7 +1291,7 @@ const Shifts: React.FC = () => {
                 { value: '', label: 'Select Brand' },
                 ...openFormBrands.map((brand) => ({
                   value: String(brand.id),
-                  label: brand.name,
+                  label: brand.name, inactive: isEntityInactive(brand),
                 })),
               ]}
               placeholder="Select Brand"

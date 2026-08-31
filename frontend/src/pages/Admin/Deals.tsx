@@ -14,6 +14,7 @@ import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { formatCurrency } from '../../utils/currency';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 
 type DealSlotType = 'fixed' | 'choice_category' | 'choice_list';
 
@@ -309,7 +310,7 @@ const Deals: React.FC = () => {
   const debouncedSearch = useDebouncedValue(search, 300);
   const dealTypeahead = useTypeaheadSuggestions({
     query: search,
-    options: dealList.map((d) => ({ id: String(d.id), label: d.name })),
+    options: dealList.map((d) => ({ id: String(d.id), label: labelWithStatus(d.name, d) })),
     minChars: 2,
     limit: 8,
   });
@@ -541,7 +542,7 @@ const Deals: React.FC = () => {
                 { value: '', label: 'Select category' },
                 ...((categoriesForForm ?? []) as { id: number; name: string }[]).map((c) => ({
                   value: String(c.id),
-                  label: c.name,
+                  label: c.name, inactive: isEntityInactive(c),
                 })),
               ]}
               placeholder={formBrandId ? 'Select category' : 'Select a brand first'}
@@ -678,7 +679,7 @@ function DealFormSearchableSelect<T extends { id: number; name: string }>({
   }, [options, debouncedSearch]);
   const typeahead = useTypeaheadSuggestions({
     query: debouncedSearch,
-    options: options.map((o) => ({ id: String(getOptionId(o)), label: o.name })),
+    options: options.map((o) => ({ id: String(getOptionId(o)), label: labelWithStatus(o.name, o) })),
     minChars: 2,
     limit: 8,
   });
@@ -805,7 +806,7 @@ function SearchableMultiSelect({
   }, [options, debouncedSearch]);
   const typeahead = useTypeaheadSuggestions({
     query: debouncedSearch,
-    options: options.map((o) => ({ id: String(o.id), label: o.name })),
+    options: options.map((o) => ({ id: String(o.id), label: labelWithStatus(o.name, o) })),
     minChars: 2,
     limit: 8,
   });

@@ -31,6 +31,7 @@ import {
 } from '../../components/OfferBrandScope';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import RecordHistoryLink from '../../components/RecordHistoryLink';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 interface Option {
   id: number;
@@ -283,10 +284,10 @@ const Discounts: React.FC = () => {
   };
 
   const branchOptions: SearchableMultiSelectOption[] = (branches ?? []).map(
-    (b) => ({ id: b.id, name: b.name, code: b.code }),
+    (b) => ({ id: b.id, name: b.name, inactive: isEntityInactive(b), code: b.code }),
   );
   const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map(
-    (b) => ({ id: b.id, name: b.name }),
+    (b) => ({ id: b.id, name: b.name, inactive: isEntityInactive(b) }),
   );
   // Category names repeat across brands (e.g. every brand has a "Deals").
   // Suffix each with its brand so they are distinguishable in the picker.

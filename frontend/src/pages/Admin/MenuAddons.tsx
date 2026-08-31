@@ -22,6 +22,7 @@ import { confirmDialog } from '../../utils/sweetAlert';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
+import { labelWithStatus } from '../../utils/entityStatus';
 
 const MenuAddons: React.FC = () => {
   const { user } = useAuth();
@@ -79,7 +80,7 @@ const MenuAddons: React.FC = () => {
   const addonList = addons ?? [];
   const addonSearchTypeahead = useTypeaheadSuggestions({
     query: debouncedAddonSearch,
-    options: addonList.map((a: any) => ({ id: String(a.id), label: a.name ?? '' })),
+    options: addonList.map((a: any) => ({ id: String(a.id), label: labelWithStatus(a.name ?? '', a) })),
     minChars: 2,
     limit: 8,
   });

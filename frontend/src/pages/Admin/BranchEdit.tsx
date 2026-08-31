@@ -15,6 +15,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import LocationPicker from '../../components/LocationPicker';
+import { labelWithStatus } from '../../utils/entityStatus';
 
 const inputClass =
   'w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-red-500/50 dark:focus:ring-red-500/40 focus:border-red-500 dark:focus:border-red-500 transition-colors';
@@ -232,7 +233,7 @@ const BranchEdit: React.FC = () => {
 
   const branchMenuItemSearchTypeahead = useTypeaheadSuggestions({
     query: debouncedMenuItemSearch,
-    options: ((brandMenuItems ?? []) as MenuItemWithMeta[]).map((mi) => ({ id: String(mi.id), label: mi.name ?? '' })),
+    options: ((brandMenuItems ?? []) as MenuItemWithMeta[]).map((mi) => ({ id: String(mi.id), label: labelWithStatus(mi.name ?? '', mi) })),
     minChars: 2,
     limit: 8,
   });
@@ -755,7 +756,7 @@ const BranchEdit: React.FC = () => {
                   className="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-red-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
                 >
                   <option value="">All brands</option>
-                  {(brands as Brand[])?.filter((b) => formData.brand_ids.includes(b.id)).map((b) => <option key={b.id} value={b.id}>{b.name}</option>) ?? []}
+                  {(brands as Brand[])?.filter((b) => formData.brand_ids.includes(b.id)).map((b) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>) ?? []}
                 </select>
                 <select
                   value={menuItemFilterCategory === '' ? '' : String(menuItemFilterCategory)}
@@ -763,7 +764,7 @@ const BranchEdit: React.FC = () => {
                   className="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-red-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
                 >
                   <option value="">All categories</option>
-                  {menuItemCategoriesForFilter.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  {menuItemCategoriesForFilter.map((c) => <option key={c.id} value={c.id}>{labelWithStatus(c.name, c)}</option>)}
                 </select>
                 <div className="relative">
                   <input

@@ -10,6 +10,7 @@ import {
   InvoiceTemplateConfig,
   LAYOUT_META,
 } from '../../invoices/types';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 export type InvoiceTemplateFormState = {
   id: number | null;
@@ -312,7 +313,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           value: form.brand_id == null ? '' : String(form.brand_id),
           options: [
             { value: '', label: 'All brands (tenant default)' },
-            ...brands.map((b) => ({ value: String(b.id), label: b.name })),
+            ...brands.map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
           ],
           onChange: (v) => setForm((f) => ({ ...f, brand_id: v === '' ? null : Number(v) })),
         },

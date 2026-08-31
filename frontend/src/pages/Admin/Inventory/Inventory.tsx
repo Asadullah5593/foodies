@@ -12,6 +12,7 @@ import { inventoryService } from '../../../services/api/inventoryService';
 import { useHasPermission } from '../../../hooks/useHasPermission';
 import { confirmDialog } from '../../../utils/sweetAlert';
 import { recordBeacon } from '../../../utils/activityBeacon';
+import { isEntityInactive, labelWithStatus } from '../../../utils/entityStatus';
 
 const BRANCH_ID_KEY = 'foodies-inventory-branch-id';
 
@@ -615,7 +616,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
   const transferBrandOptions = useMemo(
     () => [
       { value: '', label: 'Branch pool (shared)' },
-      ...(brands ?? []).map((b: any) => ({ value: String(b.id), label: b.name })),
+      ...(brands ?? []).map((b: any) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
     ],
     [brands],
   );
@@ -1020,7 +1021,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
     () =>
       (branches ?? [])
         .filter((b: any) => Number(b.id) !== Number(branchId))
-        .map((b: any) => ({ value: String(b.id), label: b.name })),
+        .map((b: any) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
     [branches, branchId],
   );
 
@@ -1899,7 +1900,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 >
                   <option value="">All brands (combined)</option>
                   <option value="pool">Branch pool (shared)</option>
-                  {(brands ?? []).map((b: any) => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  {(brands ?? []).map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>)}
                 </select>
               </label>
             </div>
