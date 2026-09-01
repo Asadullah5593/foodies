@@ -12,6 +12,7 @@ import { Notification } from '../entities/notification.entity';
 import { NotificationRecipient } from '../entities/notification-recipient.entity';
 import { NotificationSetting } from '../entities/notification-setting.entity';
 import { Role } from '../entities/role.entity';
+import { BRAND_LOCK_SQL } from '../branch-users/brand-lock';
 import {
     getNotificationEvent,
     NotificationEventDef,
@@ -251,17 +252,18 @@ export class NotificationsService {
         // at the order's branch. Tenant-level staff (owner / GM) hold their role in
         // tenant_users with NO per-branch row, so include them too — but only when
         // that role carries all-branches:access (genuinely tenant-wide reach), so a
-        // branch-scoped role never leaks across branches. Brand-lock (brand_id) is
-        // honoured on both sides.
+        // branch-scoped role never leaks across branches. A brand lock is honoured
+        // on both sides — a branch row may name several brands, a tenant row one.
         const rows = (await this.dataSource.query(
             `SELECT DISTINCT u.user_id FROM (
-                 SELECT bu.user_id AS user_id, bu.brand_id AS brand_id
+                 SELECT bu.user_id AS user_id, ${BRAND_LOCK_SQL('bu')} AS brand_ids
                  FROM branch_users bu
                  WHERE $2::int IS NOT NULL
                    AND bu.branch_id = $2
                    AND bu.role_id = ANY($3::int[])
                  UNION
-                 SELECT tu.user_id AS user_id, tu.brand_id AS brand_id
+                 SELECT tu.user_id AS user_id,
+                        CASE WHEN tu.brand_id IS NULL THEN NULL ELSE ARRAY[tu.brand_id] END AS brand_ids
                  FROM tenant_users tu
                  WHERE tu.tenant_id = $1
                    AND tu.role_id = ANY($3::int[])
@@ -271,7 +273,7 @@ export class NotificationsService {
                        WHERE p.name = 'all-branches:access'
                    )
              ) u
-             WHERE ($4::int IS NULL OR u.brand_id IS NULL OR u.brand_id = $4)`,
+             WHERE ($4::int IS NULL OR u.brand_ids IS NULL OR $4 = ANY(u.brand_ids))`,
             [tenantId, branchId, roleIds, brandId],
         )) as unknown as Array<{ user_id: number }>;
         return rows.map((r) => Number(r.user_id));

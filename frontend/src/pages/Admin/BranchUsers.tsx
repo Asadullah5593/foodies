@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import BrandLockSelect from '../../components/BrandLockSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -15,7 +16,7 @@ import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
-import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
+import { isEntityInactive } from '../../utils/entityStatus';
 import InactiveBadge from '../../components/InactiveBadge';
 
 interface RoleOption {
@@ -34,7 +35,9 @@ const BranchUsers: React.FC = () => {
   const [selectedUserIds, setSelectedUserIds] = useState<number[]>([]);
   const [roleByUserId, setRoleByUserId] = useState<Record<number, number>>({});
   // Brand lock per user: 0 / missing = all brands (no lock)
-  const [brandByUserId, setBrandByUserId] = useState<Record<number, number>>({});
+  // Brands each user is locked to at the branch; [] = all brands (what the
+  // single brand column used to say with null).
+  const [brandByUserId, setBrandByUserId] = useState<Record<number, number[]>>({});
   const [phoneByUserId, setPhoneByUserId] = useState<Record<number, string>>({});
   const [page, setPage] = useState(1);
   // Free-text search on the listing
@@ -47,7 +50,7 @@ const BranchUsers: React.FC = () => {
   const [mbUserId, setMbUserId] = useState('');
   const [mbBranchIds, setMbBranchIds] = useState<number[]>([]);
   const [mbRoleId, setMbRoleId] = useState('');
-  const [mbBrandId, setMbBrandId] = useState('0');
+  const [mbBrandIds, setMbBrandIds] = useState<number[]>([]);
   const [mbPhone, setMbPhone] = useState('');
 
   // Fetch branches
@@ -92,7 +95,24 @@ const BranchUsers: React.FC = () => {
     queryFn: () => adminService.getBranchUsers(),
   });
 
-  type BranchUserRow = User & { branch_id?: number; branch_name?: string; branch_code?: string; role_id?: number; role_name?: string; brand_id?: number | null; brand_name?: string | null };
+  /**
+   * The brands a listed assignment locks its user to. Reads the list the API
+   * now sends and falls back to the single field, so a row from a backend that
+   * predates multi-brand still shows its lock instead of reading as unlocked.
+   */
+  const lockedBrandIds = (u: {
+    brand_ids?: number[] | null;
+    brand_id?: number | null;
+  }): number[] => {
+    if (Array.isArray(u.brand_ids) && u.brand_ids.length > 0)
+      return [...u.brand_ids].sort((a, b) => a - b);
+    return u.brand_id == null ? [] : [u.brand_id];
+  };
+  /** Stable key for comparing two selections, so an unchanged row is a no-op. */
+  const brandKeyOf = (ids: number[]): string =>
+    [...ids].sort((a, b) => a - b).join(',');
+
+  type BranchUserRow = User & { branch_id?: number; branch_name?: string; branch_code?: string; role_id?: number; role_name?: string; brand_id?: number | null; brand_name?: string | null; brand_ids?: number[] | null; brand_names?: string[] | null };
 
   const assignBranchBrands = React.useMemo(() => {
     if (assignBranchId == null) return [];
@@ -140,10 +160,10 @@ const BranchUsers: React.FC = () => {
     const existing = (branchUsers as BranchUserRow[]).filter((u) => u.branch_id === branchId);
     setSelectedUserIds(existing.map((u) => u.id));
     const roleMap: Record<number, number> = {};
-    const brandMap: Record<number, number> = {};
+    const brandMap: Record<number, number[]> = {};
     for (const u of existing) {
       roleMap[u.id] = u.role_id ?? defaultRoleId;
-      brandMap[u.id] = u.brand_id ?? 0;
+      brandMap[u.id] = lockedBrandIds(u);
     }
     setRoleByUserId(roleMap);
     setBrandByUserId(brandMap);
@@ -153,11 +173,14 @@ const BranchUsers: React.FC = () => {
   // role + brand-lock (brand normalized to 0 = all brands, matching brandByUserId).
   // Drives the "Assigned" badge and the "unchanged no-op" diff below.
   const branchAssignedByUserId = React.useMemo(() => {
-    const map = new Map<number, { roleId: number; brandId: number }>();
+    const map = new Map<number, { roleId: number; brandKey: string }>();
     if (assignBranchId == null || !branchUsers) return map;
     for (const u of (branchUsers as BranchUserRow[])) {
       if (u.branch_id !== assignBranchId) continue;
-      map.set(u.id, { roleId: u.role_id ?? defaultRoleId, brandId: u.brand_id ?? 0 });
+      map.set(u.id, {
+        roleId: u.role_id ?? defaultRoleId,
+        brandKey: brandKeyOf(lockedBrandIds(u)),
+      });
     }
     return map;
   }, [assignBranchId, branchUsers, defaultRoleId]);
@@ -174,8 +197,10 @@ const BranchUsers: React.FC = () => {
         const existing = branchAssignedByUserId.get(id);
         if (!existing) return true; // new assignment
         const roleId = roleByUserId[id] ?? defaultRoleId;
-        const brandId = brandByUserId[id] ?? 0;
-        return roleId !== existing.roleId || brandId !== existing.brandId;
+        return (
+          roleId !== existing.roleId ||
+          brandKeyOf(brandByUserId[id] ?? []) !== existing.brandKey
+        );
       }),
     [selectedUserIds, branchAssignedByUserId, roleByUserId, brandByUserId, defaultRoleId],
   );
@@ -217,7 +242,7 @@ const BranchUsers: React.FC = () => {
   }, [allUsers, modalUserSearch]);
 
   const assignMutation = useMutation({
-    mutationFn: ({ branchId, assignments }: { branchId: number; assignments: { user_id: number; role_id: number; brand_id?: number | null; phone?: string | null }[] }) =>
+    mutationFn: ({ branchId, assignments }: { branchId: number; assignments: { user_id: number; role_id: number; brand_ids?: number[]; phone?: string | null }[] }) =>
       adminService.assignBranchUsersWithRoles(branchId, assignments),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['branchUsers'] });
@@ -253,7 +278,7 @@ const BranchUsers: React.FC = () => {
       setMbUserId('');
       setMbBranchIds([]);
       setMbRoleId('');
-      setMbBrandId('0');
+      setMbBrandIds([]);
       setMbPhone('');
       toast.success(result.message);
     },
@@ -295,7 +320,7 @@ const BranchUsers: React.FC = () => {
       user_id: parseInt(mbUserId, 10),
       branch_ids: newBranches,
       role_id: parseInt(mbRoleId, 10),
-      brand_id: mbBrandId && mbBrandId !== '0' ? parseInt(mbBrandId, 10) : null,
+      brand_ids: mbBrandIds,
       ...(mbIsRider ? { phone: mbPhoneValue.trim() } : {}),
     });
   };
@@ -318,8 +343,8 @@ const BranchUsers: React.FC = () => {
     setRoleByUserId((prev) => ({ ...prev, [userId]: roleId }));
   };
 
-  const setUserBrand = (userId: number, brandId: number) => {
-    setBrandByUserId((prev) => ({ ...prev, [userId]: brandId }));
+  const setUserBrands = (userId: number, brandIds: number[]) => {
+    setBrandByUserId((prev) => ({ ...prev, [userId]: brandIds }));
   };
 
   const handleAssign = () => {
@@ -343,7 +368,7 @@ const BranchUsers: React.FC = () => {
       return {
         user_id,
         role_id,
-        brand_id: brandByUserId[user_id] || null,
+        brand_ids: brandByUserId[user_id] ?? [],
         // Only riders carry a phone: it is saved to the user, and sending it
         // for other roles would overwrite their number from this screen.
         ...(isRiderRole(role_id) ? { phone: phoneOf(user_id).trim() } : {}),
@@ -362,7 +387,7 @@ const BranchUsers: React.FC = () => {
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Branch Users</h1>
         <div className="flex gap-2">
-          {canAssign && <Button variant="outline" onClick={() => { setMbUserId(''); setMbBranchIds([]); setMbRoleId(String(defaultRoleId)); setMbBrandId('0'); setShowMultiBranchForm(true); }}>
+          {canAssign && <Button variant="outline" onClick={() => { setMbUserId(''); setMbBranchIds([]); setMbRoleId(String(defaultRoleId)); setMbBrandIds([]); setShowMultiBranchForm(true); }}>
             Assign to Branches
           </Button>}
           {canAssign && <Button variant="primary" onClick={openAssignModal}>Assign Users</Button>}
@@ -506,19 +531,13 @@ const BranchUsers: React.FC = () => {
                       </td>
                       {assignBranchBrands.length > 1 && (
                         <td className="p-2">
-                          <select
-                            value={brandByUserId[user.id] ?? 0}
-                            onChange={(e) => setUserBrand(user.id, parseInt(e.target.value, 10))}
+                          <BrandLockSelect
+                            brands={assignBranchBrands}
+                            value={brandByUserId[user.id] ?? []}
+                            onChange={(ids: number[]) => setUserBrands(user.id, ids)}
                             disabled={!selectedUserIds.includes(user.id)}
-                            className="px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-                          >
-                            <option value={0}>All brands</option>
-                            {assignBranchBrands.map((brand) => (
-                              <option key={brand.id} value={brand.id}>
-                                {labelWithStatus(brand.name, brand)}
-                              </option>
-                            ))}
-                          </select>
+                            ariaLabel={`Brands for ${user.name ?? 'user'}`}
+                          />
                         </td>
                       )}
                       {showPhoneColumn && (
@@ -586,7 +605,7 @@ const BranchUsers: React.FC = () => {
       {/* Multi-branch modal: pick one user, assign to multiple branches at once */}
       <Modal
         isOpen={showMultiBranchForm}
-        onClose={() => { setShowMultiBranchForm(false); setMbUserId(''); setMbBranchIds([]); setMbRoleId(''); setMbBrandId('0'); }}
+        onClose={() => { setShowMultiBranchForm(false); setMbUserId(''); setMbBranchIds([]); setMbRoleId(''); setMbBrandIds([]); }}
         title="Assign User to Multiple Branches"
         size="large"
       >
@@ -618,14 +637,12 @@ const BranchUsers: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Brand lock</label>
-              <select
-                value={mbBrandId}
-                onChange={(e) => setMbBrandId(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="0">All brands</option>
-                {(brands ?? []).map((b) => <option key={b.id} value={String(b.id)}>{labelWithStatus(b.name, b)}</option>)}
-              </select>
+              <BrandLockSelect
+                brands={brands ?? []}
+                value={mbBrandIds}
+                onChange={setMbBrandIds}
+                ariaLabel="Brand lock"
+              />
             </div>
           </div>
 
@@ -697,7 +714,7 @@ const BranchUsers: React.FC = () => {
           </div>
 
           <div className="flex gap-2 justify-end">
-            <Button variant="outline" onClick={() => { setShowMultiBranchForm(false); setMbUserId(''); setMbBranchIds([]); setMbRoleId(''); setMbBrandId('0'); }}>
+            <Button variant="outline" onClick={() => { setShowMultiBranchForm(false); setMbUserId(''); setMbBranchIds([]); setMbRoleId(''); setMbBrandIds([]); }}>
               Cancel
             </Button>
             <Button onClick={handleBulkAssign} isLoading={bulkAssignMutation.isPending}>
@@ -731,7 +748,12 @@ const BranchUsers: React.FC = () => {
                     <p>{user.email}</p>
                     {user.branch_name != null && <p>Branch: {user.branch_name}{user.branch_code ? ` (${user.branch_code})` : ''}</p>}
                     {user.role_name && <p>Role: {user.role_name}</p>}
-                    {user.brand_name && <p>Brand: {user.brand_name} (locked)</p>}
+                    {(user.brand_names?.length ?? 0) > 0 && (
+                      <p>
+                        {user.brand_names!.length > 1 ? 'Brands: ' : 'Brand: '}
+                        {user.brand_names!.join(', ')} (locked)
+                      </p>
+                    )}
                     {user.phone && <p>{user.phone}</p>}
                   </>
                 }

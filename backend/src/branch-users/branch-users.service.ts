@@ -9,6 +9,12 @@ import { DataSource, Repository, In } from 'typeorm';
 import { Branch } from '../entities/branch.entity';
 import { User } from '../entities/user.entity';
 import { BranchUser } from '../entities/branch-user.entity';
+import {
+    BRAND_LOCK_SQL,
+    brandIdsFromInput,
+    brandLockColumns,
+    rowBrandIds,
+} from './brand-lock';
 import { Role } from '../entities/role.entity';
 import { normalizePakistaniPhone } from '../utils/phone';
 
@@ -57,11 +63,14 @@ export class BranchUsersService {
         assignments: Array<{
             userId: number;
             roleId: number;
-            brandId: number | null;
+            brandIds: number[] | null;
         }>,
         actingUserId?: number | null,
     ): Promise<void> {
-        const branded = assignments.filter((a) => a.brandId != null);
+        // One 'owned' link per brand the rider is locked to.
+        const branded = assignments.flatMap((a) =>
+            (a.brandIds ?? []).map((brandId) => ({ ...a, brandId })),
+        );
         if (branded.length === 0) return;
         const roleIds = [...new Set(branded.map((a) => a.roleId))];
         const roleResult: unknown = await this.dataSource.query(
@@ -80,6 +89,55 @@ export class BranchUsersService {
                 [a.userId, a.brandId, actingUserId ?? null],
             );
         }
+    }
+
+    /**
+     * Take these brands off a branch's assignments. A row locked only to them is
+     * deleted; a row shared with other brands merely loses them and keeps the
+     * rest. Used wherever a brand-locked admin removes or replaces staff — they
+     * must not be able to revoke a colleague's brand along with their own, which
+     * a plain DELETE on the row would do now that one row can name several.
+     */
+    private async detachBrands(
+        branchId: number,
+        brandIds: number[],
+        userId?: number,
+    ): Promise<void> {
+        if (brandIds.length === 0) return;
+        const lock = BRAND_LOCK_SQL('bu');
+        const remaining = `ARRAY(SELECT unnest(${lock}) EXCEPT SELECT unnest($2::int[]) ORDER BY 1)`;
+        const userClause = userId != null ? ' AND bu.user_id = $3' : '';
+        const params: unknown[] = [branchId, brandIds];
+        if (userId != null) params.push(userId);
+        // Rows that keep at least one brand: narrow them.
+        await this.dataSource.query(
+            `UPDATE branch_users bu
+             SET brand_ids = ${remaining}, brand_id = (${remaining})[1]
+             WHERE bu.branch_id = $1
+               AND ${lock} && $2::int[]
+               AND NOT (${lock} <@ $2::int[])${userClause}`,
+            params,
+        );
+        // Rows whose whole lock is being taken away: nothing left to assign.
+        await this.dataSource.query(
+            `DELETE FROM branch_users bu
+             WHERE bu.branch_id = $1
+               AND ${lock} IS NOT NULL
+               AND ${lock} <@ $2::int[]${userClause}`,
+            params,
+        );
+    }
+
+    /** Names for a set of brand ids, for the listings that show them. */
+    private async brandNameMap(ids: number[]): Promise<Map<number, string>> {
+        const unique = [...new Set(ids.map((id) => Number(id)))];
+        if (unique.length === 0) return new Map();
+        const rows: Array<{ id: number; name: string }> =
+            await this.dataSource.query(
+                `SELECT id, name FROM brands WHERE id = ANY($1::int[])`,
+                [unique],
+            );
+        return new Map(rows.map((r) => [Number(r.id), r.name]));
     }
 
     /** The role ids in `roleIds` that are the rider role. */
@@ -186,8 +244,12 @@ export class BranchUsersService {
             role_id: number;
             role_name?: string;
             role_slug?: string;
+            /** First locked brand — kept for callers written before multi-brand. */
             brand_id: number | null;
             brand_name?: string | null;
+            /** Every brand the row locks the user to; null = all brands. */
+            brand_ids: number[] | null;
+            brand_names?: string[] | null;
         }>
     > {
         let branchIds: number[] | null = null;
@@ -221,7 +283,7 @@ export class BranchUsersService {
         }
         // Brand-locked admins manage only their own brand's staff.
         if (allowedBrandIds != null) {
-            qb.andWhere('bu.brandId IN (:...allowedBrandIds)', {
+            qb.andWhere(`${BRAND_LOCK_SQL('bu')} && :allowedBrandIds::int[]`, {
                 allowedBrandIds,
             });
         }
@@ -230,6 +292,9 @@ export class BranchUsersService {
             branchIdSet == null
                 ? list
                 : list.filter((bu) => branchIdSet.has(bu.branchId));
+        const brandNameById = await this.brandNameMap(
+            filteredList.flatMap((bu) => rowBrandIds(bu) ?? []),
+        );
         const result: Array<{
             branch_id: number;
             branch_name: string;
@@ -242,16 +307,18 @@ export class BranchUsersService {
             role_id: number;
             role_name?: string;
             role_slug?: string;
+            /** First locked brand — kept for callers written before multi-brand. */
             brand_id: number | null;
             brand_name?: string | null;
+            /** Every brand the row locks the user to; null = all brands. */
+            brand_ids: number[] | null;
+            brand_names?: string[] | null;
         }> = [];
         for (const bu of filteredList) {
             const branch = (bu as BranchUser & { branch: Branch }).branch;
             const user = (bu as BranchUser & { user: User }).user;
             const role = (bu as BranchUser & { role?: Role | null }).role;
-            const brand = (
-                bu as BranchUser & { brand?: { name: string } | null }
-            ).brand;
+            const brandIds = rowBrandIds(bu);
             result.push({
                 branch_id: branch.id,
                 branch_name: branch.name,
@@ -264,8 +331,18 @@ export class BranchUsersService {
                 role_id: bu.roleId,
                 role_name: role?.name,
                 role_slug: role?.slug,
-                brand_id: bu.brandId ?? null,
-                brand_name: brand?.name ?? null,
+                brand_id: brandIds?.[0] ?? null,
+                brand_name:
+                    brandIds == null
+                        ? null
+                        : (brandNameById.get(brandIds[0]) ?? null),
+                brand_ids: brandIds,
+                brand_names:
+                    brandIds == null
+                        ? null
+                        : brandIds.map(
+                              (id) => brandNameById.get(id) ?? `#${id}`,
+                          ),
             });
         }
         return result;
@@ -282,10 +359,15 @@ export class BranchUsersService {
             ],
         });
         if (!branch) throw new NotFoundException('Branch not found');
-        const assignments = (branch.branchUsers || []).filter(
-            (bu) =>
-                allowedBrandIds == null ||
-                (bu.brandId != null && allowedBrandIds.includes(bu.brandId)),
+        const assignments = (branch.branchUsers || []).filter((bu) => {
+            if (allowedBrandIds == null) return true;
+            const ids = rowBrandIds(bu);
+            return (
+                ids != null && ids.some((id) => allowedBrandIds.includes(id))
+            );
+        });
+        const brandNameById = await this.brandNameMap(
+            assignments.flatMap((bu) => rowBrandIds(bu) ?? []),
         );
         return assignments.map((bu) => ({
             id: bu.user.id,
@@ -300,10 +382,13 @@ export class BranchUsersService {
             role_slug: (
                 bu as BranchUser & { role?: { name: string; slug: string } }
             ).role?.slug,
-            brand_id: bu.brandId ?? null,
-            brand_name:
-                (bu as BranchUser & { brand?: { name: string } | null }).brand
-                    ?.name ?? null,
+            brand_id: rowBrandIds(bu)?.[0] ?? null,
+            brand_name: brandNameById.get(rowBrandIds(bu)?.[0] ?? -1) ?? null,
+            brand_ids: rowBrandIds(bu),
+            brand_names:
+                rowBrandIds(bu)?.map(
+                    (id) => brandNameById.get(id) ?? `#${id}`,
+                ) ?? null,
         }));
     }
 
@@ -329,10 +414,7 @@ export class BranchUsersService {
             }
             lockedBrandId = allowedBrandIds[0];
             await this.assertRolesAssignableByBrandAdmin([resolvedRoleId]);
-            await this.branchUserRepo.delete({
-                branchId,
-                brandId: lockedBrandId,
-            });
+            await this.detachBrands(branchId, [lockedBrandId]);
         } else {
             await this.branchUserRepo.delete({ branchId });
         }
@@ -340,13 +422,17 @@ export class BranchUsersService {
         await this.requireRiderPhones(
             users.map((u) => ({ userId: u.id, roleId: resolvedRoleId })),
         );
+        const lock = brandLockColumns(
+            lockedBrandId == null ? [] : [lockedBrandId],
+        );
         for (const u of users) {
             await this.branchUserRepo.save(
                 this.branchUserRepo.create({
                     branchId,
                     userId: u.id,
                     roleId: resolvedRoleId,
-                    brandId: lockedBrandId,
+                    brandId: lock.brandId,
+                    brandIds: lock.brandIds,
                 }),
             );
         }
@@ -354,7 +440,7 @@ export class BranchUsersService {
             users.map((u) => ({
                 userId: u.id,
                 roleId: resolvedRoleId,
-                brandId: lockedBrandId,
+                brandIds: lock.brandIds,
             })),
         );
         return {
@@ -372,8 +458,10 @@ export class BranchUsersService {
         assignments: {
             user_id: number;
             role_id: number;
-            /** Lock this user to a single brand at the branch (null/omitted = all brands). */
+            /** Lock this user to one brand at the branch (null/omitted = all brands). */
             brand_id?: number | null;
+            /** Lock to several brands; wins over brand_id when non-empty. */
+            brand_ids?: number[] | null;
             /** Required when role_id is the rider role and the user has no phone on file; saved to the user. */
             phone?: string | null;
         }[],
@@ -395,9 +483,10 @@ export class BranchUsersService {
             }
             lockedBrandId = allowedBrandIds[0];
             for (const a of assignments) {
+                const wanted = brandIdsFromInput(a);
                 if (
-                    a.brand_id != null &&
-                    Number(a.brand_id) !== lockedBrandId
+                    wanted.length > 0 &&
+                    (wanted.length !== 1 || wanted[0] !== lockedBrandId)
                 ) {
                     throw new ForbiddenException(
                         'You can only assign users to your own brand',
@@ -415,17 +504,24 @@ export class BranchUsersService {
                 phone: a.phone,
             })),
         );
-        const resolveBrandId = (
-            brandId: number | null | undefined,
-        ): number | null =>
-            lockedBrandId != null ? lockedBrandId : (brandId ?? null);
-        for (const { user_id, role_id, brand_id } of assignments) {
+        // A brand-locked admin's own brand overrides whatever was sent (the
+        // brand picker is hidden for them); everyone else gets what they chose.
+        const resolveLock = (a: {
+            brand_id?: number | null;
+            brand_ids?: number[] | null;
+        }) =>
+            brandLockColumns(
+                lockedBrandId != null ? [lockedBrandId] : brandIdsFromInput(a),
+            );
+        for (const a of assignments) {
+            const lock = resolveLock(a);
             await this.branchUserRepo.save(
                 this.branchUserRepo.create({
                     branchId,
-                    userId: user_id,
-                    roleId: role_id,
-                    brandId: resolveBrandId(brand_id),
+                    userId: a.user_id,
+                    roleId: a.role_id,
+                    brandId: lock.brandId,
+                    brandIds: lock.brandIds,
                 }),
             );
         }
@@ -433,7 +529,7 @@ export class BranchUsersService {
             assignments.map((a) => ({
                 userId: a.user_id,
                 roleId: a.role_id,
-                brandId: resolveBrandId(a.brand_id),
+                brandIds: resolveLock(a).brandIds,
             })),
         );
         const users = await this.userRepo.find({
@@ -455,12 +551,9 @@ export class BranchUsersService {
         allowedBrandIds?: number[] | null,
     ) {
         if (allowedBrandIds != null) {
-            // Brand-locked admins can only detach their own brand's rows.
-            await this.branchUserRepo.delete({
-                branchId,
-                userId,
-                brandId: In(allowedBrandIds),
-            });
+            // Brand-locked admins detach only their own brands. A row shared
+            // with another brand survives, minus theirs.
+            await this.detachBrands(branchId, allowedBrandIds, userId);
         } else {
             await this.branchUserRepo.delete({ branchId, userId });
         }
@@ -473,6 +566,7 @@ export class BranchUsersService {
             branch_ids: number[];
             role_id: number;
             brand_id?: number | null;
+            brand_ids?: number[] | null;
             phone?: string | null;
         },
         allowedBrandIds?: number[] | null,
@@ -486,6 +580,7 @@ export class BranchUsersService {
             user_id: dto.user_id,
             role_id: dto.role_id,
             brand_id: dto.brand_id ?? null,
+            brand_ids: dto.brand_ids ?? null,
             phone: dto.phone ?? null,
         };
         for (const branchId of dto.branch_ids) {

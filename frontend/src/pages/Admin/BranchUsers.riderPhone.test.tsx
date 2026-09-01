@@ -95,7 +95,8 @@ describe('Branch Users — phone is required only for riders', () => {
     await waitFor(() => expect(assignBranchUsersWithRoles).toHaveBeenCalled());
     // A cashier assignment carries no phone at all.
     expect(assignBranchUsersWithRoles.mock.calls[0][1]).toEqual([
-      { user_id: 1, role_id: 3, brand_id: null },
+      // brand_ids [] = all brands, what brand_id null used to say.
+      { user_id: 1, role_id: 3, brand_ids: [] },
     ]);
     expect(row).toBeTruthy();
   });
@@ -126,7 +127,7 @@ describe('Branch Users — phone is required only for riders', () => {
     save();
     await waitFor(() => expect(assignBranchUsersWithRoles).toHaveBeenCalled());
     expect(assignBranchUsersWithRoles.mock.calls[0][1]).toEqual([
-      { user_id: 1, role_id: 7, brand_id: null, phone: '03009998877' },
+      { user_id: 1, role_id: 7, brand_ids: [], phone: '03009998877' },
     ]);
   });
 

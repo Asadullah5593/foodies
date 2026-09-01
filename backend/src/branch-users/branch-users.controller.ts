@@ -72,7 +72,10 @@ export class BranchUsersController {
             assignments?: {
                 user_id: number;
                 role_id: number;
+                /** One brand; `brand_ids` wins when both are sent. */
                 brand_id?: number | null;
+                /** Lock to several of the branch's brands; empty = all brands. */
+                brand_ids?: number[] | null;
                 /** Required for the rider role when the user has no phone yet. */
                 phone?: string | null;
             }[];
@@ -119,7 +122,10 @@ export class BranchUsersController {
             user_id: number;
             branch_ids: number[];
             role_id: number;
+            /** One brand; `brand_ids` wins when both are sent. */
             brand_id?: number | null;
+            /** Lock to several of the branch's brands; empty = all brands. */
+            brand_ids?: number[] | null;
             /** Required for the rider role when the user has no phone yet. */
             phone?: string | null;
         },
