@@ -328,7 +328,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
         {
           kind: 'textarea',
           label: 'Footer text',
-          hint: 'thank-you / return policy',
+          hint: 'thank-you / return policy — for the address, use “Show the branch\u2019s own name + address” under Branding instead',
           placeholder: 'Thank you for your order!',
           value: form.config.footerText ?? '',
           onChange: (v) => setCfg('footerText', v || null),
@@ -344,7 +344,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
         {
           kind: 'text',
           label: 'UAN / contact number',
-          hint: 'printed beside the app QR — turn “Show the UAN” on under Branding',
+          hint: 'printed beside the app QR — leave empty for no number',
           placeholder: '111 333 666',
           value: form.config.uanText ?? '',
           onChange: (v) => setCfg('uanText', v || null),

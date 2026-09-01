@@ -56,8 +56,10 @@ export interface InvoiceTemplateConfig {
    * print it twice.
    */
   showBranchAddress: boolean;
-  /** Contact number beside the app-download QR, e.g. a delivery UAN. */
-  showUan: boolean;
+  /**
+   * Contact number beside the app-download QR, e.g. a delivery UAN. Empty
+   * prints nothing, so entering a number IS switching it on.
+   */
   uanText: string | null;
   /** Wording before the number — empty prints the number alone. */
   uanLabel: string | null;
@@ -184,7 +186,6 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   headerText: null,
   footerText: null,
   showBranchAddress: false,
-  showUan: false,
   uanText: null,
   uanLabel: 'For delivery, call',
   showAppQr: false,
@@ -329,7 +330,6 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
     items: [
       { key: 'showLogo', label: 'Show logo' },
       { key: 'showBranchAddress', label: "Show the branch's own name + address in the footer" },
-      { key: 'showUan', label: 'Show the UAN / contact number' },
       { key: 'showAppQr', label: 'Show app-download QR' },
       { key: 'showFbrInvoice', label: 'Show FBR invoice # + QR' },
       { key: 'showPoweredBy', label: 'Show "Powered by Rex Technologies"' },
