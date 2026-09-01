@@ -11,7 +11,7 @@ import Modal from '../../components/Modal';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { confirmDialog } from '../../utils/sweetAlert';
 import InvoicePreview from '../../invoices/InvoicePreview';
-import { richSampleInvoice } from '../../invoices/renderInvoice';
+import { previewInvoice } from '../../invoices/renderInvoice';
 import InvoiceTemplateFormModal from './InvoiceTemplateFormModal';
 import {
   DEFAULT_INVOICE_TEMPLATE_CONFIG,
@@ -64,6 +64,18 @@ const InvoiceTemplates: React.FC = () => {
       return r.data;
     },
   });
+  // The preview stands on a real branch so the address it prints is the one a
+  // receipt from that branch will carry — the first branch the caller may see.
+  const { data: branches } = useQuery({
+    queryKey: ['branches'],
+    queryFn: async () => {
+      const r = await apiClient.get<Array<{ id: number; name: string; address: string | null }>>(
+        '/admin/branches',
+      );
+      return r.data;
+    },
+  });
+  const previewBranch = branches?.[0] ?? null;
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['invoice-templates'] });
   const onErr = (e: { response?: { data?: { message?: string } } }) =>
@@ -211,6 +223,7 @@ const InvoiceTemplates: React.FC = () => {
         form={form}
         setForm={setForm}
         brands={brands ?? []}
+        previewBranch={previewBranch}
         saving={createM.isPending || updateM.isPending}
         onClose={() => setShowForm(false)}
         onSubmit={submit}
@@ -228,7 +241,7 @@ const InvoiceTemplates: React.FC = () => {
               {LAYOUT_META[previewRow.layout]?.label ?? previewRow.layout} · {brandName(previewRow.brand_id)} — sample order
               with variants, add-ons, modifiers, a deal, notes and every discount type.
             </p>
-            <InvoicePreview data={richSampleInvoice()} layout={previewRow.layout} config={previewRow.config} />
+            <InvoicePreview data={previewInvoice(previewBranch)} layout={previewRow.layout} config={previewRow.config} />
           </div>
         )}
       </Modal>

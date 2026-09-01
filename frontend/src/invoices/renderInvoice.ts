@@ -1379,3 +1379,24 @@ export function richSampleInvoice(): InvoiceVM {
     loyalty_points_remaining: 380,
   };
 }
+
+/**
+ * Preview data for the template editor, standing on a REAL branch so the
+ * address under the receipt is the one that will actually print. Without a
+ * branch it falls back to the rich sample's made-up one, which is what used to
+ * confuse people into hunting for "Bahria Town Branch" in their branch list.
+ */
+export function previewInvoice(
+  branch?: { name?: string | null; address?: string | null } | null,
+): InvoiceVM {
+  const data = richSampleInvoice();
+  if (!branch) return data;
+  return {
+    ...data,
+    header: {
+      ...data.header,
+      branch_name: branch.name ?? data.header?.branch_name ?? null,
+      address: branch.address ?? null,
+    },
+  };
+}
