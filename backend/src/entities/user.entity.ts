@@ -34,6 +34,16 @@ export class User {
     @Column({ default: 'active' })
     status: string;
 
+    /**
+     * Platform administrator: no tenant, no scoping, every permission.
+     *
+     * Explicit on purpose. This used to be inferred from having no tenant_users
+     * row, which meant a half-finished delete promoted the leftover account to
+     * unrestricted instead of removing it. Absence must never grant anything.
+     */
+    @Column({ default: false })
+    isSuperAdmin: boolean;
+
     @CreateDateColumn()
     createdAt: Date;
 

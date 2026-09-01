@@ -294,9 +294,13 @@ export class AuthService {
         const user = await this.userRepo.findOne({
             where: { id },
             relations: ['tenantUsers'],
-            select: ['id', 'name', 'email', 'phone', 'status'],
+            select: ['id', 'name', 'email', 'phone', 'status', 'isSuperAdmin'],
         });
         if (!user) return null;
+        // Every authenticated request lands here, so this is where deactivating
+        // an account takes effect. Without it a disabled user kept working off
+        // an already-issued token until it expired.
+        if (user.status !== 'active') return null;
         const tenantUsers = user.tenantUsers as
             | { tenantId: number }[]
             | undefined;
@@ -319,7 +323,7 @@ export class AuthService {
             phone: user.phone,
             status: user.status,
             tenant_id: tenantId,
-            is_super_admin: tenantId == null,
+            is_super_admin: user.isSuperAdmin === true,
             is_owner: isOwner,
             is_rider: isRider,
             permissions,
