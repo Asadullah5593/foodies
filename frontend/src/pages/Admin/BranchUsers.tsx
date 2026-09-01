@@ -515,7 +515,7 @@ const BranchUsers: React.FC = () => {
                             <option value={0}>All brands</option>
                             {assignBranchBrands.map((brand) => (
                               <option key={brand.id} value={brand.id}>
-                                {brand.name}
+                                {labelWithStatus(brand.name, brand)}
                               </option>
                             ))}
                           </select>
