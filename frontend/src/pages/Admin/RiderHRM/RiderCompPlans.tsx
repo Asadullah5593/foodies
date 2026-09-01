@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { labelWithStatus } from '../../../utils/entityStatus';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
@@ -165,7 +166,7 @@ const RiderCompPlans: React.FC = () => {
               <option value="">All branches</option>
               {(branchesList ?? []).map((branch) => (
                 <option key={branch.id} value={branch.id}>
-                  {branch.name}
+                  {labelWithStatus(branch.name, branch)}
                 </option>
               ))}
             </select>

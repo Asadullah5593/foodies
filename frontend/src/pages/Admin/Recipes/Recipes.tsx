@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { isEntityInactive } from '../../../utils/entityStatus';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import {
@@ -109,14 +110,18 @@ const Recipes: React.FC<{ initialTab?: RecipesTabKey; showTabs?: boolean }> = ({
   const shownLines: any[] = (editing ? draftRecipe?.lines : liveRecipe?.lines) ?? [];
   const selectedLineItem = itemById.get(Number(lineItem));
 
-  const opt = (id: any, label: string) => ({ value: String(id), label });
-  const menuItemOptions = useMemo(() => (menuItemsQ.data ?? []).map((m: any) => opt(m.id, m.name)), [menuItemsQ.data]);
-  const variantOptions = useMemo(() => (selMenuItem?.variants ?? []).map((v: any) => opt(v.id, v.name)), [selMenuItem]);
-  const brandOptions = useMemo(() => (brandsQ.data ?? []).map((b: any) => opt(b.id, b.name)), [brandsQ.data]);
-  const addonOptions = useMemo(() => (addonsQ.data ?? []).map((a: any) => opt(a.id, a.name)), [addonsQ.data]);
-  const modifierOptions = useMemo(() => allModifiers.map((m: any) => opt(m.id, `${m.groupName} → ${m.name}`)), [allModifiers]);
+  const opt = (id: any, label: string, entity?: unknown) => ({
+    value: String(id),
+    label,
+    inactive: entity === undefined ? undefined : isEntityInactive(entity),
+  });
+  const menuItemOptions = useMemo(() => (menuItemsQ.data ?? []).map((m: any) => opt(m.id, m.name, m)), [menuItemsQ.data]);
+  const variantOptions = useMemo(() => (selMenuItem?.variants ?? []).map((v: any) => opt(v.id, v.name, v)), [selMenuItem]);
+  const brandOptions = useMemo(() => (brandsQ.data ?? []).map((b: any) => opt(b.id, b.name, b)), [brandsQ.data]);
+  const addonOptions = useMemo(() => (addonsQ.data ?? []).map((a: any) => opt(a.id, a.name, a)), [addonsQ.data]);
+  const modifierOptions = useMemo(() => allModifiers.map((m: any) => opt(m.id, `${m.groupName} → ${m.name}`, m)), [allModifiers]);
   const ingredientOptions = useMemo(() => (itemsQ.data ?? []).map((it: any) => opt(it.id, it.name)), [itemsQ.data]);
-  const branchOptions = useMemo(() => (branchesQ.data ?? []).map((b: any) => opt(b.id, b.name)), [branchesQ.data]);
+  const branchOptions = useMemo(() => (branchesQ.data ?? []).map((b: any) => opt(b.id, b.name, b)), [branchesQ.data]);
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['recipes'] });
   const getItemAllowedUomIds = (item: any): number[] => {

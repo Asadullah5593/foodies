@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { labelWithStatus } from '../../../utils/entityStatus';
 import { useQuery } from '@tanstack/react-query';
 import { LuSearch, LuPackage } from 'react-icons/lu';
 import apiClient from '../../../utils/apiClient';
@@ -79,7 +80,7 @@ const BrandStock: React.FC = () => {
           >
             {(brandsQ.data ?? []).map((b: any) => (
               <option key={b.id} value={b.id}>
-                {b.name}
+                {labelWithStatus(b.name, b)}
               </option>
             ))}
           </select>
