@@ -11,7 +11,7 @@ import { CustomerJwtStrategy } from './customer-jwt.strategy';
 import { CustomerJwtAuthGuard } from './customer-jwt-auth.guard';
 import { OptionalCustomerJwtAuthGuard } from './optional-customer-jwt-auth.guard';
 import { RoleAccessModule } from './role-access.module';
-import { getJwtSecret } from './jwt-secret.util';
+import { getJwtSecret, getStaffTokenTtl } from './jwt-secret.util';
 
 @Module({
     imports: [
@@ -22,7 +22,7 @@ import { getJwtSecret } from './jwt-secret.util';
         JwtModule.registerAsync({
             useFactory: () => ({
                 secret: getJwtSecret(),
-                signOptions: { expiresIn: '7d' },
+                signOptions: { expiresIn: getStaffTokenTtl() },
             }),
         }),
         CustomersModule,
