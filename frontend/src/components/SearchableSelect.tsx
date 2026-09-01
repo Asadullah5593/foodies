@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from './TypeaheadDropdown';
+import InactiveBadge from './InactiveBadge';
 
 export interface SearchableSelectOption {
   value: string;
@@ -10,6 +11,13 @@ export interface SearchableSelectOption {
   disabled?: boolean;
   /** Tooltip explaining why the option is disabled. */
   title?: string;
+  /**
+   * The record behind this option is deactivated. Still selectable (an existing
+   * assignment must remain editable), but marked so a deactivated brand or
+   * category is not mistaken for a live one. Search still matches `label`, so
+   * the marker never interferes with typing a name.
+   */
+  inactive?: boolean;
 }
 
 interface SearchableSelectProps {
@@ -60,10 +68,11 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   const debouncedSearch = useDebouncedValue(search, 300);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const selectedLabel = useMemo(
-    () => options.find((o) => o.value === value)?.label ?? (value ? value : ''),
-    [options, value]
+  const selectedOption = useMemo(
+    () => options.find((o) => o.value === value),
+    [options, value],
   );
+  const selectedLabel = selectedOption?.label ?? (value ? value : '');
 
   const filteredOptions = useMemo(() => {
     const q = debouncedSearch.trim().toLowerCase();
@@ -72,7 +81,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
   }, [options, debouncedSearch]);
 
   const typeaheadOptions = useMemo(
-    () => options.map((o) => ({ id: o.value, label: o.label })),
+    () => options.map((o) => ({ id: o.value, label: o.label, inactive: o.inactive })),
     [options],
   );
   const { open: sugOpen, setOpen: setSugOpen, suggestions, activeIndex, setActiveIndex } =
@@ -151,7 +160,10 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
         aria-expanded={open}
         aria-label={ariaLabel ? `${ariaLabel}: ${selectedLabel || placeholder}` : undefined}
       >
-        <span className="truncate">{selectedLabel || placeholder}</span>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate">{selectedLabel || placeholder}</span>
+          {selectedOption?.inactive && <InactiveBadge />}
+        </span>
         <svg
           className={`w-4 h-4 flex-shrink-0 text-gray-500 dark:text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}
           fill="none"
@@ -205,7 +217,7 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                     e.preventDefault();
                     handleSelect(opt);
                   }}
-                  className={`px-3 py-2 text-sm truncate ${
+                  className={`flex items-center gap-2 px-3 py-2 text-sm ${
                     opt.disabled
                       ? 'cursor-not-allowed text-gray-400 dark:text-slate-500'
                       : opt.value === value
@@ -213,7 +225,8 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
                         : 'cursor-pointer text-gray-800 dark:text-slate-200 hover:bg-gray-100 dark:hover:bg-slate-700'
                   }`}
                 >
-                  {opt.label}
+                  <span className="truncate">{opt.label}</span>
+                  {opt.inactive && <InactiveBadge />}
                 </li>
               ))
             )}

@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from 'react';
+import InactiveBadge from '../../../components/InactiveBadge';
+import { isEntityInactive } from '../../../utils/entityStatus';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import {
@@ -247,9 +249,12 @@ const OnHandInventory: React.FC = () => {
             return (
               <button key={b.id} onClick={() => { setBranchId(Number(b.id)); setPage(1); }}
                 className={`flex-1 min-w-[240px] max-w-[360px] text-left rounded-xl px-4 py-4 border-[1.5px] transition ${active ? 'border-red-500 bg-red-50 dark:bg-red-900/15' : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300'}`}>
-                <div className="flex items-center justify-between">
-                  <span className="text-[15px] font-bold text-slate-900 dark:text-slate-100">{b.name}</span>
-                  <span className={`text-xs font-semibold ${active ? 'text-red-600' : 'text-slate-400'}`}>{b.code}</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span className="text-[15px] font-bold text-slate-900 dark:text-slate-100 truncate">{b.name}</span>
+                    {isEntityInactive(b) && <InactiveBadge />}
+                  </span>
+                  <span className={`text-xs font-semibold flex-none ${active ? 'text-red-600' : 'text-slate-400'}`}>{b.code}</span>
                 </div>
                 <div className="flex items-end justify-between mt-3.5">
                   <div><div className="text-xl font-bold text-slate-900 dark:text-slate-100">{fmtNum(sum.stock)}</div><div className="text-[11.5px] text-slate-500">Total Stock</div></div>

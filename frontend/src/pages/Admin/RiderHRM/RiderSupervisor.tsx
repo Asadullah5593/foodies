@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { labelWithStatus } from '../../../utils/entityStatus';
 import {
   useQuery,
   useMutation,
@@ -129,7 +130,7 @@ const FilterSelect: React.FC<{
     <option value="">{allLabel}</option>
     {options.map((o) => (
       <option key={o.id} value={o.id}>
-        {o.name}
+        {labelWithStatus(o.name, o)}
       </option>
     ))}
   </select>

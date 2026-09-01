@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { labelWithStatus } from '../../../utils/entityStatus';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import {
@@ -677,7 +678,7 @@ const EventCard: React.FC<{
                 <option value="">Select branch…</option>
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.name}
+                    {labelWithStatus(b.name, b)}
                   </option>
                 ))}
               </select>
@@ -692,7 +693,7 @@ const EventCard: React.FC<{
                 <option value="">All brands</option>
                 {brands.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.name}
+                    {labelWithStatus(b.name, b)}
                   </option>
                 ))}
               </select>

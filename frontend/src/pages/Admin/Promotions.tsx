@@ -12,6 +12,7 @@ import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { confirmDialog } from '../../utils/sweetAlert';
+import { labelWithStatus } from '../../utils/entityStatus';
 
 const emptyForm = {
   name: '',
@@ -387,7 +388,7 @@ const Promotions: React.FC = () => {
               >
                 <option value="">Select a menu item...</option>
                 {(menuItems ?? []).map((item) => (
-                  <option key={item.id} value={item.id}>{item.name}</option>
+                  <option key={item.id} value={item.id}>{labelWithStatus(item.name, item)}</option>
                 ))}
               </select>
             </div>

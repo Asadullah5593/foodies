@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { labelWithStatus } from '../../../utils/entityStatus';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
@@ -117,7 +118,7 @@ const RequestRiders: React.FC = () => {
           >
             {brandOptions.map((b) => (
               <option key={b.id} value={b.id}>
-                {b.name}
+                {labelWithStatus(b.name, b)}
               </option>
             ))}
           </select>

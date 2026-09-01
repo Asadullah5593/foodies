@@ -27,6 +27,7 @@ import {
   removeLabel,
 } from '../../components/OfferBrandScope';
 import { useHasPermission } from '../../hooks/useHasPermission';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 const emptyCampaign = { name: '', description: '', is_active: true, eligibility_brand_ids: [] as number[], ...emptyValidity };
 const emptyItem = {
@@ -78,7 +79,11 @@ const Campaigns: React.FC = () => {
   const allOffers: Discount[] = [...(discounts ?? []), ...(promos ?? []), ...(coupons ?? [])];
   const asOpts = (arr: unknown, idKey = 'id'): Opt[] =>
     ((arr as Record<string, unknown>[] | undefined) ?? [])
-      .map((x) => ({ value: String((x[idKey] ?? x['menu_item_id']) as number), label: String(x['name']) }))
+      .map((x) => ({
+        value: String((x[idKey] ?? x['menu_item_id']) as number),
+        label: String(x['name']),
+        inactive: isEntityInactive(x),
+      }))
       .filter((o) => o.value !== 'undefined');
   const dealOpts = asOpts(deals);
   const productOpts = asOpts(menuItems);
@@ -88,7 +93,7 @@ const Campaigns: React.FC = () => {
   const offerOpts: Opt[] = allOffers.map((o) => ({ value: String(o.id), label: `[${KIND_LABEL[o.offer_kind ?? 'discount'] ?? o.offer_kind}] ${o.name}` }));
   const destOptionsFor = (t: string): Opt[] =>
     t === 'product' ? productOpts : t === 'deal' ? dealOpts : t === 'category' ? categoryOpts : t === 'brand' ? brandOpts : t === 'branch' ? branchOpts : [];
-  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name }));
+  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name, inactive: isEntityInactive(b) }));
   const brandNameById = useMemo(() => new Map((brands ?? []).map((b) => [b.id, b.name])), [brands]);
 
   const paginated = useMemo(() => list.slice((page - 1) * DEFAULT_PAGE_SIZE, page * DEFAULT_PAGE_SIZE), [list, page]);

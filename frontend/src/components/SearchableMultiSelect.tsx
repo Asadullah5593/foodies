@@ -2,11 +2,22 @@ import React, { useState, useRef, useMemo } from 'react';
 import { useDebouncedValue } from '../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from './TypeaheadDropdown';
+import InactiveBadge from './InactiveBadge';
+import { isEntityInactive } from '../utils/entityStatus';
 
 export interface SearchableMultiSelectOption {
   id: number;
   name: string;
   code?: string;
+  /**
+   * The record is deactivated. Still selectable — an existing selection has to
+   * stay editable — but marked so it is not mistaken for a live one.
+   *
+   * Callers pass entity payloads straight through here (`options={branches}`),
+   * so this is usually left unset and read off the payload's own is_active /
+   * isActive / status field instead. Set it explicitly only to override that.
+   */
+  inactive?: boolean;
 }
 
 interface SearchableMultiSelectProps {
@@ -47,7 +58,12 @@ const SearchableMultiSelect: React.FC<SearchableMultiSelectProps> = ({
   }, [options, debouncedSearch]);
 
   const typeaheadOptions = useMemo(
-    () => options.map((o) => ({ id: String(o.id), label: getOptionLabel(o) })),
+    () =>
+      options.map((o) => ({
+        id: String(o.id),
+        label: getOptionLabel(o),
+        inactive: o.inactive ?? isEntityInactive(o),
+      })),
     [options, getOptionLabel],
   );
   const { open: sugOpen, setOpen: setSugOpen, suggestions, activeIndex, setActiveIndex } =
@@ -238,7 +254,8 @@ const SearchableMultiSelect: React.FC<SearchableMultiSelectProps> = ({
                         </svg>
                       )}
                     </span>
-                    {getOptionLabel(opt)}
+                    <span className="min-w-0 flex-1 truncate">{getOptionLabel(opt)}</span>
+                    {(opt.inactive ?? isEntityInactive(opt)) && <InactiveBadge />}
                   </li>
                 ))
               )}

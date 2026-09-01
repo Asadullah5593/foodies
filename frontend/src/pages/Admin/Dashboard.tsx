@@ -27,6 +27,7 @@ import { defaultRange, matchPreset, presetRanges } from './dashboard/dateRanges'
 import { dashboardCsv, dashboardReportHtml, downloadFile } from './dashboard/exportReport';
 import { printContent } from '../../utils/print';
 import type { DashboardSummary, OrderSeriesResponse, RecentOrder, InventoryAlerts } from './dashboard/types';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 
 const BREAKDOWN_HEAD =
   'py-2.5 text-[11px] font-bold uppercase tracking-[0.05em] text-gray-400 dark:text-slate-500';
@@ -439,7 +440,11 @@ const Dashboard: React.FC = () => {
                 onChange={(v) => setBranchId(v ? Number(v) : null)}
                 options={[
                   { value: '', label: 'All branches' },
-                  ...relevantBranches.map((b) => ({ value: String(b.id), label: `${b.name} (${b.code})` })),
+                  ...relevantBranches.map((b) => ({
+                    value: String(b.id),
+                    label: `${b.name} (${b.code})`,
+                    inactive: isEntityInactive(b),
+                  })),
                 ]}
                 placeholder="All branches"
                 minWidth="w-full"
@@ -454,7 +459,7 @@ const Dashboard: React.FC = () => {
                 onChange={(v) => setBrandId(v ? Number(v) : null)}
                 options={[
                   { value: '', label: 'All brands' },
-                  ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name })),
+                  ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
                 ]}
                 placeholder="All brands"
                 minWidth="w-full"
@@ -592,7 +597,7 @@ const Dashboard: React.FC = () => {
                   {brandId ? `${brands?.find((b) => b.id === brandId)?.name ?? 'Brand'} (dashboard filter)` : 'All brands'}
                 </option>
                 {(brands ?? []).map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
+                  <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>
                 ))}
               </select>
             </div>
@@ -628,7 +633,7 @@ const Dashboard: React.FC = () => {
                 {brandId ? `${brands?.find((b) => b.id === brandId)?.name ?? 'Brand'} (dashboard filter)` : 'All brands'}
               </option>
               {(brands ?? []).map((b) => (
-                <option key={b.id} value={b.id}>{b.name}</option>
+                <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>
               ))}
             </select>
           }

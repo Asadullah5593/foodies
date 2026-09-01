@@ -1,4 +1,5 @@
 import React from 'react';
+import { labelWithStatus } from '../../../utils/entityStatus';
 import { MdSearch } from 'react-icons/md';
 import TypeaheadDropdown from '../../../components/TypeaheadDropdown';
 import type { TypeaheadOption } from '../../../hooks/useTypeaheadSuggestions';
@@ -71,7 +72,7 @@ const POSTopBar: React.FC<POSTopBarProps> = ({
             <option value="">All brands</option>
             {brands.map((b) => (
               <option key={b.id} value={b.id}>
-                {b.name}
+                {labelWithStatus(b.name, b)}
               </option>
             ))}
           </select>

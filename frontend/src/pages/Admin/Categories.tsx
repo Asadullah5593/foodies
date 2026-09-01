@@ -20,6 +20,7 @@ import { AccentedList, AccentedListRow } from '../../components/AccentedListRow'
 import { confirmDialog } from '../../utils/sweetAlert';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 
 export interface CategoryItem {
   id: number;
@@ -77,7 +78,7 @@ const Categories: React.FC = () => {
     () =>
       (categories ?? []).map((c: CategoryItem) => ({
         id: String(c.id),
-        label: c.name ?? '',
+        label: labelWithStatus(c.name ?? '', c),
       })),
     [categories],
   );
@@ -279,7 +280,7 @@ const Categories: React.FC = () => {
             onChange={setFilterBrandId}
             options={[
               { value: '', label: 'All brands' },
-              ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name })),
+              ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
             ]}
             placeholder="All brands"
             minWidth="min-w-[200px]"
@@ -364,7 +365,7 @@ const Categories: React.FC = () => {
               >
                 <option value="">Select brand</option>
                 {brands?.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
+                  <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>
                 ))}
               </select>
             </div>

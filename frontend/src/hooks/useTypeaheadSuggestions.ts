@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
 
-export type TypeaheadOption = { id: string; label: string };
+export type TypeaheadOption = {
+  id: string;
+  label: string;
+  /**
+   * The record behind this suggestion is deactivated. Carried through so the
+   * suggestion overlay marks it exactly like the list underneath — otherwise
+   * typing two characters hides the very status the list was showing.
+   */
+  inactive?: boolean;
+};
 
 function normalize(s: string) {
   return s.trim().toLowerCase();

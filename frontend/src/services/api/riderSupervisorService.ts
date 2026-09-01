@@ -72,6 +72,8 @@ export interface SupervisorRider {
 export interface SupervisorFilterOption {
   id: number;
   name: string;
+  /** Branches carry it; the brand list is already filtered to active ones. */
+  is_active?: boolean;
 }
 
 export interface SupervisorFilterOptions {

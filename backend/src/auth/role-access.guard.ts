@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { PATH_REQUIRED_PERMISSIONS } from './path-permissions';
+import { BRAND_LOCK_SQL } from '../branch-users/brand-lock';
 import { expandPermissions } from '../roles/permission-implications';
 import { isEnabled as isActivityLogEnabled } from '../activity-log/activity-log.config';
 
@@ -307,16 +308,22 @@ export class RoleAccessGuard implements CanActivate {
         );
         if (permissionNames.has(ALL_BRANCHES_ACCESS)) return null;
 
+        // One row per branch, each naming the brands it locks the user to. A
+        // single row without a lock means "all brands" somewhere, which is a
+        // lock on nothing — the whole user goes unrestricted, as before.
         const rows = (await this.dataSource.query(
-            `SELECT DISTINCT bu.brand_id
+            `SELECT DISTINCT ${BRAND_LOCK_SQL('bu')} AS brand_ids
              FROM branch_users bu
              INNER JOIN branch_brands bb ON bb.branch_id = bu.branch_id
              INNER JOIN brands br ON br.id = bb.brand_id AND br.tenant_id = $1
              WHERE bu.user_id = $2`,
             [tenantId, userId],
-        )) as unknown as Array<{ brand_id: number | null }>;
+        )) as unknown as Array<{ brand_ids: number[] | null }>;
         if (rows.length === 0) return null;
-        if (rows.some((r) => r.brand_id == null)) return null;
-        return [...new Set(rows.map((r) => Number(r.brand_id)))];
+        if (rows.some((r) => r.brand_ids == null)) return null;
+        const ids = new Set<number>();
+        for (const r of rows)
+            for (const id of r.brand_ids ?? []) ids.add(Number(id));
+        return ids.size === 0 ? null : [...ids];
     }
 }

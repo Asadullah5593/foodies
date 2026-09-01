@@ -19,6 +19,7 @@ import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
+import { labelWithStatus } from '../../utils/entityStatus';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
 
@@ -90,7 +91,7 @@ const Brands: React.FC = () => {
 
   const brandSearchTypeahead = useTypeaheadSuggestions({
     query: debouncedFilterSearch,
-    options: (brands ?? []).map((b: any) => ({ id: String(b.id), label: b.name ?? '' })),
+    options: (brands ?? []).map((b: any) => ({ id: String(b.id), label: labelWithStatus(b.name ?? '', b) })),
     minChars: 2,
     limit: 8,
   });

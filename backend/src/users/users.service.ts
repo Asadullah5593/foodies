@@ -11,6 +11,7 @@ import * as bcrypt from 'bcryptjs';
 import { User } from '../entities/user.entity';
 import { TenantUser } from '../entities/tenant-user.entity';
 import { BranchUser } from '../entities/branch-user.entity';
+import { BRAND_LOCK_SQL } from '../branch-users/brand-lock';
 import { RolesService } from '../roles/roles.service';
 import { ActivityContext } from '../activity-log/activity-context';
 
@@ -37,12 +38,13 @@ export class UsersService {
         brandIds: number[],
     ): Promise<boolean> {
         if (brandIds.length === 0) return false;
-        const count = await this.branchUserRepo
-            .createQueryBuilder('bu')
-            .where('bu.userId = :userId', { userId })
-            .andWhere('bu.brandId IN (:...brandIds)', { brandIds })
-            .getCount();
-        if (count > 0) return true;
+        const branchRows: unknown = await this.dataSource.query(
+            `SELECT 1 AS ok FROM branch_users bu
+             WHERE bu.user_id = $1 AND ${BRAND_LOCK_SQL('bu')} && $2::int[]
+             LIMIT 1`,
+            [userId, brandIds],
+        );
+        if (Array.isArray(branchRows) && branchRows.length > 0) return true;
         const result: unknown = await this.dataSource.query(
             `SELECT 1 AS ok FROM tenant_users
              WHERE user_id = $1 AND brand_id = ANY($2::int[]) LIMIT 1`,
@@ -116,7 +118,7 @@ export class UsersService {
         if (allowedBrandIds != null) {
             const rows = (await this.dataSource.query(
                 `SELECT DISTINCT bu.user_id FROM branch_users bu
-                 WHERE bu.brand_id = ANY($1::int[])`,
+                 WHERE ${BRAND_LOCK_SQL('bu')} && $1::int[]`,
                 [allowedBrandIds],
             )) as unknown as Array<{ user_id: number }>;
             const brandUserIds = new Set(rows.map((r) => Number(r.user_id)));

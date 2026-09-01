@@ -26,6 +26,7 @@ import {
 } from '../../components/OfferBrandScope';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import apiClient from '../../utils/apiClient';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 const emptyForm = {
   name: '',
@@ -71,8 +72,8 @@ const ProductPromotions: React.FC = () => {
     (menuItems as { id: number; name: string; deal_only?: boolean; deal_pricing_mode?: string | null }[] | undefined) ?? []
   )
     .filter((m) => !dealIds.has(m.id) && !m.deal_only && !m.deal_pricing_mode)
-    .map((m) => ({ id: m.id, name: m.name }));
-  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name }));
+    .map((m) => ({ id: m.id, name: m.name, inactive: isEntityInactive(m) }));
+  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name, inactive: isEntityInactive(b) }));
   const brandNameById = useMemo(
     () => new Map((brands ?? []).map((b) => [b.id, b.name])),
     [brands],
