@@ -140,6 +140,7 @@ const POSFilters: React.FC<POSFiltersProps> = ({
         options={(posBranches ?? []).map((b) => ({
           value: String(b.id),
           label: `${b.name} (${b.code})`,
+          inactive: isEntityInactive(b),
         }))}
         placeholder="Select branch"
         minWidth="min-w-[140px]"

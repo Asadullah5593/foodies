@@ -380,6 +380,7 @@ const BranchUsers: React.FC = () => {
               ...(branches ?? []).map((branch) => ({
                 value: String(branch.id),
                 label: `${branch.name} (${branch.code})`,
+                inactive: isEntityInactive(branch),
               })),
             ]}
             placeholder="All branches"
@@ -431,6 +432,7 @@ const BranchUsers: React.FC = () => {
               options={(branches ?? []).map((branch) => ({
                 value: String(branch.id),
                 label: `${branch.name} (${branch.code})`,
+                inactive: isEntityInactive(branch),
               }))}
               placeholder="Select branch"
               searchPlaceholder="Search branches..."

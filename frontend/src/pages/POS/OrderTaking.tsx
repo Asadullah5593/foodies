@@ -50,6 +50,7 @@ import {
 import { useHasPermission } from '../../hooks/useHasPermission';
 import { canPlaceOrder } from './checkoutGuards';
 import { computeModifiersPrice, resolveMinSelect, resolveMaxSelect, sizeKeyForSelection } from '../../utils/modifierPricing';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 const OrderTaking: React.FC = () => {
   const [selectedItems, setSelectedItems] = useState<CartLine[]>([]);
@@ -1606,9 +1607,10 @@ const OrderTaking: React.FC = () => {
               onChange={(v) => filtersProps.onBranchChange(v === '' ? null : Number(v))}
               options={(posBranches ?? []).map((b) => ({
                 value: String(b.id),
-                // Say so in the label: an inactive branch is still selectable
-                // (it just is not the default), and looked identical before.
-                label: `${b.name} (${b.code})${b.is_active === false ? ' — inactive' : ''}`,
+                // An inactive branch is still selectable (it just is not the
+                // default); the shared Inactive pill says so, as everywhere else.
+                label: `${b.name} (${b.code})`,
+                inactive: isEntityInactive(b),
               }))}
               placeholder="Select branch"
               className="w-full"
@@ -1660,9 +1662,10 @@ const OrderTaking: React.FC = () => {
               onChange={(v) => filtersProps.onBranchChange(v === '' ? null : Number(v))}
               options={(posBranches ?? []).map((b) => ({
                 value: String(b.id),
-                // Say so in the label: an inactive branch is still selectable
-                // (it just is not the default), and looked identical before.
-                label: `${b.name} (${b.code})${b.is_active === false ? ' — inactive' : ''}`,
+                // An inactive branch is still selectable (it just is not the
+                // default); the shared Inactive pill says so, as everywhere else.
+                label: `${b.name} (${b.code})`,
+                inactive: isEntityInactive(b),
               }))}
               placeholder="Select branch"
               className="w-full"

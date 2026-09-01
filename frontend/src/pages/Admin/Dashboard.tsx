@@ -440,7 +440,11 @@ const Dashboard: React.FC = () => {
                 onChange={(v) => setBranchId(v ? Number(v) : null)}
                 options={[
                   { value: '', label: 'All branches' },
-                  ...relevantBranches.map((b) => ({ value: String(b.id), label: `${b.name} (${b.code})` })),
+                  ...relevantBranches.map((b) => ({
+                    value: String(b.id),
+                    label: `${b.name} (${b.code})`,
+                    inactive: isEntityInactive(b),
+                  })),
                 ]}
                 placeholder="All branches"
                 minWidth="w-full"
