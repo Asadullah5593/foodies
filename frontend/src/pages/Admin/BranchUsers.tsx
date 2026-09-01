@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import BrandLockChips from '../../components/BrandLockChips';
+import BrandLockSelect from '../../components/BrandLockSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -531,11 +531,12 @@ const BranchUsers: React.FC = () => {
                       </td>
                       {assignBranchBrands.length > 1 && (
                         <td className="p-2">
-                          <BrandLockChips
+                          <BrandLockSelect
                             brands={assignBranchBrands}
                             value={brandByUserId[user.id] ?? []}
-                            onChange={(ids) => setUserBrands(user.id, ids)}
+                            onChange={(ids: number[]) => setUserBrands(user.id, ids)}
                             disabled={!selectedUserIds.includes(user.id)}
+                            ariaLabel={`Brands for ${user.name ?? 'user'}`}
                           />
                         </td>
                       )}
@@ -636,10 +637,11 @@ const BranchUsers: React.FC = () => {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Brand lock</label>
-              <BrandLockChips
+              <BrandLockSelect
                 brands={brands ?? []}
                 value={mbBrandIds}
                 onChange={setMbBrandIds}
+                ariaLabel="Brand lock"
               />
             </div>
           </div>
