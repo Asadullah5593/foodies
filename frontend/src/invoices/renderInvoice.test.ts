@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderInvoiceHtml, sampleInvoice, richSampleInvoice } from './renderInvoice';
+import { renderInvoiceHtml, sampleInvoice, richSampleInvoice, previewInvoice } from './renderInvoice';
 import {
   DEFAULT_INVOICE_TEMPLATE_CONFIG,
   InvoiceTemplateConfig,
@@ -1148,5 +1148,187 @@ describe('nestDealComponents — a deal component is not a giveaway', () => {
       for (const c of COMPONENTS) expect(html, layout).toContain(c);
       expect(freeSection(html), layout).toBe(false);
     }
+  });
+});
+
+describe("branch address — each branch prints its own, not the template's", () => {
+  const ADDR = '123 Food Street, Lahore';
+
+  it('is off by default, so a template that spells its address into Footer Text is unchanged', () => {
+    const html = renderInvoiceHtml(
+      sampleInvoice(),
+      'thermal_classic',
+      cfg({ footerText: 'Pine Avenue\nLahore\nThank you for choosing us! :)' }),
+    ).html;
+    expect(html).not.toContain('class="branch"');
+    // Exactly one address on the receipt — the typed one, printed once.
+    expect(html.match(/Pine Avenue/g)).toHaveLength(1);
+    expect(html).not.toContain(ADDR);
+  });
+
+  it("prints the selling branch's name and address when switched on", () => {
+    const html = render({ showBranchAddress: true });
+    expect(html).toContain('Main Branch');
+    expect(html).toContain(ADDR);
+  });
+
+  it('reads them off the order, so two branches print two different addresses', () => {
+    const a = renderInvoiceHtml(sampleInvoice(), 'thermal_classic', cfg({ showBranchAddress: true })).html;
+    const b = renderInvoiceHtml(richSampleInvoice(), 'thermal_classic', cfg({ showBranchAddress: true })).html;
+    expect(a).toContain(ADDR);
+    expect(b).toContain('Shop 12, Civic Center, Bahria Town, Lahore');
+    expect(b).not.toContain(ADDR);
+  });
+
+  it('sits inside the footer, above the free-text note', () => {
+    const html = render({ showBranchAddress: true, footerText: 'Thank you for choosing us!' });
+    expect(html.indexOf('class="foot"')).toBeLessThan(html.indexOf(ADDR));
+    expect(html.indexOf(ADDR)).toBeLessThan(html.indexOf('Thank you for choosing us!'));
+  });
+
+  it('prints nothing when the branch has no address on file', () => {
+    const data = sampleInvoice();
+    data.header = { ...data.header, branch_name: null, address: null };
+    const html = renderInvoiceHtml(data, 'thermal_classic', cfg({ showBranchAddress: true })).html;
+    expect(html).not.toContain('class="branch"');
+  });
+
+  it('renders on every layout', () => {
+    for (const layout of ALL_LAYOUTS) {
+      expect(render({ showBranchAddress: true }, layout), layout).toContain(ADDR);
+    }
+  });
+});
+
+describe('UAN — the delivery number cashiers were writing on by hand', () => {
+  it('prints nothing until a number is entered — there is no separate switch', () => {
+    expect(render({})).not.toContain('qr-uan');
+  });
+
+  it('prints beside the app QR, with its wording', () => {
+    const html = render({ showAppQr: true, uanText: '111 333 666' });
+    expect(html).toContain('For delivery, call');
+    expect(html).toContain('111 333 666');
+    // Same row as the QR, not a block of its own.
+    expect(html).toContain('class="qrblock"');
+    expect(html.indexOf('qr-uan')).toBeLessThan(html.indexOf('qr-img'));
+  });
+
+  it('still prints when the app QR is switched off', () => {
+    const html = render({ showAppQr: false, uanText: '111 333 666' });
+    expect(html).toContain('111 333 666');
+    expect(html).toContain('class="qrblock"');
+    // No QR code drawn.
+    expect(html).not.toContain('viewBox="0 0 29 29"');
+    expect(html).not.toContain('Scan to download');
+  });
+
+  it('prints the number alone when the wording is cleared', () => {
+    const html = render({ uanText: '111 333 666', uanLabel: null });
+    expect(html).toContain('111 333 666');
+    expect(html).not.toContain('For delivery, call');
+  });
+
+  it('prints nothing for an empty or blank number', () => {
+    expect(render({ uanText: null })).not.toContain('qr-uan');
+    expect(render({ uanText: '   ' })).not.toContain('qr-uan');
+  });
+
+  it('leaves the FBR block its own top rule when the UAN row is the flush one', () => {
+    const data = sampleInvoice();
+    data.orders[0].fbr_invoice_number = 'FBR-123';
+    const html = renderInvoiceHtml(
+      data,
+      'thermal_classic',
+      cfg({
+                uanText: '111 333 666',
+        showFbrInvoice: true,
+        showLoyaltyBalance: false,
+        showLoyaltyEarned: false,
+        showLoyaltyRedeemed: false,
+      }),
+    ).html;
+    // The UAN row takes the flush treatment; FBR keeps its divider.
+    expect(html).toContain('class="qrblock flush"');
+    expect(html).toContain('class="fbrblock"');
+  });
+
+  it('renders on every layout', () => {
+    for (const layout of ALL_LAYOUTS) {
+      expect(render({ uanText: '111 333 666' }, layout), layout).toContain('111 333 666');
+    }
+  });
+});
+
+describe('branch line does not repeat a name the address already carries', () => {
+  const withBranch = (branch_name: string | null, address: string | null) => {
+    const data = sampleInvoice();
+    data.header = { ...data.header, branch_name, address };
+    return renderInvoiceHtml(data, 'thermal_classic', cfg({ showBranchAddress: true })).html;
+  };
+
+  it('drops the name line when the address opens with it', () => {
+    const html = withBranch('Pine Avenue', 'Pine Avenue, Lahore');
+    expect(html.match(/Pine Avenue/g)).toHaveLength(1);
+    expect(html).toContain('Pine Avenue, Lahore');
+  });
+
+  it('is case-insensitive about it', () => {
+    expect(withBranch('Pine Avenue', 'PINE AVENUE, Lahore').match(/[Pp][Ii][Nn][Ee] [Aa]venue/gi)).toHaveLength(1);
+  });
+
+  it('keeps both when the address is genuinely different', () => {
+    const html = withBranch('Johar Town', '12 Main Boulevard, Lahore');
+    expect(html).toContain('Johar Town');
+    expect(html).toContain('12 Main Boulevard, Lahore');
+  });
+
+  it('prints the name alone when no address is on file', () => {
+    const html = withBranch('Johar Town', null);
+    expect(html).toContain('Johar Town');
+    expect(html).toContain('class="branch"');
+  });
+});
+
+describe('previewInvoice — the editor preview stands on a real branch', () => {
+  const SAMPLE_ADDR = 'Shop 12, Civic Center, Bahria Town, Lahore';
+
+  it("uses the branch's own name and address", () => {
+    const vm = previewInvoice({ name: 'Pine Avenue', address: 'Pine Avenue, Lahore' });
+    expect(vm.header?.branch_name).toBe('Pine Avenue');
+    expect(vm.header?.address).toBe('Pine Avenue, Lahore');
+  });
+
+  it('prints that address, not the sample one', () => {
+    const html = renderInvoiceHtml(
+      previewInvoice({ name: 'Pine Avenue', address: 'Pine Avenue, Lahore' }),
+      'thermal_classic',
+      cfg({ showBranchAddress: true }),
+    ).html;
+    expect(html).toContain('Pine Avenue, Lahore');
+    expect(html).not.toContain(SAMPLE_ADDR);
+    expect(html).not.toContain('Bahria Town Branch');
+  });
+
+  it('shows no address at all for a branch that has none on file', () => {
+    const html = renderInvoiceHtml(
+      previewInvoice({ name: 'Johar Town', address: null }),
+      'thermal_classic',
+      cfg({ showBranchAddress: true }),
+    ).html;
+    expect(html).toContain('Johar Town');
+    expect(html).not.toContain(SAMPLE_ADDR);
+  });
+
+  it('falls back to the rich sample while the branch list is still loading', () => {
+    expect(previewInvoice(null).header?.address).toBe(SAMPLE_ADDR);
+    expect(previewInvoice().header?.address).toBe(SAMPLE_ADDR);
+  });
+
+  it('leaves the rest of the sample order untouched', () => {
+    const vm = previewInvoice({ name: 'Pine Avenue', address: 'Pine Avenue, Lahore' });
+    const rich = richSampleInvoice();
+    expect(vm.orders).toEqual(rich.orders);
+    expect(vm.header?.legal_name).toBe(rich.header?.legal_name);
   });
 });

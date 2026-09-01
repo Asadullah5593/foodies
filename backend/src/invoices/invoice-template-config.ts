@@ -32,6 +32,23 @@ export interface InvoiceTemplateConfig {
     headerText: string | null;
     /** Free text at the bottom (thank-you note, return policy). */
     footerText: string | null;
+    /**
+     * Print the SELLING BRANCH's own name and address in the footer, read from
+     * the branch record rather than typed into Footer Text. Off by default: a
+     * template whose Footer Text already spells out one branch's address would
+     * otherwise print the address twice. Switch it on, then clear the address
+     * out of Footer Text.
+     */
+    showBranchAddress: boolean;
+    /**
+     * Contact number printed beside the app-download QR, e.g. a delivery UAN.
+     * Lives on the template (not the branch) because it is one number for
+     * everyone the template serves. Empty prints nothing, so there is no
+     * separate on/off switch — entering a number IS switching it on.
+     */
+    uanText: string | null;
+    /** Wording before the number — empty prints the number alone. */
+    uanLabel: string | null;
     /** Show the app-download QR (+ its text) above the footer. */
     showAppQr: boolean;
     /** Text shown to the left of the app-download QR (empty = QR only). */
@@ -172,6 +189,9 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     showLogo: true,
     headerText: null,
     footerText: null,
+    showBranchAddress: false,
+    uanText: null,
+    uanLabel: 'For delivery, call',
     showAppQr: false,
     appQrText: 'Scan to download the Foodies app',
     appQrTextFontWeight: 600,
@@ -293,6 +313,8 @@ export function sanitizeInvoiceTemplateConfig(
             (key === 'headerText' ||
                 key === 'footerText' ||
                 key === 'appQrText' ||
+                key === 'uanText' ||
+                key === 'uanLabel' ||
                 key === 'fbrLogoUrl') &&
             (typeof val === 'string' || val === null)
         )
