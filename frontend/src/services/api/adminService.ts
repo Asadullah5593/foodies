@@ -346,7 +346,15 @@ export const adminService = {
 
   assignBranchUsersWithRoles: async (
     branchId: number,
-    assignments: { user_id: number; role_id: number; brand_id?: number | null; phone?: string | null }[],
+    assignments: {
+      user_id: number;
+      role_id: number;
+      /** Brands to lock the user to at this branch; empty/omitted = all brands. */
+      brand_ids?: number[];
+      /** Single-brand form kept for callers that predate the list. */
+      brand_id?: number | null;
+      phone?: string | null;
+    }[],
   ): Promise<User[]> => {
     const response = await apiClient.post(`/admin/branches/${branchId}/users`, { assignments });
     return response.data.users;
@@ -360,6 +368,9 @@ export const adminService = {
     user_id: number;
     branch_ids: number[];
     role_id: number;
+    /** Brands to lock the user to at every selected branch; empty = all brands. */
+    brand_ids?: number[];
+    /** Single-brand form kept for callers that predate the list. */
     brand_id?: number | null;
     /** Required for the rider role when the user has no phone yet. */
     phone?: string | null;

@@ -22,9 +22,22 @@ export class BranchUser {
     @Column()
     roleId: number;
 
-    /** When set, the user is locked to this brand at the branch (null = all brands). */
+    /**
+     * First of `brandIds`, kept in step with it. Retained because it carries the
+     * foreign key (an int[] cannot) and because a reader still on this column
+     * then sees a narrower lock rather than none. Read the lock through
+     * `rowBrandIds()` in brand-lock.ts, never straight off either column.
+     */
     @Column({ type: 'int', nullable: true })
     brandId: number | null;
+
+    /**
+     * Every brand the user is locked to at this branch; null/empty = all brands.
+     * The row is keyed on (branchId, userId), so the set lives here rather than
+     * in extra rows.
+     */
+    @Column({ type: 'int', array: true, nullable: true })
+    brandIds: number[] | null;
 
     @CreateDateColumn()
     createdAt: Date;
