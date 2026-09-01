@@ -15,7 +15,7 @@ import Modal from '../../components/Modal';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 import RecordHistoryLink from '../../components/RecordHistoryLink';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
-import { isEntityInactive } from '../../utils/entityStatus';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 
 /* ------------------------------------------------------------- helpers --- */
 
@@ -759,7 +759,7 @@ const Shifts: React.FC = () => {
           <option value="">All branches</option>
           {(branches ?? []).map((b) => (
             <option key={b.id} value={String(b.id)}>
-              {b.name}
+              {labelWithStatus(b.name, b)}
             </option>
           ))}
         </select>
