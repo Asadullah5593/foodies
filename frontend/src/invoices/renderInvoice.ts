@@ -644,9 +644,9 @@ function footerHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
   // The UAN rides in the same row, under the prompt text — where a cashier
   // would otherwise write it by hand. With the QR switched off it still has to
   // print, so the row renders whenever EITHER is on and simply omits the code.
-  const uan = cfg.showUan && cfg.uanText ? String(cfg.uanText).trim() : '';
+  const uan = cfg.uanText ? String(cfg.uanText).trim() : '';
   const uanLine = uan
-    ? `<div class="qr-uan" data-field="showUan">${
+    ? `<div class="qr-uan" data-field="uanText">${
         cfg.uanLabel ? `${esc(cfg.uanLabel)} ` : ''
       }<span class="uan-num">${esc(uan)}</span></div>`
     : '';
@@ -682,9 +682,15 @@ function footerHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
   // template's Footer Text. A group receipt spans a single branch (the split is
   // by brand), so the first order names it.
   const header = data.header;
+  const branchName = String(header?.branch_name ?? '').trim();
+  const branchAddress = String(header?.address ?? '').trim();
+  // Branch names often lead their own address ("Pine Avenue" / "Pine Avenue,
+  // Lahore"), which would print the name twice. Drop the name line when the
+  // address already opens with it.
+  const nameIsInAddress =
+    !!branchName && branchAddress.toLowerCase().startsWith(branchName.toLowerCase());
   const branchLine = cfg.showBranchAddress
-    ? [header?.branch_name, header?.address]
-        .map((v) => (v == null ? '' : String(v).trim()))
+    ? [nameIsInAddress ? '' : branchName, branchAddress]
         .filter(Boolean)
         .map((v) => `<div class="line">${esc(v)}</div>`)
         .join('')

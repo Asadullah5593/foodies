@@ -1201,12 +1201,12 @@ describe("branch address — each branch prints its own, not the template's", ()
 });
 
 describe('UAN — the delivery number cashiers were writing on by hand', () => {
-  it('is off by default', () => {
+  it('prints nothing until a number is entered — there is no separate switch', () => {
     expect(render({})).not.toContain('qr-uan');
   });
 
   it('prints beside the app QR, with its wording', () => {
-    const html = render({ showAppQr: true, showUan: true, uanText: '111 333 666' });
+    const html = render({ showAppQr: true, uanText: '111 333 666' });
     expect(html).toContain('For delivery, call');
     expect(html).toContain('111 333 666');
     // Same row as the QR, not a block of its own.
@@ -1215,7 +1215,7 @@ describe('UAN — the delivery number cashiers were writing on by hand', () => {
   });
 
   it('still prints when the app QR is switched off', () => {
-    const html = render({ showAppQr: false, showUan: true, uanText: '111 333 666' });
+    const html = render({ showAppQr: false, uanText: '111 333 666' });
     expect(html).toContain('111 333 666');
     expect(html).toContain('class="qrblock"');
     // No QR code drawn.
@@ -1224,14 +1224,14 @@ describe('UAN — the delivery number cashiers were writing on by hand', () => {
   });
 
   it('prints the number alone when the wording is cleared', () => {
-    const html = render({ showUan: true, uanText: '111 333 666', uanLabel: null });
+    const html = render({ uanText: '111 333 666', uanLabel: null });
     expect(html).toContain('111 333 666');
     expect(html).not.toContain('For delivery, call');
   });
 
-  it('prints nothing when switched on with no number entered', () => {
-    expect(render({ showUan: true, uanText: null })).not.toContain('qr-uan');
-    expect(render({ showUan: true, uanText: '   ' })).not.toContain('qr-uan');
+  it('prints nothing for an empty or blank number', () => {
+    expect(render({ uanText: null })).not.toContain('qr-uan');
+    expect(render({ uanText: '   ' })).not.toContain('qr-uan');
   });
 
   it('leaves the FBR block its own top rule when the UAN row is the flush one', () => {
@@ -1241,8 +1241,7 @@ describe('UAN — the delivery number cashiers were writing on by hand', () => {
       data,
       'thermal_classic',
       cfg({
-        showUan: true,
-        uanText: '111 333 666',
+                uanText: '111 333 666',
         showFbrInvoice: true,
         showLoyaltyBalance: false,
         showLoyaltyEarned: false,
@@ -1256,7 +1255,37 @@ describe('UAN — the delivery number cashiers were writing on by hand', () => {
 
   it('renders on every layout', () => {
     for (const layout of ALL_LAYOUTS) {
-      expect(render({ showUan: true, uanText: '111 333 666' }, layout), layout).toContain('111 333 666');
+      expect(render({ uanText: '111 333 666' }, layout), layout).toContain('111 333 666');
     }
+  });
+});
+
+describe('branch line does not repeat a name the address already carries', () => {
+  const withBranch = (branch_name: string | null, address: string | null) => {
+    const data = sampleInvoice();
+    data.header = { ...data.header, branch_name, address };
+    return renderInvoiceHtml(data, 'thermal_classic', cfg({ showBranchAddress: true })).html;
+  };
+
+  it('drops the name line when the address opens with it', () => {
+    const html = withBranch('Pine Avenue', 'Pine Avenue, Lahore');
+    expect(html.match(/Pine Avenue/g)).toHaveLength(1);
+    expect(html).toContain('Pine Avenue, Lahore');
+  });
+
+  it('is case-insensitive about it', () => {
+    expect(withBranch('Pine Avenue', 'PINE AVENUE, Lahore').match(/[Pp][Ii][Nn][Ee] [Aa]venue/gi)).toHaveLength(1);
+  });
+
+  it('keeps both when the address is genuinely different', () => {
+    const html = withBranch('Johar Town', '12 Main Boulevard, Lahore');
+    expect(html).toContain('Johar Town');
+    expect(html).toContain('12 Main Boulevard, Lahore');
+  });
+
+  it('prints the name alone when no address is on file', () => {
+    const html = withBranch('Johar Town', null);
+    expect(html).toContain('Johar Town');
+    expect(html).toContain('class="branch"');
   });
 });

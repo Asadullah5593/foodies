@@ -43,10 +43,9 @@ export interface InvoiceTemplateConfig {
     /**
      * Contact number printed beside the app-download QR, e.g. a delivery UAN.
      * Lives on the template (not the branch) because it is one number for
-     * everyone the template serves.
+     * everyone the template serves. Empty prints nothing, so there is no
+     * separate on/off switch — entering a number IS switching it on.
      */
-    showUan: boolean;
-    /** The number itself; `uanLabel` is what precedes it. */
     uanText: string | null;
     /** Wording before the number — empty prints the number alone. */
     uanLabel: string | null;
@@ -191,7 +190,6 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
     headerText: null,
     footerText: null,
     showBranchAddress: false,
-    showUan: false,
     uanText: null,
     uanLabel: 'For delivery, call',
     showAppQr: false,
