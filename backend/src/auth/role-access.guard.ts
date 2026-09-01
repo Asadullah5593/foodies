@@ -56,8 +56,19 @@ export class RoleAccessGuard implements CanActivate {
                 '',
             ) || '/';
 
-        // Super admin: no restriction; no branch filter
-        if (user.tenantId == null) return true;
+        // Platform administrator: no restriction, no branch filter. Read off
+        // the user row — never inferred from a missing tenant link.
+        if (user.isSuperAdmin === true) return true;
+
+        // No tenant and not a platform admin: the account belongs to nobody.
+        // Everything downstream reads `tenantId == null` as "super admin", so
+        // this request must not be allowed to travel any further. It is what a
+        // half-finished delete leaves behind.
+        if (user.tenantId == null) {
+            throw new ForbiddenException(
+                'This account is not attached to any business.',
+            );
+        }
 
         // Resolve allowed branches for tenant users (Branch Manager vs General Manager)
         user.allowedBranchIds = await this.getAllowedBranchIds(

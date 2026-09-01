@@ -30,13 +30,22 @@ export class RequirePermissionGuard implements CanActivate {
         if (required.length === 0) return true;
 
         const request = context.switchToHttp().getRequest<{
-            user?: { id: number; tenantId: number | null };
+            user?: {
+                id: number;
+                tenantId: number | null;
+                isSuperAdmin?: boolean;
+            };
         }>();
         const user = request.user;
         if (!user?.id) return false;
 
+        // Platform administrator holds everything. Read off the user row, not
+        // inferred from a missing tenant link — an account left tenant-less by
+        // a failed delete used to pass this check and every write behind it.
+        if (user.isSuperAdmin === true) return true;
+
         const tenantId = user.tenantId;
-        if (tenantId == null) return true;
+        if (tenantId == null) return false;
 
         type RoleIdRow = { role_id: number };
         const tenantUser = (await this.dataSource.query(
