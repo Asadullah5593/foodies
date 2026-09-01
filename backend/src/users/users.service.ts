@@ -507,9 +507,32 @@ export class UsersService {
         ) {
             throw new NotFoundException('User not found');
         }
-        await this.tenantUserRepo.remove(tenantUser);
-        await this.branchUserRepo.delete({ userId: id });
-        await this.repo.delete(id);
+        // All three or none. Unwrapped, these ran as separate statements and a
+        // failure on the last one — a rider held by rider_order_ratings, say —
+        // left the users row behind with its tenant link already gone. That is
+        // not a partial delete, it is an account belonging to no business, and
+        // the whole system used to read that as the platform administrator.
+        try {
+            await this.dataSource.transaction(async (tx) => {
+                await tx.delete(BranchUser, { userId: id });
+                await tx.delete(TenantUser, { userId: id, tenantId });
+                await tx.delete(User, { id });
+            });
+        } catch (e) {
+            // Records that must outlive the person still point at them — a
+            // customer's rating of a rider, say. Refusing is right; the caller
+            // just needs to be told what to do instead of seeing a 500.
+            if (
+                e instanceof QueryFailedError &&
+                (e as { code?: string }).code === '23503'
+            ) {
+                throw new ConflictException(
+                    'This user has history that cannot be removed (e.g. customer ratings). ' +
+                        'Deactivate the account instead — it keeps the records and blocks all access.',
+                );
+            }
+            throw e;
+        }
         return { message: 'User deleted successfully' };
     }
 

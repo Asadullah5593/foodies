@@ -479,16 +479,19 @@ async function seed() {
         ],
     );
 
-    // —— Super admin: no tenant_users row → tenantId null → sees all tenants/brands/branches ——
+    // —— Super admin: the flag is what grants it; no tenant_users row scopes it ——
     await userRepo.save(
         userRepo.create({
             name: 'Super Admin',
             email: 'superadmin@demo.com',
             password: hashed,
             status: 'active',
+            isSuperAdmin: true,
         }),
     );
-    // Do NOT add superAdmin to tenant_users; they have access to everything via tenantId = null
+    // Do NOT add superAdmin to tenant_users — that is what leaves them unscoped.
+    // But the ACCESS comes from isSuperAdmin: having no tenant row grants
+    // nothing on its own, or a half-deleted account would inherit the platform.
 
     // —— Tenant 1: Acme Corp ——
     const tenant1 = await tenantRepo.save(
