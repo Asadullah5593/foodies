@@ -76,13 +76,27 @@ const openModalAndPick = async () => {
 };
 
 const save = () => fireEvent.click(screen.getByRole('button', { name: /Assign \d+ user\(s\)/ }));
+/** Open a row's brand dropdown; its panel is portalled outside the table. */
+const openBrands = (row: HTMLElement) => {
+  fireEvent.click(within(row).getByRole('button', { name: /^Brands for/ }));
+  return screen.getByRole('listbox');
+};
+/**
+ * Tick a brand. The panel deliberately stays open after a pick — that is what
+ * makes choosing two of them one gesture — so reuse it when it is already up
+ * rather than clicking the trigger shut again.
+ */
+const pick = (row: HTMLElement, name: RegExp) => {
+  const panel = screen.queryByRole('listbox') ?? openBrands(row);
+  fireEvent.click(within(panel).getByText(name));
+};
 const payload = () => assignBranchUsersWithRoles.mock.calls[0][1] as Array<Record<string, unknown>>;
 
 describe('Branch Users — a user can hold more than one brand at a branch', () => {
   it('sends both brands, not just the last one clicked', async () => {
     const row = await openModalAndPick();
-    fireEvent.click(within(row).getByText(/Peperi Co/));
-    fireEvent.click(within(row).getByText(/Fireaway/));
+    pick(row, /Peperi Co/);
+    pick(row, /Fireaway/);
     save();
     await waitFor(() => expect(assignBranchUsersWithRoles).toHaveBeenCalled());
     expect(payload()).toEqual([{ user_id: 1, role_id: 3, brand_ids: [21, 22] }]);
@@ -97,18 +111,18 @@ describe('Branch Users — a user can hold more than one brand at a branch', () 
 
   it('unticking the last brand goes back to all brands', async () => {
     const row = await openModalAndPick();
-    fireEvent.click(within(row).getByText(/Peperi Co/));
-    fireEvent.click(within(row).getByText(/Peperi Co/));
+    pick(row, /Peperi Co/);
+    pick(row, /Peperi Co/);
     save();
     await waitFor(() => expect(assignBranchUsersWithRoles).toHaveBeenCalled());
     expect(payload()).toEqual([{ user_id: 1, role_id: 3, brand_ids: [] }]);
   });
 
   it('offers only the brands the chosen branch actually carries', async () => {
-    const row = await openModalAndPick();
-    expect(within(row).getByText(/Peperi Co/)).toBeTruthy();
-    expect(within(row).getByText(/Loranzo/)).toBeTruthy();
-    expect(within(row).queryByText(/Wok & Go/)).toBeNull();
+    const panel = openBrands(await openModalAndPick());
+    expect(within(panel).getByText(/Peperi Co/)).toBeTruthy();
+    expect(within(panel).getByText(/Loranzo/)).toBeTruthy();
+    expect(within(panel).queryByText(/Wok & Go/)).toBeNull();
   });
 
   it('prefills an existing two-brand lock and treats it as unchanged', async () => {
@@ -134,12 +148,19 @@ describe('Branch Users — a user can hold more than one brand at a branch', () 
     const row = (await screen.findAllByText('Ali'))
       .map((el) => el.closest('tr'))
       .find(Boolean) as HTMLElement;
-    // Both chips come back pressed…
+    // The trigger summarises both without being opened…
     await waitFor(() =>
-      expect(within(row).getByText(/Peperi Co/).getAttribute('aria-pressed')).toBe('true'),
+      expect(
+        within(row).getByRole('button', { name: /^Brands for/ }).textContent,
+      ).toContain('2 brands'),
     );
-    expect(within(row).getByText(/Fireaway/).getAttribute('aria-pressed')).toBe('true');
-    expect(within(row).getByText('All brands').getAttribute('aria-pressed')).toBe('false');
+    const panel = openBrands(row);
+    const selectedOf = (name: RegExp | string) =>
+      within(panel).getByText(name).closest('[role="option"]')!.getAttribute('aria-selected');
+    expect(selectedOf(/Peperi Co/)).toBe('true');
+    expect(selectedOf(/Fireaway/)).toBe('true');
+    expect(selectedOf('All brands')).toBe('false');
+    fireEvent.keyDown(document, { key: 'Escape' });
     // …and re-saving an untouched row asks the API for nothing.
     expect(screen.queryByRole('button', { name: /Assign \d+ user\(s\)/ })).toBeNull();
   });
