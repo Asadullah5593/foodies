@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { renderInvoiceHtml, sampleInvoice, richSampleInvoice } from './renderInvoice';
+import { renderInvoiceHtml, sampleInvoice, richSampleInvoice, previewInvoice } from './renderInvoice';
 import {
   DEFAULT_INVOICE_TEMPLATE_CONFIG,
   InvoiceTemplateConfig,
@@ -1287,5 +1287,48 @@ describe('branch line does not repeat a name the address already carries', () =>
     const html = withBranch('Johar Town', null);
     expect(html).toContain('Johar Town');
     expect(html).toContain('class="branch"');
+  });
+});
+
+describe('previewInvoice — the editor preview stands on a real branch', () => {
+  const SAMPLE_ADDR = 'Shop 12, Civic Center, Bahria Town, Lahore';
+
+  it("uses the branch's own name and address", () => {
+    const vm = previewInvoice({ name: 'Pine Avenue', address: 'Pine Avenue, Lahore' });
+    expect(vm.header?.branch_name).toBe('Pine Avenue');
+    expect(vm.header?.address).toBe('Pine Avenue, Lahore');
+  });
+
+  it('prints that address, not the sample one', () => {
+    const html = renderInvoiceHtml(
+      previewInvoice({ name: 'Pine Avenue', address: 'Pine Avenue, Lahore' }),
+      'thermal_classic',
+      cfg({ showBranchAddress: true }),
+    ).html;
+    expect(html).toContain('Pine Avenue, Lahore');
+    expect(html).not.toContain(SAMPLE_ADDR);
+    expect(html).not.toContain('Bahria Town Branch');
+  });
+
+  it('shows no address at all for a branch that has none on file', () => {
+    const html = renderInvoiceHtml(
+      previewInvoice({ name: 'Johar Town', address: null }),
+      'thermal_classic',
+      cfg({ showBranchAddress: true }),
+    ).html;
+    expect(html).toContain('Johar Town');
+    expect(html).not.toContain(SAMPLE_ADDR);
+  });
+
+  it('falls back to the rich sample while the branch list is still loading', () => {
+    expect(previewInvoice(null).header?.address).toBe(SAMPLE_ADDR);
+    expect(previewInvoice().header?.address).toBe(SAMPLE_ADDR);
+  });
+
+  it('leaves the rest of the sample order untouched', () => {
+    const vm = previewInvoice({ name: 'Pine Avenue', address: 'Pine Avenue, Lahore' });
+    const rich = richSampleInvoice();
+    expect(vm.orders).toEqual(rich.orders);
+    expect(vm.header?.legal_name).toBe(rich.header?.legal_name);
   });
 });

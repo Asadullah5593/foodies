@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import LiveInvoicePreview from '../../invoices/LiveInvoicePreview';
-import { richSampleInvoice } from '../../invoices/renderInvoice';
+import { previewInvoice } from '../../invoices/renderInvoice';
 import {
   INVOICE_TOGGLE_GROUPS,
   InvoiceLayout,
@@ -29,6 +29,8 @@ interface Props {
   form: InvoiceTemplateFormState;
   setForm: React.Dispatch<React.SetStateAction<InvoiceTemplateFormState>>;
   brands: Array<{ id: number; name: string }>;
+  /** Real branch the preview stands on, so its address is one that will print. */
+  previewBranch?: { id: number; name: string; address: string | null } | null;
   saving: boolean;
   onClose: () => void;
   onSubmit: () => void;
@@ -200,6 +202,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
   form,
   setForm,
   brands,
+  previewBranch,
   saving,
   onClose,
   onSubmit,
@@ -814,16 +817,25 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
 
                 {/* Live preview */}
                 <div className="flex w-[340px] flex-none flex-col border-l border-gray-100 bg-gray-50">
-                  <div className="flex flex-none items-center justify-between px-5 pb-3 pt-4">
+                  <div className="flex flex-none items-center justify-between px-5 pb-1 pt-4">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Live preview</span>
                     <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600">
                       <span className="h-[7px] w-[7px] rounded-full bg-emerald-600" />
                       {widthMm}mm
                     </span>
                   </div>
+                  {/* Name the branch the preview stands on: its address is what
+                      prints, and without this the sample address looks like a
+                      branch nobody can find in their list. */}
+                  {previewBranch && (
+                    <div className="flex-none px-5 pb-3 text-[11px] text-gray-400">
+                      sample order at <span className="font-semibold text-gray-500">{previewBranch.name}</span> — every
+                      branch prints its own address
+                    </div>
+                  )}
                   <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
                     <LiveInvoicePreview
-                      data={richSampleInvoice()}
+                      data={previewInvoice(previewBranch)}
                       layout={form.layout}
                       config={form.config}
                       flashKey={flash.key || null}
