@@ -5,6 +5,7 @@ import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { User } from '../entities/user.entity';
 import { expandPermissions } from '../roles/permission-implications';
+import { BRAND_LOCK_SQL } from '../branch-users/brand-lock';
 import { normalizePakistaniPhone } from '../utils/phone';
 import { ActivityContext } from '../activity-log/activity-context';
 
@@ -218,12 +219,16 @@ export class AuthService {
     ): Promise<number[] | null> {
         if (permissions.includes('all-branches:access')) return null;
         const rows = (await this.dataSource.query(
-            `SELECT brand_id FROM branch_users WHERE user_id = $1`,
+            `SELECT ${BRAND_LOCK_SQL('bu')} AS brand_ids
+             FROM branch_users bu WHERE bu.user_id = $1`,
             [userId],
-        )) as unknown as { brand_id: number | null }[];
+        )) as unknown as { brand_ids: number[] | null }[];
         if (rows.length === 0) return null;
-        if (rows.some((r) => r.brand_id == null)) return null;
-        return [...new Set(rows.map((r) => Number(r.brand_id)))];
+        if (rows.some((r) => r.brand_ids == null)) return null;
+        const ids = new Set<number>();
+        for (const r of rows)
+            for (const id of r.brand_ids ?? []) ids.add(Number(id));
+        return ids.size === 0 ? null : [...ids];
     }
 
     /**
