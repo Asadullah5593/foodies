@@ -342,6 +342,22 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           onChange: (v) => setCfg('appQrText', v || null),
         },
         {
+          kind: 'text',
+          label: 'UAN / contact number',
+          hint: 'printed beside the app QR — turn “Show the UAN” on under Branding',
+          placeholder: '111 333 666',
+          value: form.config.uanText ?? '',
+          onChange: (v) => setCfg('uanText', v || null),
+        },
+        {
+          kind: 'text',
+          label: 'UAN wording',
+          hint: 'goes before the number; leave empty to print the number alone',
+          placeholder: 'For delivery, call',
+          value: form.config.uanLabel ?? '',
+          onChange: (v) => setCfg('uanLabel', v || null),
+        },
+        {
           kind: 'image',
           label: 'FBR invoice logo',
           hint: 'shown on the FBR fiscal block — turn “Show FBR invoice # + QR” on under Branding',

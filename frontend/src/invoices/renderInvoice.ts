@@ -641,13 +641,23 @@ function footerHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
   // App-download QR closes the receipt, above the footer: prompt text on the
   // left, the QR on the right. The QR encodes the same deep link the consumer
   // site shows (see appQr.ts), so scanning a receipt lands in the same place.
-  const qrBlock = cfg.showAppQr
-    ? `
-    <div class="qrblock${flushTop ? ' flush' : ''}" data-field="showAppQr">
-      <div class="qr-text">${cfg.appQrText ? esc(cfg.appQrText) : ''}</div>
-      <div class="qr-img">${APP_QR_SVG}</div>
-    </div>`
+  // The UAN rides in the same row, under the prompt text — where a cashier
+  // would otherwise write it by hand. With the QR switched off it still has to
+  // print, so the row renders whenever EITHER is on and simply omits the code.
+  const uan = cfg.showUan && cfg.uanText ? String(cfg.uanText).trim() : '';
+  const uanLine = uan
+    ? `<div class="qr-uan" data-field="showUan">${
+        cfg.uanLabel ? `${esc(cfg.uanLabel)} ` : ''
+      }<span class="uan-num">${esc(uan)}</span></div>`
     : '';
+  const qrBlock =
+    cfg.showAppQr || uanLine
+      ? `
+    <div class="qrblock${flushTop ? ' flush' : ''}"${cfg.showAppQr ? ' data-field="showAppQr"' : ''}>
+      <div class="qr-text">${cfg.showAppQr && cfg.appQrText ? esc(cfg.appQrText) : ''}${uanLine}</div>
+      ${cfg.showAppQr ? `<div class="qr-img">${APP_QR_SVG}</div>` : ''}
+    </div>`
+      : '';
   // FBR fiscalization block, directly below the app-QR row: the tax-authority
   // logo bottom-left (under the app-QR prompt text) and the verification QR
   // bottom-right (under the app QR), then the "FBR Invoice #" line BENEATH that
@@ -659,7 +669,7 @@ function footerHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
   const fbrBlock =
     cfg.showFbrInvoice && fbrNumber
       ? `
-    <div class="fbrblock${flushTop && !cfg.showAppQr ? ' flush' : ''}" data-field="showFbrInvoice">
+    <div class="fbrblock${flushTop && !qrBlock ? ' flush' : ''}" data-field="showFbrInvoice">
       <div class="fbr-row">
         <img class="fbr-logo" src="${esc(fbrLogoSrc(cfg.fbrLogoUrl))}" alt="Tax authority" />
         <div class="fbr-qr">${fbrQrSvg(fbrNumber)}</div>
@@ -667,8 +677,21 @@ function footerHtml(data: InvoiceVM, cfg: InvoiceTemplateConfig): string {
       <div class="fbr-head">FBR Invoice # <span class="fbr-num">${esc(fbrNumber)}</span></div>
     </div>`
       : '';
+  // The branch's own name and address, straight off the branch record, so each
+  // branch prints its own instead of the one address someone typed into the
+  // template's Footer Text. A group receipt spans a single branch (the split is
+  // by brand), so the first order names it.
+  const header = data.header;
+  const branchLine = cfg.showBranchAddress
+    ? [header?.branch_name, header?.address]
+        .map((v) => (v == null ? '' : String(v).trim()))
+        .filter(Boolean)
+        .map((v) => `<div class="line">${esc(v)}</div>`)
+        .join('')
+    : '';
   return `${qrBlock}${fbrBlock}
     <div class="foot">
+      ${branchLine ? `<div class="branch" data-field="showBranchAddress">${branchLine}</div>` : ''}
       ${cfg.footerText ? `<div class="line">${esc(cfg.footerText)}</div>` : ''}
       ${cfg.showPoweredBy ? `<div class="powered" data-field="showPoweredBy">Powered by Rex Technologies</div>` : ''}
     </div>`;
@@ -1008,12 +1031,17 @@ function layoutCss(layout: InvoiceLayout, cfg: InvoiceTemplateConfig): string {
     .inv-root .grandtotal { border-top: 2px solid #000; margin-top: 8px; padding-top: 6px; font-size: 1.1em; }
     .inv-root .foot { text-align: center; margin-top: 10px; font-size: .8em; color: #333; }
     .inv-root .foot .line { white-space: pre-line; }
+    /* Branch name + address above the free-text footer. */
+    .inv-root .foot .branch { margin-bottom: 3px; }
     /* App-download QR: prompt text left, code right. Sits above the footer. */
     .inv-root .qrblock { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding-top: 6px; border-top: 1px dashed #999; }
     /* First footer block sits flush under the grand total (no loyalty line
        between): drop its own top rule so only the grand total's bolder rule shows. */
     .inv-root .qrblock.flush, .inv-root .fbrblock.flush { border-top: none; padding-top: 0; }
     .inv-root .qrblock .qr-text { text-align: left; flex: 1 1 auto; }
+    /* UAN under the prompt text, in the same column as it. */
+    .inv-root .qrblock .qr-uan { margin-top: 2px; }
+    .inv-root .qrblock .qr-uan .uan-num { font-weight: 700; white-space: nowrap; }
     .inv-root .qrblock .qr-img { flex: 0 0 auto; }
     .inv-root .qrblock .qr-img svg { display: block; width: 20mm; height: 20mm; }
     /* FBR fiscalization: logo (left, under the app-QR text) and verification QR

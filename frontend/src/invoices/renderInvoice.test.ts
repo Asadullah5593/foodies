@@ -1150,3 +1150,113 @@ describe('nestDealComponents — a deal component is not a giveaway', () => {
     }
   });
 });
+
+describe("branch address — each branch prints its own, not the template's", () => {
+  const ADDR = '123 Food Street, Lahore';
+
+  it('is off by default, so a template that spells its address into Footer Text is unchanged', () => {
+    const html = renderInvoiceHtml(
+      sampleInvoice(),
+      'thermal_classic',
+      cfg({ footerText: 'Pine Avenue\nLahore\nThank you for choosing us! :)' }),
+    ).html;
+    expect(html).not.toContain('class="branch"');
+    // Exactly one address on the receipt — the typed one, printed once.
+    expect(html.match(/Pine Avenue/g)).toHaveLength(1);
+    expect(html).not.toContain(ADDR);
+  });
+
+  it("prints the selling branch's name and address when switched on", () => {
+    const html = render({ showBranchAddress: true });
+    expect(html).toContain('Main Branch');
+    expect(html).toContain(ADDR);
+  });
+
+  it('reads them off the order, so two branches print two different addresses', () => {
+    const a = renderInvoiceHtml(sampleInvoice(), 'thermal_classic', cfg({ showBranchAddress: true })).html;
+    const b = renderInvoiceHtml(richSampleInvoice(), 'thermal_classic', cfg({ showBranchAddress: true })).html;
+    expect(a).toContain(ADDR);
+    expect(b).toContain('Shop 12, Civic Center, Bahria Town, Lahore');
+    expect(b).not.toContain(ADDR);
+  });
+
+  it('sits inside the footer, above the free-text note', () => {
+    const html = render({ showBranchAddress: true, footerText: 'Thank you for choosing us!' });
+    expect(html.indexOf('class="foot"')).toBeLessThan(html.indexOf(ADDR));
+    expect(html.indexOf(ADDR)).toBeLessThan(html.indexOf('Thank you for choosing us!'));
+  });
+
+  it('prints nothing when the branch has no address on file', () => {
+    const data = sampleInvoice();
+    data.header = { ...data.header, branch_name: null, address: null };
+    const html = renderInvoiceHtml(data, 'thermal_classic', cfg({ showBranchAddress: true })).html;
+    expect(html).not.toContain('class="branch"');
+  });
+
+  it('renders on every layout', () => {
+    for (const layout of ALL_LAYOUTS) {
+      expect(render({ showBranchAddress: true }, layout), layout).toContain(ADDR);
+    }
+  });
+});
+
+describe('UAN — the delivery number cashiers were writing on by hand', () => {
+  it('is off by default', () => {
+    expect(render({})).not.toContain('qr-uan');
+  });
+
+  it('prints beside the app QR, with its wording', () => {
+    const html = render({ showAppQr: true, showUan: true, uanText: '111 333 666' });
+    expect(html).toContain('For delivery, call');
+    expect(html).toContain('111 333 666');
+    // Same row as the QR, not a block of its own.
+    expect(html).toContain('class="qrblock"');
+    expect(html.indexOf('qr-uan')).toBeLessThan(html.indexOf('qr-img'));
+  });
+
+  it('still prints when the app QR is switched off', () => {
+    const html = render({ showAppQr: false, showUan: true, uanText: '111 333 666' });
+    expect(html).toContain('111 333 666');
+    expect(html).toContain('class="qrblock"');
+    // No QR code drawn.
+    expect(html).not.toContain('viewBox="0 0 29 29"');
+    expect(html).not.toContain('Scan to download');
+  });
+
+  it('prints the number alone when the wording is cleared', () => {
+    const html = render({ showUan: true, uanText: '111 333 666', uanLabel: null });
+    expect(html).toContain('111 333 666');
+    expect(html).not.toContain('For delivery, call');
+  });
+
+  it('prints nothing when switched on with no number entered', () => {
+    expect(render({ showUan: true, uanText: null })).not.toContain('qr-uan');
+    expect(render({ showUan: true, uanText: '   ' })).not.toContain('qr-uan');
+  });
+
+  it('leaves the FBR block its own top rule when the UAN row is the flush one', () => {
+    const data = sampleInvoice();
+    data.orders[0].fbr_invoice_number = 'FBR-123';
+    const html = renderInvoiceHtml(
+      data,
+      'thermal_classic',
+      cfg({
+        showUan: true,
+        uanText: '111 333 666',
+        showFbrInvoice: true,
+        showLoyaltyBalance: false,
+        showLoyaltyEarned: false,
+        showLoyaltyRedeemed: false,
+      }),
+    ).html;
+    // The UAN row takes the flush treatment; FBR keeps its divider.
+    expect(html).toContain('class="qrblock flush"');
+    expect(html).toContain('class="fbrblock"');
+  });
+
+  it('renders on every layout', () => {
+    for (const layout of ALL_LAYOUTS) {
+      expect(render({ showUan: true, uanText: '111 333 666' }, layout), layout).toContain('111 333 666');
+    }
+  });
+});

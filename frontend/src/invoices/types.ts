@@ -49,6 +49,18 @@ export interface InvoiceTemplateConfig {
   showLogo: boolean;
   headerText: string | null;
   footerText: string | null;
+  /**
+   * Print the SELLING BRANCH's own name and address in the footer, read from the
+   * branch record rather than typed into Footer Text. Off by default so a
+   * template that already spells one branch's address into Footer Text does not
+   * print it twice.
+   */
+  showBranchAddress: boolean;
+  /** Contact number beside the app-download QR, e.g. a delivery UAN. */
+  showUan: boolean;
+  uanText: string | null;
+  /** Wording before the number — empty prints the number alone. */
+  uanLabel: string | null;
   /** Show the app-download QR (+ its text) above the footer. */
   showAppQr: boolean;
   /** Text shown to the left of the app-download QR (empty = QR only). */
@@ -171,6 +183,10 @@ export const DEFAULT_INVOICE_TEMPLATE_CONFIG: InvoiceTemplateConfig = {
   showLogo: true,
   headerText: null,
   footerText: null,
+  showBranchAddress: false,
+  showUan: false,
+  uanText: null,
+  uanLabel: 'For delivery, call',
   showAppQr: false,
   appQrText: 'Scan to download the Foodies app',
   appQrTextFontWeight: 600,
@@ -312,6 +328,8 @@ export const INVOICE_TOGGLE_GROUPS: Array<{
     title: 'Branding',
     items: [
       { key: 'showLogo', label: 'Show logo' },
+      { key: 'showBranchAddress', label: "Show the branch's own name + address in the footer" },
+      { key: 'showUan', label: 'Show the UAN / contact number' },
       { key: 'showAppQr', label: 'Show app-download QR' },
       { key: 'showFbrInvoice', label: 'Show FBR invoice # + QR' },
       { key: 'showPoweredBy', label: 'Show "Powered by Rex Technologies"' },
