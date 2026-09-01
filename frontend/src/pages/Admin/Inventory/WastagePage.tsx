@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { labelWithStatus } from '../../../utils/entityStatus';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { LuPlus, LuSearch, LuTrash2 } from 'react-icons/lu';
@@ -83,7 +84,7 @@ const WastagePage: React.FC = () => {
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5 max-w-xl leading-relaxed">Write off spoiled, expired or damaged stock. Each entry posts immediately and reduces on-hand stock at this branch (FEFO).</p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-red-500 pointer-events-none" /><select value={activeBranchId ?? ''} onChange={(e) => setBranchId(Number(e.target.value))} className="appearance-none pl-7 pr-9 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-slate-900 dark:text-slate-100 min-w-[200px]">{branches.map((b: any) => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}</select></div>
+          <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-red-500 pointer-events-none" /><select value={activeBranchId ?? ''} onChange={(e) => setBranchId(Number(e.target.value))} className="appearance-none pl-7 pr-9 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-slate-900 dark:text-slate-100 min-w-[200px]">{branches.map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(` ()`, b)}</option>)}</select></div>
           {canRecord && <button onClick={() => { setF({ item: '', qty: '', uom: '', reason: 'spoilage', notes: '' }); setOpen(true); }} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm"><LuPlus className="w-4 h-4" /> Record wastage</button>}
         </div>
       </div>
