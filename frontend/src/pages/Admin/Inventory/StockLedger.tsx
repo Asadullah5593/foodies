@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { labelWithStatus } from '../../../utils/entityStatus';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { LuPackage, LuSlidersHorizontal, LuUtensils, LuTruck, LuTrash2, LuRotateCcw, LuArrowUp, LuArrowDown, LuDownload, LuExternalLink } from 'react-icons/lu';
@@ -154,7 +155,7 @@ const StockLedger: React.FC = () => {
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-red-500 pointer-events-none" />
           <select value={activeBranchId ?? ''} onChange={(e) => { setBranchId(Number(e.target.value)); setPage(1); }} className="appearance-none pl-7 pr-9 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-slate-900 dark:text-slate-100 min-w-[210px]">
-            {branches.map((b: any) => <option key={b.id} value={b.id}>{b.name} ({b.code})</option>)}
+            {branches.map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(` ()`, b)}</option>)}
           </select>
         </div>
       </div>

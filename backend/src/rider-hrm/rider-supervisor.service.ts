@@ -484,9 +484,9 @@ export class RiderSupervisorService {
             branchParams.push(allowedBranchIds);
             branchClause = ` AND br.id = ANY($${branchParams.length}::int[])`;
         }
-        const branchRows: Array<{ id: number; name: string }> =
+        const branchRows: Array<{ id: number; name: string; is_active: boolean }> =
             await this.dataSource.query(
-                `SELECT DISTINCT br.id, br.name FROM branches br
+                `SELECT DISTINCT br.id, br.name, br.is_active FROM branches br
                  INNER JOIN branch_brands bb ON bb.branch_id = br.id
                  INNER JOIN brands b ON b.id = bb.brand_id AND b.tenant_id = $1
                  WHERE true${branchClause}
@@ -496,6 +496,7 @@ export class RiderSupervisorService {
         const branches = branchRows.map((r) => ({
             id: Number(r.id),
             name: r.name,
+            is_active: r.is_active,
         }));
 
         // Brands available at those branches, clamped to a brand lock.
