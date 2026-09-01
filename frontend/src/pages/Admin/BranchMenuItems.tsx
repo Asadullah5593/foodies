@@ -17,6 +17,7 @@ import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { confirmDialog } from '../../utils/sweetAlert';
 import RecordHistoryLink from '../../components/RecordHistoryLink';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 const BranchMenuItems: React.FC = () => {
   const queryClient = useQueryClient();
@@ -186,6 +187,7 @@ const BranchMenuItems: React.FC = () => {
               ...(branches ?? []).map((branch) => ({
                 value: String(branch.id),
                 label: `${branch.name} (${branch.code})`,
+                inactive: isEntityInactive(branch),
               })),
             ]}
             placeholder="All branches"
@@ -217,6 +219,7 @@ const BranchMenuItems: React.FC = () => {
               ...(branches ?? []).map((branch) => ({
                 value: String(branch.id),
                 label: `${branch.name} (${branch.code})`,
+                inactive: isEntityInactive(branch),
               })),
             ]}
             placeholder="Select Branch"
@@ -231,6 +234,7 @@ const BranchMenuItems: React.FC = () => {
               options={addableMenuItems.map((item) => ({
                 value: String(item.id),
                 label: `${item.name} (${formatCurrency(item.base_price)})`,
+                inactive: isEntityInactive(item),
               }))}
               placeholder={formData.branch_id ? 'Select Menu Item' : 'Select Branch first'}
               searchPlaceholder="Search menu items..."

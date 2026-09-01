@@ -123,6 +123,7 @@ const Reports: React.FC = () => {
               ...(branches ?? []).map((branch) => ({
                 value: String(branch.id),
                 label: `${branch.name} (${branch.code})`,
+                inactive: isEntityInactive(branch),
               })),
             ]}
             placeholder="All Branches"

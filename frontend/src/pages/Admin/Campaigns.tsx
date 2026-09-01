@@ -79,7 +79,11 @@ const Campaigns: React.FC = () => {
   const allOffers: Discount[] = [...(discounts ?? []), ...(promos ?? []), ...(coupons ?? [])];
   const asOpts = (arr: unknown, idKey = 'id'): Opt[] =>
     ((arr as Record<string, unknown>[] | undefined) ?? [])
-      .map((x) => ({ value: String((x[idKey] ?? x['menu_item_id']) as number), label: String(x['name']) }))
+      .map((x) => ({
+        value: String((x[idKey] ?? x['menu_item_id']) as number),
+        label: String(x['name']),
+        inactive: isEntityInactive(x),
+      }))
       .filter((o) => o.value !== 'undefined');
   const dealOpts = asOpts(deals);
   const productOpts = asOpts(menuItems);
