@@ -27,6 +27,7 @@ import {
 } from '../../components/OfferBrandScope';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import apiClient from '../../utils/apiClient';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 const emptyForm = {
   name: '',
@@ -91,7 +92,7 @@ const Coupons: React.FC = () => {
     id: c.id,
     name: `${c.name || 'Customer'}${c.phone ? ` · ${c.phone}` : ''}`,
   }));
-  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name }));
+  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name, inactive: isEntityInactive(b) }));
   const brandNameById = useMemo(
     () => new Map((brands ?? []).map((b) => [b.id, b.name])),
     [brands],

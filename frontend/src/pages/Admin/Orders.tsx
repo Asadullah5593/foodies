@@ -32,6 +32,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { ORDER_SOURCES, ORDER_SOURCE_LABEL, orderSourceLabel } from '../../utils/orderSources';
 import { deliveryStatusLabel } from '../../lib/deliveryStatus';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
+import { labelWithStatus } from '../../utils/entityStatus';
 
 type OrderPayment = { paymentMethod?: string; payment_method?: string; status?: string; amount?: number | string };
 
@@ -1175,11 +1176,11 @@ const Orders: React.FC = () => {
         </div>}
         {canFilterBranch && <select value={branchId} onChange={(e) => setFilter('branch_id', e.target.value)} className={selectCls} aria-label="Branch">
           <option value="">All branches</option>
-          {(branches ?? []).map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
+          {(branches ?? []).map((b) => <option key={b.id} value={String(b.id)}>{labelWithStatus(b.name, b)}</option>)}
         </select>}
         {canFilterBrand && <select value={brandId} onChange={(e) => setFilter('brand_id', e.target.value)} className={selectCls} aria-label="Brand">
           <option value="">All brands</option>
-          {(brands ?? []).map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
+          {(brands ?? []).map((b) => <option key={b.id} value={String(b.id)}>{labelWithStatus(b.name, b)}</option>)}
         </select>}
         {canFilterOrderType && <select value={orderType} onChange={(e) => setFilter('order_type', e.target.value)} className={selectCls} aria-label="Order type">
           <option value="">All types</option>

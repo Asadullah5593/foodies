@@ -8,6 +8,7 @@ import SearchableSelect from '../../../components/SearchableSelect';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { useHasPermission } from '../../../hooks/useHasPermission';
+import { isEntityInactive } from '../../../utils/entityStatus';
 
 const card = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl';
 const field = 'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400';
@@ -43,7 +44,7 @@ const VendorsPage: React.FC = () => {
     if (q) r = r.filter((v) => [v.name, v.email, v.phone].some((x) => String(x ?? '').toLowerCase().includes(q)));
     return r;
   }, [vendors, typeFilter, search]);
-  const branchOptions = useMemo(() => [{ value: '', label: 'None' }, ...(branchesQ.data ?? []).map((b: any) => ({ value: String(b.id), label: b.name }))], [branchesQ.data]);
+  const branchOptions = useMemo(() => [{ value: '', label: 'None' }, ...(branchesQ.data ?? []).map((b: any) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) }))], [branchesQ.data]);
 
   const openCreate = () => { setEditId(null); setF({ name: '', type: 'supplier', linked_branch_id: '', email: '', phone: '', address: '' }); setOpen(true); };
   const openEdit = (v: any) => { setEditId(Number(v.id)); setF({ name: v.name ?? '', type: v.type ?? 'supplier', linked_branch_id: v.linkedBranchId != null ? String(v.linkedBranchId) : '', email: v.email ?? '', phone: v.phone ?? '', address: v.address ?? '' }); setOpen(true); };

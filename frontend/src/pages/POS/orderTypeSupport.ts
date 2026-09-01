@@ -33,27 +33,48 @@ export function cartLineSupportsOrderType(
   );
 }
 
-/** Marker permission: this account may punch delivery orders only. */
+/**
+ * Order-type MARKER permissions. Each admits one type; held together they add
+ * up (delivery + takeaway = "no dine-in"); held by nobody, the branch's own
+ * options stand. The server enforces the same rule on quote and order
+ * (assertOrderTypeAllowed) — this only keeps the POS from offering a type it
+ * would refuse.
+ */
 export const DELIVERY_ONLY_PERMISSION = 'orders:create:delivery-only';
+export const TAKEAWAY_ONLY_PERMISSION = 'orders:create:takeaway-only';
+export const DINE_IN_ONLY_PERMISSION = 'orders:create:dine-in-only';
+
+/** The types admitted by the markers held, or null when none is held. */
+export function allowedOrderTypes(held: {
+  deliveryOnly: boolean;
+  takeawayOnly: boolean;
+  dineInOnly: boolean;
+}): Set<OrderTypeOption> | null {
+  const allowed = new Set<OrderTypeOption>();
+  if (held.deliveryOnly) allowed.add('delivery');
+  if (held.takeawayOnly) allowed.add('takeaway');
+  if (held.dineInOnly) allowed.add('dine_in');
+  return allowed.size ? allowed : null;
+}
 
 /**
- * Narrow the branch's order-type options for a delivery-only account.
+ * Narrow the branch's order-type options to what the account may place.
  *
  * `orderTypeOptions` is the POS's single source of truth — the nav tabs, the
  * checkout selector, `effectiveOrderType` and the menu filter all derive from
  * it — so restricting here restricts everything, and the cashier is never
  * offered a type the server (assertOrderTypeAllowed) would refuse.
  *
- * Deliberately returns [] rather than any fallback when the branch does not
- * offer delivery: an empty list means "cannot order here", which is the truth
- * for a delivery-only account at a collection-only branch. Falling back to
- * dine-in — as the unrestricted path does — would offer the very thing the
- * permission forbids.
+ * Deliberately returns [] rather than any fallback when the branch offers
+ * none of the allowed types: an empty list means "cannot order here", which
+ * is the truth for a delivery-only account at a collection-only branch.
+ * Falling back to dine-in — as the unrestricted path does — would offer the
+ * very thing the permission forbids.
  */
 export function restrictOrderTypeOptions<T extends { value: OrderTypeOption }>(
   options: T[],
-  deliveryOnly: boolean,
+  allowed: Set<OrderTypeOption> | null,
 ): T[] {
-  if (!deliveryOnly) return options;
-  return options.filter((o) => o.value === 'delivery');
+  if (!allowed) return options;
+  return options.filter((o) => allowed.has(o.value));
 }

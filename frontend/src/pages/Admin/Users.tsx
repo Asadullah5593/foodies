@@ -19,6 +19,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import RecordHistoryLink from '../../components/RecordHistoryLink';
+import { labelWithStatus } from '../../utils/entityStatus';
 
 interface RoleOption {
   id: number;
@@ -319,7 +320,7 @@ const Users: React.FC = () => {
               >
                 <option value="">All brands (no specific brand)</option>
                 {brands.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
+                  <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>
                 ))}
               </select>
               <p className="mt-1 text-xs text-gray-500">

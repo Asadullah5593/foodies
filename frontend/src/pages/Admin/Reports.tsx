@@ -9,6 +9,7 @@ import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
 import { formatCurrency } from '../../utils/currency';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 /** GET /admin/reports/discounts — where the discounts went. */
 interface DiscountsReport {
@@ -122,6 +123,7 @@ const Reports: React.FC = () => {
               ...(branches ?? []).map((branch) => ({
                 value: String(branch.id),
                 label: `${branch.name} (${branch.code})`,
+                inactive: isEntityInactive(branch),
               })),
             ]}
             placeholder="All Branches"
@@ -135,7 +137,7 @@ const Reports: React.FC = () => {
               { value: '', label: 'All Brands' },
               ...(brands ?? []).map((brand) => ({
                 value: String(brand.id),
-                label: brand.name,
+                label: brand.name, inactive: isEntityInactive(brand),
               })),
             ]}
             placeholder="All Brands"

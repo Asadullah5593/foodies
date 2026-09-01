@@ -8,6 +8,7 @@ import { Branch } from '../../types';
 import { recordBeacon } from '../../utils/activityBeacon';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 /**
  * The discount stages the pricing engine runs, each carrying this row's
@@ -758,7 +759,7 @@ const ProductSales: React.FC = () => {
             }}
             options={[
               { value: '', label: 'All Branches' },
-              ...(branches ?? []).map((b) => ({ value: String(b.id), label: b.name })),
+              ...(branches ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
             ]}
           />
           <SearchableSelect
@@ -775,7 +776,7 @@ const ProductSales: React.FC = () => {
             }}
             options={[
               { value: '', label: 'All Brands' },
-              ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name })),
+              ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
             ]}
           />
           <SearchableSelect
@@ -791,7 +792,7 @@ const ProductSales: React.FC = () => {
             }}
             options={[
               { value: '', label: 'All Categories' },
-              ...(categories ?? []).map((c) => ({ value: String(c.id), label: c.name })),
+              ...(categories ?? []).map((c) => ({ value: String(c.id), label: c.name, inactive: isEntityInactive(c) })),
             ]}
           />
           <SearchableSelect

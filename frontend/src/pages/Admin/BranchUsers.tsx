@@ -15,6 +15,8 @@ import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
+import InactiveBadge from '../../components/InactiveBadge';
 
 interface RoleOption {
   id: number;
@@ -378,6 +380,7 @@ const BranchUsers: React.FC = () => {
               ...(branches ?? []).map((branch) => ({
                 value: String(branch.id),
                 label: `${branch.name} (${branch.code})`,
+                inactive: isEntityInactive(branch),
               })),
             ]}
             placeholder="All branches"
@@ -429,6 +432,7 @@ const BranchUsers: React.FC = () => {
               options={(branches ?? []).map((branch) => ({
                 value: String(branch.id),
                 label: `${branch.name} (${branch.code})`,
+                inactive: isEntityInactive(branch),
               }))}
               placeholder="Select branch"
               searchPlaceholder="Search branches..."
@@ -620,7 +624,7 @@ const BranchUsers: React.FC = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="0">All brands</option>
-                {(brands ?? []).map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
+                {(brands ?? []).map((b) => <option key={b.id} value={String(b.id)}>{labelWithStatus(b.name, b)}</option>)}
               </select>
             </div>
           </div>
@@ -672,7 +676,10 @@ const BranchUsers: React.FC = () => {
                           />
                         </td>
                         <td className="p-2 font-medium text-gray-800">
-                          {branch.name} <span className="text-gray-500 font-normal">({branch.code})</span>
+                          <span className="inline-flex items-center gap-1.5">
+                            {branch.name} <span className="text-gray-500 font-normal">({branch.code})</span>
+                            {isEntityInactive(branch) && <InactiveBadge />}
+                          </span>
                         </td>
                         <td className="p-2">
                           {alreadyAssigned && (

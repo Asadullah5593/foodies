@@ -22,6 +22,7 @@ import apiClient from '../../utils/apiClient';
 import { confirmDialog } from '../../utils/sweetAlert';
 import ValidityFields, { emptyValidity } from '../../components/ValidityFields';
 import BankCardBinLookup from '../../components/BankCardBinLookup';
+import { isEntityInactive } from '../../utils/entityStatus';
 
 type Card = BrandScoped & {
   id: number;
@@ -104,7 +105,7 @@ const BankCards: React.FC = () => {
     },
   });
 
-  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name }));
+  const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name, inactive: isEntityInactive(b) }));
   const brandNameById = useMemo(
     () => new Map((brands ?? []).map((b) => [b.id, b.name])),
     [brands],

@@ -11,6 +11,7 @@ import { adminService } from '../../../services/api/adminService';
 import { useAuth } from '../../../contexts/AuthContext';
 import { RiderWithBrands } from '../../../types';
 import RiderHrmHeader from './RiderHrmHeader';
+import { isEntityInactive } from '../../../utils/entityStatus';
 
 type BrandOption = { id: number; name: string };
 
@@ -34,7 +35,7 @@ const RiderPoolSharing: React.FC = () => {
     enabled: isOwnerGM,
   });
   const brandOptions = useMemo(
-    () => (brands ?? []).map((b) => ({ id: b.id, name: b.name })),
+    () => (brands ?? []).map((b) => ({ id: b.id, name: b.name, inactive: isEntityInactive(b) })),
     [brands],
   );
 

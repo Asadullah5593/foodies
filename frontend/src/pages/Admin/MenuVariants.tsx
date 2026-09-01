@@ -21,6 +21,7 @@ import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { confirmDialog } from '../../utils/sweetAlert';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 
 const MenuVariants: React.FC = () => {
   const queryClient = useQueryClient();
@@ -79,7 +80,7 @@ const MenuVariants: React.FC = () => {
   const variantList = Array.isArray(variants) ? variants : [];
   const variantTypeahead = useTypeaheadSuggestions({
     query: searchVariant,
-    options: variantList.map((v) => ({ id: String(v.id), label: v.name ?? '' })),
+    options: variantList.map((v) => ({ id: String(v.id), label: labelWithStatus(v.name ?? '', v) })),
     minChars: 2,
     limit: 8,
   });
@@ -215,7 +216,7 @@ const MenuVariants: React.FC = () => {
               { value: '', label: 'Select a menu item' },
               ...(menuItems ?? []).map((item: { id: number; name: string }) => ({
                 value: String(item.id),
-                label: item.name,
+                label: item.name, inactive: isEntityInactive(item),
               })),
             ]}
             placeholder="Select a menu item"
@@ -284,7 +285,7 @@ const MenuVariants: React.FC = () => {
               { value: '', label: 'Select Menu Item' },
               ...(menuItems ?? []).map((item: { id: number; name: string }) => ({
                 value: String(item.id),
-                label: item.name,
+                label: item.name, inactive: isEntityInactive(item),
               })),
             ]}
             placeholder="Select Menu Item"
@@ -395,7 +396,7 @@ const MenuVariants: React.FC = () => {
                   { value: '', label: 'Select menu item' },
                   ...(menuItems ?? []).map((item: { id: number; name: string }) => ({
                     value: String(item.id),
-                    label: item.name,
+                    label: item.name, inactive: isEntityInactive(item),
                   })),
                 ]}
                 placeholder="Select menu item"
