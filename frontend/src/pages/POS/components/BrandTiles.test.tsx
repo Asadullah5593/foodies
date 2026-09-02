@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import BrandTiles from './BrandTiles';
+import BrandTiles, { brandMonogram } from './BrandTiles';
 
 const BRANDS = [
   { id: 25, name: 'Fireaway', logo_url: 'https://cdn.example/fireaway.png' },
@@ -8,10 +8,17 @@ const BRANDS = [
   { id: 27, name: 'Loranzo', logo_url: 'https://cdn.example/loranzo.png', is_active: false },
 ];
 
+const COUNTS = { 25: 42, 23: 34, 27: 51 };
+
 const setup = (selectedBrandId: number | null = null, brands = BRANDS) => {
   const onBrandChange = vi.fn();
   render(
-    <BrandTiles brands={brands} selectedBrandId={selectedBrandId} onBrandChange={onBrandChange} />,
+    <BrandTiles
+      brands={brands}
+      selectedBrandId={selectedBrandId}
+      onBrandChange={onBrandChange}
+      itemCounts={COUNTS}
+    />,
   );
   return { onBrandChange, group: screen.getByRole('group', { name: 'Brand' }) };
 };
@@ -20,7 +27,7 @@ describe('BrandTiles — behaviour matches the dropdown it replaced', () => {
   it('puts All first and selects it, so nothing changes until a brand is tapped', () => {
     const { group } = setup(null);
     const buttons = within(group).getAllByRole('button');
-    expect(buttons[0].textContent).toBe('All');
+    expect(buttons[0].textContent).toContain('All brands');
     expect(buttons[0].getAttribute('aria-pressed')).toBe('true');
   });
 
@@ -32,7 +39,7 @@ describe('BrandTiles — behaviour matches the dropdown it replaced', () => {
 
   it('tapping All clears the filter', () => {
     const { onBrandChange, group } = setup(25);
-    fireEvent.click(within(group).getByText('All'));
+    fireEvent.click(within(group).getByLabelText('All brands'));
     expect(onBrandChange).toHaveBeenCalledWith(null);
   });
 
@@ -70,7 +77,7 @@ describe('BrandTiles — the logo, and what stands in for it', () => {
     const { group } = setup();
     const tile = within(group).getByLabelText('Peperi Co');
     expect(tile.querySelector('img')).toBeNull();
-    expect(tile.textContent).toBe('Peperi Co');
+    expect(tile.textContent).toContain('PC');
   });
 
   it('falls back to the name when the logo fails to load', () => {
@@ -80,7 +87,7 @@ describe('BrandTiles — the logo, and what stands in for it', () => {
     const tile = within(group).getByLabelText('Fireaway');
     fireEvent.error(tile.querySelector('img')!);
     expect(within(group).getByLabelText('Fireaway').querySelector('img')).toBeNull();
-    expect(within(group).getByLabelText('Fireaway').textContent).toBe('Fireaway');
+    expect(within(group).getByLabelText('Fireaway').textContent).toContain('FI');
   });
 
   it('a broken logo on one brand does not affect another', () => {
@@ -113,5 +120,57 @@ describe('BrandTiles — deactivated brands', () => {
     const { onBrandChange, group } = setup();
     fireEvent.click(within(group).getByLabelText('Loranzo (inactive)'));
     expect(onBrandChange).toHaveBeenCalledWith(27);
+  });
+});
+
+describe('BrandTiles — item counts, as the design asks', () => {
+  it('shows how many items each brand holds', () => {
+    const { group } = setup();
+    expect(within(group).getByLabelText('Fireaway').textContent).toContain('42 items');
+    expect(within(group).getByLabelText('Peperi Co').textContent).toContain('34 items');
+  });
+
+  it('the All tab totals them', () => {
+    const { group } = setup();
+    expect(within(group).getByLabelText('All brands').textContent).toContain('127 items');
+  });
+
+  it('an explicit total wins — the menu may hold items with no brand', () => {
+    const onBrandChange = vi.fn();
+    render(
+      <BrandTiles
+        brands={BRANDS}
+        selectedBrandId={null}
+        onBrandChange={onBrandChange}
+        itemCounts={COUNTS}
+        totalItemCount={130}
+      />,
+    );
+    expect(screen.getByLabelText('All brands').textContent).toContain('130 items');
+  });
+
+  it('reads zero rather than blank for a brand with nothing on this order type', () => {
+    const onBrandChange = vi.fn();
+    render(
+      <BrandTiles brands={BRANDS} selectedBrandId={null} onBrandChange={onBrandChange} />,
+    );
+    expect(screen.getByLabelText('Fireaway').textContent).toContain('0 items');
+  });
+});
+
+describe('brandMonogram', () => {
+  it('takes the initials of the first two words', () => {
+    expect(brandMonogram('Wok & Go')).toBe('WG');
+    expect(brandMonogram('Peperi Co')).toBe('PC');
+  });
+
+  it('takes two letters from a single-word name', () => {
+    expect(brandMonogram('Loranzo')).toBe('LO');
+  });
+
+  it('survives punctuation and empties rather than rendering nothing', () => {
+    expect(brandMonogram('  ')).toBe('?');
+    expect(brandMonogram('')).toBe('?');
+    expect(brandMonogram("O'Briens Pizza")).toBe('OP');
   });
 });

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import BrandTiles from './components/BrandTiles';
 import { useQuery, useMutation, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { MdClose, MdOutlineWarningAmber, MdOutlineSchedule, MdOutlineRestaurantMenu, MdOutlineStorefront } from 'react-icons/md';
@@ -196,6 +197,15 @@ const OrderTaking: React.FC = () => {
       isMenuItemAvailableForOrderType(item.available_for_order_types ?? null, effectiveOrderType),
     );
   }, [rawMenu, effectiveOrderType]);
+  /** Items each brand holds for the order type in hand — what the tabs show. */
+  const menuCountsByBrand = React.useMemo(() => {
+    const counts: Record<number, number> = {};
+    (menuAll as MenuItem[]).forEach((item) => {
+      if (item.brand_id == null) return;
+      counts[item.brand_id] = (counts[item.brand_id] ?? 0) + 1;
+    });
+    return counts;
+  }, [menuAll]);
   const menuByBrand = selectedBrandId == null
     ? menuAll
     : menuAll.filter((item: MenuItem) => item.brand_id === selectedBrandId);
@@ -1795,6 +1805,18 @@ const OrderTaking: React.FC = () => {
       <POSLayout
         centerSection={
           <>
+            {/* Brands lead: a full-width tab strip above everything else, each
+                tab carrying how many items it holds for the order type in hand.
+                Only when this till sells more than one. */}
+            {brands.length > 1 && (
+              <BrandTiles
+                brands={brands}
+                selectedBrandId={selectedBrandId}
+                onBrandChange={setSelectedBrandId}
+                itemCounts={menuCountsByBrand}
+                totalItemCount={menuAll.length}
+              />
+            )}
             {/* Order type — full-width screen-mode tab strip (its own row, the
                 primary control), with the menu filters demoted to a quieter
                 row below. */}
@@ -1811,9 +1833,6 @@ const OrderTaking: React.FC = () => {
                 searchInputRef={searchInputRefMobile}
                 openShift={openShift}
                 branchId={branchId}
-                brands={brands}
-                selectedBrandId={selectedBrandId}
-                onBrandChange={filtersProps.onBrandChange}
                 effectiveBranchId={effectiveBranchId}
                 posBranches={posBranches}
                 onBranchChange={filtersProps.onBranchChange}
@@ -1832,9 +1851,6 @@ const OrderTaking: React.FC = () => {
                 searchInputRef={searchInputRefDesktop}
                 openShift={openShift}
                 branchId={branchId}
-                brands={brands}
-                selectedBrandId={selectedBrandId}
-                onBrandChange={filtersProps.onBrandChange}
                 effectiveBranchId={effectiveBranchId}
                 posBranches={posBranches}
                 onBranchChange={filtersProps.onBranchChange}
