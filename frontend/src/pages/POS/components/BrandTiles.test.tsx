@@ -174,3 +174,52 @@ describe('brandMonogram', () => {
     expect(brandMonogram("O'Briens Pizza")).toBe('OP');
   });
 });
+
+describe('BrandTiles — a till that sells one brand', () => {
+  const ONE = [{ id: 27, name: 'Loranzo', logo_url: null }];
+  const one = (selectedBrandId: number | null = null) => {
+    const onBrandChange = vi.fn();
+    render(
+      <BrandTiles
+        brands={ONE}
+        selectedBrandId={selectedBrandId}
+        onBrandChange={onBrandChange}
+        itemCounts={{ 27: 51 }}
+      />,
+    );
+    return { onBrandChange, group: screen.getByRole('group', { name: 'Brand' }) };
+  };
+
+  it('names the brand instead of showing nothing at all', () => {
+    // The dropdown hid itself entirely for a one-brand till, so the cashier was
+    // never told which brand they were selling.
+    const { group } = one();
+    expect(within(group).getByLabelText('Loranzo')).toBeTruthy();
+    expect(within(group).getByLabelText('Loranzo').textContent).toContain('51 items');
+  });
+
+  it('shows it as selected even though nothing is filtered', () => {
+    const { group } = one(null);
+    expect(within(group).getByLabelText('Loranzo').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('drops the All tab, which would name the same menu twice', () => {
+    const { group } = one();
+    expect(within(group).queryByLabelText('All brands')).toBeNull();
+    expect(within(group).getAllByRole('button')).toHaveLength(1);
+  });
+
+  it('still offers All once there is more than one brand to choose between', () => {
+    const onBrandChange = vi.fn();
+    render(
+      <BrandTiles
+        brands={[...ONE, { id: 23, name: 'Peperi Co', logo_url: null }]}
+        selectedBrandId={null}
+        onBrandChange={onBrandChange}
+      />,
+    );
+    const group = screen.getByRole('group', { name: 'Brand' });
+    expect(within(group).getByLabelText('All brands').getAttribute('aria-pressed')).toBe('true');
+    expect(within(group).getByLabelText('Loranzo').getAttribute('aria-pressed')).toBe('false');
+  });
+});

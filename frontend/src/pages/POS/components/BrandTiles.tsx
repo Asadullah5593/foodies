@@ -102,7 +102,13 @@ const BrandTiles: React.FC<{
     </button>
   );
 
-  const allActive = selectedBrandId == null;
+  // A till that sells one brand still says which one — it just has nothing to
+  // choose between. The single tab reads as selected whatever the filter holds,
+  // and All is dropped because it would name the same menu twice. Nothing is
+  // filtered: with one brand the filter is a no-op, so this stays a matter of
+  // what the cashier is told, not of what the menu shows.
+  const single = brands.length === 1 ? brands[0] : null;
+  const allActive = single ? false : selectedBrandId == null;
 
   return (
     <div
@@ -110,7 +116,8 @@ const BrandTiles: React.FC<{
       aria-label="Brand"
       className="flex items-stretch border-b border-[#F1F2F5] bg-[#FCFCFD] dark:border-slate-700 dark:bg-slate-800"
     >
-      {tab(
+      {!single &&
+        tab(
         '__all',
         allActive,
         false,
@@ -134,7 +141,7 @@ const BrandTiles: React.FC<{
         allLabel,
       )}
       {brands.map((b) => {
-        const active = selectedBrandId === b.id;
+        const active = single ? true : selectedBrandId === b.id;
         const inactive = isEntityInactive(b);
         const logo = failed[b.id] ? '' : getImageFullUrl(b.logo_url);
         return tab(
