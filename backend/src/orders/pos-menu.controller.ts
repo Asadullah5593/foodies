@@ -182,12 +182,25 @@ export class PosMenuController {
             branch?.supportsPickup === true;
         const supports_delivery = branch?.supportsDelivery === true;
         type BranchWithBrands = {
-            branchBrands?: Array<{ brandId: number; brand?: { name: string } }>;
+            branchBrands?: Array<{
+                brandId: number;
+                brand?: {
+                    name: string;
+                    logoUrl?: string | null;
+                    isActive?: boolean;
+                };
+            }>;
         };
         const branchBrands = (branch as BranchWithBrands)?.branchBrands ?? [];
+        // logo_url so the till can offer brands as their marks rather than a
+        // dropdown, and is_active so a deactivated one reads as deactivated —
+        // the till used to be sent neither, so its "(Inactive)" mark could
+        // never appear no matter what the brand said.
         let brands = branchBrands.map((bb) => ({
             id: bb.brandId,
             name: bb.brand?.name ?? '',
+            logo_url: bb.brand?.logoUrl ?? null,
+            is_active: bb.brand?.isActive !== false,
         }));
         // Brand-locked till: only the user's own brand(s) are sold here.
         const lockedBrandIds = user.allowedBrandIds ?? null;

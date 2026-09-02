@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import POSTopBar from './POSTopBar';
 
@@ -64,24 +64,38 @@ describe('POSTopBar', () => {
     expect(screen.queryByRole('button', { name: /Back to Orders/ })).toBeNull();
   });
 
-  it('carries the brand and branch dropdowns', () => {
+  it('offers each brand as its own tile, All first and selected', () => {
     renderBar();
-    const brand = screen.getByLabelText('Brand') as HTMLSelectElement;
-    expect([...brand.options].map((o) => o.text)).toEqual([
-      'All brands',
-      'Fireaway',
-      'Peperi. Co',
-    ]);
-    fireEvent.change(brand, { target: { value: '23' } });
-    expect(onBrandChange).toHaveBeenCalledWith(23);
+    const group = screen.getByRole('group', { name: 'Brand' });
+    expect(
+      within(group)
+        .getAllByRole('button')
+        .map((b) => b.getAttribute('aria-label') ?? b.textContent),
+    ).toEqual(['All', 'Fireaway', 'Peperi. Co']);
+    // Nothing picked yet, so the whole menu is showing — same as before.
+    expect(within(group).getByText('All').getAttribute('aria-pressed')).toBe('true');
 
+    fireEvent.click(within(group).getByLabelText('Peperi. Co'));
+    expect(onBrandChange).toHaveBeenCalledWith(23);
+  });
+
+  it('going back to All clears the brand filter', () => {
+    renderBar({ selectedBrandId: 23 });
+    const group = screen.getByRole('group', { name: 'Brand' });
+    expect(within(group).getByText('All').getAttribute('aria-pressed')).toBe('false');
+    fireEvent.click(within(group).getByText('All'));
+    expect(onBrandChange).toHaveBeenCalledWith(null);
+  });
+
+  it('carries the branch dropdown', () => {
+    renderBar();
     const branch = screen.getByLabelText('Branch') as HTMLSelectElement;
     expect(branch.value).toBe('11');
     fireEvent.change(branch, { target: { value: '10' } });
     expect(onBranchChange).toHaveBeenCalledWith(10);
   });
 
-  it('hides the brand dropdown for a single-brand till', () => {
+  it('shows no brand control at all for a single-brand till', () => {
     renderBar({ brands: [{ id: 25, name: 'Fireaway' }] });
     expect(screen.queryByLabelText('Brand')).toBeNull();
     expect(screen.getByLabelText('Branch')).toBeTruthy();
