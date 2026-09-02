@@ -16,6 +16,8 @@ export const Permissions = {
     ORDERS_PLACE_CALL_CENTER: 'orders:place:call-center',
     /** Marker: the account may punch delivery orders only (dine-in/takeaway refused). */
     ORDERS_CREATE_DELIVERY_ONLY: 'orders:create:delivery-only',
+    /** Look up a customer's saved delivery addresses by phone at the till. */
+    ORDERS_CUSTOMER_ADDRESSES_VIEW: 'orders:customer-addresses:view',
     // Discounts (apply at POS vs manage in admin)
     DISCOUNTS_APPLY: 'discounts:apply',
     DISCOUNTS_MANAGE: 'discounts:manage',
