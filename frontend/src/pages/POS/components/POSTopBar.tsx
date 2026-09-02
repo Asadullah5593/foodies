@@ -1,5 +1,5 @@
 import React from 'react';
-import { labelWithStatus } from '../../../utils/entityStatus';
+import BrandTiles from './BrandTiles';
 import { MdSearch } from 'react-icons/md';
 import TypeaheadDropdown from '../../../components/TypeaheadDropdown';
 import type { TypeaheadOption } from '../../../hooks/useTypeaheadSuggestions';
@@ -63,19 +63,11 @@ const POSTopBar: React.FC<POSTopBarProps> = ({
     <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#F1F2F5] bg-foodies-surface px-5 py-3 dark:border-slate-700 dark:bg-slate-800">
       <div className="flex flex-wrap items-center gap-2">
         {brands.length > 1 && (
-          <select
-            value={selectedBrandId != null ? String(selectedBrandId) : ''}
-            onChange={(e) => onBrandChange(e.target.value === '' ? null : Number(e.target.value))}
-            aria-label="Brand"
-            className={selectCls}
-          >
-            <option value="">All brands</option>
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {labelWithStatus(b.name, b)}
-              </option>
-            ))}
-          </select>
+          <BrandTiles
+            brands={brands}
+            selectedBrandId={selectedBrandId}
+            onBrandChange={onBrandChange}
+          />
         )}
         <select
           value={effectiveBranchId != null ? String(effectiveBranchId) : ''}
