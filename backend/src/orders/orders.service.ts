@@ -42,6 +42,7 @@ import {
 import { ShiftsService } from '../shifts/shifts.service';
 import { BranchesService } from '../branches/branches.service';
 import { CustomersService } from '../customers/customers.service';
+import { CustomerAddressesService } from '../customer-addresses/customer-addresses.service';
 import { InventoryConsumptionService } from '../inventory/inventory-consumption.service';
 import { normalizePakistaniPhone } from '../utils/phone';
 import { assertMenuItemAvailableForOrderType } from '../utils/menu-order-type';
@@ -203,6 +204,7 @@ export class OrdersService {
         private riderAssignmentLedgerRepo: Repository<RiderAssignmentLedger>,
         private menuService: MenuService,
         private loyaltyService: LoyaltyService,
+        private customerAddresses: CustomerAddressesService,
         private shiftsService: ShiftsService,
         private branchesService: BranchesService,
         private customersService: CustomersService,
@@ -2423,6 +2425,24 @@ export class OrdersService {
         const orders = await Promise.all(
             createdOrderIds.map((id) => this.findOne(id)),
         );
+        // Remember where this went, so the next order for this number can offer
+        // it instead of asking again. Outside the transaction and deliberately
+        // not awaited: an address book is a convenience, and nothing about it
+        // may cost a customer their order.
+        if (dto.order_type === 'delivery') {
+            void this.customerAddresses.rememberFromOrder({
+                tenantId,
+                brandId: firstBrandId ?? null,
+                customerId: customerId ?? null,
+                customerPhone:
+                    customerPhoneNormalized ??
+                    dto.customer_phone?.trim() ??
+                    null,
+                address: dto.delivery_address ?? null,
+                latitude: deliveryLatitude,
+                longitude: deliveryLongitude,
+            });
+        }
         // Notify the till/cashier of incoming online (app/web/kiosk) orders.
         void this.dispatchOnlineOrderNotifications(createdOrderIds);
         const responseWalletType = mapSourceToWalletType(source);

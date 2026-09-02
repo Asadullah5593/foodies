@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { CustomerAddressesModule } from '../customer-addresses/customer-addresses.module';
 import { AuthModule } from '../auth/auth.module';
 import { Order } from '../entities/order.entity';
 import { OrderItem } from '../entities/order-item.entity';
@@ -48,6 +49,7 @@ import { FbrModule } from '../fbr/fbr.module';
 @Module({
     imports: [
         AuthModule,
+        CustomerAddressesModule,
         PushNotificationsModule,
         TypeOrmModule.forFeature([
             Order,
