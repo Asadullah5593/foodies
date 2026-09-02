@@ -64,29 +64,10 @@ describe('POSTopBar', () => {
     expect(screen.queryByRole('button', { name: /Back to Orders/ })).toBeNull();
   });
 
-  it('offers each brand as its own tile, All first and selected', () => {
-    renderBar();
-    const group = screen.getByRole('group', { name: 'Brand' });
-    expect(
-      within(group)
-        .getAllByRole('button')
-        .map((b) => b.getAttribute('aria-label') ?? b.textContent),
-    ).toEqual(['All', 'Fireaway', 'Peperi. Co']);
-    // Nothing picked yet, so the whole menu is showing — same as before.
-    expect(within(group).getByText('All').getAttribute('aria-pressed')).toBe('true');
 
-    fireEvent.click(within(group).getByLabelText('Peperi. Co'));
-    expect(onBrandChange).toHaveBeenCalledWith(23);
-  });
 
-  it('going back to All clears the brand filter', () => {
-    renderBar({ selectedBrandId: 23 });
-    const group = screen.getByRole('group', { name: 'Brand' });
-    expect(within(group).getByText('All').getAttribute('aria-pressed')).toBe('false');
-    fireEvent.click(within(group).getByText('All'));
-    expect(onBrandChange).toHaveBeenCalledWith(null);
-  });
-
+  // The brand control moved out of this bar into its own tab strip above it;
+  // BrandTiles.test.tsx covers it.
   it('carries the branch dropdown', () => {
     renderBar();
     const branch = screen.getByLabelText('Branch') as HTMLSelectElement;
@@ -95,11 +76,6 @@ describe('POSTopBar', () => {
     expect(onBranchChange).toHaveBeenCalledWith(10);
   });
 
-  it('shows no brand control at all for a single-brand till', () => {
-    renderBar({ brands: [{ id: 25, name: 'Fireaway' }] });
-    expect(screen.queryByLabelText('Brand')).toBeNull();
-    expect(screen.getByLabelText('Branch')).toBeTruthy();
-  });
 
   it('reports typing in the menu search', () => {
     renderBar();
