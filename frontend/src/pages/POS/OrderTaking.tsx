@@ -1807,8 +1807,10 @@ const OrderTaking: React.FC = () => {
           <>
             {/* Brands lead: a full-width tab strip above everything else, each
                 tab carrying how many items it holds for the order type in hand.
-                Only when this till sells more than one. */}
-            {brands.length > 1 && (
+                Shown for a one-brand till too — it has nothing to choose
+                between, but the cashier is still told which brand they are
+                selling, which the dropdown never did. */}
+            {brands.length > 0 && (
               <BrandTiles
                 brands={brands}
                 selectedBrandId={selectedBrandId}
