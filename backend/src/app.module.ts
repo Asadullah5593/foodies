@@ -27,6 +27,7 @@ import { BranchMenuItemsModule } from './branch-menu-items/branch-menu-items.mod
 import { RolesModule } from './roles/roles.module';
 import { KitchenModule } from './kitchen/kitchen.module';
 import { CustomersModule } from './customers/customers.module';
+import { CustomerAddressesModule } from './customer-addresses/customer-addresses.module';
 import { LoyaltyModule } from './loyalty/loyalty.module';
 import { ConsumerModule } from './consumer/consumer.module';
 import { UploadModule } from './upload/upload.module';
@@ -98,6 +99,7 @@ import { PaymentsEpgModule } from './payments-epg/payments-epg.module';
         RolesModule,
         KitchenModule,
         CustomersModule,
+        CustomerAddressesModule,
         LoyaltyModule,
         ConsumerModule,
         UploadModule,

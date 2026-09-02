@@ -3,6 +3,13 @@ import { useQuery } from '@tanstack/react-query';
 import { QRCodeSVG } from 'qrcode.react';
 import CustomerSearchSelect from '../../../components/CustomerSearchSelect';
 import AddressAutocomplete from '../../../components/AddressAutocomplete';
+import SavedAddressPicker, {
+  SavedAddress,
+  placeFromSavedAddress,
+} from './SavedAddressPicker';
+import { useHasPermission } from '../../../hooks/useHasPermission';
+import apiClient from '../../../utils/apiClient';
+import { normalizePakistaniPhone } from '../../../utils/phone';
 import Modal from '../../../components/Modal';
 import Button from '../../../components/Button';
 import { adminService } from '../../../services/api/adminService';
@@ -92,6 +99,56 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
 
   const [showVouchers, setShowVouchers] = useState(false);
   const phone = customerPhone.trim();
+
+  // —— Saved delivery addresses ——
+  // Behind its own permission: a complete number is all it takes to learn where
+  // somebody lives, so the till only asks when the account is allowed to.
+  const canSeeSavedAddresses = useHasPermission('orders:customer-addresses:view');
+  const [pickedSavedId, setPickedSavedId] = useState<number | null>(null);
+  // Only a complete number is looked up — a partial one would let the till be
+  // walked through the customer book a prefix at a time.
+  const lookupPhone = normalizePakistaniPhone(phone);
+  const { data: savedAddresses = [] } = useQuery<SavedAddress[]>({
+    queryKey: ['pos-saved-addresses', lookupPhone],
+    queryFn: async () => {
+      const res = await apiClient.get<{ addresses: SavedAddress[] }>(
+        '/pos/customers/addresses',
+        { params: { phone: lookupPhone } },
+      );
+      return res.data.addresses ?? [];
+    },
+    enabled:
+      canSeeSavedAddresses &&
+      effectiveOrderType === 'delivery' &&
+      lookupPhone != null,
+    staleTime: 60_000,
+  });
+
+  /**
+   * Restore the address AND its point together. A delivery order is refused
+   * without coordinates, priced by distance from them, and the rider navigates
+   * to them — filling in only the text would look like it worked and quietly
+   * misprice the order.
+   */
+  const pickSavedAddress = (a: SavedAddress) => {
+    const place = placeFromSavedAddress(a);
+    if (!place) return;
+    onDeliveryAddressChange(a.address);
+    onDeliveryPlaceChange(place);
+    setPickedSavedId(a.id);
+  };
+
+  const clearSavedAddress = () => {
+    setPickedSavedId(null);
+    onDeliveryAddressChange('');
+  };
+
+  // Typing over a picked address makes the stored point wrong for the words on
+  // screen, so the selection stops counting as one.
+  const handleDeliveryAddressChange = (value: string) => {
+    if (pickedSavedId != null) setPickedSavedId(null);
+    onDeliveryAddressChange(value);
+  };
   const { data: voucherData, isFetching: vouchersLoading } = useQuery({
     queryKey: ['pos-customer-vouchers', phone],
     queryFn: () => adminService.getCustomerVouchers(phone),
@@ -144,9 +201,17 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
       {effectiveOrderType === 'delivery' && (
         <div>
           <label className="block text-sm font-medium text-foodies-textPrimary mb-1.5">Delivery address *</label>
+          {canSeeSavedAddresses && (
+            <SavedAddressPicker
+              addresses={savedAddresses}
+              selectedId={pickedSavedId}
+              onPick={pickSavedAddress}
+              onUseNew={clearSavedAddress}
+            />
+          )}
           <AddressAutocomplete
             value={deliveryAddress}
-            onChange={onDeliveryAddressChange}
+            onChange={handleDeliveryAddressChange}
             onPick={onDeliveryPlaceChange}
             picked={deliveryPlace}
             onUnavailable={onDeliveryPlacesUnavailable}
