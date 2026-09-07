@@ -56,13 +56,19 @@ export class PosMenuController {
             tenantId: number | null;
             isSuperAdmin?: boolean;
             allowedBranchIds?: number[] | null;
+            allowedBrandIds?: number[] | null;
         },
     ): Promise<
         { id: number; name: string; code: string; is_active: boolean }[]
     > {
+        // Brand-locked tills only see a branch where their OWN brand's shift is
+        // open — otherwise the branch looked sellable and the till discovered
+        // the refusal at checkout instead.
         const openBranchIds = scopeBranchIds(
             user,
-            await this.shiftsService.findBranchIdsWithOpenShift(),
+            await this.shiftsService.findBranchIdsWithOpenShift(
+                user.allowedBrandIds ?? null,
+            ),
         );
         if (openBranchIds.length === 0) return [];
 

@@ -322,23 +322,6 @@ export class ShiftsService {
         return this.toResponse(loaded ?? shift);
     }
 
-    /** Get the current open shift for a branch, if any (legacy: any brand). */
-    async findOpenByBranch(
-        branchId: number,
-    ): Promise<{ id: number; shift_number: string; opened_at: string } | null> {
-        const shift = await this.repo.findOne({
-            where: { branchId, status: 'open' },
-            order: { openedAt: 'DESC' },
-        });
-        if (!shift) return null;
-        return {
-            id: shift.id,
-            shift_number: shift.shiftNumber,
-            opened_at:
-                shift.openedAt?.toISOString() ?? new Date().toISOString(),
-        };
-    }
-
     /** Open shift for a specific brand at a branch, if any. */
     async findOpenByBranchAndBrand(
         branchId: number,
@@ -371,13 +354,35 @@ export class ShiftsService {
         }));
     }
 
-    /** Branch IDs that currently have an open shift (for POS branch list). */
-    async findBranchIdsWithOpenShift(): Promise<number[]> {
+    /**
+     * Branch IDs with an open shift for at least one brand the caller may sell
+     * (null = any brand), for the POS branch list.
+     *
+     * Brand-blind before, so ANY brand's open shift advertised the branch as
+     * sellable and a brand-locked till was let into a branch where its own
+     * brand was closed — only finding out when the order POST refused it. A
+     * legacy NULL-brand shift authorizes nothing (findOpenByBranchAndBrand can
+     * never match one), so it does not count as open here either.
+     */
+    async findBranchIdsWithOpenShift(
+        allowedBrandIds: number[] | null = null,
+    ): Promise<number[]> {
+        if (allowedBrandIds != null && allowedBrandIds.length === 0) return [];
         const shifts = await this.repo.find({
             where: { status: 'open' },
-            select: ['branchId'],
+            select: ['branchId', 'brandId'],
         });
-        const ids = new Set(shifts.map((s) => s.branchId));
+        const allowed =
+            allowedBrandIds == null ? null : new Set(allowedBrandIds);
+        const ids = new Set(
+            shifts
+                .filter(
+                    (s) =>
+                        s.brandId != null &&
+                        (allowed == null || allowed.has(s.brandId)),
+                )
+                .map((s) => s.branchId),
+        );
         return Array.from(ids);
     }
 
