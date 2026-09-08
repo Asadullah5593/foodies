@@ -482,12 +482,23 @@ export class KioskService {
                     `Kiosk order cannot be finalized (status: ${row.status})`,
                 );
 
-            // Cash-drawer reconciliation: require an open shift for this branch.
-            const openShift =
-                await this.shiftsService.findOpenByBranch(branchId);
+            // Cash-drawer reconciliation: the shift that will collect this
+            // money is the one for THIS brand at this branch. Shifts are per
+            // (branch, brand) and ShiftsService.getCollectedAmounts matches
+            // orders on the shift's brandId, so gating on "any open shift at
+            // the branch" let another brand's shift authorize a sale whose
+            // cash then reconciled against no shift at all.
+            if (row.brandId == null)
+                throw new BadRequestException(
+                    'This kiosk order is not attached to a single brand and cannot be finalized.',
+                );
+            const openShift = await this.shiftsService.findOpenByBranchAndBrand(
+                branchId,
+                row.brandId,
+            );
             if (!openShift)
                 throw new ForbiddenException(
-                    `No shift is open for branch ID ${branchId}. Open a shift in Admin → Shifts before finalizing kiosk orders.`,
+                    `No shift is open for this brand at branch ID ${branchId}. Open the brand's shift in Admin → Shifts before finalizing kiosk orders.`,
                 );
 
             const dto: KioskOrderPayload = {

@@ -322,13 +322,22 @@ export class RoleAccessGuard implements CanActivate {
         // One row per branch, each naming the brands it locks the user to. A
         // single row without a lock means "all brands" somewhere, which is a
         // lock on nothing — the whole user goes unrestricted, as before.
+        //
+        // Reads branch_users ALONE. This used to INNER JOIN branch_brands and
+        // brands to prove tenancy, which silently deleted any assignment to a
+        // branch carrying no brands — and when the deleted row was the
+        // UNLOCKED one, the "some row has no lock" escape below stopped firing
+        // and the guard MANUFACTURED a lock out of the survivors, hiding every
+        // other brand's orders and reports with no sign of it in the UI.
+        // Tenancy is enforced downstream by orders.tenant_id and has no
+        // business narrowing a brand lock. Kept identical to
+        // AuthService.getAllowedBrandIdsForUser, which never had the join —
+        // the two answering differently was the bug.
         const rows = (await this.dataSource.query(
-            `SELECT DISTINCT ${BRAND_LOCK_SQL('bu')} AS brand_ids
+            `SELECT ${BRAND_LOCK_SQL('bu')} AS brand_ids
              FROM branch_users bu
-             INNER JOIN branch_brands bb ON bb.branch_id = bu.branch_id
-             INNER JOIN brands br ON br.id = bb.brand_id AND br.tenant_id = $1
-             WHERE bu.user_id = $2`,
-            [tenantId, userId],
+             WHERE bu.user_id = $1`,
+            [userId],
         )) as unknown as Array<{ brand_ids: number[] | null }>;
         if (rows.length === 0) return null;
         if (rows.some((r) => r.brand_ids == null)) return null;
