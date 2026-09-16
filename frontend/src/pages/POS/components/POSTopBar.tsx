@@ -1,12 +1,10 @@
 import React from 'react';
-import { labelWithStatus } from '../../../utils/entityStatus';
 import { MdSearch } from 'react-icons/md';
 import TypeaheadDropdown from '../../../components/TypeaheadDropdown';
 import type { TypeaheadOption } from '../../../hooks/useTypeaheadSuggestions';
 
 type OpenShift = { id: number; shift_number?: string } | null;
 type Branch = { id: number; name: string; code: string };
-type Brand = { id: number; name: string };
 
 export type POSTopBarProps = {
   search: string;
@@ -20,9 +18,6 @@ export type POSTopBarProps = {
   searchInputRef?: React.RefObject<HTMLInputElement>;
   openShift: OpenShift;
   branchId: number | null;
-  brands: Brand[];
-  selectedBrandId: number | null;
-  onBrandChange: (id: number | null) => void;
   effectiveBranchId: number | null;
   posBranches: Branch[] | undefined;
   onBranchChange: (id: number | null) => void;
@@ -50,9 +45,6 @@ const POSTopBar: React.FC<POSTopBarProps> = ({
   searchInputRef,
   openShift,
   branchId,
-  brands,
-  selectedBrandId,
-  onBrandChange,
   effectiveBranchId,
   posBranches,
   onBranchChange,
@@ -62,21 +54,7 @@ const POSTopBar: React.FC<POSTopBarProps> = ({
   return (
     <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#F1F2F5] bg-foodies-surface px-5 py-3 dark:border-slate-700 dark:bg-slate-800">
       <div className="flex flex-wrap items-center gap-2">
-        {brands.length > 1 && (
-          <select
-            value={selectedBrandId != null ? String(selectedBrandId) : ''}
-            onChange={(e) => onBrandChange(e.target.value === '' ? null : Number(e.target.value))}
-            aria-label="Brand"
-            className={selectCls}
-          >
-            <option value="">All brands</option>
-            {brands.map((b) => (
-              <option key={b.id} value={b.id}>
-                {labelWithStatus(b.name, b)}
-              </option>
-            ))}
-          </select>
-        )}
+
         <select
           value={effectiveBranchId != null ? String(effectiveBranchId) : ''}
           onChange={(e) => onBranchChange(e.target.value === '' ? null : Number(e.target.value))}

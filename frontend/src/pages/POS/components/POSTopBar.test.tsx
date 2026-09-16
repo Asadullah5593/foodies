@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import POSTopBar from './POSTopBar';
 
@@ -64,28 +64,18 @@ describe('POSTopBar', () => {
     expect(screen.queryByRole('button', { name: /Back to Orders/ })).toBeNull();
   });
 
-  it('carries the brand and branch dropdowns', () => {
-    renderBar();
-    const brand = screen.getByLabelText('Brand') as HTMLSelectElement;
-    expect([...brand.options].map((o) => o.text)).toEqual([
-      'All brands',
-      'Fireaway',
-      'Peperi. Co',
-    ]);
-    fireEvent.change(brand, { target: { value: '23' } });
-    expect(onBrandChange).toHaveBeenCalledWith(23);
 
+
+  // The brand control moved out of this bar into its own tab strip above it;
+  // BrandTiles.test.tsx covers it.
+  it('carries the branch dropdown', () => {
+    renderBar();
     const branch = screen.getByLabelText('Branch') as HTMLSelectElement;
     expect(branch.value).toBe('11');
     fireEvent.change(branch, { target: { value: '10' } });
     expect(onBranchChange).toHaveBeenCalledWith(10);
   });
 
-  it('hides the brand dropdown for a single-brand till', () => {
-    renderBar({ brands: [{ id: 25, name: 'Fireaway' }] });
-    expect(screen.queryByLabelText('Brand')).toBeNull();
-    expect(screen.getByLabelText('Branch')).toBeTruthy();
-  });
 
   it('reports typing in the menu search', () => {
     renderBar();
