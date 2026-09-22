@@ -30,6 +30,7 @@ import { bankCardOffers } from './bank-card-offer.util';
 import {
     offerAllowedOnChannel,
     sourceToOfferChannel,
+    offerAllowedOnOrderType,
 } from '../discounts/offer-preview.util';
 import { InvoiceTemplatesService } from '../invoices/invoice-templates.service';
 import { FbrService } from '../fbr/fbr.service';
@@ -46,6 +47,7 @@ import { CustomerAddressesService } from '../customer-addresses/customer-address
 import { InventoryConsumptionService } from '../inventory/inventory-consumption.service';
 import { normalizePakistaniPhone } from '../utils/phone';
 import { assertMenuItemAvailableForOrderType } from '../utils/menu-order-type';
+import { orderTypeToOfferOrderType } from '../discounts/offer-validity.util';
 import {
     priceModifiersForLine,
     type PricingModifierGroup,
@@ -1754,6 +1756,7 @@ export class OrdersService {
             tenantId,
             subtotal,
             source,
+            orderType: dto.order_type ?? null,
             branchId: primaryBranch.id,
             orderBrandId,
             lineDetails,
@@ -4907,6 +4910,7 @@ export class OrdersService {
             tenantId,
             subtotal,
             source,
+            orderType: dto.order_type ?? null,
             branchId: branch.id,
             orderBrandId,
             lineDetails,
@@ -6011,6 +6015,8 @@ export class OrdersService {
         ctx: {
             subtotal: number;
             source: string;
+            /** Raw request order_type; folded to delivery|pickup|dine_in for the gate. */
+            orderType: string | null;
             branchId: number;
             orderBrandId: number | null;
             lineDetails: {
@@ -6030,6 +6036,7 @@ export class OrdersService {
         const {
             subtotal,
             source,
+            orderType,
             branchId,
             orderBrandId,
             lineDetails,
@@ -6048,6 +6055,15 @@ export class OrdersService {
                 discount.channels,
                 discount.posOnly,
                 sourceToOfferChannel(source),
+            )
+        )
+            return null;
+        // Order-type restricted offers (e.g. a delivery-only BOGO). Unrestricted
+        // offers pass whatever the order type is.
+        if (
+            !offerAllowedOnOrderType(
+                discount.orderTypes,
+                orderTypeToOfferOrderType(orderType),
             )
         )
             return null;
@@ -6293,6 +6309,8 @@ export class OrdersService {
         tenantId: number;
         subtotal: number;
         source: string;
+        /** Raw request order_type, for order-type restricted offers. */
+        orderType: string | null;
         branchId: number;
         orderBrandId: number | null;
         lineDetails: {
@@ -6351,6 +6369,7 @@ export class OrdersService {
             tenantId,
             subtotal,
             source,
+            orderType,
             branchId,
             orderBrandId,
             lineDetails,
@@ -6456,6 +6475,7 @@ export class OrdersService {
         const evalCtx = {
             subtotal,
             source,
+            orderType,
             branchId,
             orderBrandId,
             lineDetails,

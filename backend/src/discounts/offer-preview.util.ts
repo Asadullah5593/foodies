@@ -7,6 +7,7 @@
  * shown as a single per-item number and are surfaced via has_cart_level_offer.
  * No OrdersService import — avoids a circular dependency with menu.service.
  */
+import { OfferOrderType } from './offer-validity.util';
 
 /** Sale channel an offer can be restricted to. */
 export type OfferChannel = 'pos' | 'app' | 'web' | 'kiosk';
@@ -44,6 +45,21 @@ export function offerAllowedOnChannel(
     return true;
 }
 
+/**
+ * Order-type gate, shared by the pricing engine and the menu price preview.
+ * `orderTypes` null/empty = every order type. An unknown order type (null)
+ * only passes unrestricted offers, mirroring the channel gate above — a
+ * preview must never promise a discount that would not survive checkout.
+ */
+export function offerAllowedOnOrderType(
+    orderTypes: string[] | null | undefined,
+    orderType: OfferOrderType | null,
+): boolean {
+    if (!Array.isArray(orderTypes) || orderTypes.length === 0) return true;
+    if (orderType == null) return false;
+    return orderTypes.includes(orderType);
+}
+
 export interface PreviewOffer {
     name: string;
     offerKind: string;
@@ -59,6 +75,8 @@ export interface PreviewOffer {
     requiresCard: boolean;
     posOnly: boolean;
     channels: string[] | null;
+    /** Optional: offers created before order-type scoping simply have none. */
+    orderTypes?: string[] | null;
     validFrom: Date | null;
     validUntil: Date | null;
     validTimeStart: string | null;
@@ -93,6 +111,13 @@ export function previewItemOffers(
         now: Date;
         /** Sale channel the preview is rendered for; null = only unrestricted offers. */
         channel?: OfferChannel | null;
+        /**
+         * Order type the preview is rendered for; null = only offers with no
+         * order-type restriction. Menu browsing usually has no order type yet,
+         * so a delivery-only offer stays out of the "was / now" rather than
+         * promising a price that checkout would not honour.
+         */
+        orderType?: OfferOrderType | null;
     },
 ): PreviewResult {
     const timeBoxed = (o: PreviewOffer) =>
@@ -103,6 +128,8 @@ export function previewItemOffers(
     const applies = (o: PreviewOffer): boolean => {
         if (o.requiresCard) return false;
         if (!offerAllowedOnChannel(o.channels, o.posOnly, opts.channel ?? null))
+            return false;
+        if (!offerAllowedOnOrderType(o.orderTypes, opts.orderType ?? null))
             return false;
         if (o.minOrderAmount != null) return false;
         if (o.type !== 'flat' && o.type !== 'percentage') return false;
@@ -185,6 +212,8 @@ export function previewItemOffers(
         if (o.offerKind !== 'discount' && o.offerKind !== 'product_promotion')
             return false;
         if (!offerAllowedOnChannel(o.channels, o.posOnly, opts.channel ?? null))
+            return false;
+        if (!offerAllowedOnOrderType(o.orderTypes, opts.orderType ?? null))
             return false;
         const cartShaped =
             o.applicationScope === 'whole_order' ||
