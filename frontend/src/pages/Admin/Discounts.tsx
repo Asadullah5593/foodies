@@ -21,6 +21,11 @@ import OfferChannelsField, {
   channelsToForm,
   ALL_OFFER_CHANNELS,
 } from '../../components/OfferChannelsField';
+import OfferOrderTypesField, {
+  ALL_OFFER_ORDER_TYPES,
+  orderTypesToApi,
+  orderTypesToForm,
+} from '../../components/OfferOrderTypesField';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   BrandScopeBadge,
@@ -65,6 +70,7 @@ const Discounts: React.FC = () => {
     eligibility_brand_ids: [] as number[],
     is_active: true,
     channels: [...ALL_OFFER_CHANNELS] as string[],
+    order_types: [...ALL_OFFER_ORDER_TYPES] as string[],
     valid_from: '',
     valid_until: '',
     valid_time_start: '',
@@ -164,6 +170,7 @@ const Discounts: React.FC = () => {
       eligibility_brand_ids: [],
       is_active: true,
       channels: [...ALL_OFFER_CHANNELS],
+      order_types: [...ALL_OFFER_ORDER_TYPES],
       valid_from: '',
       valid_until: '',
       valid_time_start: '',
@@ -196,6 +203,7 @@ const Discounts: React.FC = () => {
       eligibility_brand_ids: discount.eligibility_brand_ids ?? [],
       is_active: discount.is_active,
       channels: channelsToForm(discount.channels),
+      order_types: orderTypesToForm(discount.order_types),
       valid_from: discount.valid_from ? discount.valid_from.split('T')[0] : '',
       valid_until: discount.valid_until ? discount.valid_until.split('T')[0] : '',
       valid_time_start: discount.valid_time_start ?? '',
@@ -256,6 +264,7 @@ const Discounts: React.FC = () => {
       eligibility_brand_ids: formData.eligibility_brand_ids,
       is_active: formData.is_active,
       channels: channelsToApi(formData.channels),
+      order_types: orderTypesToApi(formData.order_types),
       valid_from: formData.valid_from || undefined,
       valid_until: formData.valid_until || undefined,
       valid_time_start: formData.valid_time_start || null,
@@ -550,6 +559,7 @@ const Discounts: React.FC = () => {
           </div>
 
           <OfferChannelsField value={formData.channels} onChange={(channels) => setFormData({ ...formData, channels })} />
+          <OfferOrderTypesField value={formData.order_types} onChange={(order_types) => setFormData({ ...formData, order_types })} />
         </div>
       </OfferModal>
 

@@ -30,3 +30,38 @@ export function normalizeAmountOrNull(input: unknown): number | null {
     const n = Number(input);
     return Number.isFinite(n) && n >= 0 ? n : null;
 }
+
+/**
+ * Order types an offer can be limited to. POS calls it `takeaway` and consumer
+ * web calls it `pickup`; they are the same thing, so both fold to `pickup` —
+ * the same rule menu items use (`normalizeOrderTypeForMenu`).
+ */
+export const OFFER_ORDER_TYPES = ['delivery', 'pickup', 'dine_in'] as const;
+export type OfferOrderType = (typeof OFFER_ORDER_TYPES)[number];
+
+/** A request's `order_type` as a canonical offer order type; unknown → null. */
+export function orderTypeToOfferOrderType(
+    orderType: string | null | undefined,
+): OfferOrderType | null {
+    if (orderType == null) return null;
+    const t = String(orderType).trim().toLowerCase();
+    const key = t === 'takeaway' ? 'pickup' : t;
+    return (OFFER_ORDER_TYPES as readonly string[]).includes(key)
+        ? (key as OfferOrderType)
+        : null;
+}
+
+/**
+ * Order-type subset; empty / all selected / invalid → null (= every order
+ * type), so "no restriction" has exactly one representation in the column.
+ */
+export function normalizeOfferOrderTypes(input: unknown): string[] | null {
+    if (!Array.isArray(input)) return null;
+    const set = new Set<string>();
+    for (const x of input) {
+        const key = orderTypeToOfferOrderType(String(x));
+        if (key) set.add(key);
+    }
+    if (set.size === 0 || set.size === OFFER_ORDER_TYPES.length) return null;
+    return OFFER_ORDER_TYPES.filter((t) => set.has(t));
+}

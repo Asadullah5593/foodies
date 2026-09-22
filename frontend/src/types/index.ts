@@ -411,6 +411,8 @@ export interface Discount {
   pos_only?: boolean;
   /** Channels the offer applies on ('pos' | 'app' | 'web' | 'kiosk'); null/empty = all channels. */
   channels?: string[] | null;
+  /** Order types the offer applies to; null/empty = every order type. */
+  order_types?: string[] | null;
   allowed_roles?: string[];
   /** What gets discounted: whole_order | category | products */
   application_scope?: string;
