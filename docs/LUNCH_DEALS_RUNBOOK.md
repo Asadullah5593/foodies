@@ -5,8 +5,8 @@ production menu. Two routes: the script (recommended) or the admin GUI.
 
 Nothing here has been run against production. The script defaults to a dry run.
 
-> **Status: not ready to commit yet.** Three things still need an answer — see *Outstanding*.
-> The script refuses to write until they are fixed, which is the intended behaviour.
+> **Status: config verified against production, ready to dry-run.** All four discovery
+> blockers are closed and the config is pinned to prod's real names.
 >
 > Note that even after a successful `--commit`, **nothing goes live**: the deals are created
 > detached from every branch. See *The deals are created detached from every branch*.
@@ -21,11 +21,15 @@ Seven deal roots, each `available_time_start = 13:00`, `available_time_end = 17:
 |---|---|---|---|
 | Peperi Co | 2 Old & Gold Smashed Burgers | 1899 | 2 × Old & Gold Smashed |
 | Peperi Co | 2 Smashed Classic Burgers | 1899 | 2 × Smashed Classic |
-| Peperi Co | 2 Quarter Chicken with Rice and Drinks | 1499 | 2 × 1/4 Peri Peri Chicken + 2 × Peri Peri Rice + 2 × 345ml drink |
-| Fireaway | Classic Pizza and 1L Drink Lunch Deal | 1499 | any `Classic`-labelled pizza (12") + 1L drink |
-| Fireaway | Signature Pizza and 1L Drink Lunch Deal | 1599 | any `Signature`-labelled pizza (12") + 1L drink |
-| Wok & Go | Any Two Classic Meals | 2199 | 2 × any Large from **Classic Meals** |
-| Wok & Go | Any Two Meals from the Sea | 2599 | 2 × any Large from **From the Sea** |
+| Peperi Co | 2 Quarter Chicken with Rice and Drinks | 1499 | 2 × 1/4 Peri Peri Chicken + 2 × Peri Peri Rice + 2 × 345ml drink (choice of 4) |
+| Fireaway | Classic Pizza and 1L Drink Lunch Deal | 1499 | any item from the **Classic** category (12") + Pepsi 1L |
+| Fireaway | Signature Pizza and 1L Drink Lunch Deal | 1599 | any item from the **Signature** category (12") + Pepsi 1L |
+| Wok & Go | Any Two Classic Meals | 2199 | 2 × any Large from **Classic Meals** (9 choices) |
+| Wok & Go | Any Two Meals from the Sea | 2599 | 2 × any Large from **From the Sea** (3 choices) |
+
+The Fireaway drink is a **fixed** Pepsi 1L, not a chooser: it is the only active one-litre
+product on the brand, so a one-option chooser would cost the till a click per order. The
+script comments show the one-line change back to a chooser if more 1L drinks are re-activated.
 
 All seven are filed under the existing **`Lunch Deal`** category on each brand. The script
 never creates a category — if `Lunch Deal` is missing on a brand it aborts rather than
@@ -50,92 +54,55 @@ and only adds rows that are missing), or attach them per branch in the admin.
 
 ---
 
-## Production findings (first discovery round)
+## Verified against production
 
-Production differs from the dev database in ways that matter. What is already settled:
+Production differs from dev in ways that would each have broken the run. All confirmed by
+query and now pinned in the config:
 
 | Thing | Dev | **Production** |
 |---|---|---|
-| Wok & Go brand id | 28 | **27** (script matches on slug, so this is harmless) |
-| Wok & Go classic range | `Classic Boxes` | **`Classic Meals`** (9 items) |
-| Wok & Go seafood range | *(none)* | **`From the Sea`** — 3 items: Hoisin Special (Crispy Fish), Spicy Sea Food (Shrimp), Szechuan Special (Fish) |
-| Wok & Go deals category | `Deals` (active) | **`Deals` (445) is INACTIVE**; `Lunch Deal` is active and empty |
-| Wok & Go `large` sizeKey | present | **present** (3 From-the-Sea variants) |
+| `Lunch Deal` category | *(none)* | **active on all three brands** (500 / 501 / 502) |
+| Fireaway Classic/Signature | one category, split on `label` | **two categories, `Classic` and `Signature`** (6 active items each); `label` is empty brand-wide |
+| Fireaway pizza `size_key` | `12` | **`12`** — size pin correct |
+| Fireaway 1L drinks | 5 flavours | **only `Pepsi 1L` is active** — modelled as a fixed slot |
+| Peperi 345ml drinks | 5 flavours | **4 active**: `7Up`, `Dew`, `Mirinda`, `Pepsi` |
+| Drink spelling | `7up`, `Mountain Dew` | **`7Up`, `Dew`** |
+| Wok classic range | `Classic Boxes` | **`Classic Meals`** (9 items, all `large`, Rs 1449) |
+| Wok seafood range | *(none)* | **`From the Sea`** (3 items, all `large`, Rs 1749) |
 | Peperi burger prices | 899 | **999** |
 
-The script's config has been updated for all of the above. Wok & Go deals are filed under
-**`Lunch Deal`**, not `Deals` — an inactive category would likely keep them hidden.
+Two categories are duplicated on prod — Fireaway `Drinks` and Peperi Co `Deals` (432/477).
+Neither causes trouble: the resolver prefers the active row when a name matches both, and
+nothing is filed under `Deals` any more.
 
-### The price concerns are resolved
+### Every deal is a real saving
 
-On production's real prices, every deal is a genuine saving. The earlier warnings came from
-stale dev prices:
+| Deal | À la carte | Deal | Saving |
+|---|---|---|---|
+| 2 Old & Gold Smashed | 2 × 999 = 1998 | 1899 | 99 |
+| 2 Smashed Classic | 2 × 999 = 1998 | 1899 | 99 |
+| 2 Qtr Chicken + Rice + Drinks | 2×699 + 2×299 + 2×130 = 2256 | 1499 | 757 |
+| Any Two Classic Meals | 2 × 1449 = 2898 | 2199 | 699 |
+| Any Two Meals from the Sea | 2 × 1749 = 3498 | 2599 | 899 |
 
-- **2 Old & Gold Smashed / 2 Smashed Classic @ 1899** — the burgers are Rs **999** on prod, not
-  899. Two cost Rs 1998 à la carte, so the deal saves Rs 99. Fine as specified.
-- **2 Quarter Chicken + Rice + Drinks @ 1499** — 2×699 + 2×299 + 2×130 = Rs 2256 à la carte.
-  Saves Rs 757.
-
-Two comparisons still can't be checked, because the underlying data has not come back yet:
-the Fireaway pizza prices and the Wok & Go Classic Meals prices. Re-check both against the
-existing **"Classic Lunch Feast Offer" (Rs 999)** and **"Deal for 2" (Rs 1999)** before
-committing — those two older deals overlap these new ones and may undercut them.
-
----
-
-## Outstanding — needed before the script can run
-
-Run this second round on production and send the output.
-
-The Peperi Co "two Deals categories" problem is **no longer a blocker**: all three brands now
-file under `Lunch Deal`, so neither category 432 nor 477 is touched.
+The two Fireaway pizza deals are **not** in this table: the Classic and Signature pizza prices
+were never pulled. Worth one check before going live:
 
 ```sql
--- 1. Confirm the "Lunch Deal" category exists and is active on ALL THREE brands.
---    The script aborts on any brand where it is missing.
-SELECT b.slug AS brand, c.id, c.name, c.is_active
-FROM menu_categories c
-JOIN brands b ON b.id = c.brand_id
-WHERE c.name = 'Lunch Deal' AND b.slug IN ('peperi-co', 'fireaway', 'wok--go')
-ORDER BY b.slug;
-
--- 2. Fireaway: the pizza category name is NOT '%Pizza Or Calzone%' on prod
---    (that query returned zero rows). What are the categories and labels?
-SELECT c.id, c.name AS category, c.is_active, mi.label,
-       count(mi.id) AS items,
-       string_agg(DISTINCT v.size_key, ',') AS size_keys
-FROM menu_categories c
-JOIN brands b ON b.id = c.brand_id AND b.slug = 'fireaway'
-LEFT JOIN menu_items mi ON mi.category_id = c.id AND mi.is_active
-LEFT JOIN menu_variants v ON v.menu_item_id = mi.id
-GROUP BY c.id, c.name, c.is_active, mi.label
-ORDER BY c.name, mi.label;
-
--- 3. Which drinks are ACTIVE? Prod shows most of the 1L / 345ml range switched off
---    (only Pepsi 1L on Fireaway; only Pepsi + Mirinda 345ml on Peperi Co). Note Wok & Go
---    spells it "Dew 345ml", so Peperi Co may carry differently-named active drinks.
-SELECT b.slug AS brand, c.name AS category, mi.id, mi.name, mi.base_price, mi.is_active
+SELECT c.name AS category, min(mi.base_price), max(mi.base_price), count(*)
 FROM menu_items mi
-JOIN brands b ON b.id = mi.brand_id
 JOIN menu_categories c ON c.id = mi.category_id
-WHERE b.slug IN ('peperi-co', 'fireaway') AND c.name ILIKE '%drink%'
-ORDER BY b.slug, mi.is_active DESC, mi.name;
-
--- 4. Wok & Go "Classic Meals" — do its items carry the 'large' sizeKey the deal pins to?
-SELECT v.size_key, count(*) AS variants, min(v.price) AS min_price, max(v.price) AS max_price
-FROM menu_variants v
-JOIN menu_items mi ON mi.id = v.menu_item_id AND mi.is_active
-JOIN menu_categories c ON c.id = mi.category_id AND c.name = 'Classic Meals'
-JOIN brands b ON b.id = mi.brand_id AND b.slug = 'wok--go'
-GROUP BY v.size_key;
+JOIN brands b ON b.id = mi.brand_id AND b.slug = 'fireaway'
+WHERE mi.is_active AND c.name IN ('Classic','Signature')
+GROUP BY c.name;
 ```
 
-**A note on inactive items.** The script resolves item names to **active items only**. If a
-name exists but is switched off it fails with `exists (id N) but is INACTIVE` rather than
-quietly seeding a dead choice. So for each drink list you either trim the config to the
-active names, or re-activate the drinks on the menu first. Duplicated names (prod has two rows
-for several Peperi items, one active and one not) resolve cleanly as long as exactly one is
-active.
+Add Rs 199 (Pepsi 1L) to each and compare against Rs 1499 / Rs 1599. It does not block the
+run — the deals resolve either way.
+
+Two older deals that looked like they would undercut these turned out to be retired:
+Fireaway's `Deals` category is inactive (so **"Classic Lunch Feast Offer" Rs 999 is gone**) and
+so is Wok & Go's (so **"Deal for 2" Rs 1999 is gone**).
 
 ---
 
