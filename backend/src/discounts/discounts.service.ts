@@ -22,6 +22,7 @@ import {
     manageScopeFor,
 } from './offer-brand-scope.util';
 import { ActivityContext } from '../activity-log/activity-context';
+import { normalizeOfferOrderTypes } from './offer-validity.util';
 
 /** Accept 'HH:mm' / 'HH:mm:ss' (Postgres time); empty/invalid → null. */
 function normalizeDiscountTime(
@@ -310,6 +311,7 @@ export class DiscountsService {
             max_discount_amount?: number;
             pos_only?: boolean;
             channels?: string[] | null;
+            order_types?: string[] | null;
             allowed_roles?: string[];
             requires_code?: boolean;
             application_scope?: string;
@@ -410,6 +412,7 @@ export class DiscountsService {
                             : null,
                     posOnly: dto.pos_only ?? false,
                     channels: normalizeChannels(dto.channels),
+                    orderTypes: normalizeOfferOrderTypes(dto.order_types),
                     allowedRoles: dto.allowed_roles ?? null,
                     requiresCode,
                     applicationScope,
@@ -510,6 +513,7 @@ export class DiscountsService {
             max_discount_amount?: number;
             pos_only?: boolean;
             channels?: string[] | null;
+            order_types?: string[] | null;
             allowed_roles?: string[];
             requires_code?: boolean;
             application_scope?: string;
@@ -593,6 +597,8 @@ export class DiscountsService {
             if (dto.pos_only !== undefined) d.posOnly = dto.pos_only;
             if (dto.channels !== undefined)
                 d.channels = normalizeChannels(dto.channels);
+            if (dto.order_types !== undefined)
+                d.orderTypes = normalizeOfferOrderTypes(dto.order_types);
             if (dto.allowed_roles !== undefined)
                 d.allowedRoles = dto.allowed_roles;
             if (dto.application_scope !== undefined)
@@ -827,6 +833,7 @@ export class DiscountsService {
                     : null,
             pos_only: d.posOnly,
             channels: d.channels ?? null,
+            order_types: d.orderTypes ?? null,
             allowed_roles: d.allowedRoles ?? [],
             application_scope: d.applicationScope ?? 'whole_order',
             application_scope_ids: d.applicationScopeIds ?? [],

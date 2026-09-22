@@ -237,6 +237,7 @@ export class MenuService {
                 requiresCard: d.requiresCard ?? false,
                 posOnly: d.posOnly ?? false,
                 channels: d.channels ?? null,
+                orderTypes: d.orderTypes ?? null,
                 validFrom: d.validFrom ?? null,
                 validUntil: d.validUntil ?? null,
                 validTimeStart: d.validTimeStart ?? null,
