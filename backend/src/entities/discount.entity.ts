@@ -111,6 +111,16 @@ export class Discount {
     @Column('simple-json', { nullable: true })
     channels: string[] | null;
 
+    /**
+     * Order types the offer applies to: 'delivery' | 'pickup' | 'dine_in'.
+     * null/empty = every order type. POS `takeaway` folds to `pickup`, the
+     * same rule menu items use. Enforced in the pricing engine; the menu
+     * price preview shows a restricted offer only when it knows the order
+     * type, so it never promises a discount checkout would refuse.
+     */
+    @Column('simple-json', { nullable: true, name: 'order_types' })
+    orderTypes: string[] | null;
+
     @Column('simple-json', { nullable: true })
     allowedRoles: string[] | null;
 
