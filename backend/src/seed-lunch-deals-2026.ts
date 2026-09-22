@@ -154,28 +154,47 @@ interface BrandSpec {
     deals: DealSpec[];
 }
 
-/** Peperi. Co 345ml soda range — the "Drinks" included in the chicken & rice deal. */
+/**
+ * Peperi Co 345ml soda range — the "Drinks" included in the chicken & rice
+ * deal. These are the four that are ACTIVE on production. Note the spelling:
+ * prod has "7Up" (capital U) and "Dew", where dev has "7up" and "Mountain
+ * Dew". Diet Pepsi 345ml is switched off on prod, so it is not offered.
+ */
 const PEPERICO_DRINKS_345 = [
     'Pepsi 345ml',
-    'Diet Pepsi 345ml',
-    '7up 345ml',
+    '7Up 345ml',
     'Mirinda 345ml',
-    'Mountain Dew 345ml',
+    'Dew 345ml',
 ];
 
-/** Fireaway 1L soda range — the "1 Liter drink" in both pizza deals. */
-const FIREAWAY_DRINKS_1L = [
-    'Pepsi 1L',
-    'Diet Pepsi 1L',
-    '7up 1L',
-    'Mirinda 1L',
-    'Mountain Dew 1L',
-];
+/**
+ * The "1 Liter drink" in both pizza deals. Pepsi 1L is the ONLY active
+ * one-litre product on Fireaway — 7up / Diet Pepsi / Mirinda / Mountain Dew
+ * 1L all exist but are switched off, so a chooser would have exactly one
+ * entry and cost the till an extra click per order. Modelled as a fixed slot
+ * instead (client-confirmed).
+ *
+ * If more 1L drinks are re-activated later, turn this back into a chooser:
+ * swap the two `{ pick: 'item', name: FIREAWAY_DRINK_1L }` slots below for
+ * `{ pick: 'list', names: [...], allowCustomization: false }`.
+ */
+const FIREAWAY_DRINK_1L = 'Pepsi 1L';
 
-/** Fireaway pizzas are single-size; this is the sizeKey every pizza variant carries. */
+/**
+ * Fireaway pizzas are single-size. Confirmed on prod: every item in both pizza
+ * categories carries exactly one variant with size_key '12'.
+ */
 const FIREAWAY_PIZZA_SIZE = '12';
-/** The category holding both Classic and Signature pizzas. */
-const FIREAWAY_PIZZA_CATEGORY = 'Classic and Signature Pizza Or Calzone';
+
+/**
+ * On PRODUCTION, "Classic" and "Signature" are CATEGORIES (6 active items
+ * each), not labels — the `label` column is empty across the whole brand. Dev
+ * has it the other way round: one "Classic and Signature Pizza Or Calzone"
+ * category with the split carried on `label`. That category still exists on
+ * prod but is inactive and empty.
+ */
+const FIREAWAY_CLASSIC_CATEGORY = 'Classic';
+const FIREAWAY_SIGNATURE_CATEGORY = 'Signature';
 
 /**
  * Wok & Go box sizeKey the deals pin to. Confirmed on prod: the three
@@ -259,14 +278,13 @@ const DEALS: BrandSpec[] = [
                 price: 1499,
                 slots: [
                     {
-                        pick: 'label',
-                        category: FIREAWAY_PIZZA_CATEGORY,
-                        label: 'Classic',
+                        pick: 'category',
+                        category: FIREAWAY_CLASSIC_CATEGORY,
                         sizeKey: FIREAWAY_PIZZA_SIZE,
                     },
                     {
-                        pick: 'list',
-                        names: FIREAWAY_DRINKS_1L,
+                        pick: 'item',
+                        name: FIREAWAY_DRINK_1L,
                         allowCustomization: false,
                     },
                 ],
@@ -278,14 +296,13 @@ const DEALS: BrandSpec[] = [
                 price: 1599,
                 slots: [
                     {
-                        pick: 'label',
-                        category: FIREAWAY_PIZZA_CATEGORY,
-                        label: 'Signature',
+                        pick: 'category',
+                        category: FIREAWAY_SIGNATURE_CATEGORY,
                         sizeKey: FIREAWAY_PIZZA_SIZE,
                     },
                     {
-                        pick: 'list',
-                        names: FIREAWAY_DRINKS_1L,
+                        pick: 'item',
+                        name: FIREAWAY_DRINK_1L,
                         allowCustomization: false,
                     },
                 ],
