@@ -27,6 +27,7 @@
     "seed:loranzo-real": "ts-node -r tsconfig-paths/register src/seed-loranzo-real.ts",
     "seed:loranzo-2026": "ts-node -r tsconfig-paths/register src/seed-loranzo-2026.ts",
     "seed:pizza-pasta": "ts-node -r tsconfig-paths/register src/seed-pizza-pasta.ts",
+    "seed:lunch-deals": "ts-node -r tsconfig-paths/register src/seed-lunch-deals-2026.ts",
     "seed:inventory": "ts-node -r tsconfig-paths/register src/seed-inventory.ts",
     "seed:uoms": "ts-node -r tsconfig-paths/register src/seed-uoms.ts",
     "seed:brand-admins": "ts-node -r tsconfig-paths/register src/seed-brand-admins.ts",
