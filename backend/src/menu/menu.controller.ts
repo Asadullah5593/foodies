@@ -233,7 +233,7 @@ export class MenuController {
     @ApiOperation({
         summary: 'Create menu item',
         description:
-            'Optional `available_for_order_types` limits which order channels can include this item (delivery, pickup, dine_in). Omit or null = all channels.',
+            'Optional `available_for_order_types` limits which order channels can include this item (delivery, pickup, dine_in). Omit or null = all channels. Optional `available_channels` limits the SALE channel it is sold on (pos, app, web, kiosk) — a different axis: one is how the food leaves the shop, the other is where the order is placed. Omit, null, [] or all four = every channel.',
     })
     @ApiBody({
         schema: {
@@ -288,6 +288,7 @@ export class MenuController {
             gallery_image_urls?: string[] | null;
             deal_only?: boolean;
             available_for_order_types?: string[] | null;
+            available_channels?: string[] | null;
             allergens?: string[] | null;
             calories?: number | null;
             label?: string | null;
@@ -366,6 +367,7 @@ export class MenuController {
             gallery_image_urls?: string[] | null;
             deal_only?: boolean;
             available_for_order_types?: string[] | null;
+            available_channels?: string[] | null;
             allergens?: string[] | null;
             calories?: number | null;
             label?: string | null;
