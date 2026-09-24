@@ -30,6 +30,7 @@ import {
     isMenuItemAvailableForOrderType,
     parseMenuOrderChannelsInput,
 } from '../utils/menu-order-type';
+import { normalizeMenuSaleChannels } from '../utils/menu-sale-channel';
 import {
     normalizePriceBySize,
     normalizeIncludedBySize,
@@ -478,6 +479,8 @@ export class MenuService {
             available_for_order_types: effectiveMenuOrderChannels(
                 i.availableForOrderTypes,
             ),
+            // null = sold on every channel; a subset limits it (e.g. ['pos']).
+            available_channels: i.availableChannels ?? null,
             ...itemMetaForApi(i),
             category: i.category
                 ? { id: i.category.id, name: i.category.name }
@@ -557,6 +560,7 @@ export class MenuService {
         deal_only?: boolean;
         /** Omit or null = available on all channels (delivery, pickup, dine_in). */
         available_for_order_types?: string[] | null;
+        available_channels?: string[] | null;
         allergens?: string[] | null;
         calories?: number | null;
         label?: string | null;
@@ -596,6 +600,9 @@ export class MenuService {
                               dto.available_for_order_types,
                           )
                         : null,
+                availableChannels: normalizeMenuSaleChannels(
+                    dto.available_channels,
+                ),
                 allergens: normalizeAllergens(dto.allergens),
                 calories: normalizeCalories(dto.calories),
                 label: normalizeText40(dto.label),
@@ -623,6 +630,7 @@ export class MenuService {
             gallery_image_urls?: string[] | null;
             deal_only?: boolean;
             available_for_order_types?: string[] | null;
+            available_channels?: string[] | null;
             allergens?: string[] | null;
             calories?: number | null;
             label?: string | null;
@@ -675,6 +683,11 @@ export class MenuService {
                     : parseMenuOrderChannelsInput(
                           dto.available_for_order_types,
                       );
+        }
+        if (dto.available_channels !== undefined) {
+            item.availableChannels = normalizeMenuSaleChannels(
+                dto.available_channels,
+            );
         }
         if (dto.name !== undefined) {
             item.name = dto.name;
