@@ -48,6 +48,7 @@ interface MenuItem {
   gallery_image_urls?: string[];
   /** Effective channels from API (delivery, pickup, dine_in). */
   available_for_order_types?: string[];
+  available_channels?: string[] | null;
   allergens?: string[] | null;
   calories?: number | null;
   label?: string | null;
@@ -68,6 +69,35 @@ const ORDER_CHANNELS = [
   { key: 'pickup', label: 'Pickup / Takeaway' },
   { key: 'dine_in', label: 'Dine-in' },
 ] as const;
+
+/**
+ * SALE channel — the surface the order is placed on. A different axis from
+ * ORDER_CHANNELS above, which is how the food leaves the shop. Same vocabulary
+ * as an offer's "Applies on", so an item and a discount agree on what "App"
+ * means. Call-centre orders count as POS, since agents order through the till.
+ */
+const SALE_CHANNELS = [
+  { key: 'pos', label: 'POS' },
+  { key: 'app', label: 'Customer App' },
+  { key: 'web', label: 'Website' },
+  { key: 'kiosk', label: 'Kiosk' },
+] as const;
+const ALL_SALE_CHANNEL_KEYS: string[] = SALE_CHANNELS.map((c) => c.key);
+
+/** null/empty from the API = sold on every channel. */
+function saleChannelsToForm(channels: string[] | undefined | null): string[] {
+  return channels?.length ? [...channels] : [...ALL_SALE_CHANNEL_KEYS];
+}
+
+/** Create: omit when every channel (backend default). Update: send `null` when every channel. */
+function buildSaleChannelsPayload(
+  selected: string[],
+  forUpdate: boolean,
+): string[] | null | undefined {
+  if (selected.length === 0) return undefined;
+  if (selected.length === SALE_CHANNELS.length) return forUpdate ? null : undefined;
+  return ALL_SALE_CHANNEL_KEYS.filter((k) => selected.includes(k));
+}
 
 const MENU_ITEM_GALLERY_MAX = 12;
 /** Must match backend `MAX_UPLOAD_FILE_BYTES` in upload.constants.ts */
@@ -140,6 +170,7 @@ const MenuItems: React.FC = () => {
     channel_delivery: true,
     channel_pickup: true,
     channel_dine_in: true,
+    sale_channels: [...ALL_SALE_CHANNEL_KEYS] as string[],
     allergens: '',
     label: '',
     calories: '',
@@ -267,6 +298,7 @@ const MenuItems: React.FC = () => {
     channel_delivery: true,
     channel_pickup: true,
     channel_dine_in: true,
+    sale_channels: [...ALL_SALE_CHANNEL_KEYS] as string[],
     allergens: '',
     label: '',
     calories: '',
@@ -291,6 +323,7 @@ const MenuItems: React.FC = () => {
         channel_delivery: ch.delivery,
         channel_pickup: ch.pickup,
         channel_dine_in: ch.dine_in,
+        sale_channels: saleChannelsToForm(editingItem.available_channels),
         allergens: (editingItem.allergens ?? []).join(', '),
         label: editingItem.label ?? '',
         calories: editingItem.calories != null ? String(editingItem.calories) : '',
@@ -340,6 +373,7 @@ const MenuItems: React.FC = () => {
         gallery_image_urls?: string[];
         deal_only?: boolean;
         available_for_order_types?: string[] | null;
+        available_channels?: string[] | null;
         allergens?: string[] | null;
         label?: string | null;
         calories?: number | null;
@@ -539,6 +573,7 @@ const MenuItems: React.FC = () => {
       channel_delivery: boolean;
       channel_pickup: boolean;
       channel_dine_in: boolean;
+      sale_channels: string[];
       allergens?: string;
       label?: string;
       calories?: string;
@@ -578,6 +613,8 @@ const MenuItems: React.FC = () => {
         payload.gallery_image_urls = data.gallery_image_urls;
       }
       if (channels !== undefined) payload.available_for_order_types = channels;
+      const saleChannels = buildSaleChannelsPayload(data.sale_channels, false);
+      if (saleChannels !== undefined) payload.available_channels = saleChannels;
       const response = await apiClient.post('/admin/menu/items', payload);
       return response.data;
     },
@@ -598,6 +635,7 @@ const MenuItems: React.FC = () => {
         channel_delivery: true,
         channel_pickup: true,
         channel_dine_in: true,
+        sale_channels: [...ALL_SALE_CHANNEL_KEYS],
         allergens: '',
         label: '',
         calories: '',
@@ -975,6 +1013,11 @@ const MenuItems: React.FC = () => {
                 toast.error('Select at least one order type');
                 return;
               }
+              const sc = buildSaleChannelsPayload(editFormData.sale_channels, true);
+              if (sc === undefined) {
+                toast.error('Select at least one sale channel');
+                return;
+              }
               updateItemMutation.mutate({
                 id: editingItem.id,
                 data: {
@@ -988,6 +1031,7 @@ const MenuItems: React.FC = () => {
                   image_url: editFormData.image_url || null,
                   gallery_image_urls: [...editFormData.gallery_image_urls],
                   available_for_order_types: av,
+                  available_channels: sc,
                   allergens: parseAllergensInput(editFormData.allergens),
                   label: editFormData.label.trim() || null,
                   calories: editFormData.calories.trim() ? parseInt(editFormData.calories, 10) : null,
@@ -1261,6 +1305,34 @@ const MenuItems: React.FC = () => {
                         if (c.key === 'delivery') setEditFormData((f) => ({ ...f, channel_delivery: checked }));
                         else if (c.key === 'pickup') setEditFormData((f) => ({ ...f, channel_pickup: checked }));
                         else setEditFormData((f) => ({ ...f, channel_dine_in: checked }));
+                      }}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                    />
+                    <span className="text-sm text-gray-800">{c.label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Available on sale channels</label>
+              <p className="text-xs text-gray-500 mb-2">
+                Where this item can be sold. Leave all checked for every channel (same as backend default).
+                Call-centre orders count as POS.
+              </p>
+              <div className="flex flex-wrap gap-4">
+                {SALE_CHANNELS.map((c) => (
+                  <label key={c.key} className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editFormData.sale_channels.includes(c.key)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setEditFormData((f) => ({
+                          ...f,
+                          sale_channels: checked
+                            ? [...f.sale_channels, c.key]
+                            : f.sale_channels.filter((k) => k !== c.key),
+                        }));
                       }}
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
@@ -1607,6 +1679,34 @@ const MenuItems: React.FC = () => {
                       if (c.key === 'delivery') setFormData((f) => ({ ...f, channel_delivery: checked }));
                       else if (c.key === 'pickup') setFormData((f) => ({ ...f, channel_pickup: checked }));
                       else setFormData((f) => ({ ...f, channel_dine_in: checked }));
+                    }}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-800 dark:text-slate-200">{c.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Available on sale channels</label>
+            <p className="text-xs text-gray-500 mb-2">
+              Where this item can be sold. Leave all checked for every channel (same as backend default).
+              Call-centre orders count as POS.
+            </p>
+            <div className="flex flex-wrap gap-4">
+              {SALE_CHANNELS.map((c) => (
+                <label key={c.key} className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.sale_channels.includes(c.key)}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setFormData((f) => ({
+                        ...f,
+                        sale_channels: checked
+                          ? [...f.sale_channels, c.key]
+                          : f.sale_channels.filter((k) => k !== c.key),
+                      }));
                     }}
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                   />
