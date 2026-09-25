@@ -11,10 +11,22 @@
 /** Sale channel an offer can be restricted to. */
 export type OfferChannel = 'pos' | 'app' | 'web' | 'kiosk';
 
-/** Map an order `source` to its offer channel. */
+/**
+ * Map an order `source` to its offer channel.
+ *
+ * `call_centre` is POS. Agents place orders through the till against a branch
+ * they are not standing at, and the rest of the system already treats them that
+ * way — `isStaffTill()` in orders.service, the loyalty wallet, and menu items'
+ * `available_channels`. Leaving it to fall through to `null` here meant a
+ * CHANNEL-RESTRICTED offer silently refused every call-centre order, because
+ * `offerAllowedOnChannel` rejects an unknown channel. Worse, the menu price
+ * preview mapped it to 'pos' separately, so an agent could SEE an offer the
+ * pricing engine then declined to apply.
+ */
 export function sourceToOfferChannel(source: string): OfferChannel | null {
     switch (source) {
         case 'pos':
+        case 'call_centre':
             return 'pos';
         case 'consumer_app':
             return 'app';
