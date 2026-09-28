@@ -12,6 +12,18 @@ import * as bcrypt from 'bcryptjs';
 import { clientIp } from './activity-log.actor';
 import { isEnabled } from './activity-log.config';
 import type { ClientEventDto } from './client-event.dto';
+import {
+    canonicalEntityType,
+    entityTypeVariants,
+} from './activity-log.subject';
+import {
+    mergeAreas,
+    mergePeople,
+    mergePlaces,
+    mergeRecordTypes,
+    mergeRoles,
+    parseRoleSlugs,
+} from './activity-log.options';
 
 export interface ActivityLogFilters {
     date_from?: string;
@@ -22,11 +34,24 @@ export interface ActivityLogFilters {
     action_group?: string;
     entity_type?: string;
     entity_id?: string;
+    /**
+     * A record by what people call it — an order's number, an item's name —
+     * rather than by its database id. See resolveRecordIds.
+     */
+    entity_ref?: string;
+    /**
+     * Role the person held AT THE TIME, by slug. Comma-separated slugs match
+     * any of them — two roles can share a name, and the dropdown offers the
+     * name once.
+     */
+    actor_role?: string;
     outcome?: string;
     branch_id?: number;
     brand_id?: number;
     request_id?: string;
-    /** Free text over actor label, action, route and entity label. */
+    /** Exact address — "everything that came from here". */
+    ip?: string;
+    /** Free text over actor label, action, route, entity label and IP. */
     search?: string;
     page?: number;
     page_size?: number;
@@ -93,6 +118,10 @@ export interface ActivityLogRelatedRow {
     route: string | null;
     entity_type: string | null;
     entity_id: string | null;
+    entity_label: string | null;
+    summary: string | null;
+    action_group: string | null;
+    http_method: string | null;
 }
 
 export interface ActivityLogHistoryRow {
@@ -407,6 +436,9 @@ export class ActivityLogService {
         tenantId: number | null,
         allowedBranchIds: number[] | null | undefined,
         allowedGroups?: string[] | null,
+        allowedBrandIds?: number[] | null,
+        /** Ids `entity_ref` resolved to, from resolveRecordIds. */
+        recordIds: string[] = [],
     ): { sql: string; params: unknown[] } {
         const { from, to } = this.resolveRange(filters);
         const params: unknown[] = [from, to];
@@ -433,6 +465,9 @@ export class ActivityLogService {
             );
         }
 
+        const brand = this.brandClause(params, allowedBrandIds);
+        if (brand) clauses.push(brand);
+
         // A narrow grant caps what can be seen, whatever the filters ask for.
         if (allowedGroups != null) {
             if (allowedGroups.length === 0) {
@@ -440,6 +475,34 @@ export class ActivityLogService {
             } else {
                 params.push(allowedGroups);
                 clauses.push(`action_group = ANY($${params.length})`);
+            }
+        }
+
+        const roleSlugs = parseRoleSlugs(filters.actor_role);
+        if (roleSlugs.length) add('actor_role_slugs && ?', roleSlugs);
+
+        const ref = filters.entity_ref?.trim();
+        if (ref) {
+            // By name or number as the row recorded it, or by an id the name
+            // resolved to. The second is what reaches rows written before
+            // records were labelled — they carry the id and nothing else.
+            params.push(`%${ref.toLowerCase()}%`);
+            const like = `lower(entity_label) LIKE $${params.length}`;
+            if (recordIds.length) {
+                params.push(recordIds);
+                const ids = `entity_id = ANY($${params.length})`;
+                const isOrder =
+                    canonicalEntityType(filters.entity_type) === 'order';
+                clauses.push(
+                    // Older order rows were filed under whichever screen made
+                    // the request (orders, kitchen, pos), so they are matched
+                    // by area rather than by a type they never had.
+                    isOrder
+                        ? `(${like} OR (action_group = 'orders' AND ${ids}))`
+                        : `(${like} OR ${ids})`,
+                );
+            } else {
+                clauses.push(like);
             }
         }
 
@@ -452,20 +515,49 @@ export class ActivityLogService {
             add('actor_type = ?', filters.actor_type);
         if (filters.action) add('action = ?', filters.action);
         if (filters.action_group) add('action_group = ?', filters.action_group);
-        if (filters.entity_type) add('entity_type = ?', filters.entity_type);
+        if (filters.entity_type) {
+            const variants = entityTypeVariants(filters.entity_type);
+            const isOrder =
+                canonicalEntityType(filters.entity_type) === 'order';
+            params.push(variants);
+            clauses.push(
+                isOrder
+                    ? `(entity_type = ANY($${params.length}) OR action_group = 'orders')`
+                    : `entity_type = ANY($${params.length})`,
+            );
+        }
         if (filters.entity_id) add('entity_id = ?', filters.entity_id);
         if (filters.outcome && OUTCOMES.includes(filters.outcome as never))
             add('outcome = ?', filters.outcome);
-        if (filters.branch_id) add('branch_id = ?', filters.branch_id);
-        if (filters.brand_id) add('brand_id = ?', filters.brand_id);
+        // Rows written before branch and brand were recorded carry neither.
+        // When an order was looked up by number, the branch and brand were
+        // already applied to the ORDER, so its unplaced rows still belong.
+        const placedByLookup =
+            recordIds.length > 0 &&
+            canonicalEntityType(filters.entity_type) === 'order';
+        if (filters.branch_id)
+            add(
+                placedByLookup
+                    ? '(branch_id = ? OR branch_id IS NULL)'
+                    : 'branch_id = ?',
+                filters.branch_id,
+            );
+        if (filters.brand_id)
+            add(
+                placedByLookup
+                    ? '(brand_id = ? OR brand_id IS NULL)'
+                    : 'brand_id = ?',
+                filters.brand_id,
+            );
         if (filters.request_id) add('request_id = ?', filters.request_id);
+        if (filters.ip?.trim()) add('ip = ?', filters.ip.trim().slice(0, 64));
 
         if (filters.search?.trim()) {
             const term = `%${filters.search.trim().toLowerCase()}%`;
             params.push(term);
             const i = params.length;
             clauses.push(
-                `(lower(actor_label) LIKE $${i} OR lower(action) LIKE $${i} OR lower(route) LIKE $${i} OR lower(entity_label) LIKE $${i})`,
+                `(lower(actor_label) LIKE $${i} OR lower(action) LIKE $${i} OR lower(route) LIKE $${i} OR lower(entity_label) LIKE $${i} OR lower(ip) LIKE $${i})`,
             );
         }
 
@@ -496,18 +588,103 @@ export class ActivityLogService {
         return `(branch_id IS NULL OR branch_id = ANY($${params.length}))`;
     }
 
+    /**
+     * Brand lock, in one place for the same reason as branchClause.
+     *
+     * A brand-locked person sees their brands' rows and the rows that belong
+     * to no brand (sign-ins, tenant-level admin) — never another brand's.
+     */
+    private brandClause(
+        params: unknown[],
+        allowedBrandIds: number[] | null | undefined,
+    ): string | null {
+        if (allowedBrandIds == null || !Array.isArray(allowedBrandIds)) {
+            return null;
+        }
+        if (allowedBrandIds.length === 0) return 'brand_id IS NULL';
+        params.push(allowedBrandIds);
+        return `(brand_id IS NULL OR brand_id = ANY($${params.length}))`;
+    }
+
+    /**
+     * Turns what people call a record into the ids it is stored under.
+     *
+     * Only orders need it: "order 013 on 20 September" names a daily number
+     * that repeats every day at every branch, so it is looked up among the
+     * orders PLACED in the window being searched. The tracking reference
+     * (`FDS-…`) works too, and so does the number without its leading zeros.
+     */
+    private async resolveRecordIds(
+        filters: ActivityLogFilters,
+        tenantId: number | null,
+        allowedBranchIds: number[] | null | undefined,
+        allowedBrandIds: number[] | null | undefined,
+    ): Promise<string[]> {
+        const ref = filters.entity_ref?.trim();
+        if (!ref || canonicalEntityType(filters.entity_type) !== 'order') {
+            return [];
+        }
+        const { from, to } = this.resolveRange(filters);
+        const params: unknown[] = [
+            ref.replace(/^#/, ''),
+            // An order placed late one evening can be acted on the next day.
+            new Date(from.getTime() - 86_400_000),
+            to,
+        ];
+        const clauses = [
+            `(order_number = $1 OR upper(order_id) = upper($1)
+              OR ltrim(order_number, '0') = ltrim($1, '0'))`,
+            'placed_at BETWEEN $2 AND $3',
+        ];
+        if (tenantId != null) {
+            params.push(tenantId);
+            clauses.push(`tenant_id = $${params.length}`);
+        }
+        if (Array.isArray(allowedBranchIds) && allowedBranchIds.length > 0) {
+            params.push(allowedBranchIds);
+            clauses.push(`branch_id = ANY($${params.length})`);
+        }
+        if (Array.isArray(allowedBrandIds)) {
+            params.push(allowedBrandIds);
+            clauses.push(`brand_id = ANY($${params.length})`);
+        }
+        if (filters.branch_id) {
+            params.push(filters.branch_id);
+            clauses.push(`branch_id = $${params.length}`);
+        }
+        if (filters.brand_id) {
+            params.push(filters.brand_id);
+            clauses.push(`brand_id = $${params.length}`);
+        }
+        const rows = await this.dataSource.query<Array<{ id: number }>>(
+            `SELECT id FROM orders WHERE ${clauses.join(' AND ')}
+             ORDER BY id DESC LIMIT 200`,
+            params,
+        );
+        return rows.map((r) => String(r.id));
+    }
+
     /** Paginated list plus the outcome tallies the UI shows as chips. */
     async find(
         filters: ActivityLogFilters,
         tenantId: number | null,
         allowedBranchIds?: number[] | null,
         allowedGroups?: string[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
+        const recordIds = await this.resolveRecordIds(
+            filters,
+            tenantId,
+            allowedBranchIds,
+            allowedBrandIds,
+        );
         const { sql, params } = this.buildWhere(
             filters,
             tenantId,
             allowedBranchIds,
             allowedGroups,
+            allowedBrandIds,
+            recordIds,
         );
         const page = Math.max(1, Math.floor(Number(filters.page) || 1));
         const pageSize = Math.min(
@@ -577,6 +754,7 @@ export class ActivityLogService {
         tenantId: number | null,
         allowedBranchIds?: number[] | null,
         allowedGroups?: string[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         const at = new Date(createdAt);
         if (Number.isNaN(at.getTime())) {
@@ -603,6 +781,8 @@ export class ActivityLogService {
                 `(branch_id IS NULL OR branch_id = ANY($${params.length}))`,
             );
         }
+        const brandOne = this.brandClause(params, allowedBrandIds);
+        if (brandOne) clauses.push(brandOne);
         // A narrow grant must gate the detail view too, or the list filter
         // would be a formality anyone could step around with a direct id.
         if (allowedGroups != null) {
@@ -626,6 +806,7 @@ export class ActivityLogService {
         createdAt: string,
         tenantId: number | null,
         allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
     ) {
         const at = new Date(createdAt);
         if (Number.isNaN(at.getTime())) return [];
@@ -641,8 +822,12 @@ export class ActivityLogService {
         }
         const branch = this.branchClause(params, allowedBranchIds);
         if (branch) clauses.push(branch);
+        const brand = this.brandClause(params, allowedBrandIds);
+        if (brand) clauses.push(brand);
         return await this.dataSource.query<ActivityLogRelatedRow[]>(
-            `SELECT id, created_at, action, outcome, status_code, route, entity_type, entity_id
+            `SELECT id, created_at, action, outcome, status_code, route,
+                    entity_type, entity_id, entity_label, summary,
+                    action_group, http_method
              FROM activity_logs WHERE ${clauses.join(' AND ')}
              ORDER BY created_at ASC LIMIT 50`,
             params,
@@ -660,14 +845,23 @@ export class ActivityLogService {
         allowedBranchIds?: number[] | null,
         allowedGroups?: string[] | null,
         days = MAX_WINDOW_DAYS,
+        allowedBrandIds?: number[] | null,
     ) {
         const from = new Date(Date.now() - Math.min(days, 365) * 86_400_000);
-        const params: unknown[] = [entityType, entityId, from];
+        // Every spelling the type was stored under, so rows written before the
+        // spelling was settled are still part of the record's history.
+        const params: unknown[] = [
+            entityTypeVariants(entityType),
+            entityId,
+            from,
+        ];
         const clauses = [
-            'entity_type = $1',
+            'entity_type = ANY($1)',
             'entity_id = $2',
             'created_at >= $3',
         ];
+        const brandHistory = this.brandClause(params, allowedBrandIds);
+        if (brandHistory) clauses.push(brandHistory);
         if (tenantId != null) {
             params.push(tenantId);
             clauses.push(`tenant_id = $${params.length}`);
@@ -688,47 +882,242 @@ export class ActivityLogService {
         );
     }
 
-    /** Distinct values for the filter dropdowns, within the current window. */
-    async filterOptions(tenantId: number | null) {
+    /**
+     * Values for the filter dropdowns.
+     *
+     * Each list is what exists for this reader — their branches, brands,
+     * roles and staff — merged with what the last 30 days of the log have
+     * seen. Built from the log alone, the lists were empty wherever the log
+     * was: with capture switched off, on a fresh install, and for branch and
+     * brand on every row written before rows carried a place.
+     */
+    async filterOptions(
+        tenantId: number | null,
+        allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
+    ) {
         const from = new Date(Date.now() - 30 * 86_400_000);
         const params: unknown[] = [from];
-        let scope = 'created_at >= $1';
+        let scope = 'l.created_at >= $1';
         if (tenantId != null) {
             params.push(tenantId);
-            scope += ` AND tenant_id = $${params.length}`;
+            scope += ` AND l.tenant_id = $${params.length}`;
         }
-        const [actions, groups, actors] = await Promise.all([
+        if (Array.isArray(allowedBranchIds) && allowedBranchIds.length > 0) {
+            params.push(allowedBranchIds);
+            scope += ` AND (l.branch_id IS NULL OR l.branch_id = ANY($${params.length}))`;
+        }
+        if (Array.isArray(allowedBrandIds)) {
+            params.push(allowedBrandIds);
+            scope += ` AND (l.brand_id IS NULL OR l.brand_id = ANY($${params.length}))`;
+        }
+        const [
+            current,
+            actions,
+            groups,
+            actors,
+            branches,
+            brands,
+            roles,
+            types,
+        ] = await Promise.all([
+            this.currentOptions(tenantId, allowedBranchIds, allowedBrandIds),
             this.dataSource.query<Array<{ action: string }>>(
-                `SELECT DISTINCT action FROM activity_logs WHERE ${scope} ORDER BY action LIMIT 200`,
+                `SELECT DISTINCT l.action FROM activity_logs l
+                 WHERE ${scope} ORDER BY l.action LIMIT 200`,
                 params,
             ),
             this.dataSource.query<Array<{ action_group: string }>>(
-                `SELECT DISTINCT action_group FROM activity_logs WHERE ${scope} AND action_group IS NOT NULL ORDER BY action_group`,
+                `SELECT DISTINCT l.action_group FROM activity_logs l
+                 WHERE ${scope} AND l.action_group IS NOT NULL
+                 ORDER BY l.action_group`,
                 params,
             ),
             this.dataSource.query<
                 Array<{ actor_user_id: number; actor_label: string }>
             >(
-                `SELECT DISTINCT actor_user_id, actor_label FROM activity_logs
-                 WHERE ${scope} AND actor_user_id IS NOT NULL
-                 ORDER BY actor_label LIMIT 200`,
+                `SELECT DISTINCT l.actor_user_id, l.actor_label
+                 FROM activity_logs l
+                 WHERE ${scope} AND l.actor_user_id IS NOT NULL
+                 ORDER BY l.actor_label LIMIT 200`,
+                params,
+            ),
+            this.dataSource.query<Array<{ id: number; name: string }>>(
+                `SELECT b.id, b.name FROM branches b
+                 WHERE b.id IN (
+                     SELECT DISTINCT l.branch_id FROM activity_logs l
+                     WHERE ${scope} AND l.branch_id IS NOT NULL
+                 ) ORDER BY b.name`,
+                params,
+            ),
+            this.dataSource.query<Array<{ id: number; name: string }>>(
+                `SELECT b.id, b.name FROM brands b
+                 WHERE b.id IN (
+                     SELECT DISTINCT l.brand_id FROM activity_logs l
+                     WHERE ${scope} AND l.brand_id IS NOT NULL
+                 ) ORDER BY b.name`,
+                params,
+            ),
+            this.dataSource.query<Array<{ slug: string; name: string }>>(
+                `SELECT DISTINCT r.slug, r.name
+                 FROM activity_logs l,
+                      unnest(l.actor_role_slugs, l.actor_role_names)
+                          AS r(slug, name)
+                 WHERE ${scope} AND l.actor_role_slugs IS NOT NULL
+                 ORDER BY r.name LIMIT 100`,
+                params,
+            ),
+            this.dataSource.query<Array<{ entity_type: string }>>(
+                `SELECT DISTINCT l.entity_type FROM activity_logs l
+                 WHERE ${scope} AND l.entity_type IS NOT NULL
+                   AND l.entity_id IS NOT NULL
+                   AND (l.action_group IS NULL OR l.action_group <> 'client')
+                 LIMIT 300`,
                 params,
             ),
         ]);
+
         return {
-            actions: (actions as Array<{ action: string }>).map(
-                (r) => r.action,
-            ),
-            action_groups: (groups as Array<{ action_group: string }>).map(
-                (r) => r.action_group,
-            ),
-            actors: actors as Array<{
-                actor_user_id: number;
-                actor_label: string;
-            }>,
+            actions: actions.map((r) => r.action),
+            action_groups: mergeAreas(groups.map((r) => r.action_group)),
+            actors: mergePeople(current.people, actors),
+            branches: mergePlaces(current.branches, branches),
+            brands: mergePlaces(current.brands, brands),
+            roles: mergeRoles(current.roles, roles),
+            record_types: mergeRecordTypes(types.map((r) => r.entity_type)),
             outcomes: [...OUTCOMES],
             actor_types: [...ACTOR_TYPES],
             max_window_days: MAX_WINDOW_DAYS,
         };
+    }
+
+    /**
+     * The branches, brands, roles and staff that exist for this reader,
+     * scoped the way the log itself is: tenant, then the reader's own
+     * branches and brands.
+     */
+    private async currentOptions(
+        tenantId: number | null,
+        allowedBranchIds: number[] | null | undefined,
+        allowedBrandIds: number[] | null | undefined,
+    ) {
+        // Read the scope as branchClause and brandClause do, so a dropdown
+        // never offers a place whose rows the list would then withhold.
+        const branchIds =
+            Array.isArray(allowedBranchIds) && allowedBranchIds.length > 0
+                ? allowedBranchIds
+                : null;
+        const brandIds = Array.isArray(allowedBrandIds)
+            ? allowedBrandIds
+            : null;
+        const where = (clauses: string[]) =>
+            clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+
+        // A branch belongs to a tenant through the brands it serves.
+        const branchParams: unknown[] = [];
+        const branchWhere: string[] = [];
+        if (tenantId != null || brandIds) {
+            const link = ['bb.branch_id = b.id'];
+            if (tenantId != null) {
+                branchParams.push(tenantId);
+                link.push(`br.tenant_id = $${branchParams.length}`);
+            }
+            if (brandIds) {
+                branchParams.push(brandIds);
+                link.push(`br.id = ANY($${branchParams.length})`);
+            }
+            branchWhere.push(
+                `EXISTS (SELECT 1 FROM branch_brands bb
+                         JOIN brands br ON br.id = bb.brand_id
+                         WHERE ${link.join(' AND ')})`,
+            );
+        }
+        if (branchIds) {
+            branchParams.push(branchIds);
+            branchWhere.push(`b.id = ANY($${branchParams.length})`);
+        }
+
+        const brandParams: unknown[] = [];
+        const brandWhere: string[] = [];
+        if (tenantId != null) {
+            brandParams.push(tenantId);
+            brandWhere.push(`br.tenant_id = $${brandParams.length}`);
+        }
+        if (brandIds) {
+            brandParams.push(brandIds);
+            brandWhere.push(`br.id = ANY($${brandParams.length})`);
+        }
+        if (branchIds) {
+            brandParams.push(branchIds);
+            brandWhere.push(
+                `EXISTS (SELECT 1 FROM branch_brands bb
+                         WHERE bb.brand_id = br.id
+                           AND bb.branch_id = ANY($${brandParams.length}))`,
+            );
+        }
+
+        // Built-in roles carry no tenant and are shared by every tenant.
+        // super_admin is left out: super admins bypass role resolution, so no
+        // row ever carries that slug and the option could only return nothing.
+        const roleParams: unknown[] = [];
+        const roleWhere = [`r.slug <> 'super_admin'`];
+        if (tenantId != null) {
+            roleParams.push(tenantId);
+            roleWhere.push(
+                `(r.tenant_id = $${roleParams.length} OR r.tenant_id IS NULL)`,
+            );
+        }
+
+        // The tenant's staff; a branch-restricted reader gets their branches'.
+        const peopleParams: unknown[] = [];
+        const peopleWhere: string[] = [];
+        if (branchIds) {
+            peopleParams.push(branchIds);
+            peopleWhere.push(
+                `u.id IN (SELECT bu.user_id FROM branch_users bu
+                          WHERE bu.branch_id = ANY($${peopleParams.length}))`,
+            );
+        } else if (tenantId != null) {
+            peopleParams.push(tenantId);
+            peopleWhere.push(
+                `u.id IN (SELECT tu.user_id FROM tenant_users tu
+                          WHERE tu.tenant_id = $${peopleParams.length})`,
+            );
+        }
+
+        const [branches, brands, roles, people] = await Promise.all([
+            this.dataSource.query<
+                Array<{ id: number; name: string; is_active: boolean }>
+            >(
+                `SELECT b.id, b.name, b.is_active FROM branches b
+                 ${where(branchWhere)}
+                 ORDER BY lower(b.name) LIMIT 500`,
+                branchParams,
+            ),
+            this.dataSource.query<
+                Array<{ id: number; name: string; is_active: boolean }>
+            >(
+                `SELECT br.id, br.name, br.is_active FROM brands br
+                 ${where(brandWhere)}
+                 ORDER BY lower(br.name) LIMIT 500`,
+                brandParams,
+            ),
+            // A tenant's own role wins over a built-in one sharing its slug.
+            this.dataSource.query<Array<{ slug: string; name: string }>>(
+                `SELECT DISTINCT ON (r.slug) r.slug, r.name FROM roles r
+                 ${where(roleWhere)}
+                 ORDER BY r.slug, (r.tenant_id IS NULL)`,
+                roleParams,
+            ),
+            this.dataSource.query<
+                Array<{ id: number; name: string; status: string | null }>
+            >(
+                `SELECT u.id, u.name, u.status FROM users u
+                 ${where(peopleWhere)}
+                 ORDER BY lower(u.name) LIMIT 1000`,
+                peopleParams,
+            ),
+        ]);
+        return { branches, brands, roles, people };
     }
 }

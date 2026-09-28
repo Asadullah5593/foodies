@@ -54,6 +54,13 @@ const RESPONSE_ALLOW = [
     'status',
     'count',
     'total',
+    // What the record is called and where it lives — so a row can say
+    // "Pepperoni Pizza, Johar Town" instead of "menu-items #2421".
+    'name',
+    'title',
+    'code',
+    'branch_id',
+    'brand_id',
 ];
 
 /** Request headers worth keeping. Never `authorization`, never `cookie`. */

@@ -53,7 +53,17 @@ export interface ActivityLogPage {
 export interface ActivityLogFilterOptions {
   actions: string[];
   action_groups: string[];
-  actors: Array<{ actor_user_id: number; actor_label: string }>;
+  /**
+   * Each list is what exists for the reader — staff, branches, brands, roles —
+   * merged with what the log has seen, so it is never empty just because the
+   * log is. `is_active` is absent when only the log knows the entry.
+   */
+  actors: Array<{ actor_user_id: number; actor_label: string; is_active?: boolean }>;
+  branches?: Array<{ id: number; name: string; is_active?: boolean }>;
+  brands?: Array<{ id: number; name: string; is_active?: boolean }>;
+  /** One per role name; `slugs` are every role going by that name. */
+  roles?: Array<{ name: string; slugs: string[] }>;
+  record_types?: string[];
   outcomes: string[];
   actor_types: string[];
   max_window_days: number;
@@ -68,6 +78,10 @@ export interface ActivityLogRelated {
   route: string | null;
   entity_type: string | null;
   entity_id: string | null;
+  entity_label?: string | null;
+  summary?: string | null;
+  action_group?: string | null;
+  http_method?: string | null;
 }
 
 export interface ActivityLogSettings {
@@ -89,8 +103,15 @@ export interface ActivityLogQuery {
   action_group?: string;
   entity_type?: string;
   entity_id?: string;
+  /** A record by its name or number, e.g. an order's `013`. */
+  entity_ref?: string;
+  /** Role held at the time of the action: one or more slugs, comma-separated. */
+  actor_role?: string;
+  branch_id?: number | null;
+  brand_id?: number | null;
   outcome?: string;
   request_id?: string;
+  ip?: string;
   search?: string;
   page?: number;
   page_size?: number;

@@ -9,10 +9,35 @@ export interface RecordedChange {
     after: Record<string, unknown> | null;
 }
 
+/**
+ * Something that happened to ONE record, worded by the service that did it.
+ *
+ * Exists because a single request can act on several records — a mixed cart
+ * becomes one order per brand, a rider is assigned to a whole order group — and
+ * "what happened to order 013" is unanswerable unless each of them gets a row
+ * of its own, under its own branch and brand.
+ */
+export interface RecordedEvent {
+    entityType: string;
+    entityId: string | number | null;
+    entityLabel?: string | null;
+    /** What happened, in words: "Status changed from preparing to ready". */
+    summary?: string | null;
+    before?: Record<string, unknown> | null;
+    after?: Record<string, unknown> | null;
+    tenantId?: number | null;
+    branchId?: number | null;
+    brandId?: number | null;
+}
+
 /** Per-request store opened by the middleware. */
 export interface ActivityStore {
     requestId: string;
     changes: RecordedChange[];
+    /** One row each, emitted only when the request succeeded. */
+    events?: RecordedEvent[];
+    /** What happened, in words, when the service can say it better than the route. */
+    summary?: string | null;
     /** Set by a service when it knows the subject better than the route does. */
     entityType?: string;
     entityId?: string | number | null;
@@ -77,6 +102,29 @@ export const ActivityContext = {
             before,
             after,
         });
+    },
+
+    /**
+     * Record something that happened to one record, as a row of its own.
+     *
+     * Call it AFTER the write has succeeded. The middleware drops events when
+     * the request ends in an error, so a rolled-back change is never reported
+     * as having happened.
+     */
+    recordEvent(event: RecordedEvent): void {
+        const store = storage.getStore();
+        if (!store) return;
+        store.events ??= [];
+        // Bounded, like changes: a bulk loop must not grow the store forever.
+        if (store.events.length >= 50) return;
+        store.events.push(event);
+    },
+
+    /** Say what happened in words, when the route name would not. */
+    setSummary(summary: string | null): void {
+        const store = storage.getStore();
+        if (!store) return;
+        store.summary = summary ? summary.slice(0, 400) : null;
     },
 
     /** Name the subject when the route cannot (e.g. an id created mid-handler). */

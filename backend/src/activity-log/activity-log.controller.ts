@@ -28,6 +28,7 @@ type ActivityUser = {
     id: number;
     tenantId: number | null;
     allowedBranchIds?: number[] | null;
+    allowedBrandIds?: number[] | null;
     permissions?: string[];
     name?: string;
     email?: string;
@@ -104,10 +105,13 @@ export class ActivityLogController {
         @Query('action_group') actionGroup?: string,
         @Query('entity_type') entityType?: string,
         @Query('entity_id') entityId?: string,
+        @Query('entity_ref') entityRef?: string,
+        @Query('actor_role') actorRole?: string,
         @Query('outcome') outcome?: string,
         @Query('branch_id') branchId?: string,
         @Query('brand_id') brandId?: string,
         @Query('request_id') requestId?: string,
+        @Query('ip') ip?: string,
         @Query('search') search?: string,
         @Query('page') page?: string,
         @Query('page_size') pageSize?: string,
@@ -122,10 +126,13 @@ export class ActivityLogController {
                 action_group: actionGroup,
                 entity_type: entityType,
                 entity_id: entityId,
+                entity_ref: entityRef,
+                actor_role: actorRole,
                 outcome,
                 branch_id: branchId ? +branchId : undefined,
                 brand_id: brandId ? +brandId : undefined,
                 request_id: requestId,
+                ip,
                 search,
                 page: page ? +page : undefined,
                 page_size: pageSize ? +pageSize : undefined,
@@ -135,6 +142,7 @@ export class ActivityLogController {
             // A narrow grant caps the list too — otherwise the per-module
             // permission would only hide links, not withhold rows.
             allowedGroupsFor(user.permissions, user.isSuperAdmin === true),
+            user.allowedBrandIds,
         );
     }
 
@@ -180,7 +188,11 @@ export class ActivityLogController {
     @Get('filter-options')
     @RequirePermission(Permissions.ACTIVITY_LOG_VIEW)
     filterOptions(@CurrentUser() user: ActivityUser) {
-        return this.service.filterOptions(user.tenantId);
+        return this.service.filterOptions(
+            user.tenantId,
+            user.allowedBranchIds,
+            user.allowedBrandIds,
+        );
     }
 
     /** History of one record — what the "History" drawer on a record page uses. */
@@ -209,6 +221,7 @@ export class ActivityLogController {
             user.allowedBranchIds,
             allowedGroupsFor(user.permissions, user.isSuperAdmin === true),
             days ? +days : undefined,
+            user.allowedBrandIds,
         );
     }
 
@@ -228,6 +241,7 @@ export class ActivityLogController {
             createdAt,
             user.tenantId,
             user.allowedBranchIds,
+            user.allowedBrandIds,
         );
     }
 
@@ -259,6 +273,7 @@ export class ActivityLogController {
             user.tenantId,
             user.allowedBranchIds,
             allowedGroupsFor(user.permissions, user.isSuperAdmin === true),
+            user.allowedBrandIds,
         );
     }
 }
