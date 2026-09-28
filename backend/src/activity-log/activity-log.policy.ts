@@ -26,11 +26,30 @@ const SKIP_PREFIXES = [
     '/pos/orders/quote',
     '/rider/location',
     '/rider/orders/location',
+    '/rider/attendance/heartbeat',
     '/consumer/cart',
-    '/kitchen/orders/status',
+    '/public/consumer/cart',
     '/notifications/read',
     '/health',
     '/api-docs',
+    // The beacon's own transport. Every event it carries is written as its
+    // own row, so logging the POST as well said the same thing twice — and,
+    // being an `activity-log.` action, did it with an immediate write.
+    '/admin/activity-logs/events',
+];
+
+/**
+ * The same chatter where the route carries an id, which a prefix cannot match:
+ * `/rider/orders/812/location` never started with `/rider/orders/location`, so
+ * every GPS ping was being written as activity.
+ *
+ * Kitchen status changes are deliberately NOT here. "Accepted, preparing,
+ * ready" is the middle of an order's story, and an order's story is what this
+ * log is asked for most.
+ */
+const SKIP_PATTERNS = [
+    /^\/rider\/orders\/[^/]+\/location$/,
+    /^\/notifications\/[^/]+\/read$/,
 ];
 
 /** Kept even though they sit under a skipped prefix — the money and the outliers. */
@@ -50,9 +69,15 @@ const SENSITIVE_READ_PREFIXES = [
     '/admin/rider-hrm/payroll',
     '/admin/reports',
     '/admin/shifts',
-    '/admin/branches',
     '/admin/activity-logs',
 ];
+
+/**
+ * Sensitive only when ONE record is opened. The bare collection is what every
+ * branch dropdown in the admin loads, so logging it recorded "opened a page",
+ * not "looked at a branch's settings".
+ */
+const SENSITIVE_DETAIL_PREFIXES = ['/admin/branches'];
 
 /**
  * Routes whose rows SHOULD carry a before/after diff. A row from one of these
@@ -113,14 +138,16 @@ export function normalisePath(url: string): string {
 export function isSkippedRoute(method: string, path: string): boolean {
     if (SKIP_EXCEPTIONS.some((e) => path.includes(e))) return false;
     if (SKIP_PREFIXES.some((p) => path.startsWith(p))) return true;
-    // A POS order create is skipped, but its payment/void/refund is not (above).
-    if (method === 'POST' && path === '/pos/orders') return true;
+    if (SKIP_PATTERNS.some((p) => p.test(path))) return true;
+    // Placing an order IS logged: it is the first line of that order's
+    // history, and without it nothing says who took the order or when.
     return false;
 }
 
 export function isSensitiveRead(method: string, path: string): boolean {
     if (method !== 'GET') return false;
-    return SENSITIVE_READ_PREFIXES.some((p) => path.startsWith(p));
+    if (SENSITIVE_READ_PREFIXES.some((p) => path.startsWith(p))) return true;
+    return SENSITIVE_DETAIL_PREFIXES.some((p) => path.startsWith(`${p}/`));
 }
 
 export function expectsDiff(method: string, path: string): boolean {

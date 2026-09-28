@@ -10,6 +10,7 @@ import { Order } from '../entities/order.entity';
 import { ShiftsService } from '../shifts/shifts.service';
 import { OrdersService } from '../orders/orders.service';
 import { PushNotificationService } from '../push-notifications/push-notification.service';
+import { auditOrderStatus } from '../orders/order-audit';
 
 /** Statuses shown on KDS (includes 'placed' so new orders appear immediately). */
 const KITCHEN_STATUSES = [
@@ -185,6 +186,7 @@ export class KitchenService {
         );
         if (changed !== null) {
             order.status = status;
+            auditOrderStatus(order, changed, status);
             // Shift cash is derived from tenders at read/close time; completing
             // an order here no longer needs to accrue anything.
         }

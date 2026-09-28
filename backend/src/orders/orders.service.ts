@@ -118,6 +118,8 @@ import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
 import { StaffDiscount } from '../entities/staff-discount.entity';
 import { assertOrderTypeAllowed } from './order-type-restriction';
 import { assertBranchesAllowed } from './branch-scope';
+import { auditOrder, auditOrderStatus, placedSummary } from './order-audit';
+import { ActivityContext } from '../activity-log/activity-context';
 import {
     staffDiscountToOffer,
     staffDiscountRawAmount,
@@ -1292,6 +1294,14 @@ export class OrdersService {
                 await this.buildDispatchFailureMessage(latestFailure),
             );
         }
+        auditOrder(
+            refreshed,
+            `Rider assigned automatically: rider #${refreshed.riderId}`,
+            {
+                before: { rider_id: null },
+                after: { rider_id: refreshed.riderId },
+            },
+        );
         return this.findForAdmin(orderId, tenantId, allowedBranchIds);
     }
 
@@ -2428,6 +2438,7 @@ export class OrdersService {
         const orders = await Promise.all(
             createdOrderIds.map((id) => this.findOne(id)),
         );
+        await this.auditPlacedOrders(createdOrderIds, source);
         // Remember where this went, so the next order for this number can offer
         // it instead of asking again. Outside the transaction and deliberately
         // not awaited: an address book is a convenience, and nothing about it
@@ -2466,6 +2477,46 @@ export class OrdersService {
                 loyalty_points_balance: loyaltyPointsBalance,
             })),
         };
+    }
+
+    /**
+     * First line of each order's history: who took it, where, for how much.
+     * One line per order, so a mixed cart shows up under each of its brands.
+     */
+    private async auditPlacedOrders(
+        orderIds: number[],
+        source: string,
+    ): Promise<void> {
+        if (!ActivityContext.isActive() || orderIds.length === 0) return;
+        try {
+            const placed = await this.orderRepo.find({
+                where: { id: In(orderIds) },
+                select: {
+                    id: true,
+                    tenantId: true,
+                    branchId: true,
+                    brandId: true,
+                    orderNumber: true,
+                    orderId: true,
+                    orderType: true,
+                    status: true,
+                    totalAmount: true,
+                },
+                order: { id: 'ASC' },
+            });
+            for (const order of placed) {
+                auditOrder(order, placedSummary(order.orderType, source), {
+                    after: {
+                        status: order.status,
+                        order_type: order.orderType,
+                        source,
+                        total_amount: order.totalAmount,
+                    },
+                });
+            }
+        } catch {
+            // The orders exist; failing to describe them must not fail the sale.
+        }
     }
 
     async findOne(id: number) {
@@ -3343,6 +3394,7 @@ export class OrdersService {
             // Reflect the committed transition on the in-memory entity for the
             // downstream helpers that read order.status.
             order.status = status;
+            auditOrderStatus(order, previousStatus, status);
             const leftCompleted =
                 previousStatus === 'completed' && status !== 'completed';
             if (leftCompleted) {
@@ -4140,6 +4192,17 @@ export class OrdersService {
                 reasonDetail: 'Assigned manually by admin',
             });
         });
+        auditOrder(
+            order,
+            `Rider assigned: ${riders.find((r) => r.id === riderId)?.name ?? `rider #${riderId}`}`,
+            {
+                before: {
+                    rider_id: order.riderId ?? null,
+                    delivery_status: previousDeliveryStatus ?? null,
+                },
+                after: { rider_id: riderId, delivery_status: 'accepted' },
+            },
+        );
         order.riderId = riderId;
         order.deliveryStatus = 'accepted';
         if (previousDeliveryStatus !== 'accepted') {
@@ -4236,6 +4299,14 @@ export class OrdersService {
                 reasonDetail: 'Rider changed manually by admin',
             });
         });
+        auditOrder(
+            order,
+            `Rider changed to ${riders.find((r) => r.id === riderId)?.name ?? `rider #${riderId}`}`,
+            {
+                before: { rider_id: order.riderId ?? null },
+                after: { rider_id: riderId },
+            },
+        );
         order.riderId = riderId;
         this.pushNotificationService.notifyRiderNewAssignment(order);
         return this.findForAdmin(orderId, tenantId, allowedBranchIds);
@@ -4349,6 +4420,17 @@ export class OrdersService {
         });
         for (const order of orders) {
             const previousDeliveryStatus = order.deliveryStatus;
+            auditOrder(
+                order,
+                `Rider assigned: ${riders.find((r) => r.id === riderId)?.name ?? `rider #${riderId}`}`,
+                {
+                    before: {
+                        rider_id: order.riderId ?? null,
+                        delivery_status: previousDeliveryStatus ?? null,
+                    },
+                    after: { rider_id: riderId, delivery_status: 'accepted' },
+                },
+            );
             order.riderId = riderId;
             order.deliveryStatus = 'accepted';
             if (previousDeliveryStatus !== 'accepted') {
@@ -4473,6 +4555,12 @@ export class OrdersService {
                 });
             }
         });
+        for (const order of orders) {
+            auditOrder(order, `Rider changed to rider #${riderId}`, {
+                before: { rider_id: order.riderId ?? null },
+                after: { rider_id: riderId },
+            });
+        }
         return {
             order_group_id: orderGroupId,
             updated_count: orders.length,
@@ -4676,6 +4764,15 @@ export class OrdersService {
                 deliveryFailedReason: order.deliveryFailedReason ?? null,
             },
         );
+        auditOrderStatus(
+            order,
+            previousDeliveryStatus,
+            deliveryStatus,
+            'delivery_status',
+            order.deliveryFailedReason
+                ? { delivery_failed_reason: order.deliveryFailedReason }
+                : undefined,
+        );
         if (deliveryStatus === 'delivered') {
             // Atomic completion transition: loyalty earn + shift-cash credit fire
             // exactly once even if a POS 'complete' or a retried 'delivered' event
@@ -4689,6 +4786,7 @@ export class OrdersService {
             );
             order.status = 'completed';
             if (prevStatus !== null) {
+                auditOrderStatus(order, prevStatus, 'completed');
                 await this.loyaltyService.earnOnOrderComplete(order.id);
                 await this.recordCodTenderIfUntendered(order);
             }

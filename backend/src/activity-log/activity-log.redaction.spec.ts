@@ -133,7 +133,12 @@ describe('activity log redaction', () => {
                 gst_rate_cash: 15,
                 status: 'active',
             });
-            expect(meta).toEqual({ id: 10, status: 'active' });
+            // The name is kept on purpose: it is what the row calls the record.
+            expect(meta).toEqual({
+                id: 10,
+                name: 'Emporium',
+                status: 'active',
+            });
             expect(JSON.stringify(meta)).not.toContain('FBR-SECRET-999');
         });
 
