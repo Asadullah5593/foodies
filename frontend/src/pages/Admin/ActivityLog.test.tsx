@@ -61,6 +61,9 @@ const row = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+/** How the default row reads in the list. */
+const SENTENCE = 'Changed role "Cashier"';
+
 const page = (rows: unknown[] = [row()]) => ({
   data: rows,
   total: rows.length,
@@ -85,6 +88,13 @@ beforeEach(() => {
     actions: ['role.update'],
     action_groups: ['access', 'auth'],
     actors: [{ actor_user_id: 13, actor_label: 'foodies' }],
+    branches: [{ id: 4, name: 'Johar Town' }],
+    brands: [{ id: 2, name: 'Wok & Go' }],
+    roles: [
+      { name: 'Delivery Manager', slugs: ['delivery_manager'] },
+      { name: 'Cashier', slugs: ['cashier', 'pos_cashier'] },
+    ],
+    record_types: ['menu_item', 'order', 'role'],
     outcomes: ['success', 'denied', 'failed', 'error'],
     actor_types: ['staff', 'customer'],
     max_window_days: 92,
@@ -130,14 +140,14 @@ describe('ActivityLog capture state', () => {
 
   it('says nothing when capture is on', async () => {
     renderPage();
-    await screen.findByText('role.update');
+    await screen.findByText(SENTENCE);
     expect(screen.queryByText(/Logging is OFF/)).not.toBeInTheDocument();
   });
 
   it('hides the settings panel from someone who cannot configure', async () => {
     mockUser.mockReturnValue({ permissions: ['activity-log:view'] });
     renderPage();
-    await screen.findByText('role.update');
+    await screen.findByText(SENTENCE);
     expect(
       screen.queryByRole('button', { name: /Capture settings/ })
     ).not.toBeInTheDocument();
@@ -196,7 +206,7 @@ describe('ActivityLog record lens', () => {
 
   it('keeps the normal heading when not looking at one record', async () => {
     renderFor('');
-    expect(await screen.findByText('role.update')).toBeInTheDocument();
+    expect(await screen.findByText(SENTENCE)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Activity Log' })).toBeInTheDocument();
     expect(screen.queryByText(/Full history of this record/)).not.toBeInTheDocument();
   });
@@ -212,16 +222,212 @@ describe('ActivityLog record lens', () => {
 describe('ActivityLog', () => {
   it('lists activity with who, what and outcome', async () => {
     renderPage();
-    expect(await screen.findByText('role.update')).toBeInTheDocument();
+    expect(await screen.findByText(SENTENCE)).toBeInTheDocument();
     expect(screen.getByText('foodies')).toBeInTheDocument();
     expect(screen.getByText('Cashier')).toBeInTheDocument();
-    expect(screen.getAllByText('success').length).toBeGreaterThan(0);
+    expect(screen.getByText('Succeeded')).toBeInTheDocument();
     expect(screen.getByText('203.0.113.9')).toBeInTheDocument();
+  });
+
+  it('says what happened in words, not in action codes', async () => {
+    renderPage();
+    await screen.findByText(SENTENCE);
+    // The code is still there for whoever needs it — inside the details.
+    expect(screen.queryByText('role.update')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText(SENTENCE));
+    expect(await screen.findByText('role.update')).toBeInTheDocument();
+  });
+
+  it('folds a burst of reads into one line that opens to show them all', async () => {
+    const read = (id: string, route: string) =>
+      row({
+        id,
+        action: 'report.view',
+        action_group: 'reports',
+        entity_type: 'reports',
+        entity_id: null,
+        entity_label: null,
+        http_method: 'GET',
+        route,
+        changed_fields: null,
+        diff_expected: false,
+      });
+    list.mockResolvedValue(
+      page([
+        read('1', '/admin/reports/sales-summary'),
+        read('2', '/admin/reports/top-items'),
+        read('3', '/admin/reports/day-overview'),
+      ])
+    );
+    renderPage();
+    expect(await screen.findByText('Viewed 3 reports')).toBeInTheDocument();
+    expect(screen.getByText('3 entries')).toBeInTheDocument();
+    expect(screen.queryByText('Viewed the Top items report')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Viewed 3 reports'));
+    expect(screen.getByText('Viewed the Top items report')).toBeInTheDocument();
+    expect(screen.getByText('Viewed the Sales summary report')).toBeInTheDocument();
+  });
+
+  it('never folds a change into its neighbours', async () => {
+    list.mockResolvedValue(page([row({ id: '1' }), row({ id: '2' })]));
+    renderPage();
+    expect((await screen.findAllByText(SENTENCE)).length).toBe(2);
+  });
+
+  it('narrows to one address when an IP is clicked', async () => {
+    renderPage();
+    await screen.findByText(SENTENCE);
+    fireEvent.click(screen.getByRole('button', { name: '203.0.113.9' }));
+    await waitFor(() => {
+      const latest = list.mock.calls.at(-1)![0] as { ip?: string };
+      expect(latest.ip).toBe('203.0.113.9');
+    });
+    // Clicking the address filters; it does not open the details.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('keeps the address in the details, with the device it came from', async () => {
+    detail.mockResolvedValue({
+      ...row(),
+      query: null,
+      request_body: null,
+      response_meta: null,
+      changes: null,
+      user_agent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+      session_id: null,
+      device_id: null,
+      actor_customer_id: null,
+    });
+    renderPage();
+    fireEvent.click(await screen.findByText(SENTENCE));
+    const drawer = await screen.findByRole('dialog');
+    expect(within(drawer).getByText('203.0.113.9')).toBeInTheDocument();
+    expect(await within(drawer).findByText('Chrome on Windows')).toBeInTheDocument();
+  });
+
+  it('finds an order by the number staff call it', async () => {
+    renderPage();
+    await screen.findByText(SENTENCE);
+    fireEvent.click(screen.getByRole('button', { name: /Record type/ }));
+    fireEvent.mouseDown(await screen.findByRole('option', { name: 'Order' }));
+    const box = screen.getByLabelText('Record number or name');
+    fireEvent.change(box, { target: { value: '013' } });
+    fireEvent.blur(box);
+    await waitFor(() => {
+      const latest = list.mock.calls.at(-1)![0] as {
+        entity_type?: string;
+        entity_ref?: string;
+      };
+      expect(latest.entity_type).toBe('order');
+      expect(latest.entity_ref).toBe('013');
+    });
+    // Order numbers repeat daily, so the screen says how the match is made.
+    expect(screen.getByText(/Order numbers restart every day/)).toBeInTheDocument();
+  });
+
+  it('filters by branch, brand and the role held at the time', async () => {
+    renderPage();
+    await screen.findByText(SENTENCE);
+    for (const [control, option] of [
+      [/^Branch:/, 'Johar Town'],
+      [/^Brand:/, 'Wok & Go'],
+      [/^Role:/, 'Delivery Manager'],
+    ] as const) {
+      fireEvent.click(screen.getByRole('button', { name: control }));
+      fireEvent.mouseDown(await screen.findByRole('option', { name: option }));
+    }
+    await waitFor(() => {
+      const latest = list.mock.calls.at(-1)![0] as {
+        branch_id?: number;
+        brand_id?: number;
+        actor_role?: string;
+      };
+      expect(latest.branch_id).toBe(4);
+      expect(latest.brand_id).toBe(2);
+      expect(latest.actor_role).toBe('delivery_manager');
+    });
+  });
+
+  it('offers a role once even when two roles share its name', async () => {
+    renderPage();
+    await screen.findByText(SENTENCE);
+    fireEvent.click(screen.getByRole('button', { name: /^Role:/ }));
+    expect(await screen.findAllByRole('option', { name: 'Cashier' })).toHaveLength(1);
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Cashier' }));
+    await waitFor(() => {
+      const latest = list.mock.calls.at(-1)![0] as { actor_role?: string };
+      expect(latest.actor_role).toBe('cashier,pos_cashier');
+    });
+  });
+
+  it('keeps a closed branch findable, and says it is closed', async () => {
+    filterOptions.mockResolvedValue({
+      actions: [],
+      action_groups: ['orders'],
+      actors: [],
+      branches: [
+        { id: 4, name: 'Johar Town', is_active: true },
+        { id: 5, name: 'Old Branch', is_active: false },
+      ],
+      brands: [],
+      roles: [],
+      record_types: ['order'],
+      outcomes: ['success'],
+      actor_types: ['staff'],
+      max_window_days: 92,
+    });
+    renderPage();
+    await screen.findByText(SENTENCE);
+    fireEvent.click(screen.getByRole('button', { name: /^Branch:/ }));
+    const closed = await screen.findByRole('option', { name: /Old Branch/ });
+    expect(closed.textContent).toMatch(/inactive/i);
+    expect(
+      screen.getByRole('option', { name: /Johar Town/ }).textContent
+    ).not.toMatch(/inactive/i);
+  });
+
+  it('shows where each entry happened, by name', async () => {
+    list.mockResolvedValue(page([row({ branch_id: 4, brand_id: 2 })]));
+    renderPage();
+    await screen.findByText(SENTENCE);
+    expect(screen.getByText('Johar Town')).toBeInTheDocument();
+    expect(screen.getByText('Wok & Go')).toBeInTheDocument();
+  });
+
+  it('opens the full history of a record from its row', async () => {
+    renderPage();
+    await screen.findByText(SENTENCE);
+    fireEvent.click(screen.getByRole('button', { name: 'Full history' }));
+    expect(
+      await screen.findByText(/Full history of this record/)
+    ).toBeInTheDocument();
+    const latest = list.mock.calls.at(-1)![0] as {
+      entity_type?: string;
+      entity_id?: string;
+    };
+    expect(latest.entity_type).toBe('role');
+    expect(latest.entity_id).toBe('4');
+    // Following a record does not open the details of the row it came from.
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('applies a period in one click', async () => {
+    renderPage();
+    await screen.findByText(SENTENCE);
+    fireEvent.click(screen.getByRole('button', { name: 'Today' }));
+    await waitFor(() => {
+      const latest = list.mock.calls.at(-1)![0] as {
+        date_from: string;
+        date_to: string;
+      };
+      expect(latest.date_from).toBe(latest.date_to);
+    });
   });
 
   it('defaults to a 7-day window rather than an unbounded query', async () => {
     renderPage();
-    await screen.findByText('role.update');
+    await screen.findByText(SENTENCE);
     const sent = list.mock.calls[0][0] as { date_from: string; date_to: string };
     expect(sent.date_from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(sent.date_to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
@@ -232,16 +438,16 @@ describe('ActivityLog', () => {
 
   it('shows the role held AT THE TIME, labelled as such', async () => {
     renderPage();
-    fireEvent.click(await screen.findByText('role.update'));
+    fireEvent.click(await screen.findByText(SENTENCE));
     // Labelled explicitly, because today's role is the wrong answer for a past action
-    expect(await screen.findByText(/Role at the time/)).toBeInTheDocument();
-    const drawer = screen.getByText(/Role at the time/).closest('dl')!;
+    const panel = await screen.findByRole('dialog');
+    const drawer = within(panel).getByText(/Role at the time/).closest('dl')!;
     expect(within(drawer).getByText(/Owner/)).toBeInTheDocument();
   });
 
   it('shows the before/after diff as the centrepiece of the drawer', async () => {
     renderPage();
-    fireEvent.click(await screen.findByText('role.update'));
+    fireEvent.click(await screen.findByText(SENTENCE));
     expect(await screen.findByText('What changed')).toBeInTheDocument();
     expect(screen.getByText('read')).toBeInTheDocument();
     expect(screen.getByText('read,write')).toBeInTheDocument();
@@ -267,7 +473,7 @@ describe('ActivityLog', () => {
       actor_customer_id: null,
     });
     renderPage();
-    fireEvent.click(await screen.findByText('role.update'));
+    fireEvent.click(await screen.findByText(SENTENCE));
     await screen.findByText('What changed');
     expect(screen.getByText('+ orders:refund')).toBeInTheDocument();
     expect(screen.getByText('− orders:create')).toBeInTheDocument();
@@ -289,14 +495,14 @@ describe('ActivityLog', () => {
       actor_customer_id: null,
     });
     renderPage();
-    fireEvent.click(await screen.findByText('role.update'));
+    fireEvent.click(await screen.findByText(SENTENCE));
     await screen.findByText('What changed');
     expect(screen.getAllByText('[changed]').length).toBe(2);
   });
 
   it('offers no way to edit or delete an entry', async () => {
     renderPage();
-    fireEvent.click(await screen.findByText('role.update'));
+    fireEvent.click(await screen.findByText(SENTENCE));
     await screen.findByText('What changed');
     const buttons = screen.getAllByRole('button').map((b) => b.textContent ?? '');
     expect(buttons.join(' ')).not.toMatch(/delete|remove|edit/i);
@@ -310,8 +516,8 @@ describe('ActivityLog', () => {
 
   it('filters by outcome from the tally chips, and puts it in the URL', async () => {
     renderPage();
-    await screen.findByText('role.update');
-    fireEvent.click(screen.getByRole('button', { name: /denied: 2/ }));
+    await screen.findByText(SENTENCE);
+    fireEvent.click(screen.getByRole('button', { name: /Refused 2/ }));
     await waitFor(() => {
       const latest = list.mock.calls.at(-1)![0] as { outcome?: string };
       expect(latest.outcome).toBe('denied');
@@ -333,9 +539,9 @@ describe('ActivityLog', () => {
 
   it('debounces the search box', async () => {
     renderPage();
-    await screen.findByText('role.update');
+    await screen.findByText(SENTENCE);
     const before = list.mock.calls.length;
-    const box = screen.getByPlaceholderText('Person, action, route or record…');
+    const box = screen.getByPlaceholderText('Person, record, action or IP…');
     fireEvent.change(box, { target: { value: 'r' } });
     fireEvent.change(box, { target: { value: 'ro' } });
     fireEvent.change(box, { target: { value: 'role' } });

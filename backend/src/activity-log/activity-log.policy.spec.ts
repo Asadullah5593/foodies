@@ -49,8 +49,82 @@ describe('activity log policy', () => {
             );
         });
 
+        it('does not log the beacon transport on top of the events it carries', () => {
+            expect(
+                shouldCapture(
+                    level,
+                    'POST',
+                    '/admin/activity-logs/events',
+                    202,
+                ),
+            ).toBe(false);
+            // A refused beacon is still a refusal.
+            expect(
+                shouldCapture(
+                    level,
+                    'POST',
+                    '/admin/activity-logs/events',
+                    401,
+                ),
+            ).toBe(true);
+            // Reading the log itself stays audited.
+            expect(
+                shouldCapture(level, 'GET', '/admin/activity-logs', 200),
+            ).toBe(true);
+        });
+
+        it('logs opening one branch, not the list every dropdown loads', () => {
+            expect(shouldCapture(level, 'GET', '/admin/branches', 200)).toBe(
+                false,
+            );
+            expect(shouldCapture(level, 'GET', '/admin/branches/4', 200)).toBe(
+                true,
+            );
+            expect(shouldCapture(level, 'PUT', '/admin/branches/4', 200)).toBe(
+                true,
+            );
+        });
+
+        it('drops chatter whose route carries an id', () => {
+            // A prefix cannot match these, so every GPS ping used to be a row.
+            expect(
+                shouldCapture(level, 'POST', '/rider/orders/812/location', 201),
+            ).toBe(false);
+            expect(
+                shouldCapture(level, 'POST', '/notifications/44/read', 201),
+            ).toBe(false);
+            expect(
+                shouldCapture(
+                    level,
+                    'PATCH',
+                    '/rider/attendance/heartbeat',
+                    200,
+                ),
+            ).toBe(false);
+            expect(
+                shouldCapture(
+                    level,
+                    'POST',
+                    '/public/consumer/cart/items',
+                    201,
+                ),
+            ).toBe(false);
+        });
+
+        it('keeps every step of an order, from placing it to delivering it', () => {
+            for (const [method, path] of [
+                ['POST', '/pos/orders'],
+                ['POST', '/pos/orders/12/pay'],
+                ['PATCH', '/kitchen/orders/12/status'],
+                ['PUT', '/admin/orders/12/status'],
+                ['PUT', '/admin/orders/12/rider'],
+                ['PATCH', '/rider/orders/12/status'],
+            ]) {
+                expect(shouldCapture(level, method, path, 200)).toBe(true);
+            }
+        });
+
         it('keeps the money even under a skipped prefix', () => {
-            expect(isSkippedRoute('POST', '/pos/orders')).toBe(true);
             expect(isSkippedRoute('POST', '/pos/orders/12/pay')).toBe(false);
             expect(isSkippedRoute('POST', '/pos/orders/12/void')).toBe(false);
             expect(isSkippedRoute('POST', '/pos/orders/12/refund')).toBe(false);

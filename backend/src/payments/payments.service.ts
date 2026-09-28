@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { Payment } from '../entities/payment.entity';
 import { Order } from '../entities/order.entity';
+import { auditOrder } from '../orders/order-audit';
 
 // Statuses at or past payment-acceptance — the paid->accepted flip must never move
 // an order backwards into 'accepted' from one of these.
@@ -50,8 +51,15 @@ export class PaymentsService {
                 id: number;
                 status: string;
                 total_amount: string;
+                tenant_id: number | null;
+                branch_id: number | null;
+                brand_id: number | null;
+                order_number: string | null;
+                order_id: string | null;
             }> = await manager.query(
-                `SELECT id, status, total_amount FROM orders WHERE id = $1 FOR UPDATE`,
+                `SELECT id, status, total_amount, tenant_id, branch_id,
+                        brand_id, order_number, order_id
+                 FROM orders WHERE id = $1 FOR UPDATE`,
                 [orderId],
             );
             if (!orderRows.length)
@@ -123,6 +131,24 @@ export class PaymentsService {
                 );
             }
 
+            auditOrder(
+                {
+                    id: order.id,
+                    tenantId: order.tenant_id,
+                    branchId: order.branch_id,
+                    brandId: order.brand_id,
+                    orderNumber: order.order_number,
+                    orderId: order.order_id,
+                },
+                `Payment taken: ${(appliedP / 100).toFixed(2)} by ${paymentMethod.replace(/_/g, ' ')}`,
+                {
+                    after: {
+                        payment_method: paymentMethod,
+                        amount: appliedP / 100,
+                        fully_paid: alreadyPaidP + appliedP >= totalDueP,
+                    },
+                },
+            );
             return payment;
         });
     }

@@ -807,3 +807,96 @@ path-level gate never matches and is currently inert**. All real enforcement com
 from `RequirePermissionGuard` method guards. Fixing it in this change would 403 a lot
 of currently-working traffic. The activity log will make it visible: if anyone does
 fix it, you will see an immediate `outcome=denied` spike.
+
+---
+
+## 14. Readability pass (2026-09-28)
+
+Prompted by production use: one screen open produced four rows, and a reports
+page load produced five identical "view reports" lines.
+
+**Capture**
+
+- `POST /admin/activity-logs/events` is skipped. Each event the beacon carries
+  is already its own row; logging the transport duplicated it, and did so with
+  an immediate write because the action starts with `activity-log.`. A refused
+  or failing beacon is still captured (401/403/5xx always are).
+- `/admin/branches` is a sensitive read **only for one record**
+  (`/admin/branches/:id`), as §5 Phase 1 specified. The prefix match had also
+  been logging the list every branch dropdown loads.
+
+**Display** — `frontend/src/pages/Admin/activityLogText.ts`
+
+- Rows are worded at display time from columns they already carry, because the
+  table is append-only: a stored sentence could never be corrected, and older
+  rows would stay unreadable.
+- A request that did not succeed reads as an attempt ("Tried to view…").
+- Successful reads by one person from one address within a minute fold into a
+  single expandable line. **A change, a refusal or a failure never folds.**
+  Folding is per page of results; nothing is hidden or dropped server-side.
+
+**IP** — still captured and listed on every row. Added: an exact `ip` filter on
+the list endpoint, IP included in free-text search, click-to-filter on the
+address, and the device (from the user agent) beside it in the details.
+
+---
+
+## 15. Investigation pass (2026-09-28)
+
+The log has to answer three questions: *what happened to this record*, *what
+did this person do that day in that module*, and *what happened at this branch
+or brand*. It could not, because rows rarely said which record, branch or brand
+they concerned.
+
+**Every row now carries where it happened.** `branch_id` / `brand_id` are
+resolved in this order (`activity-log.subject.ts`):
+
+1. what the service declared (`setScope`, `recordEvent`);
+2. what the request named — route params, query, body, then the response;
+3. for someone confined to exactly one branch or brand, that one.
+
+Step 3 departs from §5's "never from the actor's access scope". It applies only
+when there is a single possibility, so it cannot misplace a row; owners and
+multi-branch staff get no guess. Consequence: branch-restricted readers now see
+fewer rows, because fewer rows are unplaced.
+
+**One spelling per record type.** `entity_type` is stored canonically
+(`menu_item`, `order`, `role`). Reads match every older spelling
+(`entityTypeVariants`), since existing rows cannot be rewritten.
+
+**One row per record.** `ActivityContext.recordEvent()` gives each record a
+request touched its own row, summary, diff, branch and brand. Events are
+dropped when the request fails, so a rolled-back change is never reported.
+
+**Orders** (`orders/order-audit.ts`) — placed, status changed (admin, kitchen,
+rider delivery), rider assigned / changed / auto-assigned, payment taken. Label
+is `<daily number> · <tracking reference>`, e.g. `013 · FDS-A7K2M9QX`.
+`POST /pos/orders` is no longer skipped: it is the first line of the order's
+history. Kitchen status changes are kept for the same reason.
+
+**Skip rules that never matched.** Prefixes cannot match a route with an id in
+the middle, so rider GPS pings (`/rider/orders/:id/location`), notification
+reads (`/notifications/:id/read`), rider heartbeats and consumer cart edits
+(`/public/consumer/cart`) were all being written as activity. Fixed.
+
+**Read API** — new filters `branch_id`, `brand_id` (now in the UI),
+`actor_role`, `entity_ref`; brand lock (`allowedBrandIds`) enforced on the
+list, detail, related rows, record history and filter options.
+
+`entity_type=order&entity_ref=013` resolves the daily number against orders
+**placed in the window being searched** (daily numbers repeat), then matches
+log rows by order id — which is what reaches rows written before orders were
+labelled.
+
+**Limits on older rows.** They keep what they were written with: no branch or
+brand, no before/after, and no "placed" line for POS orders.
+
+**Filter dropdowns list what exists** (`activity-log.options.ts`). Person,
+role, branch and brand come from the tenant's own staff, roles, branches and
+brands (narrowed to the reader's branches and brands), merged with what the
+last 30 days of the log have seen. Built from the log alone they were empty
+wherever the log was — capture off, a fresh install, and branch/brand on every
+row written before rows carried a place. Roles sharing a name (a tenant's own
+"Cashier" beside the built-in one) are offered once; `actor_role` takes
+comma-separated slugs and matches any. Closed branches and brands and inactive
+staff stay listed, marked inactive.
