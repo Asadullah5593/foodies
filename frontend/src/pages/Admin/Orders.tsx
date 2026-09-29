@@ -841,6 +841,13 @@ const Orders: React.FC = () => {
           </Link>
           <div className="truncate text-[12.5px] text-gray-400 dark:text-slate-500">{o.brand?.name ?? o.brand_name ?? '—'}</div>
         </div>
+        {/* Branch */}
+        <div
+          title={o.branch?.name ?? undefined}
+          className="truncate text-[13.5px] font-semibold text-gray-700 dark:text-slate-200"
+        >
+          {o.branch?.name ?? '—'}
+        </div>
         {/* Customer */}
         <div className="min-w-0">
           <div className="truncate text-[14px] font-semibold text-gray-800 dark:text-slate-100">{customerText(o)}</div>
@@ -991,6 +998,9 @@ const Orders: React.FC = () => {
         </div>
         {/* meta line */}
         <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-gray-500 dark:text-slate-400">
+          {o.branch?.name && (
+            <span className="font-semibold text-gray-700 dark:text-slate-200">{o.branch.name} ·</span>
+          )}
           <span>{placedTimeText(o.placed_at)}</span>
           <span className={`font-bold ${overdue ? 'text-red-600' : 'text-gray-400 dark:text-slate-500'}`}>{ageText(age)}</span>
           <span>· {o.items_count ?? 0} item{(o.items_count ?? 0) === 1 ? '' : 's'}</span>
@@ -1269,6 +1279,7 @@ const Orders: React.FC = () => {
                 <span className={cellHead}>#</span>
                 <span className={cellHead}>Type</span>
                 <span className={cellHead}>Order</span>
+                <span className={cellHead}>Branch</span>
                 <span className={cellHead}>Customer</span>
                 <span className={cellHead}>Source</span>
                 <span className={`${cellHead} text-center`}>Items</span>
