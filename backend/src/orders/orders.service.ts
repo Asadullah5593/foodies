@@ -3747,11 +3747,14 @@ export class OrdersService {
                 ? Math.floor(orderHistoryDays)
                 : null;
 
+        // 'completed' counts too: a delivery marked completed before anyone was
+        // assigned still has no rider on record. Cancelled orders need no one.
         const NEEDS_RIDER_STATUSES = [
             'placed',
             'accepted',
             'preparing',
             'ready',
+            'completed',
         ];
         const NEEDS_RIDER_SQL =
             "o.orderType = 'delivery' AND o.riderId IS NULL AND o.status IN (:...nrs)";
@@ -4161,8 +4164,12 @@ export class OrdersService {
                 maxBatchSize,
                 excludeOrderId: order.id,
             });
-            // Scoped, terminal-state-guarded update (not a full-entity save): never
-            // assign a cancelled/completed order or clobber a concurrent status write.
+            // Scoped, guarded update (not a full-entity save), so a concurrent
+            // status write is never clobbered. A completed order may take a
+            // rider only while it has none — that is attaching the rider it
+            // never had, not re-opening a delivery that already finished. A
+            // cancelled order never may: a rider marking it delivered would
+            // move it to completed and book its cash and loyalty points.
             const res = await manager
                 .getRepository(Order)
                 .createQueryBuilder()
@@ -4172,14 +4179,14 @@ export class OrdersService {
                     deliveryStatus: 'accepted',
                     deliveryFailedReason: null,
                 })
-                .where('id = :id AND status NOT IN (:...terminal)', {
-                    id: order.id,
-                    terminal: ['cancelled', 'completed'],
-                })
+                .where(
+                    "id = :id AND status <> 'cancelled' AND (status <> 'completed' OR rider_id IS NULL)",
+                    { id: order.id },
+                )
                 .execute();
             if (res.affected === 0) {
                 throw new BadRequestException(
-                    'This order can no longer be assigned (it may have been cancelled or completed).',
+                    'This order can no longer be assigned (it has been cancelled, or it is completed and already has a rider).',
                 );
             }
             await this.createAssignmentLedgerEntry({

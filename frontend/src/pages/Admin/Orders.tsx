@@ -201,12 +201,15 @@ function isDeliveryOrder(o: OrderRow): boolean {
   return getOrderType(o) === 'delivery';
 }
 
-/** Delivery order still needing a rider while the kitchen is actively working it. */
+/**
+ * Delivery order with no rider on it. Kept in step with the server's
+ * "Needs rider" view: a completed order counts, a cancelled one does not.
+ */
 function needsRider(o: OrderRow): boolean {
   return (
     isDeliveryOrder(o) &&
     o.rider_id == null &&
-    ['placed', 'accepted', 'preparing', 'ready'].includes(String(o.status ?? ''))
+    ['placed', 'accepted', 'preparing', 'ready', 'completed'].includes(String(o.status ?? ''))
   );
 }
 
