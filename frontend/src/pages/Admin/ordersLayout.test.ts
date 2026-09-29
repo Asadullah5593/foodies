@@ -25,9 +25,9 @@ describe('orders grid geometry', () => {
     expect(ordersGridTemplate.split(' ')).toHaveLength(ORDERS_COLUMNS.length);
   });
 
-  it('still covers all 14 columns of the list', () => {
+  it('still covers all 15 columns of the list', () => {
     expect(ORDERS_COLUMNS.map((c) => c.key)).toEqual([
-      'serial', 'type', 'order', 'customer', 'source', 'items', 'placed',
+      'serial', 'type', 'order', 'branch', 'customer', 'source', 'items', 'placed',
       'total', 'discount', 'payment', 'kitchen', 'delivery', 'rider', 'actions',
     ]);
   });
