@@ -1,4 +1,5 @@
 import apiClient from '../../utils/apiClient';
+import type { CustomerOrderStats, CustomerRow } from '../../utils/customerFilters';
 import {
   MenuVariant,
   MenuAddon,
@@ -74,6 +75,25 @@ export interface ModifierResponse {
   sort_order?: number;
   modifier_group_name?: string;
 }
+
+/** One line of a customer's order breakdown (a brand + branch, an order type, a channel). */
+export type CustomerBreakdownLine = CustomerOrderStats & {
+  brand_id?: number | null;
+  brand_name?: string | null;
+  branch_id?: number;
+  branch_name?: string | null;
+  order_type?: string;
+  source?: string;
+};
+
+/** GET /admin/customers/:id/summary */
+export type CustomerSummary = Omit<CustomerRow, 'orderStats'> & {
+  phoneVerified?: boolean;
+  orderStats: CustomerOrderStats & { first_order_at: string | null };
+  breakdown: CustomerBreakdownLine[];
+  by_order_type: CustomerBreakdownLine[];
+  by_source: CustomerBreakdownLine[];
+};
 
 export const adminService = {
   // Categories (brand-scoped; uses dedicated categories module)
@@ -1265,6 +1285,12 @@ export const adminService = {
 
   getCustomer: async (id: number) => {
     const response = await apiClient.get(`/admin/customers/${id}`);
+    return response.data;
+  },
+
+  /** The customer detail page: figures plus the brand + branch breakdown. */
+  getCustomerSummary: async (id: number): Promise<CustomerSummary> => {
+    const response = await apiClient.get(`/admin/customers/${id}/summary`);
     return response.data;
   },
 

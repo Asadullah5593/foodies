@@ -18,6 +18,16 @@ import {
 import { PromotionsService } from '../promotions/promotions.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { CustomerSource } from './customer-sources';
+import { withoutSecrets } from './customer-secrets';
+import {
+    CustomerOrderScope,
+    CustomerOrderStats,
+    FINISHED_ORDERS_SQL,
+    ORDER_STATS_SELECT,
+    mapOrderStats,
+    orderScopeSql,
+    toIso,
+} from './customer-order-stats';
 
 /**
  * Union `add` into `current` brand-id list (deduped). Returns the new array, or
@@ -64,7 +74,25 @@ export class CustomersService {
      * - super admin (tenantId null): all customers
      * - brand-locked users: only customers who have ordered from their brand
      */
-    async findAll(tenantId: number | null, allowedBrandIds?: number[] | null) {
+    async findAll(
+        tenantId: number | null,
+        allowedBrandIds?: number[] | null,
+        /**
+         * The rest of the viewer's ORDER scope, for the order figures beside
+         * each customer. Which customers are listed is unchanged by it.
+         */
+        orderView: Omit<CustomerOrderScope, 'tenantId' | 'allowedBrandIds'> & {
+            /** `orders:view:no-totals` holders get no money figure. */
+            hideTotals?: boolean;
+        } = {},
+    ) {
+        const { hideTotals = false, ...restOfScope } = orderView;
+        const scope: CustomerOrderScope = {
+            ...restOfScope,
+            tenantId,
+            allowedBrandIds,
+        };
+
         if (allowedBrandIds != null) {
             // Brand-locked: customers who ordered from their brand(s) OR are
             // explicitly associated via brand_ids (manual add / link).
@@ -82,17 +110,54 @@ export class CustomersService {
                 .orderBy('c.id', 'DESC');
             if (tenantId != null)
                 qb.andWhere('c.tenantId = :tenantId', { tenantId });
-            const customers = await qb.getMany();
-            return this.attachLoyaltyWallets(customers, allowedBrandIds);
+            // Rows leave here for the admin, so the login hash comes off first.
+            const customers = (await qb.getMany()).map(withoutSecrets);
+            const withBrands = await this.attachBrands(
+                customers,
+                allowedBrandIds,
+            );
+            const withStats = await this.attachOrderStats(
+                withBrands,
+                scope,
+                hideTotals,
+            );
+            return this.attachLoyaltyWallets(withStats, allowedBrandIds);
         }
 
         // Owner / unrestricted: return all customers with brand badges
-        const customers = await this.repo.find({
-            where: tenantId != null ? { tenantId } : {},
-            // Newest first: a just-registered customer lands at the top.
-            order: { id: 'DESC' },
-        });
+        const customers = (
+            await this.repo.find({
+                where: tenantId != null ? { tenantId } : {},
+                // Newest first: a just-registered customer lands at the top.
+                order: { id: 'DESC' },
+            })
+        ).map(withoutSecrets);
         if (!customers.length) return customers;
+
+        const withBrands = await this.attachBrands(customers, null);
+        const withStats = await this.attachOrderStats(
+            withBrands,
+            scope,
+            hideTotals,
+        );
+        return this.attachLoyaltyWallets(withStats, null);
+    }
+
+    /**
+     * Attach the brands each customer belongs to: the ones they ordered from,
+     * plus any they were explicitly associated with (brand_ids — a manually
+     * added customer with no orders yet still shows a brand badge).
+     * A brand-locked viewer only ever gets their own brands back.
+     */
+    private async attachBrands<
+        T extends { id: number; brandIds?: number[] | null },
+    >(
+        customers: T[],
+        allowedBrandIds: number[] | null,
+    ): Promise<Array<T & { brands: { id: number; name: string }[] }>> {
+        if (!customers.length) return [];
+        const allowed =
+            allowedBrandIds != null ? new Set(allowedBrandIds) : null;
 
         const brandRows = await this.dataSource.query<
             { customer_id: number; id: number; name: string }[]
@@ -106,6 +171,7 @@ export class CustomersService {
 
         const brandMap = new Map<number, { id: number; name: string }[]>();
         for (const row of brandRows) {
+            if (allowed && !allowed.has(Number(row.id))) continue;
             if (!brandMap.has(row.customer_id))
                 brandMap.set(row.customer_id, []);
             brandMap.get(row.customer_id)!.push({ id: row.id, name: row.name });
@@ -115,7 +181,10 @@ export class CustomersService {
         // manually-added customer with no orders yet still shows a brand badge.
         const assocBrandIds = new Set<number>();
         for (const c of customers)
-            for (const bid of c.brandIds ?? []) assocBrandIds.add(Number(bid));
+            for (const bid of c.brandIds ?? []) {
+                const n = Number(bid);
+                if (!allowed || allowed.has(n)) assocBrandIds.add(n);
+            }
         const brandNameMap = new Map<number, string>();
         if (assocBrandIds.size) {
             const nameRows = await this.dataSource.query<
@@ -126,7 +195,7 @@ export class CustomersService {
             for (const r of nameRows) brandNameMap.set(Number(r.id), r.name);
         }
 
-        const withBrands = customers.map((c) => {
+        return customers.map((c) => {
             const fromOrders = brandMap.get(c.id) ?? [];
             const seen = new Set(fromOrders.map((b) => b.id));
             const fromAssoc = (c.brandIds ?? [])
@@ -135,7 +204,191 @@ export class CustomersService {
                 .map((id) => ({ id, name: brandNameMap.get(id)! }));
             return { ...c, brands: [...fromOrders, ...fromAssoc] };
         });
-        return this.attachLoyaltyWallets(withBrands, null);
+    }
+
+    /**
+     * Attach each customer's order figures (completed / cancelled / spent /
+     * last order) and the branches they ordered at — over the orders the
+     * viewer may read, and by the rules in customer-order-stats.ts.
+     */
+    private async attachOrderStats<T extends { id: number }>(
+        customers: T[],
+        scope: CustomerOrderScope,
+        hideTotals: boolean,
+    ): Promise<
+        Array<
+            T & {
+                orderStats: CustomerOrderStats;
+                branches: { id: number; name: string }[];
+            }
+        >
+    > {
+        if (!customers.length) return [];
+        const ids = customers.map((c) => c.id);
+        const { sql: scopeSql, params: scopeParams } = orderScopeSql(scope, 2);
+
+        const statRows = await this.dataSource.query<
+            Array<{
+                customer_id: number;
+                completed_count: number;
+                cancelled_count: number;
+                spent: string;
+                last_order_at: Date | null;
+            }>
+        >(
+            `SELECT o.customer_id, ${ORDER_STATS_SELECT}
+             FROM orders o
+             WHERE o.customer_id = ANY($1) AND ${FINISHED_ORDERS_SQL}${scopeSql}
+             GROUP BY o.customer_id`,
+            [ids, ...scopeParams],
+        );
+        const statMap = new Map(
+            statRows.map((r) => [Number(r.customer_id), r]),
+        );
+
+        const branchRows = await this.dataSource.query<
+            { customer_id: number; id: number; name: string }[]
+        >(
+            `SELECT DISTINCT o.customer_id, br.id, br.name
+             FROM orders o
+             JOIN branches br ON br.id = o.branch_id
+             WHERE o.customer_id = ANY($1) AND ${FINISHED_ORDERS_SQL}${scopeSql}
+             ORDER BY br.name`,
+            [ids, ...scopeParams],
+        );
+        const branchMap = new Map<number, { id: number; name: string }[]>();
+        for (const row of branchRows) {
+            const key = Number(row.customer_id);
+            if (!branchMap.has(key)) branchMap.set(key, []);
+            branchMap.get(key)!.push({ id: Number(row.id), name: row.name });
+        }
+
+        return customers.map((c) => ({
+            ...c,
+            orderStats: mapOrderStats(statMap.get(c.id), hideTotals),
+            branches: branchMap.get(c.id) ?? [],
+        }));
+    }
+
+    /**
+     * Everything the customer detail page shows: who they are, their points,
+     * their order figures, and where those orders were placed — one line per
+     * brand + branch ("12 completed at Fireaway · Pine Avenue").
+     *
+     * Same visibility as findOne (tenant + brand lock), and the same order
+     * scope and rules as the list's figures.
+     */
+    async getSummary(
+        id: number,
+        scope: CustomerOrderScope,
+        hideTotals = false,
+    ) {
+        const customer = await this.findOne(
+            id,
+            scope.tenantId,
+            scope.allowedBrandIds,
+        );
+        // A whitelist, not the entity: the row also holds the login password hash.
+        const base = {
+            id: customer.id,
+            name: customer.name,
+            phone: customer.phone,
+            email: customer.email,
+            source: customer.source,
+            phoneVerified: customer.phoneVerified,
+            createdAt: customer.createdAt,
+            brandIds: customer.brandIds,
+        };
+        const withBrands = await this.attachBrands(
+            [base],
+            scope.allowedBrandIds ?? null,
+        );
+        const withStats = await this.attachOrderStats(
+            withBrands,
+            scope,
+            hideTotals,
+        );
+        const [row] = await this.attachLoyaltyWallets(
+            withStats,
+            scope.allowedBrandIds ?? null,
+        );
+
+        const { sql: scopeSql, params: scopeParams } = orderScopeSql(scope, 2);
+        const where = `o.customer_id = $1 AND ${FINISHED_ORDERS_SQL}${scopeSql}`;
+        const params = [customer.id, ...scopeParams];
+        type Agg = {
+            completed_count: number;
+            cancelled_count: number;
+            spent: string;
+            last_order_at: Date | null;
+            first_order_at: Date | null;
+        };
+
+        const [totals] = await this.dataSource.query<Agg[]>(
+            `SELECT ${ORDER_STATS_SELECT} FROM orders o WHERE ${where}`,
+            params,
+        );
+        const breakdownRows = await this.dataSource.query<
+            Array<
+                Agg & {
+                    brand_id: number | null;
+                    brand_name: string | null;
+                    branch_id: number;
+                    branch_name: string | null;
+                }
+            >
+        >(
+            `SELECT o.brand_id, b.name AS brand_name,
+                    o.branch_id, br.name AS branch_name, ${ORDER_STATS_SELECT}
+             FROM orders o
+             LEFT JOIN brands b ON b.id = o.brand_id
+             LEFT JOIN branches br ON br.id = o.branch_id
+             WHERE ${where}
+             GROUP BY o.brand_id, b.name, o.branch_id, br.name
+             ORDER BY COUNT(*) DESC, b.name, br.name`,
+            params,
+        );
+        const typeRows = await this.dataSource.query<
+            Array<Agg & { order_type: string }>
+        >(
+            `SELECT o.order_type, ${ORDER_STATS_SELECT}
+             FROM orders o WHERE ${where}
+             GROUP BY o.order_type ORDER BY COUNT(*) DESC, o.order_type`,
+            params,
+        );
+        const sourceRows = await this.dataSource.query<
+            Array<Agg & { source: string }>
+        >(
+            `SELECT o.source, ${ORDER_STATS_SELECT}
+             FROM orders o WHERE ${where}
+             GROUP BY o.source ORDER BY COUNT(*) DESC, o.source`,
+            params,
+        );
+
+        const { brandIds: _brandIds, ...publicRow } = row;
+        void _brandIds;
+        return {
+            ...publicRow,
+            orderStats: {
+                ...mapOrderStats(totals, hideTotals),
+                first_order_at: toIso(totals?.first_order_at),
+            },
+            breakdown: breakdownRows.map((r) => ({
+                brand_id: r.brand_id != null ? Number(r.brand_id) : null,
+                brand_name: r.brand_name,
+                branch_id: Number(r.branch_id),
+                branch_name: r.branch_name,
+                ...mapOrderStats(r, hideTotals),
+            })),
+            by_order_type: typeRows.map((r) => ({
+                order_type: r.order_type,
+                ...mapOrderStats(r, hideTotals),
+            })),
+            by_source: sourceRows.map((r) => ({
+                source: r.source,
+                ...mapOrderStats(r, hideTotals),
+            })),
+        };
     }
 
     /**
