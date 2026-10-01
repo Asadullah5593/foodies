@@ -186,6 +186,14 @@ const ORDERS_DEFAULT_PAGE_SIZE = 25;
 
 /* --------------------------------------------------------------- helpers -- */
 
+/** The header's date summary; either end may be open in a customer's history. */
+function dateRangeLabel(from: string, to: string): string {
+  if (!from && !to) return 'all time';
+  if (!from) return `up to ${to}`;
+  if (!to) return `from ${from}`;
+  return from === to ? from : `${from} → ${to}`;
+}
+
 function localDateYYYYMMDD(date?: Date): string {
   const d = date ?? new Date();
   const y = d.getFullYear();
@@ -423,9 +431,17 @@ const Orders: React.FC = () => {
   const source = searchParams.get('source') || '';
   const paymentMethod = searchParams.get('payment_method') || '';
   const discount = searchParams.get('discount') || '';
+  // One customer's order history (opened from the Customers page). The id is
+  // what filters; the label only names them in the banner.
+  const customerIdRaw = searchParams.get('customer_id') || '';
+  const customerId = /^[1-9]\d*$/.test(customerIdRaw) ? customerIdRaw : '';
+  const customerLabel = searchParams.get('customer_label') || '';
   const defaultToday = localDateYYYYMMDD();
-  const dateFrom = searchParams.get('date_from') || defaultToday;
-  const dateTo = searchParams.get('date_to') || defaultToday;
+  // A history is every order they ever placed, so it opens with no date bound
+  // instead of the list's usual "today"; the pickers still narrow it.
+  const defaultDate = customerId ? '' : defaultToday;
+  const dateFrom = searchParams.get('date_from') || defaultDate;
+  const dateTo = searchParams.get('date_to') || defaultDate;
 
   const baseParams = {
     ...(branchId && { branch_id: +branchId }),
@@ -436,6 +452,7 @@ const Orders: React.FC = () => {
     ...(discount && { discount }),
     ...(dateFrom && { date_from: dateFrom }),
     ...(dateTo && { date_to: dateTo }),
+    ...(customerId && { customer_id: +customerId }),
   };
 
   // Debounce the search box so we fire one request after typing settles, not per keystroke.
@@ -457,6 +474,7 @@ const Orders: React.FC = () => {
     if (baseParams.discount) sp.append('discount', baseParams.discount);
     if (baseParams.date_from) sp.append('date_from', baseParams.date_from);
     if (baseParams.date_to) sp.append('date_to', baseParams.date_to);
+    if (baseParams.customer_id) sp.append('customer_id', String(baseParams.customer_id));
     if (debouncedSearch) sp.append('search', debouncedSearch);
     sp.append('page', String(ordersPage));
     sp.append('page_size', String(pageSize));
@@ -653,7 +671,7 @@ const Orders: React.FC = () => {
 
   useEffect(() => {
     setOrdersPage(1);
-  }, [branchId, brandId, status, orderType, source, paymentMethod, dateFrom, dateTo, search]);
+  }, [branchId, brandId, status, orderType, source, paymentMethod, dateFrom, dateTo, search, customerId]);
 
   // The status popover is position:fixed — dismiss it whenever the page moves
   // or ESC is pressed, so it can never drift away from its pill.
@@ -1113,7 +1131,7 @@ const Orders: React.FC = () => {
         <div className="flex items-baseline gap-3">
           <h1 className="text-2xl font-extrabold tracking-tight text-gray-800 dark:text-slate-100 sm:text-3xl">Orders</h1>
           <span className="text-[15px] text-gray-400 dark:text-slate-500">
-            {totalCount} {totalCount === 1 ? 'order' : 'orders'} · {dateFrom === dateTo ? dateFrom : `${dateFrom} → ${dateTo}`}
+            {totalCount} {totalCount === 1 ? 'order' : 'orders'} · {dateRangeLabel(dateFrom, dateTo)}
           </span>
         </div>
         <div className="flex items-center gap-2.5">
@@ -1148,6 +1166,41 @@ const Orders: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Customer history banner — this list is one customer's orders. */}
+      {customerId && (
+        <div
+          data-testid="customer-history-banner"
+          className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-indigo-200 bg-indigo-50 px-4 py-3 dark:border-indigo-800 dark:bg-indigo-900/30"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-white text-indigo-600 dark:bg-indigo-900/60 dark:text-indigo-200">
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="8" cy="5.5" r="2.5" /><path d="M3 13.5c.6-2.3 2.6-3.5 5-3.5s4.4 1.2 5 3.5" />
+              </svg>
+            </span>
+            <div className="min-w-0">
+              <div className="text-[12px] font-bold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">Order history</div>
+              <div className="truncate text-[16px] font-bold text-gray-800 dark:text-slate-100">
+                {customerLabel || `Customer #${customerId}`}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-none gap-2">
+            {canAccessPath(user, '/admin/customers') && (
+              <Link to="/admin/customers" className="rounded-[9px] border border-indigo-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:bg-slate-800 dark:text-indigo-200">
+                Back to customers
+              </Link>
+            )}
+            <button
+              onClick={() => { setSearch(''); setSearchParams({}); }}
+              className="rounded-[9px] border border-indigo-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-indigo-700 dark:bg-slate-800 dark:text-slate-200"
+            >
+              Show all orders
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Rider banner — shown only if the user can reach at least one of its
           actions (Rider HRM or branch config). */}
@@ -1234,8 +1287,14 @@ const Orders: React.FC = () => {
         <input type="date" min={minDate} value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />
         <button
           onClick={() => {
-            const t = localDateYYYYMMDD();
             setSearch('');
+            // Clearing the filters keeps the customer whose history this is —
+            // leaving that view is the banner's job — and their full date range.
+            if (customerId) {
+              setSearchParams({ customer_id: customerId, ...(customerLabel && { customer_label: customerLabel }) });
+              return;
+            }
+            const t = localDateYYYYMMDD();
             setSearchParams({ date_from: t, date_to: t });
           }}
           className="whitespace-nowrap rounded-[10px] bg-red-50 px-4 py-3 text-[14.5px] font-bold text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300"

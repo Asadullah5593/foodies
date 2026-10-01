@@ -92,6 +92,7 @@ import LoyaltySettings from './pages/Admin/LoyaltySettings';
 import DeliveryTiers from './pages/Admin/DeliveryTiers';
 import BusinessSettings from './pages/Admin/BusinessSettings';
 import Customers from './pages/Admin/Customers';
+import CustomerDetail from './pages/Admin/CustomerDetail';
 import InventoryOnHand from './pages/Admin/Inventory/InventoryOnHand';
 import InventoryLedger from './pages/Admin/Inventory/InventoryLedger';
 import InventoryAlerts from './pages/Admin/Inventory/InventoryAlerts';
@@ -1115,6 +1116,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><Customers /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/customers/:id"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><CustomerDetail /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />
