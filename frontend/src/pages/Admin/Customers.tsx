@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { QRCodeSVG } from 'qrcode.react';
@@ -21,13 +22,12 @@ import {
   customerSourceLabel,
 } from '../../utils/customerSources';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
+import LoyaltyWalletChips, { type LoyaltyWalletChip } from '../../components/LoyaltyWalletChips';
+import { useAuth } from '../../contexts/AuthContext';
+import { canAccessPath } from '../../lib/pathPermissions';
+import { customerOrdersPath } from '../../utils/customerOrdersPath';
 
-type LoyaltyWallet = {
-  wallet_type: 'pos' | 'app';
-  brand_id: number | null;
-  brand_name: string | null;
-  balance: number;
-};
+type LoyaltyWallet = LoyaltyWalletChip;
 
 type Customer = {
   id: number;
@@ -48,6 +48,11 @@ const Customers: React.FC = () => {
   const canCreate = useHasPermission('customers:create');
   const canEdit = useHasPermission('customers:edit');
   const canDelete = useHasPermission('customers:delete');
+  // The history lives in the Orders module, so the button is only offered to
+  // someone who can open it — and it shows them what Orders would anyway.
+  const { user } = useAuth();
+  const canViewOrders = canAccessPath(user, '/admin/orders');
+  const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
   const [name, setName] = useState('');
@@ -306,21 +311,7 @@ const Customers: React.FC = () => {
                   subtitle={
                     <>
                       <p className="font-mono">{c.phone}</p>
-                      {c.loyaltyWallets && c.loyaltyWallets.length > 0 ? (
-                        <p>
-                          Loyalty:{' '}
-                          {c.loyaltyWallets
-                            .map((w) =>
-                              w.wallet_type === 'app'
-                                ? `App ${w.balance}`
-                                : `${w.brand_name ?? 'Brand'} ${w.balance}`,
-                            )
-                            .join(' · ')}{' '}
-                          pts
-                        </p>
-                      ) : (
-                        <p>Loyalty: 0 pts</p>
-                      )}
+                      <LoyaltyWalletChips wallets={c.loyaltyWallets} />
                       {c.brands && c.brands.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
                           {c.brands.map((b) => (
@@ -349,6 +340,9 @@ const Customers: React.FC = () => {
                   animationIndex={i}
                   actions={
                     <>
+                      {canViewOrders && (
+                        <Button size="small" variant="outline" onClick={() => navigate(customerOrdersPath(c))}>Orders</Button>
+                      )}
                       <Button size="small" variant="outline" onClick={() => setVouchersFor(c)}>Vouchers</Button>
                       {canEdit && <Button size="small" variant="edit" onClick={() => openEdit(c)}>Edit</Button>}
                       {canDelete && <Button size="small" variant="danger" onClick={() => setDeleteTarget(c)}>Delete</Button>}

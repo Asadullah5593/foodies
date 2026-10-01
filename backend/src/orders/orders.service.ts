@@ -3784,6 +3784,12 @@ export class OrdersService {
             has_rider?: boolean;
             /** Free-text search over order number / customer / FDS reference. */
             search?: string;
+            /**
+             * One customer's order history. Narrows inside the caller's scope —
+             * tenant, branches, brand lock, history window and source markers
+             * all still apply, so it can never widen what they may read.
+             */
+            customer_id?: number;
             /** 1-based page. */
             page?: number;
             /** Rows per page (order-level), capped at 200. */
@@ -3927,6 +3933,10 @@ export class OrdersService {
                 );
             if (filters.has_rider === true)
                 qb.andWhere('o.riderId IS NOT NULL');
+            if (filters.customer_id)
+                qb.andWhere('o.customerId = :customerId', {
+                    customerId: filters.customer_id,
+                });
             if (search)
                 qb.andWhere(
                     '(o.orderNumber ILIKE :q OR o.customerName ILIKE :q OR o.customerPhone ILIKE :q OR o.orderId ILIKE :q)',
