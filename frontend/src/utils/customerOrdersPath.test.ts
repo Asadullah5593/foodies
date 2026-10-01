@@ -24,6 +24,28 @@ describe('customerOrdersPath', () => {
     }
   });
 
+  it('can narrow to one brand, one branch and one status', () => {
+    const sp = parse(
+      customerOrdersPath(
+        { id: 412, name: 'Abdullah Arshad', phone: '03240201350' },
+        { brandId: 21, branchId: 10, status: 'completed' },
+      ),
+    );
+    expect(sp.get('customer_id')).toBe('412');
+    expect(sp.get('brand_id')).toBe('21');
+    expect(sp.get('branch_id')).toBe('10');
+    expect(sp.get('status')).toBe('completed');
+    // Still the whole history of that slice, not today's.
+    expect(sp.has('date_from')).toBe(false);
+  });
+
+  it('adds no narrowing it was not asked for', () => {
+    const sp = parse(customerOrdersPath({ id: 1, name: 'A', phone: '03000000000' }, { brandId: null }));
+    expect(sp.has('brand_id')).toBe(false);
+    expect(sp.has('branch_id')).toBe(false);
+    expect(sp.has('status')).toBe(false);
+  });
+
   it('survives names that would break a query string', () => {
     const sp = parse(customerOrdersPath({ id: 9, name: 'Ali & Sons #1 ?x=1', phone: '03001234567' }));
     expect(sp.get('customer_id')).toBe('9');

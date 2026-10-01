@@ -17,6 +17,30 @@ import { CurrentUser } from '../auth/current-user.decorator';
 import { RequirePermission } from '../roles/require-permission.decorator';
 import { RequirePermissionGuard } from '../roles/require-permission.guard';
 import { Permissions } from '../roles/permissions.dto';
+import { restrictedOrderSources } from '../orders/order-source-restriction';
+
+/**
+ * The viewer, as RoleAccessGuard enriches them. The order figures beside a
+ * customer are computed inside this scope — the same one the Orders module
+ * applies — so they never count an order the viewer could not open there.
+ */
+type CustomerViewer = {
+    id: number;
+    tenantId: number | null;
+    allowedBranchIds?: number[] | null;
+    allowedBrandIds?: number[] | null;
+    orderHistoryDays?: number | null;
+    permissions?: string[] | null;
+};
+
+/**
+ * `orders:view:no-totals` takes money aggregates away from an account. A
+ * customer's lifetime spend is one, so it is withheld server-side, not just
+ * hidden in the page.
+ */
+function hidesOrderTotals(user: CustomerViewer): boolean {
+    return (user.permissions ?? []).includes(Permissions.ORDERS_VIEW_NO_TOTALS);
+}
 
 @ApiTags('Admin – Customers')
 @ApiBearerAuth()
@@ -26,15 +50,29 @@ export class CustomersController {
     constructor(private service: CustomersService) {}
 
     @Get()
-    index(
-        @CurrentUser()
-        user: {
-            id: number;
-            tenantId: number | null;
-            allowedBrandIds?: number[] | null;
-        },
-    ) {
-        return this.service.findAll(user.tenantId, user.allowedBrandIds);
+    index(@CurrentUser() user: CustomerViewer) {
+        return this.service.findAll(user.tenantId, user.allowedBrandIds, {
+            allowedBranchIds: user.allowedBranchIds,
+            orderHistoryDays: user.orderHistoryDays,
+            restrictedSources: restrictedOrderSources(user),
+            hideTotals: hidesOrderTotals(user),
+        });
+    }
+
+    /** The customer detail page: figures plus the brand + branch breakdown. */
+    @Get(':id/summary')
+    summary(@Param('id') id: string, @CurrentUser() user: CustomerViewer) {
+        return this.service.getSummary(
+            +id,
+            {
+                tenantId: user.tenantId,
+                allowedBranchIds: user.allowedBranchIds,
+                allowedBrandIds: user.allowedBrandIds,
+                orderHistoryDays: user.orderHistoryDays,
+                restrictedSources: restrictedOrderSources(user),
+            },
+            hidesOrderTotals(user),
+        );
     }
 
     @Get(':id')
