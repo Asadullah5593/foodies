@@ -160,6 +160,8 @@ export class KitchenService {
         branchId: number,
         status: string,
         allowedBrandIds: number[] | null = null,
+        /** Settles an unpaid till order on completion (FOH Packing hands it over). */
+        paymentMethod: string | null = null,
     ) {
         if (!KITCHEN_STATUSES.includes(status)) {
             throw new ForbiddenException(
@@ -169,6 +171,12 @@ export class KitchenService {
         const order = await this.orderRepo.findOne({ where: { id, branchId } });
         if (!order) throw new NotFoundException('Order not found');
         this.assertBrandAccess(order, allowedBrandIds);
+        if (status === 'completed') {
+            await this.ordersService.settleBeforeCompletion(
+                order,
+                paymentMethod,
+            );
+        }
         const previousStatus = order.status;
         // Atomic, lock-serialised transition: shift-cash is credited exactly once
         // even if two KDS terminals (or a double-tap) complete the same order.
