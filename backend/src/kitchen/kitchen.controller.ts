@@ -112,7 +112,13 @@ export class KitchenController {
             allowedBranchIds?: number[] | null;
             allowedBrandIds?: number[] | null;
         },
-        @Body() body: { status: string; branch_id: number },
+        @Body()
+        body: {
+            status: string;
+            branch_id: number;
+            /** Completing an unpaid till order: the tender it was settled by. */
+            payment_method?: string;
+        },
     ) {
         const branchId = body.branch_id ?? null;
         if (!branchId) throw new ForbiddenException('branch_id is required');
@@ -131,6 +137,7 @@ export class KitchenController {
             branchId,
             body.status,
             user.allowedBrandIds ?? null,
+            body.payment_method ?? null,
         );
     }
 

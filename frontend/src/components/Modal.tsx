@@ -7,6 +7,8 @@ interface ModalProps {
   title?: string;
   children: React.ReactNode;
   size?: 'small' | 'medium' | 'large' | 'xlarge' | 'full';
+  /** Stack above page-level dialogs (e.g. Shifts' z-60 close form). */
+  elevated?: boolean;
 }
 
 const Modal: React.FC<ModalProps> = ({
@@ -15,6 +17,7 @@ const Modal: React.FC<ModalProps> = ({
   title,
   children,
   size = 'medium',
+  elevated = false,
 }) => {
   useEffect(() => {
     if (isOpen) {
@@ -40,13 +43,13 @@ const Modal: React.FC<ModalProps> = ({
       {isOpen && (
         <>
           <motion.div
-            className="fixed inset-0 bg-black bg-opacity-50 z-40"
+            className={`fixed inset-0 bg-black bg-opacity-50 ${elevated ? 'z-[70]' : 'z-40'}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className={`fixed inset-0 ${elevated ? 'z-[80]' : 'z-50'} flex items-center justify-center p-4`}>
             <motion.div
               className={`bg-white rounded-lg shadow-xl w-full ${sizeStyles[size]} max-h-[calc(100vh-2rem)] flex flex-col`}
               initial={{ opacity: 0, scale: 0.95, y: 20 }}

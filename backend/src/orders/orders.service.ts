@@ -114,6 +114,10 @@ import {
 import { resolveOfferSettings, OfferSettings } from './offer-settings';
 import { ORDER_SOURCES } from './order-sources';
 import { isOrderPaymentMethodFilter } from './payment-methods';
+import {
+    requiresPaymentToComplete,
+    settleMethodsForTaxBasis,
+} from './settle-on-complete';
 import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
 import { StaffDiscount } from '../entities/staff-discount.entity';
 import { assertOrderTypeAllowed } from './order-type-restriction';
@@ -262,6 +266,75 @@ export class OrdersService {
                 }`,
             );
         }
+    }
+
+    /**
+     * Gate on completing a till order (see settle-on-complete.ts). Fully paid →
+     * returns. Unpaid and no method given → 409 PAYMENT_REQUIRED carrying what
+     * the "missing payment" modal needs. Unpaid with a method → records the
+     * outstanding balance through processPayment, exactly as checkout would,
+     * so the caller can go on to complete.
+     *
+     * The idempotency key carries the amount owed, so a double-click or a
+     * retried request records the tender once.
+     */
+    async settleBeforeCompletion(
+        order: {
+            id: number;
+            source?: string | null;
+            status?: string | null;
+            orderNumber?: string | null;
+            taxBasis?: string | null;
+        },
+        paymentMethod?: string | null,
+    ): Promise<void> {
+        if (!requiresPaymentToComplete(order.source)) return;
+        // Re-completing a completed order changes nothing, so it settles nothing.
+        if (order.status === 'completed') return;
+
+        // Same sum processPayment clamps against: every payment row counts.
+        const rows: Array<{ total: string; paid: string }> =
+            await this.dataSource.query(
+                `SELECT o.total_amount AS total,
+                        COALESCE((SELECT SUM(p.amount) FROM payments p
+                                  WHERE p.order_id = o.id), 0) AS paid
+                 FROM orders o WHERE o.id = $1`,
+                [order.id],
+            );
+        const totalP = Math.round(Number(rows[0]?.total ?? 0) * 100);
+        const paidP = Math.round(Number(rows[0]?.paid ?? 0) * 100);
+        const outstandingP = totalP - paidP;
+        if (outstandingP <= 0) return;
+
+        const outstanding = outstandingP / 100;
+        const methods = settleMethodsForTaxBasis(order.taxBasis);
+        const label = `#${order.orderNumber ?? order.id}`;
+        if (!paymentMethod) {
+            throw new ConflictException({
+                statusCode: 409,
+                error: 'Conflict',
+                code: 'PAYMENT_REQUIRED',
+                message: `Order ${label} is missing payment of ${outstanding.toFixed(2)}. Select a payment method before marking it completed.`,
+                order_id: order.id,
+                order_number: order.orderNumber ?? null,
+                total_amount: totalP / 100,
+                outstanding,
+                tax_basis: order.taxBasis ?? null,
+                payment_methods: methods,
+            });
+        }
+        if (!(methods as string[]).includes(paymentMethod)) {
+            throw new BadRequestException(
+                `Order ${label} was taxed as a ${order.taxBasis} payment, so it can only be settled by ${methods.join(' or ').replace(/_/g, ' ')}.`,
+            );
+        }
+        await this.paymentsService.processPayment(
+            order.id,
+            paymentMethod,
+            outstanding,
+            undefined,
+            `settle:order:${order.id}:${outstandingP}`,
+        );
     }
 
     /**
@@ -3337,6 +3410,8 @@ export class OrdersService {
         status: string,
         allowedBranchIds?: number[] | null,
         allowedBrandIds?: number[] | null,
+        /** Settles an unpaid till order on completion — see settleBeforeCompletion. */
+        paymentMethod?: string | null,
     ) {
         const order = await this.orderRepo.findOne({
             where: tenantId != null ? { id, tenantId } : { id },
@@ -3359,6 +3434,9 @@ export class OrdersService {
             throw new ForbiddenException(
                 'You do not have access to this brand',
             );
+        }
+        if (status === 'completed') {
+            await this.settleBeforeCompletion(order, paymentMethod);
         }
 
         // Atomic, lock-serialised transition. Only the caller that actually changes

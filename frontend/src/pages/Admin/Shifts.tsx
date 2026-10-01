@@ -14,6 +14,7 @@ import SearchableSelect from '../../components/SearchableSelect';
 import Modal from '../../components/Modal';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 import RecordHistoryLink from '../../components/RecordHistoryLink';
+import { usePaymentRequiredPrompt } from '../../components/PaymentRequiredModal';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 
@@ -422,14 +423,24 @@ const Shifts: React.FC = () => {
     },
   });
 
+  const invalidateShiftOrders = () => {
+    queryClient.invalidateQueries({ queryKey: ['shift-pending-orders'] });
+    queryClient.invalidateQueries({ queryKey: ['shift-orders'] });
+    queryClient.invalidateQueries({ queryKey: ['shifts'] });
+  };
+
+  // An unpaid till order can't be completed (and so can't clear the close
+  // gate) until its payment method is recorded.
+  const paymentPrompt = usePaymentRequiredPrompt({
+    complete: (orderId, method) => adminService.updateOrderStatus(orderId, 'completed', method),
+    onCompleted: invalidateShiftOrders,
+  });
+
   const completeOrderMutation = useMutation({
     mutationFn: (orderId: number) => adminService.updateOrderStatus(orderId, 'completed'),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shift-pending-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['shift-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['shifts'] });
-    },
+    onSuccess: invalidateShiftOrders,
     onError: (error: any) => {
+      if (paymentPrompt.ask(error)) return;
       toast.error(error.response?.data?.message || 'Failed to complete order');
     },
   });
@@ -437,15 +448,25 @@ const Shifts: React.FC = () => {
   const completeAllMutation = useMutation({
     // Sequential on purpose: each completion also bumps the shift's expected
     // cash server-side; a burst of parallel PUTs buys nothing here.
+    // Unpaid orders are skipped and queued for the payment prompt.
     mutationFn: async (orderIds: number[]) => {
-      for (const id of orderIds) await adminService.updateOrderStatus(id, 'completed');
-      return orderIds.length;
+      let done = 0;
+      let unpaid = 0;
+      for (const id of orderIds) {
+        try {
+          await adminService.updateOrderStatus(id, 'completed');
+          done++;
+        } catch (error) {
+          if (!paymentPrompt.ask(error)) throw error;
+          unpaid++;
+        }
+      }
+      return { done, unpaid };
     },
-    onSuccess: (n) => {
-      queryClient.invalidateQueries({ queryKey: ['shift-pending-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['shift-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['shifts'] });
-      toast.success(`${n} order${n === 1 ? '' : 's'} marked completed`);
+    onSuccess: ({ done, unpaid }) => {
+      invalidateShiftOrders();
+      if (done > 0) toast.success(`${done} order${done === 1 ? '' : 's'} marked completed`);
+      if (unpaid > 0) toast.error(`${unpaid} order${unpaid === 1 ? ' is' : 's are'} missing payment — select a payment method to complete`);
     },
     onError: (error: any) => {
       // Partial progress is possible — refresh so the list shows what's left.
@@ -1652,6 +1673,7 @@ const Shifts: React.FC = () => {
           </form>
         </div>
       )}
+      {paymentPrompt.modal}
     </div>
   );
 };
