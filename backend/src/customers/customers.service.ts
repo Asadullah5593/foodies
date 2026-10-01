@@ -18,6 +18,7 @@ import {
 import { PromotionsService } from '../promotions/promotions.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { CustomerSource } from './customer-sources';
+import { withoutSecrets } from './customer-secrets';
 import {
     CustomerOrderScope,
     CustomerOrderStats,
@@ -109,7 +110,8 @@ export class CustomersService {
                 .orderBy('c.id', 'DESC');
             if (tenantId != null)
                 qb.andWhere('c.tenantId = :tenantId', { tenantId });
-            const customers = await qb.getMany();
+            // Rows leave here for the admin, so the login hash comes off first.
+            const customers = (await qb.getMany()).map(withoutSecrets);
             const withBrands = await this.attachBrands(
                 customers,
                 allowedBrandIds,
@@ -123,11 +125,13 @@ export class CustomersService {
         }
 
         // Owner / unrestricted: return all customers with brand badges
-        const customers = await this.repo.find({
-            where: tenantId != null ? { tenantId } : {},
-            // Newest first: a just-registered customer lands at the top.
-            order: { id: 'DESC' },
-        });
+        const customers = (
+            await this.repo.find({
+                where: tenantId != null ? { tenantId } : {},
+                // Newest first: a just-registered customer lands at the top.
+                order: { id: 'DESC' },
+            })
+        ).map(withoutSecrets);
         if (!customers.length) return customers;
 
         const withBrands = await this.attachBrands(customers, null);

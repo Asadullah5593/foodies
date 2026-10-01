@@ -18,6 +18,7 @@ import { RequirePermission } from '../roles/require-permission.decorator';
 import { RequirePermissionGuard } from '../roles/require-permission.guard';
 import { Permissions } from '../roles/permissions.dto';
 import { restrictedOrderSources } from '../orders/order-source-restriction';
+import { withoutSecrets } from './customer-secrets';
 
 /**
  * The viewer, as RoleAccessGuard enriches them. The order figures beside a
@@ -76,7 +77,7 @@ export class CustomersController {
     }
 
     @Get(':id')
-    show(
+    async show(
         @Param('id') id: string,
         @CurrentUser()
         user: {
@@ -85,12 +86,18 @@ export class CustomersController {
             allowedBrandIds?: number[] | null;
         },
     ) {
-        return this.service.findOne(+id, user.tenantId, user.allowedBrandIds);
+        return withoutSecrets(
+            await this.service.findOne(
+                +id,
+                user.tenantId,
+                user.allowedBrandIds,
+            ),
+        );
     }
 
     @Post()
     @RequirePermission(Permissions.CUSTOMERS_CREATE)
-    store(
+    async store(
         @CurrentUser()
         user: {
             id: number;
@@ -101,17 +108,20 @@ export class CustomersController {
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.create(
-            user.tenantId,
-            dto,
-            user.allowedBrandIds,
-            dto.link,
+        // Linking hands back an EXISTING customer, who may well have a login.
+        return withoutSecrets(
+            await this.service.create(
+                user.tenantId,
+                dto,
+                user.allowedBrandIds,
+                dto.link,
+            ),
         );
     }
 
     @Put(':id')
     @RequirePermission(Permissions.CUSTOMERS_EDIT)
-    update(
+    async update(
         @Param('id') id: string,
         @CurrentUser()
         user: {
@@ -123,11 +133,13 @@ export class CustomersController {
     ) {
         if (!user.tenantId)
             throw new ForbiddenException('Tenant context required');
-        return this.service.update(
-            +id,
-            user.tenantId,
-            dto,
-            user.allowedBrandIds,
+        return withoutSecrets(
+            await this.service.update(
+                +id,
+                user.tenantId,
+                dto,
+                user.allowedBrandIds,
+            ),
         );
     }
 
