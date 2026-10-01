@@ -12,6 +12,7 @@ import Card from '../../components/Card';
 import Button from '../../components/Button';
 import SearchableSelect from '../../components/SearchableSelect';
 import AssignRiderModal from '../../components/AssignRiderModal';
+import { usePaymentRequiredPrompt } from '../../components/PaymentRequiredModal';
 import ScrollToTopButton from '../../components/ScrollToTopButton';
 import { formatOrderType } from '../../utils/format';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
@@ -136,6 +137,21 @@ const FOHPacking: React.FC = () => {
     }
   }, [completedVisible]);
 
+  // Handing over an unpaid till order asks for its payment method first.
+  const paymentPrompt = usePaymentRequiredPrompt({
+    complete: (orderId, method) =>
+      apiClient.patch(`/kitchen/orders/${orderId}/status`, {
+        status: 'completed',
+        branch_id: +branchId,
+        payment_method: method,
+      }),
+    onCompleted: (orderId) => {
+      setDissolvingOrderId(orderId);
+      queryClient.invalidateQueries({ queryKey: ['foh-packing-orders'] });
+      queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] });
+    },
+  });
+
   const updateStatusMutation = useMutation({
     mutationFn: async ({ orderId, status }: { orderId: number; status: string }) => {
       const response = await apiClient.patch(`/kitchen/orders/${orderId}/status`, {
@@ -158,6 +174,7 @@ const FOHPacking: React.FC = () => {
       toast.success('Status updated');
     },
     onError: (error: any) => {
+      if (paymentPrompt.ask(error)) return;
       toast.error(error.response?.data?.message || 'Failed to update status');
     },
     onSettled: () => {
@@ -492,6 +509,7 @@ const FOHPacking: React.FC = () => {
         }}
       />
 
+      {paymentPrompt.modal}
       <ScrollToTopButton />
     </div>
   );

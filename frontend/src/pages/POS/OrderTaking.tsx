@@ -15,6 +15,7 @@ import { formatCurrency } from '../../utils/currency';
 import { placesConfigured, ResolvedPlace } from '../../utils/googlePlaces';
 import { bogoDealTotal } from '../../utils/bogoPricing';
 import { allocateTenders } from './allocateTenders';
+import { recordTenders, KeyedTender } from './recordTenders';
 import Button from '../../components/Button';
 import Card from '../../components/Card';
 import SearchableSelect from '../../components/SearchableSelect';
@@ -52,6 +53,12 @@ import { useHasPermission } from '../../hooks/useHasPermission';
 import { canPlaceOrder } from './checkoutGuards';
 import { computeModifiersPrice, resolveMinSelect, resolveMaxSelect, sizeKeyForSelection } from '../../utils/modifierPricing';
 import { isEntityInactive } from '../../utils/entityStatus';
+
+/** What POST /pos/orders answers: one order per brand in the cart. */
+type PlacedOrderGroup = {
+  order_group_id: string;
+  orders: Array<{ id: number; order_number: string; total_amount?: number }>;
+};
 
 const OrderTaking: React.FC = () => {
   const [selectedItems, setSelectedItems] = useState<CartLine[]>([]);
@@ -557,6 +564,76 @@ const OrderTaking: React.FC = () => {
     },
   });
 
+  const resetCheckout = () => {
+    setShowCheckoutModal(false);
+    setDrawerOpen(false);
+    setSelectedItems([]);
+    setTableNumber('');
+    setDiscountCode('');
+    setStaffDiscountId(null);
+    setManualOfferId(null);
+    setCustomerName('');
+    setCustomerPhone('');
+    setDeliveryAddress('');
+    setDeliveryPlace(null);
+    setLoyaltyPointsToRedeem('');
+    setPhoneError('');
+    setPaymentCashAmount('');
+    setPaymentCardAmount('');
+    setOrderType(null);
+  };
+
+  const invalidatePlacedOrders = () => {
+    queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] });
+    queryClient.invalidateQueries({ queryKey: ['customer-display-orders'] });
+    queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
+  };
+
+  // Placed and paid: open the invoice and say so.
+  const announcePlacedOrder = (data: PlacedOrderGroup) => {
+    const orders = data?.orders ?? [];
+    const grossTotal = orders.reduce((sum, o) => sum + Number(o?.total_amount ?? 0), 0);
+    const groupId = data?.order_group_id ?? '';
+    if (groupId) {
+      setLastOrderGroupId(groupId);
+      setShowCustomerInvoiceModal(true);
+    }
+    if (orders.length === 0) {
+      toast.success('Order created successfully!');
+    } else if (orders.length === 1) {
+      toast.success(`Order #${orders[0]?.order_number ?? ''} created. Total: ${formatCurrency(grossTotal)}${groupId ? ` (Group: ${groupId.slice(0, 8)}…)` : ''}`);
+    } else {
+      toast.success(`${orders.length} orders created. Group: ${groupId.slice(0, 8)}… | Gross total: ${formatCurrency(grossTotal)}`);
+    }
+  };
+
+  // The order exists but its payment request never got through, even after
+  // retries. Held here so the cashier can retry exactly what is missing.
+  const [unsavedPayment, setUnsavedPayment] = useState<{ data: PlacedOrderGroup; tenders: KeyedTender[] } | null>(null);
+  const [retryingPayment, setRetryingPayment] = useState(false);
+
+  const payTender = (t: KeyedTender) =>
+    orderService.processPayment(t.orderId, {
+      payment_method: t.method,
+      amount: t.amount,
+      idempotency_key: t.idempotencyKey,
+    });
+
+  const retryUnsavedPayment = async () => {
+    if (!unsavedPayment) return;
+    setRetryingPayment(true);
+    const { failed } = await recordTenders(unsavedPayment.tenders, payTender);
+    setRetryingPayment(false);
+    invalidatePlacedOrders();
+    if (failed.length) {
+      setUnsavedPayment({ ...unsavedPayment, tenders: failed });
+      toast.error('Payment still not saved — check the connection and retry');
+      return;
+    }
+    setUnsavedPayment(null);
+    announcePlacedOrder(unsavedPayment.data);
+  };
+
   const createOrderMutation = useMutation({
     mutationFn: async (arg: {
       order: CreateOrderRequest;
@@ -566,7 +643,7 @@ const OrderTaking: React.FC = () => {
       }>;
     }) => orderService.createOrder(arg.order),
     onSuccess: async (
-      data: { order_group_id: string; orders: Array<{ id: number; order_number: string; total_amount?: number }> },
+      data: PlacedOrderGroup,
       variables: {
         order: CreateOrderRequest;
         payments: Array<{
@@ -580,45 +657,20 @@ const OrderTaking: React.FC = () => {
       // Tender the SERVER totals, not the on-screen quote: the cart can re-price
       // at placement (checkout-page discounts), and recording the stale client
       // amount is how payments drift above the bill.
-      for (const t of allocateTenders(orders, payments)) {
-        await orderService.processPayment(t.orderId, {
-          payment_method: t.method,
-          amount: t.amount,
-          idempotency_key: `pos:${data?.order_group_id ?? 'grp'}:${t.orderId}:${t.method}`,
-        });
+      const tenders = allocateTenders(orders, payments).map((t) => ({
+        ...t,
+        idempotencyKey: `pos:${data?.order_group_id ?? 'grp'}:${t.orderId}:${t.method}`,
+      }));
+      const { failed } = await recordTenders(tenders, payTender);
+      invalidatePlacedOrders();
+      // The order exists either way, so the cart goes: leaving it up invites
+      // placing the same order twice.
+      resetCheckout();
+      if (failed.length) {
+        setUnsavedPayment({ data, tenders: failed });
+        return;
       }
-      const grossTotal = orders.reduce((sum, o) => sum + Number(o?.total_amount ?? 0), 0);
-      const groupId = data?.order_group_id ?? '';
-      if (groupId) {
-        setLastOrderGroupId(groupId);
-        setShowCustomerInvoiceModal(true);
-      }
-      if (orders.length === 0) {
-        toast.success('Order created successfully!');
-      } else if (orders.length === 1) {
-        toast.success(`Order #${orders[0]?.order_number ?? ''} created. Total: ${formatCurrency(grossTotal)}${groupId ? ` (Group: ${groupId.slice(0, 8)}…)` : ''}`);
-      } else {
-        toast.success(`${orders.length} orders created. Group: ${groupId.slice(0, 8)}… | Gross total: ${formatCurrency(grossTotal)}`);
-      }
-      queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['customer-display-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
-      setShowCheckoutModal(false);
-      setDrawerOpen(false);
-      setSelectedItems([]);
-      setTableNumber('');
-      setDiscountCode('');
-      setStaffDiscountId(null);
-      setManualOfferId(null);
-      setCustomerName('');
-      setCustomerPhone('');
-      setDeliveryAddress('');
-      setDeliveryPlace(null);
-      setLoyaltyPointsToRedeem('');
-      setPhoneError('');
-      setPaymentCashAmount('');
-      setPaymentCardAmount('');
-      setOrderType(null);
+      announcePlacedOrder(data);
     },
     onError: (error: any) => {
       toast.error(error.response?.data?.message || 'Failed to create order');
@@ -641,25 +693,8 @@ const OrderTaking: React.FC = () => {
         setShowCustomerInvoiceModal(true);
       }
       toast.success(`Kiosk order #${data?.kiosk_code ?? activeKioskCode ?? ''} placed. Total: ${formatCurrency(grossTotal)}`);
-      queryClient.invalidateQueries({ queryKey: ['kitchen-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['customer-display-orders'] });
-      queryClient.invalidateQueries({ queryKey: ['admin-orders'] });
-      setShowCheckoutModal(false);
-      setDrawerOpen(false);
-      setSelectedItems([]);
-      setTableNumber('');
-      setDiscountCode('');
-      setStaffDiscountId(null);
-      setManualOfferId(null);
-      setCustomerName('');
-      setCustomerPhone('');
-      setDeliveryAddress('');
-      setDeliveryPlace(null);
-      setLoyaltyPointsToRedeem('');
-      setPhoneError('');
-      setPaymentCashAmount('');
-      setPaymentCardAmount('');
-      setOrderType(null);
+      invalidatePlacedOrders();
+      resetCheckout();
       setActiveKioskCode(null);
       setKioskInfo(null);
     },
@@ -1893,6 +1928,54 @@ const OrderTaking: React.FC = () => {
         orderGroupId={lastOrderGroupId}
         autoPrintOnOpen
       />
+
+      {/* Order placed, payment not saved: never "Failed to create order" for an order that exists. */}
+      <Modal isOpen={unsavedPayment != null} onClose={() => undefined} size="small">
+        {unsavedPayment && (
+          <div className="space-y-4" role="alertdialog" aria-label="Payment not saved">
+            <div className="flex items-start gap-3">
+              <MdOutlineWarningAmber className="mt-0.5 h-6 w-6 flex-none text-amber-600" aria-hidden />
+              <div>
+                <h2 className="text-lg font-semibold text-gray-800">Payment not saved</h2>
+                <p className="mt-1 text-sm text-gray-700">
+                  {(() => {
+                    const ids = new Set(unsavedPayment.tenders.map((t) => t.orderId));
+                    const labels = (unsavedPayment.data.orders ?? [])
+                      .filter((o) => ids.has(o.id))
+                      .map((o) => `#${o.order_number}`);
+                    return `Order ${labels.join(', ')} was created but the payment wasn't saved — the connection dropped.`;
+                  })()}{' '}
+                  Retrying is safe: the payment is never recorded twice.
+                </p>
+              </div>
+            </div>
+            <ul className="rounded-lg border border-gray-200 divide-y divide-gray-100 text-sm">
+              {unsavedPayment.tenders.map((t) => {
+                const order = unsavedPayment.data.orders?.find((o) => o.id === t.orderId);
+                return (
+                  <li key={t.idempotencyKey} className="flex justify-between px-3 py-2">
+                    <span>
+                      #{order?.order_number ?? t.orderId} · {t.method === 'online_transfer' ? 'Online transfer' : t.method === 'card' ? 'Card' : 'Cash'}
+                    </span>
+                    <span className="font-semibold">{formatCurrency(t.amount)}</span>
+                  </li>
+                );
+              })}
+            </ul>
+            <p className="text-xs text-gray-500">
+              If you close this, the order stays unpaid and will ask for its payment method when it is marked completed.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setUnsavedPayment(null)} disabled={retryingPayment}>
+                Close
+              </Button>
+              <Button variant="primary" onClick={retryUnsavedPayment} isLoading={retryingPayment} disabled={retryingPayment}>
+                Retry payment
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Checkout modal (customer, discounts/loyalty, payment) */}
       <Modal

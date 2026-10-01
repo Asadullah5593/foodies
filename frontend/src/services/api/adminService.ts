@@ -692,8 +692,12 @@ export const adminService = {
     return response.data;
   },
 
-  updateOrderStatus: async (id: number, status: string): Promise<Order> => {
-    const response = await apiClient.put(`/admin/orders/${id}/status`, { status });
+  /** `payment_method` settles an unpaid till order as it completes (see PaymentRequiredModal). */
+  updateOrderStatus: async (id: number, status: string, paymentMethod?: string): Promise<Order> => {
+    const response = await apiClient.put(`/admin/orders/${id}/status`, {
+      status,
+      ...(paymentMethod ? { payment_method: paymentMethod } : {}),
+    });
     return response.data;
   },
 

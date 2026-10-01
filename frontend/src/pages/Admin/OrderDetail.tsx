@@ -19,6 +19,7 @@ import {
 import Card from '../../components/Card';
 import { deliveryStatusLabel, deliveryStatusTone, isDeliveryFailed } from '../../lib/deliveryStatus';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
+import { usePaymentRequiredPrompt } from '../../components/PaymentRequiredModal';
 import { groupOrderItems } from '../../utils/orderItemGrouping';
 
 type OrderDetailItem = {
@@ -129,22 +130,34 @@ const OrderDetail: React.FC = () => {
     refetchInterval: ORDER_POLL_INTERVAL_MS,
   });
 
+  const invalidateAfterStatus = (status: string) => {
+    queryClient.invalidateQueries({ queryKey: ['admin-order', id] });
+    queryClient.invalidateQueries({ queryKey: ['admin-order-ratings', id] });
+    if (status === 'completed') {
+      queryClient.invalidateQueries({ queryKey: ['salesSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['topItems'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+    }
+  };
+
+  // Completing an unpaid till order asks for the payment method first.
+  const paymentPrompt = usePaymentRequiredPrompt({
+    complete: (orderId, method) =>
+      apiClient.put(`/admin/orders/${orderId}/status`, { status: 'completed', payment_method: method }),
+    onCompleted: () => invalidateAfterStatus('completed'),
+  });
+
   const updateStatusMutation = useMutation({
     mutationFn: async (status: string) => {
       const response = await apiClient.put(`/admin/orders/${id}/status`, { status });
       return response.data;
     },
     onSuccess: (_data, status) => {
-      queryClient.invalidateQueries({ queryKey: ['admin-order', id] });
-      queryClient.invalidateQueries({ queryKey: ['admin-order-ratings', id] });
-      if (status === 'completed') {
-        queryClient.invalidateQueries({ queryKey: ['salesSummary'] });
-        queryClient.invalidateQueries({ queryKey: ['topItems'] });
-        queryClient.invalidateQueries({ queryKey: ['shifts'] });
-      }
+      invalidateAfterStatus(status);
       toast.success('Order status updated');
     },
     onError: (error: any) => {
+      if (paymentPrompt.ask(error)) return;
       toast.error(error.response?.data?.message || 'Failed to update status');
     },
   });
@@ -572,6 +585,7 @@ const OrderDetail: React.FC = () => {
         orderGroupId={o.order_group_id ?? null}
         orderId={o.id}
       />
+      {paymentPrompt.modal}
     </div>
   );
 };

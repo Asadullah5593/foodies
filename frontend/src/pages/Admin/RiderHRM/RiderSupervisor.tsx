@@ -12,6 +12,7 @@ import Button from '../../../components/Button';
 import Loader from '../../../components/Loader';
 import { useHasPermission } from '../../../hooks/useHasPermission';
 import { adminService } from '../../../services/api/adminService';
+import { usePaymentRequiredPrompt } from '../../../components/PaymentRequiredModal';
 import RiderHrmHeader from './RiderHrmHeader';
 import {
   riderSupervisorService,
@@ -247,6 +248,12 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
     placeholderData: keepPreviousData,
   });
 
+  // Completing an unpaid till delivery asks for its payment method first.
+  const paymentPrompt = usePaymentRequiredPrompt({
+    complete: (id, method) => adminService.updateOrderStatus(id, 'completed', method),
+    onCompleted: () => queryClient.invalidateQueries({ queryKey: ['supervisor-delivery-orders'] }),
+  });
+
   const updateStatus = useMutation({
     mutationFn: ({ id, status: next }: { id: number; status: string }) =>
       adminService.updateOrderStatus(id, next),
@@ -255,6 +262,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
       toast.success('Order status updated');
     },
     onError: (error: any) => {
+      if (paymentPrompt.ask(error)) return;
       toast.error(error.response?.data?.message || 'Failed to update status');
     },
   });
@@ -461,6 +469,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
           </div>
         </div>
       ) : null}
+      {paymentPrompt.modal}
     </Card>
   );
 };

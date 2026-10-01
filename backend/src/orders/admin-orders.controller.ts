@@ -212,7 +212,12 @@ export class AdminOrdersController {
             allowedBrandIds?: number[] | null;
             permissions?: string[];
         },
-        @Body() body: { status: string },
+        @Body()
+        body: {
+            status: string;
+            /** Completing an unpaid till order: the tender it was settled by. */
+            payment_method?: string;
+        },
     ) {
         // Every user-facing cancel — dropdown, order detail, the notification
         // toast's Reject — comes through here, so this single gate covers them
@@ -225,6 +230,7 @@ export class AdminOrdersController {
             body.status,
             user.allowedBranchIds,
             user.allowedBrandIds,
+            body.payment_method ?? null,
         );
     }
 
