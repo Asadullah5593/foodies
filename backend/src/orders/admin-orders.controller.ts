@@ -146,7 +146,11 @@ export class AdminOrdersController {
         @Query('search') search: string,
         @Query('page') page: string,
         @Query('page_size') pageSize: string,
+        @Query('customer_id') customerId?: string,
     ) {
+        // One customer's order history (the Customers page's "Orders" button).
+        // Anything that is not a positive whole number is ignored, not guessed.
+        const customerIdNum = Number(customerId);
         return this.service.findAllAdmin(
             user.tenantId,
             {
@@ -162,6 +166,10 @@ export class AdminOrdersController {
                 has_rider:
                     hasRider === '1' || hasRider === 'true' ? true : undefined,
                 search: search || undefined,
+                customer_id:
+                    Number.isInteger(customerIdNum) && customerIdNum > 0
+                        ? customerIdNum
+                        : undefined,
                 page: page ? +page : undefined,
                 page_size: pageSize ? +pageSize : undefined,
             },
