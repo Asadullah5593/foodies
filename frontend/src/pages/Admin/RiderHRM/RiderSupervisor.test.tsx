@@ -100,6 +100,14 @@ const RIDERS_RESPONSE = [
   },
 ];
 
+/** The test order's cell in the column with this header. */
+const cellUnder = (columnName: string): HTMLElement => {
+  const header = screen.getByRole('columnheader', { name: columnName });
+  const columnIndex = Array.from(header.parentElement!.children).indexOf(header);
+  const row = screen.getByText('FDS-TEST01').closest('tr') as HTMLElement;
+  return row.children[columnIndex] as HTMLElement;
+};
+
 const renderPage = () => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -322,10 +330,10 @@ describe('RiderSupervisor page', () => {
     });
     renderPage();
     await screen.findByText('FDS-TEST01');
-    expect(screen.getByRole('columnheader', { name: 'Trip time' })).toBeInTheDocument();
-    // The row's own trip, with both taps under it.
-    const cell = screen.getByText('23 min').closest('td') as HTMLElement;
-    expect(cell.textContent).toContain('→');
+    // Pickup, delivery and the time between them each get a column of their own.
+    expect(cellUnder('Picked up').textContent).toBe(new Date('2026-07-20T10:20:00.000Z').toLocaleString());
+    expect(cellUnder('Delivered').textContent).toBe(new Date('2026-07-20T10:43:00.000Z').toLocaleString());
+    expect(cellUnder('Trip time').textContent).toBe('23 min');
     // The average for the current filters.
     expect(screen.getByText('Average trip time:')).toBeInTheDocument();
     expect(screen.getByText('24 min')).toBeInTheDocument();
@@ -350,10 +358,9 @@ describe('RiderSupervisor page', () => {
     });
     renderPage();
     await screen.findByText('FDS-TEST01');
-    const header = screen.getByRole('columnheader', { name: 'Trip time' });
-    const columnIndex = Array.from(header.parentElement!.children).indexOf(header);
-    const row = screen.getByText('FDS-TEST01').closest('tr') as HTMLElement;
-    expect(row.children[columnIndex].textContent).toBe('—');
+    expect(cellUnder('Picked up').textContent).toBe('—');
+    expect(cellUnder('Delivered').textContent).toBe('—');
+    expect(cellUnder('Trip time').textContent).toBe('—');
     expect(screen.getByText(/no trips recorded for these filters/)).toBeInTheDocument();
   });
 });
