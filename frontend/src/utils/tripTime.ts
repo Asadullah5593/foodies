@@ -14,24 +14,3 @@ export function formatTripDuration(seconds: number | null | undefined): string {
   const minutes = totalMinutes % 60;
   return `${hours} h ${String(minutes).padStart(2, '0')} min`;
 }
-
-/** Clock time of a recorded tap, e.g. "12:41 PM". */
-export function formatTripClock(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-/**
- * The line under a trip time: both taps as "12:41 PM → 1:04 PM", or whichever
- * one exists so far. Null when the rider has tapped neither.
- */
-export function tripTapsLabel(
-  pickedUpAt: string | null | undefined,
-  deliveredAt: string | null | undefined,
-): string | null {
-  if (pickedUpAt && deliveredAt) return `${formatTripClock(pickedUpAt)} → ${formatTripClock(deliveredAt)}`;
-  if (pickedUpAt) return `Picked up ${formatTripClock(pickedUpAt)}`;
-  if (deliveredAt) return `Delivered ${formatTripClock(deliveredAt)}`;
-  return null;
-}
