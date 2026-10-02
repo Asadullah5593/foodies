@@ -12,6 +12,11 @@ export interface SupervisorDeliveryOrder {
   /** null when the caller lacks rider-supervisor:view-status. */
   status: string | null;
   delivery_status: string | null;
+  /** When the rider marked the order picked up / delivered (null = not tapped). */
+  picked_up_at: string | null;
+  delivered_at: string | null;
+  /** Pickup → delivered; null unless both taps were recorded. */
+  trip_duration_seconds: number | null;
   placed_at: string | null;
   completed_at: string | null;
   cancelled_at: string | null;
@@ -37,6 +42,12 @@ export interface SupervisorDeliveryOrdersResponse {
   status: SupervisorDeliveryStatus;
   /** null when the caller lacks rider-supervisor:view-status. */
   counts: { active: number; delivered: number; cancelled: number; all: number } | null;
+  /**
+   * Average pickup → delivered time over the brand / branch / rider / date
+   * filters (not the status tab). average_seconds is null when no trip in the
+   * range has both taps recorded.
+   */
+  trip_time?: { trips: number; average_seconds: number | null };
   /** Placement-date range actually applied (null = default window). */
   date_from?: string | null;
   date_to?: string | null;

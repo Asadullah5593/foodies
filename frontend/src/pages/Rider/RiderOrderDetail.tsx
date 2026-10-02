@@ -10,6 +10,7 @@ import Button from '../../components/Button';
 import { formatCurrency } from '../../utils/currency';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { deliveryStatusLabel } from '../../lib/deliveryStatus';
+import { getStatusOptions } from './riderStatusOptions';
 
 const ORDER_STATUS_LABELS: Record<string, string> = {
   placed: 'Placed',
@@ -19,25 +20,6 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   completed: 'Completed',
   cancelled: 'Cancelled',
 };
-
-const DELIVERY_STATUS_OPTIONS = [
-  { value: 'accepted', label: 'Accepted' },
-  { value: 'picked_up', label: 'Picked Up' },
-  { value: 'delivered', label: 'Delivered' },
-  { value: 'delivery_failed', label: 'Delivery Failed' },
-];
-
-
-/** When order is already assigned/accepted, rider cannot "accept" again – next step is Picked Up. */
-function getStatusOptions(currentStatus: string | null | undefined) {
-  if (currentStatus === 'accepted' || currentStatus === 'assigned' || !currentStatus) {
-    return DELIVERY_STATUS_OPTIONS.filter((o) => o.value !== 'accepted');
-  }
-  if (currentStatus === 'picked_up') {
-    return DELIVERY_STATUS_OPTIONS.filter((o) => o.value === 'delivered' || o.value === 'delivery_failed');
-  }
-  return DELIVERY_STATUS_OPTIONS;
-}
 
 const RiderOrderDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();

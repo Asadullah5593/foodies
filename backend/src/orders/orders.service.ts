@@ -123,6 +123,7 @@ import { StaffDiscount } from '../entities/staff-discount.entity';
 import { assertOrderTypeAllowed } from './order-type-restriction';
 import { assertBranchesAllowed } from './branch-scope';
 import { auditOrder, auditOrderStatus, placedSummary } from './order-audit';
+import { tripTimeFields } from './trip-time';
 import { ActivityContext } from '../activity-log/activity-context';
 import {
     staffDiscountToOffer,
@@ -1126,6 +1127,9 @@ export class OrdersService {
             order.riderId = selectedRiderId;
             order.deliveryStatus = 'accepted';
             order.deliveryFailedReason = null;
+            // A new assignment is a new trip.
+            order.pickedUpAt = null;
+            order.deliveredAt = null;
             await manager.save(order);
             didAssign = true;
 
@@ -3616,6 +3620,8 @@ export class OrdersService {
                 : null,
             delivery_status: order.deliveryStatus ?? null,
             delivery_failed_reason: order.deliveryFailedReason ?? null,
+            // Rider's pickup → delivered taps, and the time between them.
+            ...tripTimeFields(order),
             source: order.source,
             subtotal: Number(order.subtotal),
             discount_amount: Number(order.discountAmount),
@@ -4266,6 +4272,10 @@ export class OrdersService {
                     riderId,
                     deliveryStatus: 'accepted',
                     deliveryFailedReason: null,
+                    // A new assignment is a new trip: the previous rider's
+                    // pickup must not be paired with this rider's delivery.
+                    pickedUpAt: null,
+                    deliveredAt: null,
                 })
                 .where(
                     "id = :id AND status <> 'cancelled' AND (status <> 'completed' OR rider_id IS NULL)",
@@ -4374,7 +4384,9 @@ export class OrdersService {
                 .getRepository(Order)
                 .createQueryBuilder()
                 .update(Order)
-                .set({ riderId })
+                // The change is only allowed before pickup, so there is no
+                // trip yet — clearing keeps that true whatever came before.
+                .set({ riderId, pickedUpAt: null, deliveredAt: null })
                 .where("id = :id AND delivery_status = 'accepted'", {
                     id: order.id,
                 })
@@ -4491,6 +4503,8 @@ export class OrdersService {
                         riderId,
                         deliveryStatus: 'accepted',
                         deliveryFailedReason: null,
+                        pickedUpAt: null,
+                        deliveredAt: null,
                     })
                     .where('id = :id AND status NOT IN (:...terminal)', {
                         id: order.id,
@@ -4629,7 +4643,7 @@ export class OrdersService {
                     .getRepository(Order)
                     .createQueryBuilder()
                     .update(Order)
-                    .set({ riderId })
+                    .set({ riderId, pickedUpAt: null, deliveredAt: null })
                     .where("id = :id AND delivery_status = 'accepted'", {
                         id: order.id,
                     })
@@ -4857,6 +4871,14 @@ export class OrdersService {
             {
                 deliveryStatus,
                 deliveryFailedReason: order.deliveryFailedReason ?? null,
+                // Trip time: stamp the tap as it arrives. First tap wins, so
+                // a repeated or retried call cannot move the time.
+                ...(deliveryStatus === 'picked_up'
+                    ? { pickedUpAt: () => 'COALESCE(picked_up_at, now())' }
+                    : {}),
+                ...(deliveryStatus === 'delivered'
+                    ? { deliveredAt: () => 'COALESCE(delivered_at, now())' }
+                    : {}),
             },
         );
         auditOrderStatus(

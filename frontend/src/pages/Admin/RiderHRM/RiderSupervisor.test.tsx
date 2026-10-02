@@ -305,4 +305,55 @@ describe('RiderSupervisor page', () => {
     expect(screen.queryByLabelText(/Update status for order/)).toBeNull();
     expect(updateOrderStatus).not.toHaveBeenCalled();
   });
+
+  it('shows each delivery its trip time, pickup to delivery, and the average', async () => {
+    getDeliveryOrders.mockResolvedValue({
+      ...ORDERS_RESPONSE,
+      data: [
+        {
+          ...ORDERS_RESPONSE.data[0],
+          delivery_status: 'delivered',
+          picked_up_at: '2026-07-20T10:20:00.000Z',
+          delivered_at: '2026-07-20T10:43:00.000Z',
+          trip_duration_seconds: 23 * 60,
+        },
+      ],
+      trip_time: { trips: 12, average_seconds: 24 * 60 },
+    });
+    renderPage();
+    await screen.findByText('FDS-TEST01');
+    expect(screen.getByRole('columnheader', { name: 'Trip time' })).toBeInTheDocument();
+    // The row's own trip, with both taps under it.
+    const cell = screen.getByText('23 min').closest('td') as HTMLElement;
+    expect(cell.textContent).toContain('→');
+    // The average for the current filters.
+    expect(screen.getByText('Average trip time:')).toBeInTheDocument();
+    expect(screen.getByText('24 min')).toBeInTheDocument();
+    expect(screen.getByText(/12 trips, pickup to delivery/)).toBeInTheDocument();
+  });
+
+  it('shows a dash, never a guess, when the rider has not tapped', async () => {
+    getDeliveryOrders.mockResolvedValue({
+      ...ORDERS_RESPONSE,
+      data: [
+        {
+          ...ORDERS_RESPONSE.data[0],
+          // Completed by staff; the rider never marked pickup or delivery.
+          status: 'completed',
+          completed_at: '2026-07-20T10:43:00.000Z',
+          picked_up_at: null,
+          delivered_at: null,
+          trip_duration_seconds: null,
+        },
+      ],
+      trip_time: { trips: 0, average_seconds: null },
+    });
+    renderPage();
+    await screen.findByText('FDS-TEST01');
+    const header = screen.getByRole('columnheader', { name: 'Trip time' });
+    const columnIndex = Array.from(header.parentElement!.children).indexOf(header);
+    const row = screen.getByText('FDS-TEST01').closest('tr') as HTMLElement;
+    expect(row.children[columnIndex].textContent).toBe('—');
+    expect(screen.getByText(/no trips recorded for these filters/)).toBeInTheDocument();
+  });
 });

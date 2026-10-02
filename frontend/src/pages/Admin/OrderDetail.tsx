@@ -20,6 +20,7 @@ import Card from '../../components/Card';
 import { deliveryStatusLabel, deliveryStatusTone, isDeliveryFailed } from '../../lib/deliveryStatus';
 import CustomerInvoiceModal from '../../components/CustomerInvoiceModal';
 import { usePaymentRequiredPrompt } from '../../components/PaymentRequiredModal';
+import { formatTripDuration } from '../../utils/tripTime';
 import { groupOrderItems } from '../../utils/orderItemGrouping';
 
 type OrderDetailItem = {
@@ -84,6 +85,11 @@ type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   delivery_status?: string | null;
   /** Why the rider could not deliver. Set by the rider when marking delivery failed. */
   delivery_failed_reason?: string | null;
+  /** When the rider marked the order picked up / delivered (null = not tapped). */
+  picked_up_at?: string | null;
+  delivered_at?: string | null;
+  /** Pickup → delivered; null unless both taps were recorded. */
+  trip_duration_seconds?: number | null;
 };
 
 function escapeHtml(s: string): string {
@@ -306,6 +312,21 @@ const OrderDetail: React.FC = () => {
                   <span className="font-medium text-gray-500 dark:text-slate-400">Rider:</span> {o.rider.name}
                 </span>
               )}
+            </div>
+            {/* The rider's own taps — never the order's completed time, which staff can set. */}
+            <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-gray-700 dark:text-slate-300">
+              <span>
+                <span className="font-medium text-gray-500 dark:text-slate-400">Picked up:</span>{' '}
+                {o.picked_up_at ? new Date(o.picked_up_at).toLocaleString() : '—'}
+              </span>
+              <span>
+                <span className="font-medium text-gray-500 dark:text-slate-400">Delivered:</span>{' '}
+                {o.delivered_at ? new Date(o.delivered_at).toLocaleString() : '—'}
+              </span>
+              <span>
+                <span className="font-medium text-gray-500 dark:text-slate-400">Trip time:</span>{' '}
+                <span className="font-semibold">{formatTripDuration(o.trip_duration_seconds)}</span>
+              </span>
             </div>
             {/* The rider's own words for why it failed — previously stored but never shown. */}
             {isDeliveryFailed(o.delivery_status) && (
