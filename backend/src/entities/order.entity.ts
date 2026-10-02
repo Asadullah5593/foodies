@@ -327,6 +327,19 @@ export class Order {
     @Column({ type: 'text', nullable: true })
     deliveryFailedReason: string | null;
 
+    /**
+     * When the rider marked the order picked up / delivered. Stamped only by
+     * the rider's own status update (first tap wins) and cleared when a rider
+     * is assigned, so the pair always describes the current rider's trip.
+     * `completedAt` is NOT the delivered time: staff can complete a delivery
+     * order without the rider tapping anything.
+     */
+    @Column({ type: 'timestamp', nullable: true })
+    pickedUpAt: Date | null;
+
+    @Column({ type: 'timestamp', nullable: true })
+    deliveredAt: Date | null;
+
     @CreateDateColumn()
     createdAt: Date;
 

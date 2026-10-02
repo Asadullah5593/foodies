@@ -616,6 +616,8 @@ Unique constraint: `(branch_id, menu_item_id)`.
 | `notes` | text | Yes | Order notes. |
 | `completed_at` | timestamp | Yes | When completed. |
 | `cancelled_at` | timestamp | Yes | When cancelled. |
+| `picked_up_at` | timestamp | Yes | When the rider marked the order picked up. Trip time = `delivered_at` − `picked_up_at`. |
+| `delivered_at` | timestamp | Yes | When the rider marked the order delivered. Not the same as `completed_at`, which staff can set without the rider. |
 | `created_by` | int FK | Yes | User who created (POS). |
 | `created_at` | timestamp | No | Created at. |
 | `updated_at` | timestamp | No | Updated at. |

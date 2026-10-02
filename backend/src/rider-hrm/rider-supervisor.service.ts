@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository, SelectQueryBuilder } from 'typeorm';
 import { Order } from '../entities/order.entity';
+import { tripTimeFields } from '../orders/trip-time';
 
 type SupervisorUser = {
     tenantId: number | null;
@@ -209,6 +210,33 @@ export class RiderSupervisorService {
         }
         const counts = canViewStatus ? tally : null;
 
+        // Average trip time (rider's pickup → delivered taps) over the same
+        // common set. It follows the brand / branch / rider / date filters but
+        // not the status bucket, so it reads the same whichever tab is open —
+        // pick a rider and it is that rider's average. Only trips with both
+        // taps recorded, in order, are counted.
+        const tripQb = this.orderRepo
+            .createQueryBuilder('o')
+            .select(
+                'AVG(EXTRACT(EPOCH FROM (o.delivered_at - o.picked_up_at)))',
+                'avg_seconds',
+            )
+            .addSelect('COUNT(*)', 'trips');
+        applyCommon(tripQb);
+        const [tripRow] = await tripQb
+            .andWhere('o.picked_up_at IS NOT NULL')
+            .andWhere('o.delivered_at IS NOT NULL')
+            .andWhere('o.delivered_at >= o.picked_up_at')
+            .getRawMany<{ avg_seconds: string | null; trips: string }>();
+        const trips = Number(tripRow?.trips ?? 0) || 0;
+        const tripTime = {
+            trips,
+            average_seconds:
+                trips > 0 && tripRow?.avg_seconds != null
+                    ? Math.round(Number(tripRow.avg_seconds))
+                    : null,
+        };
+
         // Data page for the selected bucket.
         const dataQb = this.orderRepo
             .createQueryBuilder('o')
@@ -234,6 +262,8 @@ export class RiderSupervisorService {
                 // Withheld (not just hidden) without rider-supervisor:view-status.
                 status: canViewStatus ? o.status : null,
                 delivery_status: o.deliveryStatus,
+                // Rider's pickup → delivered taps and the time between them.
+                ...tripTimeFields(o),
                 placed_at: o.placedAt?.toISOString() ?? null,
                 completed_at: o.completedAt?.toISOString() ?? null,
                 cancelled_at: o.cancelledAt?.toISOString() ?? null,
@@ -255,6 +285,7 @@ export class RiderSupervisorService {
             page_size: pageSize,
             status: statusGroup,
             counts,
+            trip_time: tripTime,
             // Echo the applied range so the UI can show exactly what it asked
             // for, plus the role's ceiling for its date-picker limits.
             date_from: dateFrom,
