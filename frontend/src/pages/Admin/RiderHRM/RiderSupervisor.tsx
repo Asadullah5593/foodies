@@ -13,7 +13,7 @@ import Loader from '../../../components/Loader';
 import { useHasPermission } from '../../../hooks/useHasPermission';
 import { adminService } from '../../../services/api/adminService';
 import { usePaymentRequiredPrompt } from '../../../components/PaymentRequiredModal';
-import { formatTripDuration, tripTapsLabel } from '../../../utils/tripTime';
+import { formatTripDuration } from '../../../utils/tripTime';
 import RiderHrmHeader from './RiderHrmHeader';
 import {
   riderSupervisorService,
@@ -397,6 +397,8 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
                 <th className={thClass}>Placed</th>
                 {canViewStatus && <th className={thClass}>Status</th>}
                 <th className={thClass}>Delivery</th>
+                <th className={thClass}>Picked up</th>
+                <th className={thClass}>Delivered</th>
                 <th className={thClass}>Trip time</th>
                 <th className={thClass}>Rider</th>
                 <th className={thClass}>Brand</th>
@@ -445,13 +447,11 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
                     </td>
                   )}
                   <td className={tdClass}>{o.delivery_status ?? '—'}</td>
+                  {/* The rider's own taps, each in its own column, then the time between them. */}
+                  <td className={tdClass}>{fmtDateTime(o.picked_up_at)}</td>
+                  <td className={tdClass}>{fmtDateTime(o.delivered_at)}</td>
                   <td className={tdClass}>
                     <span className="font-medium">{formatTripDuration(o.trip_duration_seconds)}</span>
-                    {tripTapsLabel(o.picked_up_at, o.delivered_at) ? (
-                      <span className="block text-xs text-gray-400 dark:text-slate-500">
-                        {tripTapsLabel(o.picked_up_at, o.delivered_at)}
-                      </span>
-                    ) : null}
                   </td>
                   <td className={tdClass}>{o.rider_name ?? '—'}</td>
                   <td className={tdClass}>{o.brand_name ?? '—'}</td>

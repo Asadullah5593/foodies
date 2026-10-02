@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatTripDuration, formatTripClock, tripTapsLabel } from './tripTime';
+import { formatTripDuration } from './tripTime';
 
 describe('formatTripDuration', () => {
   it('reads as minutes for an ordinary trip', () => {
@@ -25,29 +25,5 @@ describe('formatTripDuration', () => {
     expect(formatTripDuration(undefined)).toBe('—');
     expect(formatTripDuration(-5)).toBe('—');
     expect(formatTripDuration(Number.NaN)).toBe('—');
-  });
-});
-
-describe('tripTapsLabel', () => {
-  const pickup = '2026-10-02T10:00:00.000Z';
-  const delivered = '2026-10-02T10:23:00.000Z';
-
-  it('shows both taps once the trip is finished', () => {
-    expect(tripTapsLabel(pickup, delivered)).toBe(`${formatTripClock(pickup)} → ${formatTripClock(delivered)}`);
-  });
-
-  it('shows the one tap that exists so far', () => {
-    expect(tripTapsLabel(pickup, null)).toBe(`Picked up ${formatTripClock(pickup)}`);
-    expect(tripTapsLabel(null, delivered)).toBe(`Delivered ${formatTripClock(delivered)}`);
-  });
-
-  it('is empty when the rider has tapped neither', () => {
-    expect(tripTapsLabel(null, null)).toBeNull();
-    expect(tripTapsLabel(undefined, undefined)).toBeNull();
-  });
-
-  it('never prints an invalid date', () => {
-    expect(formatTripClock('not-a-date')).toBe('—');
-    expect(formatTripClock(null)).toBe('—');
   });
 });
