@@ -228,6 +228,9 @@ describe('OrdersService — deliveries with no rider', () => {
                 riderId: 9,
                 deliveryStatus: 'accepted',
                 deliveryFailedReason: null,
+                // A new assignment is a new trip (see trip-time.spec.ts).
+                pickedUpAt: null,
+                deliveredAt: null,
             });
             expect(ledger).toHaveBeenCalledWith(
                 expect.objectContaining({

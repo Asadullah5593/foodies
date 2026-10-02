@@ -13,6 +13,7 @@ import Loader from '../../../components/Loader';
 import { useHasPermission } from '../../../hooks/useHasPermission';
 import { adminService } from '../../../services/api/adminService';
 import { usePaymentRequiredPrompt } from '../../../components/PaymentRequiredModal';
+import { formatTripDuration, tripTapsLabel } from '../../../utils/tripTime';
 import RiderHrmHeader from './RiderHrmHeader';
 import {
   riderSupervisorService,
@@ -268,6 +269,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
   });
 
   const counts = data?.counts;
+  const tripTime = data?.trip_time;
   const orders: SupervisorDeliveryOrder[] = data?.data ?? [];
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -357,6 +359,23 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
         </div>
       </div>
 
+      {/* Average of the trips matching the filters above (not the status
+          tab), so picking a rider shows that rider's average. */}
+      {tripTime && (
+        <p className="mb-3 text-sm text-gray-600 dark:text-slate-300">
+          <span className="font-medium text-gray-500 dark:text-slate-400">Average trip time:</span>{' '}
+          <span className="font-semibold text-gray-900 dark:text-slate-100">
+            {formatTripDuration(tripTime.average_seconds)}
+          </span>
+          <span className="text-xs text-gray-500 dark:text-slate-400">
+            {' '}
+            {tripTime.trips > 0
+              ? `· ${tripTime.trips} ${tripTime.trips === 1 ? 'trip' : 'trips'}, pickup to delivery`
+              : '· no trips recorded for these filters'}
+          </span>
+        </p>
+      )}
+
       {isLoading ? (
         <div className="py-12 flex justify-center">
           <Loader text="Loading delivery orders..." />
@@ -378,6 +397,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
                 <th className={thClass}>Placed</th>
                 {canViewStatus && <th className={thClass}>Status</th>}
                 <th className={thClass}>Delivery</th>
+                <th className={thClass}>Trip time</th>
                 <th className={thClass}>Rider</th>
                 <th className={thClass}>Brand</th>
                 <th className={thClass}>Branch</th>
@@ -425,6 +445,14 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
                     </td>
                   )}
                   <td className={tdClass}>{o.delivery_status ?? '—'}</td>
+                  <td className={tdClass}>
+                    <span className="font-medium">{formatTripDuration(o.trip_duration_seconds)}</span>
+                    {tripTapsLabel(o.picked_up_at, o.delivered_at) ? (
+                      <span className="block text-xs text-gray-400 dark:text-slate-500">
+                        {tripTapsLabel(o.picked_up_at, o.delivered_at)}
+                      </span>
+                    ) : null}
+                  </td>
                   <td className={tdClass}>{o.rider_name ?? '—'}</td>
                   <td className={tdClass}>{o.brand_name ?? '—'}</td>
                   <td className={tdClass}>{o.branch_name ?? '—'}</td>
