@@ -8,6 +8,7 @@
  * No OrdersService import — avoids a circular dependency with menu.service.
  */
 import { OfferOrderType } from './offer-validity.util';
+import { isWithinValidity } from '../utils/validity-window';
 
 /** Sale channel an offer can be restricted to. */
 export type OfferChannel = 'pos' | 'app' | 'web' | 'kiosk';
@@ -91,6 +92,12 @@ export interface PreviewOffer {
     orderTypes?: string[] | null;
     validFrom: Date | null;
     validUntil: Date | null;
+    /**
+     * Timezone a picked "valid from / until" date is read in: the browsed
+     * branch's, so the preview keeps the same days checkout does. Unset reads
+     * it in UTC.
+     */
+    timezone?: string | null;
     validTimeStart: string | null;
     validTimeEnd: string | null;
     validDaysOfWeek: number[] | null;
@@ -146,8 +153,7 @@ export function previewItemOffers(
         if (o.minOrderAmount != null) return false;
         if (o.type !== 'flat' && o.type !== 'percentage') return false;
         if (o.audience != null && o.audience !== 'all') return false;
-        if (o.validFrom && opts.now < o.validFrom) return false;
-        if (o.validUntil && opts.now > o.validUntil) return false;
+        if (!isWithinValidity(o, o.timezone, opts.now)) return false;
         if (!opts.allowTimeBoxed && timeBoxed(o)) return false;
         if (
             Array.isArray(o.eligibilityBranchIds) &&

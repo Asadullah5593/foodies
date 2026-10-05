@@ -44,6 +44,7 @@ import {
     summarizeSortOrders,
 } from './sort-order.util';
 import { getBranchClock, isWithinSchedule } from '../utils/branch-schedule';
+import { hasPickedDate, validityTimezone } from '../utils/validity-window';
 import { ActivityContext } from '../activity-log/activity-context';
 
 const MENU_ITEM_GALLERY_MAX = 12;
@@ -208,11 +209,20 @@ export class MenuService {
     /** Load active auto offers (product_promotion + discount) usable for the menu price preview. */
     private async loadPreviewOffers(
         tenantId: number | null,
+        branchId: number | null,
     ): Promise<PreviewOffer[]> {
         if (tenantId == null) return [];
         const rows = await this.discountRepo.find({
             where: { tenantId, isActive: true, requiresCode: false },
         });
+        // A picked "valid from / until" date is read on the browsed branch's
+        // clock, the way checkout reads it, so the two agree on the last day.
+        const timezone = rows.some(hasPickedDate)
+            ? await validityTimezone(this.discountRepo.manager, {
+                  branchId,
+                  tenantId,
+              })
+            : null;
         return rows
             .filter((d) => {
                 const k = (d as { offerKind?: string }).offerKind ?? 'discount';
@@ -241,6 +251,7 @@ export class MenuService {
                 orderTypes: d.orderTypes ?? null,
                 validFrom: d.validFrom ?? null,
                 validUntil: d.validUntil ?? null,
+                timezone,
                 validTimeStart: d.validTimeStart ?? null,
                 validTimeEnd: d.validTimeEnd ?? null,
                 validDaysOfWeek: d.validDaysOfWeek ?? null,
@@ -1543,7 +1554,10 @@ export class MenuService {
                     branchBrands?: Array<{ brand?: { tenantId?: number } }>;
                 }
             ).branchBrands ?? [])[0]?.brand?.tenantId ?? null;
-        const previewOffers = await this.loadPreviewOffers(previewTenantId);
+        const previewOffers = await this.loadPreviewOffers(
+            previewTenantId,
+            branchId,
+        );
         const previewNow = new Date();
 
         return linked.map((bmi) => {
@@ -2368,6 +2382,7 @@ export class MenuService {
                       })) as { tenantId?: number } | null
                   )?.tenantId ?? null)
                 : null,
+            branchId,
         );
         return {
             id: item.id,
@@ -2773,6 +2788,7 @@ export class MenuService {
                       })) as { tenantId?: number } | null
                   )?.tenantId ?? null)
                 : null,
+            branchId,
         );
         const base = {
             id: item.id,
