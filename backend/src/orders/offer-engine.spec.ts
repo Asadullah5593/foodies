@@ -177,6 +177,56 @@ describe('offer-engine', () => {
     });
   });
 
+  describe('printed voucher — the printed price is always honoured', () => {
+    // A Rs 1,949 pizza, cost Rs 1,200, voucher price Rs 999 → Rs 950 off.
+    const voucherStage = (extra: Partial<EngineStage> = {}): EngineStage => ({
+      ...flatOn('voucher', 950, 0, 1),
+      ...extra,
+    });
+
+    it('the tenant cap neither limits it nor is spent by it', () => {
+      const settings = resolveOfferSettings({ maxTotalDiscountPercent: 20 });
+      const capped = runOfferEngine([line(1949)], [voucherStage()], settings);
+      // Without the exemption a 20% cap would hand the customer Rs 389.80 off.
+      expect(capped.byKind.voucher).toBe(389.8);
+
+      const res = runOfferEngine(
+        [line(1949)],
+        [voucherStage({ exemptFromCap: true })],
+        settings,
+      );
+      expect(res.byKind.voucher).toBe(950);
+      expect(res.lines[0].after).toBe(999);
+      expect(res.capApplied).toBe(false);
+      expect(res.merchantSpent).toBe(0);
+    });
+
+    it('may go below cost when the stage says so', () => {
+      const floored = runOfferEngine(
+        [line(1949, { lineCost: 1200 })],
+        [voucherStage()],
+        DEFAULT_OFFER_SETTINGS,
+      );
+      expect(floored.lines[0].after).toBe(1200);
+
+      const res = runOfferEngine(
+        [line(1949, { lineCost: 1200 })],
+        [voucherStage({ bypassesCostFloor: true })],
+        DEFAULT_OFFER_SETTINGS,
+      );
+      expect(res.lines[0].after).toBe(999);
+    });
+
+    it('still never touches a deal line', () => {
+      const res = runOfferEngine(
+        [line(1949, { isDeal: true })],
+        [voucherStage({ exemptFromCap: true, bypassesCostFloor: true })],
+        DEFAULT_OFFER_SETTINGS,
+      );
+      expect(res.totalDiscount).toBe(0);
+    });
+  });
+
   describe('resolveOfferSettings', () => {
     it('null → defaults (cap off, deals excluded, Option B base)', () => {
       const s = resolveOfferSettings(null);
