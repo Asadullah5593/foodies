@@ -1838,6 +1838,10 @@ export class OrdersService {
             (tenant as { offerSettings?: OfferSettings | null })
                 .offerSettings ?? null,
         );
+        // A printed voucher must stand alone. Checked before the other
+        // discounts are authorized, so a request that asks for both is told
+        // exactly that rather than whatever is wrong with the other one.
+        if (dto.voucher_id != null) this.assertVoucherStandsAlone(dto);
         // Enforcement point: unlike quote this THROWS, so a cashier who posts a
         // preset above their ceiling is refused rather than quietly clamped.
         const staffDiscount = await this.authorizeStaffDiscount(
@@ -1857,9 +1861,8 @@ export class OrdersService {
             primaryBranch.id,
             orderBrandId,
         );
-        // Enforcement point for a printed voucher: it must stand alone, be
-        // usable here today, and actually take something off this cart.
-        if (dto.voucher_id != null) this.assertVoucherStandsAlone(dto);
+        // Enforcement point for a printed voucher: it must be usable here
+        // today, and actually take something off this cart.
         const voucher = await this.authorizeVoucher(
             dto.voucher_id,
             tenantId,

@@ -53,6 +53,9 @@ Tenant (tenant_id; super admin requests have tenantId = null)
 ├─ TENANT-scoped: discounts (with eligibility_brand_ids /
 │    eligibility_branch_ids arrays), customers, recipes, uoms,
 │    vendors, rider_profiles, tenant_users, roles
+├─ TENANT + BRAND: printed_vouchers (the paper coupon book; one brand
+│    each; a cashier applies ONE per order at the till and it replaces
+│    every other discount; never reaches the app or the website)
 └─ GLOBAL: users, permissions, otp_codes
 ```
 
@@ -64,7 +67,7 @@ User assignment: `users` is global; `tenant_users` ties a user to a tenant; `bra
   - `tenantId` (null ⇒ super admin, no scoping)
   - `allowedBranchIds` — null = all branches (user has `all-branches:access` permission, e.g. GM/owner); else the branch IDs from `branch_users`
   - `allowedBrandIds` — null = unrestricted; an array only when the user is brand-locked (every `branch_users` row has `brand_id`; GM/owner never locked)
-- Brand lock is enforced server-side in: kitchen/KDS, admin orders, POS quote/order, reports/dashboard, discounts, customers (via brand order history), users/branch-users, menu admin CRUD (items/categories/variants/addons/modifiers/deals), branch-menu-items, shifts, and the admin brands list. The "Brand Admin" role (slug `brand_admin`) bundles the brand-scoped permissions; demo accounts: `peperi@demo.com`, `wokandgo@demo.com`, `fireaway@demo.com` (password `brand123`, seeded by `npm run seed:brand-admins`).
+- Brand lock is enforced server-side in: kitchen/KDS, admin orders, POS quote/order, reports/dashboard, discounts, customers (via brand order history), users/branch-users, menu admin CRUD (items/categories/variants/addons/modifiers/deals), branch-menu-items, shifts, printed vouchers (and their report), and the admin brands list. The "Brand Admin" role (slug `brand_admin`) bundles the brand-scoped permissions; demo accounts: `peperi@demo.com`, `wokandgo@demo.com`, `fireaway@demo.com` (password `brand123`, seeded by `npm run seed:brand-admins`).
 - Reports/dashboard (`backend/src/reports/`) scope by `tenantId + allowedBranchIds + allowedBrandIds + optional branch_id/brand_id` via `applyOrderScope()`/`applyBrandScope()`; `dashboard-summary` returns a `sales_by_brand` breakdown for the owner.
 - Delivery fee is configured per **brand** (`brands.delivery_flat_fee`); each split web order charges its own brand's fee. A rider carries exactly one active order at a time (auto-dispatch and manual assignment both enforce it).
 - Guards/decorators: `JwtAuthGuard`, `RoleAccessGuard`, `CustomerJwtAuthGuard` (consumer), `@CurrentUser()`, `@RequirePermission()`.
@@ -92,5 +95,6 @@ Production: PM2 + Nginx on EC2, no Docker — `docs/EC2_DEPLOYMENT_RUNBOOK.md`. 
 - `docs/MULTI_BRAND_ORDER_FLOW.md` — mixed-brand order splitting
 - `docs/DATABASE_OVERVIEW.md` + `docs/DATABASE_ERD.md` — schema reference
 - `docs/DISCOUNTS.md` — discount eligibility rules
+- `docs/PRINTED_VOUCHERS.md` — the paper coupon book: pricing rules, exclusivity, report
 - `docs/SYSTEM_FUNCTIONALITIES_AND_FLOW.md` — roles & order lifecycle
 - `docs/POS_GOOGLE_PLACES.md` — POS address autocomplete & delivery coordinates
