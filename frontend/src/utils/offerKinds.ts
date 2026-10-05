@@ -15,7 +15,11 @@ export type OfferKind =
   | 'discount'
   | 'staff_discount'
   | 'coupon'
-  | 'card_offer';
+  | 'card_offer'
+  // A printed voucher (the paper coupon book). Never stacks with the others:
+  // when one is applied it is the only kind on the order. Like staff_discount
+  // it has its own module, so it is absent from OFFER_KINDS below.
+  | 'voucher';
 
 /**
  * The kinds that are `discounts.offer_kind` values — what an offer can be
@@ -36,6 +40,7 @@ export const OFFER_KIND_LABEL: Record<OfferKind, string> = {
   staff_discount: 'Staff discount',
   coupon: 'Coupon',
   card_offer: 'Card offer',
+  voucher: 'Voucher',
 };
 
 /** Label for a kind, falling back to the raw value for anything unrecognised. */

@@ -39,6 +39,8 @@ export interface DashboardSummary {
       discount: number;
       coupon: number;
       card: number;
+      /** Printed vouchers redeemed at the till; counted in merchant_funded. */
+      voucher?: number;
       merchant_funded: number;
       bank_funded: number;
     };

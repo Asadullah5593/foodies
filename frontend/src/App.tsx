@@ -63,6 +63,8 @@ import BranchUsers from './pages/Admin/BranchUsers';
 import Discounts from './pages/Admin/Discounts';
 import BankCards from './pages/Admin/BankCards';
 import StaffDiscounts from './pages/Admin/StaffDiscounts';
+import PrintedVouchers from './pages/Admin/PrintedVouchers';
+import PrintedVoucherReport from './pages/Admin/PrintedVoucherReport';
 import Banners from './pages/Admin/Banners';
 import Promotions from './pages/Admin/Promotions';
 import ProductPromotions from './pages/Admin/ProductPromotions';
@@ -341,6 +343,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { path: '/admin/discounts', label: 'Discounts' },
         { path: '/admin/product-promotions', label: 'Product Promotions' },
         { path: '/admin/coupons', label: 'Coupons' },
+        // The paper coupon book — applied by a cashier at the till, one per order.
+        { path: '/admin/printed-vouchers', label: 'Printed Vouchers' },
         { path: '/admin/bank-cards', label: 'Bank Cards' },
         { path: '/admin/campaigns', label: 'Campaigns' },
         { path: '/admin/offer-settings', label: 'Offer Settings' },
@@ -394,6 +398,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         // Keeps the original /admin/reports URL so existing links still land here.
         { path: '/admin/reports', label: 'Sales Overview' },
         { path: '/admin/reports/product-sales', label: 'Product-wise Sales' },
+        { path: '/admin/reports/printed-vouchers', label: 'Printed Vouchers' },
       ],
     },
     {
@@ -1080,6 +1085,14 @@ const AppRoutes: React.FC = () => {
         }
       />
       <Route
+        path="/admin/printed-vouchers"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><PrintedVouchers /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/admin/loyalty-settings"
         element={
           <ProtectedRoute>
@@ -1221,6 +1234,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><ProductSales /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/reports/printed-vouchers"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><PrintedVoucherReport /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />

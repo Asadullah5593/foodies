@@ -587,6 +587,137 @@ export interface StaffDiscountPayload {
   is_active?: boolean;
 }
 
+/**
+ * A printed voucher from the paper coupon book ("Any large pizza for Rs 999",
+ * "30% off"), as the admin page sees it. One brand each; applied by a cashier
+ * at the till, where it replaces every other discount on the order.
+ */
+export type PrintedVoucherType = 'fixed_price' | 'percentage';
+
+export interface PrintedVoucher {
+  id: number;
+  name: string;
+  brand_id: number;
+  brand_name: string | null;
+  /** fixed_price: ONE qualifying item at `value`. percentage: `value`% off. */
+  voucher_type: PrintedVoucherType;
+  value: number;
+  max_discount_amount: number | null;
+  category_ids: number[];
+  category_names: string[];
+  product_ids: number[];
+  product_names: string[];
+  /** Options a fixed price also covers (a meal voucher's fries + drink). */
+  included_modifier_ids: number[];
+  included_modifier_names: string[];
+  eligibility_branch_ids: number[];
+  branch_names: string[];
+  /** null = every order type. */
+  order_types: string[] | null;
+  /** 'YYYY-MM-DD', both days inclusive. */
+  valid_from: string | null;
+  valid_until: string | null;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface PrintedVoucherPayload {
+  name?: string;
+  brand_id?: number | null;
+  voucher_type?: PrintedVoucherType;
+  value?: number | null;
+  max_discount_amount?: number | null;
+  category_ids?: number[];
+  product_ids?: number[];
+  included_modifier_ids?: number[];
+  eligibility_branch_ids?: number[];
+  order_types?: string[] | null;
+  valid_from?: string | null;
+  valid_until?: string | null;
+  sort_order?: number;
+  is_active?: boolean;
+}
+
+/** The trimmed shape the till's picker returns — only what a button needs. */
+export interface TillVoucher {
+  id: number;
+  name: string;
+  voucher_type: PrintedVoucherType;
+  value: number;
+}
+
+/** Pick-lists for the voucher form, for one brand. */
+export interface PrintedVoucherFormOptions {
+  categories: Array<{ id: number; name: string; is_active: boolean }>;
+  products: Array<{
+    id: number;
+    name: string;
+    base_price: number;
+    is_active: boolean;
+    category_id: number | null;
+    category_name: string | null;
+    /** Option groups this item's wizard offers. */
+    modifier_group_ids: number[];
+  }>;
+  /** Paid options only — a fixed price has nothing to include in a free one. */
+  modifier_options: Array<{
+    id: number;
+    name: string;
+    price: number;
+    group_id: number;
+    group_name: string;
+  }>;
+  branches: Array<{ id: number; name: string; is_active: boolean }>;
+}
+
+/** GET /admin/printed-vouchers/report */
+export interface PrintedVoucherReport {
+  date_from: string;
+  date_to: string;
+  totals: {
+    redemptions: number;
+    discount: number;
+    subtotal: number;
+    total: number;
+    average_discount: number;
+  };
+  by_voucher: Array<{
+    voucher_id: number | null;
+    voucher_name: string;
+    voucher_type: PrintedVoucherType | null;
+    value: number | null;
+    brand_name: string | null;
+    redemptions: number;
+    discount: number;
+    total: number;
+  }>;
+  by_day: Array<{
+    day: string;
+    branch_name: string | null;
+    voucher_name: string;
+    redemptions: number;
+    discount: number;
+  }>;
+  rows: Array<{
+    id: number;
+    order_id: string | null;
+    order_number: string | null;
+    placed_at: string | null;
+    status: string;
+    order_type: string;
+    customer_name: string | null;
+    customer_phone: string | null;
+    subtotal: number;
+    discount: number;
+    total: number;
+    voucher_name: string;
+    branch_name: string | null;
+    brand_name: string | null;
+    applied_by: string | null;
+  }>;
+  rows_truncated: boolean;
+}
+
 export interface OfferSettings {
   stackingOrder?: string[];
   withinGroup?: 'best_value' | 'priority';

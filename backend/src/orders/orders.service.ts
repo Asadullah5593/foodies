@@ -3689,6 +3689,10 @@ export class OrdersService {
             subtotal: Number(order.subtotal),
             discount_amount: Number(order.discountAmount),
             discount_code: order.discountCode,
+            // Printed voucher the order used; its name is the snapshot taken
+            // when it was applied.
+            voucher_name: order.voucherName ?? null,
+            voucher_discount_amount: Number(order.voucherDiscountAmount ?? 0),
             loyalty_points_earned: order.loyaltyPointsEarned ?? 0,
             loyalty_points_redeemed: order.loyaltyPointsRedeemed ?? 0,
             tax_amount: Number(order.taxAmount),

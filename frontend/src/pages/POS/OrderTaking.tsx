@@ -73,6 +73,8 @@ const OrderTaking: React.FC = () => {
   const [staffDiscountId, setStaffDiscountId] = useState<number | null>(null);
   /** Till-activated offer switched on for this cart (discounts id), or null. */
   const [manualOfferId, setManualOfferId] = useState<number | null>(null);
+  /** Printed voucher applied to this cart (printed_vouchers id), or null. */
+  const [voucherId, setVoucherId] = useState<number | null>(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -336,6 +338,54 @@ const OrderTaking: React.FC = () => {
     retry: false,
   });
 
+  /**
+   * Printed vouchers (the paper coupon book) that can be used on this order:
+   * the cart's brand, this branch, this order type, today. Server-filtered, and
+   * [] without the right, so an unauthorized till shows no control. A kiosk
+   * cart being finalized takes no voucher.
+   */
+  const { data: tillVouchers } = useQuery({
+    queryKey: ['pos-vouchers', branchId, cartBrandId, effectiveOrderType],
+    queryFn: () =>
+      adminService.getPrintedVouchersForTill({
+        branch_id: branchId,
+        brand_id: cartBrandId,
+        order_type: effectiveOrderType,
+      }),
+    enabled: branchId != null && cartBrandId != null && effectiveOrderType != null && activeKioskCode == null,
+    retry: false,
+  });
+  const usableVouchers = activeKioskCode == null && cartBrandId != null ? (tillVouchers ?? []) : [];
+
+  /**
+   * One voucher per order, and it replaces every other discount — so picking
+   * one clears the staff discount, the till offer, the code and the points.
+   */
+  const selectVoucher = (id: number | null) => {
+    setVoucherId(id);
+    if (id == null) return;
+    setStaffDiscountId(null);
+    setManualOfferId(null);
+    setDiscountCode('');
+    setLoyaltyPointsToRedeem('');
+  };
+
+  // The cart changed brand or order type and the voucher no longer applies to
+  // it: drop it rather than leave a selection the cashier can no longer see.
+  useEffect(() => {
+    if (voucherId == null) return;
+    // An emptied cart, or a kiosk cart taking over, has no voucher to keep.
+    if (cartBrandId == null || activeKioskCode != null) {
+      setVoucherId(null);
+      return;
+    }
+    if (tillVouchers == null) return; // still loading this cart's list
+    if (!tillVouchers.some((v) => v.id === voucherId)) {
+      setVoucherId(null);
+      toast('The voucher was removed — it cannot be used on this order.');
+    }
+  }, [voucherId, tillVouchers, cartBrandId, activeKioskCode]);
+
   const getBrandName = (brandId: number | null | undefined): string | null =>
     brandId != null ? (brands.find((b) => b.id === brandId)?.name ?? null) : null;
 
@@ -448,6 +498,7 @@ const OrderTaking: React.FC = () => {
         discount_code: discountCode.trim() || undefined,
         staff_discount_id: staffDiscountId ?? undefined,
         manual_offer_id: manualOfferId ?? undefined,
+        voucher_id: voucherId ?? undefined,
         customer_phone: customerPhone.trim() || undefined,
         loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
       }
@@ -572,6 +623,7 @@ const OrderTaking: React.FC = () => {
     setDiscountCode('');
     setStaffDiscountId(null);
     setManualOfferId(null);
+    setVoucherId(null);
     setCustomerName('');
     setCustomerPhone('');
     setDeliveryAddress('');
@@ -1135,6 +1187,13 @@ const OrderTaking: React.FC = () => {
       toast.error('Prices are updating — tap Place Order again in a moment');
       return;
     }
+    // The cashier is holding the customer's paper voucher: an order that was
+    // meant to use it must not go through at another price. (The server
+    // refuses it too.)
+    if (voucherId != null && quote?.voucher_applied !== true) {
+      toast.error(quote?.voucher_error || 'The voucher is not applied. Fix the cart or clear the voucher.');
+      return;
+    }
     const orderTotal = Number(quote?.total_amount ?? total ?? 0);
     if (
       !canPlaceOrder({
@@ -1192,6 +1251,7 @@ const OrderTaking: React.FC = () => {
       discount_code: discountCode.trim() || undefined,
       staff_discount_id: staffDiscountId ?? undefined,
       manual_offer_id: manualOfferId ?? undefined,
+      voucher_id: voucherId ?? undefined,
       loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
       items: selectedItems.map((item) => {
         if (item.dealId != null && item.components?.length) {
@@ -2081,6 +2141,9 @@ const OrderTaking: React.FC = () => {
               manualOffers={manualOffers ?? []}
               manualOfferId={manualOfferId}
               onManualOfferChange={setManualOfferId}
+              vouchers={usableVouchers}
+              voucherId={voucherId}
+              onVoucherChange={selectVoucher}
               orderNotes={orderNotes}
               onOrderNotesChange={setOrderNotes}
               quote={quote}
