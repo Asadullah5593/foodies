@@ -17,6 +17,11 @@ import { Promotion } from '../entities/promotion.entity';
 import { CustomerPromotion } from '../entities/customer-promotion.entity';
 import { Discount } from '../entities/discount.entity';
 import { MediaCleanupService } from '../media/media-cleanup.service';
+import {
+    hasPickedDate,
+    isWithinValidity,
+    validityTimezone,
+} from '../utils/validity-window';
 
 @Injectable()
 export class PromotionsService {
@@ -393,10 +398,11 @@ export class PromotionsService {
             },
         });
 
-        const eligible = promotions.filter(
-            (p) =>
-                (p.validFrom == null || p.validFrom <= now) &&
-                (p.validUntil == null || p.validUntil >= now),
+        const timezone = promotions.some(hasPickedDate)
+            ? await validityTimezone(this.dataSource, { tenantId })
+            : null;
+        const eligible = promotions.filter((p) =>
+            isWithinValidity(p, timezone, now),
         );
 
         for (const promo of eligible) {

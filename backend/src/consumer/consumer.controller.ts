@@ -58,6 +58,11 @@ import { RatingsService } from '../ratings/ratings.service';
 import { BannersService } from '../banners/banners.service';
 import { PromotionsService } from '../promotions/promotions.service';
 import { FirebaseService } from '../firebase/firebase.service';
+import {
+    hasEnded,
+    isPickedDate,
+    validityTimezone,
+} from '../utils/validity-window';
 
 type BranchWithBrands = Branch & {
     branchBrands: Array<{ brand: { tenantId: number } }>;
@@ -2616,8 +2621,14 @@ export class ConsumerController {
             ? await this.discountRepo.find({ where: { id: In(offerIds) } })
             : [];
         const byId = new Map(offers.map((o) => [o.id, o]));
+        // A voucher that took its coupon's "valid until" date lasts that whole day.
+        const timezone = rows.some((v) => isPickedDate(v.expiresAt))
+            ? await validityTimezone(this.voucherRepo.manager, {
+                  tenantId: rows[0].tenantId,
+              })
+            : null;
         return rows
-            .filter((v) => !v.expiresAt || v.expiresAt >= now)
+            .filter((v) => !hasEnded(v.expiresAt, timezone, now))
             .map((v) => {
                 const o = byId.get(v.offerId);
                 return {
@@ -2655,9 +2666,10 @@ export class ConsumerController {
             where: { qrToken: token.trim(), tenantId },
         });
         if (!v) throw new NotFoundException('Voucher not found');
-        const now = new Date();
-        const valid =
-            v.status === 'active' && (!v.expiresAt || v.expiresAt >= now);
+        const timezone = isPickedDate(v.expiresAt)
+            ? await validityTimezone(this.voucherRepo.manager, { tenantId })
+            : null;
+        const valid = v.status === 'active' && !hasEnded(v.expiresAt, timezone);
         const offer = await this.discountRepo.findOne({
             where: { id: v.offerId },
         });
