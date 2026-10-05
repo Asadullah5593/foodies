@@ -85,6 +85,77 @@ describe('PromotionsService', () => {
             expect(cp2.expiresAt).toBeNull();
         });
 
+        describe('a window picked as plain dates', () => {
+            // Saved as midnight UTC, which is 05:00 in Pakistan; the promo is
+            // on offer for the whole of each picked day on the business clock.
+            type Copy = { promotionId: number };
+            const picked = (day: string) => new Date(day);
+            const promo = (window: {
+                validFrom?: Date;
+                validUntil?: Date;
+            }) => ({
+                id: 5,
+                validFrom: null,
+                validUntil: null,
+                expiresInDays: null,
+                ...window,
+            });
+            afterEach(() => jest.useRealTimers());
+
+            const assignedAt = async (
+                local: string,
+                row: ReturnType<typeof promo>,
+            ) => {
+                jest.useFakeTimers({ now: new Date(`${local}+05:00`) });
+                const saved: Copy[] = [];
+                const query = jest
+                    .fn()
+                    .mockResolvedValue([{ timezone: 'Asia/Karachi' }]);
+                const svc = makeService({
+                    promo: { find: jest.fn().mockResolvedValue([row]) },
+                    cp: {
+                        create: (x: Copy) => x,
+                        save: jest.fn((x: Copy) => {
+                            saved.push(x);
+                            return Promise.resolve(x);
+                        }),
+                    },
+                    dataSource: { query },
+                });
+                await svc.assignNewCustomerPromotions(6, 99);
+                return { ids: saved.map((c) => c.promotionId), query };
+            };
+
+            it('assigns the promo through its last day and not after', async () => {
+                const row = promo({ validUntil: picked('2026-11-30') });
+                expect(
+                    (await assignedAt('2026-11-30T21:00:00', row)).ids,
+                ).toEqual([5]);
+                expect(
+                    (await assignedAt('2026-12-01T00:00:30', row)).ids,
+                ).toEqual([]);
+            });
+
+            it('assigns it from midnight on its first day', async () => {
+                const row = promo({ validFrom: picked('2026-10-01') });
+                expect(
+                    (await assignedAt('2026-09-30T23:59:30', row)).ids,
+                ).toEqual([]);
+                expect(
+                    (await assignedAt('2026-10-01T00:00:30', row)).ids,
+                ).toEqual([5]);
+            });
+
+            it("reads the dates on the clock the tenant's branches run on", async () => {
+                const row = promo({ validUntil: picked('2026-11-30') });
+                const { query } = await assignedAt('2026-11-30T21:00:00', row);
+                expect(query).toHaveBeenCalledWith(
+                    expect.stringContaining('branch_brands'),
+                    [6],
+                );
+            });
+        });
+
         it('swallows a per-promo save failure and continues', async () => {
             const promos = [
                 {

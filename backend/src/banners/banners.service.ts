@@ -7,6 +7,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Banner } from '../entities/banner.entity';
 import { MediaCleanupService } from '../media/media-cleanup.service';
+import {
+    hasPickedDate,
+    isWithinValidity,
+    validityTimezone,
+} from '../utils/validity-window';
 
 @Injectable()
 export class BannersService {
@@ -126,12 +131,11 @@ export class BannersService {
             where: { tenantId, isActive: true },
             order: { sortOrder: 'ASC', createdAt: 'DESC' },
         });
+        const timezone = all.some(hasPickedDate)
+            ? await validityTimezone(this.repo.manager, { tenantId })
+            : null;
         return all
-            .filter(
-                (b) =>
-                    (b.validFrom == null || b.validFrom <= now) &&
-                    (b.validUntil == null || b.validUntil >= now),
-            )
+            .filter((b) => isWithinValidity(b, timezone, now))
             .map((b) => this.toResponse(b));
     }
 
