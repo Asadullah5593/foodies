@@ -318,6 +318,7 @@ export class ReportsService {
         coupon_discounts: number;
         card_discounts: number;
         staff_discounts: number;
+        voucher_discounts: number;
         total_tax: number;
         total_service_charge: number;
         total_delivery_fee: number;
@@ -355,6 +356,11 @@ export class ReportsService {
                 'COALESCE(SUM(o.staffDiscountAmount), 0)',
                 'staff_discounts',
             )
+            // Printed vouchers (the paper coupon book) redeemed at the till.
+            .addSelect(
+                'COALESCE(SUM(o.voucherDiscountAmount), 0)',
+                'voucher_discounts',
+            )
             .addSelect('COALESCE(SUM(o.taxAmount), 0)', 'total_tax')
             .addSelect(
                 'COALESCE(SUM(o.serviceCharge), 0)',
@@ -381,6 +387,7 @@ export class ReportsService {
             coupon_discounts: Number(r?.coupon_discounts ?? 0),
             card_discounts: Number(r?.card_discounts ?? 0),
             staff_discounts: Number(r?.staff_discounts ?? 0),
+            voucher_discounts: Number(r?.voucher_discounts ?? 0),
             total_tax: Number(r?.total_tax ?? 0),
             total_service_charge: Number(r?.total_service_charge ?? 0),
             total_delivery_fee: Number(r?.total_delivery_fee ?? 0),
@@ -888,7 +895,7 @@ export class ReportsService {
         const discountExpr = shareOf('discountAmount');
 
         /**
-         * The same pro-rata slice, taken per discount stage. The five stages sum
+         * The same pro-rata slice, taken per discount stage. The six stages sum
          * to discountAmount on the order, so their shares sum to `discount` here
          * (bar rounding, which is reconciled below) — which is what lets the
          * report answer "which kind of discount did this product give away?"
@@ -900,6 +907,7 @@ export class ReportsService {
             { key: 'coupon', column: 'couponDiscountAmount' },
             { key: 'card', column: 'cardDiscountAmount' },
             { key: 'staff', column: 'staffDiscountAmount' },
+            { key: 'voucher', column: 'voucherDiscountAmount' },
         ] as const;
         type StageKey = (typeof DISCOUNT_STAGES)[number]['key'];
         type Breakdown = Record<StageKey, number>;
@@ -1579,7 +1587,8 @@ export class ReportsService {
             totals.promo_discounts +
             totals.order_discounts +
             totals.coupon_discounts +
-            totals.staff_discounts;
+            totals.staff_discounts +
+            totals.voucher_discounts;
         return {
             date_from: range.dateFrom.toISOString(),
             date_to: range.dateTo.toISOString(),
@@ -1594,6 +1603,8 @@ export class ReportsService {
                 coupon: totals.coupon_discounts,
                 card: totals.card_discounts,
                 staff_discount: totals.staff_discounts,
+                /** Printed vouchers redeemed at the till. */
+                voucher: totals.voucher_discounts,
             },
             /** Staff give-aways by the person who granted them. */
             staff: staffRows.map((r) => {
@@ -2300,11 +2311,13 @@ export class ReportsService {
                     coupon: kpiCurrent.coupon_discounts,
                     card: kpiCurrent.card_discounts,
                     staff_discount: kpiCurrent.staff_discounts,
+                    voucher: kpiCurrent.voucher_discounts,
                     merchant_funded:
                         kpiCurrent.promo_discounts +
                         kpiCurrent.order_discounts +
                         kpiCurrent.coupon_discounts +
-                        kpiCurrent.staff_discounts,
+                        kpiCurrent.staff_discounts +
+                        kpiCurrent.voucher_discounts,
                     bank_funded: kpiCurrent.card_discounts,
                 },
                 total_tax: kpiCurrent.total_tax,

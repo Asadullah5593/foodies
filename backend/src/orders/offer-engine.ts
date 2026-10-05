@@ -16,7 +16,10 @@ export type OfferStageKind =
   | 'discount'
   | 'staff_discount'
   | 'coupon'
-  | 'card_offer';
+  | 'card_offer'
+  // A printed voucher. Never stacks: when one is applied the caller passes it
+  // as the ONLY stage, so it has no place in the stacking order.
+  | 'voucher';
 
 export interface EngineLine {
   /** Original sell subtotal for the line (qty × unit sell price). */
@@ -40,6 +43,13 @@ export interface EngineStage {
    * nobody chose those line by line.
    */
   bypassesCostFloor?: boolean;
+  /**
+   * Leave this stage out of the max-total-discount cap: it is neither limited
+   * by it nor counted against it. Set only by the printed-voucher stage — the
+   * price is printed on paper the customer is holding, so a tenant-wide cap
+   * must not turn "Rs 999" into some other number at the till.
+   */
+  exemptFromCap?: boolean;
   /**
    * Given the current running per-line amounts (post previous stages), return
    * the raw desired discount for each line (index-aligned). Percentage offers
@@ -91,6 +101,7 @@ export function runOfferEngine(
     staff_discount: 0,
     coupon: 0,
     card_offer: 0,
+    voucher: 0,
   };
 
   const excluded = lines.map(
@@ -141,8 +152,9 @@ export function runOfferEngine(
 
     // Progressive cap: only stages that count toward the cap are limited.
     const countsTowardCap =
-      stage.funding === 'merchant' ||
-      (stage.kind === 'card_offer' && settings.capIncludesCardOffers);
+      !stage.exemptFromCap &&
+      (stage.funding === 'merchant' ||
+        (stage.kind === 'card_offer' && settings.capIncludesCardOffers));
     if (capTotal != null && countsTowardCap) {
       const stageTotal = alloc.reduce((s, x) => s + x, 0);
       const capRemaining = Math.max(0, round2(capTotal - merchantSpent));

@@ -353,11 +353,12 @@ describe('ProductSales page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
 
     expect(csv).toContain(
-      'Product,Category,Brand,Branch,Variant / size,Qty sold,Orders,Gross sales,Discount,Product promotion,Order discount,Coupon,Bank card offer,Staff discount,Net sales'
+      'Product,Category,Brand,Branch,Variant / size,Qty sold,Orders,Gross sales,Discount,Product promotion,Order discount,Coupon,Bank card offer,Staff discount,Printed voucher,Net sales'
     );
-    expect(csv).toContain('BBQ Chicken Pizza,Pizzas,Fireaway,2 branches,,10,4,5000,1200.26,400.26,0,0,800,0,3799.74');
+    // The printed-voucher share is absent from this (older) payload and reads 0.
+    expect(csv).toContain('BBQ Chicken Pizza,Pizzas,Fireaway,2 branches,,10,4,5000,1200.26,400.26,0,0,800,0,0,3799.74');
     // Child rows are exported under their parent
-    expect(csv).toContain('BBQ Chicken Pizza,Pizzas,Fireaway,2 branches,"12""",7,3,3500,900,100,0,0,800,0,2600');
+    expect(csv).toContain('BBQ Chicken Pizza,Pizzas,Fireaway,2 branches,"12""",7,3,3500,900,100,0,0,800,0,0,2600');
     expect(created[0].download).toMatch(/^product-sales_\d{4}-\d{2}-\d{2}_to_\d{4}-\d{2}-\d{2}\.csv$/);
     vi.restoreAllMocks();
     vi.unstubAllGlobals();

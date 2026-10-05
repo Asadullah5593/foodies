@@ -29,6 +29,9 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   // Its own right, NOT under discounts:manage — authoring offers and handing
   // out a give-away at the till are different permissions.
   '/admin/staff-discounts': ['staff-discounts:view'],
+  // The paper coupon book. Its own right too — applied by cashiers at the till
+  // (printed-vouchers:apply), managed here by whoever holds :view.
+  '/admin/printed-vouchers': ['printed-vouchers:view'],
   '/admin/loyalty-settings': ['loyalty:manage', 'loyalty:view'],
   '/admin/invoice-templates': ['business-settings:access', 'invoice-templates:view'],
   '/admin/delivery-tiers': ['deliveries:manage', 'delivery-tiers:view'],
@@ -73,6 +76,9 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   '/admin/hr': ['employees:view'],
   '/admin/rider-ops': ['deliveries:view'],
   '/admin/shifts': ['shifts:manage', 'shifts:view'],
+  // More specific than /admin/reports (longest-prefix match wins): whoever can
+  // see the vouchers can see what was redeemed, with or without reports:view.
+  '/admin/reports/printed-vouchers': ['printed-vouchers:view'],
   '/admin/reports': ['reports:view'],
   // Reading the audit trail is its own right, not implied by reports:view.
   '/admin/activity-logs': ['activity-log:view'],

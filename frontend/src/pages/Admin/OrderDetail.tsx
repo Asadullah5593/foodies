@@ -66,6 +66,9 @@ type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   source?: 'pos' | 'consumer_app' | string;
   subtotal?: number;
   discount_amount?: number;
+  /** Printed voucher the order used (its name when applied), and what it took off. */
+  voucher_name?: string | null;
+  voucher_discount_amount?: number;
   tax_amount?: number;
   service_charge?: number;
   delivery_fee?: number;
@@ -182,6 +185,8 @@ const OrderDetail: React.FC = () => {
   const deliveryFee = Number(o.delivery_fee ?? 0);
   const hasDiscount = discountAmount > 0;
   const hasCoupon = !!(o.discount_code?.trim());
+  // A printed voucher is the order's only discount, so the discount line is it.
+  const voucherName = Number(o.voucher_discount_amount ?? 0) > 0 ? (o.voucher_name ?? '').trim() : '';
 
   const handlePrint = () => {
     const orderNum = o.order_number ?? (order as any).order_number;
@@ -216,7 +221,7 @@ const OrderDetail: React.FC = () => {
       <table><thead><tr><th>Item</th><th class="text-right">Amount</th></tr></thead><tbody>${itemsHtml}</tbody></table>
       <h2>Totals</h2>
       <p class="py-2 border-t">Subtotal: ${formatCurrency(subtotal)}</p>
-      ${hasDiscount ? `<p class="py-2">Discount${hasCoupon ? ` (${escapeHtml(o.discount_code ?? '')})` : ''}: -${formatCurrency(discountAmount)}</p>` : ''}
+      ${hasDiscount ? `<p class="py-2">${voucherName ? `Voucher (${escapeHtml(voucherName)})` : `Discount${hasCoupon ? ` (${escapeHtml(o.discount_code ?? '')})` : ''}`}: -${formatCurrency(discountAmount)}</p>` : ''}
       <p class="py-2">Tax: ${formatCurrency(taxAmount)}</p>
       ${serviceCharge > 0 ? `<p class="py-2">Service charge: ${formatCurrency(serviceCharge)}</p>` : ''}
       ${deliveryFee > 0 ? `<p class="py-2">Delivery fee: ${formatCurrency(deliveryFee)}</p>` : ''}
@@ -531,7 +536,10 @@ const OrderDetail: React.FC = () => {
           {hasDiscount && (
             <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
               <span>
-                Discount
+                {voucherName ? 'Voucher' : 'Discount'}
+                {voucherName && (
+                  <span className="ml-1 text-gray-500 dark:text-slate-400">(<strong>{voucherName}</strong>)</span>
+                )}
                 {hasCoupon && (
                   <span className="ml-1 text-gray-500 dark:text-slate-400">(Coupon: <strong>{o.discount_code}</strong>)</span>
                 )}

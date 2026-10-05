@@ -224,6 +224,33 @@ export class Order {
     manualOfferBy: number | null;
 
     /**
+     * Printed voucher the cashier applied (printed_vouchers id). A voucher
+     * replaces every other discount, so on such an order this amount IS
+     * discountAmount. ON DELETE SET NULL: retiring a voucher keeps the order's
+     * snapshotted name and amount.
+     */
+    @Column({ name: 'printed_voucher_id', type: 'int', nullable: true })
+    printedVoucherId: number | null;
+
+    /** The voucher's name when it was applied; also marks "this order used one". */
+    @Column({ name: 'voucher_name', type: 'varchar', nullable: true })
+    voucherName: string | null;
+
+    /** What the voucher took off; one of the splits that sum to discountAmount. */
+    @Column({
+        name: 'voucher_discount_amount',
+        type: 'decimal',
+        precision: 12,
+        scale: 2,
+        default: 0,
+    })
+    voucherDiscountAmount: number;
+
+    /** Who applied it. */
+    @Column({ name: 'voucher_by', type: 'int', nullable: true })
+    voucherBy: number | null;
+
+    /**
      * The bank card the customer paid with, when one was selected. Recorded even
      * if its offer gave nothing (below min spend, outside its window), so a card
      * offer's take-up can be measured against every order that could have used it

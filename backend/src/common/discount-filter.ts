@@ -3,7 +3,7 @@
  * list and the product-wise sales report.
  *
  * Both surfaces show the same per-stage split (promo / order / coupon / card /
- * staff), so both must filter it by the same rules — a coupon order appearing
+ * staff / voucher), so both must filter it by the same rules — a coupon order appearing
  * in one view and not the other is the kind of mismatch nobody reports as a bug,
  * they just stop trusting the reports.
  *
@@ -19,6 +19,7 @@ const STAGE_COLUMNS = {
     coupon: 'coupon_discount_amount',
     card: 'card_discount_amount',
     staff: 'staff_discount_amount',
+    voucher: 'voucher_discount_amount',
 } as const;
 
 export type DiscountStage = keyof typeof STAGE_COLUMNS;

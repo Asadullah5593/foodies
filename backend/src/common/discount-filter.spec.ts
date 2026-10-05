@@ -21,6 +21,7 @@ describe('discount filter', () => {
                 'coupon',
                 'card',
                 'staff',
+                'voucher',
             ])
                 expect(isDiscountFilter(value)).toBe(true);
         });
@@ -51,6 +52,7 @@ describe('discount filter', () => {
                 'coupon',
                 'card',
                 'staff',
+                'voucher',
             ]);
         });
     });

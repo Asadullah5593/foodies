@@ -618,6 +618,10 @@ Unique constraint: `(branch_id, menu_item_id)`.
 | `cancelled_at` | timestamp | Yes | When cancelled. |
 | `picked_up_at` | timestamp | Yes | When the rider marked the order picked up. Trip time = `delivered_at` − `picked_up_at`. |
 | `delivered_at` | timestamp | Yes | When the rider marked the order delivered. Not the same as `completed_at`, which staff can set without the rider. |
+| `printed_voucher_id` | int FK | Yes | Printed voucher (paper coupon book) the cashier applied → `printed_vouchers.id`, ON DELETE SET NULL. See `docs/PRINTED_VOUCHERS.md`. |
+| `voucher_name` | varchar | Yes | The voucher's name when it was applied. Also marks "this order used a voucher"; outlives a deleted voucher. |
+| `voucher_discount_amount` | decimal(12,2) | No | What the voucher took off. One of the splits that sum to `discount_amount`. |
+| `voucher_by` | int FK | Yes | User who applied the voucher. |
 | `created_by` | int FK | Yes | User who created (POS). |
 | `created_at` | timestamp | No | Created at. |
 | `updated_at` | timestamp | No | Updated at. |

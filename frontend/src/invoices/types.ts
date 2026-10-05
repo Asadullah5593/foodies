@@ -391,6 +391,9 @@ export type InvoiceOrderVM = {
   coupon_discount_amount?: number;
   card_discount_amount?: number;
   staff_discount_amount?: number;
+  /** Printed voucher the order used; when set it is the order's whole discount. */
+  voucher_name?: string | null;
+  voucher_discount_amount?: number;
   discount_code?: string | null;
   tax_amount: number;
   tax_rate?: number | null;

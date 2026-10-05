@@ -48,6 +48,34 @@ describe('renderInvoiceHtml — field toggles drive output', () => {
     expect(itemized).not.toContain('Discount (SAVE10)');
   });
 
+  it('names a printed voucher as the discount, however the template lists discounts', () => {
+    const voucherOrder = () => {
+      const data = sampleInvoice();
+      const o = data.orders[0];
+      o.promo_discount_amount = 0;
+      o.coupon_discount_amount = 0;
+      o.order_discount_amount = 0;
+      o.card_discount_amount = 0;
+      o.discount_amount = 950;
+      o.discount_code = null;
+      o.voucher_name = 'Any Large Pizza <b>';
+      o.voucher_discount_amount = 950;
+      return data;
+    };
+    for (const showDiscountTotal of [true, false]) {
+      const html = renderInvoiceHtml(
+        voucherOrder(),
+        'thermal_classic',
+        cfg({ showDiscountTotal, showPromoDiscount: true, showCouponDiscount: true }),
+      ).html;
+      // Escaped, and listed once — never also as a plain "Discount" line.
+      expect(html).toContain('Voucher (Any Large Pizza &lt;b&gt;)');
+      expect(html).toContain('950.00');
+      expect(html).not.toContain('>Discount<');
+      expect(html).not.toContain('Promotional discount');
+    }
+  });
+
   it('falls back to the combined line for older orders with no split', () => {
     const data = sampleInvoice();
     const o = data.orders[0];

@@ -556,7 +556,16 @@ function totalsHtml(
   const enabledStages = perStage.filter(([on]) => on);
   const shownStageTotal = enabledStages.reduce((s, [, , amt]) => s + Number(amt ?? 0), 0);
 
-  if (cfg.showDiscountTotal || enabledStages.length === 0) {
+  // A printed voucher replaces every other discount, so on such an order it IS
+  // the discount: one line, named after the voucher the customer handed over,
+  // whichever way the template lists discounts.
+  const voucherAmount = Number(order.voucher_discount_amount ?? 0);
+  if (voucherAmount > 0) {
+    const name = (order.voucher_name ?? '').trim();
+    parts.push(
+      row(name ? `Voucher (${esc(name)})` : 'Voucher', `-${money(voucherAmount)}`, 'disc', 'showDiscountTotal'),
+    );
+  } else if (cfg.showDiscountTotal || enabledStages.length === 0) {
     if (Number(order.discount_amount) > 0)
       parts.push(row(combinedLabel, `-${money(order.discount_amount)}`, 'disc', 'showDiscountTotal'));
   } else if (shownStageTotal > 0) {

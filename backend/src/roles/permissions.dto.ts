@@ -231,6 +231,15 @@ export const Permissions = {
     /** Switch a till-activated offer (activation='manual') on for one cart. */
     ORDERS_APPLY_MANUAL_OFFER: 'orders:apply-manual-offer',
 
+    // — Printed vouchers (the paper coupon book; own module, like staff
+    //   discounts — applying one at the till is not authoring one) —
+    PRINTED_VOUCHERS_VIEW: 'printed-vouchers:view',
+    PRINTED_VOUCHERS_CREATE: 'printed-vouchers:create',
+    PRINTED_VOUCHERS_EDIT: 'printed-vouchers:edit',
+    PRINTED_VOUCHERS_DELETE: 'printed-vouchers:delete',
+    /** Apply one to an order at the till. */
+    PRINTED_VOUCHERS_APPLY: 'printed-vouchers:apply',
+
     // — Campaigns (umbrella: campaigns:manage) —
     CAMPAIGNS_VIEW: 'campaigns:view',
     CAMPAIGNS_CREATE: 'campaigns:create',

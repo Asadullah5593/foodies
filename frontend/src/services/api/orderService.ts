@@ -53,6 +53,8 @@ export interface CreateOrderRequest {
   staff_discount_id?: number | null;
   /** Till-activated offer switched on for this cart (discounts id). */
   manual_offer_id?: number | null;
+  /** Printed voucher applied at the till (printed_vouchers id). */
+  voucher_id?: number | null;
 }
 
 export interface ProcessPaymentRequest {
@@ -96,6 +98,14 @@ export interface OrderQuoteResponse {
   /** False when the activated offer produced nothing — lost, or cart doesn't qualify. */
   manual_offer_applied?: boolean;
   manual_offer_error?: string | null;
+  /** Present only when a printed voucher was asked for. */
+  voucher_id?: number;
+  voucher_name?: string | null;
+  voucher_discount_amount?: number;
+  /** True when the voucher is what priced this cart. */
+  voucher_applied?: boolean;
+  /** Why it was not applied; the order cannot be placed with it. */
+  voucher_error?: string | null;
   discount_code: string | null;
   loyalty_discount?: number;
   loyalty_points_redeemed?: number;
@@ -130,6 +140,8 @@ export type OrderQuoteRequest = {
   staff_discount_id?: number | null;
   /** Till-activated offer switched on for this cart (discounts id). */
   manual_offer_id?: number | null;
+  /** Printed voucher applied at the till (printed_vouchers id). */
+  voucher_id?: number | null;
 };
 
 export const orderService = {

@@ -23,6 +23,8 @@ interface DiscountsReport {
     discount: number;
     coupon: number;
     card: number;
+    /** Printed vouchers redeemed at the till. */
+    voucher?: number;
   };
   cards: Array<{
     card_id: number;
@@ -228,7 +230,7 @@ const Reports: React.FC = () => {
             <p className="text-3xl font-bold text-rose-700">
               {formatCurrency(discounts?.merchant_funded ?? 0)}
             </p>
-            <p className="mt-1 text-xs text-gray-400">Product promotions, discounts and coupons</p>
+            <p className="mt-1 text-xs text-gray-400">Product promotions, discounts, coupons and printed vouchers</p>
           </Card>
           <Card>
             <h3 className="text-sm font-medium text-gray-500 mb-2">Funded by the bank</h3>
@@ -245,6 +247,7 @@ const Reports: React.FC = () => {
                 ['Product promotions', discounts?.by_type.product_promotion],
                 ['Discounts', discounts?.by_type.discount],
                 ['Coupons', discounts?.by_type.coupon],
+                ['Printed vouchers', discounts?.by_type.voucher],
                 ['Bank card offers', discounts?.by_type.card],
               ] as Array<[string, number | undefined]>).map(([label, value]) => (
                 <tr key={label} className="border-b border-gray-100 last:border-0">
