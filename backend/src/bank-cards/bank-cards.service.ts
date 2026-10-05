@@ -22,6 +22,11 @@ import {
 import { normalizeBin, matchCardsByBin } from './bin-lookup.util';
 import { cardHasOffer } from '../orders/bank-card-offer.util';
 import { getBranchClock, isWithinSchedule } from '../utils/branch-schedule';
+import {
+    hasPickedDate,
+    isWithinValidity,
+    validityTimezone,
+} from '../utils/validity-window';
 
 type BankCardDto = {
     name?: string;
@@ -98,12 +103,17 @@ export class BankCardsService {
               })
             : null;
         const now = new Date();
+        // A picked date is read on the branch's clock, or the tenant's when the
+        // lookup came without a branch.
+        const dateTimezone = branch
+            ? branch.timezone
+            : visible.some(hasPickedDate)
+              ? await validityTimezone(this.repo.manager, { tenantId })
+              : null;
         const matches = matchCardsByBin(bin, visible).map(
             ({ card, matchedPrefix }) => {
                 const hasOffer = cardHasOffer(card);
-                const dateOk =
-                    (!card.validFrom || now >= card.validFrom) &&
-                    (!card.validUntil || now <= card.validUntil);
+                const dateOk = isWithinValidity(card, dateTimezone, now);
                 const hasSchedule =
                     card.validTimeStart != null ||
                     card.validTimeEnd != null ||

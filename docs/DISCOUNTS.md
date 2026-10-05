@@ -60,3 +60,7 @@ All of this is **per tenant**: discounts and their scope/eligibility are isolate
 Optional **Min order amount**: discount applies only if order subtotal ≥ this value.
 
 Optional **Valid from / Valid until**: discount only applied within this date range.
+
+Both dates are **whole days on the branch's own clock** (`branches.timezone`): "Valid until 30 Nov" covers all of 30 Nov up to midnight, and "Valid from 1 Oct" starts at 00:00 on 1 Oct. The same rule applies to coupons, bank card offers, banners, promotions and campaigns; where there is no branch (banners, the campaign feed, welcome coupons, the app's voucher wallet) the day is read in the timezone most of the tenant's active branches use.
+
+How it works: the admin forms send a plain date and it is stored as midnight UTC, which is 05:00 in Pakistan. `backend/src/utils/validity-window.ts` treats a value sitting exactly on midnight UTC as a picked day and compares day against day in the timezone; a value with a time of day (the coupon minted when a customer claims a promotion expires N×24h after the claim) is still compared as an exact moment. Any new check of these columns should go through that helper rather than comparing dates directly.

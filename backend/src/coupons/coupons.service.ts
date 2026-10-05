@@ -13,6 +13,13 @@ import { CouponRealization } from '../entities/coupon-realization.entity';
 import { Customer } from '../entities/customer.entity';
 import { DiscountsService } from '../discounts/discounts.service';
 import { normalizePakistaniPhone } from '../utils/phone';
+import {
+    hasEnded,
+    hasPickedDate,
+    isPickedDate,
+    isWithinValidity,
+    validityTimezone,
+} from '../utils/validity-window';
 
 /**
  * Coupons = voucher-backed discounts (offer_kind='coupon', requires_code=true).
@@ -282,12 +289,14 @@ export class CouponsService {
         const coupons = await this.discountRepo.find({
             where: { tenantId, isActive: true },
         });
+        const timezone = coupons.some(hasPickedDate)
+            ? await validityTimezone(this.discountRepo.manager, { tenantId })
+            : null;
         for (const c of coupons) {
             if ((c as { offerKind?: string }).offerKind !== 'coupon') continue;
             const aud = (c as { audience?: string }).audience;
             if (aud !== 'new_customer' && aud !== 'all') continue;
-            if (c.validFrom && now < c.validFrom) continue;
-            if (c.validUntil && now > c.validUntil) continue;
+            if (!isWithinValidity(c, timezone, now)) continue;
             const exists = await this.voucherRepo.findOne({
                 where: { offerId: c.id, customerId },
             });
@@ -327,11 +336,15 @@ export class CouponsService {
             : [];
         const byId = new Map(offers.map((o) => [o.id, o]));
         const now = new Date();
+        // A voucher that took its coupon's "valid until" date lasts that whole day.
+        const timezone = vs.some((v) => isPickedDate(v.expiresAt))
+            ? await validityTimezone(this.voucherRepo.manager, { tenantId })
+            : null;
         return {
             customer: { id: customer.id, name: customer.name, phone: customer.phone },
             vouchers: vs.map((v) => {
                 const o = byId.get(v.offerId);
-                const expired = !!v.expiresAt && v.expiresAt < now;
+                const expired = hasEnded(v.expiresAt, timezone, now);
                 const status =
                     v.status !== 'active' ? v.status : expired ? 'expired' : 'active';
                 return {
