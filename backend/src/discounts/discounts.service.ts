@@ -23,6 +23,11 @@ import {
 } from './offer-brand-scope.util';
 import { ActivityContext } from '../activity-log/activity-context';
 import { normalizeOfferOrderTypes } from './offer-validity.util';
+import {
+    hasPickedDate,
+    isWithinValidity,
+    validityTimezone,
+} from '../utils/validity-window';
 
 /** Accept 'HH:mm' / 'HH:mm:ss' (Postgres time); empty/invalid → null. */
 function normalizeDiscountTime(
@@ -254,6 +259,13 @@ export class DiscountsService {
             order: { priority: 'ASC', id: 'ASC' },
         });
         const now = new Date();
+        // A picked date is read on the till's own branch clock.
+        const timezone = rows.some(hasPickedDate)
+            ? await validityTimezone(this.repo.manager, {
+                  branchId: opts.branchId,
+                  tenantId,
+              })
+            : null;
         return rows
             .filter(
                 (d) => (d as { activation?: string }).activation === 'manual',
@@ -268,8 +280,7 @@ export class DiscountsService {
                     (d as { offerKind?: string }).offerKind ?? 'discount',
                 ),
             )
-            .filter((d) => !(d.validFrom && now < d.validFrom))
-            .filter((d) => !(d.validUntil && now > d.validUntil))
+            .filter((d) => isWithinValidity(d, timezone, now))
             .filter((d) => {
                 const ids = (d.eligibilityBrandIds ?? []).map(Number);
                 if (ids.length === 0) return true;

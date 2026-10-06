@@ -184,3 +184,60 @@ describe('previewItemOffers', () => {
         expect(r.discount_amount).toBe(0);
     });
 });
+
+/**
+ * "Valid from / until" is picked as a plain date and saved as midnight UTC —
+ * 05:00 in Pakistan. The preview reads it as a whole day on the browsed branch's
+ * clock, exactly as checkout does, so the menu never shows a price the order
+ * would not get, nor drops one it would.
+ */
+describe('previewItemOffers — validity dates', () => {
+    const KARACHI = 'Asia/Karachi';
+    const picked = (day: string) => new Date(day);
+    const pkt = (local: string) => new Date(`${local}+05:00`);
+    const dated = (o: Partial<PreviewOffer>) =>
+        base({
+            applicationScope: 'category',
+            applicationScopeIds: [3],
+            timezone: KARACHI,
+            ...o,
+        });
+    const priceAt = (offer: PreviewOffer, at: Date) =>
+        previewItemOffers(item, [offer], { ...opts, now: at }).discounted_price;
+
+    it('keeps the discounted price through the last day', () => {
+        const offer = dated({ validUntil: picked('2026-11-30') });
+        expect(priceAt(offer, pkt('2026-11-30T04:59:00'))).toBe(720);
+        // Past the stored 05:00, where the preview used to fall back to 800.
+        expect(priceAt(offer, pkt('2026-11-30T05:01:00'))).toBe(720);
+        expect(priceAt(offer, pkt('2026-11-30T23:59:30'))).toBe(720);
+    });
+
+    it('returns to the full price once the day is over', () => {
+        const offer = dated({ validUntil: picked('2026-11-30') });
+        expect(priceAt(offer, pkt('2026-12-01T00:00:30'))).toBe(800);
+    });
+
+    it('shows the discounted price from midnight on the first day', () => {
+        const offer = dated({ validFrom: picked('2026-10-01') });
+        expect(priceAt(offer, pkt('2026-09-30T23:59:30'))).toBe(800);
+        expect(priceAt(offer, pkt('2026-10-01T00:00:30'))).toBe(720);
+    });
+
+    it("follows the offer's timezone, so a UTC branch keeps the UTC day", () => {
+        const offer = dated({
+            validUntil: picked('2026-11-30'),
+            timezone: 'UTC',
+        });
+        // 02:00 on 1 Dec in Pakistan is 21:00 UTC on 30 Nov.
+        expect(priceAt(offer, pkt('2026-12-01T02:00:00'))).toBe(720);
+        expect(priceAt(offer, pkt('2026-12-01T05:00:30'))).toBe(800);
+    });
+
+    it('still ends an offer with a real expiry moment at that moment', () => {
+        const expiry = new Date('2026-10-12T09:23:11.123Z');
+        const offer = dated({ validUntil: expiry });
+        expect(priceAt(offer, new Date(expiry.getTime() - 1000))).toBe(720);
+        expect(priceAt(offer, new Date(expiry.getTime() + 1000))).toBe(800);
+    });
+});

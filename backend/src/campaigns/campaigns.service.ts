@@ -18,6 +18,12 @@ import {
     isVisibleToBrands,
     manageScopeFor,
 } from '../discounts/offer-brand-scope.util';
+import {
+    hasPickedDate,
+    isWithinValidity,
+    validityTimezone,
+    type ValidityWindow,
+} from '../utils/validity-window';
 
 function appBaseUrl(): string {
     const raw =
@@ -468,11 +474,16 @@ export class CampaignsService {
             where: { tenantId, isActive: true },
             order: { sortOrder: 'ASC', createdAt: 'DESC' },
         });
-        const inWindow = (from: Date | null, until: Date | null) =>
-            (!from || now >= from) && (!until || now <= until);
-        const active = campaigns.filter((c) =>
-            inWindow(c.validFrom ?? null, c.validUntil ?? null),
-        );
+        // Looked up once, and only when something carries a picked date.
+        let timezone: string | null = null;
+        const inWindow = async <T extends ValidityWindow>(rows: T[]) => {
+            if (timezone == null && rows.some(hasPickedDate))
+                timezone = await validityTimezone(this.campaignRepo.manager, {
+                    tenantId,
+                });
+            return rows.filter((r) => isWithinValidity(r, timezone, now));
+        };
+        const active = await inWindow(campaigns);
         const ids = active.map((c) => c.id);
         const items = ids.length
             ? await this.itemRepo.find({
@@ -480,9 +491,7 @@ export class CampaignsService {
                   order: { sortOrder: 'ASC', id: 'ASC' },
               })
             : [];
-        const activeItems = items.filter((i) =>
-            inWindow(i.validFrom ?? null, i.validUntil ?? null),
-        );
+        const activeItems = await inWindow(items);
         const byCampaign = new Map<number, CampaignItem[]>();
         for (const i of activeItems) {
             const arr = byCampaign.get(i.campaignId) ?? [];

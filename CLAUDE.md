@@ -77,6 +77,7 @@ User assignment: `users` is global; `tenant_users` ties a user to a tenant; `bra
 
 - DB naming is snake_case (`typeorm-naming-strategies`); entity properties are camelCase. ~86 entities in `backend/src/entities/`, one feature module per domain in `backend/src/<module>/`.
 - DTO validation via class-validator; global `ValidationPipe({ whitelist: true, transform: true })` — undeclared body fields are stripped.
+- Offer dates (`valid_from` / `valid_until` on discounts, coupons, bank cards, banners, promotions, campaigns) are picked as plain dates and mean whole days on the branch's clock. Check them with `backend/src/utils/validity-window.ts`, never with a direct `now > validUntil` — the stored value is midnight UTC, i.e. 05:00 in Pakistan (`docs/DISCOUNTS.md`).
 - Frontend: API calls live in `frontend/src/services/api/` (e.g. `adminService.ts`); server state via React Query, client state via Zustand; Tailwind for styling; shared types in `frontend/src/types/index.ts`. Pages grouped by surface: `src/pages/{Admin,POS,Kitchen,FOH,Rider}/`.
 - Consumer-web: App Router under `consumer-web/src/app/`; API client/stores in `src/lib/`.
 - Real-time (KDS, rider tracking) via socket.io; CORS for both HTTP and WS driven by `CORS_ORIGINS` env (empty = reflect request).

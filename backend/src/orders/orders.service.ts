@@ -58,6 +58,11 @@ import {
     type BranchClock,
 } from '../utils/branch-schedule';
 import {
+    hasPickedDate,
+    isWithinValidity,
+    type ValidityWindow,
+} from '../utils/validity-window';
+import {
     bogoUnitDiscounts,
     priceBogoComponents,
     validateBogoComponents,
@@ -6315,6 +6320,30 @@ export class OrdersService {
     }
 
     /**
+     * Check if `now` is inside the offer's "valid from / valid until" dates. A
+     * date picked in the admin form covers that whole day on the branch's clock
+     * (see validity-window), so the branch is only read for an offer that has
+     * one, and at most once per pricing pass through `timezones`.
+     */
+    private async isDiscountInDateForBranch(
+        discount: ValidityWindow,
+        branchId: number,
+        now: Date,
+        timezones: Map<number, string | undefined>,
+    ): Promise<boolean> {
+        if (!hasPickedDate(discount))
+            return isWithinValidity(discount, null, now);
+        if (!timezones.has(branchId)) {
+            const branch = await this.branchRepo.findOne({
+                where: { id: branchId },
+                select: ['timezone'],
+            });
+            timezones.set(branchId, branch?.timezone);
+        }
+        return isWithinValidity(discount, timezones.get(branchId), now);
+    }
+
+    /**
      * Check if discount is valid for current time and day in branch timezone.
      * validDaysOfWeek: 0=Sun, 1=Mon, …, 6=Sat.
      */
@@ -6915,16 +6944,16 @@ export class OrdersService {
         }
 
         const now = new Date();
-        const dateOk = (d: Discount): boolean =>
-            !(d.validFrom && now < d.validFrom) &&
-            !(d.validUntil && now > d.validUntil);
+        const branchTimezones = new Map<number, string | undefined>();
+        const dateOk = (d: Discount): Promise<boolean> =>
+            this.isDiscountInDateForBranch(d, branchId, now, branchTimezones);
 
         const autoOffers = await this.discountRepo.find({
             where: { tenantId, isActive: true, requiresCode: false },
         });
         const eligibleAuto: Discount[] = [];
         for (const d of autoOffers) {
-            if (!dateOk(d)) continue;
+            if (!(await dateOk(d))) continue;
             if (!(await this.isDiscountValidForBranchTime(d, branchId)))
                 continue;
             eligibleAuto.push(d);
@@ -6967,7 +6996,7 @@ export class OrdersService {
             where: { tenantId, isActive: true },
         });
         for (const offer of bankCardOffers(activeCards)) {
-            if (!dateOk(offer)) continue;
+            if (!(await dateOk(offer))) continue;
             if (!(await this.isDiscountValidForBranchTime(offer, branchId)))
                 continue;
             cardOffers.push(offer);
@@ -6980,7 +7009,7 @@ export class OrdersService {
             });
             if (
                 c &&
-                dateOk(c) &&
+                (await dateOk(c)) &&
                 (await this.isDiscountValidForBranchTime(c, branchId)) &&
                 (await this.couponRedeemableSoft(
                     c,
@@ -7397,13 +7426,21 @@ export class OrdersService {
             where: { tenantId, isActive: true, requiresCode: false },
         });
         const now = new Date();
+        const branchTimezones = new Map<number, string | undefined>();
         let best = {
             ...this.discountResultEmpty,
             eligibilityBrandIds: null as number[] | null,
         };
         for (const discount of discounts) {
-            if (discount.validFrom && now < discount.validFrom) continue;
-            if (discount.validUntil && now > discount.validUntil) continue;
+            if (
+                !(await this.isDiscountInDateForBranch(
+                    discount,
+                    branchId,
+                    now,
+                    branchTimezones,
+                ))
+            )
+                continue;
             if (!(await this.isDiscountValidForBranchTime(discount, branchId)))
                 continue;
             if (
@@ -7575,9 +7612,15 @@ export class OrdersService {
             where: { code: code.trim(), tenantId, isActive: true },
         });
         if (!discount) return empty;
-        const now = new Date();
-        if (discount.validFrom && now < discount.validFrom) return empty;
-        if (discount.validUntil && now > discount.validUntil) return empty;
+        if (
+            !(await this.isDiscountInDateForBranch(
+                discount,
+                branchId,
+                new Date(),
+                new Map(),
+            ))
+        )
+            return empty;
         if (!(await this.isDiscountValidForBranchTime(discount, branchId)))
             return empty;
         if (
