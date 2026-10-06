@@ -622,6 +622,8 @@ Unique constraint: `(branch_id, menu_item_id)`.
 | `voucher_name` | varchar | Yes | The voucher's name when it was applied. Also marks "this order used a voucher"; outlives a deleted voucher. |
 | `voucher_discount_amount` | decimal(12,2) | No | What the voucher took off. One of the splits that sum to `discount_amount`. |
 | `voucher_by` | int FK | Yes | User who applied the voucher. |
+
+Several printed vouchers can sit on one order (three pizza vouchers for three pizzas), so the per-kind detail is in `order_printed_vouchers`: one row per voucher kind the order used — `order_id` (cascade), `printed_voucher_id` (ON DELETE SET NULL), `voucher_name` (snapshot), `quantity` (papers), `discount_amount`, `applied_by`. `orders.voucher_discount_amount` is the sum of those rows and `orders.voucher_name` a one-line summary ("Any Large Pizza ×3"); `orders.printed_voucher_id` is set only when exactly one kind was used. See `docs/PRINTED_VOUCHERS.md`.
 | `created_by` | int FK | Yes | User who created (POS). |
 | `created_at` | timestamp | No | Created at. |
 | `updated_at` | timestamp | No | Updated at. |

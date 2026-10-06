@@ -17,6 +17,7 @@ import { Discount } from '../entities/discount.entity';
 import { BankCard } from '../entities/bank-card.entity';
 import { StaffDiscount } from '../entities/staff-discount.entity';
 import { PrintedVoucher } from '../entities/printed-voucher.entity';
+import { OrderPrintedVoucher } from '../entities/order-printed-voucher.entity';
 import { PosMenuController } from './pos-menu.controller';
 import { PosOrdersController } from './pos-orders.controller';
 import { AdminOrdersController } from './admin-orders.controller';
@@ -68,6 +69,7 @@ import { FbrModule } from '../fbr/fbr.module';
             BankCard,
             StaffDiscount,
             PrintedVoucher,
+            OrderPrintedVoucher,
             RiderOrderLocation,
             RiderOrderLocationSummary,
             RiderProfile,

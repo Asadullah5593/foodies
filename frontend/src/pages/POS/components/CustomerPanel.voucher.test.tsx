@@ -22,7 +22,7 @@ const STAFF = [{ id: 7, name: '10% off', discount_type: 'percentage' as const, v
 const OFFERS = [{ id: 9, name: 'BOGO', type: 'buy_x_get_y', value: 0, buy_quantity: 1, get_quantity: 1, get_discount_percent: 100 }];
 
 const renderPanel = (props: Record<string, unknown> = {}) => {
-  const onVoucherChange = vi.fn();
+  const onVoucherPicksChange = vi.fn();
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
@@ -52,8 +52,8 @@ const renderPanel = (props: Record<string, unknown> = {}) => {
         manualOfferId={null}
         onManualOfferChange={() => {}}
         vouchers={VOUCHERS}
-        voucherId={null}
-        onVoucherChange={onVoucherChange}
+        voucherPicks={[]}
+        onVoucherPicksChange={onVoucherPicksChange}
         orderNotes=""
         onOrderNotesChange={() => {}}
         quote={undefined as never}
@@ -61,14 +61,14 @@ const renderPanel = (props: Record<string, unknown> = {}) => {
       />
     </QueryClientProvider>,
   );
-  return { onVoucherChange };
+  return { onVoucherPicksChange };
 };
 
 describe('printed vouchers on the checkout', () => {
   it('offers the vouchers and leaves the other discounts usable until one is picked', () => {
-    const { onVoucherChange } = renderPanel();
+    const { onVoucherPicksChange } = renderPanel();
     fireEvent.click(screen.getByRole('button', { name: 'Any Large Pizza — Rs 999' }));
-    expect(onVoucherChange).toHaveBeenCalledWith(1);
+    expect(onVoucherPicksChange).toHaveBeenCalledWith([{ id: 1, quantity: 1 }]);
     expect((screen.getByPlaceholderText('Optional') as HTMLInputElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: '10%' }) as HTMLButtonElement).disabled).toBe(false);
     expect((screen.getByRole('button', { name: 'BOGO' }) as HTMLButtonElement).disabled).toBe(false);
@@ -76,7 +76,7 @@ describe('printed vouchers on the checkout', () => {
 
   it('locks every other discount while a voucher is applied', () => {
     renderPanel({
-      voucherId: 1,
+      voucherPicks: [{ id: 1, quantity: 1 }],
       quote: { voucher_applied: true, voucher_discount_amount: 950 },
     });
     // Discount code, loyalty points, the till offer and the staff discount.
@@ -90,7 +90,7 @@ describe('printed vouchers on the checkout', () => {
 
   it('shows why a picked voucher is not applied', () => {
     renderPanel({
-      voucherId: 1,
+      voucherPicks: [{ id: 1, quantity: 1 }],
       quote: {
         voucher_applied: false,
         voucher_discount_amount: 0,
@@ -102,6 +102,6 @@ describe('printed vouchers on the checkout', () => {
 
   it('shows no voucher control when none can be used on this order', () => {
     renderPanel({ vouchers: [] });
-    expect(screen.queryByText(/Printed voucher/)).toBeNull();
+    expect(screen.queryByText(/Printed vouchers/)).toBeNull();
   });
 });

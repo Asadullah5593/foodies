@@ -66,9 +66,11 @@ type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   source?: 'pos' | 'consumer_app' | string;
   subtotal?: number;
   discount_amount?: number;
-  /** Printed voucher the order used (its name when applied), and what it took off. */
+  /** Printed vouchers the order used (as one line, e.g. "Any Large Pizza ×3"), and what they took off. */
   voucher_name?: string | null;
   voucher_discount_amount?: number;
+  /** One entry per voucher kind, with its paper count. */
+  vouchers?: Array<{ name: string; quantity: number; discount_amount: number }>;
   tax_amount?: number;
   service_charge?: number;
   delivery_fee?: number;
@@ -185,8 +187,12 @@ const OrderDetail: React.FC = () => {
   const deliveryFee = Number(o.delivery_fee ?? 0);
   const hasDiscount = discountAmount > 0;
   const hasCoupon = !!(o.discount_code?.trim());
-  // A printed voucher is the order's only discount, so the discount line is it.
+  // Printed vouchers are the order's only discount, so the discount line is them.
   const voucherName = Number(o.voucher_discount_amount ?? 0) > 0 ? (o.voucher_name ?? '').trim() : '';
+  // Several kinds on one order get a line each under the total.
+  const voucherKinds = voucherName ? (o.vouchers ?? []).filter((v) => Number(v.discount_amount) > 0) : [];
+  const voucherKindLabel = (v: { name: string; quantity: number }) =>
+    `${v.name}${Number(v.quantity) > 1 ? ` ×${Number(v.quantity)}` : ''}`;
 
   const handlePrint = () => {
     const orderNum = o.order_number ?? (order as any).order_number;
@@ -545,6 +551,16 @@ const OrderDetail: React.FC = () => {
                 )}
               </span>
               <span>-{formatCurrency(discountAmount)}</span>
+            </div>
+          )}
+          {voucherKinds.length > 1 && (
+            <div className="pl-4 text-sm text-gray-500 dark:text-slate-400">
+              {voucherKinds.map((v) => (
+                <div key={v.name} className="flex justify-between">
+                  <span>{voucherKindLabel(v)}</span>
+                  <span>-{formatCurrency(Number(v.discount_amount))}</span>
+                </div>
+              ))}
             </div>
           )}
           {!hasDiscount && hasCoupon && (

@@ -55,6 +55,8 @@ export interface CreateOrderRequest {
   manual_offer_id?: number | null;
   /** Printed voucher applied at the till (printed_vouchers id). */
   voucher_id?: number | null;
+  /** The printed vouchers handed over, with a paper count each. */
+  vouchers?: Array<{ voucher_id: number; quantity: number }>;
 }
 
 export interface ProcessPaymentRequest {
@@ -98,14 +100,17 @@ export interface OrderQuoteResponse {
   /** False when the activated offer produced nothing — lost, or cart doesn't qualify. */
   manual_offer_applied?: boolean;
   manual_offer_error?: string | null;
-  /** Present only when a printed voucher was asked for. */
+  /** Present only when printed vouchers were asked for. */
   voucher_id?: number;
+  /** The vouchers used, as one line: "Any Large Pizza ×3". */
   voucher_name?: string | null;
   voucher_discount_amount?: number;
-  /** True when the voucher is what priced this cart. */
+  /** True when the vouchers are what priced this cart. */
   voucher_applied?: boolean;
-  /** Why it was not applied; the order cannot be placed with it. */
+  /** Why they were not applied; the order cannot be placed with them. */
   voucher_error?: string | null;
+  /** Each voucher asked for, with what it took off. */
+  vouchers?: Array<{ voucher_id: number; name: string | null; quantity: number; discount_amount: number }>;
   discount_code: string | null;
   loyalty_discount?: number;
   loyalty_points_redeemed?: number;
@@ -142,6 +147,8 @@ export type OrderQuoteRequest = {
   manual_offer_id?: number | null;
   /** Printed voucher applied at the till (printed_vouchers id). */
   voucher_id?: number | null;
+  /** The printed vouchers handed over, with a paper count each. */
+  vouchers?: Array<{ voucher_id: number; quantity: number }>;
 };
 
 export const orderService = {
