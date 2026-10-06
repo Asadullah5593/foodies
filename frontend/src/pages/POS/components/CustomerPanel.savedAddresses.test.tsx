@@ -63,6 +63,9 @@ const renderPanel = (props: Record<string, unknown> = {}) => {
         manualOffers={[]}
         manualOfferId={null}
         onManualOfferChange={() => {}}
+        vouchers={[]}
+        voucherPicks={[]}
+        onVoucherPicksChange={() => {}}
         orderNotes=""
         onOrderNotesChange={() => {}}
         quote={undefined as never}

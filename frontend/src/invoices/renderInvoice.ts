@@ -556,7 +556,25 @@ function totalsHtml(
   const enabledStages = perStage.filter(([on]) => on);
   const shownStageTotal = enabledStages.reduce((s, [, , amt]) => s + Number(amt ?? 0), 0);
 
-  if (cfg.showDiscountTotal || enabledStages.length === 0) {
+  // Printed vouchers replace every other discount, so on such an order they
+  // ARE the discount, whichever way the template lists discounts: one line per
+  // voucher kind the customer handed over ("Any Large Pizza ×3"), or the one
+  // line older orders carry.
+  const voucherAmount = Number(order.voucher_discount_amount ?? 0);
+  if (voucherAmount > 0) {
+    const kinds = (order.vouchers ?? []).filter((v) => Number(v.discount_amount) > 0);
+    if (kinds.length > 1) {
+      for (const v of kinds) {
+        const label = `${esc(v.name)}${Number(v.quantity) > 1 ? ` ×${Number(v.quantity)}` : ''}`;
+        parts.push(row(`Voucher (${label})`, `-${money(Number(v.discount_amount))}`, 'disc', 'showDiscountTotal'));
+      }
+    } else {
+      const name = (order.voucher_name ?? '').trim();
+      parts.push(
+        row(name ? `Voucher (${esc(name)})` : 'Voucher', `-${money(voucherAmount)}`, 'disc', 'showDiscountTotal'),
+      );
+    }
+  } else if (cfg.showDiscountTotal || enabledStages.length === 0) {
     if (Number(order.discount_amount) > 0)
       parts.push(row(combinedLabel, `-${money(order.discount_amount)}`, 'disc', 'showDiscountTotal'));
   } else if (shownStageTotal > 0) {

@@ -18,7 +18,8 @@ import { formatCurrency } from '../../../utils/currency';
 import { OrderTypeOption } from './types';
 import StaffDiscountPicker from './StaffDiscountPicker';
 import ManualOfferPicker from './ManualOfferPicker';
-import { StaffDiscountPreset, ManualOffer } from '../../../types';
+import VoucherPicker from './VoucherPicker';
+import { StaffDiscountPreset, ManualOffer, TillVoucher, VoucherPick } from '../../../types';
 
 export type CustomerPanelProps = {
   orderType: OrderTypeOption;
@@ -48,6 +49,11 @@ export type CustomerPanelProps = {
   manualOffers: ManualOffer[];
   manualOfferId: number | null;
   onManualOfferChange: (id: number | null) => void;
+  /** Printed vouchers usable on this order; empty = no control shown. */
+  vouchers: TillVoucher[];
+  /** The vouchers on the cart, with a paper count each. */
+  voucherPicks: VoucherPick[];
+  onVoucherPicksChange: (picks: VoucherPick[]) => void;
   orderNotes: string;
   onOrderNotesChange: (v: string) => void;
   quote: {
@@ -58,6 +64,10 @@ export type CustomerPanelProps = {
     manual_offer_amount?: number;
     manual_offer_applied?: boolean;
     manual_offer_error?: string | null;
+    voucher_discount_amount?: number;
+    voucher_applied?: boolean;
+    voucher_error?: string | null;
+    vouchers?: Array<{ voucher_id: number; name: string | null; quantity: number; discount_amount: number }>;
     discount_code?: string | null;
     discount_amount?: number;
   } | null | undefined;
@@ -88,10 +98,16 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
   manualOffers,
   manualOfferId,
   onManualOfferChange,
+  vouchers,
+  voucherPicks,
+  onVoucherPicksChange,
   orderNotes,
   onOrderNotesChange,
   quote,
 }) => {
+  // Printed vouchers replace every other discount, so while any is on the
+  // other discount controls are locked (the parent has cleared them).
+  const voucherOn = voucherPicks.length > 0;
   const effectiveOrderType = orderType;
   // Dine-in: customer is fully optional. Takeaway & delivery: customer required.
   const customerRequired =
@@ -226,6 +242,7 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
           type="number"
           min={0}
           max={loyaltyBalance?.balance ?? undefined}
+          disabled={voucherOn}
           value={loyaltyPointsToRedeem === '' ? '' : loyaltyPointsToRedeem}
           onChange={(e) => {
             const raw = e.target.value === '' ? '' : Math.max(0, parseInt(e.target.value, 10) || 0);
@@ -237,8 +254,13 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
             onLoyaltyPointsToRedeemChange(Math.min(raw as number, maxAllowed));
           }}
           placeholder="0"
-          className="w-full px-4 py-2.5 border border-foodies-border rounded-xl bg-foodies-surface text-foodies-textPrimary focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
+          className="w-full px-4 py-2.5 border border-foodies-border rounded-xl bg-foodies-surface text-foodies-textPrimary focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary disabled:opacity-50 disabled:cursor-not-allowed"
         />
+        {voucherOn && (
+          <p className="mt-1 text-xs text-foodies-textSecondary">
+            Points cannot be redeemed with a voucher. The customer still earns points on this order.
+          </p>
+        )}
         {quote?.loyalty_discount != null && quote.loyalty_discount > 0 && (
           <p className="mt-1 text-sm text-foodies-cta font-medium">Discount: {formatCurrency(quote.loyalty_discount)}</p>
         )}
@@ -249,9 +271,10 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
         <input
           type="text"
           value={discountCode}
+          disabled={voucherOn}
           onChange={(e) => onDiscountCodeChange(e.target.value.toUpperCase())}
-          placeholder="Optional"
-          className="w-full px-4 py-2.5 border border-foodies-border rounded-xl bg-foodies-surface text-foodies-textPrimary placeholder-foodies-textSecondary focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
+          placeholder={voucherOn ? 'Not available with a voucher' : 'Optional'}
+          className="w-full px-4 py-2.5 border border-foodies-border rounded-xl bg-foodies-surface text-foodies-textPrimary placeholder-foodies-textSecondary focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary disabled:opacity-50 disabled:cursor-not-allowed"
         />
         {discountCode.trim() && quote && (quote.coupon_discount_amount ?? 0) === 0 && (
           <p className="mt-1 text-xs text-foodies-primary">
@@ -269,6 +292,16 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
         )}
       </div>
 
+      <VoucherPicker
+        vouchers={vouchers}
+        picks={voucherPicks}
+        onChange={onVoucherPicksChange}
+        breakdown={quote?.vouchers}
+        appliedAmount={quote?.voucher_discount_amount ?? 0}
+        applied={quote?.voucher_applied ?? false}
+        error={quote?.voucher_error ?? null}
+      />
+
       <ManualOfferPicker
         offers={manualOffers}
         selectedId={manualOfferId}
@@ -276,6 +309,7 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
         appliedAmount={quote?.manual_offer_amount ?? 0}
         applied={quote?.manual_offer_applied ?? false}
         error={quote?.manual_offer_error ?? null}
+        disabled={voucherOn}
       />
 
       <StaffDiscountPicker
@@ -284,6 +318,7 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
         onSelect={onStaffDiscountChange}
         appliedAmount={quote?.staff_discount_amount ?? 0}
         error={quote?.staff_discount_error ?? null}
+        disabled={voucherOn}
       />
 
       <Modal isOpen={showVouchers} onClose={() => setShowVouchers(false)} title="Customer vouchers" size="large">

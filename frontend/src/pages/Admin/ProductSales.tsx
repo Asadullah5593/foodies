@@ -21,6 +21,8 @@ interface DiscountBreakdown {
   coupon: number;
   card: number;
   staff: number;
+  /** Printed vouchers (the paper coupon book) redeemed at the till. */
+  voucher: number;
 }
 
 type DiscountKind = keyof DiscountBreakdown;
@@ -32,6 +34,7 @@ const DISCOUNT_TYPES: Array<{ key: DiscountKind; short: string; long: string }> 
   { key: 'coupon', short: 'Coupon', long: 'Coupon' },
   { key: 'card', short: 'Card', long: 'Bank card offer' },
   { key: 'staff', short: 'Staff', long: 'Staff discount' },
+  { key: 'voucher', short: 'Voucher', long: 'Printed voucher' },
 ];
 
 const EMPTY_BREAKDOWN: DiscountBreakdown = {
@@ -40,6 +43,7 @@ const EMPTY_BREAKDOWN: DiscountBreakdown = {
   coupon: 0,
   card: 0,
   staff: 0,
+  voucher: 0,
 };
 
 /** The stages that actually contributed, biggest first. */

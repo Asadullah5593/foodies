@@ -17,6 +17,11 @@ import {
   StaffDiscountPreset,
   StaffDiscountPayload,
   ManualOffer,
+  PrintedVoucher,
+  PrintedVoucherPayload,
+  PrintedVoucherFormOptions,
+  PrintedVoucherReport,
+  TillVoucher,
   Shift,
   ShiftOrdersResponse,
   ShiftPendingOrdersResponse,
@@ -1186,6 +1191,68 @@ export const adminService = {
   deleteStaffDiscount: async (id: number) => {
     const response = await apiClient.delete(`/admin/staff-discounts/${id}`);
     return response.data;
+  },
+
+  // Printed vouchers (the paper coupon book)
+  getPrintedVouchers: async () => {
+    const response = await apiClient.get('/admin/printed-vouchers');
+    return response.data as PrintedVoucher[];
+  },
+  /**
+   * The till's buttons: the cart brand's vouchers that can be used on this
+   * order type, at this branch, today. Whether the cart qualifies is the
+   * quote's answer.
+   */
+  getPrintedVouchersForTill: async (params: {
+    branch_id?: number | null;
+    brand_id?: number | null;
+    order_type?: string | null;
+  }) => {
+    const response = await apiClient.get('/admin/printed-vouchers/for-till', {
+      params: {
+        ...(params.branch_id != null ? { branch_id: params.branch_id } : {}),
+        ...(params.brand_id != null ? { brand_id: params.brand_id } : {}),
+        ...(params.order_type ? { order_type: params.order_type } : {}),
+      },
+    });
+    return response.data as TillVoucher[];
+  },
+  /** Categories, products, paid options and branches of one brand, for the form. */
+  getPrintedVoucherFormOptions: async (brandId: number) => {
+    const response = await apiClient.get('/admin/printed-vouchers/form-options', {
+      params: { brand_id: brandId },
+    });
+    return response.data as PrintedVoucherFormOptions;
+  },
+  createPrintedVoucher: async (data: PrintedVoucherPayload) => {
+    const response = await apiClient.post('/admin/printed-vouchers', data);
+    return response.data as PrintedVoucher;
+  },
+  updatePrintedVoucher: async (id: number, data: PrintedVoucherPayload) => {
+    const response = await apiClient.put(`/admin/printed-vouchers/${id}`, data);
+    return response.data as PrintedVoucher;
+  },
+  deletePrintedVoucher: async (id: number) => {
+    const response = await apiClient.delete(`/admin/printed-vouchers/${id}`);
+    return response.data;
+  },
+  getPrintedVoucherReport: async (params: {
+    date_from?: string;
+    date_to?: string;
+    branch_id?: number | null;
+    brand_id?: number | null;
+    voucher_id?: number | null;
+  }) => {
+    const response = await apiClient.get('/admin/printed-vouchers/report', {
+      params: {
+        ...(params.date_from ? { date_from: params.date_from } : {}),
+        ...(params.date_to ? { date_to: params.date_to } : {}),
+        ...(params.branch_id != null ? { branch_id: params.branch_id } : {}),
+        ...(params.brand_id != null ? { brand_id: params.brand_id } : {}),
+        ...(params.voucher_id != null ? { voucher_id: params.voucher_id } : {}),
+      },
+    });
+    return response.data as PrintedVoucherReport;
   },
 
   // Business settings (tenant users: get/update their own business details)

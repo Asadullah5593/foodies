@@ -95,6 +95,9 @@ export class PosOrdersController {
             bank_card_id?: number | null;
             staff_discount_id?: number | null;
             manual_offer_id?: number | null;
+            voucher_id?: number | null;
+            /** The printed vouchers handed over, with a paper count each. */
+            vouchers?: Array<{ voucher_id: number; quantity?: number }> | null;
         },
     ) {
         const tenantId = await this.resolveTenantId(user, dto.branch_id);
@@ -152,6 +155,10 @@ export class PosOrdersController {
             staff_discount_id?: number | null;
             /** Till-activated offer switched on for this cart (discounts id). */
             manual_offer_id?: number | null;
+            /** Printed voucher applied at the till (printed_vouchers id). */
+            voucher_id?: number | null;
+            /** The printed vouchers handed over, with a paper count each. */
+            vouchers?: Array<{ voucher_id: number; quantity?: number }> | null;
             /** Optional idempotency key so a retried/double-tapped placement is deduped. */
             idempotency_key?: string;
         },

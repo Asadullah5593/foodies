@@ -66,6 +66,11 @@ type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   source?: 'pos' | 'consumer_app' | string;
   subtotal?: number;
   discount_amount?: number;
+  /** Printed vouchers the order used (as one line, e.g. "Any Large Pizza ×3"), and what they took off. */
+  voucher_name?: string | null;
+  voucher_discount_amount?: number;
+  /** One entry per voucher kind, with its paper count. */
+  vouchers?: Array<{ name: string; quantity: number; discount_amount: number }>;
   tax_amount?: number;
   service_charge?: number;
   delivery_fee?: number;
@@ -182,6 +187,12 @@ const OrderDetail: React.FC = () => {
   const deliveryFee = Number(o.delivery_fee ?? 0);
   const hasDiscount = discountAmount > 0;
   const hasCoupon = !!(o.discount_code?.trim());
+  // Printed vouchers are the order's only discount, so the discount line is them.
+  const voucherName = Number(o.voucher_discount_amount ?? 0) > 0 ? (o.voucher_name ?? '').trim() : '';
+  // Several kinds on one order get a line each under the total.
+  const voucherKinds = voucherName ? (o.vouchers ?? []).filter((v) => Number(v.discount_amount) > 0) : [];
+  const voucherKindLabel = (v: { name: string; quantity: number }) =>
+    `${v.name}${Number(v.quantity) > 1 ? ` ×${Number(v.quantity)}` : ''}`;
 
   const handlePrint = () => {
     const orderNum = o.order_number ?? (order as any).order_number;
@@ -216,7 +227,7 @@ const OrderDetail: React.FC = () => {
       <table><thead><tr><th>Item</th><th class="text-right">Amount</th></tr></thead><tbody>${itemsHtml}</tbody></table>
       <h2>Totals</h2>
       <p class="py-2 border-t">Subtotal: ${formatCurrency(subtotal)}</p>
-      ${hasDiscount ? `<p class="py-2">Discount${hasCoupon ? ` (${escapeHtml(o.discount_code ?? '')})` : ''}: -${formatCurrency(discountAmount)}</p>` : ''}
+      ${hasDiscount ? `<p class="py-2">${voucherName ? `Voucher (${escapeHtml(voucherName)})` : `Discount${hasCoupon ? ` (${escapeHtml(o.discount_code ?? '')})` : ''}`}: -${formatCurrency(discountAmount)}</p>` : ''}
       <p class="py-2">Tax: ${formatCurrency(taxAmount)}</p>
       ${serviceCharge > 0 ? `<p class="py-2">Service charge: ${formatCurrency(serviceCharge)}</p>` : ''}
       ${deliveryFee > 0 ? `<p class="py-2">Delivery fee: ${formatCurrency(deliveryFee)}</p>` : ''}
@@ -531,12 +542,25 @@ const OrderDetail: React.FC = () => {
           {hasDiscount && (
             <div className="flex justify-between text-emerald-600 dark:text-emerald-400">
               <span>
-                Discount
+                {voucherName ? 'Voucher' : 'Discount'}
+                {voucherName && (
+                  <span className="ml-1 text-gray-500 dark:text-slate-400">(<strong>{voucherName}</strong>)</span>
+                )}
                 {hasCoupon && (
                   <span className="ml-1 text-gray-500 dark:text-slate-400">(Coupon: <strong>{o.discount_code}</strong>)</span>
                 )}
               </span>
               <span>-{formatCurrency(discountAmount)}</span>
+            </div>
+          )}
+          {voucherKinds.length > 1 && (
+            <div className="pl-4 text-sm text-gray-500 dark:text-slate-400">
+              {voucherKinds.map((v) => (
+                <div key={v.name} className="flex justify-between">
+                  <span>{voucherKindLabel(v)}</span>
+                  <span>-{formatCurrency(Number(v.discount_amount))}</span>
+                </div>
+              ))}
             </div>
           )}
           {!hasDiscount && hasCoupon && (

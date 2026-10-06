@@ -54,6 +54,11 @@ type OrderRow = Omit<Order, 'payments' | 'creator'> & {
   cardDiscountAmount?: number | string;
   staff_discount_amount?: number | string;
   staffDiscountAmount?: number | string;
+  voucher_discount_amount?: number | string;
+  voucherDiscountAmount?: number | string;
+  /** Printed voucher the order used (snapshot of its name). */
+  voucher_name?: string | null;
+  voucherName?: string | null;
   order_group_id?: string | null;
   orderGroupId?: string | null;
   branch?: { id: number; name: string; code: string };
@@ -102,6 +107,8 @@ function normalizeOrder(o: OrderRow): OrderRow {
     coupon_discount_amount: Number(o.coupon_discount_amount ?? row.couponDiscountAmount ?? 0),
     card_discount_amount: Number(o.card_discount_amount ?? row.cardDiscountAmount ?? 0),
     staff_discount_amount: Number(o.staff_discount_amount ?? row.staffDiscountAmount ?? 0),
+    voucher_discount_amount: Number(o.voucher_discount_amount ?? row.voucherDiscountAmount ?? 0),
+    voucher_name: o.voucher_name ?? row.voucherName ?? null,
     order_group_id: o.order_group_id ?? o.orderGroupId ?? null,
     order_type: o.order_type ?? o.orderType,
     // /admin/orders returns raw entities (camelCase + nested brand), never brand_id.
@@ -272,11 +279,13 @@ const DISCOUNT_KINDS: Array<{
   { key: 'coupon_discount_amount' as keyof OrderRow, label: 'Coupon', filter: 'coupon', long: 'Coupon only' },
   { key: 'card_discount_amount' as keyof OrderRow, label: 'Card', filter: 'card', long: 'Card offer only' },
   { key: 'staff_discount_amount' as keyof OrderRow, label: 'Staff', filter: 'staff', long: 'Staff discount only' },
+  { key: 'voucher_discount_amount' as keyof OrderRow, label: 'Voucher', filter: 'voucher', long: 'Printed voucher only' },
 ];
 
 function discountKinds(o: OrderRow): Array<{ label: string; amount: number }> {
   return DISCOUNT_KINDS.map(({ key, label }) => ({
-    label,
+    // A printed voucher is named: "which voucher" is the question on the floor.
+    label: key === 'voucher_discount_amount' && o.voucher_name ? `Voucher: ${o.voucher_name}` : label,
     amount: Number((o as unknown as Record<string, unknown>)[key] ?? 0),
   })).filter((d) => d.amount > 0);
 }
