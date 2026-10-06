@@ -54,8 +54,10 @@ Tenant (tenant_id; super admin requests have tenantId = null)
 │    eligibility_branch_ids arrays), customers, recipes, uoms,
 │    vendors, rider_profiles, tenant_users, roles
 ├─ TENANT + BRAND: printed_vouchers (the paper coupon book; one brand
-│    each; a cashier applies ONE per order at the till and it replaces
-│    every other discount; never reaches the app or the website)
+│    each; a cashier applies them at the till — fixed prices combine, one
+│    item per paper, a percentage voucher stands alone — and they replace
+│    every other discount; order_printed_vouchers holds what an order
+│    used; never reaches the app or the website)
 └─ GLOBAL: users, permissions, otp_codes
 ```
 

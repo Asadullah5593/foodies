@@ -19,7 +19,7 @@ import { OrderTypeOption } from './types';
 import StaffDiscountPicker from './StaffDiscountPicker';
 import ManualOfferPicker from './ManualOfferPicker';
 import VoucherPicker from './VoucherPicker';
-import { StaffDiscountPreset, ManualOffer, TillVoucher } from '../../../types';
+import { StaffDiscountPreset, ManualOffer, TillVoucher, VoucherPick } from '../../../types';
 
 export type CustomerPanelProps = {
   orderType: OrderTypeOption;
@@ -51,8 +51,9 @@ export type CustomerPanelProps = {
   onManualOfferChange: (id: number | null) => void;
   /** Printed vouchers usable on this order; empty = no control shown. */
   vouchers: TillVoucher[];
-  voucherId: number | null;
-  onVoucherChange: (id: number | null) => void;
+  /** The vouchers on the cart, with a paper count each. */
+  voucherPicks: VoucherPick[];
+  onVoucherPicksChange: (picks: VoucherPick[]) => void;
   orderNotes: string;
   onOrderNotesChange: (v: string) => void;
   quote: {
@@ -66,6 +67,7 @@ export type CustomerPanelProps = {
     voucher_discount_amount?: number;
     voucher_applied?: boolean;
     voucher_error?: string | null;
+    vouchers?: Array<{ voucher_id: number; name: string | null; quantity: number; discount_amount: number }>;
     discount_code?: string | null;
     discount_amount?: number;
   } | null | undefined;
@@ -97,15 +99,15 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
   manualOfferId,
   onManualOfferChange,
   vouchers,
-  voucherId,
-  onVoucherChange,
+  voucherPicks,
+  onVoucherPicksChange,
   orderNotes,
   onOrderNotesChange,
   quote,
 }) => {
-  // A printed voucher replaces every other discount, so while one is selected
-  // the other discount controls are locked (the parent has cleared them).
-  const voucherOn = voucherId != null;
+  // Printed vouchers replace every other discount, so while any is on the
+  // other discount controls are locked (the parent has cleared them).
+  const voucherOn = voucherPicks.length > 0;
   const effectiveOrderType = orderType;
   // Dine-in: customer is fully optional. Takeaway & delivery: customer required.
   const customerRequired =
@@ -292,8 +294,9 @@ const CustomerPanel: React.FC<CustomerPanelProps> = ({
 
       <VoucherPicker
         vouchers={vouchers}
-        selectedId={voucherId}
-        onSelect={onVoucherChange}
+        picks={voucherPicks}
+        onChange={onVoucherPicksChange}
+        breakdown={quote?.vouchers}
         appliedAmount={quote?.voucher_discount_amount ?? 0}
         applied={quote?.voucher_applied ?? false}
         error={quote?.voucher_error ?? null}

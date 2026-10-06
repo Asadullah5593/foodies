@@ -126,14 +126,18 @@ import {
 import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
 import { StaffDiscount } from '../entities/staff-discount.entity';
 import { PrintedVoucher } from '../entities/printed-voucher.entity';
+import { OrderPrintedVoucher } from '../entities/order-printed-voucher.entity';
 import {
     branchLocalDate,
-    evaluateVoucher,
+    evaluateVouchers,
     voucherIneligibleMessage,
     voucherIneligibleReason,
     voucherMissMessage,
+    voucherSummary,
     VoucherLineModifier,
-    VoucherMiss,
+    VoucherProblem,
+    VoucherRequest,
+    VoucherShare,
 } from './printed-voucher-pricing';
 import { assertOrderTypeAllowed } from './order-type-restriction';
 import { assertBranchesAllowed } from './branch-scope';
@@ -225,6 +229,8 @@ export class OrdersService {
         private staffDiscountRepo: Repository<StaffDiscount>,
         @InjectRepository(PrintedVoucher)
         private printedVoucherRepo: Repository<PrintedVoucher>,
+        @InjectRepository(OrderPrintedVoucher)
+        private orderPrintedVoucherRepo: Repository<OrderPrintedVoucher>,
         @InjectRepository(User) private userRepo: Repository<User>,
         @InjectRepository(RiderAssignmentLedger)
         private riderAssignmentLedgerRepo: Repository<RiderAssignmentLedger>,
@@ -1453,6 +1459,11 @@ export class OrdersService {
             manual_offer_id?: number | null;
             /** Printed voucher the cashier applied (printed_vouchers id). */
             voucher_id?: number | null;
+            /**
+             * The printed vouchers the customer handed over, with a paper count
+             * each. `voucher_id` is the one-voucher shorthand of the same thing.
+             */
+            vouchers?: Array<{ voucher_id: number; quantity?: number }> | null;
             /** When set, must match normalized customer_phone for same tenant. */
             customer_id?: number;
             /** Optional drop-off coordinates (e.g. consumer map picker). */
@@ -1846,7 +1857,8 @@ export class OrdersService {
         // A printed voucher must stand alone. Checked before the other
         // discounts are authorized, so a request that asks for both is told
         // exactly that rather than whatever is wrong with the other one.
-        if (dto.voucher_id != null) this.assertVoucherStandsAlone(dto);
+        const voucherRequests = this.voucherRequestsOf(dto);
+        if (voucherRequests.length > 0) this.assertVoucherStandsAlone(dto);
         // Enforcement point: unlike quote this THROWS, so a cashier who posts a
         // preset above their ceiling is refused rather than quietly clamped.
         const staffDiscount = await this.authorizeStaffDiscount(
@@ -1866,10 +1878,11 @@ export class OrdersService {
             primaryBranch.id,
             orderBrandId,
         );
-        // Enforcement point for a printed voucher: it must be usable here
-        // today, and actually take something off this cart.
-        const voucher = await this.authorizeVoucher(
-            dto.voucher_id,
+        // Enforcement point for printed vouchers: each must be usable here
+        // today, they must be allowed together, and they must actually take
+        // something off this cart.
+        const vouchers = await this.authorizeVouchers(
+            voucherRequests,
             tenantId,
             actor,
             primaryBranch.id,
@@ -1891,14 +1904,14 @@ export class OrdersService {
             bankCardId,
             staffDiscount,
             manualOffer,
-            voucher,
+            vouchers,
             settings: offerSettings,
         });
         // The cashier is holding the customer's paper voucher: an order that
         // was asked to use it and could not must not go through as if it had.
-        if (voucher && staged.voucherMiss) {
+        if (vouchers.length > 0 && staged.voucherMiss) {
             throw new BadRequestException(
-                await this.voucherMissText(voucher, staged.voucherMiss),
+                await this.voucherMissText(staged.voucherMiss),
             );
         }
         const combinedLineDiscount = staged.combinedLineDiscount;
@@ -2123,6 +2136,19 @@ export class OrdersService {
                         0,
                     ),
                 );
+                // What each voucher kind took off this brand's lines — one
+                // order_printed_vouchers row each, written once the order exists.
+                const brandVoucherShares = staged.voucherShares
+                    .map((share) => ({
+                        share,
+                        amount: r2(
+                            indices.reduce(
+                                (s, i) => s + (share.alloc[i] ?? 0),
+                                0,
+                            ),
+                        ),
+                    }))
+                    .filter(({ amount }) => amount > 0);
                 const isFirstOrder = key === firstKey;
                 let afterDiscount =
                     Math.round((brandSubtotal - brandDiscountAmount) * 100) /
@@ -2251,20 +2277,29 @@ export class OrdersService {
                                           ),
                                 manualOfferBy:
                                     manualOffer != null ? createdBy : null,
-                                // The voucher's name is snapshotted: renaming
-                                // or deleting it later must not rewrite what
-                                // this order's receipt and the report say.
+                                // The vouchers' names are snapshotted: renaming
+                                // or deleting one later must not rewrite what
+                                // this order's receipt and the report say. The
+                                // id is kept only when one kind was used; the
+                                // rows below hold every kind and its count.
                                 voucherDiscountAmount: brandVoucherDiscount,
                                 printedVoucherId:
-                                    brandVoucherDiscount > 0
-                                        ? (voucher?.id ?? null)
+                                    brandVoucherShares.length === 1
+                                        ? brandVoucherShares[0].share.voucher.id
                                         : null,
                                 voucherName:
-                                    brandVoucherDiscount > 0
-                                        ? (voucher?.name ?? null)
+                                    brandVoucherShares.length > 0
+                                        ? voucherSummary(
+                                              brandVoucherShares.map((v) => ({
+                                                  name: v.share.voucher.name,
+                                                  quantity: v.share.quantity,
+                                              })),
+                                          )
                                         : null,
                                 voucherBy:
-                                    brandVoucherDiscount > 0 ? createdBy : null,
+                                    brandVoucherShares.length > 0
+                                        ? createdBy
+                                        : null,
                                 // Kept even when the offer gave nothing, so take-up
                                 // can be measured against every order that could
                                 // have used the card.
@@ -2354,6 +2389,18 @@ export class OrdersService {
                     }
                 }
                 createdOrderIds.push(order.id);
+                for (const { share, amount } of brandVoucherShares) {
+                    await this.orderPrintedVoucherRepo.save(
+                        this.orderPrintedVoucherRepo.create({
+                            orderId: order.id,
+                            printedVoucherId: share.voucher.id,
+                            voucherName: share.voucher.name,
+                            quantity: share.quantity,
+                            discountAmount: amount,
+                            appliedBy: createdBy,
+                        }),
+                    );
+                }
                 if (deliveryResolved.tier === 'priority') {
                     priorityOrderIds.push(order.id);
                 }
@@ -2977,6 +3024,7 @@ export class OrdersService {
                 'brand',
                 'creator',
                 'payments',
+                'printedVouchers',
                 'orderItems',
                 'orderItems.menuItem',
                 'orderItems.menuItem.category',
@@ -3022,6 +3070,7 @@ export class OrdersService {
                 staff_discount_amount: Number(o.staffDiscountAmount ?? 0),
                 voucher_name: o.voucherName ?? null,
                 voucher_discount_amount: Number(o.voucherDiscountAmount ?? 0),
+                vouchers: this.voucherLinesOf(o),
                 manual_offer_id: o.manualOfferId ?? null,
                 manual_offer_amount: Number(o.manualOfferAmount ?? 0),
                 discount_code: o.discountCode ?? null,
@@ -3169,6 +3218,7 @@ export class OrdersService {
                 'tenant',
                 'creator',
                 'payments',
+                'printedVouchers',
                 'orderItems',
                 'orderItems.menuItem',
                 'orderItems.menuItem.category',
@@ -3353,6 +3403,7 @@ export class OrdersService {
             staff_discount_amount: Number(order.staffDiscountAmount ?? 0),
             voucher_name: order.voucherName ?? null,
             voucher_discount_amount: Number(order.voucherDiscountAmount ?? 0),
+            vouchers: this.voucherLinesOf(order),
             manual_offer_id: order.manualOfferId ?? null,
             manual_offer_amount: Number(order.manualOfferAmount ?? 0),
             discount_code: order.discountCode ?? null,
@@ -3620,6 +3671,7 @@ export class OrdersService {
                 'brand',
                 'creator',
                 'rider',
+                'printedVouchers',
                 'orderItems',
                 'orderItems.menuItem',
                 'orderItems.variant',
@@ -3697,10 +3749,11 @@ export class OrdersService {
             subtotal: Number(order.subtotal),
             discount_amount: Number(order.discountAmount),
             discount_code: order.discountCode,
-            // Printed voucher the order used; its name is the snapshot taken
-            // when it was applied.
+            // Printed vouchers the order used; the names are the snapshots
+            // taken when they were applied.
             voucher_name: order.voucherName ?? null,
             voucher_discount_amount: Number(order.voucherDiscountAmount ?? 0),
+            vouchers: this.voucherLinesOf(order),
             loyalty_points_earned: order.loyaltyPointsEarned ?? 0,
             loyalty_points_redeemed: order.loyaltyPointsRedeemed ?? 0,
             tax_amount: Number(order.taxAmount),
@@ -5046,6 +5099,11 @@ export class OrdersService {
             manual_offer_id?: number | null;
             /** Printed voucher the cashier applied (printed_vouchers id). */
             voucher_id?: number | null;
+            /**
+             * The printed vouchers the customer handed over, with a paper count
+             * each. `voucher_id` is the one-voucher shorthand of the same thing.
+             */
+            vouchers?: Array<{ voucher_id: number; quantity?: number }> | null;
             /** Drop-off coords — required to price/return delivery tiers. */
             latitude?: number;
             longitude?: number;
@@ -5198,15 +5256,16 @@ export class OrdersService {
                       e.message)
                     : 'That offer could not be applied.';
         }
-        // Same soft treatment for a printed voucher: say why it cannot be used
-        // and price the cart without it. createOrder refuses for real.
-        let voucher: PrintedVoucher | null = null;
+        // Same soft treatment for printed vouchers: say why they cannot be
+        // used and price the cart without them. createOrder refuses for real.
+        const voucherRequests = this.voucherRequestsOf(dto);
+        let vouchers: VoucherRequest<PrintedVoucher>[] = [];
         let voucherError: string | null = null;
-        if (dto.voucher_id != null) {
+        if (voucherRequests.length > 0) {
             try {
                 this.assertVoucherStandsAlone(dto);
-                voucher = await this.authorizeVoucher(
-                    dto.voucher_id,
+                vouchers = await this.authorizeVouchers(
+                    voucherRequests,
                     tenantId,
                     actor,
                     branch.id,
@@ -5237,14 +5296,11 @@ export class OrdersService {
             bankCardId,
             staffDiscount,
             manualOffer,
-            voucher,
+            vouchers,
             settings: offerSettings,
         });
-        if (voucher && staged.voucherMiss) {
-            voucherError = await this.voucherMissText(
-                voucher,
-                staged.voucherMiss,
-            );
+        if (vouchers.length > 0 && staged.voucherMiss) {
+            voucherError = await this.voucherMissText(staged.voucherMiss);
         }
         const combinedLineDiscount = staged.combinedLineDiscount;
         const totalDiscount = staged.totalDiscount;
@@ -5455,22 +5511,45 @@ export class OrdersService {
             manual_offer_applied: staged.manualOfferAmount > 0,
             /** Why a requested offer wasn't applied (permission, scope, inactive). */
             manual_offer_error: manualOfferError,
-            // Only when a voucher was asked for — which only the till does — so
+            // Only when vouchers were asked for — which only the till does — so
             // the app and the website receive exactly the response they always
             // have.
-            ...(dto.voucher_id != null
+            ...(voucherRequests.length > 0
                 ? {
-                      voucher_id: Number(dto.voucher_id),
-                      voucher_name: voucher?.name ?? null,
+                      voucher_id: voucherRequests[0].voucherId,
+                      voucher_name:
+                          staged.voucherShares.length > 0
+                              ? voucherSummary(
+                                    staged.voucherShares.map((v) => ({
+                                        name: v.voucher.name,
+                                        quantity: v.quantity,
+                                    })),
+                                )
+                              : null,
                       voucher_discount_amount: staged.voucherDiscountAmount,
-                      /** True when the voucher is what priced this cart. */
+                      /** True when the vouchers are what priced this cart. */
                       voucher_applied: staged.voucherDiscountAmount > 0,
-                      /** Why it was not applied; the order cannot be placed with it. */
+                      /** Why they were not applied; the order cannot be placed with them. */
                       voucher_error:
                           staged.voucherDiscountAmount > 0
                               ? null
                               : (voucherError ??
                                 'That voucher could not be applied.'),
+                      /** Each voucher asked for, with what it took off. */
+                      vouchers: voucherRequests.map((request) => {
+                          const share = staged.voucherShares.find(
+                              (v) => v.voucher.id === request.voucherId,
+                          );
+                          const known = vouchers.find(
+                              (v) => v.voucher.id === request.voucherId,
+                          );
+                          return {
+                              voucher_id: request.voucherId,
+                              name: known?.voucher.name ?? null,
+                              quantity: request.quantity,
+                              discount_amount: share?.amount ?? 0,
+                          };
+                      }),
                   }
                 : {}),
             discount_amount: totalDiscount,
@@ -6675,6 +6754,19 @@ export class OrdersService {
      * coupon code or a loyalty redemption. Refused rather than quietly dropping
      * the others: the cashier has to know which one the customer is getting.
      */
+    /** The vouchers an order used, for receipts and order detail. */
+    private voucherLinesOf(order: {
+        printedVouchers?: OrderPrintedVoucher[] | null;
+    }): Array<{ name: string; quantity: number; discount_amount: number }> {
+        return [...(order.printedVouchers ?? [])]
+            .sort((a, b) => a.id - b.id)
+            .map((v) => ({
+                name: v.voucherName,
+                quantity: Number(v.quantity) || 1,
+                discount_amount: Number(v.discountAmount ?? 0),
+            }));
+    }
+
     private assertVoucherStandsAlone(dto: {
         staff_discount_id?: number | null;
         manual_offer_id?: number | null;
@@ -6696,22 +6788,50 @@ export class OrdersService {
     }
 
     /**
-     * Resolve and AUTHORIZE a printed voucher. Called by both quote and
-     * createOrder — the till only shows the buttons, this is what stops a till
-     * without the right, or the wrong brand, branch, order type or date, from
-     * posting a voucher id. Says nothing about the cart: whether anything in it
-     * qualifies is the pricing stage's answer. Returns null when none was
-     * requested.
+     * The printed vouchers a request asks for, one entry per voucher kind with
+     * its paper count. `vouchers` is the list; `voucher_id` the one-voucher
+     * shorthand the till used before vouchers could combine. The same id
+     * twice adds up; anything unparsable is ignored.
      */
-    private async authorizeVoucher(
-        voucherId: number | null | undefined,
+    private voucherRequestsOf(dto: {
+        voucher_id?: number | null;
+        vouchers?: Array<{ voucher_id: number; quantity?: number }> | null;
+    }): Array<{ voucherId: number; quantity: number }> {
+        const counts = new Map<number, number>();
+        const add = (id: unknown, quantity: unknown) => {
+            const voucherId = Number(id);
+            if (!Number.isInteger(voucherId) || voucherId <= 0) return;
+            const papers = Math.floor(Number(quantity ?? 1));
+            if (!Number.isFinite(papers) || papers < 1) return;
+            counts.set(voucherId, (counts.get(voucherId) ?? 0) + papers);
+        };
+        for (const v of Array.isArray(dto.vouchers) ? dto.vouchers : [])
+            add(v?.voucher_id, v?.quantity);
+        if (dto.voucher_id != null) add(dto.voucher_id, 1);
+        return [...counts].map(([voucherId, quantity]) => ({
+            voucherId,
+            quantity,
+        }));
+    }
+
+    /**
+     * Resolve and AUTHORIZE the printed vouchers a request asks for. Called by
+     * both quote and createOrder — the till only shows the buttons, this is
+     * what stops a till without the right, or the wrong brand, branch, order
+     * type or date, from posting a voucher id. A percentage voucher is also
+     * refused here alongside any other paper. Says nothing about the cart:
+     * whether anything in it qualifies is the pricing stage's answer. Returns
+     * [] when none was requested.
+     */
+    private async authorizeVouchers(
+        requests: Array<{ voucherId: number; quantity: number }>,
         tenantId: number,
         actor: { permissions?: string[] | null } | null,
         branchId: number,
         orderBrandId: number | null,
         orderType: string | null | undefined,
-    ): Promise<PrintedVoucher | null> {
-        if (voucherId == null) return null;
+    ): Promise<VoucherRequest<PrintedVoucher>[]> {
+        if (requests.length === 0) return [];
         if (!actor) {
             throw new ForbiddenException(
                 'A voucher can only be applied by a signed-in user.',
@@ -6722,43 +6842,59 @@ export class OrdersService {
                 'You do not have permission to apply a voucher.',
             );
         }
-        const voucher = await this.printedVoucherRepo.findOne({
-            where: { id: Number(voucherId), tenantId },
-        });
-        if (!voucher) throw new NotFoundException('Voucher not found');
         const branch = await this.branchRepo.findOne({
             where: { id: branchId },
             select: ['timezone'],
         });
-        const reason = voucherIneligibleReason(voucher, {
-            brandId: orderBrandId,
-            branchId,
-            orderType,
-            today: branchLocalDate(branch?.timezone),
-        });
-        if (reason) {
+        const today = branchLocalDate(branch?.timezone);
+        const authorized: VoucherRequest<PrintedVoucher>[] = [];
+        for (const request of requests) {
+            const voucher = await this.printedVoucherRepo.findOne({
+                where: { id: request.voucherId, tenantId },
+            });
+            if (!voucher) throw new NotFoundException('Voucher not found');
+            const reason = voucherIneligibleReason(voucher, {
+                brandId: orderBrandId,
+                branchId,
+                orderType,
+                today,
+            });
+            if (reason) {
+                throw new BadRequestException(
+                    `${voucher.name}: ${voucherIneligibleMessage(reason, voucher, orderType)}`,
+                );
+            }
+            authorized.push({ voucher, quantity: request.quantity });
+        }
+        // A percentage voucher stands alone; fixed prices combine.
+        const papers = authorized.reduce((s, v) => s + v.quantity, 0);
+        const percentage = authorized.find(
+            (v) => v.voucher.voucherType === 'percentage',
+        );
+        if (percentage && papers > 1) {
             throw new BadRequestException(
-                voucherIneligibleMessage(reason, voucher, orderType),
+                `${percentage.voucher.name}: ${voucherMissMessage({ reason: 'cannot_combine' })}`,
             );
         }
-        return voucher;
+        return authorized;
     }
 
-    /** Why an authorized voucher took nothing off this cart, in the cashier's words. */
+    /** Why the vouchers took nothing off this cart, in the cashier's words. */
     private async voucherMissText(
-        voucher: PrintedVoucher,
-        reason: VoucherMiss,
+        problem: VoucherProblem<PrintedVoucher>,
     ): Promise<string> {
         let optionNames: string[] = [];
-        const included = (voucher.includedModifierIds ?? []).map(Number);
-        if (reason === 'needs_included_option' && included.length > 0) {
+        const included = (problem.voucher.includedModifierIds ?? []).map(
+            Number,
+        );
+        if (problem.reason === 'needs_included_option' && included.length > 0) {
             const rows: Array<{ name: string }> = await this.dataSource.query(
                 `SELECT DISTINCT name FROM modifiers WHERE id = ANY($1::int[]) ORDER BY name`,
                 [included],
             );
             optionNames = rows.map((r) => r.name);
         }
-        return `${voucher.name}: ${voucherMissMessage(reason, optionNames)}`;
+        return `${problem.voucher.name}: ${voucherMissMessage(problem, optionNames)}`;
     }
 
     /**
@@ -6806,11 +6942,12 @@ export class OrdersService {
          */
         manualOffer?: Discount | null;
         /**
-         * Printed voucher the cashier applied, already authorized by the
-         * caller. When it takes something off the cart it is the ONLY stage:
-         * every other offer, automatic or granted, is switched off.
+         * The printed vouchers the cashier applied, already authorized by the
+         * caller, with a paper count each. When they take something off the
+         * cart they are the ONLY stage: every other offer, automatic or
+         * granted, is switched off.
          */
-        voucher?: PrintedVoucher | null;
+        vouchers?: VoucherRequest<PrintedVoucher>[] | null;
         settings: OfferSettings;
     }): Promise<{
         combinedLineDiscount: number[];
@@ -6818,14 +6955,17 @@ export class OrdersService {
         productPromoAmount: number;
         discountAmount: number;
         staffDiscountAmount: number;
-        /** What the printed voucher took off; 0 when none was applied. */
+        /** What the printed vouchers took off; 0 when none was applied. */
         voucherDiscountAmount: number;
+        /** Per voucher kind: papers, amount and the per-line split. */
+        voucherShares: VoucherShare<PrintedVoucher>[];
         /**
-         * Why a requested voucher took nothing off this cart. The cart is then
-         * priced as if no voucher had been asked for; the caller decides what
-         * to do about it (quote reports it, createOrder refuses).
+         * Why the requested vouchers took nothing off this cart, and which one
+         * stopped them. The cart is then priced as if none had been asked for;
+         * the caller decides what to do about it (quote reports it,
+         * createOrder refuses).
          */
-        voucherMiss: VoucherMiss | null;
+        voucherMiss: VoucherProblem<PrintedVoucher> | null;
         /** What the till-activated offer produced; 0 if it lost to a better one. */
         manualOfferAmount: number;
         /** Which stage it ran in — the caller needs it to apportion per brand. */
@@ -6873,16 +7013,16 @@ export class OrdersService {
                 (l.isOverridden && !settings.offersApplyToOverriddenLines),
         );
 
-        // A printed voucher stands alone. When it takes something off this
-        // cart it is the only stage — no automatic offer, till-activated offer,
-        // staff discount, coupon or card offer runs beside it. The price is
-        // printed on paper the customer is holding, so the stage also ignores
-        // the cost floor and the tenant's max-discount cap.
-        let voucherMiss: VoucherMiss | null = null;
-        if (ctx.voucher) {
-            const voucher = ctx.voucher;
-            const evaluation = evaluateVoucher(
-                voucher,
+        // Printed vouchers stand alone. When they take something off this
+        // cart they are the only stage — no automatic offer, till-activated
+        // offer, staff discount, coupon or card offer runs beside them. The
+        // price is printed on paper the customer is holding, so the stage also
+        // ignores the cost floor and the tenant's max-discount cap.
+        let voucherMiss: VoucherProblem<PrintedVoucher> | null = null;
+        if (ctx.vouchers && ctx.vouchers.length > 0) {
+            const vouchers = ctx.vouchers;
+            const evaluation = evaluateVouchers(
+                vouchers,
                 lineDetails,
                 excluded,
                 lineDetails.map((l) => l.itemSubtotal),
@@ -6897,8 +7037,8 @@ export class OrdersService {
                             bypassesCostFloor: true,
                             exemptFromCap: true,
                             compute: (running) => {
-                                const r = evaluateVoucher(
-                                    voucher,
+                                const r = evaluateVouchers(
+                                    vouchers,
                                     lineDetails,
                                     excluded,
                                     running,
@@ -6920,6 +7060,7 @@ export class OrdersService {
                     discountAmount: 0,
                     staffDiscountAmount: 0,
                     voucherDiscountAmount: result.byKind.voucher,
+                    voucherShares: evaluation.shares,
                     voucherMiss: null,
                     manualOfferAmount: 0,
                     manualOfferKind: null,
@@ -6940,7 +7081,7 @@ export class OrdersService {
                     })),
                 };
             }
-            voucherMiss = evaluation.reason;
+            voucherMiss = evaluation.problem;
         }
 
         const now = new Date();
@@ -7147,6 +7288,7 @@ export class OrdersService {
             discountAmount: result.byKind.discount,
             staffDiscountAmount: result.byKind.staff_discount,
             voucherDiscountAmount: 0,
+            voucherShares: [],
             voucherMiss,
             /**
              * What the activated offer actually produced. Capped by its own

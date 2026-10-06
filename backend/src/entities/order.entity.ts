@@ -16,6 +16,7 @@ import { OrderItem } from './order-item.entity';
 import { Payment } from './payment.entity';
 import { Discount } from './discount.entity';
 import { Customer } from './customer.entity';
+import { OrderPrintedVoucher } from './order-printed-voucher.entity';
 
 @Entity('orders')
 export class Order {
@@ -401,4 +402,8 @@ export class Order {
 
     @OneToMany(() => Payment, (p) => p.order)
     payments: Payment[];
+
+    /** The printed vouchers this order used, one row per kind with a paper count. */
+    @OneToMany(() => OrderPrintedVoucher, (v) => v.order)
+    printedVouchers: OrderPrintedVoucher[];
 }

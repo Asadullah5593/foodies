@@ -149,6 +149,7 @@ const PrintedVoucherReport: React.FC = () => {
         'Customer',
         'Phone',
         'Subtotal',
+        'Papers',
         'Voucher discount',
         'Total charged',
         'Applied by',
@@ -166,6 +167,7 @@ const PrintedVoucherReport: React.FC = () => {
           r.customer_name,
           r.customer_phone,
           r.subtotal,
+          r.papers,
           r.discount,
           r.total,
           r.applied_by,
@@ -183,7 +185,7 @@ const PrintedVoucherReport: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-  const hasData = (totals?.redemptions ?? 0) > 0;
+  const hasData = (totals?.papers ?? 0) > 0 || (totals?.redemptions ?? 0) > 0;
 
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-12">
@@ -305,9 +307,9 @@ const PrintedVoucherReport: React.FC = () => {
           <div className="mb-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
             {(
               [
-                ['Vouchers redeemed', String(totals?.redemptions ?? 0), 'Orders that used a voucher'],
+                ['Vouchers collected', String(totals?.papers ?? 0), `Paper vouchers, on ${totals?.redemptions ?? 0} ${(totals?.redemptions ?? 0) === 1 ? 'order' : 'orders'}`],
                 ['Discount given', money(totals?.discount ?? 0), 'What the vouchers took off'],
-                ['Average per voucher', money(totals?.average_discount ?? 0), 'Discount given ÷ vouchers'],
+                ['Average per voucher', money(totals?.average_discount ?? 0), 'Discount given ÷ vouchers collected'],
                 ['Charged on these orders', money(totals?.total ?? 0), 'After the voucher, tax included'],
               ] as Array<[string, string, string]>
             ).map(([label, value, hint]) => (
@@ -336,7 +338,8 @@ const PrintedVoucherReport: React.FC = () => {
                         <th className={th}>Voucher</th>
                         <th className={th}>Brand</th>
                         <th className={th}>Worth</th>
-                        <th className={`${th} ${num}`}>Redeemed</th>
+                        <th className={`${th} ${num}`}>Papers</th>
+                        <th className={`${th} ${num}`}>Orders</th>
                         <th className={`${th} ${num}`}>Discount given</th>
                         <th className={`${th} ${num}`}>Charged</th>
                       </tr>
@@ -358,7 +361,8 @@ const PrintedVoucherReport: React.FC = () => {
                               ? voucherFace({ voucher_type: v.voucher_type, value: v.value })
                               : '—'}
                           </td>
-                          <td className={`${td} ${num} font-semibold`}>{v.redemptions}</td>
+                          <td className={`${td} ${num} font-semibold`}>{v.papers}</td>
+                          <td className={`${td} ${num}`}>{v.redemptions}</td>
                           <td className={`${td} ${num}`}>{money(v.discount)}</td>
                           <td className={`${td} ${num}`}>{money(v.total)}</td>
                         </tr>
@@ -369,6 +373,7 @@ const PrintedVoucherReport: React.FC = () => {
                         <td className={`${td} font-bold text-gray-800`} colSpan={3}>
                           Total
                         </td>
+                        <td className={`${td} ${num} font-bold text-gray-800`}>{totals!.papers}</td>
                         <td className={`${td} ${num} font-bold text-gray-800`}>{totals!.redemptions}</td>
                         <td className={`${td} ${num} font-bold text-gray-800`}>{money(totals!.discount)}</td>
                         <td className={`${td} ${num} font-bold text-gray-800`}>{money(totals!.total)}</td>
@@ -393,7 +398,8 @@ const PrintedVoucherReport: React.FC = () => {
                         <th className={th}>Day</th>
                         <th className={th}>Branch</th>
                         <th className={th}>Voucher</th>
-                        <th className={`${th} ${num}`}>Redeemed</th>
+                        <th className={`${th} ${num}`}>Papers</th>
+                        <th className={`${th} ${num}`}>Orders</th>
                         <th className={`${th} ${num}`}>Discount given</th>
                       </tr>
                     </thead>
@@ -403,7 +409,8 @@ const PrintedVoucherReport: React.FC = () => {
                           <td className={`${td} whitespace-nowrap`}>{prettyDay(d.day)}</td>
                           <td className={td}>{d.branch_name ?? '—'}</td>
                           <td className={td}>{d.voucher_name}</td>
-                          <td className={`${td} ${num} font-semibold`}>{d.redemptions}</td>
+                          <td className={`${td} ${num} font-semibold`}>{d.papers}</td>
+                          <td className={`${td} ${num}`}>{d.redemptions}</td>
                           <td className={`${td} ${num}`}>{money(d.discount)}</td>
                         </tr>
                       ))}
@@ -428,7 +435,8 @@ const PrintedVoucherReport: React.FC = () => {
                         <th className={th}>Placed</th>
                         <th className={th}>Order</th>
                         <th className={th}>Branch</th>
-                        <th className={th}>Voucher</th>
+                        <th className={th}>Vouchers</th>
+                        <th className={`${th} ${num}`}>Papers</th>
                         <th className={th}>Customer</th>
                         <th className={th}>Type</th>
                         <th className={`${th} ${num}`}>Subtotal</th>
@@ -452,6 +460,7 @@ const PrintedVoucherReport: React.FC = () => {
                             <span className="block text-[11.5px] text-gray-400">{r.brand_name ?? ''}</span>
                           </td>
                           <td className={`${td} font-semibold text-gray-800`}>{r.voucher_name}</td>
+                          <td className={`${td} ${num}`}>{r.papers}</td>
                           <td className={td}>
                             {r.customer_name ?? '—'}
                             {r.customer_phone && (
@@ -507,7 +516,7 @@ const PrintedVoucherReport: React.FC = () => {
             <style>{PRINT_CSS}</style>
             <h1>Printed Vouchers Report</h1>
             <p className="pv-sub">
-              {rangeText} · {scopeText} · {totals?.redemptions ?? 0} redeemed · {money(totals?.discount ?? 0)} given
+              {rangeText} · {scopeText} · {totals?.papers ?? 0} vouchers on {totals?.redemptions ?? 0} orders · {money(totals?.discount ?? 0)} given
             </p>
             <h2>By voucher</h2>
             <table>
@@ -515,7 +524,8 @@ const PrintedVoucherReport: React.FC = () => {
                 <tr>
                   <th>Voucher</th>
                   <th>Brand</th>
-                  <th className="pv-r">Redeemed</th>
+                  <th className="pv-r">Papers</th>
+                  <th className="pv-r">Orders</th>
                   <th className="pv-r">Discount given</th>
                 </tr>
               </thead>
@@ -524,6 +534,7 @@ const PrintedVoucherReport: React.FC = () => {
                   <tr key={`${v.voucher_id ?? 'deleted'}-${v.voucher_name}-${v.brand_name}`}>
                     <td>{v.voucher_name}</td>
                     <td>{v.brand_name ?? ''}</td>
+                    <td className="pv-r">{v.papers}</td>
                     <td className="pv-r">{v.redemptions}</td>
                     <td className="pv-r">{money(v.discount)}</td>
                   </tr>
@@ -532,6 +543,7 @@ const PrintedVoucherReport: React.FC = () => {
               <tfoot>
                 <tr>
                   <td colSpan={2}>Total</td>
+                  <td className="pv-r">{totals?.papers ?? 0}</td>
                   <td className="pv-r">{totals?.redemptions ?? 0}</td>
                   <td className="pv-r">{money(totals?.discount ?? 0)}</td>
                 </tr>
@@ -544,7 +556,8 @@ const PrintedVoucherReport: React.FC = () => {
                   <th>Day</th>
                   <th>Branch</th>
                   <th>Voucher</th>
-                  <th className="pv-r">Redeemed</th>
+                  <th className="pv-r">Papers</th>
+                  <th className="pv-r">Orders</th>
                   <th className="pv-r">Discount given</th>
                 </tr>
               </thead>
@@ -554,6 +567,7 @@ const PrintedVoucherReport: React.FC = () => {
                     <td>{prettyDay(d.day)}</td>
                     <td>{d.branch_name ?? ''}</td>
                     <td>{d.voucher_name}</td>
+                    <td className="pv-r">{d.papers}</td>
                     <td className="pv-r">{d.redemptions}</td>
                     <td className="pv-r">{money(d.discount)}</td>
                   </tr>

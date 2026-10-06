@@ -34,20 +34,21 @@ vi.mock('../../utils/apiClient', () => ({
 const REPORT: ReportData = {
   date_from: '2026-10-05T00:00:00.000Z',
   date_to: '2026-10-05T23:59:59.999Z',
-  totals: { redemptions: 3, discount: 2450, subtotal: 5247, total: 3244.52, average_discount: 816.67 },
+  // Four papers on three orders: two pizza vouchers sat on one order.
+  totals: { redemptions: 3, papers: 4, discount: 2450, subtotal: 5247, total: 3244.52, average_discount: 612.5 },
   by_voucher: [
-    { voucher_id: 1, voucher_name: 'Any Large Pizza', voucher_type: 'fixed_price', value: 999, brand_name: 'Fireaway', redemptions: 2, discount: 1900, total: 2317.68 },
-    { voucher_id: null, voucher_name: 'Old Summer Voucher', voucher_type: null, value: null, brand_name: 'Peperi Co', redemptions: 1, discount: 550, total: 926.84 },
+    { voucher_id: 1, voucher_name: 'Any Large Pizza', voucher_type: 'fixed_price', value: 999, brand_name: 'Fireaway', redemptions: 2, papers: 3, discount: 1900, total: 2317.68 },
+    { voucher_id: null, voucher_name: 'Old Summer Voucher', voucher_type: null, value: null, brand_name: 'Peperi Co', redemptions: 1, papers: 1, discount: 550, total: 926.84 },
   ],
   by_day: [
-    { day: '2026-10-05', branch_name: 'Pine Avenue', voucher_name: 'Any Large Pizza', redemptions: 2, discount: 1900 },
-    { day: '2026-10-05', branch_name: 'Johar Town', voucher_name: 'Old Summer Voucher', redemptions: 1, discount: 550 },
+    { day: '2026-10-05', branch_name: 'Pine Avenue', voucher_name: 'Any Large Pizza', redemptions: 2, papers: 3, discount: 1900 },
+    { day: '2026-10-05', branch_name: 'Johar Town', voucher_name: 'Old Summer Voucher', redemptions: 1, papers: 1, discount: 550 },
   ],
   rows: [
     {
       id: 900, order_id: 'FDS-AAA', order_number: '004', placed_at: '2026-10-05T09:30:00.000Z', status: 'completed',
       order_type: 'dine_in', customer_name: 'Ali', customer_phone: '03001234567', subtotal: 1949, discount: 950,
-      total: 1158.84, voucher_name: 'Any Large Pizza', branch_name: 'Pine Avenue', brand_name: 'Fireaway', applied_by: 'Cashier One',
+      total: 1158.84, voucher_name: 'Any Large Pizza', papers: 1, branch_name: 'Pine Avenue', brand_name: 'Fireaway', applied_by: 'Cashier One',
     },
   ],
   rows_truncated: false,
@@ -75,7 +76,7 @@ describe('Printed Vouchers report', () => {
 
   it('opens on today and shows what was redeemed', async () => {
     renderPage();
-    expect(await screen.findByText('Vouchers redeemed')).toBeInTheDocument();
+    expect(await screen.findByText('Vouchers collected')).toBeInTheDocument();
     const today = new Date().toISOString().split('T')[0];
     expect(getPrintedVoucherReport).toHaveBeenCalledWith(
       expect.objectContaining({ date_from: today, date_to: today, branch_id: null, brand_id: null, voucher_id: null }),
@@ -83,9 +84,10 @@ describe('Printed Vouchers report', () => {
     // Summary tiles.
     // "Discount given" is also a table heading; the tile's label is the div.
     const tile = (label: string) => screen.getByText(label, { selector: 'div' }).parentElement as HTMLElement;
-    expect(within(tile('Vouchers redeemed')).getByText('3')).toBeInTheDocument();
+    expect(within(tile('Vouchers collected')).getByText('4')).toBeInTheDocument();
+    expect(within(tile('Vouchers collected')).getByText('Paper vouchers, on 3 orders')).toBeInTheDocument();
     expect(within(tile('Discount given')).getByText('Rs. 2,450.00')).toBeInTheDocument();
-    expect(within(tile('Average per voucher')).getByText('Rs. 816.67')).toBeInTheDocument();
+    expect(within(tile('Average per voucher')).getByText('Rs. 612.50')).toBeInTheDocument();
     expect(within(tile('Charged on these orders')).getByText('Rs. 3,244.52')).toBeInTheDocument();
   });
 
@@ -128,7 +130,7 @@ describe('Printed Vouchers report', () => {
 
   it('refetches for a new date range', async () => {
     renderPage();
-    await screen.findByText('Vouchers redeemed');
+    await screen.findByText('Vouchers collected');
     fireEvent.change(screen.getByLabelText('From'), { target: { value: '2026-10-01' } });
     await waitFor(() =>
       expect(getPrintedVoucherReport).toHaveBeenLastCalledWith(expect.objectContaining({ date_from: '2026-10-01' })),
@@ -138,7 +140,7 @@ describe('Printed Vouchers report', () => {
   it('says so when nothing was redeemed, and has nothing to export', async () => {
     getPrintedVoucherReport.mockResolvedValue({
       ...REPORT,
-      totals: { redemptions: 0, discount: 0, subtotal: 0, total: 0, average_discount: 0 },
+      totals: { redemptions: 0, papers: 0, discount: 0, subtotal: 0, total: 0, average_discount: 0 },
       by_voucher: [],
       by_day: [],
       rows: [],
@@ -177,9 +179,9 @@ describe('Printed Vouchers report', () => {
 
     const [header, first] = csv.split('\n');
     expect(header).toBe(
-      'Placed at,Order ID,Order number,Branch,Brand,Voucher,Order type,Customer,Phone,Subtotal,Voucher discount,Total charged,Applied by,Status',
+      'Placed at,Order ID,Order number,Branch,Brand,Voucher,Order type,Customer,Phone,Subtotal,Papers,Voucher discount,Total charged,Applied by,Status',
     );
-    expect(first).toContain('FDS-AAA,004,Pine Avenue,Fireaway,Any Large Pizza,Dine in,Ali,03001234567,1949,950,1158.84,Cashier One,completed');
+    expect(first).toContain('FDS-AAA,004,Pine Avenue,Fireaway,Any Large Pizza,Dine in,Ali,03001234567,1949,1,950,1158.84,Cashier One,completed');
     // The page also renders ordinary links; the download is the anchor that names a file.
     const download = anchors.find((a) => a.download);
     expect(download?.download).toMatch(/^printed-vouchers_\d{4}-\d{2}-\d{2}_to_\d{4}-\d{2}-\d{2}\.csv$/);

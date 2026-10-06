@@ -186,8 +186,8 @@ const PrintedVouchers: React.FC = () => {
           <h1 className="mb-1.5 text-2xl font-extrabold tracking-tight text-gray-800 sm:text-[28px]">Printed Vouchers</h1>
           <p className="max-w-[760px] text-[14px] leading-relaxed text-gray-500">
             The paper vouchers from your coupon book. A cashier taps one on the checkout screen when the customer
-            hands it over. Only one voucher can be used per order, and it switches off every other discount on that
-            order. What was redeemed shows under{' '}
+            hands it over. Fixed-price vouchers can be combined, each pricing one item, so three pizza vouchers price three pizzas;
+            a percentage voucher is used on its own. Any voucher switches off every other discount on that order. What was redeemed shows under{' '}
             <Link to="/admin/reports/printed-vouchers" className="font-semibold text-red-600 hover:underline">
               Reports → Printed Vouchers
             </Link>
@@ -209,7 +209,7 @@ const PrintedVouchers: React.FC = () => {
         <MdInfoOutline size={16} className="mt-px shrink-0" />
         <span>
           There is no usage limit: the system does not know whether a paper voucher was used before, so staff should
-          collect it. A fixed-price voucher covers <span className="font-semibold">one</span> item per order — the
+          collect it. A fixed-price voucher covers <span className="font-semibold">one</span> item per paper handed over — the
           one where the customer saves most — and extras are charged on top.
         </span>
       </div>

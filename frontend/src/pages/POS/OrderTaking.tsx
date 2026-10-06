@@ -9,7 +9,7 @@ import { menuService, orderService, adminService, CreateOrderRequest } from '../
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import { validatePakistaniPhone, PAKISTANI_PHONE_PLACEHOLDER, normalizePakistaniPhone } from '../../utils/phone';
-import { MenuItem } from '../../types';
+import { MenuItem, VoucherPick } from '../../types';
 import Loader from '../../components/Loader';
 import { formatCurrency } from '../../utils/currency';
 import { placesConfigured, ResolvedPlace } from '../../utils/googlePlaces';
@@ -73,8 +73,8 @@ const OrderTaking: React.FC = () => {
   const [staffDiscountId, setStaffDiscountId] = useState<number | null>(null);
   /** Till-activated offer switched on for this cart (discounts id), or null. */
   const [manualOfferId, setManualOfferId] = useState<number | null>(null);
-  /** Printed voucher applied to this cart (printed_vouchers id), or null. */
-  const [voucherId, setVoucherId] = useState<number | null>(null);
+  /** Printed vouchers on this cart, with a paper count each. */
+  const [voucherPicks, setVoucherPicks] = useState<VoucherPick[]>([]);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [deliveryAddress, setDeliveryAddress] = useState('');
@@ -358,33 +358,34 @@ const OrderTaking: React.FC = () => {
   const usableVouchers = activeKioskCode == null && cartBrandId != null ? (tillVouchers ?? []) : [];
 
   /**
-   * One voucher per order, and it replaces every other discount — so picking
-   * one clears the staff discount, the till offer, the code and the points.
+   * Vouchers replace every other discount — so putting any on the cart clears
+   * the staff discount, the till offer, the code and the points.
    */
-  const selectVoucher = (id: number | null) => {
-    setVoucherId(id);
-    if (id == null) return;
+  const changeVoucherPicks = (picks: VoucherPick[]) => {
+    setVoucherPicks(picks);
+    if (picks.length === 0) return;
     setStaffDiscountId(null);
     setManualOfferId(null);
     setDiscountCode('');
     setLoyaltyPointsToRedeem('');
   };
 
-  // The cart changed brand or order type and the voucher no longer applies to
+  // The cart changed brand or order type and a voucher no longer applies to
   // it: drop it rather than leave a selection the cashier can no longer see.
   useEffect(() => {
-    if (voucherId == null) return;
-    // An emptied cart, or a kiosk cart taking over, has no voucher to keep.
+    if (voucherPicks.length === 0) return;
+    // An emptied cart, or a kiosk cart taking over, has no vouchers to keep.
     if (cartBrandId == null || activeKioskCode != null) {
-      setVoucherId(null);
+      setVoucherPicks([]);
       return;
     }
     if (tillVouchers == null) return; // still loading this cart's list
-    if (!tillVouchers.some((v) => v.id === voucherId)) {
-      setVoucherId(null);
-      toast('The voucher was removed — it cannot be used on this order.');
+    const kept = voucherPicks.filter((p) => tillVouchers.some((v) => v.id === p.id));
+    if (kept.length !== voucherPicks.length) {
+      setVoucherPicks(kept);
+      toast('A voucher was removed — it cannot be used on this order.');
     }
-  }, [voucherId, tillVouchers, cartBrandId, activeKioskCode]);
+  }, [voucherPicks, tillVouchers, cartBrandId, activeKioskCode]);
 
   const getBrandName = (brandId: number | null | undefined): string | null =>
     brandId != null ? (brands.find((b) => b.id === brandId)?.name ?? null) : null;
@@ -498,7 +499,7 @@ const OrderTaking: React.FC = () => {
         discount_code: discountCode.trim() || undefined,
         staff_discount_id: staffDiscountId ?? undefined,
         manual_offer_id: manualOfferId ?? undefined,
-        voucher_id: voucherId ?? undefined,
+        vouchers: voucherPicks.length > 0 ? voucherPicks.map((p) => ({ voucher_id: p.id, quantity: p.quantity })) : undefined,
         customer_phone: customerPhone.trim() || undefined,
         loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
       }
@@ -623,7 +624,7 @@ const OrderTaking: React.FC = () => {
     setDiscountCode('');
     setStaffDiscountId(null);
     setManualOfferId(null);
-    setVoucherId(null);
+    setVoucherPicks([]);
     setCustomerName('');
     setCustomerPhone('');
     setDeliveryAddress('');
@@ -1187,11 +1188,11 @@ const OrderTaking: React.FC = () => {
       toast.error('Prices are updating — tap Place Order again in a moment');
       return;
     }
-    // The cashier is holding the customer's paper voucher: an order that was
-    // meant to use it must not go through at another price. (The server
+    // The cashier is holding the customer's paper vouchers: an order that was
+    // meant to use them must not go through at another price. (The server
     // refuses it too.)
-    if (voucherId != null && quote?.voucher_applied !== true) {
-      toast.error(quote?.voucher_error || 'The voucher is not applied. Fix the cart or clear the voucher.');
+    if (voucherPicks.length > 0 && quote?.voucher_applied !== true) {
+      toast.error(quote?.voucher_error || 'The vouchers are not applied. Fix the cart or clear them.');
       return;
     }
     const orderTotal = Number(quote?.total_amount ?? total ?? 0);
@@ -1251,7 +1252,7 @@ const OrderTaking: React.FC = () => {
       discount_code: discountCode.trim() || undefined,
       staff_discount_id: staffDiscountId ?? undefined,
       manual_offer_id: manualOfferId ?? undefined,
-      voucher_id: voucherId ?? undefined,
+      vouchers: voucherPicks.length > 0 ? voucherPicks.map((p) => ({ voucher_id: p.id, quantity: p.quantity })) : undefined,
       loyalty_points_to_redeem: typeof loyaltyPointsToRedeem === 'number' && loyaltyPointsToRedeem > 0 ? loyaltyPointsToRedeem : undefined,
       items: selectedItems.map((item) => {
         if (item.dealId != null && item.components?.length) {
@@ -2142,8 +2143,8 @@ const OrderTaking: React.FC = () => {
               manualOfferId={manualOfferId}
               onManualOfferChange={setManualOfferId}
               vouchers={usableVouchers}
-              voucherId={voucherId}
-              onVoucherChange={selectVoucher}
+              voucherPicks={voucherPicks}
+              onVoucherPicksChange={changeVoucherPicks}
               orderNotes={orderNotes}
               onOrderNotesChange={setOrderNotes}
               quote={quote}

@@ -585,8 +585,9 @@ export class PrintedVouchersService {
 
     /**
      * Deletion retires the button. Orders that used the voucher keep their
-     * snapshotted name and amount (orders.printed_voucher_id is ON DELETE SET
-     * NULL), so the report still counts them — under the name they were given.
+     * snapshotted name and amount (order_printed_vouchers.printed_voucher_id
+     * is ON DELETE SET NULL), so the report still counts them — under the
+     * name they were given.
      */
     async remove(
         id: number,
@@ -602,9 +603,10 @@ export class PrintedVouchersService {
     }
 
     /**
-     * The redemption report: which vouchers were used, where, when, by whom,
-     * and what they took off — the system's side of counting the paper
-     * vouchers staff collected.
+     * The redemption report: which vouchers were used, how many papers of
+     * each, where, when, by whom, and what they took off — the system's side
+     * of counting the paper vouchers staff collected. Several vouchers can sit
+     * on one order, so papers and orders are counted separately.
      *
      * Counts orders PLACED in the range (the voucher changes hands when the
      * order is rung up), cancelled ones excluded. Day bounds are the server's
@@ -680,49 +682,68 @@ export class PrintedVouchersService {
         if (filters.branch_id != null)
             add('o.branch_id = ?', filters.branch_id);
         if (filters.brand_id != null) add('o.brand_id = ?', filters.brand_id);
-        if (filters.voucher_id != null)
-            add('o.printed_voucher_id = ?', filters.voucher_id);
+        // An order holds one row per voucher kind it used (order_printed_vouchers),
+        // with a paper count. Narrowing by voucher narrows to those rows.
+        let voucherFilter = '';
+        if (filters.voucher_id != null) {
+            params.push(filters.voucher_id);
+            voucherFilter = ` AND v.printed_voucher_id = $${params.length}`;
+        }
         const whereSql = where.join(' AND ');
+        const voucherRows = `FROM order_printed_vouchers v
+                 JOIN orders o ON o.id = v.order_id`;
+        const voucherRowsWhere = `WHERE ${whereSql}${voucherFilter}`;
+        const usedVouchers = `EXISTS (SELECT 1 FROM order_printed_vouchers v
+                                     WHERE v.order_id = o.id${voucherFilter})`;
 
         // A voucher renamed mid-range must stay one row: live vouchers group by
         // id under their current name; deleted ones by the name they had.
-        const voucherKey = `COALESCE(pv.name, o.voucher_name)`;
-        const [totals, byVoucher, byDay, rows] = await Promise.all([
+        const voucherKey = `COALESCE(pv.name, v.voucher_name)`;
+        const [papers, orders, byVoucher, byDay, rows] = await Promise.all([
             this.dataSource.query<Array<Record<string, string>>>(
-                `SELECT COUNT(*) AS redemptions,
-                        COALESCE(SUM(o.voucher_discount_amount), 0) AS discount,
-                        COALESCE(SUM(o.subtotal), 0) AS subtotal,
+                `SELECT COALESCE(SUM(v.quantity), 0) AS papers,
+                        COALESCE(SUM(v.discount_amount), 0) AS discount,
+                        COUNT(DISTINCT o.id) AS redemptions
+                 ${voucherRows}
+                 ${voucherRowsWhere}`,
+                params,
+            ),
+            this.dataSource.query<Array<Record<string, string>>>(
+                `SELECT COALESCE(SUM(o.subtotal), 0) AS subtotal,
                         COALESCE(SUM(o.total_amount), 0) AS total
-                 FROM orders o WHERE ${whereSql}`,
+                 FROM orders o
+                 WHERE ${whereSql} AND ${usedVouchers}`,
                 params,
             ),
             this.dataSource.query<Array<Record<string, string | null>>>(
-                `SELECT o.printed_voucher_id AS voucher_id,
+                `SELECT v.printed_voucher_id AS voucher_id,
                         ${voucherKey} AS voucher_name,
                         pv.voucher_type, pv.value,
                         b.name AS brand_name,
-                        COUNT(*) AS redemptions,
-                        COALESCE(SUM(o.voucher_discount_amount), 0) AS discount,
+                        COUNT(DISTINCT o.id) AS redemptions,
+                        COALESCE(SUM(v.quantity), 0) AS papers,
+                        COALESCE(SUM(v.discount_amount), 0) AS discount,
                         COALESCE(SUM(o.total_amount), 0) AS total
-                 FROM orders o
-                 LEFT JOIN printed_vouchers pv ON pv.id = o.printed_voucher_id
+                 ${voucherRows}
+                 LEFT JOIN printed_vouchers pv ON pv.id = v.printed_voucher_id
                  LEFT JOIN brands b ON b.id = o.brand_id
-                 WHERE ${whereSql}
-                 GROUP BY o.printed_voucher_id, ${voucherKey}, pv.voucher_type,
+                 ${voucherRowsWhere}
+                 GROUP BY v.printed_voucher_id, ${voucherKey}, pv.voucher_type,
                           pv.value, b.name
-                 ORDER BY COUNT(*) DESC, ${voucherKey}`,
+                 ORDER BY COALESCE(SUM(v.quantity), 0) DESC, ${voucherKey}`,
                 params,
             ),
             this.dataSource.query<Array<Record<string, string | null>>>(
                 `SELECT to_char(o.placed_at, 'YYYY-MM-DD') AS day,
                         br.name AS branch_name,
                         ${voucherKey} AS voucher_name,
-                        COUNT(*) AS redemptions,
-                        COALESCE(SUM(o.voucher_discount_amount), 0) AS discount
-                 FROM orders o
-                 LEFT JOIN printed_vouchers pv ON pv.id = o.printed_voucher_id
+                        COUNT(DISTINCT o.id) AS redemptions,
+                        COALESCE(SUM(v.quantity), 0) AS papers,
+                        COALESCE(SUM(v.discount_amount), 0) AS discount
+                 ${voucherRows}
+                 LEFT JOIN printed_vouchers pv ON pv.id = v.printed_voucher_id
                  LEFT JOIN branches br ON br.id = o.branch_id
-                 WHERE ${whereSql}
+                 ${voucherRowsWhere}
                  GROUP BY to_char(o.placed_at, 'YYYY-MM-DD'), br.name, ${voucherKey}
                  ORDER BY 1 DESC, br.name, ${voucherKey}`,
                 params,
@@ -731,37 +752,43 @@ export class PrintedVouchersService {
                 `SELECT o.id, o.order_id, o.order_number, o.placed_at, o.status,
                         o.order_type, o.customer_name, o.customer_phone,
                         o.subtotal, o.voucher_discount_amount, o.total_amount,
-                        ${voucherKey} AS voucher_name,
+                        o.voucher_name,
+                        (SELECT COALESCE(SUM(x.quantity), 0)
+                           FROM order_printed_vouchers x
+                          WHERE x.order_id = o.id) AS papers,
                         br.name AS branch_name, b.name AS brand_name,
                         u.name AS applied_by
                  FROM orders o
-                 LEFT JOIN printed_vouchers pv ON pv.id = o.printed_voucher_id
                  LEFT JOIN branches br ON br.id = o.branch_id
                  LEFT JOIN brands b ON b.id = o.brand_id
                  LEFT JOIN users u ON u.id = o.voucher_by
-                 WHERE ${whereSql}
+                 WHERE ${whereSql} AND ${usedVouchers}
                  ORDER BY o.placed_at DESC, o.id DESC
                  LIMIT ${REPORT_ROW_LIMIT + 1}`,
                 params,
             ),
         ]);
 
-        const t = totals[0] ?? {};
-        const redemptions = Number(t.redemptions ?? 0);
-        const discount = Number(t.discount ?? 0);
+        const p = papers[0] ?? {};
+        const t = orders[0] ?? {};
+        const paperCount = Number(p.papers ?? 0);
+        const discount = Number(p.discount ?? 0);
         return {
             date_from: dateFrom.toISOString(),
             date_to: dateTo.toISOString(),
             totals: {
-                redemptions,
+                /** Orders that used a voucher. */
+                redemptions: Number(p.redemptions ?? 0),
+                /** Paper vouchers collected — what the count sheet is matched against. */
+                papers: paperCount,
                 discount,
-                /** What those orders were worth before the voucher. */
+                /** What those orders were worth before the vouchers. */
                 subtotal: Number(t.subtotal ?? 0),
                 /** What was actually charged, tax included. */
                 total: Number(t.total ?? 0),
                 average_discount:
-                    redemptions > 0
-                        ? Math.round((discount / redemptions) * 100) / 100
+                    paperCount > 0
+                        ? Math.round((discount / paperCount) * 100) / 100
                         : 0,
             },
             by_voucher: byVoucher.map((r) => ({
@@ -771,6 +798,7 @@ export class PrintedVouchersService {
                 value: r.value != null ? Number(r.value) : null,
                 brand_name: r.brand_name,
                 redemptions: Number(r.redemptions ?? 0),
+                papers: Number(r.papers ?? 0),
                 discount: Number(r.discount ?? 0),
                 total: Number(r.total ?? 0),
             })),
@@ -779,6 +807,7 @@ export class PrintedVouchersService {
                 branch_name: r.branch_name,
                 voucher_name: r.voucher_name,
                 redemptions: Number(r.redemptions ?? 0),
+                papers: Number(r.papers ?? 0),
                 discount: Number(r.discount ?? 0),
             })),
             rows: rows.slice(0, REPORT_ROW_LIMIT).map((r) => ({
@@ -796,7 +825,9 @@ export class PrintedVouchersService {
                 subtotal: Number(r.subtotal ?? 0),
                 discount: Number(r.voucher_discount_amount ?? 0),
                 total: Number(r.total_amount ?? 0),
+                /** The vouchers used, as a line: "Any Large Pizza ×3". */
                 voucher_name: r.voucher_name as string,
+                papers: Number(r.papers ?? 0),
                 branch_name: (r.branch_name as string | null) ?? null,
                 brand_name: (r.brand_name as string | null) ?? null,
                 applied_by: (r.applied_by as string | null) ?? null,

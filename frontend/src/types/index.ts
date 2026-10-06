@@ -646,6 +646,19 @@ export interface TillVoucher {
   value: number;
 }
 
+/** A voucher the cashier has on the cart, and how many papers of it. */
+export interface VoucherPick {
+  id: number;
+  quantity: number;
+}
+
+/** What one voucher kind took off an order, as receipts and order detail show it. */
+export interface OrderVoucherLine {
+  name: string;
+  quantity: number;
+  discount_amount: number;
+}
+
 /** Pick-lists for the voucher form, for one brand. */
 export interface PrintedVoucherFormOptions {
   categories: Array<{ id: number; name: string; is_active: boolean }>;
@@ -675,10 +688,14 @@ export interface PrintedVoucherReport {
   date_from: string;
   date_to: string;
   totals: {
+    /** Orders that used a voucher. */
     redemptions: number;
+    /** Paper vouchers collected; several can sit on one order. */
+    papers: number;
     discount: number;
     subtotal: number;
     total: number;
+    /** Discount given ÷ papers. */
     average_discount: number;
   };
   by_voucher: Array<{
@@ -688,6 +705,7 @@ export interface PrintedVoucherReport {
     value: number | null;
     brand_name: string | null;
     redemptions: number;
+    papers: number;
     discount: number;
     total: number;
   }>;
@@ -696,6 +714,7 @@ export interface PrintedVoucherReport {
     branch_name: string | null;
     voucher_name: string;
     redemptions: number;
+    papers: number;
     discount: number;
   }>;
   rows: Array<{
@@ -710,7 +729,9 @@ export interface PrintedVoucherReport {
     subtotal: number;
     discount: number;
     total: number;
+    /** The vouchers used, as one line: "Any Large Pizza ×3". */
     voucher_name: string;
+    papers: number;
     branch_name: string | null;
     brand_name: string | null;
     applied_by: string | null;

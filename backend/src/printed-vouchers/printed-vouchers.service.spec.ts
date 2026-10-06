@@ -45,16 +45,16 @@ function build(
             return Promise.resolve([
                 { timezone: opts.timezone ?? 'Asia/Karachi' },
             ]);
-        if (sql.includes('FROM orders o')) {
-            if (sql.includes('COUNT(*) AS redemptions,\n'))
+        if (sql.includes('FROM orders o') || sql.includes('JOIN orders o')) {
+            if (
+                sql.includes('AS papers,\n') &&
+                sql.includes('AS redemptions\n')
+            )
                 return Promise.resolve([
-                    {
-                        redemptions: '2',
-                        discount: '1500',
-                        subtotal: '3898',
-                        total: '2590',
-                    },
+                    { papers: '3', discount: '1500', redemptions: '2' },
                 ]);
+            if (sql.includes('AS subtotal,\n'))
+                return Promise.resolve([{ subtotal: '3898', total: '2590' }]);
             return Promise.resolve(
                 sql.includes('LIMIT') ? (opts.reportRows ?? []) : [],
             );
@@ -414,12 +414,14 @@ describe('the redemption report', () => {
         expect(params[0]).toBe(1);
         expect(params[1]).toEqual(new Date(2026, 9, 1, 0, 0, 0, 0));
         expect(params[2]).toEqual(new Date(2026, 9, 5, 23, 59, 59, 999));
+        // Three papers on two orders: the average is per paper.
         expect(res.totals).toEqual({
             redemptions: 2,
+            papers: 3,
             discount: 1500,
             subtotal: 3898,
             total: 2590,
-            average_discount: 750,
+            average_discount: 500,
         });
     });
 
@@ -452,7 +454,7 @@ describe('the redemption report', () => {
         const { sql, params } = lastOrdersQuery(queries);
         expect(sql).toContain('o.branch_id = $4');
         expect(sql).toContain('o.brand_id = $5');
-        expect(sql).toContain('o.printed_voucher_id = $6');
+        expect(sql).toContain('v.printed_voucher_id = $6');
         expect(params.slice(3)).toEqual([10, FIREAWAY, 5]);
     });
 
@@ -471,7 +473,8 @@ describe('the redemption report', () => {
                     subtotal: '1949.00',
                     voucher_discount_amount: '950.00',
                     total_amount: '1158.84',
-                    voucher_name: 'Any Large Pizza',
+                    voucher_name: 'Any Large Pizza ×2',
+                    papers: '2',
                     branch_name: 'Pine Avenue',
                     brand_name: 'Fireaway',
                     applied_by: 'Cashier One',
@@ -492,7 +495,8 @@ describe('the redemption report', () => {
                 subtotal: 1949,
                 discount: 950,
                 total: 1158.84,
-                voucher_name: 'Any Large Pizza',
+                voucher_name: 'Any Large Pizza ×2',
+                papers: 2,
                 branch_name: 'Pine Avenue',
                 brand_name: 'Fireaway',
                 applied_by: 'Cashier One',
