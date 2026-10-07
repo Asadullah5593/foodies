@@ -17,8 +17,9 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
   // Removed StrictMode to prevent double renders in development that cause concurrent API requests
   <QueryClientProvider client={queryClient}>
     <App />
-    <Toaster 
-      position="top-right"
+    {/* Phones: toasts top-centre, clear of the header actions and the order-notification stack. */}
+    <Toaster
+      position={typeof window !== 'undefined' && window.matchMedia?.('(max-width: 639.98px)').matches ? 'top-center' : 'top-right'}
       toastOptions={{
         duration: 3000,
         style: {

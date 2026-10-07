@@ -92,7 +92,7 @@ const OrderNotificationStack: React.FC = () => {
   };
 
   return (
-    <div className="fixed top-16 right-4 z-50 flex w-80 max-w-[90vw] flex-col gap-2">
+    <div className="fixed top-16 right-4 z-50 flex w-80 max-w-[90vw] max-sm:left-2 max-sm:right-2 max-sm:w-auto max-sm:max-w-none flex-col gap-2">
       <div className="flex items-center justify-between rounded-lg bg-red-600 px-3 py-1.5 text-white shadow-lg">
         <span className="flex items-center gap-1.5 text-sm font-semibold">
           <MdNotificationsActive className="h-4 w-4" />

@@ -95,7 +95,9 @@ const Login: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col lg:flex-row relative overflow-hidden bg-slate-100 dark:bg-slate-950">
       {/* ========== LEFT: Branding / welcome panel (full height on desktop) ========== */}
-      <div className="relative flex-1 min-h-[40vh] lg:min-h-screen flex flex-col justify-center px-8 sm:px-12 lg:px-16 py-12 lg:py-0">
+      {/* Below lg the form panel comes first (max-lg:order-*) so the sign-in fields are on the
+          first screen; the branding panel becomes a compact band underneath. */}
+      <div className="relative flex-1 min-h-[40vh] lg:min-h-screen flex flex-col justify-center px-8 sm:px-12 lg:px-16 py-12 lg:py-0 max-lg:order-2 max-lg:min-h-0 max-lg:py-10">
         {/* Background layer */}
         <div className="absolute inset-0 bg-gradient-to-br from-red-600 via-red-700 to-slate-900 dark:from-red-900 dark:via-slate-900 dark:to-slate-950" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(255,255,255,0.15),transparent)]" />
@@ -168,7 +170,7 @@ const Login: React.FC = () => {
           </motion.div>
 
           <motion.h2
-            className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white leading-tight max-w-md mb-4"
+            className="text-3xl sm:text-4xl lg:text-5xl font-bold text-white leading-tight max-w-md mb-4 max-sm:text-2xl sm:max-lg:text-3xl max-lg:mb-2"
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2, duration: 0.5 }}
@@ -176,7 +178,7 @@ const Login: React.FC = () => {
             Run your restaurant, your way.
           </motion.h2>
           <motion.p
-            className="text-lg sm:text-xl text-white/85 max-w-sm mb-10"
+            className="text-lg sm:text-xl text-white/85 max-w-sm mb-10 max-sm:text-base sm:max-lg:text-lg max-lg:mb-6"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.35 }}
@@ -184,7 +186,7 @@ const Login: React.FC = () => {
             POS, orders, menu, and reports in one place.
           </motion.p>
 
-          <ul className="space-y-4">
+          <ul className="space-y-4 max-sm:hidden">
             {features.map((f) => (
               <motion.li
                 key={f.text}
@@ -202,7 +204,7 @@ const Login: React.FC = () => {
       </div>
 
       {/* ========== RIGHT: Form panel ========== */}
-      <div className="relative flex-shrink-0 w-full lg:w-[48%] xl:w-[44%] min-h-[60vh] lg:min-h-screen flex flex-col justify-center items-center px-6 sm:px-10 lg:px-14 py-12 lg:py-16 bg-slate-50 dark:bg-slate-900/50">
+      <div className="relative flex-shrink-0 w-full lg:w-[48%] xl:w-[44%] min-h-[60vh] lg:min-h-screen flex flex-col justify-center items-center px-6 sm:px-10 lg:px-14 py-12 lg:py-16 bg-slate-50 dark:bg-slate-900/50 max-lg:order-1 max-lg:min-h-[100dvh] max-lg:py-8">
         {/* Subtle background on form side */}
         <div className="absolute inset-0 bg-gradient-to-t from-slate-200/50 to-transparent dark:from-slate-800/30 dark:to-transparent pointer-events-none" />
         <div
@@ -217,7 +219,7 @@ const Login: React.FC = () => {
         <motion.button
           type="button"
           onClick={toggleTheme}
-          className="absolute top-6 right-6 z-20 p-2.5 rounded-xl bg-white dark:bg-slate-800 shadow-md border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+          className="absolute top-6 right-6 z-20 p-2.5 rounded-xl bg-white dark:bg-slate-800 shadow-md border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors max-sm:top-4 max-sm:right-4"
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.5 }}
@@ -243,7 +245,7 @@ const Login: React.FC = () => {
           className="relative z-10 w-full max-w-md"
         >
           <motion.div
-            className="bg-white dark:bg-slate-800/90 backdrop-blur-sm p-8 sm:p-10 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-700/80"
+            className="bg-white dark:bg-slate-800/90 backdrop-blur-sm p-8 sm:p-10 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-700/80 max-sm:p-6"
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.4, delay: 0.1 }}

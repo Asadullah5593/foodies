@@ -60,7 +60,7 @@ const NotificationBell: React.FC = () => {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+        className="relative p-2 max-lg:p-3 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
         aria-label="Notifications"
         title="Notifications"
       >
@@ -73,7 +73,7 @@ const NotificationBell: React.FC = () => {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 max-w-[90vw] rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl z-50 overflow-hidden">
+        <div className="absolute right-0 mt-2 w-80 max-w-[90vw] max-sm:fixed max-sm:inset-x-2 max-sm:top-14 max-sm:w-auto max-sm:max-w-none rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-xl z-50 overflow-hidden">
           <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 dark:border-slate-700">
             <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">
               Inventory alerts
