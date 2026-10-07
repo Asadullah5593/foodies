@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# visual audit output (scripts/visual-audit.cjs)
+.visual-audit
