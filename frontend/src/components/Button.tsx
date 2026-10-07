@@ -58,8 +58,9 @@ const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const { theme } = useTheme();
+  // Below lg every button is at least 44px tall (touch target); desktop density is unchanged.
   const baseStyles =
-    'font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed';
+    'font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed max-lg:min-h-[44px]';
 
   const isGradient = variant === 'gradient';
   const semanticVariant = isGradient ? 'primary' : variant;

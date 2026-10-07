@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { useViewport } from '../hooks/useViewport';
 
 export type AccentVariant = 'active' | 'inactive';
 
@@ -40,6 +41,12 @@ export interface AccentedListRowProps {
 const accentBarClass: Record<AccentVariant, string> = {
   active: 'bg-emerald-500 dark:bg-emerald-500',
   inactive: 'bg-rose-500 dark:bg-rose-500',
+};
+
+/** Below lg the accent is the card's own left border (spans the wrapped row). */
+const accentBorderClass: Record<AccentVariant, string> = {
+  active: 'border-l-emerald-500 hover:border-l-emerald-500 dark:border-l-emerald-500 dark:hover:border-l-emerald-500',
+  inactive: 'border-l-rose-500 hover:border-l-rose-500 dark:border-l-rose-500 dark:hover:border-l-rose-500',
 };
 
 const statusPillClass: Record<AccentVariant, string> = {
@@ -121,9 +128,17 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
   animationIndex = 0,
   footer,
 }) => {
+  // Below lg the row stacks: avatar + text on the first line, status + actions on a full-width
+  // second line, and the accent becomes the card's left border so it spans both. The desktop
+  // (≥ lg) class strings are the originals, untouched.
+  const { isDesktop, isPhone } = useViewport();
+  const stacked = !isDesktop;
+  // Second line starts under the title: avatar (56px / 64px from sm) + the 12px gap.
+  const indent = isPhone ? 'pl-[4.25rem]' : 'pl-[4.75rem]';
+
   const showDualStatus = orderStatusLabel != null || deliveryStatusLabel != null;
   const statusContent = showDualStatus ? (
-    <span className="hidden sm:flex items-center gap-2 flex-wrap">
+    <span className={`${stacked ? 'flex' : 'hidden sm:flex'} items-center gap-2 flex-wrap`}>
       {orderStatusLabel != null && orderStatusLabel !== '' && (
         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${statusPillClass[statusVariant]}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass[statusVariant]}`} />
@@ -138,7 +153,7 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
       )}
     </span>
   ) : statusLabel != null && statusLabel !== '' ? (
-    <span className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${statusPillClass[statusVariant]}`}>
+    <span className={`${stacked ? 'inline-flex' : 'hidden sm:inline-flex'} items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${statusPillClass[statusVariant]}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass[statusVariant]}`} />
       {statusLabel}
     </span>
@@ -150,16 +165,25 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 12 }}
       transition={{ delay: animationIndex * 0.04, duration: 0.25 }}
-      className={`group rounded-xl bg-white dark:bg-slate-800/80 border border-gray-200/80 dark:border-slate-700/80 overflow-hidden hover:border-gray-300 dark:hover:border-slate-600 hover:shadow-md transition-all duration-200 ${footer ? 'flex flex-col' : ''}`}
+      className={`group rounded-xl bg-white dark:bg-slate-800/80 border border-gray-200/80 dark:border-slate-700/80 overflow-hidden hover:border-gray-300 dark:hover:border-slate-600 hover:shadow-md transition-all duration-200 ${footer ? 'flex flex-col' : ''}${
+        stacked ? ` border-l-[6px] ${accentBorderClass[accent]}` : ''
+      }`}
     >
-      <div className="flex items-center gap-4 sm:gap-6 min-h-[4rem]">
-        <div
-          className={`flex-shrink-0 w-1.5 sm:w-2 self-stretch min-h-[4rem] ${accentBarClass[accent]}`}
-          aria-hidden
-        />
+      <div className={stacked ? 'flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-3' : 'flex items-center gap-4 sm:gap-6 min-h-[4rem]'}>
+        {!stacked && (
+          <div
+            className={`flex-shrink-0 w-1.5 sm:w-2 self-stretch min-h-[4rem] ${accentBarClass[accent]}`}
+            aria-hidden
+          />
+        )}
         <AvatarImage imageUrl={imageUrl} initial={initial} />
-        <div className="flex-1 min-w-0 py-4">
-          <h3 className="font-semibold text-gray-900 dark:text-slate-100 text-base sm:text-lg truncate" title={title}>
+        <div className={stacked ? 'flex-1 min-w-0' : 'flex-1 min-w-0 py-4'}>
+          <h3
+            className={`font-semibold text-gray-900 dark:text-slate-100 ${
+              stacked ? 'text-base leading-snug line-clamp-2' : 'text-base sm:text-lg truncate'
+            }`}
+            title={title}
+          >
             {title}
           </h3>
           {subtitle != null && subtitle !== '' && (
@@ -169,13 +193,13 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
           )}
         </div>
         {meta != null && meta !== '' && (
-          <div className="flex-shrink-0 w-24 sm:w-32 py-4 flex items-center">
+          <div className={stacked ? `basis-full flex items-center ${indent}` : 'flex-shrink-0 w-24 sm:w-32 py-4 flex items-center'}>
             {meta}
           </div>
         )}
-        <div className="flex-shrink-0 flex items-center gap-3 py-4 pr-4 sm:pr-6">
+        <div className={stacked ? `basis-full flex flex-wrap items-center gap-2 ${indent}` : 'flex-shrink-0 flex items-center gap-3 py-4 pr-4 sm:pr-6'}>
           {statusContent}
-          <div className="flex gap-2">{actions}</div>
+          <div className={stacked ? 'flex flex-wrap gap-2' : 'flex gap-2'}>{actions}</div>
         </div>
       </div>
       {footer != null && footer !== '' && (

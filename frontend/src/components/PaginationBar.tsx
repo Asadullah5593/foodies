@@ -22,7 +22,7 @@ export type PaginationBarProps = {
 };
 
 const btnCls =
-  'px-3 py-1.5 rounded-lg text-sm font-semibold text-white border border-transparent disabled:opacity-50 disabled:cursor-not-allowed !bg-[linear-gradient(90deg,#000000_0%,#B91C1C_50%,#000000_100%)] hover:brightness-110 active:brightness-95 transition-all';
+  'px-3 py-1.5 rounded-lg text-sm font-semibold text-white border border-transparent disabled:opacity-50 disabled:cursor-not-allowed !bg-[linear-gradient(90deg,#000000_0%,#B91C1C_50%,#000000_100%)] hover:brightness-110 active:brightness-95 transition-all max-lg:min-h-[44px] max-lg:px-4';
 
 const PaginationBar: React.FC<PaginationBarProps> = ({
   totalCount,
@@ -58,7 +58,7 @@ const PaginationBar: React.FC<PaginationBarProps> = ({
       aria-label="Pagination"
     >
       {showSizer && (
-        <div className="flex items-center gap-1.5 mr-auto">
+        <div className="flex items-center gap-1.5 mr-auto max-sm:mr-0 max-sm:w-full max-sm:justify-center">
           <span className="text-sm text-foodies-textSecondary">Show</span>
           <select
             value={pageSize}
@@ -87,9 +87,13 @@ const PaginationBar: React.FC<PaginationBarProps> = ({
           >
             ← Prev
           </button>
-          <span className="text-sm text-foodies-textSecondary px-2">
+          <span className="text-sm text-foodies-textSecondary px-2 max-sm:hidden">
             Page {page} of {totalPages}{' '}
             <span className="text-foodies-textPrimary">({totalCount} {itemLabel})</span>
+          </span>
+          {/* Phones: the short form, so Prev / page / Next stay on one line. */}
+          <span className="hidden max-sm:inline text-sm text-foodies-textSecondary px-2" aria-hidden>
+            {page} / {totalPages}
           </span>
           <button
             type="button"
@@ -104,7 +108,7 @@ const PaginationBar: React.FC<PaginationBarProps> = ({
           {/* Jump straight to a page — handy when there are many pages. */}
           {totalPages > 2 && (
             <form
-              className="flex items-center gap-1.5 ml-1"
+              className="flex items-center gap-1.5 ml-1 max-sm:hidden"
               onSubmit={(e) => {
                 e.preventDefault();
                 goToJump();

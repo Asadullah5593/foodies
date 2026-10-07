@@ -51,9 +51,9 @@ const OfferModal: React.FC<Props> = ({ open, onClose, title, subtitle, icon, wid
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 max-lg:items-stretch max-lg:p-0">
             <motion.div
-              className={`flex w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-2xl ${autoHeight ? 'max-h-[92vh]' : 'h-[88vh] max-h-[760px]'}`}
+              className={`flex w-full flex-col overflow-hidden rounded-[18px] max-lg:rounded-none max-lg:h-[100dvh] max-lg:max-h-none bg-white shadow-2xl ${autoHeight ? 'max-h-[92vh]' : 'h-[88vh] max-h-[760px]'}`}
               style={{ maxWidth: width }}
               initial={{ opacity: 0, scale: 0.96, y: 18 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -61,7 +61,7 @@ const OfferModal: React.FC<Props> = ({ open, onClose, title, subtitle, icon, wid
               onClick={(e) => e.stopPropagation()}
             >
               <div className="h-1.5 flex-none bg-gradient-to-r from-red-500 via-red-600 to-rose-500" />
-              <div className="flex flex-none items-center justify-between gap-4 border-b border-gray-100 px-7 py-5">
+              <div className="flex flex-none items-center justify-between gap-4 border-b border-gray-100 px-7 py-5 max-lg:px-4 max-lg:py-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <span className="flex h-[34px] w-[34px] flex-none items-center justify-center rounded-[9px] bg-red-50 text-red-600">
                     {icon}
@@ -74,7 +74,7 @@ const OfferModal: React.FC<Props> = ({ open, onClose, title, subtitle, icon, wid
                 <button
                   onClick={onClose}
                   aria-label="Close"
-                  className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[10px] bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200"
+                  className="flex h-[38px] w-[38px] max-lg:h-11 max-lg:w-11 flex-none items-center justify-center rounded-[10px] bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200"
                 >
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
                     <line x1="4" y1="4" x2="12" y2="12" />
@@ -86,7 +86,7 @@ const OfferModal: React.FC<Props> = ({ open, onClose, title, subtitle, icon, wid
               <div className="flex min-h-0 flex-1 flex-col">{children}</div>
 
               {footer && (
-                <div className="flex flex-none items-center justify-between gap-4 border-t border-gray-100 bg-gray-50 px-7 py-4">
+                <div className="flex flex-none items-center justify-between gap-4 border-t border-gray-100 bg-gray-50 px-7 py-4 max-lg:flex-wrap max-lg:px-4 max-lg:pb-[max(1rem,env(safe-area-inset-bottom))]">
                   {footer}
                 </div>
               )}

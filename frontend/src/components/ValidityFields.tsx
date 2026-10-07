@@ -48,7 +48,7 @@ const ValidityFields: React.FC<Props> = ({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
         <label className="block">
           <span className={labelCls}>
             Valid from{requireDates && <span className="text-red-500 ml-0.5">*</span>}

@@ -38,7 +38,7 @@ const CustomerVouchersModal: React.FC<{
         <p className="text-sm text-gray-500 py-8 text-center">Loading…</p>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-4 gap-2 max-sm:grid-cols-2">
             {[
               { label: 'Total', value: voucherStats.total, cls: 'text-gray-800 dark:text-slate-100' },
               { label: 'Active', value: voucherStats.active, cls: 'text-green-600' },

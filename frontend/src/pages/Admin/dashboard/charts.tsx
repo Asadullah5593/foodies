@@ -15,6 +15,7 @@ import {
   Legend,
 } from 'recharts';
 import { formatCurrency } from '../../../utils/currency';
+import { useViewport } from '../../../hooks/useViewport';
 import {
   CHART_COLORS,
   REVENUE_COLOR,
@@ -245,6 +246,8 @@ export const OrdersByStatusChart: React.FC<{
   data: DashboardSummary['orders_by_status'];
   theme: Theme;
 }> = ({ data, theme }) => {
+  // Phones: a narrower label gutter leaves the bars room on a ~320px chart.
+  const { isPhone } = useViewport();
   const sorted = [...data].sort((a, b) => {
     const ai = STATUS_ORDER.indexOf(a.status);
     const bi = STATUS_ORDER.indexOf(b.status);
@@ -267,7 +270,7 @@ export const OrdersByStatusChart: React.FC<{
           <YAxis
             type="category"
             dataKey="status"
-            width={84}
+            width={isPhone ? 64 : 84}
             tick={{ fontSize: 11, fill: axisColor(theme) }}
             stroke={axisColor(theme)}
           />
@@ -351,7 +354,15 @@ export const PaymentMethodDonut: React.FC<{
 export const TopItemsChart: React.FC<{
   data: DashboardSummary['top_items'];
   theme: Theme;
-}> = ({ data, theme }) => (
+}> = ({ data, theme }) => {
+  // Phones: a 130px label gutter would take 40% of the chart, so shorten the names instead.
+  const { isPhone } = useViewport();
+  const labelWidth = isPhone ? 96 : 130;
+  const shortName = (value: unknown) => {
+    const s = String(value);
+    return isPhone && s.length > 14 ? `${s.slice(0, 13)}…` : s;
+  };
+  return (
   <Measured height={Math.max(240, data.length * 32)}>
     {(w, h) => (
       <BarChart width={w} height={h} data={data} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 4 }}>
@@ -365,7 +376,8 @@ export const TopItemsChart: React.FC<{
         <YAxis
           type="category"
           dataKey="name"
-          width={130}
+          width={labelWidth}
+          tickFormatter={shortName}
           tick={{ fontSize: 11, fill: axisColor(theme) }}
           stroke={axisColor(theme)}
         />
@@ -380,4 +392,5 @@ export const TopItemsChart: React.FC<{
       </BarChart>
     )}
   </Measured>
-);
+  );
+};

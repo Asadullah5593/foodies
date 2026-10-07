@@ -35,7 +35,7 @@ const Modal: React.FC<ModalProps> = ({
     medium: 'max-w-lg',
     large: 'max-w-2xl',
     xlarge: 'max-w-4xl',
-    full: 'max-w-full mx-4',
+    full: 'max-w-full mx-4 max-sm:mx-0',
   };
 
   return (
@@ -49,20 +49,27 @@ const Modal: React.FC<ModalProps> = ({
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
-          <div className={`fixed inset-0 ${elevated ? 'z-[80]' : 'z-50'} flex items-center justify-center p-4`}>
+          {/* Phones (max-sm): a bottom sheet — full width, rounded top, capped at 92dvh so the
+              footer clears the browser toolbar. Tablets: centred, dvh-based height. Desktop:
+              exactly the classes it always had. */}
+          <div className={`fixed inset-0 ${elevated ? 'z-[80]' : 'z-50'} flex items-center justify-center p-4 max-sm:items-end max-sm:p-0`}>
             <motion.div
-              className={`bg-white rounded-lg shadow-xl w-full ${sizeStyles[size]} max-h-[calc(100vh-2rem)] flex flex-col`}
+              className={`bg-white rounded-lg shadow-xl w-full ${sizeStyles[size]} max-h-[calc(100vh-2rem)] flex flex-col max-lg:max-h-[calc(100dvh-2rem)] max-sm:max-w-none max-sm:max-h-[92dvh] max-sm:rounded-t-2xl max-sm:rounded-b-none`}
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               onClick={(e) => e.stopPropagation()}
             >
+              <div className="hidden max-sm:block flex-none pt-2" aria-hidden>
+                <div className="mx-auto h-1 w-10 rounded-full bg-gray-300" />
+              </div>
               {title && (
                 <div className="flex items-center justify-between p-4 border-b border-gray-200 flex-none">
                   <h2 className="text-xl font-semibold text-gray-800">{title}</h2>
                   <button
                     onClick={onClose}
-                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                    aria-label="Close dialog"
+                    className="text-gray-400 hover:text-gray-600 transition-colors max-lg:-m-2 max-lg:p-2"
                   >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -70,7 +77,7 @@ const Modal: React.FC<ModalProps> = ({
                   </button>
                 </div>
               )}
-              <div className="p-4 overflow-y-auto flex-1">{children}</div>
+              <div className="p-4 overflow-y-auto flex-1 max-sm:pb-[max(1rem,env(safe-area-inset-bottom))]">{children}</div>
             </motion.div>
           </div>
         </>
