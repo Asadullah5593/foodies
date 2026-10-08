@@ -103,14 +103,14 @@ const UomsPage: React.FC = () => {
 
       <Modal isOpen={open} onClose={() => setOpen(false)} title={editId ? 'Edit unit' : 'Add unit'} size="medium">
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
             <div><div className="text-xs font-medium text-slate-500 mb-1">Name</div><input className={field} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Kilogram" /></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Code</div><input className={field} value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} placeholder="kg" /></div>
           </div>
           <div><div className="text-xs font-medium text-slate-500 mb-1">Measurement kind</div><SearchableSelect value={f.kind} onChange={(v) => setF({ ...f, kind: v })} options={KINDS} minWidth="w-full" className="w-full" /></div>
           <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-3 space-y-2">
             <div className="text-xs text-slate-500">Leave the base unit empty for a standalone base unit. Otherwise pick the base it converts into and the multiplier.</div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
               <div><div className="text-xs font-medium text-slate-500 mb-1">Converts into (base)</div><SearchableSelect value={f.base_uom_id} onChange={(v) => setF({ ...f, base_uom_id: v })} options={baseOptions} placeholder="None — base unit" searchPlaceholder="Search units…" minWidth="w-full" className="w-full" /></div>
               <div><div className="text-xs font-medium text-slate-500 mb-1">Multiplier to base</div><input className={field} value={f.multiplier_to_base} onChange={(e) => setF({ ...f, multiplier_to_base: e.target.value })} placeholder="1000" disabled={!f.base_uom_id} /></div>
             </div>

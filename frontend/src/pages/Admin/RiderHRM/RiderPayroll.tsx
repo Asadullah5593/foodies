@@ -63,7 +63,7 @@ const RiderPayroll: React.FC = () => {
   });
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 space-y-6">
       <RiderHrmHeader
         title="Payroll Runs"
         subtitle="Combine attendance, completed rides, timely deliveries and ratings against the active compensation plan to produce per-rider payroll for a period. Finalize or reverse."

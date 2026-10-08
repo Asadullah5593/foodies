@@ -404,7 +404,7 @@ const Deals: React.FC = () => {
   ];
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Deals</h1>
         <Button variant="primary" onClick={openAdd}>Add deal</Button>

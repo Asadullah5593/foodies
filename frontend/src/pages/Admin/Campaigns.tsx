@@ -182,7 +182,7 @@ const Campaigns: React.FC = () => {
   if (isLoading) return <Loader fullScreen text="Loading campaigns..." />;
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Campaigns</h1>
         {canCreatePerm && <Button onClick={() => { setEditing(null); setForm({ ...emptyCampaign }); setShowForm(true); }}>Add Campaign</Button>}
@@ -239,9 +239,10 @@ const Campaigns: React.FC = () => {
           </svg>
         }
       >
-        <div className="flex min-h-0 flex-1">
+        {/* Below lg the two panes stack and the whole sheet scrolls as one. */}
+        <div className="flex min-h-0 flex-1 max-lg:flex-col max-lg:overflow-y-auto">
           {/* Left: add a banner */}
-          <div className="w-[480px] flex-none overflow-y-auto border-r border-gray-100 px-6 py-5">
+          <div className="w-[480px] flex-none overflow-y-auto border-r border-gray-100 px-6 py-5 max-lg:w-full max-lg:overflow-visible max-lg:border-b max-lg:border-r-0 max-lg:px-4">
             <div className="mb-4 text-[15px] font-bold text-gray-800">Add a banner</div>
 
             <label className={offerLabel}>Type</label>
@@ -274,7 +275,7 @@ const Campaigns: React.FC = () => {
                 : 'Promotes a combo deal; tapping opens the deal.'}
             </p>
 
-            <div className="mb-4 grid grid-cols-2 gap-3">
+            <div className="mb-4 grid grid-cols-2 max-sm:grid-cols-1 gap-3">
               <div><label className={offerLabel}>Title</label><input type="text" placeholder="Title" value={itemForm.title} onChange={(e) => setItemForm({ ...itemForm, title: e.target.value })} className={offerInput} /></div>
               <div><label className={offerLabel}>Subtitle</label><input type="text" placeholder="Subtitle" value={itemForm.subtitle} onChange={(e) => setItemForm({ ...itemForm, subtitle: e.target.value })} className={offerInput} /></div>
             </div>
@@ -306,7 +307,7 @@ const Campaigns: React.FC = () => {
 
             <div className="mb-4">
               <label className={offerLabel}>Tapping the banner opens</label>
-              <div className="grid grid-cols-2 items-start gap-2.5">
+              <div className="grid grid-cols-2 max-sm:grid-cols-1 items-start gap-2.5">
                 <select value={itemForm.destination_type}
                   onChange={(e) => setItemForm({ ...itemForm, destination_type: e.target.value, destination_id: '' })}
                   className={offerInput}>
@@ -354,7 +355,7 @@ const Campaigns: React.FC = () => {
               <span className="text-[15px] font-bold text-gray-800">Banners in this campaign</span>
               <span className="rounded-full bg-red-50 px-2.5 py-0.5 text-[12.5px] font-bold text-red-600">{items?.length ?? 0}</span>
             </div>
-            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 pb-5">
+            <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-6 pb-5 max-lg:overflow-visible max-lg:px-4">
               {(items ?? []).map((it) => (
                 <div key={it.id} className="flex gap-3.5 rounded-2xl border border-gray-200 bg-white p-3.5 shadow-sm">
                   {it.image_url

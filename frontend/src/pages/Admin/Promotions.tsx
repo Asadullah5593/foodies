@@ -243,7 +243,7 @@ const Promotions: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Promotions</h1>
         {canCreate && <Button onClick={() => { setEditingPromotion(null); setFormData({ ...emptyForm }); setShowForm(true); }}>
@@ -344,7 +344,7 @@ const Promotions: React.FC = () => {
 
           {/* Discount-specific fields */}
           {formData.promotion_type === 'discount' && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Discount Type *</label>
                 <select
@@ -428,7 +428,7 @@ const Promotions: React.FC = () => {
           )}
 
           {/* Campaign window — when the promo is handed out to new customers */}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Valid From</label>
               <input
@@ -451,7 +451,7 @@ const Promotions: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Expires After (days)</label>
               <input

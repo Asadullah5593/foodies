@@ -356,7 +356,7 @@ const StockTransfers: React.FC = () => {
               <select className={field} value={nf.item ?? ''} onChange={(e) => { const it = itemById.get(Number(e.target.value)); setNf({ ...nf, item: e.target.value, uom: it?.baseUomId ? String(it.baseUomId) : '' }); }}>
                 <option value="">Select item…</option>{(itemsQ.data ?? []).map((it: any) => <option key={it.id} value={it.id}>{it.name}</option>)}
               </select></div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-2">
               <div><div className="text-xs font-medium text-slate-500 mb-1">Quantity</div><input className={field} placeholder="e.g. 5" value={nf.qty ?? ''} onChange={(e) => setNf({ ...nf, qty: e.target.value })} /></div>
               <div><div className="text-xs font-medium text-slate-500 mb-1">Unit</div>
                 <select className={field} value={nf.uom ?? ''} onChange={(e) => setNf({ ...nf, uom: e.target.value })} disabled={!nf.item}>
@@ -380,7 +380,7 @@ const StockTransfers: React.FC = () => {
       <Modal isOpen={detailRow != null} onClose={() => setDetailRow(null)} title={detailRow ? `${detailRow.ref} · ${transferType(detailRow.sourceBrandId, detailRow.destinationBrandId)}` : ''} size="large">
         {detailRow && (
           <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
               <div><div className="text-xs text-slate-500">From</div><div className="font-medium">{bucketLabel(detailRow.sourceBranchId, detailRow.sourceBrandId)} <span className="text-xs text-slate-400">({bucketKind(detailRow.sourceBrandId)})</span></div></div>
               <div><div className="text-xs text-slate-500">To</div><div className="font-medium">{bucketLabel(detailRow.destinationBranchId, detailRow.destinationBrandId)} <span className="text-xs text-slate-400">({bucketKind(detailRow.destinationBrandId)})</span></div></div>
               <div><div className="text-xs text-slate-500">Status</div><span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${PILL[detailRow.color]}`}>{detailRow.statusLabel}</span></div>

@@ -19,6 +19,7 @@ import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { procurementService } from '../../../services/api/procurementService';
 import { useAuth } from '../../../contexts/AuthContext';
+import TableScroll from '../../../components/TableScroll';
 
 export type ProcurementTabKey = 'prs' | 'pos' | 'grns';
 
@@ -1361,7 +1362,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               {prsQ.isLoading ? (
                 <div className="p-10"><Loader /></div>
               ) : (
-                <div className="overflow-x-auto">
+                <TableScroll>
                   <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1100px]" style={{ gridTemplateColumns: gridCols }}>
                     <div>#</div><div>PR number</div><div>Vendor</div><div>Created by</div><div className="text-right">Items</div><div className="text-right">Qty</div><div>Dates</div><div>Notes</div><div>Status</div><div className="text-right">Actions</div>
                   </div>
@@ -1401,7 +1402,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                     );
                   })}
                   <Pagination shown={pageRows.length} total={totalRows} page={safePage} totalPages={totalPages} onPage={setPrPage} />
-                </div>
+                </TableScroll>
               )}
             </div>
           </>
@@ -1459,7 +1460,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               {posQ.isLoading ? (
                 <div className="p-10"><Loader /></div>
               ) : (
-                <div className="overflow-x-auto">
+                <TableScroll>
                   <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1000px]" style={{ gridTemplateColumns: gridCols }}>
                     <div>PO number</div><div>PR reference</div><div>Buyer branch</div><div>Vendor</div><div>Status</div><div className="text-right">Action</div>
                   </div>
@@ -1486,7 +1487,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                     );
                   })}
                   <Pagination shown={pageRows.length} total={totalRows} page={safePage} totalPages={totalPages} onPage={setPoPage} />
-                </div>
+                </TableScroll>
               )}
             </div>
           </>
@@ -1584,7 +1585,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               {grnsQ.isLoading ? (
                 <div className="p-10"><Loader /></div>
               ) : (
-                <div className="overflow-x-auto">
+                <TableScroll>
                   <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1000px]" style={{ gridTemplateColumns: gridCols }}>
                     <div>GRN number</div><div>PR reference</div><div>PO number</div><div>Branch</div><div className="text-right">Lines</div><div>Status</div><div className="text-right">Actions</div>
                   </div>
@@ -1618,7 +1619,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                     );
                   })}
                   <Pagination shown={pageRows.length} total={totalRows} page={safePage} totalPages={totalPages} onPage={setGrnPage} />
-                </div>
+                </TableScroll>
               )}
             </div>
           </>

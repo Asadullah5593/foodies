@@ -470,7 +470,7 @@ const Dashboard: React.FC = () => {
         aria-label="From time"
         value={timeFrom}
         onChange={(e) => setTimeFrom(e.target.value || DAY_START)}
-        className={`${FILTER_INPUT} w-[90px]`}
+        className={`${FILTER_INPUT} w-[90px] max-lg:w-[136px]`}
       />
     </div>
   );
@@ -487,7 +487,7 @@ const Dashboard: React.FC = () => {
         aria-label="To time"
         value={timeTo}
         onChange={(e) => setTimeTo(e.target.value || DAY_END)}
-        className={`${FILTER_INPUT} w-[90px]`}
+        className={`${FILTER_INPUT} w-[90px] max-lg:w-[136px]`}
       />
     </div>
   );

@@ -675,9 +675,9 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
             exit={{ opacity: 0 }}
             onClick={onClose}
           />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 max-lg:p-0">
             <motion.div
-              className="flex h-[92vh] max-h-[920px] w-full max-w-[1180px] flex-col overflow-hidden rounded-[18px] bg-white shadow-2xl"
+              className="flex h-[92vh] max-h-[920px] w-full max-w-[1180px] flex-col overflow-hidden rounded-[18px] bg-white shadow-2xl max-lg:h-[100dvh] max-lg:max-h-none max-lg:rounded-none"
               initial={{ opacity: 0, scale: 0.96, y: 18 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 18 }}
@@ -710,10 +710,11 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
                 </button>
               </div>
 
-              {/* Body */}
-              <div className="flex min-h-0 flex-1">
+              {/* Body. Below lg the three panes stack — the section rail becomes a swipeable row of
+                  chips, then the form, then the preview — and the whole sheet scrolls as one. */}
+              <div className="flex min-h-0 flex-1 max-lg:flex-col max-lg:overflow-y-auto">
                 {/* Nav rail */}
-                <div className="w-[216px] flex-none overflow-y-auto border-r border-gray-100 bg-gray-50 p-3">
+                <div className="w-[216px] flex-none overflow-y-auto border-r border-gray-100 bg-gray-50 p-3 max-lg:flex max-lg:w-full max-lg:gap-1 max-lg:overflow-x-auto max-lg:overflow-y-hidden max-lg:border-b max-lg:border-r-0 max-lg:p-2">
                   {sections.map((sec) => {
                     const isActive = sec.id === active.id;
                     const isToggles = sec.kind === 'toggles';
@@ -724,12 +725,12 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
                         key={sec.id}
                         type="button"
                         onClick={() => setActiveId(sec.id)}
-                        className={`relative mb-0.5 flex w-full items-center gap-[11px] rounded-[10px] px-3 py-2.5 text-left transition-colors ${
+                        className={`relative mb-0.5 flex w-full items-center gap-[11px] rounded-[10px] px-3 py-2.5 text-left transition-colors max-lg:mb-0 max-lg:w-auto max-lg:flex-none max-lg:whitespace-nowrap ${
                           isActive ? 'bg-red-50' : 'hover:bg-gray-100'
                         }`}
                       >
                         <span
-                          className={`absolute bottom-2 left-0 top-2 w-[3px] rounded-full ${
+                          className={`absolute bottom-2 left-0 top-2 w-[3px] rounded-full max-lg:hidden ${
                             isActive ? 'bg-red-600' : 'bg-transparent'
                           }`}
                         />
@@ -759,7 +760,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
                 </div>
 
                 {/* Panel */}
-                <div className="flex-1 overflow-y-auto px-7 py-6">
+                <div className="flex-1 overflow-y-auto px-7 py-6 max-lg:flex-none max-lg:overflow-visible max-lg:px-4 max-lg:py-4">
                   <div className="flex items-start justify-between gap-3.5">
                     <div>
                       <div className="text-[17px] font-bold tracking-tight text-gray-800">{active.title}</div>
@@ -816,7 +817,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
                 </div>
 
                 {/* Live preview */}
-                <div className="flex w-[340px] flex-none flex-col border-l border-gray-100 bg-gray-50">
+                <div className="flex w-[340px] flex-none flex-col border-l border-gray-100 bg-gray-50 max-lg:w-full max-lg:border-l-0 max-lg:border-t">
                   <div className="flex flex-none items-center justify-between px-5 pb-1 pt-4">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-gray-400">Live preview</span>
                     <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-600">
@@ -833,7 +834,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
                       branch prints its own address
                     </div>
                   )}
-                  <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+                  <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6 max-lg:overflow-visible">
                     <LiveInvoicePreview
                       data={previewInvoice(previewBranch)}
                       layout={form.layout}

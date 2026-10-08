@@ -12,6 +12,7 @@ import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 import { isEntityInactive } from '../../utils/entityStatus';
 import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import { rangeChipLabel } from '../../utils/rangeChipLabel';
+import TableScroll from '../../components/TableScroll';
 
 /** GET /admin/reports/discounts — where the discounts went. */
 interface DiscountsReport {
@@ -284,7 +285,7 @@ const Reports: React.FC = () => {
         {discounts != null && discounts.cards.length > 0 && (
           <Card>
             <h3 className="mb-3 text-sm font-medium text-gray-500">By bank card</h3>
-            <div className="overflow-x-auto">
+            <TableScroll>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
@@ -316,7 +317,7 @@ const Reports: React.FC = () => {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableScroll>
           </Card>
         )}
         </FetchingOverlay>

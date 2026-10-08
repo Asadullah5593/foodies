@@ -17,6 +17,7 @@ import ActivityLogSettingsPanel, {
 } from './ActivityLogSettings';
 import ActivityLogDetails from './ActivityLogDetails';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
+import TableScroll from '../../components/TableScroll';
 import {
   ACTOR_STYLES,
   OUTCOME_HINTS,
@@ -804,7 +805,7 @@ const ActivityLog: React.FC = () => {
             No activity matches these filters.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <TableScroll>
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#ECEDF0] bg-[#F7F8FA] text-left text-[12.5px] font-semibold text-[#4B5563]">
@@ -906,7 +907,7 @@ const ActivityLog: React.FC = () => {
                 })}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
         )}
 
         {data && data.total > 0 && (

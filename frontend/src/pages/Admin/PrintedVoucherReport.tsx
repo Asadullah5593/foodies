@@ -14,6 +14,7 @@ import FilterBar, { type FilterChip, type FilterField } from '../../components/F
 import { rangeChipLabel } from '../../utils/rangeChipLabel';
 import { formatOrderType } from '../../utils/format';
 import { prettyDay, voucherFace } from '../../utils/voucherText';
+import TableScroll from '../../components/TableScroll';
 
 const PAGE_SIZE = 25;
 
@@ -373,7 +374,7 @@ const PrintedVoucherReport: React.FC = () => {
               {/* By voucher */}
               <section className="mb-5 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                 <h2 className="border-b border-gray-100 px-4 py-3 text-[14px] font-bold text-gray-800">By voucher</h2>
-                <div className="overflow-x-auto">
+                <TableScroll>
                   <table className="min-w-full">
                     <thead className="bg-gray-50">
                       <tr>
@@ -422,7 +423,7 @@ const PrintedVoucherReport: React.FC = () => {
                       </tr>
                     </tfoot>
                   </table>
-                </div>
+                </TableScroll>
               </section>
 
               {/* By day and branch */}
@@ -433,7 +434,7 @@ const PrintedVoucherReport: React.FC = () => {
                     the count to match against the paper vouchers collected
                   </span>
                 </h2>
-                <div className="max-h-[420px] overflow-auto">
+                <TableScroll className="max-h-[420px] overflow-auto">
                   <table className="min-w-full">
                     <thead className="sticky top-0 bg-gray-50">
                       <tr>
@@ -458,7 +459,7 @@ const PrintedVoucherReport: React.FC = () => {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TableScroll>
               </section>
 
               {/* Order by order */}
@@ -470,7 +471,7 @@ const PrintedVoucherReport: React.FC = () => {
                     {data!.rows_truncated ? ' shown — narrow the range to list the rest' : ''}
                   </span>
                 </h2>
-                <div className="overflow-x-auto">
+                <TableScroll>
                   <table className="min-w-full">
                     <thead className="bg-gray-50">
                       <tr>
@@ -518,7 +519,7 @@ const PrintedVoucherReport: React.FC = () => {
                       ))}
                     </tbody>
                   </table>
-                </div>
+                </TableScroll>
                 {totalPages > 1 && (
                   <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3 text-[13px] text-gray-600">
                     <span>

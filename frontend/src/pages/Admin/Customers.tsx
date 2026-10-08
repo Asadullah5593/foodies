@@ -14,6 +14,7 @@ import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import { useViewport } from '../../hooks/useViewport';
 import { rangeChipLabel } from '../../utils/rangeChipLabel';
+import TableScroll from '../../components/TableScroll';
 import {
   CUSTOMER_SOURCES,
   CUSTOMER_SOURCE_BADGE,
@@ -59,6 +60,11 @@ type Customer = CustomerRow;
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const DEFAULT_TABLE_PAGE_SIZE = 25;
+
+/** Column names, for the phone sort control and its chip. */
+const SORT_LABEL: Record<SortKey, string> = {
+  name: 'Customer', points: 'Points', completed: 'Completed', cancelled: 'Cancelled', spent: 'Spent', last_order: 'Last order',
+};
 
 /** The two-way arrow in a sortable heading; the lit half is the current direction. */
 const SortIcon: React.FC<{ state: 'none' | 'asc' | 'desc' }> = ({ state }) => (
@@ -118,7 +124,7 @@ const Customers: React.FC = () => {
   // `orders:view:no-totals` takes money aggregates away; the server sends no
   // spend figure to such an account, so there is nothing to show or filter on.
   const hideTotals = useHasRestriction(NO_TOTALS_PERMISSION);
-  const { isDesktop } = useViewport();
+  const { isDesktop, isPhone } = useViewport();
 
   // Filters and sort live in the URL, so a narrowed view can be shared.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -427,7 +433,7 @@ const Customers: React.FC = () => {
 
   const optionLabel = (opts: Array<{ value: string; label: string }>, v: string) => opts.find((o) => o.value === v)?.label ?? v;
   const lowerFirst = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
-  const customerChips: FilterChip[] = [
+  const baseChips: FilterChip[] = [
     ...(filters.source ? [{ key: 'source', label: customerSourceLabel(filters.source), onRemove: () => setFilter('source', '') }] : []),
     ...(filters.brand
       ? [{ key: 'brand', label: brandOptions.find((b) => String(b.id) === filters.brand)?.name ?? 'Brand', onRemove: () => setFilter('brand', '') }]
@@ -461,12 +467,141 @@ const Customers: React.FC = () => {
         }]
       : []),
   ];
+  // Phones have no table header to sort by, so the sheet carries the sort.
+  const sortField = (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2.5">
+      <select
+        aria-label="Sort by"
+        value={sortKey}
+        onChange={(e) => {
+          const k = e.target.value as SortKey | '';
+          setParams(k ? { sort: k, dir: defaultSortDir(k) } : { sort: '', dir: '' });
+        }}
+        className={`${cu.input} cursor-pointer`}
+      >
+        <option value="">Default order</option>
+        {SORT_KEYS.filter((k) => k !== 'spent' || !hideTotals).map((k) => (
+          <option key={k} value={k}>{SORT_LABEL[k]}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        disabled={!sortKey}
+        onClick={() => setParams({ sort: sortKey, dir: sortDir === 'asc' ? 'desc' : 'asc' })}
+        className="min-h-[44px] whitespace-nowrap rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-3.5 text-[13px] font-bold text-[#374151] disabled:opacity-40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+      >
+        {sortDir === 'asc' ? '↑ Ascending' : '↓ Descending'}
+      </button>
+    </div>
+  );
+  const customerChips: FilterChip[] = [
+    ...baseChips,
+    ...(sortKey
+      ? [{ key: 'sort', label: `Sorted by ${SORT_LABEL[sortKey].toLowerCase()} ${sortDir === 'asc' ? '↑' : '↓'}`, onRemove: () => setParams({ sort: '', dir: '' }) }]
+      : []),
+  ];
   const customerFields: FilterField[] = [
     { key: 'source', label: 'Source', node: sourceTabs },
     { key: 'brand', label: 'Brand', node: brandSelect },
     { key: 'branch', label: 'Branch', node: branchSelect },
     { key: 'more', label: 'More filters', node: <div className="grid grid-cols-2 gap-x-3 gap-y-3">{moreFilterItems}</div> },
+    ...(isPhone ? [{ key: 'sort', label: 'Sort by', node: sortField }] : []),
   ];
+
+  // Phones: one card per customer, carrying every column the table has.
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+  const cardList = (
+    <ul className="space-y-2.5" data-testid="customer-cards">
+      {pageRows.map((c) => {
+        const stats = c.orderStats;
+        const completed = stats?.completed_count ?? 0;
+        const cancelled = stats?.cancelled_count ?? 0;
+        const label = c.name?.trim() || c.phone;
+        const status = customerStatus(stats?.last_order_at);
+        return (
+          <li
+            key={c.id}
+            data-testid={`customer-card-${c.id}`}
+            onClick={() => navigate(profilePath(c))}
+            className={`${cu.card} cursor-pointer rounded-[14px] px-4 pb-3.5 pt-3`}
+          >
+            <div className="flex items-start gap-3">
+              <span aria-hidden="true" className="mt-0.5 flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-[#F1F2F5] text-[13px] font-extrabold text-[#5A6473] dark:bg-slate-700 dark:text-slate-300">
+                {nameInitials(c.name, 1)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <Link
+                  to={profilePath(c)}
+                  onClick={stop}
+                  title={c.name ?? undefined}
+                  className={`block truncate text-[15px] font-bold ${c.name?.trim() ? cu.strong : cu.muted}`}
+                >
+                  {c.name?.trim() || 'No name'}
+                </Link>
+                <div className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] tabular-nums ${cu.soft}`}>
+                  <span>{c.phone}</span>
+                  <span
+                    className={`inline-block whitespace-nowrap rounded-[7px] px-[9px] py-0.5 text-[11px] font-bold ${
+                      CUSTOMER_SOURCE_BADGE[String(c.source ?? 'pos')] ?? CUSTOMER_SOURCE_BADGE.pos
+                    }`}
+                  >
+                    {customerSourceLabel(c.source ?? 'pos')}
+                  </span>
+                </div>
+              </div>
+              {/* Using the menu must not also open the profile. */}
+              <div className="flex-none" onClick={stop}>
+                <RowActionsMenu actions={actionsFor(c)} ariaLabel={`Actions for ${label}`} />
+              </div>
+            </div>
+            {/* Figures as plain columns: the spend takes the width that is left, so it never truncates. */}
+            <dl className="mt-3 grid grid-cols-[auto_auto_minmax(0,1fr)] gap-x-4 border-t border-[#F1F2F5] pt-3 dark:border-slate-700">
+              <div>
+                <dt className={cu.label}>Completed</dt>
+                <dd className={`mt-0.5 text-[15px] font-bold tabular-nums ${completed > 0 ? cu.strong : cu.faint}`}>{completed}</dd>
+              </div>
+              <div>
+                <dt className={cu.label}>Cancelled</dt>
+                <dd className={`mt-0.5 text-[15px] tabular-nums ${cancelled > 0 ? `font-bold ${cu.danger}` : cu.faint}`}>{cancelled}</dd>
+              </div>
+              {!hideTotals && (
+                <div className="min-w-0">
+                  <dt className={cu.label}>Spent</dt>
+                  <dd className={`mt-0.5 whitespace-nowrap text-[14px] font-bold tabular-nums ${stats?.spent != null && completed > 0 ? cu.strong : cu.faint}`}>
+                    {stats?.spent != null && completed > 0 ? formatRs(stats.spent) : '—'}
+                  </dd>
+                </div>
+              )}
+            </dl>
+            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
+              <div onClick={stop}>
+                <dt className={cu.label}>Points</dt>
+                <dd className="mt-1"><LoyaltyPointsCell wallets={c.loyaltyWallets} /></dd>
+              </div>
+              <div>
+                <dt className={cu.label}>Last order</dt>
+                <dd className={`mt-1 text-[13px] font-semibold ${stats?.last_order_at ? cu.text : STATUS_TEXT.never}`}>
+                  {stats?.last_order_at ? formatDay(stats.last_order_at) : 'Never'}
+                  {stats?.last_order_at && (
+                    <span className={`ml-1.5 text-[11.5px] font-bold ${STATUS_TEXT[status.key]}`}>{daysAgoLabel(stats.last_order_at)}</span>
+                  )}
+                </dd>
+              </div>
+              {/* Tapping "+N more" must not open the profile. */}
+              <div className="min-w-0" onClick={stop}>
+                <dt className={cu.label}>Brands</dt>
+                <dd className="mt-1"><NameList items={c.brands} noun="brand" /></dd>
+              </div>
+              <div className="min-w-0" onClick={stop}>
+                <dt className={cu.label}>Branches</dt>
+                <dd className="mt-1"><NameList items={c.branches} noun="branch" /></dd>
+              </div>
+            </dl>
+          </li>
+        );
+      })}
+    </ul>
+  );
 
   return (
     <div className={cu.page}>
@@ -576,7 +711,8 @@ const Customers: React.FC = () => {
         <div className={`${cu.card} rounded-[16px] p-12 text-center text-[14px] ${cu.muted}`}>No customers match these filters.</div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-[16px] border border-[#ECEDF0] bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
+          {isPhone ? cardList : (
+          <TableScroll className="overflow-x-auto rounded-[16px] border border-[#ECEDF0] bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
             <table className="min-w-full border-collapse">
               <thead>
                 <tr className={cu.headRow}>
@@ -675,7 +811,8 @@ const Customers: React.FC = () => {
                 })}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
+          )}
           <PaginationBar
             totalCount={filtered.length}
             page={page}

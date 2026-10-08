@@ -314,7 +314,7 @@ const Discounts: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Discounts</h1>
         {canCreatePerm && <Button onClick={() => {
@@ -374,7 +374,7 @@ const Discounts: React.FC = () => {
             </p>
           </div>
 
-          <div className="mb-5 grid grid-cols-2 gap-4">
+          <div className="mb-5 grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className={offerLabel}>Type <span className="text-red-500">*</span></label>
               <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as 'flat' | 'percentage' | 'buy_x_get_y' })} className={offerInput}>
@@ -428,7 +428,7 @@ const Discounts: React.FC = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className={offerLabel}>Min order amount</label>
               <input type="number" step="0.01" min="0" value={formData.min_order_amount} onChange={(e) => setFormData({ ...formData, min_order_amount: e.target.value })} placeholder="No minimum" className={offerInput} />

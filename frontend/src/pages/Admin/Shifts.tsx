@@ -798,7 +798,7 @@ const Shifts: React.FC = () => {
   ];
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       {/* Header */}
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -815,11 +815,12 @@ const Shifts: React.FC = () => {
       </div>
 
       {/* Summary strip */}
-      <div className="mb-[22px] grid grid-cols-1 gap-[14px] sm:grid-cols-2 xl:grid-cols-4">
+      {/* Phones: each stat is one compact row (icon · label · value, note under the label). */}
+      <div className="mb-[22px] grid grid-cols-1 gap-[14px] sm:grid-cols-2 xl:grid-cols-4 max-sm:gap-2.5">
         {stats.map((s) => (
           <div
             key={s.label}
-            className="rounded-[14px] border border-[#ECEDF0] bg-white px-[17px] py-[15px] shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800"
+            className="rounded-[14px] border border-[#ECEDF0] bg-white px-[17px] py-[15px] shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800 max-sm:grid max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:items-center max-sm:gap-x-3 max-sm:px-4 max-sm:py-3"
           >
             <div className="flex items-center gap-2">
               <span
@@ -830,8 +831,8 @@ const Shifts: React.FC = () => {
               </span>
               <span className="text-[11.5px] font-bold uppercase tracking-[.05em] text-[#9AA1AD]">{s.label}</span>
             </div>
-            <div className="mt-[9px] text-[22px] font-black tabular-nums text-[#1A1D24] dark:text-slate-100">{s.value}</div>
-            <div className="mt-px text-xs text-[#9AA1AD]">{s.sub}</div>
+            <div className="mt-[9px] text-[22px] font-black tabular-nums text-[#1A1D24] dark:text-slate-100 max-sm:col-start-2 max-sm:row-start-1 max-sm:row-span-2 max-sm:mt-0 max-sm:text-right max-sm:text-[18px]">{s.value}</div>
+            <div className="mt-px text-xs text-[#9AA1AD] max-sm:col-start-1 max-sm:mt-0 max-sm:pl-9">{s.sub}</div>
           </div>
         ))}
       </div>
@@ -998,12 +999,12 @@ const Shifts: React.FC = () => {
       {detailShiftId != null && (
         <div
           onClick={() => setDetailShiftId(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-[30px]"
+          className="fixed inset-0 z-50 flex items-center justify-center p-[30px] max-sm:items-end max-sm:p-0"
           style={{ background: 'rgba(20,17,18,.55)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="flex max-h-[92vh] w-[660px] max-w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_40px_90px_rgba(0,0,0,.5)] dark:bg-slate-800"
+            className="flex max-h-[92vh] w-[660px] max-w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_40px_90px_rgba(0,0,0,.5)] dark:bg-slate-800 max-lg:max-h-[92dvh] max-sm:rounded-b-none"
           >
             <div className="h-1.5 flex-none" style={{ background: 'linear-gradient(90deg,#EF4444,#DC2A2A 55%,#F43F5E)' }} />
             {!detail ? (
@@ -1463,13 +1464,13 @@ const Shifts: React.FC = () => {
       {showCloseForm && selectedShift && (
         <div
           onClick={() => setShowCloseForm(false)}
-          className="fixed inset-0 z-[60] flex items-center justify-center p-[30px]"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-[30px] max-sm:items-end max-sm:p-0"
           style={{ background: 'rgba(20,17,18,.55)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' }}
         >
           <form
             onSubmit={handleCloseShift}
             onClick={(e) => e.stopPropagation()}
-            className="flex max-h-[92vh] w-[720px] max-w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_40px_90px_rgba(0,0,0,.5)] dark:bg-slate-800"
+            className="flex max-h-[92vh] w-[720px] max-w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_40px_90px_rgba(0,0,0,.5)] dark:bg-slate-800 max-lg:max-h-[92dvh] max-sm:rounded-b-none"
           >
             <div className="h-1.5 flex-none" style={{ background: 'linear-gradient(90deg,#EF4444,#DC2A2A 55%,#F43F5E)' }} />
             {/* Header */}

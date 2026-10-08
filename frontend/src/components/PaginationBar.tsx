@@ -64,7 +64,7 @@ const PaginationBar: React.FC<PaginationBarProps> = ({
             value={pageSize}
             onChange={(e) => onPageSizeChange!(Number(e.target.value))}
             aria-label="Entries per page"
-            className="rounded-lg border border-foodies-border bg-white px-2 py-1.5 text-sm text-foodies-textPrimary outline-none cursor-pointer focus:border-red-500 dark:bg-slate-700 dark:text-slate-100"
+            className="rounded-lg border border-foodies-border bg-white px-2 py-1.5 text-sm text-foodies-textPrimary outline-none cursor-pointer focus:border-red-500 dark:bg-slate-700 dark:text-slate-100 max-lg:min-h-[44px]"
           >
             {pageSizeOptions!.map((n) => (
               <option key={n} value={n}>

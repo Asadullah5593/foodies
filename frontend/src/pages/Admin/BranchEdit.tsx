@@ -367,7 +367,7 @@ const BranchEdit: React.FC = () => {
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
   if (!isNew && (branchId == null || isNaN(branchId))) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
         <p className="text-gray-600 dark:text-slate-400">Invalid branch ID.</p>
         <Link to="/admin/branches" className="text-red-600 dark:text-red-400 hover:underline mt-2 inline-block">← Back to Branches</Link>
       </div>
@@ -378,7 +378,7 @@ const BranchEdit: React.FC = () => {
   }
   if (!isNew && branchId && !branch && !loadingBranch) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
         <p className="text-gray-600 dark:text-slate-400">Branch not found.</p>
         <Link to="/admin/branches" className="text-red-600 dark:text-red-400 hover:underline mt-2 inline-block">← Back to Branches</Link>
       </div>
@@ -386,7 +386,7 @@ const BranchEdit: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 max-w-5xl mx-auto">
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <Link to="/admin/branches" className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 mb-2 inline-block">← Back to Branches</Link>
@@ -536,9 +536,9 @@ const BranchEdit: React.FC = () => {
             <div>
               <span className={labelClass}>Supported order types</span>
               <div className="flex flex-wrap gap-4 pt-1">
-                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.supports_dine_in} onChange={(e) => setFormData({ ...formData, supports_dine_in: e.target.checked })} /> Dine-in</label>
-                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.supports_takeaway} onChange={(e) => setFormData({ ...formData, supports_takeaway: e.target.checked })} /> Takeaway</label>
-                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.supports_delivery} onChange={(e) => setFormData({ ...formData, supports_delivery: e.target.checked })} /> Delivery</label>
+                <label className="flex items-center gap-2 cursor-pointer max-lg:min-h-[44px]"><input type="checkbox" checked={formData.supports_dine_in} onChange={(e) => setFormData({ ...formData, supports_dine_in: e.target.checked })} /> Dine-in</label>
+                <label className="flex items-center gap-2 cursor-pointer max-lg:min-h-[44px]"><input type="checkbox" checked={formData.supports_takeaway} onChange={(e) => setFormData({ ...formData, supports_takeaway: e.target.checked })} /> Takeaway</label>
+                <label className="flex items-center gap-2 cursor-pointer max-lg:min-h-[44px]"><input type="checkbox" checked={formData.supports_delivery} onChange={(e) => setFormData({ ...formData, supports_delivery: e.target.checked })} /> Delivery</label>
               </div>
             </div>
             <div>
@@ -560,7 +560,7 @@ const BranchEdit: React.FC = () => {
               </p>
             </div>
             <div className="sm:col-span-2">
-              <label className="flex items-start gap-2 cursor-pointer max-w-xl">
+              <label className="flex items-start gap-2 cursor-pointer max-w-xl max-lg:py-1.5">
                 <input
                   type="checkbox"
                   checked={formData.auto_dispatch_enabled}
@@ -584,7 +584,7 @@ const BranchEdit: React.FC = () => {
           <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-600 pb-2 mb-4">Status</h2>
           <div className="space-y-4">
             <div className="flex flex-wrap items-start gap-6">
-              <label className="flex items-start gap-2 cursor-pointer max-w-md">
+              <label className="flex items-start gap-2 cursor-pointer max-w-md max-lg:py-1.5">
                 <input type="checkbox" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} className="mt-1 rounded border-gray-300 dark:border-slate-500 text-red-600 focus:ring-red-500" />
                 <span>
                   <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Branch active</span>
@@ -612,7 +612,7 @@ const BranchEdit: React.FC = () => {
             )}
           </div>
           <div className="space-y-4">
-            <label className="flex items-start gap-2 cursor-pointer max-w-2xl">
+            <label className="flex items-start gap-2 cursor-pointer max-w-2xl max-lg:py-1.5">
               <input
                 type="checkbox"
                 checked={formData.fbr_enabled}

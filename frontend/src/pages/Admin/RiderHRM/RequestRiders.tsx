@@ -90,7 +90,7 @@ const RequestRiders: React.FC = () => {
 
   if (!isBrandAdmin) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
         <Card className="dark:bg-slate-800 dark:border-slate-700">
           <p className="text-sm text-gray-600 dark:text-slate-300">
             Requesting riders is for brand admins. Manage the shared pool from{' '}
@@ -102,7 +102,7 @@ const RequestRiders: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 space-y-6">
       <RiderHrmHeader
         title="Request Riders"
         subtitle="Browse Foodies-pool riders and request them for your brand. The owner approves before a rider becomes available to you."

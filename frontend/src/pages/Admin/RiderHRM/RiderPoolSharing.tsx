@@ -97,7 +97,7 @@ const RiderPoolSharing: React.FC = () => {
 
   if (!isOwnerGM) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
         <Card className="dark:bg-slate-800 dark:border-slate-700">
           <p className="text-sm text-gray-600 dark:text-slate-300">
             Only the owner / general manager can manage the rider pool. Brand
@@ -115,7 +115,7 @@ const RiderPoolSharing: React.FC = () => {
   const unlinkedCount = (riders ?? []).filter((r) => !r.is_dispatchable).length;
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 space-y-6">
       <RiderHrmHeader
         title="Rider Pool & Sharing"
         subtitle="Link riders to brands and review brands' requests to borrow Foodies-pool riders. A rider must be linked to a brand to be dispatchable for that brand's orders."

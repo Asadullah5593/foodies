@@ -12,6 +12,7 @@ import { isEntityInactive } from '../../utils/entityStatus';
 import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import { useViewport } from '../../hooks/useViewport';
 import { rangeChipLabel } from '../../utils/rangeChipLabel';
+import TableScroll from '../../components/TableScroll';
 
 /**
  * The discount stages the pricing engine runs, each carrying this row's
@@ -1033,7 +1034,7 @@ const ProductSales: React.FC = () => {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        <TableScroll>
           <div className="min-w-[1206px]">
             <div
               style={{ gridTemplateColumns: GRID }}
@@ -1259,7 +1260,7 @@ const ProductSales: React.FC = () => {
               </span>
             </div>
           </div>
-        </div>
+        </TableScroll>
 
         {/* Pagination — the totals strip above covers the whole selection, not
             just this page, so the two are deliberately different scopes. */}

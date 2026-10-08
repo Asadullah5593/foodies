@@ -7,7 +7,8 @@
 const label = 'text-[10.5px] font-bold uppercase tracking-[.06em] text-[#9AA1AD] dark:text-slate-400';
 
 export const cu = {
-  page: 'w-full px-4 pb-16 pt-6 sm:px-6 lg:px-8',
+  // Phones: the shell's main already pads 16px, so the page adds none (max-lg loses to sm: on tablets).
+  page: 'w-full px-4 pb-16 pt-6 sm:px-6 lg:px-8 max-lg:px-0',
   card: 'border border-[#ECEDF0] bg-white shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800',
   strong: 'text-[#20242C] dark:text-slate-100',
   text: 'text-[#374151] dark:text-slate-200',

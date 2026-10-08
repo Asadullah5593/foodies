@@ -116,7 +116,8 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
   return (
     <div ref={setNodeRef} style={style}>
       <Card hover>
-        <div className="flex justify-between items-start gap-2">
+        {/* Below lg the action buttons drop to their own full-width line, so the title keeps its width. */}
+        <div className="flex justify-between items-start gap-2 max-lg:flex-wrap">
           <span
             {...attributes}
             {...(reorderDisabled ? {} : listeners)}
@@ -138,7 +139,7 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
               </div>
             )}
           </div>
-          <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
+          <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end max-lg:basis-full max-lg:justify-start">
             {canEdit && <Button size="small" variant="edit" onClick={onLinkMenuItems}>Link to menu items</Button>}
             {canCreate && <Button size="small" variant="secondary" onClick={() => onAddModifier(group.id)}>Add modifier</Button>}
             {canEdit && <Button size="small" variant="edit" onClick={onEditGroup}>Edit group</Button>}
@@ -581,10 +582,10 @@ const Modifiers: React.FC = () => {
   ];
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Modifiers</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 max-sm:flex-wrap">
           {canCreate && <Button variant="secondary" onClick={() => setShowModifierForm(true)}>
             + Add Modifier
           </Button>}
@@ -662,7 +663,7 @@ const Modifiers: React.FC = () => {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Min select</label>
               <input
@@ -762,7 +763,7 @@ const Modifiers: React.FC = () => {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Min select</label>
                 <input

@@ -126,7 +126,7 @@ const Tenants: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Tenants</h1>
         {isSuperAdmin && (
@@ -205,7 +205,7 @@ const Tenants: React.FC = () => {
               </div>
             </>
           )}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Default tax rate (0–1)</label>
               <input

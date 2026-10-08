@@ -343,7 +343,7 @@ const BankCards: React.FC = () => {
             <label className={offerLabel}>Card name <span className="text-red-500">*</span></label>
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={offerInput} placeholder="HBL Premium Debit" autoFocus />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
             <div>
               <label className={offerLabel}>Bank</label>
               <input value={form.bank} onChange={(e) => setForm({ ...form, bank: e.target.value })} className={offerInput} placeholder="HBL" />
@@ -384,7 +384,7 @@ const BankCards: React.FC = () => {
             <p className="mb-3 mt-0.5 text-[12px] leading-snug text-gray-400">
               What the customer gets for paying with this card. Leave the value empty for a card you only want to record at the till.
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
               <div>
                 <label className={offerLabel}>Type</label>
                 <select value={form.discount_type} onChange={(e) => setForm({ ...form, discount_type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
@@ -397,7 +397,7 @@ const BankCards: React.FC = () => {
                 <input type="number" min={0} value={form.discount_value} onChange={(e) => setForm({ ...form, discount_value: e.target.value === '' ? '' : Number(e.target.value) })} className={offerInput} placeholder="none" />
               </div>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-2 max-sm:grid-cols-1 gap-3">
               <div>
                 <label className={offerLabel}>Min order (Rs)</label>
                 <input type="number" min={0} value={form.min_order_amount} onChange={(e) => setForm({ ...form, min_order_amount: e.target.value === '' ? '' : Number(e.target.value) })} className={offerInput} placeholder="none" />

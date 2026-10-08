@@ -824,10 +824,10 @@ const MenuItems: React.FC = () => {
   ];
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Menu Items</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 max-sm:flex-wrap">
           {canCreateCategory && <Button variant="secondary" onClick={() => setShowCategoryForm(true)}>+ New Category</Button>}
           {canEdit && (
             <Button
@@ -896,7 +896,7 @@ const MenuItems: React.FC = () => {
                 ))}
               </select>
             </div>
-            <div className="grid grid-cols-3 gap-2 mb-2">
+            <div className="grid grid-cols-3 max-sm:grid-cols-1 gap-2 mb-2">
               <input
                 type="text"
                 value={categoryFormData.name}
@@ -1234,7 +1234,7 @@ const MenuItems: React.FC = () => {
                 {editGalleryUploading && <p className="text-xs text-amber-600 mt-2 font-medium">Uploading gallery…</p>}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Price *</label>
                 <input
@@ -1259,7 +1259,7 @@ const MenuItems: React.FC = () => {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Allergens (comma-separated)</label>
                 <input type="text" value={editFormData.allergens}
@@ -1283,7 +1283,7 @@ const MenuItems: React.FC = () => {
             </div>
             <div className="rounded-lg border border-gray-200 p-3 space-y-2">
               <p className="text-xs text-gray-500">Available only at certain times (branch timezone) — leave blank for all day.</p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
                 <input type="time" value={editFormData.available_time_start}
                   onChange={(e) => setEditFormData((f) => ({ ...f, available_time_start: e.target.value }))}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
@@ -1592,7 +1592,7 @@ const MenuItems: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Price: *</label>
               <input
@@ -1631,7 +1631,7 @@ const MenuItems: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Allergens (comma-separated)</label>
               <input
@@ -1655,7 +1655,7 @@ const MenuItems: React.FC = () => {
           </div>
           <div className="rounded-lg border border-gray-200 p-3 space-y-2">
             <p className="text-xs text-gray-500">Available only at certain times (branch timezone) — leave blank for all day. Used for lunch-only items/deals.</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
               <input type="time" value={formData.available_time_start}
                 onChange={(e) => setFormData({ ...formData, available_time_start: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg" />

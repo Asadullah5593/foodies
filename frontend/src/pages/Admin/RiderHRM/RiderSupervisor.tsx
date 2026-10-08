@@ -17,6 +17,7 @@ import { adminService } from '../../../services/api/adminService';
 import { usePaymentRequiredPrompt } from '../../../components/PaymentRequiredModal';
 import { formatTripDuration } from '../../../utils/tripTime';
 import RiderHrmHeader from './RiderHrmHeader';
+import TableScroll from '../../../components/TableScroll';
 import {
   riderSupervisorService,
   SupervisorDeliveryOrder,
@@ -440,7 +441,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
           No delivery orders in this view.
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        <TableScroll>
           <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
             <thead>
               <tr>
@@ -520,7 +521,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
               ))}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       )}
 
       {total > PAGE_SIZE ? (
@@ -667,7 +668,7 @@ const RidersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({ filters }) 
           No riders in this view.
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        <TableScroll>
           <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
             <thead>
               <tr>
@@ -714,7 +715,7 @@ const RidersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({ filters }) 
               })}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       )}
     </Card>
   );
@@ -740,7 +741,7 @@ const RiderSupervisor: React.FC = () => {
   const filterOptions = filters ?? EMPTY_FILTERS;
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 space-y-6">
       <RiderHrmHeader
         title="Rider Supervisor"
         subtitle="Read-only oversight — recent delivery orders and the live rider roster with attendance and base salary. Salary edits and user accounts are managed on the admin side."

@@ -141,3 +141,20 @@ html.dark .swal2-popup .swal2-content {
 .dark ::-webkit-scrollbar-track { background: #1e293b; }
 .dark ::-webkit-scrollbar-thumb { background: #475569; }
 .dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* Phones only (same query as Tailwind's max-sm): iOS Safari zooms the whole page into a text
+   field whose text is under 16px. Text fields, selects and textareas get 16px unless a class on
+   the element already makes them 16px or larger (listed here: every such class the app uses). */
+@media not all and (min-width: 640px) {
+  :is(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='button'], [type='submit'], [type='reset'], [type='image'], [type='hidden']),
+    select,
+    textarea
+  ):not(
+    .text-base, .text-lg, .text-xl, .text-2xl, .text-3xl, .text-4xl, .text-5xl, .text-6xl,
+    .text-\[16px\], .text-\[17px\], .text-\[18px\], .text-\[19px\], .text-\[20px\], .text-\[21px\], .text-\[22px\],
+    .text-\[23px\], .text-\[25px\], .text-\[26px\], .text-\[27px\], .text-\[28px\]
+  ) {
+    font-size: 16px;
+  }
+}

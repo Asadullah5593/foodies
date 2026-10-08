@@ -16,6 +16,7 @@ import Loader from '../../../components/Loader';
 import Modal from '../../../components/Modal';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
+import TableScroll from '../../../components/TableScroll';
 
 const EVENT_LABEL: Record<string, string> = {
   receive: 'Received (GRN)',
@@ -284,7 +285,7 @@ const OnHandInventory: React.FC = () => {
         </div>
 
         {loading ? <div className="p-10"><Loader /></div> : (
-          <div className="overflow-x-auto">
+          <TableScroll>
             {/* header row */}
             <div className="grid items-end px-4 py-3.5 border-b border-slate-100 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-900/40 min-w-[760px]" style={{ gridTemplateColumns: gridTemplate }}>
               <div className="text-[12px] font-semibold uppercase tracking-wide text-slate-400">Item</div>
@@ -344,7 +345,7 @@ const OnHandInventory: React.FC = () => {
               </div>
               <span>{PAGE_SIZE} per page</span>
             </div>
-          </div>
+          </TableScroll>
         )}
       </div>
 

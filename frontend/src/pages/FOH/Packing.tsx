@@ -443,7 +443,7 @@ const FOHPacking: React.FC = () => {
   };
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 text-gray-900 dark:text-gray-100">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 text-gray-900 dark:text-gray-100">
       <div className="w-full">
         <div ref={pageTopRef} className="flex justify-between items-center mb-6 flex-wrap gap-4 scroll-mt-6">
           <div>

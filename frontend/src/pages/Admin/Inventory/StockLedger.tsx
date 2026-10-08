@@ -10,6 +10,7 @@ import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { recordBeacon } from '../../../utils/activityBeacon';
 import { useResultsRefreshing } from '../../../components/useResultsRefreshing';
+import TableScroll from '../../../components/TableScroll';
 
 const card = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl';
 const fieldBox = 'flex items-center gap-2 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm';
@@ -191,7 +192,7 @@ const StockLedger: React.FC = () => {
 
         {loading ? <div className="p-10"><Loader /></div> : (
           <FetchingOverlay active={ledgerRefreshing} label="Updating movements…" className="rounded-b-xl">
-          <div className="overflow-x-auto">
+          <TableScroll>
             <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1020px]" style={{ gridTemplateColumns: '150px minmax(180px,1.3fr) 130px 140px minmax(150px,1fr) 110px 120px 110px' }}>
               <div>Time</div><div>Type</div><div>Item</div><div>Location</div><div>Lot / Expiry</div><div className="text-right pr-2">Qty Δ</div><div className="pl-3">Reference</div><div>By</div>
             </div>
@@ -252,7 +253,7 @@ const StockLedger: React.FC = () => {
                 <button disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)} className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700">Next</button>
               </div>
             </div>
-          </div>
+          </TableScroll>
           </FetchingOverlay>
         )}
       </div>

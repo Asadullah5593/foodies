@@ -258,7 +258,7 @@ const CustomerDisplay: React.FC = () => {
       </AnimatePresence>
 
       {/* Compact customer-facing header: no branch filter */}
-      <header className="flex-shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between bg-white">
+      <header className="flex-shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between bg-white max-sm:flex-wrap max-sm:gap-y-3">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -278,7 +278,7 @@ const CustomerDisplay: React.FC = () => {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+        <div className="flex items-center gap-2 flex-wrap justify-end max-sm:w-full max-sm:justify-start">
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
             <label className="text-xs text-gray-600 font-medium">From</label>
             <input

@@ -74,7 +74,7 @@ const RiderAttendance: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 space-y-6">
       <RiderHrmHeader
         title="Attendance & On-Duty"
         subtitle="Check riders in at a branch and monitor live on-duty presence. A checked-in, un-paused rider with a fresh heartbeat is required for automatic order assignment."

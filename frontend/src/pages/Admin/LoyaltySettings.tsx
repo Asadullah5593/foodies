@@ -96,7 +96,7 @@ const LoyaltySettings: React.FC = () => {
 
   if (effectiveBrandId == null && tenantId == null) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 max-w-7xl mx-auto">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 max-w-7xl mx-auto">
         <Card className="p-6">
           <p className="text-gray-600 dark:text-slate-400">You need a tenant context to manage loyalty settings.</p>
         </Card>
@@ -110,7 +110,7 @@ const LoyaltySettings: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 max-w-7xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 max-w-7xl mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Reward Point Settings</h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Configure how customers earn and redeem reward points for each brand. Each brand runs its own program.</p>

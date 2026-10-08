@@ -162,7 +162,7 @@ const Coupons: React.FC = () => {
   if (isLoading) return <Loader fullScreen text="Loading coupons..." />;
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Coupons</h1>
@@ -197,7 +197,7 @@ const Coupons: React.FC = () => {
         }
       >
         <div className="flex-1 overflow-y-auto px-7 py-6">
-          <div className="mb-5 grid grid-cols-2 gap-4">
+          <div className="mb-5 grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className={offerLabel}>Name <span className="text-red-500">*</span></label>
               <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Rs 100 off — all" className={offerInput} />
@@ -211,7 +211,7 @@ const Coupons: React.FC = () => {
             </div>
           </div>
 
-          <div className="mb-6 grid grid-cols-3 gap-4">
+          <div className="mb-6 grid grid-cols-3 max-sm:grid-cols-1 gap-4">
             <div>
               <label className={offerLabel}>Type</label>
               <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
@@ -228,7 +228,7 @@ const Coupons: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className={offerLabel}>Per-customer limit</label>
               <input type="number" min={1} value={form.per_customer_limit} onChange={(e) => setForm({ ...form, per_customer_limit: e.target.value === '' ? '' : Number(e.target.value) })} placeholder="unlimited" className={offerInput} />
@@ -399,7 +399,7 @@ const Coupons: React.FC = () => {
       <Modal isOpen={reportFor != null} onClose={() => setReportFor(null)} title={`Usage — ${reportFor?.name ?? ''}`} size="large">
         {report ? (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-3 max-sm:grid-cols-1 gap-3">
               <div className="rounded-xl bg-green-50 dark:bg-slate-800 p-4 text-center"><div className="text-2xl font-bold text-green-700">{report.total_redemptions ?? 0}</div><div className="text-xs text-gray-500">Redemptions</div></div>
               <div className="rounded-xl bg-blue-50 dark:bg-slate-800 p-4 text-center"><div className="text-2xl font-bold text-blue-700">Rs {report.total_value ?? 0}</div><div className="text-xs text-gray-500">Value given</div></div>
               <div className="rounded-xl bg-amber-50 dark:bg-slate-800 p-4 text-center"><div className="text-2xl font-bold text-amber-700">{report.reversed ?? 0}</div><div className="text-xs text-gray-500">Reversed</div></div>

@@ -182,7 +182,7 @@ const RoleForm: React.FC = () => {
 
   if (isEdit && (roleError || !role)) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
         <p className="text-gray-500 dark:text-slate-400">Role not found.</p>
         <Button variant="outline" className="mt-4" onClick={() => navigate('/admin/roles')}>
           ← Back to Roles
@@ -194,7 +194,7 @@ const RoleForm: React.FC = () => {
   const pageTitle = isViewOnly ? 'View Role' : isEdit ? 'Edit Role' : 'Create Role';
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-wrap items-center gap-4 mb-6">
         <Button size="small" variant="outline" onClick={() => navigate('/admin/roles')}>
           ← Back
@@ -327,7 +327,7 @@ const RoleForm: React.FC = () => {
                   </h2>
                   <div>
                     {perms.length > 1 && (
-                      <label className="inline-flex items-center gap-3 cursor-pointer">
+                      <label className="inline-flex items-center gap-3 cursor-pointer max-lg:min-h-[44px]">
                         <input
                           type="checkbox"
                           checked={allSelected}
@@ -344,12 +344,13 @@ const RoleForm: React.FC = () => {
                       </label>
                     )}
                   </div>
-                  <div className="space-y-4">
+                  {/* Below lg each row is 44px tall, so the rows need no gap of their own. */}
+                  <div className="space-y-4 max-lg:space-y-0">
                     {nestPermissions(perms).map(({ permission: p, children }) => (
-                      <div key={p.id} className="space-y-3">
+                      <div key={p.id} className="space-y-3 max-lg:space-y-0">
                         <label
                           title={p.name}
-                          className="flex items-start gap-3 cursor-pointer"
+                          className="flex items-start gap-3 cursor-pointer max-lg:py-2.5"
                         >
                           <input
                             type="checkbox"
@@ -365,12 +366,12 @@ const RoleForm: React.FC = () => {
                         {/* Narrowing permissions read as qualifiers of the one
                             above them, so they sit indented beneath it. */}
                         {children.length > 0 && (
-                          <div className="ml-8 space-y-3 border-l border-gray-200 pl-4 dark:border-slate-700">
+                          <div className="ml-8 space-y-3 border-l border-gray-200 pl-4 dark:border-slate-700 max-lg:space-y-0">
                             {children.map((c) => (
                               <label
                                 key={c.id}
                                 title={c.name}
-                                className="flex items-start gap-3 cursor-pointer"
+                                className="flex items-start gap-3 cursor-pointer max-lg:py-2.5"
                               >
                                 <input
                                   type="checkbox"

@@ -102,11 +102,11 @@ const VendorsPage: React.FC = () => {
       <Modal isOpen={open} onClose={() => setOpen(false)} title={editId ? 'Edit vendor' : 'Add vendor'} size="medium">
         <div className="space-y-3">
           <div><div className="text-xs font-medium text-slate-500 mb-1">Name</div><input className={field} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Acme Foods Ltd." /></div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
             <div><div className="text-xs font-medium text-slate-500 mb-1">Type</div><SearchableSelect value={f.type} onChange={(v) => setF({ ...f, type: v })} options={TYPES} minWidth="w-full" className="w-full" /></div>
             {f.type === 'branch' && <div><div className="text-xs font-medium text-slate-500 mb-1">Linked branch</div><SearchableSelect value={f.linked_branch_id} onChange={(v) => setF({ ...f, linked_branch_id: v })} options={branchOptions} placeholder="Select branch…" searchPlaceholder="Search…" minWidth="w-full" className="w-full" /></div>}
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
             <div><div className="text-xs font-medium text-slate-500 mb-1">Email</div><input className={field} value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} placeholder="orders@acme.com" /></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Phone</div><input className={field} value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} placeholder="+1 555 0100" /></div>
           </div>

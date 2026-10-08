@@ -130,7 +130,7 @@ const WastagePage: React.FC = () => {
       <Modal isOpen={open} onClose={() => setOpen(false)} title="Record wastage" size="medium">
         <div className="space-y-3">
           <div><div className="text-xs font-medium text-slate-500 mb-1">Item</div><SearchableSelect value={f.item} onChange={(v) => setF({ ...f, item: v, uom: itemById.get(Number(v))?.baseUomId ? String(itemById.get(Number(v)).baseUomId) : '' })} options={itemOptions} placeholder="Select item…" searchPlaceholder="Search items…" minWidth="w-full" className="w-full" /></div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
             <div><div className="text-xs font-medium text-slate-500 mb-1">Quantity</div><input className={field} value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} placeholder="e.g. 3" /></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Unit</div><SearchableSelect value={f.uom} onChange={(v) => setF({ ...f, uom: v })} options={allowedUoms(selItem).map((u: any) => ({ value: String(u.id), label: u.code }))} placeholder="Unit…" minWidth="w-full" className="w-full" disabled={!selItem} /></div>
           </div>

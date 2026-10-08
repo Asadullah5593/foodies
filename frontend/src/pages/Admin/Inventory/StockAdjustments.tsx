@@ -9,6 +9,7 @@ import SearchableSelect from '../../../components/SearchableSelect';
 import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { useHasPermission } from '../../../hooks/useHasPermission';
+import TableScroll from '../../../components/TableScroll';
 
 const card = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl';
 const field = 'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400';
@@ -310,7 +311,7 @@ const StockAdjustments: React.FC = () => {
         </div>
 
         {loading ? <div className="p-10"><Loader /></div> : (
-          <div className="overflow-x-auto">
+          <TableScroll>
             <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[920px]" style={{ gridTemplateColumns: '40px minmax(200px,1.7fr) 116px minmax(150px,1.3fr) 120px 64px 84px 150px 180px' }}>
               <div>#</div><div>Reference</div><div>Type</div><div>Reason</div><div>Status</div><div className="text-right">Items</div><div className="text-right pr-3">Qty</div><div className="pl-3">Created</div><div className="text-right">Actions</div>
             </div>
@@ -353,7 +354,7 @@ const StockAdjustments: React.FC = () => {
                 <button disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)} className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-md disabled:opacity-40">›</button>
               </div>
             </div>
-          </div>
+          </TableScroll>
         )}
       </div>
 
@@ -368,7 +369,7 @@ const StockAdjustments: React.FC = () => {
             <div><div className="text-xs font-medium text-slate-500 mb-1">Quantity</div><input className={field} value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} placeholder="e.g. 2" /></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Unit</div>
               <SearchableSelect value={String(f.uom)} onChange={(v) => setF({ ...f, uom: v })} options={getItemAllowedUoms(selectedFormItem).map((u: any) => ({ value: String(u.id), label: u.code }))} placeholder="Unit…" minWidth="w-full" className="w-full" disabled={!selectedFormItem} /></div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-2">
               <div><div className="text-xs font-medium text-slate-500 mb-1">Lot {f.type === 'in' ? '(opt)' : '(IN only)'}</div><input className={field} value={f.lot} onChange={(e) => setF({ ...f, lot: e.target.value })} disabled={f.type !== 'in'} /></div>
               <div><div className="text-xs font-medium text-slate-500 mb-1">Expiry {f.type === 'in' ? '(req)' : '(IN only)'}</div><input type="date" className={field} value={f.expiry} onChange={(e) => setF({ ...f, expiry: e.target.value })} disabled={f.type !== 'in'} /></div>
             </div>
