@@ -9,6 +9,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
 import Card from '../../components/Card';
 import { singleToPrintVM } from '../../components/CustomerInvoiceModal';
 import { renderInvoiceHtml } from '../../invoices/renderInvoice';
@@ -373,6 +375,131 @@ const KDS: React.FC = () => {
     </motion.div>
   );
 
+  const dateInputCls =
+    'w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500';
+  const dateFromInput = (
+    <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={dateInputCls} aria-label="From date" />
+  );
+  const dateToInput = (
+    <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={dateInputCls} aria-label="To date" />
+  );
+  const branchSelect = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={branchId}
+      onChange={(v) => {
+        setBranchId(v);
+        setBrandId('');
+      }}
+      options={[
+        { value: '', label: 'Select branch' },
+        ...(branches ?? []).map((b: { id: number; name: string }) => ({
+          value: String(b.id),
+          label: b.name, inactive: isEntityInactive(b),
+        })),
+      ]}
+      placeholder="Select branch"
+    />
+  );
+  const brandSelect = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={brandId}
+      onChange={setBrandId}
+      options={[
+        { value: '', label: 'All brands' },
+        ...brands.map((b: { id: number; name: string }) => ({
+          value: String(b.id),
+          label: b.name, inactive: isEntityInactive(b),
+        })),
+      ]}
+      placeholder="All brands"
+    />
+  );
+  const statusSelect = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={statusFilter}
+      onChange={(v) => {
+        setStatusFilter(v);
+        if (v === 'completed') setShowCompleted(true);
+        if (v === 'ready') setShowReady(true);
+      }}
+      options={[
+        { value: '', label: 'All statuses' },
+        { value: 'placed', label: 'Placed' },
+        { value: 'accepted', label: 'Accepted' },
+        { value: 'preparing', label: 'Preparing' },
+        { value: 'ready', label: 'Ready' },
+        { value: 'completed', label: 'Completed' },
+      ]}
+      placeholder="All statuses"
+    />
+  );
+  const readyToggle = (
+    <button
+      type="button"
+      onClick={() => {
+        if (readyVisible) {
+          setShowReady(false);
+          // Otherwise the status filter would keep the section open and
+          // the button would appear to do nothing.
+          if (statusFilter === 'ready') setStatusFilter('');
+        } else {
+          setShowReady(true);
+        }
+      }}
+      className={[
+        'px-4 py-2 rounded-lg border text-sm font-medium transition-colors max-lg:min-h-[40px]',
+        readyVisible
+          ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-200'
+          : 'bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700',
+      ].join(' ')}
+      title="Ready orders leave the queue by default — they are packed in FOH"
+    >
+      {readyVisible ? 'Hide Ready' : hiddenReadyCount > 0 ? `Show Ready (${hiddenReadyCount})` : 'Show Ready'}
+    </button>
+  );
+  const completedToggle = (
+    <button
+      type="button"
+      onClick={() => setShowCompleted((v) => !v)}
+      className={[
+        'px-4 py-2 rounded-lg border text-sm font-medium transition-colors max-lg:min-h-[40px]',
+        showCompleted
+          ? 'bg-emerald-50 dark:bg-emerald-900/40 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-200'
+          : 'bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700',
+      ].join(' ')}
+      title="Toggle completed orders"
+    >
+      {showCompleted ? 'Hide Completed' : 'Show Completed'}
+    </button>
+  );
+
+  // Phones and tablets: the Ready / Completed toggles stay on screen; the rest is in the sheet.
+  const today = todayIsoDate();
+  const branchName = (branches ?? []).find((b: { id: number }) => String(b.id) === branchId)?.name;
+  const kdsChips: FilterChip[] = [
+    ...(branchName ? [{ key: 'branch', label: branchName }] : []),
+    ...(dateFrom !== today || dateTo !== today
+      ? [{ key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { setDateFrom(today); setDateTo(today); } }]
+      : []),
+    ...(brandId ? [{ key: 'brand', label: brands.find((b: { id: number }) => String(b.id) === brandId)?.name ?? 'Brand', onRemove: () => setBrandId('') }] : []),
+    ...(statusFilter ? [{ key: 'status', label: statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1), onRemove: () => setStatusFilter('') }] : []),
+  ];
+  const kdsFields: FilterField[] = [
+    { key: 'date', label: 'Date range', node: <div className="grid grid-cols-2 gap-2.5">{dateFromInput}{dateToInput}</div> },
+    ...(canFilterBranch ? [{ key: 'branch', label: 'Branch', node: branchSelect() }] : []),
+    ...(brands.length > 0 ? [{ key: 'brand', label: 'Brand', node: brandSelect() }] : []),
+    { key: 'status', label: 'Status', node: statusSelect() },
+  ];
+  const clearKdsFilters = () => {
+    setDateFrom(today);
+    setDateTo(today);
+    setBrandId('');
+    setStatusFilter('');
+  };
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6 text-gray-900 dark:text-gray-100">
       <div className="w-full">
@@ -383,112 +510,23 @@ const KDS: React.FC = () => {
               Brand-specific orders. Filter by brand to see only your orders.
             </p>
           </div>
+          <FilterBar className="w-full" primaryRow={<>{readyToggle}{completedToggle}</>} chips={kdsChips} fields={kdsFields} onClearAll={clearKdsFilters}>
           <div className="flex flex-wrap gap-4 items-end">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">From date</label>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+              {dateFromInput}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">To date</label>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+              {dateToInput}
             </div>
-            {canFilterBranch && (
-              <SearchableSelect
-                label="Branch"
-                value={branchId}
-                onChange={(v) => {
-                  setBranchId(v);
-                  setBrandId('');
-                }}
-                options={[
-                  { value: '', label: 'Select branch' },
-                  ...(branches ?? []).map((b: { id: number; name: string }) => ({
-                    value: String(b.id),
-                    label: b.name, inactive: isEntityInactive(b),
-                  })),
-                ]}
-                placeholder="Select branch"
-              />
-            )}
-            {brands.length > 0 && (
-              <SearchableSelect
-                label="Brand"
-                value={brandId}
-                onChange={setBrandId}
-                options={[
-                  { value: '', label: 'All brands' },
-                  ...brands.map((b: { id: number; name: string }) => ({
-                    value: String(b.id),
-                    label: b.name, inactive: isEntityInactive(b),
-                  })),
-                ]}
-                placeholder="All brands"
-              />
-            )}
-            <SearchableSelect
-              label="Status"
-              value={statusFilter}
-              onChange={(v) => {
-                setStatusFilter(v);
-                if (v === 'completed') setShowCompleted(true);
-                if (v === 'ready') setShowReady(true);
-              }}
-              options={[
-                { value: '', label: 'All statuses' },
-                { value: 'placed', label: 'Placed' },
-                { value: 'accepted', label: 'Accepted' },
-                { value: 'preparing', label: 'Preparing' },
-                { value: 'ready', label: 'Ready' },
-                { value: 'completed', label: 'Completed' },
-              ]}
-              placeholder="All statuses"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (readyVisible) {
-                  setShowReady(false);
-                  // Otherwise the status filter would keep the section open and
-                  // the button would appear to do nothing.
-                  if (statusFilter === 'ready') setStatusFilter('');
-                } else {
-                  setShowReady(true);
-                }
-              }}
-              className={[
-                'px-4 py-2 rounded-lg border text-sm font-medium transition-colors',
-                readyVisible
-                  ? 'bg-blue-50 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-200'
-                  : 'bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700',
-              ].join(' ')}
-              title="Ready orders leave the queue by default — they are packed in FOH"
-            >
-              {readyVisible ? 'Hide Ready' : hiddenReadyCount > 0 ? `Show Ready (${hiddenReadyCount})` : 'Show Ready'}
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCompleted((v) => !v)}
-              className={[
-                'px-4 py-2 rounded-lg border text-sm font-medium transition-colors',
-                showCompleted
-                  ? 'bg-emerald-50 dark:bg-emerald-900/40 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-200'
-                  : 'bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700',
-              ].join(' ')}
-              title="Toggle completed orders"
-            >
-              {showCompleted ? 'Hide Completed' : 'Show Completed'}
-            </button>
+            {canFilterBranch && branchSelect('Branch')}
+            {brands.length > 0 && brandSelect('Brand')}
+            {statusSelect('Status')}
+            {readyToggle}
+            {completedToggle}
           </div>
+          </FilterBar>
         </div>
 
         {!branchId ? (

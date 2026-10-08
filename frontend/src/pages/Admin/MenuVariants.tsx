@@ -13,6 +13,7 @@ import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -185,6 +186,99 @@ const MenuVariants: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading variants...'} />;
   }
 
+  // Each filter control once: desktop shows the card below, phones and tablets the
+  // compact bar + sheet (only one renders).
+  const brandFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filterBrandId != null ? String(filterBrandId) : ''}
+      onChange={(v) => setFilterBrandId(v ? parseInt(v, 10) : null)}
+      options={[
+        { value: '', label: 'Select brand' },
+        ...(brands ?? []).map((b: Brand & { tenant_name?: string }) => ({
+          value: String(b.id),
+          label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+        })),
+      ]}
+      placeholder="Select brand"
+      minWidth="min-w-[180px]"
+    />
+  );
+  const menuItemFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={selectedMenuItem != null ? String(selectedMenuItem) : ''}
+      onChange={(v) => setSelectedMenuItem(v ? parseInt(v, 10) : null)}
+      options={[
+        { value: '', label: 'Select a menu item' },
+        ...(menuItems ?? []).map((item: { id: number; name: string }) => ({
+          value: String(item.id),
+          label: item.name, inactive: isEntityInactive(item),
+        })),
+      ]}
+      placeholder="Select a menu item"
+      minWidth="min-w-[160px]"
+      disabled={!filterBrandId}
+    />
+  );
+  const searchFilter = (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1 max-lg:hidden">Search variant name</label>
+      <div className="relative">
+        <input
+          type="text"
+          aria-label="Search variant name"
+          value={searchVariant}
+          onChange={(e) => setSearchVariant(e.target.value)}
+          onFocus={() => variantTypeahead.setOpen(true)}
+          onKeyDown={(e) => {
+            const suggestions = variantTypeahead.suggestions;
+            if (!suggestions.length) return;
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              variantTypeahead.setActiveIndex(Math.min(variantTypeahead.activeIndex + 1, suggestions.length - 1));
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              variantTypeahead.setActiveIndex(Math.max(variantTypeahead.activeIndex - 1, 0));
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              const opt = suggestions[variantTypeahead.activeIndex];
+              if (opt?.label) setSearchVariant(opt.label);
+              variantTypeahead.setOpen(false);
+            } else if (e.key === 'Escape') {
+              variantTypeahead.setOpen(false);
+            }
+          }}
+          placeholder="Variant name..."
+          className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 max-lg:min-h-[44px] max-lg:w-full max-lg:min-w-0"
+        />
+        <TypeaheadDropdown
+          open={variantTypeahead.open && searchVariant.trim().length >= 2}
+          suggestions={variantTypeahead.suggestions}
+          activeIndex={variantTypeahead.activeIndex}
+          onHoverIndex={variantTypeahead.setActiveIndex}
+          onSelect={(opt) => {
+            setSearchVariant(opt.label);
+            variantTypeahead.setOpen(false);
+          }}
+          onClose={() => variantTypeahead.setOpen(false)}
+        />
+      </div>
+    </div>
+  );
+  const filterChips: FilterChip[] = [
+    ...(filterBrandId != null
+      ? [{ key: 'brand', label: (brands ?? []).find((b: Brand) => b.id === filterBrandId)?.name ?? 'Brand', onRemove: () => { setFilterBrandId(null); setSelectedMenuItem(null); } }]
+      : []),
+    ...(selectedMenuItem != null
+      ? [{ key: 'item', label: (menuItems ?? []).find((m: { id: number; name: string }) => m.id === selectedMenuItem)?.name ?? 'Menu item', onRemove: () => setSelectedMenuItem(null) }]
+      : []),
+  ];
+  const filterFields: FilterField[] = [
+    { key: 'brandFilter', label: 'Brand', node: brandFilter() },
+    { key: 'menuItemFilter', label: 'Menu Item', node: menuItemFilter() },
+  ];
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
@@ -192,88 +286,32 @@ const MenuVariants: React.FC = () => {
         {canCreate && <Button onClick={() => setShowForm(true)}>Add Variant</Button>}
       </div>
 
-      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap gap-3 items-end">
-          <SearchableSelect
-            label="Brand"
-            value={filterBrandId != null ? String(filterBrandId) : ''}
-            onChange={(v) => setFilterBrandId(v ? parseInt(v, 10) : null)}
-            options={[
-              { value: '', label: 'Select brand' },
-              ...(brands ?? []).map((b: Brand & { tenant_name?: string }) => ({
-                value: String(b.id),
-                label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
-              })),
-            ]}
-            placeholder="Select brand"
-            minWidth="min-w-[180px]"
-          />
-          <SearchableSelect
-            label="Menu Item"
-            value={selectedMenuItem != null ? String(selectedMenuItem) : ''}
-            onChange={(v) => setSelectedMenuItem(v ? parseInt(v, 10) : null)}
-            options={[
-              { value: '', label: 'Select a menu item' },
-              ...(menuItems ?? []).map((item: { id: number; name: string }) => ({
-                value: String(item.id),
-                label: item.name, inactive: isEntityInactive(item),
-              })),
-            ]}
-            placeholder="Select a menu item"
-            minWidth="min-w-[160px]"
-            disabled={!filterBrandId}
-          />
-          <div>
-            <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Search variant name</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={searchVariant}
-                onChange={(e) => setSearchVariant(e.target.value)}
-                onFocus={() => variantTypeahead.setOpen(true)}
-                onKeyDown={(e) => {
-                  const suggestions = variantTypeahead.suggestions;
-                  if (!suggestions.length) return;
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    variantTypeahead.setActiveIndex(Math.min(variantTypeahead.activeIndex + 1, suggestions.length - 1));
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    variantTypeahead.setActiveIndex(Math.max(variantTypeahead.activeIndex - 1, 0));
-                  } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const opt = suggestions[variantTypeahead.activeIndex];
-                    if (opt?.label) setSearchVariant(opt.label);
-                    variantTypeahead.setOpen(false);
-                  } else if (e.key === 'Escape') {
-                    variantTypeahead.setOpen(false);
-                  }
-                }}
-                placeholder="Variant name..."
-                className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-              />
-              <TypeaheadDropdown
-                open={variantTypeahead.open && searchVariant.trim().length >= 2}
-                suggestions={variantTypeahead.suggestions}
-                activeIndex={variantTypeahead.activeIndex}
-                onHoverIndex={variantTypeahead.setActiveIndex}
-                onSelect={(opt) => {
-                  setSearchVariant(opt.label);
-                  variantTypeahead.setOpen(false);
-                }}
-                onClose={() => variantTypeahead.setOpen(false)}
-              />
-            </div>
+      <FilterBar
+        className="mb-4"
+        primary={searchFilter}
+        chips={filterChips}
+        fields={filterFields}
+        onClearAll={() => {
+          setFilterBrandId(null);
+          setSelectedMenuItem(null);
+          setSearchVariant('');
+        }}
+      >
+        <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap gap-3 items-end">
+            {brandFilter('Brand')}
+            {menuItemFilter('Menu Item')}
+            {searchFilter}
+            <ClearFiltersButton
+              onClick={() => {
+                setFilterBrandId(null);
+                setSelectedMenuItem(null);
+                setSearchVariant('');
+              }}
+            />
           </div>
-          <ClearFiltersButton
-            onClick={() => {
-              setFilterBrandId(null);
-              setSelectedMenuItem(null);
-              setSearchVariant('');
-            }}
-          />
-        </div>
-      </Card>
+        </Card>
+      </FilterBar>
 
       <Modal isOpen={showForm} onClose={() => setShowForm(false)} title="Create Variant" size="medium">
         <form onSubmit={handleSubmit} className="space-y-4">

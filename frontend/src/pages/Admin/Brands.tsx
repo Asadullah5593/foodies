@@ -10,6 +10,7 @@ import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -280,6 +281,89 @@ const Brands: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading brands...'} />;
   }
 
+  // Each filter control once: desktop shows the card below, phones and tablets the
+  // compact bar + sheet (only one renders).
+  const tenantFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filterTenantId}
+      onChange={setFilterTenantId}
+      options={[
+        { value: '', label: 'All tenants' },
+        ...(tenants ?? []).map((t) => ({ value: String(t.id), label: t.name })),
+      ]}
+      placeholder="All tenants"
+      minWidth="min-w-[180px]"
+    />
+  );
+  const statusFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filterStatus}
+      onChange={setFilterStatus}
+      options={[
+        { value: '', label: 'All' },
+        { value: 'active', label: 'Active' },
+        { value: 'inactive', label: 'Inactive' },
+      ]}
+      placeholder="All"
+      minWidth="min-w-[120px]"
+    />
+  );
+  const searchFilter = (
+    <div className="relative">
+      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 max-lg:hidden">Search</label>
+      <input
+        type="text"
+        aria-label="Search brands"
+        value={filterSearch}
+        onChange={(e) => setFilterSearch(e.target.value)}
+        onFocus={() => brandSearchTypeahead.setOpen(true)}
+        onKeyDown={(e) => {
+          const suggestions = brandSearchTypeahead.suggestions;
+          if (!suggestions.length) return;
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            brandSearchTypeahead.setActiveIndex(Math.min(brandSearchTypeahead.activeIndex + 1, suggestions.length - 1));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            brandSearchTypeahead.setActiveIndex(Math.max(brandSearchTypeahead.activeIndex - 1, 0));
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const opt = suggestions[brandSearchTypeahead.activeIndex];
+            if (opt?.label) setFilterSearch(opt.label);
+            brandSearchTypeahead.setOpen(false);
+          } else if (e.key === 'Escape') {
+            brandSearchTypeahead.setOpen(false);
+          }
+        }}
+        placeholder="Brand name..."
+        className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-red-500/50 bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 min-w-[200px] placeholder-gray-400 dark:placeholder-slate-500 max-lg:min-h-[44px] max-lg:w-full max-lg:min-w-0"
+      />
+      <TypeaheadDropdown
+        open={brandSearchTypeahead.open && filterSearch.trim().length >= 2}
+        suggestions={brandSearchTypeahead.suggestions}
+        activeIndex={brandSearchTypeahead.activeIndex}
+        onHoverIndex={brandSearchTypeahead.setActiveIndex}
+        onSelect={(opt) => {
+          setFilterSearch(opt.label);
+          brandSearchTypeahead.setOpen(false);
+        }}
+        onClose={() => brandSearchTypeahead.setOpen(false)}
+      />
+    </div>
+  );
+  const filterChips: FilterChip[] = [
+    ...(filterTenantId
+      ? [{ key: 'tenant', label: (tenants ?? []).find((t) => String(t.id) === filterTenantId)?.name ?? 'Tenant', onRemove: () => setFilterTenantId('') }]
+      : []),
+    ...(filterStatus ? [{ key: 'status', label: filterStatus === 'active' ? 'Active' : 'Inactive', onRemove: () => setFilterStatus('') }] : []),
+  ];
+  const filterFields: FilterField[] = [
+    ...(isSuperAdmin && tenants && tenants.length > 0 ? [{ key: 'tenantFilter', label: 'Tenant', node: tenantFilter() }] : []),
+    { key: 'statusFilter', label: 'Status', node: statusFilter() },
+  ];
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
@@ -289,76 +373,18 @@ const Brands: React.FC = () => {
         )}
       </div>
 
-      <Card className="mb-6 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap items-end gap-4">
-          {isSuperAdmin && tenants && tenants.length > 0 && (
-            <SearchableSelect
-              label="Tenant"
-              value={filterTenantId}
-              onChange={setFilterTenantId}
-              options={[
-                { value: '', label: 'All tenants' },
-                ...tenants.map((t) => ({ value: String(t.id), label: t.name })),
-              ]}
-              placeholder="All tenants"
-              minWidth="min-w-[180px]"
-            />
-          )}
-          <SearchableSelect
-            label="Status"
-            value={filterStatus}
-            onChange={setFilterStatus}
-            options={[
-              { value: '', label: 'All' },
-              { value: 'active', label: 'Active' },
-              { value: 'inactive', label: 'Inactive' },
-            ]}
-            placeholder="All"
-            minWidth="min-w-[120px]"
-          />
-          <div className="relative">
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Search</label>
-            <input
-              type="text"
-              value={filterSearch}
-              onChange={(e) => setFilterSearch(e.target.value)}
-              onFocus={() => brandSearchTypeahead.setOpen(true)}
-              onKeyDown={(e) => {
-                const suggestions = brandSearchTypeahead.suggestions;
-                if (!suggestions.length) return;
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  brandSearchTypeahead.setActiveIndex(Math.min(brandSearchTypeahead.activeIndex + 1, suggestions.length - 1));
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  brandSearchTypeahead.setActiveIndex(Math.max(brandSearchTypeahead.activeIndex - 1, 0));
-                } else if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const opt = suggestions[brandSearchTypeahead.activeIndex];
-                  if (opt?.label) setFilterSearch(opt.label);
-                  brandSearchTypeahead.setOpen(false);
-                } else if (e.key === 'Escape') {
-                  brandSearchTypeahead.setOpen(false);
-                }
-              }}
-              placeholder="Brand name..."
-              className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-red-500/50 bg-white dark:bg-slate-700 text-gray-900 dark:text-slate-100 min-w-[200px] placeholder-gray-400 dark:placeholder-slate-500"
-            />
-            <TypeaheadDropdown
-              open={brandSearchTypeahead.open && filterSearch.trim().length >= 2}
-              suggestions={brandSearchTypeahead.suggestions}
-              activeIndex={brandSearchTypeahead.activeIndex}
-              onHoverIndex={brandSearchTypeahead.setActiveIndex}
-              onSelect={(opt) => {
-                setFilterSearch(opt.label);
-                brandSearchTypeahead.setOpen(false);
-              }}
-              onClose={() => brandSearchTypeahead.setOpen(false)}
-            />
+      <FilterBar className="mb-4" primary={searchFilter} chips={filterChips} fields={filterFields} onClearAll={clearFilters}>
+        <Card className="mb-6 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap items-end gap-4">
+            {isSuperAdmin && tenants && tenants.length > 0 && (
+              tenantFilter('Tenant')
+            )}
+            {statusFilter('Status')}
+            {searchFilter}
+            <ClearFiltersButton onClick={clearFilters} />
           </div>
-          <ClearFiltersButton onClick={clearFilters} />
-        </div>
-      </Card>
+        </Card>
+      </FilterBar>
 
       <Modal
         isOpen={showForm}

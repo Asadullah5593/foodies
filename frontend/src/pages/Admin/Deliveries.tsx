@@ -7,6 +7,8 @@ import FetchingOverlay from '../../components/FetchingOverlay';
 import Card from '../../components/Card';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { formatCurrency } from '../../utils/currency';
@@ -146,6 +148,66 @@ const Deliveries: React.FC = () => {
 
   if (isLoading) return <Loader fullScreen text="Loading deliveries..." />;
 
+  // Each control once: desktop shows the card, phones and tablets a bar + sheet.
+  const riderSelect = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={riderId}
+      onChange={(v) => setFilter('rider_id', v)}
+      options={[
+        { value: '', label: 'All riders' },
+        ...(riders ?? []).map((r) => ({
+          value: String(r.id),
+          label:
+            (r.rating_count ?? 0) > 0 && r.rating_average != null
+              ? `${r.name} (${r.rating_average.toFixed(1)}/5, ${r.rating_count})`
+              : r.name,
+        })),
+      ]}
+      placeholder="All riders"
+      minWidth="min-w-[160px]"
+    />
+  );
+  const dateFromInput = (
+    <input
+      type="date"
+      aria-label="Date from"
+      value={dateFrom}
+      onChange={(e) => setFilter('date_from', e.target.value)}
+      className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+    />
+  );
+  const dateToInput = (
+    <input
+      type="date"
+      aria-label="Date to"
+      value={dateTo}
+      onChange={(e) => setFilter('date_to', e.target.value)}
+      className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+    />
+  );
+  const deliveryChips: FilterChip[] = [
+    ...(riderId
+      ? [{ key: 'rider', label: (riders ?? []).find((r) => String(r.id) === riderId)?.name ?? 'Rider', onRemove: () => setFilter('rider_id', '') }]
+      : []),
+    ...(dateFrom || dateTo
+      ? [{
+          key: 'date',
+          label: rangeChipLabel(dateFrom, dateTo),
+          onRemove: () => {
+            const p = new URLSearchParams(searchParams);
+            p.delete('date_from');
+            p.delete('date_to');
+            setSearchParams(p);
+          },
+        }]
+      : []),
+  ];
+  const deliveryFields: FilterField[] = [
+    { key: 'rider', label: 'Rider', node: riderSelect() },
+    { key: 'date', label: 'Date range', node: <div className="grid grid-cols-2 gap-2.5">{dateFromInput}{dateToInput}</div> },
+  ];
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex justify-between items-center mb-6">
@@ -157,46 +219,22 @@ const Deliveries: React.FC = () => {
         </div>
       </div>
 
-      <Card className="mb-6 p-4 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap gap-4 items-end">
-          <SearchableSelect
-            label="Rider"
-            value={riderId}
-            onChange={(v) => setFilter('rider_id', v)}
-            options={[
-              { value: '', label: 'All riders' },
-              ...(riders ?? []).map((r) => ({
-                value: String(r.id),
-                label:
-                  (r.rating_count ?? 0) > 0 && r.rating_average != null
-                    ? `${r.name} (${r.rating_average.toFixed(1)}/5, ${r.rating_count})`
-                    : r.name,
-              })),
-            ]}
-            placeholder="All riders"
-            minWidth="min-w-[160px]"
-          />
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Date from</label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setFilter('date_from', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
+      <FilterBar chips={deliveryChips} fields={deliveryFields} onClearAll={() => setSearchParams({})}>
+        <Card className="mb-6 p-4 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap gap-4 items-end">
+            {riderSelect('Rider')}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Date from</label>
+              {dateFromInput}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Date to</label>
+              {dateToInput}
+            </div>
+            <ClearFiltersButton onClick={() => setSearchParams({})} />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Date to</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setFilter('date_to', e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <ClearFiltersButton onClick={() => setSearchParams({})} />
-        </div>
-      </Card>
+        </Card>
+      </FilterBar>
 
       {/* While a filter change is fetching, the previous results stay mounted
           and a soft veil fades in over them (see useResultsRefreshing — background polls stay silent). */}

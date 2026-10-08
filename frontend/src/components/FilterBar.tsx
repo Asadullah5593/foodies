@@ -106,6 +106,14 @@ const FilterBar: React.FC<FilterBarProps> = ({
             {c.label}
             <span aria-hidden className="text-[15px] leading-none">✕</span>
           </button>
+        ) : !c.onSelect ? (
+          // Context, not a filter you can drop (e.g. the kitchen's branch): a plain label.
+          <span
+            key={c.key}
+            className="inline-flex min-h-[38px] flex-none items-center whitespace-nowrap rounded-full border-[1.5px] border-gray-200 bg-gray-50 px-3.5 text-[13px] font-bold text-gray-600 dark:border-slate-600 dark:bg-slate-700/60 dark:text-slate-300"
+          >
+            {c.label}
+          </span>
         ) : (
           <button
             key={c.key}

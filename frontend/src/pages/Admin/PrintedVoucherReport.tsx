@@ -10,6 +10,8 @@ import FetchingOverlay from '../../components/FetchingOverlay';
 import { Branch, PrintedVoucherReport as ReportData } from '../../types';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 import { isEntityInactive } from '../../utils/entityStatus';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
 import { formatOrderType } from '../../utils/format';
 import { prettyDay, voucherFace } from '../../utils/voucherText';
 
@@ -187,6 +189,105 @@ const PrintedVoucherReport: React.FC = () => {
 
   const hasData = (totals?.papers ?? 0) > 0 || (totals?.redemptions ?? 0) > 0;
 
+  // Filter controls, shared by the desktop grid and the phone/tablet sheet (one tree renders).
+  const fromBlock = (
+    <label className="block">
+      <span className={filterLabel}>From</span>
+      <input
+        type="date"
+        value={dateFrom}
+        max={dateTo || undefined}
+        onChange={(e) => setDateFrom(e.target.value || today)}
+        className={dateInput}
+      />
+    </label>
+  );
+  const toBlock = (
+    <label className="block">
+      <span className={filterLabel}>To</span>
+      <input
+        type="date"
+        value={dateTo}
+        min={dateFrom || undefined}
+        onChange={(e) => setDateTo(e.target.value || today)}
+        className={dateInput}
+      />
+    </label>
+  );
+  const branchBlock = (
+    <div>
+      <span className={filterLabel}>Branch</span>
+      <SearchableSelect
+        value={branchId != null ? String(branchId) : ''}
+        onChange={(v) => setBranchId(v ? Number(v) : null)}
+        options={[
+          { value: '', label: 'All branches' },
+          ...(branches ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
+        ]}
+        triggerClassName={selectTrigger}
+        ariaLabel="Branch"
+      />
+    </div>
+  );
+  const brandBlock = (
+    <div>
+      <span className={filterLabel}>Brand</span>
+      <SearchableSelect
+        value={brandId != null ? String(brandId) : ''}
+        onChange={(v) => {
+          setBrandId(v ? Number(v) : null);
+          setVoucherId(null);
+        }}
+        options={[
+          { value: '', label: 'All brands' },
+          ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
+        ]}
+        triggerClassName={selectTrigger}
+        ariaLabel="Brand"
+      />
+    </div>
+  );
+  const voucherBlock = (
+    <div>
+      <span className={filterLabel}>Voucher</span>
+      <SearchableSelect
+        value={voucherId != null ? String(voucherId) : ''}
+        onChange={(v) => setVoucherId(v ? Number(v) : null)}
+        options={[
+          { value: '', label: 'All vouchers' },
+          ...voucherOptions.map((v) => ({
+            value: String(v.id),
+            label: `${v.name} (${voucherFace(v)})`,
+            inactive: !v.is_active,
+          })),
+        ]}
+        triggerClassName={selectTrigger}
+        ariaLabel="Voucher"
+      />
+    </div>
+  );
+  const pvChips: FilterChip[] = [
+    ...(dateFrom !== today || dateTo !== today
+      ? [{ key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { setDateFrom(today); setDateTo(today); } }]
+      : []),
+    ...(branchId != null ? [{ key: 'branch', label: (branches ?? []).find((b) => b.id === branchId)?.name ?? 'Branch', onRemove: () => setBranchId(null) }] : []),
+    ...(brandId != null ? [{ key: 'brand', label: (brands ?? []).find((b) => b.id === brandId)?.name ?? 'Brand', onRemove: () => { setBrandId(null); setVoucherId(null); } }] : []),
+    ...(voucherId != null ? [{ key: 'voucher', label: voucherOptions.find((v) => v.id === voucherId)?.name ?? 'Voucher', onRemove: () => setVoucherId(null) }] : []),
+  ];
+  const pvFields: FilterField[] = [
+    { key: 'date', node: <div className="grid grid-cols-2 gap-2.5">{fromBlock}{toBlock}</div> },
+    { key: 'branch', node: branchBlock },
+    { key: 'brand', node: brandBlock },
+    { key: 'voucher', node: voucherBlock },
+  ];
+  const clearPvFilters = () => {
+    setDateFrom(today);
+    setDateTo(today);
+    setBranchId(null);
+    setBrandId(null);
+    setVoucherId(null);
+  };
+
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-12">
       {/* Header */}
@@ -227,75 +328,16 @@ const PrintedVoucherReport: React.FC = () => {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filters — below lg a compact bar + sheet; desktop keeps the grid. */}
+      <FilterBar className="mb-5" chips={pvChips} fields={pvFields} onClearAll={clearPvFilters}>
       <div className="mb-5 grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-5">
-        <label className="block">
-          <span className={filterLabel}>From</span>
-          <input
-            type="date"
-            value={dateFrom}
-            max={dateTo || undefined}
-            onChange={(e) => setDateFrom(e.target.value || today)}
-            className={dateInput}
-          />
-        </label>
-        <label className="block">
-          <span className={filterLabel}>To</span>
-          <input
-            type="date"
-            value={dateTo}
-            min={dateFrom || undefined}
-            onChange={(e) => setDateTo(e.target.value || today)}
-            className={dateInput}
-          />
-        </label>
-        <div>
-          <span className={filterLabel}>Branch</span>
-          <SearchableSelect
-            value={branchId != null ? String(branchId) : ''}
-            onChange={(v) => setBranchId(v ? Number(v) : null)}
-            options={[
-              { value: '', label: 'All branches' },
-              ...(branches ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
-            ]}
-            triggerClassName={selectTrigger}
-            ariaLabel="Branch"
-          />
-        </div>
-        <div>
-          <span className={filterLabel}>Brand</span>
-          <SearchableSelect
-            value={brandId != null ? String(brandId) : ''}
-            onChange={(v) => {
-              setBrandId(v ? Number(v) : null);
-              setVoucherId(null);
-            }}
-            options={[
-              { value: '', label: 'All brands' },
-              ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
-            ]}
-            triggerClassName={selectTrigger}
-            ariaLabel="Brand"
-          />
-        </div>
-        <div>
-          <span className={filterLabel}>Voucher</span>
-          <SearchableSelect
-            value={voucherId != null ? String(voucherId) : ''}
-            onChange={(v) => setVoucherId(v ? Number(v) : null)}
-            options={[
-              { value: '', label: 'All vouchers' },
-              ...voucherOptions.map((v) => ({
-                value: String(v.id),
-                label: `${v.name} (${voucherFace(v)})`,
-                inactive: !v.is_active,
-              })),
-            ]}
-            triggerClassName={selectTrigger}
-            ariaLabel="Voucher"
-          />
-        </div>
+        {fromBlock}
+        {toBlock}
+        {branchBlock}
+        {brandBlock}
+        {voucherBlock}
       </div>
+      </FilterBar>
 
       {isLoading ? (
         <div className="py-12 text-center text-gray-500">Loading…</div>

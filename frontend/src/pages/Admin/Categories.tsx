@@ -13,6 +13,7 @@ import FetchingOverlay from '../../components/FetchingOverlay';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -251,6 +252,90 @@ const Categories: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading categories...'} />;
   }
 
+  // Each control once: desktop shows the card, phones and tablets the search box + a sheet.
+  const brandFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filterBrandId}
+      onChange={setFilterBrandId}
+      options={[
+        { value: '', label: 'All brands' },
+        ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
+      ]}
+      placeholder="All brands"
+      minWidth="min-w-[200px]"
+    />
+  );
+  const statusFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filterActive}
+      onChange={setFilterActive}
+      options={[
+        { value: '', label: 'All' },
+        { value: 'active', label: 'Active' },
+        { value: 'inactive', label: 'Inactive' },
+      ]}
+      placeholder="All"
+      minWidth="min-w-[120px]"
+    />
+  );
+  const searchFilter = (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 max-lg:hidden">Search</label>
+      <div className="relative">
+        <input
+          type="text"
+          aria-label="Search categories"
+          value={filterSearch}
+          onChange={(e) => setFilterSearch(e.target.value)}
+          onFocus={() => searchTypeahead.setOpen(true)}
+          onKeyDown={(e) => {
+            const suggestions = searchTypeahead.suggestions;
+            if (!suggestions.length) return;
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              searchTypeahead.setActiveIndex(Math.min(searchTypeahead.activeIndex + 1, suggestions.length - 1));
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              searchTypeahead.setActiveIndex(Math.max(searchTypeahead.activeIndex - 1, 0));
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              const opt = suggestions[searchTypeahead.activeIndex];
+              if (opt?.label) setFilterSearch(opt.label);
+              searchTypeahead.setOpen(false);
+            } else if (e.key === 'Escape') {
+              searchTypeahead.setOpen(false);
+            }
+          }}
+          placeholder="Search by name..."
+          className="px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[180px] max-lg:min-h-[44px] max-lg:w-full max-lg:min-w-0"
+        />
+        <TypeaheadDropdown
+          open={searchTypeahead.open && filterSearch.trim().length >= 2}
+          suggestions={searchTypeahead.suggestions}
+          activeIndex={searchTypeahead.activeIndex}
+          onHoverIndex={searchTypeahead.setActiveIndex}
+          onSelect={(opt) => {
+            setFilterSearch(opt.label);
+            searchTypeahead.setOpen(false);
+          }}
+          onClose={() => searchTypeahead.setOpen(false)}
+        />
+      </div>
+    </div>
+  );
+  const categoryChips: FilterChip[] = [
+    ...(filterBrandId
+      ? [{ key: 'brand', label: (brands ?? []).find((b) => String(b.id) === filterBrandId)?.name ?? 'Brand', onRemove: () => setFilterBrandId('') }]
+      : []),
+    ...(filterActive ? [{ key: 'status', label: filterActive === 'active' ? 'Active' : 'Inactive', onRemove: () => setFilterActive('') }] : []),
+  ];
+  const categoryFields: FilterField[] = [
+    { key: 'brand', label: 'Brand', node: brandFilter() },
+    { key: 'status', label: 'Status', node: statusFilter() },
+  ];
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
@@ -272,81 +357,21 @@ const Categories: React.FC = () => {
         </div>
       </div>
 
-      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap gap-3 items-end">
-          <SearchableSelect
-            label="Brand"
-            value={filterBrandId}
-            onChange={setFilterBrandId}
-            options={[
-              { value: '', label: 'All brands' },
-              ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
-            ]}
-            placeholder="All brands"
-            minWidth="min-w-[200px]"
-          />
-          <SearchableSelect
-            label="Status"
-            value={filterActive}
-            onChange={setFilterActive}
-            options={[
-              { value: '', label: 'All' },
-              { value: 'active', label: 'Active' },
-              { value: 'inactive', label: 'Inactive' },
-            ]}
-            placeholder="All"
-            minWidth="min-w-[120px]"
-          />
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Search</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={filterSearch}
-                onChange={(e) => setFilterSearch(e.target.value)}
-                onFocus={() => searchTypeahead.setOpen(true)}
-                onKeyDown={(e) => {
-                  const suggestions = searchTypeahead.suggestions;
-                  if (!suggestions.length) return;
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    searchTypeahead.setActiveIndex(Math.min(searchTypeahead.activeIndex + 1, suggestions.length - 1));
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    searchTypeahead.setActiveIndex(Math.max(searchTypeahead.activeIndex - 1, 0));
-                  } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const opt = suggestions[searchTypeahead.activeIndex];
-                    if (opt?.label) setFilterSearch(opt.label);
-                    searchTypeahead.setOpen(false);
-                  } else if (e.key === 'Escape') {
-                    searchTypeahead.setOpen(false);
-                  }
-                }}
-                placeholder="Search by name..."
-                className="px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 min-w-[180px]"
-              />
-              <TypeaheadDropdown
-                open={searchTypeahead.open && filterSearch.trim().length >= 2}
-                suggestions={searchTypeahead.suggestions}
-                activeIndex={searchTypeahead.activeIndex}
-                onHoverIndex={searchTypeahead.setActiveIndex}
-                onSelect={(opt) => {
-                  setFilterSearch(opt.label);
-                  searchTypeahead.setOpen(false);
-                }}
-                onClose={() => searchTypeahead.setOpen(false)}
-              />
-            </div>
+      <FilterBar className="mb-4" primary={searchFilter} chips={categoryChips} fields={categoryFields} onClearAll={clearFilters}>
+        <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap gap-3 items-end">
+            {brandFilter('Brand')}
+            {statusFilter('Status')}
+            {searchFilter}
+            {isFetching && (
+              <span className="text-xs text-gray-500 dark:text-slate-400 pb-1">
+                Updating…
+              </span>
+            )}
+            {hasActiveFilters && <ClearFiltersButton onClick={clearFilters} />}
           </div>
-          {isFetching && (
-            <span className="text-xs text-gray-500 dark:text-slate-400 pb-1">
-              Updating…
-            </span>
-          )}
-          {hasActiveFilters && <ClearFiltersButton onClick={clearFilters} />}
-        </div>
-      </Card>
+        </Card>
+      </FilterBar>
 
       <Modal
         isOpen={showForm}

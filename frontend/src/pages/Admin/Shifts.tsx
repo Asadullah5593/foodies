@@ -11,6 +11,8 @@ import { printContent } from '../../utils/print';
 import Button from '../../components/Button';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
 import Modal from '../../components/Modal';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 import RecordHistoryLink from '../../components/RecordHistoryLink';
@@ -680,6 +682,121 @@ const Shifts: React.FC = () => {
           ? { headline: 'Over', color: '#2563EB', amount: `+${fmtMoney(detailVariance)}`, panelBg: '#EEF4FF', icon: I.varUp, countedTone: 'normal' as const }
           : { headline: 'Short', color: '#C21F1F', amount: `−${fmtMoney(Math.abs(detailVariance))}`, panelBg: '#FDECEC', icon: I.varDown, countedTone: 'short' as const };
 
+  // The toolbar's controls, each once: desktop shows the toolbar, phones and tablets
+  // the search box + a sheet with the rest (only one renders).
+  const onFromDate = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    if (!v) return; // cleared: keep the previous date
+    setFromDate(v);
+    if (v > toDate) setToDate(v);
+  };
+  const onToDate = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    if (!v) return; // cleared: keep the previous date
+    setToDate(v);
+    if (v < fromDate) setFromDate(v);
+  };
+  const shiftSearch = (
+    <div className="flex min-w-[200px] flex-1 items-center gap-[9px] max-lg:min-h-[44px] max-lg:min-w-0 rounded-[10px] border-[1.5px] border-[#EEEFF2] bg-[#F6F7F9] px-3 dark:border-slate-600 dark:bg-slate-700">
+      {I.search}
+      <input
+        aria-label="Search shifts"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search shift #, brand, staff…"
+        className="flex-1 border-none bg-transparent py-2.5 text-[13.5px] text-[#1A1D24] outline-none dark:text-slate-100"
+      />
+    </div>
+  );
+  const shiftBranchSelect = (
+    <select
+      aria-label="Branch"
+      value={branchFilter}
+      onChange={(e) => setBranchFilter(e.target.value)}
+      className="cursor-pointer rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-[13px] py-2.5 text-[13px] text-[#374151] outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+    >
+      <option value="">All branches</option>
+      {(branches ?? []).map((b) => (
+        <option key={b.id} value={String(b.id)}>
+          {labelWithStatus(b.name, b)}
+        </option>
+      ))}
+    </select>
+  );
+  const shiftStatusTabs = (
+    <div className="flex gap-[7px]">
+      {(
+        [
+          { key: 'all', label: 'All', dot: null },
+          { key: 'open', label: 'Open', dot: '#2FB86B' },
+          { key: 'closed', label: 'Closed', dot: '#B6BCC6' },
+        ] as const
+      ).map((t) => {
+        const active = statusTab === t.key;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setStatusTab(t.key)}
+            className={`inline-flex cursor-pointer items-center gap-[7px] rounded-[10px] border-[1.5px] px-[15px] py-[9px] text-[13px] font-bold max-lg:min-h-[44px] ${
+              active ? '' : 'border-[#E2E5EA] text-[#4B5563] dark:border-slate-600 dark:text-slate-300'
+            }`}
+            style={active ? { borderColor: '#DC2A2A', background: '#FCEEEE', color: '#B5121B' } : undefined}
+          >
+            {t.dot && <span className="h-[7px] w-[7px] rounded-full" style={{ background: t.dot }} />}
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+  const sheetDateCls =
+    'w-full rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-2.5 text-[13.5px] font-semibold text-[#374151] outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200';
+  const resetShiftFilters = () => {
+    setFromDate(today);
+    setToDate(today);
+    setBranchFilter('');
+    setStatusTab('all');
+    setSearch('');
+  };
+  const shiftChips: FilterChip[] = [
+    ...(!isTodaySelected
+      ? [{ key: 'date', label: rangeChipLabel(fromDate, toDate), onRemove: () => { setFromDate(today); setToDate(today); } }]
+      : []),
+    ...(branchFilter
+      ? [{ key: 'branch', label: (branches ?? []).find((b) => String(b.id) === branchFilter)?.name ?? 'Branch', onRemove: () => setBranchFilter('') }]
+      : []),
+    ...(statusTab !== 'all' ? [{ key: 'status', label: statusTab === 'open' ? 'Open' : 'Closed', onRemove: () => setStatusTab('all') }] : []),
+  ];
+  const shiftFields: FilterField[] = [
+    { key: 'status', label: 'Status', node: shiftStatusTabs },
+    {
+      key: 'date',
+      label: 'Date range',
+      node: (
+        <>
+          <div className="grid grid-cols-2 gap-2.5">
+            <input type="date" aria-label="From date" value={fromDate} onChange={onFromDate} className={sheetDateCls} />
+            <input type="date" aria-label="To date" value={toDate} onChange={onToDate} className={sheetDateCls} />
+          </div>
+          {!isTodaySelected && (
+            <button
+              type="button"
+              onClick={() => {
+                setFromDate(today);
+                setToDate(today);
+              }}
+              className="mt-2 min-h-[40px] text-[13px] font-bold text-[#DC2A2A]"
+            >
+              Back to today
+            </button>
+          )}
+        </>
+      ),
+    },
+    { key: 'branch', label: 'Branch', node: shiftBranchSelect },
+  ];
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       {/* Header */}
@@ -719,97 +836,48 @@ const Shifts: React.FC = () => {
         ))}
       </div>
 
-      {/* Toolbar */}
-      <div className="mb-[18px] flex flex-wrap items-center gap-[11px] rounded-[14px] border border-[#ECEDF0] bg-white px-[15px] py-3 shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800">
-        <div className="flex min-w-[200px] flex-1 items-center gap-[9px] rounded-[10px] border-[1.5px] border-[#EEEFF2] bg-[#F6F7F9] px-3 dark:border-slate-600 dark:bg-slate-700">
-          {I.search}
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search shift #, brand, staff…"
-            className="flex-1 border-none bg-transparent py-2.5 text-[13.5px] text-[#1A1D24] outline-none dark:text-slate-100"
-          />
-        </div>
-        <div className="flex items-center gap-2 rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-[11px] dark:border-slate-600 dark:bg-slate-800">
-          {I.calendar}
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (!v) return; // cleared: keep the previous date
-              setFromDate(v);
-              if (v > toDate) setToDate(v);
-            }}
-            className="cursor-pointer border-none bg-transparent py-[9px] text-[13px] font-semibold text-[#374151] outline-none dark:text-slate-200"
-          />
-          <span className="text-[13px] text-[#C0C5CD]">→</span>
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (!v) return; // cleared: keep the previous date
-              setToDate(v);
-              if (v < fromDate) setFromDate(v);
-            }}
-            className="cursor-pointer border-none bg-transparent py-[9px] text-[13px] font-semibold text-[#374151] outline-none dark:text-slate-200"
-          />
-          {isTodaySelected ? (
-            <span className="rounded-md bg-[#E7F7EE] px-[7px] py-0.5 text-[10.5px] font-extrabold uppercase tracking-[.04em] text-[#0F9D58]">
-              Today
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setFromDate(today);
-                setToDate(today);
-              }}
-              className="whitespace-nowrap border-none bg-transparent text-[11.5px] font-bold text-[#DC2A2A] cursor-pointer"
-            >
-              Today
-            </button>
-          )}
-        </div>
-        <select
-          value={branchFilter}
-          onChange={(e) => setBranchFilter(e.target.value)}
-          className="cursor-pointer rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-[13px] py-2.5 text-[13px] text-[#374151] outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
-        >
-          <option value="">All branches</option>
-          {(branches ?? []).map((b) => (
-            <option key={b.id} value={String(b.id)}>
-              {labelWithStatus(b.name, b)}
-            </option>
-          ))}
-        </select>
-        <div className="flex gap-[7px]">
-          {(
-            [
-              { key: 'all', label: 'All', dot: null },
-              { key: 'open', label: 'Open', dot: '#2FB86B' },
-              { key: 'closed', label: 'Closed', dot: '#B6BCC6' },
-            ] as const
-          ).map((t) => {
-            const active = statusTab === t.key;
-            return (
+      {/* Toolbar — phones and tablets get the compact bar and sheet instead. */}
+      <FilterBar primary={shiftSearch} chips={shiftChips} fields={shiftFields} onClearAll={resetShiftFilters} resultLabel={`Show ${filtered.length} ${filtered.length === 1 ? 'shift' : 'shifts'}`}>
+        <div className="mb-[18px] flex flex-wrap items-center gap-[11px] rounded-[14px] border border-[#ECEDF0] bg-white px-[15px] py-3 shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800">
+          {shiftSearch}
+          <div className="flex items-center gap-2 rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-[11px] dark:border-slate-600 dark:bg-slate-800">
+            {I.calendar}
+            <input
+              type="date"
+              aria-label="From date"
+              value={fromDate}
+              onChange={onFromDate}
+              className="cursor-pointer border-none bg-transparent py-[9px] text-[13px] font-semibold text-[#374151] outline-none dark:text-slate-200"
+            />
+            <span className="text-[13px] text-[#C0C5CD]">→</span>
+            <input
+              type="date"
+              aria-label="To date"
+              value={toDate}
+              onChange={onToDate}
+              className="cursor-pointer border-none bg-transparent py-[9px] text-[13px] font-semibold text-[#374151] outline-none dark:text-slate-200"
+            />
+            {isTodaySelected ? (
+              <span className="rounded-md bg-[#E7F7EE] px-[7px] py-0.5 text-[10.5px] font-extrabold uppercase tracking-[.04em] text-[#0F9D58]">
+                Today
+              </span>
+            ) : (
               <button
-                key={t.key}
                 type="button"
-                onClick={() => setStatusTab(t.key)}
-                className={`inline-flex cursor-pointer items-center gap-[7px] rounded-[10px] border-[1.5px] px-[15px] py-[9px] text-[13px] font-bold ${
-                  active ? '' : 'border-[#E2E5EA] text-[#4B5563] dark:border-slate-600 dark:text-slate-300'
-                }`}
-                style={active ? { borderColor: '#DC2A2A', background: '#FCEEEE', color: '#B5121B' } : undefined}
+                onClick={() => {
+                  setFromDate(today);
+                  setToDate(today);
+                }}
+                className="whitespace-nowrap border-none bg-transparent text-[11.5px] font-bold text-[#DC2A2A] cursor-pointer"
               >
-                {t.dot && <span className="h-[7px] w-[7px] rounded-full" style={{ background: t.dot }} />}
-                {t.label}
+                Today
               </button>
-            );
-          })}
+            )}
+          </div>
+          {shiftBranchSelect}
+          {shiftStatusTabs}
         </div>
-      </div>
+      </FilterBar>
 
       {/* Shift cards. While a date-range change is fetching, the previous
           results stay mounted and a soft veil fades in over them

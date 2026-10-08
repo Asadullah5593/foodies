@@ -11,6 +11,7 @@ import FetchingOverlay from '../../components/FetchingOverlay';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
@@ -718,6 +719,110 @@ const MenuItems: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading menu items...'} />;
   }
 
+  // Filter controls, shared by the desktop card and the phone/tablet sheet (one tree renders).
+  const brandFilter = (label?: string, minWidth = 'w-full') => (
+    <SearchableSelect
+      label={label}
+      value={filters.brand_id}
+      onChange={(v) => setFilters((f) => ({ ...f, brand_id: v }))}
+      options={[
+        { value: '', label: 'Select brand' },
+        ...(brands ?? []).map((b) => ({
+          value: String(b.id),
+          label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+        })),
+      ]}
+      placeholder="Select brand"
+      minWidth={minWidth}
+    />
+  );
+  const categoryFilter = (label?: string, minWidth = 'w-full') => (
+    <SearchableSelect
+      label={label}
+      value={filters.category_id}
+      onChange={(v) => setFilters((f) => ({ ...f, category_id: v }))}
+      options={[
+        { value: '', label: 'All categories' },
+        ...categoriesForFilter.map((c: { id: number; name: string }) => ({
+          value: String(c.id),
+          label: c.name, inactive: isEntityInactive(c),
+        })),
+      ]}
+      placeholder="All categories"
+      minWidth={minWidth}
+    />
+  );
+  const statusFilter = (label?: string, minWidth = 'w-full') => (
+    <SearchableSelect
+      label={label}
+      value={filters.status}
+      onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
+      options={[
+        { value: '', label: 'All' },
+        { value: 'active', label: 'Active' },
+        { value: 'inactive', label: 'Inactive' },
+      ]}
+      placeholder="All"
+      minWidth={minWidth}
+    />
+  );
+  const searchFilter = (
+    <div className="relative">
+      <label className="block text-xs font-medium text-gray-500 mb-1 max-lg:hidden">Search item name</label>
+      <input
+        type="text"
+        value={filters.search}
+        onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+        onFocus={() => menuItemSearchTypeahead.setOpen(true)}
+        onKeyDown={(e) => {
+          const suggestions = menuItemSearchTypeahead.suggestions;
+          if (!suggestions.length) return;
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            menuItemSearchTypeahead.setActiveIndex(Math.min(menuItemSearchTypeahead.activeIndex + 1, suggestions.length - 1));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            menuItemSearchTypeahead.setActiveIndex(Math.max(menuItemSearchTypeahead.activeIndex - 1, 0));
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const opt = suggestions[menuItemSearchTypeahead.activeIndex];
+            if (opt?.label) setFilters((f) => ({ ...f, search: opt.label }));
+            menuItemSearchTypeahead.setOpen(false);
+          } else if (e.key === 'Escape') {
+            menuItemSearchTypeahead.setOpen(false);
+          }
+        }}
+        placeholder="Item name..."
+        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48 max-lg:w-full max-lg:min-h-[44px]"
+        aria-label="Search item name"
+      />
+      <TypeaheadDropdown
+        open={menuItemSearchTypeahead.open && filters.search.trim().length >= 2}
+        suggestions={menuItemSearchTypeahead.suggestions}
+        activeIndex={menuItemSearchTypeahead.activeIndex}
+        onHoverIndex={menuItemSearchTypeahead.setActiveIndex}
+        onSelect={(opt) => {
+          setFilters((f) => ({ ...f, search: opt.label }));
+          menuItemSearchTypeahead.setOpen(false);
+        }}
+        onClose={() => menuItemSearchTypeahead.setOpen(false)}
+      />
+    </div>
+  );
+  const clearMenuFilters = () => setFilters({ brand_id: '', category_id: '', status: '', search: '' });
+  const menuChips: FilterChip[] = [
+    ...(filters.brand_id ? [{ key: 'brand', label: (brands ?? []).find((b) => String(b.id) === filters.brand_id)?.name ?? 'Brand', onRemove: () => setFilters((f) => ({ ...f, brand_id: '' })) }] : []),
+    ...(filters.category_id
+      ? [{ key: 'category', label: categoriesForFilter.find((c: { id: number; name: string }) => String(c.id) === filters.category_id)?.name ?? 'Category', onRemove: () => setFilters((f) => ({ ...f, category_id: '' })) }]
+      : []),
+    ...(filters.status ? [{ key: 'status', label: filters.status === 'active' ? 'Active' : 'Inactive', onRemove: () => setFilters((f) => ({ ...f, status: '' })) }] : []),
+  ];
+  const menuFields: FilterField[] = [
+    { key: 'brand', label: 'Brand', node: brandFilter() },
+    { key: 'category', label: 'Category', node: categoryFilter() },
+    { key: 'status', label: 'Status', node: statusFilter() },
+  ];
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
@@ -738,91 +843,17 @@ const MenuItems: React.FC = () => {
         </div>
       </div>
 
+      <FilterBar className="mb-4" primary={searchFilter} chips={menuChips} fields={menuFields} onClearAll={clearMenuFilters}>
       <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-3 items-end">
-          <SearchableSelect
-            label="Brand"
-            value={filters.brand_id}
-            onChange={(v) => setFilters((f) => ({ ...f, brand_id: v }))}
-            options={[
-              { value: '', label: 'Select brand' },
-              ...(brands ?? []).map((b) => ({
-                value: String(b.id),
-                label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
-              })),
-            ]}
-            placeholder="Select brand"
-            minWidth="min-w-[180px]"
-          />
-          <SearchableSelect
-            label="Category"
-            value={filters.category_id}
-            onChange={(v) => setFilters((f) => ({ ...f, category_id: v }))}
-            options={[
-              { value: '', label: 'All categories' },
-              ...categoriesForFilter.map((c: { id: number; name: string }) => ({
-                value: String(c.id),
-                label: c.name, inactive: isEntityInactive(c),
-              })),
-            ]}
-            placeholder="All categories"
-            minWidth="min-w-[140px]"
-          />
-          <SearchableSelect
-            label="Status"
-            value={filters.status}
-            onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
-            options={[
-              { value: '', label: 'All' },
-              { value: 'active', label: 'Active' },
-              { value: 'inactive', label: 'Inactive' },
-            ]}
-            placeholder="All"
-            minWidth="min-w-[120px]"
-          />
-          <div className="relative">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Search item name</label>
-            <input
-              type="text"
-              value={filters.search}
-              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-              onFocus={() => menuItemSearchTypeahead.setOpen(true)}
-              onKeyDown={(e) => {
-                const suggestions = menuItemSearchTypeahead.suggestions;
-                if (!suggestions.length) return;
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  menuItemSearchTypeahead.setActiveIndex(Math.min(menuItemSearchTypeahead.activeIndex + 1, suggestions.length - 1));
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  menuItemSearchTypeahead.setActiveIndex(Math.max(menuItemSearchTypeahead.activeIndex - 1, 0));
-                } else if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const opt = suggestions[menuItemSearchTypeahead.activeIndex];
-                  if (opt?.label) setFilters((f) => ({ ...f, search: opt.label }));
-                  menuItemSearchTypeahead.setOpen(false);
-                } else if (e.key === 'Escape') {
-                  menuItemSearchTypeahead.setOpen(false);
-                }
-              }}
-              placeholder="Item name..."
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48"
-            />
-            <TypeaheadDropdown
-              open={menuItemSearchTypeahead.open && filters.search.trim().length >= 2}
-              suggestions={menuItemSearchTypeahead.suggestions}
-              activeIndex={menuItemSearchTypeahead.activeIndex}
-              onHoverIndex={menuItemSearchTypeahead.setActiveIndex}
-              onSelect={(opt) => {
-                setFilters((f) => ({ ...f, search: opt.label }));
-                menuItemSearchTypeahead.setOpen(false);
-              }}
-              onClose={() => menuItemSearchTypeahead.setOpen(false)}
-            />
-          </div>
-          <ClearFiltersButton onClick={() => setFilters({ brand_id: '', category_id: '', status: '', search: '' })} />
+          {brandFilter('Brand', 'min-w-[180px]')}
+          {categoryFilter('Category', 'min-w-[140px]')}
+          {statusFilter('Status', 'min-w-[120px]')}
+          {searchFilter}
+          <ClearFiltersButton onClick={clearMenuFilters} />
         </div>
       </Card>
+      </FilterBar>
 
       {showCategoryForm && (
         <Card className="mb-4 bg-blue-50 border-blue-300">

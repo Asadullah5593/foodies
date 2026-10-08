@@ -9,6 +9,9 @@ import {
 import Card from '../../components/Card';
 import PaginationBar from '../../components/PaginationBar';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { useViewport } from '../../hooks/useViewport';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
 import ActivityLogSettingsPanel, {
   CaptureStateBanner,
 } from './ActivityLogSettings';
@@ -76,6 +79,8 @@ const ActivityLog: React.FC = () => {
   const [params, setParams] = useSearchParams();
   const [selected, setSelected] = useState<ActivityLogRow | null>(null);
   const [searchInput, setSearchInput] = useState(params.get('search') ?? '');
+  // Below lg: compact filter bar + sheet (see FilterBar); desktop keeps the filter card.
+  const { isDesktop } = useViewport();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Record lens: arriving from a History link asks "everything that ever
@@ -363,221 +368,192 @@ const ActivityLog: React.FC = () => {
     </>
   );
 
-  return (
-    <div className="mx-auto max-w-[1500px] px-9 pb-20 pt-8 text-[#1F2430]">
-      <div className="mb-[22px] flex flex-wrap items-start justify-between gap-5">
-        <div>
-          <div className="mb-[5px] text-xs font-semibold text-[#6B7280]">Oversight</div>
-          {isRecordLens ? (
-            <>
-              <h1 className="mb-1.5 text-[27px] font-extrabold tracking-[-0.02em]">
-                {params.get('entity_label') || filters.entity_type.replace(/_/g, ' ')}
-                {params.get('entity_label') ? '' : ` #${filters.entity_id}`}
-              </h1>
-              <p className="text-[14px] text-[#4B5563]">
-                Full history of this record, newest first · last 12 months
-              </p>
-              <button
-                type="button"
-                onClick={clearAll}
-                className="mt-2.5 inline-flex items-center gap-1.5 rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6]"
-              >
-                ← All activity
-              </button>
-            </>
-          ) : (
-            <>
-              <h1 className="mb-1.5 text-[27px] font-extrabold tracking-[-0.02em]">
-                Activity Log
-              </h1>
-              <p className="text-[14px] text-[#4B5563]">
-                Who did what, when and from where — append-only, and nothing here can be
-                edited or deleted
-              </p>
-            </>
-          )}
-        </div>
-        <div className="flex flex-none items-center gap-2.5">
-          <ActivityLogSettingsPanel />
-        </div>
-      </div>
-
-      <CaptureStateBanner />
-
-      <Card className="mb-[18px] rounded-2xl border border-[#ECEDF0] p-5 shadow-[0_6px_18px_rgba(15,23,42,0.04)]">
-        <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
-          <div>
-            <span className={LABEL}>Period</span>
-            <div className="flex h-10 overflow-hidden rounded-lg border border-[#D5D9E0]">
-              {PERIODS.map((period) => {
-                const active =
-                  filters.date_from === period.from() && filters.date_to === period.to();
-                return (
-                  <button
-                    key={period.label}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() =>
-                      setFilters({ date_from: period.from(), date_to: period.to() })
-                    }
-                    className={`border-r border-[#D5D9E0] px-3.5 text-[13.5px] font-semibold transition last:border-r-0 ${
-                      active
-                        ? 'bg-[#20242C] text-white'
-                        : 'bg-white text-[#374151] hover:bg-[#F3F4F6]'
-                    }`}
-                  >
-                    {period.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-          <div>
-            <label className={LABEL} htmlFor="activity-from">
-              From
-            </label>
-            <input
-              id="activity-from"
-              type="date"
-              aria-label="From date"
-              value={filters.date_from}
-              max={filters.date_to}
-              onChange={(e) => setFilter('date_from', e.target.value)}
-              className={INPUT}
-            />
-          </div>
-          <div>
-            <label className={LABEL} htmlFor="activity-to">
-              To
-            </label>
-            <input
-              id="activity-to"
-              type="date"
-              aria-label="To date"
-              value={filters.date_to}
-              min={filters.date_from}
-              onChange={(e) => setFilter('date_to', e.target.value)}
-              className={INPUT}
-            />
-          </div>
-        </div>
-
-        {/* Who and where */}
-        <div className="mt-4 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-5 lg:items-end">
-          <div>
-            <span className={LABEL}>Person</span>
-            <SearchableSelect
-              ariaLabel="Who"
-              minWidth="min-w-0"
-              triggerClassName={SELECT_TRIGGER}
-              value={filters.actor_user_id}
-              onChange={(v) => setFilter('actor_user_id', v)}
-              options={[
-                { value: '', label: 'Anyone' },
-                ...(options?.actors ?? []).map((a) => ({
-                  value: String(a.actor_user_id),
-                  label: a.actor_label ?? `user#${a.actor_user_id}`,
-                  inactive: a.is_active === false,
-                })),
-              ]}
-            />
-          </div>
-          <div>
-            <span className={LABEL}>Role at the time</span>
-            <SearchableSelect
-              ariaLabel="Role"
-              minWidth="min-w-0"
-              triggerClassName={SELECT_TRIGGER}
-              value={filters.actor_role}
-              onChange={(v) => setFilter('actor_role', v)}
-              options={[
-                { value: '', label: 'Any role' },
-                ...(options?.roles ?? []).map((r) => ({
-                  value: r.slugs.join(','),
-                  label: r.name,
-                })),
-              ]}
-            />
-          </div>
-          <div>
-            <span className={LABEL}>Branch</span>
-            <SearchableSelect
-              ariaLabel="Branch"
-              minWidth="min-w-0"
-              triggerClassName={SELECT_TRIGGER}
-              value={filters.branch_id}
-              onChange={(v) => setFilter('branch_id', v)}
-              options={[
-                { value: '', label: 'All branches' },
-                ...(options?.branches ?? []).map((b) => ({
-                  value: String(b.id),
-                  label: b.name,
-                  inactive: b.is_active === false,
-                })),
-              ]}
-            />
-          </div>
-          <div>
-            <span className={LABEL}>Brand</span>
-            <SearchableSelect
-              ariaLabel="Brand"
-              minWidth="min-w-0"
-              triggerClassName={SELECT_TRIGGER}
-              value={filters.brand_id}
-              onChange={(v) => setFilter('brand_id', v)}
-              options={[
-                { value: '', label: 'All brands' },
-                ...(options?.brands ?? []).map((b) => ({
-                  value: String(b.id),
-                  label: b.name,
-                  inactive: b.is_active === false,
-                })),
-              ]}
-            />
-          </div>
-          <div>
-            <label className={LABEL} htmlFor="activity-ip">
-              IP address
-            </label>
-            {/* Exact match, so it is applied on Enter or on leaving the box
-                rather than on every keystroke of a half-typed address. */}
-            <input
-              id="activity-ip"
-              key={filters.ip}
-              defaultValue={filters.ip}
-              placeholder="e.g. 101.53.234.92"
-              onBlur={(e) => {
-                const value = e.target.value.trim();
-                if (value !== filters.ip) setFilter('ip', value);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur();
-              }}
-              className={`${INPUT} font-mono`}
-            />
-          </div>
-        </div>
-
-        {/* What */}
-        <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-[1fr,1fr,1.1fr,0.9fr,1.5fr,auto] lg:items-end">
-          <div>
-            <span className={LABEL}>Area</span>
-            <SearchableSelect
-              ariaLabel="Area"
-              minWidth="min-w-0"
-              triggerClassName={SELECT_TRIGGER}
-              value={filters.action_group}
-              onChange={(v) => setFilter('action_group', v)}
-              options={[
-                { value: '', label: 'All areas' },
-                ...(options?.action_groups ?? []).map((g) => ({
-                  value: g,
-                  label: areaLabel(g),
-                })),
-              ]}
-            />
-          </div>
-          {!isRecordLens && (
+  // Filter controls, shared by the desktop card and the phone/tablet sheet (one tree renders).
+  const periodGroup = (
+    <div className="flex h-10 overflow-hidden rounded-lg border border-[#D5D9E0]">
+      {PERIODS.map((period) => {
+        const active =
+          filters.date_from === period.from() && filters.date_to === period.to();
+        return (
+          <button
+            key={period.label}
+            type="button"
+            aria-pressed={active}
+            onClick={() =>
+              setFilters({ date_from: period.from(), date_to: period.to() })
+            }
+            className={`border-r border-[#D5D9E0] px-3.5 text-[13.5px] font-semibold transition last:border-r-0 ${
+              active
+                ? 'bg-[#20242C] text-white'
+                : 'bg-white text-[#374151] hover:bg-[#F3F4F6]'
+            }`}
+          >
+            {period.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+  const periodBlock = (
+    <div>
+      <span className={LABEL}>Period</span>
+      {periodGroup}
+    </div>
+  );
+  const fromBlock = (
+    <div>
+      <label className={LABEL} htmlFor="activity-from">
+        From
+      </label>
+      <input
+        id="activity-from"
+        type="date"
+        aria-label="From date"
+        value={filters.date_from}
+        max={filters.date_to}
+        onChange={(e) => setFilter('date_from', e.target.value)}
+        className={INPUT}
+      />
+    </div>
+  );
+  const toBlock = (
+    <div>
+      <label className={LABEL} htmlFor="activity-to">
+        To
+      </label>
+      <input
+        id="activity-to"
+        type="date"
+        aria-label="To date"
+        value={filters.date_to}
+        min={filters.date_from}
+        onChange={(e) => setFilter('date_to', e.target.value)}
+        className={INPUT}
+      />
+    </div>
+  );
+  const personBlock = (
+    <div>
+      <span className={LABEL}>Person</span>
+      <SearchableSelect
+        ariaLabel="Who"
+        minWidth="min-w-0"
+        triggerClassName={SELECT_TRIGGER}
+        value={filters.actor_user_id}
+        onChange={(v) => setFilter('actor_user_id', v)}
+        options={[
+          { value: '', label: 'Anyone' },
+          ...(options?.actors ?? []).map((a) => ({
+            value: String(a.actor_user_id),
+            label: a.actor_label ?? `user#${a.actor_user_id}`,
+            inactive: a.is_active === false,
+          })),
+        ]}
+      />
+    </div>
+  );
+  const roleBlock = (
+    <div>
+      <span className={LABEL}>Role at the time</span>
+      <SearchableSelect
+        ariaLabel="Role"
+        minWidth="min-w-0"
+        triggerClassName={SELECT_TRIGGER}
+        value={filters.actor_role}
+        onChange={(v) => setFilter('actor_role', v)}
+        options={[
+          { value: '', label: 'Any role' },
+          ...(options?.roles ?? []).map((r) => ({
+            value: r.slugs.join(','),
+            label: r.name,
+          })),
+        ]}
+      />
+    </div>
+  );
+  const branchBlock = (
+    <div>
+      <span className={LABEL}>Branch</span>
+      <SearchableSelect
+        ariaLabel="Branch"
+        minWidth="min-w-0"
+        triggerClassName={SELECT_TRIGGER}
+        value={filters.branch_id}
+        onChange={(v) => setFilter('branch_id', v)}
+        options={[
+          { value: '', label: 'All branches' },
+          ...(options?.branches ?? []).map((b) => ({
+            value: String(b.id),
+            label: b.name,
+            inactive: b.is_active === false,
+          })),
+        ]}
+      />
+    </div>
+  );
+  const brandBlock = (
+    <div>
+      <span className={LABEL}>Brand</span>
+      <SearchableSelect
+        ariaLabel="Brand"
+        minWidth="min-w-0"
+        triggerClassName={SELECT_TRIGGER}
+        value={filters.brand_id}
+        onChange={(v) => setFilter('brand_id', v)}
+        options={[
+          { value: '', label: 'All brands' },
+          ...(options?.brands ?? []).map((b) => ({
+            value: String(b.id),
+            label: b.name,
+            inactive: b.is_active === false,
+          })),
+        ]}
+      />
+    </div>
+  );
+  const ipBlock = (
+    <div>
+      <label className={LABEL} htmlFor="activity-ip">
+        IP address
+      </label>
+      {/* Exact match, so it is applied on Enter or on leaving the box
+          rather than on every keystroke of a half-typed address. */}
+      <input
+        id="activity-ip"
+        key={filters.ip}
+        defaultValue={filters.ip}
+        placeholder="e.g. 101.53.234.92"
+        onBlur={(e) => {
+          const value = e.target.value.trim();
+          if (value !== filters.ip) setFilter('ip', value);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+        }}
+        className={`${INPUT} font-mono`}
+      />
+    </div>
+  );
+  const areaBlock = (
+    <div>
+      <span className={LABEL}>Area</span>
+      <SearchableSelect
+        ariaLabel="Area"
+        minWidth="min-w-0"
+        triggerClassName={SELECT_TRIGGER}
+        value={filters.action_group}
+        onChange={(v) => setFilter('action_group', v)}
+        options={[
+          { value: '', label: 'All areas' },
+          ...(options?.action_groups ?? []).map((g) => ({
+            value: g,
+            label: areaLabel(g),
+          })),
+        ]}
+      />
+    </div>
+  );
+  const recordBlocks = !isRecordLens && (
             <>
               <div>
                 <span className={LABEL}>Record type</span>
@@ -620,55 +596,52 @@ const ActivityLog: React.FC = () => {
                 />
               </div>
             </>
-          )}
-          <div>
-            <span className={LABEL}>Result</span>
-            <SearchableSelect
-              ariaLabel="Outcome"
-              minWidth="min-w-0"
-              triggerClassName={SELECT_TRIGGER}
-              value={filters.outcome}
-              onChange={(v) => setFilter('outcome', v)}
-              options={[
-                { value: '', label: 'Any result' },
-                ...(options?.outcomes ?? []).map((o) => ({
-                  value: o,
-                  label: outcomeLabel(o),
-                })),
-              ]}
-            />
-          </div>
-          <div>
-            <label className={LABEL} htmlFor="activity-search">
-              Search
-            </label>
-            <input
-              id="activity-search"
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Person, record, action or IP…"
-              className={INPUT}
-            />
-          </div>
-          <button
-            type="button"
-            onClick={clearAll}
-            className="h-10 rounded-lg border border-[#D5D9E0] bg-white px-4 text-[13.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6]"
-          >
-            Clear filters
-          </button>
-        </div>
-
-        {filters.entity_type === 'order' && filters.entity_ref && !isRecordLens && (
+          );
+  const resultBlock = (
+    <div>
+      <span className={LABEL}>Result</span>
+      <SearchableSelect
+        ariaLabel="Outcome"
+        minWidth="min-w-0"
+        triggerClassName={SELECT_TRIGGER}
+        value={filters.outcome}
+        onChange={(v) => setFilter('outcome', v)}
+        options={[
+          { value: '', label: 'Any result' },
+          ...(options?.outcomes ?? []).map((o) => ({
+            value: o,
+            label: outcomeLabel(o),
+          })),
+        ]}
+      />
+    </div>
+  );
+  const searchInputEl = (
+    <input
+      id="activity-search"
+      value={searchInput}
+      onChange={(e) => setSearchInput(e.target.value)}
+      placeholder="Person, record, action or IP…"
+      className={INPUT}
+    />
+  );
+  const searchBlock = (
+    <div>
+      <label className={LABEL} htmlFor="activity-search">
+        Search
+      </label>
+      {searchInputEl}
+    </div>
+  );
+  const orderNote = filters.entity_type === 'order' && filters.entity_ref && !isRecordLens && (
           <p className="mt-3 text-[12.5px] text-[#6B7280]">
             Order numbers restart every day at each branch and brand, so this finds
             order {filters.entity_ref} among orders placed in the period above. Pick a
             branch or brand to narrow it, or use “Full history” on a row to follow one
             order.
           </p>
-        )}
-
-        {data && (
+        );
+  const summaryRow = data && (
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-[#F1F2F5] pt-4">
             <span className="mr-1 text-[13.5px] text-[#4B5563]">
               <span className="font-bold text-[#20242C]">
@@ -692,8 +665,127 @@ const ActivityLog: React.FC = () => {
               </button>
             ))}
           </div>
-        )}
+        );
+
+  // Phones and tablets: each applied filter as a chip (search and the period stay on screen).
+  const optionName = (list: Array<{ id?: number | string; name?: string }> | undefined, id: string) =>
+    (list ?? []).find((x) => String(x.id) === id)?.name ?? id;
+  const defaultFrom = isRecordLens ? daysAgoIso(365) : daysAgoIso(7);
+  const activityChips: FilterChip[] = [
+    ...(PERIODS.some((p) => filters.date_from === p.from() && filters.date_to === p.to()) || (filters.date_from === defaultFrom && filters.date_to === todayIso())
+      ? []
+      : [{ key: 'dates', label: rangeChipLabel(filters.date_from, filters.date_to), onRemove: () => setFilters({ date_from: '', date_to: '' }) }]),
+    ...(filters.actor_user_id
+      ? [{ key: 'person', label: (options?.actors ?? []).find((a) => String(a.actor_user_id) === filters.actor_user_id)?.actor_label ?? 'Person', onRemove: () => setFilter('actor_user_id', '') }]
+      : []),
+    ...(filters.actor_role
+      ? [{ key: 'role', label: (options?.roles ?? []).find((r) => r.slugs.join(',') === filters.actor_role)?.name ?? 'Role', onRemove: () => setFilter('actor_role', '') }]
+      : []),
+    ...(filters.branch_id ? [{ key: 'branch', label: optionName(options?.branches, filters.branch_id), onRemove: () => setFilter('branch_id', '') }] : []),
+    ...(filters.brand_id ? [{ key: 'brand', label: optionName(options?.brands, filters.brand_id), onRemove: () => setFilter('brand_id', '') }] : []),
+    ...(filters.ip ? [{ key: 'ip', label: filters.ip, onRemove: () => setFilter('ip', '') }] : []),
+    ...(filters.action_group ? [{ key: 'area', label: areaLabel(filters.action_group), onRemove: () => setFilter('action_group', '') }] : []),
+    ...(!isRecordLens && filters.entity_type ? [{ key: 'type', label: recordTypeLabel(filters.entity_type), onRemove: () => setFilter('entity_type', '') }] : []),
+    ...(!isRecordLens && filters.entity_ref ? [{ key: 'ref', label: filters.entity_ref, onRemove: () => setFilter('entity_ref', '') }] : []),
+    ...(filters.outcome ? [{ key: 'outcome', label: outcomeLabel(filters.outcome), onRemove: () => setFilter('outcome', '') }] : []),
+  ];
+  const activityFields: FilterField[] = [
+    { key: 'dates', node: <div className="grid grid-cols-2 gap-2.5">{fromBlock}{toBlock}</div> },
+    { key: 'who', node: <div className="space-y-3">{personBlock}{roleBlock}</div> },
+    { key: 'where', node: <div className="space-y-3">{branchBlock}{brandBlock}{ipBlock}</div> },
+    { key: 'what', node: <div className="space-y-3">{areaBlock}{recordBlocks}{resultBlock}{orderNote}</div> },
+  ];
+
+  return (
+    <div className="mx-auto max-w-[1500px] px-9 pb-20 pt-8 text-[#1F2430] max-lg:px-0 max-lg:pt-2">
+      <div className="mb-[22px] flex flex-wrap items-start justify-between gap-5">
+        <div>
+          <div className="mb-[5px] text-xs font-semibold text-[#6B7280]">Oversight</div>
+          {isRecordLens ? (
+            <>
+              <h1 className="mb-1.5 text-[27px] font-extrabold tracking-[-0.02em]">
+                {params.get('entity_label') || filters.entity_type.replace(/_/g, ' ')}
+                {params.get('entity_label') ? '' : ` #${filters.entity_id}`}
+              </h1>
+              <p className="text-[14px] text-[#4B5563]">
+                Full history of this record, newest first · last 12 months
+              </p>
+              <button
+                type="button"
+                onClick={clearAll}
+                className="mt-2.5 inline-flex items-center gap-1.5 rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6]"
+              >
+                ← All activity
+              </button>
+            </>
+          ) : (
+            <>
+              <h1 className="mb-1.5 text-[27px] font-extrabold tracking-[-0.02em]">
+                Activity Log
+              </h1>
+              <p className="text-[14px] text-[#4B5563]">
+                Who did what, when and from where — append-only, and nothing here can be
+                edited or deleted
+              </p>
+            </>
+          )}
+        </div>
+        <div className="flex flex-none items-center gap-2.5">
+          <ActivityLogSettingsPanel />
+        </div>
+      </div>
+
+      <CaptureStateBanner />
+
+      <FilterBar
+        className="mb-[18px]"
+        primary={searchInputEl}
+        primaryRow={periodGroup}
+        chips={activityChips}
+        fields={activityFields}
+        onClearAll={clearAll}
+        resultLabel={data ? `Show ${data.total.toLocaleString()} ${data.total === 1 ? 'entry' : 'entries'}` : undefined}
+      >
+      <Card className="mb-[18px] rounded-2xl border border-[#ECEDF0] p-5 shadow-[0_6px_18px_rgba(15,23,42,0.04)]">
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
+          {periodBlock}
+          {fromBlock}
+          {toBlock}
+        </div>
+
+        {/* Who and where */}
+        <div className="mt-4 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-5 lg:items-end">
+          {personBlock}
+          {roleBlock}
+          {branchBlock}
+          {brandBlock}
+          {ipBlock}
+        </div>
+
+        {/* What */}
+        <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:grid-cols-[1fr,1fr,1.1fr,0.9fr,1.5fr,auto] lg:items-end">
+          {areaBlock}
+          {recordBlocks}
+          {resultBlock}
+          {searchBlock}
+          <button
+            type="button"
+            onClick={clearAll}
+            className="h-10 rounded-lg border border-[#D5D9E0] bg-white px-4 text-[13.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6]"
+          >
+            Clear filters
+          </button>
+        </div>
+
+        {orderNote}
+
+        {summaryRow}
       </Card>
+      </FilterBar>
+      {/* Phones and tablets: the result summary and outcome counts stay on screen under the bar. */}
+      {!isDesktop && summaryRow && (
+        <div className="mb-[18px] [&>div]:mt-0 [&>div]:border-t-0 [&>div]:pt-0">{summaryRow}</div>
+      )}
 
       <Card className="overflow-hidden rounded-2xl border border-[#ECEDF0] p-0 shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
         {rangeError ? (

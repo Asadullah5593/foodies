@@ -10,6 +10,7 @@ import Button from '../../components/Button';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -382,6 +383,47 @@ const BranchUsers: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading branch users...'} />;
   }
 
+  // Each filter control once: desktop shows the card below, phones and tablets the
+  // compact bar + sheet (only one renders).
+  const branchFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={selectedBranch != null ? String(selectedBranch) : ''}
+      onChange={(v) => setSelectedBranch(v ? parseInt(v, 10) : null)}
+      options={[
+        { value: '', label: 'All branches' },
+        ...(branches ?? []).map((branch) => ({
+          value: String(branch.id),
+          label: `${branch.name} (${branch.code})`,
+          inactive: isEntityInactive(branch),
+        })),
+      ]}
+      placeholder="All branches"
+      minWidth="min-w-[200px]"
+    />
+  );
+  const searchFilter = (
+    <div className="flex-1 min-w-[200px] max-lg:min-w-0">
+      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 max-lg:hidden">Search</label>
+      <input
+        type="text"
+        aria-label="Search branch users"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Name, email, branch, role or brand..."
+        className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 max-lg:min-h-[44px] max-lg:w-full max-lg:min-w-0"
+      />
+    </div>
+  );
+  const filterChips: FilterChip[] = [
+    ...(selectedBranch != null
+      ? [{ key: 'branch', label: (branches ?? []).find((b) => b.id === selectedBranch)?.name ?? 'Branch', onRemove: () => setSelectedBranch(null) }]
+      : []),
+  ];
+  const filterFields: FilterField[] = [
+    { key: 'branchFilter', label: 'Branch', node: branchFilter() },
+  ];
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
@@ -394,41 +436,29 @@ const BranchUsers: React.FC = () => {
         </div>
       </div>
 
-      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap gap-3 items-end">
-          <SearchableSelect
-            label="Filter by Branch"
-            value={selectedBranch != null ? String(selectedBranch) : ''}
-            onChange={(v) => setSelectedBranch(v ? parseInt(v, 10) : null)}
-            options={[
-              { value: '', label: 'All branches' },
-              ...(branches ?? []).map((branch) => ({
-                value: String(branch.id),
-                label: `${branch.name} (${branch.code})`,
-                inactive: isEntityInactive(branch),
-              })),
-            ]}
-            placeholder="All branches"
-            minWidth="min-w-[200px]"
-          />
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Search</label>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Name, email, branch, role or brand..."
-              className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+      <FilterBar
+        className="mb-4"
+        primary={searchFilter}
+        chips={filterChips}
+        fields={filterFields}
+        onClearAll={() => {
+          setSelectedBranch(null);
+          setSearch('');
+        }}
+      >
+        <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap gap-3 items-end">
+            {branchFilter('Filter by Branch')}
+            {searchFilter}
+            <ClearFiltersButton
+              onClick={() => {
+                setSelectedBranch(null);
+                setSearch('');
+              }}
             />
           </div>
-          <ClearFiltersButton
-            onClick={() => {
-              setSelectedBranch(null);
-              setSearch('');
-            }}
-          />
-        </div>
-      </Card>
+        </Card>
+      </FilterBar>
 
       <Modal
         isOpen={showForm}

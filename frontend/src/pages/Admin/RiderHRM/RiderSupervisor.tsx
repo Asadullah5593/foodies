@@ -8,6 +8,8 @@ import {
 } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
+import FilterBar, { type FilterChip, type FilterField } from '../../../components/FilterBar';
+import { rangeChipLabel } from '../../../utils/rangeChipLabel';
 import Button from '../../../components/Button';
 import Loader from '../../../components/Loader';
 import { useHasPermission } from '../../../hooks/useHasPermission';
@@ -155,30 +157,33 @@ const DateRangeFilter: React.FC<{
   onFrom: (v: string) => void;
   onTo: (v: string) => void;
   historyDays: number | null;
-}> = ({ from, to, onFrom, onTo, historyDays }) => {
+  /** The phone/tablet filter sheet: two full-width boxes side by side. */
+  stacked?: boolean;
+}> = ({ from, to, onFrom, onTo, historyDays, stacked = false }) => {
   const min = earliestIso(historyDays);
   const max = todayIso();
   const cls =
     'rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm px-2 py-1.5 text-gray-800 dark:text-slate-200 focus:ring-2 focus:ring-red-500';
+  const inputCls = stacked ? `${cls} w-full` : cls;
   return (
-    <div className="flex items-center gap-1.5">
+    <div className={stacked ? 'grid grid-cols-2 gap-2.5' : 'flex items-center gap-1.5'}>
       <input
         type="date"
         value={from}
         min={min}
         max={to || max}
         onChange={(e) => onFrom(e.target.value)}
-        className={cls}
+        className={inputCls}
         aria-label="Orders placed from"
       />
-      <span className="text-xs text-gray-500 dark:text-slate-400">to</span>
+      {!stacked && <span className="text-xs text-gray-500 dark:text-slate-400">to</span>}
       <input
         type="date"
         value={to}
         min={from || min}
         max={max}
         onChange={(e) => onTo(e.target.value)}
-        className={cls}
+        className={inputCls}
         aria-label="Orders placed to"
       />
       {(from || to) && (
@@ -188,7 +193,7 @@ const DateRangeFilter: React.FC<{
             onFrom('');
             onTo('');
           }}
-          className="text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 underline"
+          className={`text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 underline${stacked ? ' col-span-2 min-h-[40px] justify-self-start' : ''}`}
         >
           Clear
         </button>
@@ -274,73 +279,118 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // Each filter once: desktop shows the row below, phones and tablets a bar + sheet.
+  const statusPills = canViewStatus
+    ? ORDER_STATUS_TABS.map((t) => (
+        <Pill
+          key={t.key}
+          active={status === t.key}
+          label={t.label}
+          count={counts ? counts[t.key] : undefined}
+          onClick={() => {
+            setStatus(t.key);
+            setPage(1);
+          }}
+        />
+      ))
+    : null;
+  const brandSelect =
+    (filters.brands ?? []).length > 1 ? (
+      <FilterSelect
+        value={brandId}
+        onChange={(v) => {
+          setBrandId(v);
+          setPage(1);
+        }}
+        allLabel="All brands"
+        options={filters.brands ?? []}
+      />
+    ) : null;
+  const branchSelect =
+    (filters.branches ?? []).length > 1 ? (
+      <FilterSelect
+        value={branchId}
+        onChange={(v) => {
+          setBranchId(v);
+          setPage(1);
+        }}
+        allLabel="All branches"
+        options={filters.branches ?? []}
+      />
+    ) : null;
+  const riderSelect =
+    (filters.riders ?? []).length > 1 ? (
+      <FilterSelect
+        value={riderId}
+        onChange={(v) => {
+          setRiderId(v);
+          setPage(1);
+        }}
+        allLabel="All riders"
+        options={filters.riders ?? []}
+      />
+    ) : null;
+  const dateRange = (stacked = false) => (
+    <DateRangeFilter
+      from={dateFrom}
+      to={dateTo}
+      onFrom={(v) => {
+        setDateFrom(v);
+        setPage(1);
+      }}
+      onTo={(v) => {
+        setDateTo(v);
+        setPage(1);
+      }}
+      historyDays={filters.history_days ?? null}
+      stacked={stacked}
+    />
+  );
+  const nameOf = (list: SupervisorFilterOption[] | undefined, id: number | '') => (list ?? []).find((o) => o.id === id)?.name;
+  const windowLabel = filters.history_days != null ? `Last ${filters.history_days} days` : 'Last 30 days';
+  const deliveryChips: FilterChip[] = [
+    ...(canViewStatus && status !== 'all'
+      ? [{ key: 'status', label: ORDER_STATUS_TABS.find((t) => t.key === status)?.label ?? status, onRemove: () => { setStatus('all'); setPage(1); } }]
+      : []),
+    ...(brandId !== '' ? [{ key: 'brand', label: nameOf(filters.brands, brandId) ?? 'Brand', onRemove: () => { setBrandId(''); setPage(1); } }] : []),
+    ...(branchId !== '' ? [{ key: 'branch', label: nameOf(filters.branches, branchId) ?? 'Branch', onRemove: () => { setBranchId(''); setPage(1); } }] : []),
+    ...(riderId !== '' ? [{ key: 'rider', label: nameOf(filters.riders, riderId) ?? 'Rider', onRemove: () => { setRiderId(''); setPage(1); } }] : []),
+    dateFrom || dateTo
+      ? { key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { setDateFrom(''); setDateTo(''); setPage(1); } }
+      : // The default window is context, not a filter you can drop.
+        { key: 'window', label: filters.history_days != null ? `${windowLabel} · role limit` : windowLabel },
+  ];
+  const deliveryFields: FilterField[] = [
+    ...(statusPills ? [{ key: 'status', label: 'Status', node: <div className="flex flex-wrap gap-2 [&>button]:min-h-[40px]">{statusPills}</div> }] : []),
+    { key: 'date', label: 'Order date', node: dateRange(true) },
+    ...(brandSelect ? [{ key: 'brand', label: 'Brand', node: brandSelect }] : []),
+    ...(branchSelect ? [{ key: 'branch', label: 'Branch', node: branchSelect }] : []),
+    ...(riderSelect ? [{ key: 'rider', label: 'Rider', node: riderSelect }] : []),
+  ];
+  const clearDeliveryFilters = () => {
+    setStatus('all');
+    setBrandId('');
+    setBranchId('');
+    setRiderId('');
+    setDateFrom('');
+    setDateTo('');
+    setPage(1);
+  };
+
   return (
     <Card className="dark:bg-slate-800 dark:border-slate-700">
+      <FilterBar chips={deliveryChips} fields={deliveryFields} onClearAll={clearDeliveryFilters} resultLabel={`Show ${total} ${total === 1 ? 'order' : 'orders'}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
         {/* Status filter pills are part of the status permission — without it
             the buckets would reveal exactly what the hidden column shows. */}
         <div className="flex flex-wrap gap-2">
-          {canViewStatus &&
-            ORDER_STATUS_TABS.map((t) => (
-              <Pill
-                key={t.key}
-                active={status === t.key}
-                label={t.label}
-                count={counts ? counts[t.key] : undefined}
-                onClick={() => {
-                  setStatus(t.key);
-                  setPage(1);
-                }}
-              />
-            ))}
+          {statusPills}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {(filters.brands ?? []).length > 1 ? (
-            <FilterSelect
-              value={brandId}
-              onChange={(v) => {
-                setBrandId(v);
-                setPage(1);
-              }}
-              allLabel="All brands"
-              options={filters.brands ?? []}
-            />
-          ) : null}
-          {(filters.branches ?? []).length > 1 ? (
-            <FilterSelect
-              value={branchId}
-              onChange={(v) => {
-                setBranchId(v);
-                setPage(1);
-              }}
-              allLabel="All branches"
-              options={filters.branches ?? []}
-            />
-          ) : null}
-          {(filters.riders ?? []).length > 1 ? (
-            <FilterSelect
-              value={riderId}
-              onChange={(v) => {
-                setRiderId(v);
-                setPage(1);
-              }}
-              allLabel="All riders"
-              options={filters.riders ?? []}
-            />
-          ) : null}
-          <DateRangeFilter
-            from={dateFrom}
-            to={dateTo}
-            onFrom={(v) => {
-              setDateFrom(v);
-              setPage(1);
-            }}
-            onTo={(v) => {
-              setDateTo(v);
-              setPage(1);
-            }}
-            historyDays={filters.history_days ?? null}
-          />
+          {brandSelect}
+          {branchSelect}
+          {riderSelect}
+          {dateRange()}
           <span className="text-xs text-gray-500 dark:text-slate-400">
             {dateFrom || dateTo
               ? 'by order date'
@@ -358,6 +408,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
           </span>
         </div>
       </div>
+      </FilterBar>
 
       {/* Average of the trips matching the filters above (not the status
           tab), so picking a rider shows that rider's average. */}
@@ -536,37 +587,64 @@ const RidersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({ filters }) 
     [riders, status]
   );
 
+  // Each filter once: desktop shows the row below, phones and tablets a bar + sheet.
+  const riderStatusPills = RIDER_STATUS_TABS.map((t) => (
+    <Pill
+      key={t.key}
+      active={status === t.key}
+      label={t.label}
+      count={counts[t.key]}
+      onClick={() => setStatus(t.key)}
+    />
+  ));
+  const brandSelect =
+    (filters.brands ?? []).length > 1 ? (
+      <FilterSelect
+        value={brandId}
+        onChange={setBrandId}
+        allLabel="All brands"
+        options={filters.brands ?? []}
+      />
+    ) : null;
+  const riderSelect =
+    (filters.riders ?? []).length > 1 ? (
+      <FilterSelect
+        value={riderId}
+        onChange={setRiderId}
+        allLabel="All riders"
+        options={filters.riders ?? []}
+      />
+    ) : null;
+  const nameOf = (list: SupervisorFilterOption[] | undefined, id: number | '') => (list ?? []).find((o) => o.id === id)?.name;
+  const riderChips: FilterChip[] = [
+    ...(status !== 'all'
+      ? [{ key: 'status', label: RIDER_STATUS_TABS.find((t) => t.key === status)?.label ?? status, onRemove: () => setStatus('all') }]
+      : []),
+    ...(brandId !== '' ? [{ key: 'brand', label: nameOf(filters.brands, brandId) ?? 'Brand', onRemove: () => setBrandId('') }] : []),
+    ...(riderId !== '' ? [{ key: 'rider', label: nameOf(filters.riders, riderId) ?? 'Rider', onRemove: () => setRiderId('') }] : []),
+    { key: 'live', label: 'Live · every 30s' },
+  ];
+  const riderFields: FilterField[] = [
+    { key: 'status', label: 'Status', node: <div className="flex flex-wrap gap-2 [&>button]:min-h-[40px]">{riderStatusPills}</div> },
+    ...(brandSelect ? [{ key: 'brand', label: 'Brand', node: brandSelect }] : []),
+    ...(riderSelect ? [{ key: 'rider', label: 'Rider', node: riderSelect }] : []),
+  ];
+  const clearRiderFilters = () => {
+    setStatus('all');
+    setBrandId('');
+    setRiderId('');
+  };
+
   return (
     <Card className="dark:bg-slate-800 dark:border-slate-700">
+      <FilterBar chips={riderChips} fields={riderFields} onClearAll={clearRiderFilters} resultLabel={`Show ${visible.length} ${visible.length === 1 ? 'rider' : 'riders'}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
         <div className="flex flex-wrap gap-2">
-          {RIDER_STATUS_TABS.map((t) => (
-            <Pill
-              key={t.key}
-              active={status === t.key}
-              label={t.label}
-              count={counts[t.key]}
-              onClick={() => setStatus(t.key)}
-            />
-          ))}
+          {riderStatusPills}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {(filters.brands ?? []).length > 1 ? (
-            <FilterSelect
-              value={brandId}
-              onChange={setBrandId}
-              allLabel="All brands"
-              options={filters.brands ?? []}
-            />
-          ) : null}
-          {(filters.riders ?? []).length > 1 ? (
-            <FilterSelect
-              value={riderId}
-              onChange={setRiderId}
-              allLabel="All riders"
-              options={filters.riders ?? []}
-            />
-          ) : null}
+          {brandSelect}
+          {riderSelect}
           {/* No date filter here on purpose: this is live attendance state,
               not order history — dates would read as a period report. */}
           <span className="text-xs text-gray-500 dark:text-slate-400">
@@ -574,6 +652,7 @@ const RidersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({ filters }) 
           </span>
         </div>
       </div>
+      </FilterBar>
 
       {isLoading ? (
         <div className="py-12 flex justify-center">

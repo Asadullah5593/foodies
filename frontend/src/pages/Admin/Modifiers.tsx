@@ -27,6 +27,7 @@ import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -487,6 +488,98 @@ const Modifiers: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading modifiers...'} />;
   }
 
+  // Each filter control once: desktop shows the card below, phones and tablets the
+  // compact bar + sheet (only one renders).
+  const brandFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filters.brand_id}
+      onChange={(v) => setFilters((f) => ({ ...f, brand_id: v, menu_item_id: '' }))}
+      options={[
+        { value: '', label: 'All brands' },
+        ...(brands ?? []).map((b) => ({
+          value: String(b.id),
+          label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+        })),
+      ]}
+      placeholder="All brands"
+      minWidth="min-w-[180px]"
+    />
+  );
+  const menuItemFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filters.menu_item_id}
+      onChange={(v) => setFilters((f) => ({ ...f, menu_item_id: v }))}
+      options={[
+        { value: '', label: 'All items' },
+        ...(menuItemsForFilter ?? []).map((mi: { id: number; name: string }) => ({
+          value: String(mi.id),
+          label: mi.name, inactive: isEntityInactive(mi),
+        })),
+      ]}
+      placeholder="All items"
+      minWidth="min-w-[180px]"
+    />
+  );
+  const searchFilter = (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1 max-lg:hidden">Search</label>
+      <div className="relative">
+        <input
+          type="text"
+          aria-label="Search modifiers"
+          value={filters.search}
+          onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+          onFocus={() => modifierSearchTypeahead.setOpen(true)}
+          onKeyDown={(e) => {
+            const suggestions = modifierSearchTypeahead.suggestions;
+            if (!suggestions.length) return;
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              modifierSearchTypeahead.setActiveIndex(Math.min(modifierSearchTypeahead.activeIndex + 1, suggestions.length - 1));
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              modifierSearchTypeahead.setActiveIndex(Math.max(modifierSearchTypeahead.activeIndex - 1, 0));
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              const opt = suggestions[modifierSearchTypeahead.activeIndex];
+              if (opt?.label) setFilters((f) => ({ ...f, search: opt.label }));
+              modifierSearchTypeahead.setOpen(false);
+            } else if (e.key === 'Escape') {
+              modifierSearchTypeahead.setOpen(false);
+            }
+          }}
+          placeholder="Group or modifier name..."
+          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48 max-lg:min-h-[44px] max-lg:w-full max-lg:min-w-0"
+        />
+        <TypeaheadDropdown
+          open={modifierSearchTypeahead.open && filters.search.trim().length >= 2}
+          suggestions={modifierSearchTypeahead.suggestions}
+          activeIndex={modifierSearchTypeahead.activeIndex}
+          onHoverIndex={modifierSearchTypeahead.setActiveIndex}
+          onSelect={(opt) => {
+            setFilters((f) => ({ ...f, search: opt.label }));
+            modifierSearchTypeahead.setOpen(false);
+          }}
+          onClose={() => modifierSearchTypeahead.setOpen(false)}
+        />
+      </div>
+    </div>
+  );
+  const filterChips: FilterChip[] = [
+    ...(!singleBrand && filters.brand_id
+      ? [{ key: 'brand', label: (brands ?? []).find((b) => String(b.id) === filters.brand_id)?.name ?? 'Brand', onRemove: () => setFilters((f) => ({ ...f, brand_id: '', menu_item_id: '' })) }]
+      : []),
+    ...(filters.menu_item_id
+      ? [{ key: 'item', label: (menuItemsForFilter ?? []).find((mi: { id: number; name: string }) => String(mi.id) === filters.menu_item_id)?.name ?? 'Menu item', onRemove: () => setFilters((f) => ({ ...f, menu_item_id: '' })) }]
+      : []),
+  ];
+  const filterFields: FilterField[] = [
+    ...(!singleBrand ? [{ key: 'brandFilter', label: 'Brand', node: brandFilter() }] : []),
+    ...(effectiveBrandId != null ? [{ key: 'menuItemFilter', label: 'Menu Item', node: menuItemFilter() }] : []),
+  ];
+
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
@@ -499,85 +592,20 @@ const Modifiers: React.FC = () => {
         </div>
       </div>
 
-      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap gap-3 items-end">
-          {!singleBrand && (
-            <SearchableSelect
-              label="Brand"
-              value={filters.brand_id}
-              onChange={(v) => setFilters((f) => ({ ...f, brand_id: v, menu_item_id: '' }))}
-              options={[
-                { value: '', label: 'All brands' },
-                ...(brands ?? []).map((b) => ({
-                  value: String(b.id),
-                  label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
-                })),
-              ]}
-              placeholder="All brands"
-              minWidth="min-w-[180px]"
-            />
-          )}
-          {effectiveBrandId != null && (
-            <SearchableSelect
-              label="Menu Item"
-              value={filters.menu_item_id}
-              onChange={(v) => setFilters((f) => ({ ...f, menu_item_id: v }))}
-              options={[
-                { value: '', label: 'All items' },
-                ...(menuItemsForFilter ?? []).map((mi: { id: number; name: string }) => ({
-                  value: String(mi.id),
-                  label: mi.name, inactive: isEntityInactive(mi),
-                })),
-              ]}
-              placeholder="All items"
-              minWidth="min-w-[180px]"
-            />
-          )}
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Search</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={filters.search}
-                onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-                onFocus={() => modifierSearchTypeahead.setOpen(true)}
-                onKeyDown={(e) => {
-                  const suggestions = modifierSearchTypeahead.suggestions;
-                  if (!suggestions.length) return;
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    modifierSearchTypeahead.setActiveIndex(Math.min(modifierSearchTypeahead.activeIndex + 1, suggestions.length - 1));
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    modifierSearchTypeahead.setActiveIndex(Math.max(modifierSearchTypeahead.activeIndex - 1, 0));
-                  } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const opt = suggestions[modifierSearchTypeahead.activeIndex];
-                    if (opt?.label) setFilters((f) => ({ ...f, search: opt.label }));
-                    modifierSearchTypeahead.setOpen(false);
-                  } else if (e.key === 'Escape') {
-                    modifierSearchTypeahead.setOpen(false);
-                  }
-                }}
-                placeholder="Group or modifier name..."
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48"
-              />
-              <TypeaheadDropdown
-                open={modifierSearchTypeahead.open && filters.search.trim().length >= 2}
-                suggestions={modifierSearchTypeahead.suggestions}
-                activeIndex={modifierSearchTypeahead.activeIndex}
-                onHoverIndex={modifierSearchTypeahead.setActiveIndex}
-                onSelect={(opt) => {
-                  setFilters((f) => ({ ...f, search: opt.label }));
-                  modifierSearchTypeahead.setOpen(false);
-                }}
-                onClose={() => modifierSearchTypeahead.setOpen(false)}
-              />
-            </div>
+      <FilterBar className="mb-4" primary={searchFilter} chips={filterChips} fields={filterFields} onClearAll={() => setFilters(singleBrand ? { brand_id: String(singleBrand.id), search: '', menu_item_id: '' } : { brand_id: '', search: '', menu_item_id: '' })}>
+        <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap gap-3 items-end">
+            {!singleBrand && (
+              brandFilter('Brand')
+            )}
+            {effectiveBrandId != null && (
+              menuItemFilter('Menu Item')
+            )}
+            {searchFilter}
+            <ClearFiltersButton onClick={() => setFilters(singleBrand ? { brand_id: String(singleBrand.id), search: '', menu_item_id: '' } : { brand_id: '', search: '', menu_item_id: '' })} />
           </div>
-          <ClearFiltersButton onClick={() => setFilters(singleBrand ? { brand_id: String(singleBrand.id), search: '', menu_item_id: '' } : { brand_id: '', search: '', menu_item_id: '' })} />
-        </div>
-      </Card>
+        </Card>
+      </FilterBar>
 
       {/* Add Modifier Group modal */}
       <Modal

@@ -9,6 +9,9 @@ import { recordBeacon } from '../../utils/activityBeacon';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 import { isEntityInactive } from '../../utils/entityStatus';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { useViewport } from '../../hooks/useViewport';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
 
 /**
  * The discount stages the pricing engine runs, each carrying this row's
@@ -226,6 +229,8 @@ const ProductSales: React.FC = () => {
   const [dateTo, setDateTo] = useState(today);
   const [status, setStatus] = useState('completed');
   const [discountFilter, setDiscountFilter] = useState('');
+  // Below lg: compact filter bar + sheet; the Break-down row stays on screen under it.
+  const { isDesktop } = useViewport();
   const [splitBy, setSplitBy] = useState<SplitBy>('variant');
   const [sortBy, setSortBy] = useState<SortBy>('net_sales');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -691,9 +696,212 @@ const ProductSales: React.FC = () => {
     </>
   );
 
+  // Filter controls, shared by the desktop card and the phone/tablet sheet (one tree renders).
+  const searchBox = (
+    <div className="flex min-w-[180px] flex-1 items-center gap-2.5 rounded-[10px] border-[1.5px] border-[#EEEFF2] bg-[#F6F7F9] px-3">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#9AA1AD" strokeWidth="1.7" strokeLinecap="round">
+        <circle cx="7" cy="7" r="4.5" />
+        <line x1="10.5" y1="10.5" x2="14" y2="14" />
+      </svg>
+      <input
+        value={search}
+        onChange={(e) => {
+          setSearch(e.target.value);
+          resetPage();
+        }}
+        placeholder="Search product, category or brand…"
+        className="w-full flex-1 border-none bg-transparent py-2.5 text-[13.5px] text-[#1F2430] outline-none placeholder:text-[#A9AFB9]"
+      />
+    </div>
+  );
+  const branchSel = (
+    <SearchableSelect
+      ariaLabel="Branch"
+      searchPlaceholder="Search branches…"
+      triggerClassName={selectTrigger}
+      minWidth="min-w-[142px]"
+      className="flex-none"
+      value={selectedBranch ? String(selectedBranch) : ''}
+      onChange={(v) => {
+        setSelectedBranch(v ? +v : null);
+        resetPage();
+      }}
+      options={[
+        { value: '', label: 'All Branches' },
+        ...(branches ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
+      ]}
+    />
+  );
+  const brandSel = (
+    <SearchableSelect
+      ariaLabel="Brand"
+      searchPlaceholder="Search brands…"
+      triggerClassName={selectTrigger}
+      minWidth="min-w-[136px]"
+      className="flex-none"
+      value={selectedBrand ? String(selectedBrand) : ''}
+      onChange={(v) => {
+        setSelectedBrand(v ? +v : null);
+        setCategoryId(null);
+        resetPage();
+      }}
+      options={[
+        { value: '', label: 'All Brands' },
+        ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
+      ]}
+    />
+  );
+  const categorySel = (
+    <SearchableSelect
+      ariaLabel="Category"
+      searchPlaceholder="Search categories…"
+      triggerClassName={selectTrigger}
+      minWidth="min-w-[152px]"
+      className="flex-none"
+      value={categoryId ? String(categoryId) : ''}
+      onChange={(v) => {
+        setCategoryId(v ? +v : null);
+        resetPage();
+      }}
+      options={[
+        { value: '', label: 'All Categories' },
+        ...(categories ?? []).map((c) => ({ value: String(c.id), label: c.name, inactive: isEntityInactive(c) })),
+      ]}
+    />
+  );
+  const statusSel = (
+    <SearchableSelect
+      ariaLabel="Orders"
+      searchPlaceholder="Search…"
+      triggerClassName={selectTrigger}
+      minWidth="min-w-[146px]"
+      className="flex-none"
+      value={status}
+      onChange={(v) => {
+        setStatus(v || 'completed');
+        resetPage();
+      }}
+      options={STATUS_OPTIONS}
+    />
+  );
+  const discountSel = (
+    <SearchableSelect
+      ariaLabel="Discount"
+      searchPlaceholder="Search…"
+      triggerClassName={selectTrigger}
+      minWidth="min-w-[168px]"
+      className="flex-none"
+      value={discountFilter}
+      onChange={(v) => {
+        setDiscountFilter(v);
+        resetPage();
+      }}
+      options={DISCOUNT_FILTER_OPTIONS}
+    />
+  );
+  const datePill = (
+    <div className="flex items-center gap-1.5 rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-2.5 py-[7px]">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#9AA1AD" strokeWidth="1.6" className="flex-none">
+        <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
+        <line x1="2.5" y1="6.5" x2="13.5" y2="6.5" />
+        <line x1="5.5" y1="2" x2="5.5" y2="5" />
+        <line x1="10.5" y1="2" x2="10.5" y2="5" />
+      </svg>
+      <input
+        type="date"
+        aria-label="From date"
+        value={dateFrom}
+        onChange={(e) => {
+          setDateFrom(e.target.value);
+          resetPage();
+        }}
+        className="border-none bg-transparent text-[12.5px] font-semibold text-[#374151] outline-none"
+      />
+      <span className="text-[#C0C5CD]">–</span>
+      <input
+        type="date"
+        aria-label="To date"
+        value={dateTo}
+        onChange={(e) => {
+          setDateTo(e.target.value);
+          resetPage();
+        }}
+        className="border-none bg-transparent text-[12.5px] font-semibold text-[#374151] outline-none"
+      />
+    </div>
+  );
+  const splitRow = (
+    <div className="mt-[13px] flex flex-wrap items-center gap-2.5 border-t border-[#F3F4F6] pt-[13px]">
+      <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#9AA1AD]">
+        Break down by
+      </span>
+      <div className="flex gap-[7px]">
+        {SPLIT_OPTIONS.map((s) => {
+          const on = splitBy === s.value;
+          return (
+            <button
+              key={s.value}
+              type="button"
+              onClick={() => {
+                setSplitBy(s.value);
+                setExpanded(new Set());
+                setAllOpen(false);
+              }}
+              aria-pressed={on}
+              className={
+                on
+                  ? 'whitespace-nowrap rounded-full border-[1.5px] border-[#DC2A2A] bg-[#DC2A2A] px-3.5 py-2 text-[12.5px] font-bold text-white'
+                  : 'whitespace-nowrap rounded-full border-[1.5px] border-[#E2E5EA] bg-white px-3.5 py-2 text-[12.5px] font-semibold text-[#5A6473] transition hover:bg-[#F6F7F9]'
+              }
+            >
+              {s.label}
+            </button>
+          );
+        })}
+      </div>
+      <span className="flex-1" />
+      <button
+        type="button"
+        onClick={toggleAll}
+        disabled={splitBy === 'none'}
+        className="whitespace-nowrap rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-3.5 py-2 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {allOpen ? 'Collapse all' : 'Expand all'}
+      </button>
+    </div>
+  );
+  const psChips: FilterChip[] = [
+    ...(dateFrom !== today || dateTo !== today
+      ? [{ key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { setDateFrom(today); setDateTo(today); resetPage(); } }]
+      : []),
+    ...(selectedBranch != null
+      ? [{ key: 'branch', label: (branches ?? []).find((b) => b.id === selectedBranch)?.name ?? 'Branch', onRemove: () => { setSelectedBranch(null); resetPage(); } }]
+      : []),
+    ...(selectedBrand != null
+      ? [{ key: 'brand', label: (brands ?? []).find((b) => b.id === selectedBrand)?.name ?? 'Brand', onRemove: () => { setSelectedBrand(null); setCategoryId(null); resetPage(); } }]
+      : []),
+    ...(categoryId != null
+      ? [{ key: 'category', label: (categories ?? []).find((c) => c.id === categoryId)?.name ?? 'Category', onRemove: () => { setCategoryId(null); resetPage(); } }]
+      : []),
+    ...(status !== 'completed'
+      ? [{ key: 'status', label: STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status, onRemove: () => { setStatus('completed'); resetPage(); } }]
+      : []),
+    ...(discountFilter
+      ? [{ key: 'discount', label: DISCOUNT_FILTER_OPTIONS.find((o) => o.value === discountFilter)?.label ?? discountFilter, onRemove: () => { setDiscountFilter(''); resetPage(); } }]
+      : []),
+  ];
+  const psFields: FilterField[] = [
+    { key: 'date', label: 'Date range', node: <div className="[&>div]:w-full [&>div]:justify-between">{datePill}</div> },
+    { key: 'branch', label: 'Branch', node: branchSel },
+    { key: 'brand', label: 'Brand', node: brandSel },
+    { key: 'category', label: 'Category', node: categorySel },
+    { key: 'status', label: 'Orders', node: statusSel },
+    { key: 'discount', label: 'Discount', node: discountSel },
+  ];
+
   return (
     <>
-    <div className="mx-auto max-w-[1400px] px-9 pb-20 pt-8 text-[#1F2430]">
+    <div className="mx-auto max-w-[1400px] px-9 pb-20 pt-8 text-[#1F2430] max-lg:px-0 max-lg:pt-2">
       {/* Header */}
       <div className="mb-[22px] flex flex-wrap items-start justify-between gap-5">
         <div>
@@ -732,131 +940,20 @@ const ProductSales: React.FC = () => {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filters — below lg a compact bar (search + Filters) and a sheet; desktop keeps the card. */}
+      <FilterBar className="mb-[18px]" primary={searchBox} chips={psChips} fields={psFields} onClearAll={clearFilters}>
       <div className="mb-[18px] rounded-2xl border border-[#ECEDF0] bg-white px-4 py-3.5 shadow-[0_6px_18px_rgba(15,23,42,0.04)]">
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex min-w-[180px] flex-1 items-center gap-2.5 rounded-[10px] border-[1.5px] border-[#EEEFF2] bg-[#F6F7F9] px-3">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#9AA1AD" strokeWidth="1.7" strokeLinecap="round">
-              <circle cx="7" cy="7" r="4.5" />
-              <line x1="10.5" y1="10.5" x2="14" y2="14" />
-            </svg>
-            <input
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value);
-                resetPage();
-              }}
-              placeholder="Search product, category or brand…"
-              className="w-full flex-1 border-none bg-transparent py-2.5 text-[13.5px] text-[#1F2430] outline-none placeholder:text-[#A9AFB9]"
-            />
-          </div>
-          <SearchableSelect
-            ariaLabel="Branch"
-            searchPlaceholder="Search branches…"
-            triggerClassName={selectTrigger}
-            minWidth="min-w-[142px]"
-            className="flex-none"
-            value={selectedBranch ? String(selectedBranch) : ''}
-            onChange={(v) => {
-              setSelectedBranch(v ? +v : null);
-              resetPage();
-            }}
-            options={[
-              { value: '', label: 'All Branches' },
-              ...(branches ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
-            ]}
-          />
-          <SearchableSelect
-            ariaLabel="Brand"
-            searchPlaceholder="Search brands…"
-            triggerClassName={selectTrigger}
-            minWidth="min-w-[136px]"
-            className="flex-none"
-            value={selectedBrand ? String(selectedBrand) : ''}
-            onChange={(v) => {
-              setSelectedBrand(v ? +v : null);
-              setCategoryId(null);
-              resetPage();
-            }}
-            options={[
-              { value: '', label: 'All Brands' },
-              ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
-            ]}
-          />
-          <SearchableSelect
-            ariaLabel="Category"
-            searchPlaceholder="Search categories…"
-            triggerClassName={selectTrigger}
-            minWidth="min-w-[152px]"
-            className="flex-none"
-            value={categoryId ? String(categoryId) : ''}
-            onChange={(v) => {
-              setCategoryId(v ? +v : null);
-              resetPage();
-            }}
-            options={[
-              { value: '', label: 'All Categories' },
-              ...(categories ?? []).map((c) => ({ value: String(c.id), label: c.name, inactive: isEntityInactive(c) })),
-            ]}
-          />
-          <SearchableSelect
-            ariaLabel="Orders"
-            searchPlaceholder="Search…"
-            triggerClassName={selectTrigger}
-            minWidth="min-w-[146px]"
-            className="flex-none"
-            value={status}
-            onChange={(v) => {
-              setStatus(v || 'completed');
-              resetPage();
-            }}
-            options={STATUS_OPTIONS}
-          />
-          <SearchableSelect
-            ariaLabel="Discount"
-            searchPlaceholder="Search…"
-            triggerClassName={selectTrigger}
-            minWidth="min-w-[168px]"
-            className="flex-none"
-            value={discountFilter}
-            onChange={(v) => {
-              setDiscountFilter(v);
-              resetPage();
-            }}
-            options={DISCOUNT_FILTER_OPTIONS}
-          />
+          {searchBox}
+          {branchSel}
+          {brandSel}
+          {categorySel}
+          {statusSel}
+          {discountSel}
           {/* Date range and Clear travel together so Clear never drops to a line
               of its own when the bar wraps. */}
           <div className="flex flex-none items-center gap-2">
-            <div className="flex items-center gap-1.5 rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-2.5 py-[7px]">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#9AA1AD" strokeWidth="1.6" className="flex-none">
-                <rect x="2.5" y="3.5" width="11" height="10" rx="1.5" />
-                <line x1="2.5" y1="6.5" x2="13.5" y2="6.5" />
-                <line x1="5.5" y1="2" x2="5.5" y2="5" />
-                <line x1="10.5" y1="2" x2="10.5" y2="5" />
-              </svg>
-              <input
-                type="date"
-                aria-label="From date"
-                value={dateFrom}
-                onChange={(e) => {
-                  setDateFrom(e.target.value);
-                  resetPage();
-                }}
-                className="border-none bg-transparent text-[12.5px] font-semibold text-[#374151] outline-none"
-              />
-              <span className="text-[#C0C5CD]">–</span>
-              <input
-                type="date"
-                aria-label="To date"
-                value={dateTo}
-                onChange={(e) => {
-                  setDateTo(e.target.value);
-                  resetPage();
-                }}
-                className="border-none bg-transparent text-[12.5px] font-semibold text-[#374151] outline-none"
-              />
-            </div>
+            {datePill}
             <button
               type="button"
               onClick={clearFilters}
@@ -867,45 +964,12 @@ const ProductSales: React.FC = () => {
           </div>
         </div>
 
-        <div className="mt-[13px] flex flex-wrap items-center gap-2.5 border-t border-[#F3F4F6] pt-[13px]">
-          <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#9AA1AD]">
-            Break down by
-          </span>
-          <div className="flex gap-[7px]">
-            {SPLIT_OPTIONS.map((s) => {
-              const on = splitBy === s.value;
-              return (
-                <button
-                  key={s.value}
-                  type="button"
-                  onClick={() => {
-                    setSplitBy(s.value);
-                    setExpanded(new Set());
-                    setAllOpen(false);
-                  }}
-                  aria-pressed={on}
-                  className={
-                    on
-                      ? 'whitespace-nowrap rounded-full border-[1.5px] border-[#DC2A2A] bg-[#DC2A2A] px-3.5 py-2 text-[12.5px] font-bold text-white'
-                      : 'whitespace-nowrap rounded-full border-[1.5px] border-[#E2E5EA] bg-white px-3.5 py-2 text-[12.5px] font-semibold text-[#5A6473] transition hover:bg-[#F6F7F9]'
-                  }
-                >
-                  {s.label}
-                </button>
-              );
-            })}
-          </div>
-          <span className="flex-1" />
-          <button
-            type="button"
-            onClick={toggleAll}
-            disabled={splitBy === 'none'}
-            className="whitespace-nowrap rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-3.5 py-2 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {allOpen ? 'Collapse all' : 'Expand all'}
-          </button>
-        </div>
+        {splitRow}
       </div>
+      </FilterBar>
+      {!isDesktop && (
+        <div className="mb-[18px] [&>div]:mt-0 [&>div]:border-t-0 [&>div]:pt-0">{splitRow}</div>
+      )}
 
       {/* Report body: while a filter change is fetching, the previous results
           stay mounted and a soft veil fades in over them
