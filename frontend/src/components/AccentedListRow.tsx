@@ -43,6 +43,15 @@ const accentBarClass: Record<AccentVariant, string> = {
   inactive: 'bg-rose-500 dark:bg-rose-500',
 };
 
+/** True for null / false / '' / an empty fragment — e.g. Deliveries passes `actions={<></>}`. */
+const isEmptyNode = (node: React.ReactNode): boolean => {
+  if (node == null || node === false || node === '') return true;
+  if (React.isValidElement(node) && node.type === React.Fragment) {
+    return React.Children.toArray((node.props as { children?: React.ReactNode }).children).length === 0;
+  }
+  return false;
+};
+
 /** Below lg the accent is the card's own left border (spans the wrapped row). */
 const accentBorderClass: Record<AccentVariant, string> = {
   active: 'border-l-emerald-500 hover:border-l-emerald-500 dark:border-l-emerald-500 dark:hover:border-l-emerald-500',
@@ -197,10 +206,14 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
             {meta}
           </div>
         )}
-        <div className={stacked ? `basis-full flex flex-wrap items-center gap-2 ${indent}` : 'flex-shrink-0 flex items-center gap-3 py-4 pr-4 sm:pr-6'}>
-          {statusContent}
-          <div className={stacked ? 'flex flex-wrap gap-2' : 'flex gap-2'}>{actions}</div>
-        </div>
+        {/* Stacked rows skip the second line entirely when it would be empty (no pill, no
+            actions) — an empty flex line still adds the row gap below the title. */}
+        {(!stacked || statusContent != null || !isEmptyNode(actions)) && (
+          <div className={stacked ? `basis-full flex flex-wrap items-center gap-2 ${indent}` : 'flex-shrink-0 flex items-center gap-3 py-4 pr-4 sm:pr-6'}>
+            {statusContent}
+            <div className={stacked ? 'flex flex-wrap gap-2' : 'flex gap-2'}>{actions}</div>
+          </div>
+        )}
       </div>
       {footer != null && footer !== '' && (
         <div className="border-t border-gray-100 dark:border-slate-600 bg-gray-50/50 dark:bg-slate-700/30">

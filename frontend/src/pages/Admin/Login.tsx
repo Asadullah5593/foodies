@@ -204,7 +204,7 @@ const Login: React.FC = () => {
       </div>
 
       {/* ========== RIGHT: Form panel ========== */}
-      <div className="relative flex-shrink-0 w-full lg:w-[48%] xl:w-[44%] min-h-[60vh] lg:min-h-screen flex flex-col justify-center items-center px-6 sm:px-10 lg:px-14 py-12 lg:py-16 bg-slate-50 dark:bg-slate-900/50 max-lg:order-1 max-lg:min-h-[100dvh] max-lg:py-8">
+      <div className="relative flex-shrink-0 w-full lg:w-[48%] xl:w-[44%] min-h-[60vh] lg:min-h-screen flex flex-col justify-center items-center px-6 sm:px-10 lg:px-14 py-12 lg:py-16 bg-slate-50 dark:bg-slate-900/50 max-lg:order-1 max-lg:min-h-[100dvh] max-lg:py-8 max-sm:justify-start max-sm:pt-16">
         {/* Subtle background on form side */}
         <div className="absolute inset-0 bg-gradient-to-t from-slate-200/50 to-transparent dark:from-slate-800/30 dark:to-transparent pointer-events-none" />
         <div
@@ -245,21 +245,21 @@ const Login: React.FC = () => {
           className="relative z-10 w-full max-w-md"
         >
           <motion.div
-            className="bg-white dark:bg-slate-800/90 backdrop-blur-sm p-8 sm:p-10 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-700/80 max-sm:p-6"
+            className="bg-white dark:bg-slate-800/90 backdrop-blur-sm p-8 sm:p-10 rounded-2xl shadow-xl border border-slate-200/80 dark:border-slate-700/80 max-sm:p-5"
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.4, delay: 0.1 }}
           >
-            <div className="text-center mb-8">
+            <div className="text-center mb-8 max-sm:mb-5">
               <motion.div
-                className="inline-block mb-4"
+                className="inline-block mb-4 max-sm:mb-2"
                 animate={{ y: [0, -6, 0] }}
                 transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
               >
                 <img
                   src="/foodies-logo.png"
                   alt="Foodies"
-                  className="h-16 w-16 sm:h-20 sm:w-20 mx-auto rounded-2xl object-contain"
+                  className="h-16 w-16 sm:h-20 sm:w-20 mx-auto rounded-2xl object-contain max-sm:h-12 max-sm:w-12"
                 />
               </motion.div>
               <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100 mb-1">
@@ -282,7 +282,7 @@ const Login: React.FC = () => {
 
             <motion.form
               onSubmit={handleSubmit}
-              className="space-y-5"
+              className="space-y-5 max-sm:space-y-4"
               variants={containerVariants}
               initial="hidden"
               animate="visible"

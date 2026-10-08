@@ -53,7 +53,7 @@ const OfferModal: React.FC<Props> = ({ open, onClose, title, subtitle, icon, wid
           />
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 max-lg:items-stretch max-lg:p-0">
             <motion.div
-              className={`flex w-full flex-col overflow-hidden rounded-[18px] max-lg:rounded-none max-lg:h-[100dvh] max-lg:max-h-none bg-white shadow-2xl ${autoHeight ? 'max-h-[92vh]' : 'h-[88vh] max-h-[760px]'}`}
+              className={`flex w-full flex-col overflow-hidden rounded-[18px] max-lg:rounded-none max-lg:h-[100dvh] max-lg:max-h-none max-lg:!max-w-none bg-white shadow-2xl ${autoHeight ? 'max-h-[92vh]' : 'h-[88vh] max-h-[760px]'}`}
               style={{ maxWidth: width }}
               initial={{ opacity: 0, scale: 0.96, y: 18 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -86,7 +86,7 @@ const OfferModal: React.FC<Props> = ({ open, onClose, title, subtitle, icon, wid
               <div className="flex min-h-0 flex-1 flex-col">{children}</div>
 
               {footer && (
-                <div className="flex flex-none items-center justify-between gap-4 border-t border-gray-100 bg-gray-50 px-7 py-4 max-lg:flex-wrap max-lg:px-4 max-lg:pb-[max(1rem,env(safe-area-inset-bottom))]">
+                <div className="flex flex-none items-center justify-between gap-4 border-t border-gray-100 bg-gray-50 px-7 py-4 max-lg:flex-wrap max-lg:px-4 max-lg:[&_button]:min-h-[44px] max-lg:pb-[max(1rem,env(safe-area-inset-bottom))]">
                   {footer}
                 </div>
               )}

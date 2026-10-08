@@ -513,7 +513,7 @@ const Discounts: React.FC = () => {
           </div>
 
           {/* Date + time + day window */}
-          <div className="mb-5 grid grid-cols-2 gap-4">
+          <div className="mb-5 grid grid-cols-2 gap-4 max-sm:grid-cols-1">
             <div>
               <label className={offerLabel}>Valid from</label>
               <input type="date" value={formData.valid_from} onChange={(e) => setFormData({ ...formData, valid_from: e.target.value })} className={offerInput} />

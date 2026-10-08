@@ -156,18 +156,22 @@ const SearchableSelect: React.FC<SearchableSelectProps> = ({
     };
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // Below lg the panel is portalled; stop the key here so a surrounding offer editor
+        // (window-level Escape) stays open. Desktop keeps the original behaviour.
+        if (portalPanel) e.stopPropagation();
         setOpen(false);
         setSearch('');
         setSugOpen(false);
       }
     };
+    const keyTarget: Window | Document = portalPanel ? window : document;
     document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
+    keyTarget.addEventListener('keydown', handleEscape as EventListener, portalPanel);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
+      keyTarget.removeEventListener('keydown', handleEscape as EventListener, portalPanel);
     };
-  }, [open]);
+  }, [open, portalPanel]);
 
   const handleSelect = (opt: SearchableSelectOption) => {
     if (opt.disabled) return;

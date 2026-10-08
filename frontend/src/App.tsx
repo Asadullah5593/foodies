@@ -40,6 +40,7 @@ import {
   MdKeyboardHide,
   MdOutlineLightMode,
   MdOutlineDarkMode,
+  MdLogout,
 } from 'react-icons/md';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
@@ -313,6 +314,29 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   }, [location.pathname]);
 
   useEffect(() => {
+    if (isDesktop) setSidebarOpen(false);
+  }, [isDesktop]);
+
+  // The drawer stays mounted (it slides), so while closed it is made inert: its links leave
+  // the Tab order and screen readers skip it. Opening moves focus to its close button;
+  // closing hands focus back to the hamburger.
+  const drawerRef = useRef<HTMLElement>(null);
+  const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const hamburgerRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+    if (sidebarOpen) {
+      drawer.removeAttribute('inert');
+      drawerCloseRef.current?.focus({ preventScroll: true });
+    } else {
+      const hadFocus = drawer.contains(document.activeElement);
+      drawer.setAttribute('inert', '');
+      if (hadFocus) hamburgerRef.current?.focus({ preventScroll: true });
+    }
+  }, [sidebarOpen]);
+
+  useEffect(() => {
     if (!sidebarOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -556,6 +580,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </Link>
         {drawer && (
           <button
+            ref={drawerCloseRef}
             type="button"
             onClick={() => setSidebarOpen(false)}
             className={`absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-lg ${sidebarMuted} ${isDarkSidebar ? 'hover:bg-white/10 hover:text-white' : 'hover:bg-slate-200 hover:text-slate-800'}`}
@@ -701,7 +726,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           onClick={toggleTheme}
           className={`w-full flex items-center rounded-lg font-medium text-sm transition-colors ${sidebarMuted} ${isDarkSidebar ? 'hover:bg-white/10 hover:text-white' : 'hover:bg-slate-200 hover:text-slate-800'} ${
             collapsed ? 'justify-center p-2.5' : 'justify-center gap-2 px-3 py-2.5'
-          }`}
+          } ${drawer ? 'min-h-[44px]' : ''}`}
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
@@ -730,7 +755,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           title={collapsed ? 'Logout' : undefined}
           className={`w-full flex items-center rounded-lg font-medium text-sm transition-all duration-200 text-white border-0 !bg-[linear-gradient(90deg,#000000_0%,#B91C1C_50%,#000000_100%)] hover:brightness-110 active:brightness-95 ${
             collapsed ? 'justify-center p-2.5' : 'justify-center gap-2 px-3 py-2.5'
-          }`}
+          } ${drawer ? 'min-h-[44px]' : ''}`}
         >
           <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -764,6 +789,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       icon: theme === 'dark' ? <MdOutlineLightMode className="h-5 w-5" /> : <MdOutlineDarkMode className="h-5 w-5" />,
       onSelect: toggleTheme,
     },
+    // The POS has no hamburger, so without this a till user on a phone could not sign out.
+    { key: 'logout', label: 'Logout', icon: <MdLogout className="h-5 w-5" />, onSelect: handleLogout },
   ];
 
   return (
@@ -797,6 +824,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {/* Mobile: slide-in drawer (always expanded, theme-aware). 100dvh, not 100vh, so the
           logout row isn't hidden behind the phone browser's toolbar. */}
       <motion.aside
+        ref={drawerRef}
         initial={false}
         animate={{ x: sidebarOpen ? 0 : -SIDEBAR_WIDTH }}
         transition={{ type: 'tween', duration: 0.25 }}
@@ -835,6 +863,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               {!isPOS && (
                 <>
                   <button
+                    ref={hamburgerRef}
                     onClick={() => setSidebarOpen(true)}
                     className="lg:hidden p-2.5 -ml-1 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
                     aria-label="Open menu"

@@ -69,7 +69,7 @@ const Modal: React.FC<ModalProps> = ({
                   <button
                     onClick={onClose}
                     aria-label="Close dialog"
-                    className="text-gray-400 hover:text-gray-600 transition-colors max-lg:-m-2 max-lg:p-2"
+                    className="text-gray-400 hover:text-gray-600 transition-colors max-lg:-m-2.5 max-lg:p-2.5"
                   >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

@@ -536,7 +536,7 @@ const PrintedVouchers: React.FC = () => {
 
           <OfferOrderTypesField value={form.order_types} onChange={(v) => setForm({ ...form, order_types: v })} />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
             <div>
               <label className={offerLabel} htmlFor="voucher-from">
                 Valid from
