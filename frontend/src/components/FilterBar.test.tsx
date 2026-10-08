@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import FilterBar from './FilterBar';
 
@@ -42,7 +42,7 @@ describe('FilterBar', () => {
     expect(onRemove).toHaveBeenCalledTimes(1);
   });
 
-  it('opens the sheet with the fields, clears all, and closes from the button and Escape', () => {
+  it('opens the sheet with the fields, clears all, and closes from the button and Escape', async () => {
     setWidth(390);
     const onClearAll = vi.fn();
     renderBar({ onClearAll, resultLabel: 'Show 15 orders' });
@@ -53,10 +53,12 @@ describe('FilterBar', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
     expect(onClearAll).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole('button', { name: 'Show 15 orders' }));
-    expect(screen.queryByRole('dialog')).toBeNull();
+    // The sheet animates out, so it leaves the tree a moment after the tap.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     fireEvent.click(screen.getByRole('button', { name: /Filters/ }));
+    expect(screen.getByRole('dialog', { name: 'Filters' })).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('renders shortcut chips that apply instead of remove', () => {

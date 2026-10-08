@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useViewport } from '../hooks/useViewport';
 
 export interface FilterChip {
@@ -62,7 +63,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
   activeCount,
   className = 'mb-4',
 }) => {
-  const { isDesktop } = useViewport();
+  const { isDesktop, isPhone } = useViewport();
   const [open, setOpen] = useState(false);
   const openerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -150,73 +151,93 @@ const FilterBar: React.FC<FilterBarProps> = ({
     </button>
   );
 
-  const sheet = open
-    ? createPortal(
+  // Same motion as Modal: the backdrop fades; on phones the sheet slides up from the bottom
+  // edge, on tablets it rises a little and fades. The positioning wrapper is static so the
+  // tablet centring (translate-x) is never fought over with the animated transform.
+  const panelMotion = isPhone
+    ? { initial: { y: '100%' }, animate: { y: '0%' }, exit: { y: '100%' } }
+    : { initial: { opacity: 0, y: 24 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: 24 } };
+  const sheet = createPortal(
+    <AnimatePresence>
+      {open && (
         <div className="fixed inset-0 z-[60]">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} aria-hidden />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Filters"
-            className="absolute inset-x-0 bottom-0 flex max-h-[88dvh] flex-col rounded-t-2xl bg-white shadow-2xl dark:bg-slate-800 sm:inset-x-auto sm:bottom-4 sm:left-1/2 sm:w-[min(560px,calc(100%-2rem))] sm:-translate-x-1/2 sm:rounded-2xl"
-          >
-            <div className="flex-none pt-2 sm:hidden" aria-hidden>
-              <div className="mx-auto h-1 w-10 rounded-full bg-gray-300 dark:bg-slate-600" />
-            </div>
-            <div className="flex flex-none items-center justify-between gap-3 px-4 pt-2">
-              <h2 className="text-[17px] font-extrabold text-gray-900 dark:text-slate-50">Filters</h2>
-              <div className="flex items-center gap-1">
-                {onClearAll && (
+          <motion.div
+            className="absolute inset-0 bg-black/50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setOpen(false)}
+            aria-hidden
+          />
+          <div className="absolute inset-x-0 bottom-0 flex sm:inset-x-auto sm:bottom-4 sm:left-1/2 sm:w-[min(560px,calc(100%-2rem))] sm:-translate-x-1/2">
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Filters"
+              className="flex max-h-[88dvh] w-full flex-col rounded-t-2xl bg-white shadow-2xl dark:bg-slate-800 sm:rounded-2xl"
+              {...panelMotion}
+              transition={{ type: 'tween', duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
+            >
+              <div className="flex-none pt-2 sm:hidden" aria-hidden>
+                <div className="mx-auto h-1 w-10 rounded-full bg-gray-300 dark:bg-slate-600" />
+              </div>
+              <div className="flex flex-none items-center justify-between gap-3 px-4 pt-2">
+                <h2 className="text-[17px] font-extrabold text-gray-900 dark:text-slate-50">Filters</h2>
+                <div className="flex items-center gap-1">
+                  {onClearAll && (
+                    <button
+                      type="button"
+                      onClick={onClearAll}
+                      className="min-h-[44px] px-2 text-[13.5px] font-bold text-red-600 dark:text-red-400"
+                    >
+                      Clear all
+                    </button>
+                  )}
                   <button
+                    ref={closeRef}
                     type="button"
-                    onClick={onClearAll}
-                    className="min-h-[44px] px-2 text-[13.5px] font-bold text-red-600 dark:text-red-400"
+                    onClick={() => setOpen(false)}
+                    aria-label="Close filters"
+                    className="flex h-11 w-11 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700"
                   >
-                    Clear all
+                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                   </button>
-                )}
+                </div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
+                {fields.map((f) => (
+                  <section key={f.key} className="border-b border-gray-100 py-3 last:border-0 dark:border-slate-700">
+                    {f.label && (
+                      <div className="mb-2 text-[11.5px] font-extrabold uppercase tracking-[0.06em] text-gray-400 dark:text-slate-500">
+                        {f.label}
+                      </div>
+                    )}
+                    {/* Native controls go full width and 44px tall in the sheet. */}
+                    <div className="[&_select]:min-h-[44px] [&_select]:w-full [&_input[type=date]]:min-h-[44px] [&_input[type=time]]:min-h-[44px]">
+                      {f.node}
+                    </div>
+                  </section>
+                ))}
+              </div>
+              <div className="flex-none border-t border-gray-100 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-slate-700">
                 <button
-                  ref={closeRef}
                   type="button"
                   onClick={() => setOpen(false)}
-                  aria-label="Close filters"
-                  className="flex h-11 w-11 items-center justify-center rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700"
+                  className="min-h-[48px] w-full rounded-xl text-[15px] font-extrabold text-white !bg-[linear-gradient(90deg,#000000_0%,#B91C1C_50%,#000000_100%)]"
                 >
-                  <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
+                  {resultLabel ?? 'Show results'}
                 </button>
               </div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-2">
-              {fields.map((f) => (
-                <section key={f.key} className="border-b border-gray-100 py-3 last:border-0 dark:border-slate-700">
-                  {f.label && (
-                    <div className="mb-2 text-[11.5px] font-extrabold uppercase tracking-[0.06em] text-gray-400 dark:text-slate-500">
-                      {f.label}
-                    </div>
-                  )}
-                  {/* Native controls go full width and 44px tall in the sheet. */}
-                  <div className="[&_select]:min-h-[44px] [&_select]:w-full [&_input[type=date]]:min-h-[44px] [&_input[type=time]]:min-h-[44px]">
-                    {f.node}
-                  </div>
-                </section>
-              ))}
-            </div>
-            <div className="flex-none border-t border-gray-100 px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-slate-700">
-              <button
-                type="button"
-                onClick={() => setOpen(false)}
-                className="min-h-[48px] w-full rounded-xl text-[15px] font-extrabold text-white !bg-[linear-gradient(90deg,#000000_0%,#B91C1C_50%,#000000_100%)]"
-              >
-                {resultLabel ?? 'Show results'}
-              </button>
-            </div>
+            </motion.div>
           </div>
-        </div>,
-        document.body,
-      )
-    : null;
+        </div>
+      )}
+    </AnimatePresence>,
+    document.body,
+  );
 
   return (
     <div className={className}>
