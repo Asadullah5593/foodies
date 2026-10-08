@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useMatch, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -8,6 +8,7 @@ import { MdOutlineDeliveryDining } from 'react-icons/md';
 import Button from '../../components/Button';
 import { riderService } from '../../services/api/riderService';
 import RiderDutyBar from './RiderDutyBar';
+import { useViewport } from '../../hooks/useViewport';
 
 const ATTENDANCE_STATUS_POLL_MS = 10000;
 const HEARTBEAT_RESEND_MS = 30000;
@@ -24,6 +25,12 @@ type LocationShareState =
 const RiderLayout: React.FC = () => {
   const { logout, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  // Below lg the live-location status sits under the header (desktop shows it at the right of the bar).
+  const { isPhone, isDesktop } = useViewport();
+  // On a phone the order page leads with the order (address, receiver, items) and the shift card
+  // follows it; everywhere else the shift card stays on top.
+  const onOrderPage = useMatch('/rider/orders/:id') != null;
+  const dutyBelowOrder = isPhone && onOrderPage;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [_menuOpen, _setMenuOpen] = useState(false);
@@ -205,6 +212,12 @@ const RiderLayout: React.FC = () => {
       ? `${attendanceStatus.last_latitude.toFixed(5)}, ${attendanceStatus.last_longitude.toFixed(5)}`
       : 'No GPS fix yet';
 
+  const dutyBar = (
+    <div className="w-full px-4 sm:px-6 lg:px-8 pt-4 max-w-5xl mx-auto">
+      <RiderDutyBar />
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-slate-900">
       <nav className="bg-white dark:bg-slate-800 shadow border-b border-gray-200 dark:border-slate-700 sticky top-0 z-40">
@@ -212,7 +225,7 @@ const RiderLayout: React.FC = () => {
           <div className="flex justify-between items-center h-14">
             <Link
               to="/rider"
-              className="text-lg font-bold text-gray-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
+              className="text-lg font-bold text-gray-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center max-lg:gap-1"
             >
               <MdOutlineDeliveryDining className="inline h-5 w-5 mr-1 align-text-bottom" /> Rider
             </Link>
@@ -220,7 +233,7 @@ const RiderLayout: React.FC = () => {
               <button
                 type="button"
                 onClick={toggleTheme}
-                className="p-2 rounded-lg text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+                className="p-2 rounded-lg text-gray-600 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors max-lg:p-3"
                 title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
                 aria-label={theme === 'dark' ? 'Light mode' : 'Dark mode'}
               >
@@ -252,6 +265,18 @@ const RiderLayout: React.FC = () => {
               </Button>
             </div>
           </div>
+          {!isDesktop && (
+            <div className="flex items-center gap-2 pb-2.5" data-testid="rider-location-row">
+              <span className={`flex-none px-2.5 py-1 rounded-full text-xs font-medium ${liveLocationLabel.badgeClass}`}>
+                {liveLocationLabel.text}
+              </span>
+              <span className="min-w-0 truncate text-[11px] text-gray-500 dark:text-slate-400">
+                {attendanceStatus?.is_checked_in
+                  ? `${attendanceStatus.branch_name ?? 'Checked in'} · ${coordinateText}`
+                  : 'Check in first to publish live rider location'}
+              </span>
+            </div>
+          )}
           {attendanceStatus?.is_checked_in && (locationError || locationShareState !== 'sharing') ? (
             <div className="pb-3">
               <p className="text-xs text-gray-600 dark:text-slate-300">
@@ -262,10 +287,9 @@ const RiderLayout: React.FC = () => {
           ) : null}
         </div>
       </nav>
-      <main>
-        <div className="w-full px-4 sm:px-6 lg:px-8 pt-4 max-w-5xl mx-auto">
-          <RiderDutyBar />
-        </div>
+      {/* Below the order the page ends with the pinned "Update delivery status" bar, so it leaves room. */}
+      <main className={dutyBelowOrder ? 'pb-28' : undefined}>
+        {!dutyBelowOrder && dutyBar}
         <motion.div
           initial={false}
           animate={{ opacity: 1 }}
@@ -273,6 +297,7 @@ const RiderLayout: React.FC = () => {
         >
           <Outlet />
         </motion.div>
+        {dutyBelowOrder && dutyBar}
       </main>
     </div>
   );

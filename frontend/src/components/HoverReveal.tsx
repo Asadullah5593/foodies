@@ -106,7 +106,7 @@ const HoverReveal: React.FC<{
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className={`cursor-help rounded-[4px] outline-none focus-visible:ring-2 focus-visible:ring-[#DC2A2A]/40 max-lg:relative max-lg:before:absolute max-lg:before:-inset-x-2 max-lg:before:-inset-y-3 max-lg:before:content-[''] ${
+        className={`cursor-help rounded-[4px] outline-none focus-visible:ring-2 focus-visible:ring-[#DC2A2A]/40 max-lg:relative max-lg:before:absolute max-lg:before:-inset-x-2 max-lg:before:-inset-y-3.5 max-lg:before:content-[''] ${
           underline ? `${HOVER_CUE} hover:decoration-[#DC2A2A] dark:hover:decoration-red-400` : ''
         } ${className}`}
       >
