@@ -81,7 +81,8 @@ const ActivityLog: React.FC = () => {
   const [selected, setSelected] = useState<ActivityLogRow | null>(null);
   const [searchInput, setSearchInput] = useState(params.get('search') ?? '');
   // Below lg: compact filter bar + sheet (see FilterBar); desktop keeps the filter card.
-  const { isDesktop } = useViewport();
+  // Below lg the filters live in the sheet; phones also get a card per entry instead of the table.
+  const { isDesktop, isPhone } = useViewport();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   // Record lens: arriving from a History link asks "everything that ever
@@ -805,109 +806,263 @@ const ActivityLog: React.FC = () => {
             No activity matches these filters.
           </div>
         ) : (
-          <TableScroll>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-[#ECEDF0] bg-[#F7F8FA] text-left text-[12.5px] font-semibold text-[#4B5563]">
-                  <th className="px-5 py-3">When</th>
-                  <th className="px-5 py-3">Who</th>
-                  <th className="px-5 py-3">What happened</th>
-                  <th className="px-5 py-3">Record</th>
-                  <th className="px-5 py-3">Branch / brand</th>
-                  <th className="px-5 py-3">Result</th>
-                  <th className="px-5 py-3">IP address</th>
-                  <th className="px-5 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {groups.map((group) => {
-                  const first = group.rows[0];
-                  const folded = group.rows.length > 1;
-                  const isOpen = expanded.has(first.id);
-                  const { title, detail: groupDetail } = describeGroup(group);
-                  return (
-                    <React.Fragment key={first.id}>
-                      <tr
-                        onClick={() =>
-                          folded ? toggleGroup(first.id) : setSelected(first)
-                        }
-                        aria-expanded={folded ? isOpen : undefined}
-                        className="cursor-pointer border-b border-[#F1F2F5] last:border-0 hover:bg-[#F7F8FA]"
-                      >
-                        {when(first)}
-                        {who(first)}
-                        <td className="px-5 py-3.5 align-top">
-                          <div className="text-[14px] font-medium text-[#20242C]">
-                            {title}
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            {folded ? (
-                              <>
-                                <span className="rounded bg-[#EEF0F3] px-1.5 py-0.5 text-[11.5px] font-semibold text-[#374151]">
-                                  {group.rows.length} entries
-                                </span>
-                                {groupDetail && (
-                                  <span className="text-[12.5px] text-[#6B7280]">
-                                    {groupDetail}
-                                  </span>
-                                )}
-                              </>
-                            ) : (
-                              <>
-                                <span className="text-[12.5px] text-[#6B7280]">
-                                  {areaLabel(first.action_group)}
-                                </span>
-                                {changeMarks(first)}
-                              </>
-                            )}
-                          </div>
-                        </td>
+          isPhone ? (
+            <ul className="divide-y divide-[#F1F2F5]" data-testid="activity-cards">
+              {groups.map((group) => {
+                const first = group.rows[0];
+                const folded = group.rows.length > 1;
+                const isOpen = expanded.has(first.id);
+                const { title, detail: groupDetail } = describeGroup(group);
+                const open = () => (folded ? toggleGroup(first.id) : setSelected(first));
+                const onKey = (fn: () => void) => (e: React.KeyboardEvent) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    fn();
+                  }
+                };
+                const pill = (row: ActivityLogRow) => (
+                  <span
+                    title={OUTCOME_HINTS[row.outcome]}
+                    className={`flex-none rounded-full border px-2.5 py-0.5 text-[12px] font-semibold ${
+                      OUTCOME_STYLES[row.outcome] ?? 'border-gray-200 bg-gray-50 text-gray-600'
+                    }`}
+                  >
+                    {outcomeLabel(row.outcome)}
+                  </span>
+                );
+                return (
+                  <li key={first.id} className="px-4 py-3.5">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onClick={open}
+                      onKeyDown={onKey(open)}
+                      aria-expanded={folded ? isOpen : undefined}
+                      className="cursor-pointer"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="text-[12.5px] text-[#6B7280]">
+                          <span className="font-medium tabular-nums text-[#20242C]">{formatWhen(first.created_at)}</span>
+                          {' · '}
+                          {relativeWhen(first.created_at)}
+                        </div>
+                        {pill(first)}
+                      </div>
+                      <div className="mt-1.5 text-[14px] font-medium text-[#20242C]">{title}</div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
                         {folded ? (
-                          <td className="px-5 py-3.5 align-top text-[#9AA1AD]">—</td>
+                          <>
+                            <span className="rounded bg-[#EEF0F3] px-1.5 py-0.5 text-[11.5px] font-semibold text-[#374151]">
+                              {group.rows.length} entries
+                            </span>
+                            {groupDetail && <span className="text-[12.5px] text-[#6B7280]">{groupDetail}</span>}
+                          </>
                         ) : (
-                          record(first)
+                          <>
+                            <span className="text-[12.5px] text-[#6B7280]">{areaLabel(first.action_group)}</span>
+                            {changeMarks(first)}
+                          </>
                         )}
-                        {where(first)}
-                        {outcome(first)}
-                        {address(first)}
-                        <td className="px-5 py-3.5 text-right align-top">
-                          <span className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-[#DC2A2A]">
-                            {folded ? (isOpen ? 'Hide' : 'Show all') : 'Details'}
-                            <Chevron open={folded && isOpen} />
-                          </span>
-                        </td>
-                      </tr>
-                      {folded &&
-                        isOpen &&
-                        group.rows.map((row) => (
-                          <tr
-                            key={row.id}
-                            onClick={() => setSelected(row)}
-                            className="cursor-pointer border-b border-[#F1F2F5] bg-[#FAFBFC] hover:bg-[#F3F4F6]"
-                          >
-                            <td className="whitespace-nowrap py-2.5 pl-9 pr-5 text-[12.5px] tabular-nums text-[#6B7280]">
-                              {formatWhen(row.created_at)}
-                            </td>
-                            <td />
-                            <td className="px-5 py-2.5 text-[13.5px] text-[#20242C]" colSpan={3}>
-                              {describeActivity(row)}
-                            </td>
-                            {outcome(row)}
-                            <td />
-                            <td className="px-5 py-2.5 text-right">
-                              <span className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-[#DC2A2A]">
-                                Details
-                                <Chevron />
-                              </span>
-                            </td>
-                          </tr>
+                      </div>
+                      {/* Who, their role at the time, and where — one line, wrapping. */}
+                      <div className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[12.5px] text-[#4B5563]">
+                        <span className="font-semibold text-[#20242C]">{first.actor_label ?? actorTypeLabel(first.actor_type)}</span>
+                        {(first.actor_role_names ?? []).map((r) => (
+                          <span key={r}>· {r}</span>
                         ))}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          </TableScroll>
+                        {first.actor_is_super_admin && <span className="font-semibold text-purple-700">· Super admin</span>}
+                        {first.actor_type !== 'staff' && (
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[11px] font-semibold ${
+                              ACTOR_STYLES[first.actor_type] ?? 'bg-gray-100 text-gray-600'
+                            }`}
+                          >
+                            {actorTypeLabel(first.actor_type)}
+                          </span>
+                        )}
+                        {(first.branch_id != null || first.brand_id != null) && (
+                          <span className="text-[#6B7280]">
+                            · {[branchName(first.branch_id), brandName(first.brand_id)].filter(Boolean).join(' · ')}
+                          </span>
+                        )}
+                      </div>
+                      {!folded && hasRecord(first) && (
+                        <div className="mt-1.5 text-[12.5px] text-[#6B7280]">
+                          <span className="text-[#20242C]">{first.entity_label ?? `#${first.entity_id}`}</span>
+                          {first.entity_type && (
+                            <span>
+                              {' · '}
+                              {first.entity_type.replace(/[-_]/g, ' ')}
+                              {first.entity_label && first.entity_id ? ` #${first.entity_id}` : ''}
+                            </span>
+                          )}
+                          {first.entity_type && first.entity_id && !isRecordLens && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                showRecord(first);
+                              }}
+                              className="ml-2 font-semibold text-[#DC2A2A] hover:underline"
+                            >
+                              Full history
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        {first.ip ? (
+                          <button
+                            type="button"
+                            title="Show all activity from this address"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              showIp(first.ip!);
+                            }}
+                            className="rounded font-mono text-[12.5px] text-[#374151] underline decoration-[#D5D9E0] underline-offset-4"
+                          >
+                            {first.ip}
+                          </button>
+                        ) : (
+                          <span className="text-[12.5px] text-[#9AA1AD]">—</span>
+                        )}
+                        <span className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-[#DC2A2A]">
+                          {folded ? (isOpen ? 'Hide' : 'Show all') : 'Details'}
+                          <Chevron open={folded && isOpen} />
+                        </span>
+                      </div>
+                    </div>
+                    {folded && isOpen && (
+                      <ul className="mt-3 divide-y divide-[#F1F2F5] rounded-xl bg-[#FAFBFC]">
+                        {group.rows.map((row) => (
+                          <li
+                            key={row.id}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => setSelected(row)}
+                            onKeyDown={onKey(() => setSelected(row))}
+                            className="cursor-pointer px-3 py-2.5"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="text-[12.5px] tabular-nums text-[#6B7280]">{formatWhen(row.created_at)}</div>
+                                <div className="text-[13.5px] text-[#20242C]">{describeActivity(row)}</div>
+                              </div>
+                              {pill(row)}
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <TableScroll>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[#ECEDF0] bg-[#F7F8FA] text-left text-[12.5px] font-semibold text-[#4B5563]">
+                    <th className="px-5 py-3">When</th>
+                    <th className="px-5 py-3">Who</th>
+                    <th className="px-5 py-3">What happened</th>
+                    <th className="px-5 py-3">Record</th>
+                    <th className="px-5 py-3">Branch / brand</th>
+                    <th className="px-5 py-3">Result</th>
+                    <th className="px-5 py-3">IP address</th>
+                    <th className="px-5 py-3" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {groups.map((group) => {
+                    const first = group.rows[0];
+                    const folded = group.rows.length > 1;
+                    const isOpen = expanded.has(first.id);
+                    const { title, detail: groupDetail } = describeGroup(group);
+                    return (
+                      <React.Fragment key={first.id}>
+                        <tr
+                          onClick={() =>
+                            folded ? toggleGroup(first.id) : setSelected(first)
+                          }
+                          aria-expanded={folded ? isOpen : undefined}
+                          className="cursor-pointer border-b border-[#F1F2F5] last:border-0 hover:bg-[#F7F8FA]"
+                        >
+                          {when(first)}
+                          {who(first)}
+                          <td className="px-5 py-3.5 align-top">
+                            <div className="text-[14px] font-medium text-[#20242C]">
+                              {title}
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2">
+                              {folded ? (
+                                <>
+                                  <span className="rounded bg-[#EEF0F3] px-1.5 py-0.5 text-[11.5px] font-semibold text-[#374151]">
+                                    {group.rows.length} entries
+                                  </span>
+                                  {groupDetail && (
+                                    <span className="text-[12.5px] text-[#6B7280]">
+                                      {groupDetail}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-[12.5px] text-[#6B7280]">
+                                    {areaLabel(first.action_group)}
+                                  </span>
+                                  {changeMarks(first)}
+                                </>
+                              )}
+                            </div>
+                          </td>
+                          {folded ? (
+                            <td className="px-5 py-3.5 align-top text-[#9AA1AD]">—</td>
+                          ) : (
+                            record(first)
+                          )}
+                          {where(first)}
+                          {outcome(first)}
+                          {address(first)}
+                          <td className="px-5 py-3.5 text-right align-top">
+                            <span className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-[#DC2A2A]">
+                              {folded ? (isOpen ? 'Hide' : 'Show all') : 'Details'}
+                              <Chevron open={folded && isOpen} />
+                            </span>
+                          </td>
+                        </tr>
+                        {folded &&
+                          isOpen &&
+                          group.rows.map((row) => (
+                            <tr
+                              key={row.id}
+                              onClick={() => setSelected(row)}
+                              className="cursor-pointer border-b border-[#F1F2F5] bg-[#FAFBFC] hover:bg-[#F3F4F6]"
+                            >
+                              <td className="whitespace-nowrap py-2.5 pl-9 pr-5 text-[12.5px] tabular-nums text-[#6B7280]">
+                                {formatWhen(row.created_at)}
+                              </td>
+                              <td />
+                              <td className="px-5 py-2.5 text-[13.5px] text-[#20242C]" colSpan={3}>
+                                {describeActivity(row)}
+                              </td>
+                              {outcome(row)}
+                              <td />
+                              <td className="px-5 py-2.5 text-right">
+                                <span className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-[#DC2A2A]">
+                                  Details
+                                  <Chevron />
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </TableScroll>
+          )
         )}
 
         {data && data.total > 0 && (

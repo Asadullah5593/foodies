@@ -146,7 +146,8 @@ const LoyaltySettings: React.FC = () => {
                   Enable Reward Points
                 </label>
               </div>
-              <div className="min-w-0 flex-1 max-w-md">
+              {/* Phones: the name field takes its own line instead of squeezing beside the checkbox. */}
+              <div className="min-w-0 flex-1 max-w-md max-sm:basis-full">
                 <label className={labelClass}>Reward Point display name</label>
                 <input
                   type="text"

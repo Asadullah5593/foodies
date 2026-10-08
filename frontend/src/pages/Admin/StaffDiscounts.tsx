@@ -229,7 +229,7 @@ const StaffDiscounts: React.FC = () => {
                       type="button"
                       onClick={() => startEdit(p)}
                       title="Edit"
-                      className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-gray-100 text-gray-600 transition-colors hover:bg-gray-200"
+                      className="flex h-[30px] w-[30px] items-center justify-center rounded-lg max-lg:h-11 max-lg:w-11 bg-gray-100 text-gray-600 transition-colors hover:bg-gray-200"
                     >
                       <MdEdit size={15} />
                     </button>
@@ -242,7 +242,7 @@ const StaffDiscounts: React.FC = () => {
                           deleteMutation.mutate(p.id);
                       }}
                       title={removeLabel(p.manage_scope)}
-                      className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-gray-100 text-red-500 transition-colors hover:bg-red-100"
+                      className="flex h-[30px] w-[30px] items-center justify-center rounded-lg max-lg:h-11 max-lg:w-11 bg-gray-100 text-red-500 transition-colors hover:bg-red-100"
                     >
                       <MdDelete size={15} />
                     </button>
@@ -360,7 +360,7 @@ const StaffDiscounts: React.FC = () => {
             </div>
           )}
 
-          <p className="flex items-start gap-1.5 text-[12px] leading-snug text-gray-400">
+          <p className="flex items-start gap-1.5 text-[12px] leading-snug text-gray-400 max-lg:flex-wrap">
             <MdInfoOutline size={14} className="mt-px shrink-0" />
             100% is allowed — that is a full comp, and the bill goes to zero. Who may grant it is set per role under{' '}
             <span className="font-medium text-gray-500">Roles → Staff discount limit</span>; a role has to be set to

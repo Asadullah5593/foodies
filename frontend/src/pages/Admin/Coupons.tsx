@@ -163,7 +163,7 @@ const Coupons: React.FC = () => {
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex justify-between items-center mb-6 max-sm:flex-wrap max-sm:gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-800">Coupons</h1>
           <p className="text-sm text-gray-500">A coupon is the offer &amp; its code. Its <span className="font-medium">vouchers</span> (the customer's physical form, with a QR) are generated automatically from the audience — view them on the Vouchers screen.</p>

@@ -19,6 +19,7 @@ import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { isEntityInactive } from '../../utils/entityStatus';
 import InactiveBadge from '../../components/InactiveBadge';
+import TableScroll from '../../components/TableScroll';
 
 interface RoleOption {
   id: number;
@@ -510,7 +511,7 @@ const BranchUsers: React.FC = () => {
                 className="w-full sm:w-64 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <div className="max-h-80 overflow-y-auto border border-gray-300 rounded-lg">
+            <TableScroll className="max-h-80 overflow-y-auto border border-gray-300 rounded-lg">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>
@@ -597,7 +598,7 @@ const BranchUsers: React.FC = () => {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableScroll>
             {allUsers?.length === 0 && (
               <p className="text-gray-500 text-sm p-2">No users found. Create users in the Users page first.</p>
             )}
@@ -694,7 +695,7 @@ const BranchUsers: React.FC = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Branches *</label>
-            <div className="max-h-64 overflow-y-auto border border-gray-300 rounded-lg">
+            <TableScroll className="max-h-64 overflow-y-auto border border-gray-300 rounded-lg">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>
@@ -740,7 +741,7 @@ const BranchUsers: React.FC = () => {
                   })}
                 </tbody>
               </table>
-            </div>
+            </TableScroll>
           </div>
 
           <div className="flex gap-2 justify-end">

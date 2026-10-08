@@ -277,7 +277,7 @@ const PrintedVouchers: React.FC = () => {
                             onClick={() => startEdit(v)}
                             title="Edit"
                             aria-label={`Edit ${v.name}`}
-                            className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-gray-100 text-gray-600 transition-colors hover:bg-gray-200"
+                            className="flex h-[30px] w-[30px] items-center justify-center rounded-lg max-lg:h-11 max-lg:w-11 bg-gray-100 text-gray-600 transition-colors hover:bg-gray-200"
                           >
                             <MdEdit size={15} />
                           </button>
@@ -297,7 +297,7 @@ const PrintedVouchers: React.FC = () => {
                             }}
                             title="Delete"
                             aria-label={`Delete ${v.name}`}
-                            className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-gray-100 text-red-500 transition-colors hover:bg-red-100"
+                            className="flex h-[30px] w-[30px] items-center justify-center rounded-lg max-lg:h-11 max-lg:w-11 bg-gray-100 text-red-500 transition-colors hover:bg-red-100"
                           >
                             <MdDelete size={15} />
                           </button>

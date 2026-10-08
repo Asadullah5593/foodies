@@ -258,12 +258,12 @@ const BankCards: React.FC = () => {
                   <span className="text-[12px] font-extrabold uppercase tracking-[0.1em] text-white/80">{c.network || ''}</span>
                   <div className="flex gap-1.5">
                     {canEditPerm && canEdit(c.manage_scope) && (
-                      <button type="button" onClick={() => startEdit(c)} title="Edit" className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-white/[0.14] text-white transition-colors hover:bg-white/25">
+                      <button type="button" onClick={() => startEdit(c)} title="Edit" className="flex h-[30px] w-[30px] items-center justify-center rounded-lg max-lg:h-11 max-lg:w-11 bg-white/[0.14] text-white transition-colors hover:bg-white/25">
                         <MdEdit size={15} />
                       </button>
                     )}
                     {canDeletePerm && c.manage_scope !== 'read_only' && (
-                      <button type="button" onClick={async () => { if (await confirmDialog(removeDialog(c.manage_scope, 'card', c.name))) deleteMutation.mutate(c.id); }} title={removeLabel(c.manage_scope)} className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-white/[0.14] text-red-200 transition-colors hover:bg-red-500/60">
+                      <button type="button" onClick={async () => { if (await confirmDialog(removeDialog(c.manage_scope, 'card', c.name))) deleteMutation.mutate(c.id); }} title={removeLabel(c.manage_scope)} className="flex h-[30px] w-[30px] items-center justify-center rounded-lg max-lg:h-11 max-lg:w-11 bg-white/[0.14] text-red-200 transition-colors hover:bg-red-500/60">
                         <MdDelete size={15} />
                       </button>
                     )}

@@ -10,6 +10,7 @@ import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
 import FilterBar, { type FilterChip, type FilterField } from '../../../components/FilterBar';
 import { rangeChipLabel } from '../../../utils/rangeChipLabel';
+import { useViewport } from '../../../hooks/useViewport';
 import Button from '../../../components/Button';
 import Loader from '../../../components/Loader';
 import { useHasPermission } from '../../../hooks/useHasPermission';
@@ -206,12 +207,15 @@ const DateRangeFilter: React.FC<{
 const thClass =
   'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 whitespace-nowrap';
 const tdClass = 'px-3 py-2 text-sm text-gray-800 dark:text-slate-200 whitespace-nowrap';
+/** Phone cards: the column headings become small labels over each value. */
+const cardLabel = 'text-[10.5px] font-bold uppercase tracking-wide text-gray-400 dark:text-slate-500';
 
 /* ── Delivery orders tab ─────────────────────────────────────────────────── */
 
 const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
   filters,
 }) => {
+  const { isPhone } = useViewport();
   const queryClient = useQueryClient();
   // Order status is its own grant on this surface; the server withholds the
   // data as well, so this only decides what to render.
@@ -441,6 +445,62 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
           No delivery orders in this view.
         </p>
       ) : (
+        isPhone ? (
+          <ul className="space-y-2.5" data-testid="supervisor-order-cards">
+            {orders.map((o) => (
+              <li key={o.id} className="rounded-xl border border-gray-200 bg-white p-3.5 dark:border-slate-700 dark:bg-slate-800">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[14px] font-semibold text-gray-800 dark:text-slate-100">{o.order_id ?? `#${o.order_number}`}</div>
+                    {o.order_id ? <div className="text-xs text-gray-400 dark:text-slate-500">#{o.order_number}</div> : null}
+                    <div className="mt-0.5 text-xs text-gray-500 dark:text-slate-400">Placed {fmtDateTime(o.placed_at)}</div>
+                  </div>
+                  <div className="flex-none text-right">
+                    <div className="text-[14px] font-semibold tabular-nums text-gray-800 dark:text-slate-100">{fmtMoney(o.total_amount)}</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400">{o.delivery_status ?? '—'}</div>
+                  </div>
+                </div>
+                {canViewStatus && (
+                  <div className="mt-2.5">
+                    {canUpdateStatus ? (
+                      <select
+                        value={o.status ?? ''}
+                        disabled={updateStatus.isPending}
+                        onChange={(e) => updateStatus.mutate({ id: o.id, status: e.target.value })}
+                        aria-label={`Update status for order ${o.order_id ?? o.order_number}`}
+                        className="min-h-[44px] w-full rounded-lg border border-gray-300 bg-white px-3 text-[14px] text-gray-800 focus:ring-2 focus:ring-red-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                      >
+                        {ORDER_STATUS_OPTIONS.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${orderStatusClasses(o.status ?? '')}`}>
+                        {o.status ?? '—'}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] text-gray-800 dark:text-slate-200">
+                  <div><dt className={cardLabel}>Rider</dt><dd>{o.rider_name ?? '—'}</dd></div>
+                  <div><dt className={cardLabel}>Trip time</dt><dd className="font-medium">{formatTripDuration(o.trip_duration_seconds)}</dd></div>
+                  <div><dt className={cardLabel}>Picked up</dt><dd>{fmtDateTime(o.picked_up_at)}</dd></div>
+                  <div><dt className={cardLabel}>Delivered</dt><dd>{fmtDateTime(o.delivered_at)}</dd></div>
+                  <div><dt className={cardLabel}>Brand · Branch</dt><dd>{o.brand_name ?? '—'} · {o.branch_name ?? '—'}</dd></div>
+                  <div>
+                    <dt className={cardLabel}>Customer</dt>
+                    <dd>
+                      {o.customer_name ?? '—'}
+                      {o.customer_phone ? <span className="block text-xs text-gray-400 dark:text-slate-500">{o.customer_phone}</span> : null}
+                    </dd>
+                  </div>
+                </dl>
+              </li>
+            ))}
+          </ul>
+        ) : (
         <TableScroll>
           <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
             <thead>
@@ -522,6 +582,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
             </tbody>
           </table>
         </TableScroll>
+        )
       )}
 
       {total > PAGE_SIZE ? (
@@ -557,6 +618,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
 /* ── Riders tab ──────────────────────────────────────────────────────────── */
 
 const RidersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({ filters }) => {
+  const { isPhone } = useViewport();
   const [status, setStatus] = useState<'all' | SupervisorRiderStatus>('all');
   const [brandId, setBrandId] = useState<number | ''>('');
   const [riderId, setRiderId] = useState<number | ''>('');
@@ -668,6 +730,37 @@ const RidersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({ filters }) 
           No riders in this view.
         </p>
       ) : (
+        isPhone ? (
+          <ul className="space-y-2.5" data-testid="supervisor-rider-cards">
+            {visible.map((r) => {
+              const meta = RIDER_STATUS_META[r.status];
+              return (
+                <li key={r.rider_user_id} className="rounded-xl border border-gray-200 bg-white p-3.5 dark:border-slate-700 dark:bg-slate-800">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[14px] font-semibold text-gray-800 dark:text-slate-100">{r.name}</div>
+                      <div className="mt-0.5 text-xs text-gray-500 dark:text-slate-400">
+                        {r.phone ?? '—'}
+                        {r.email ? ` · ${r.email}` : ''}
+                      </div>
+                    </div>
+                    <span className={`flex-none px-2 py-0.5 rounded-full text-xs font-medium ${meta.classes}`}>{meta.label}</span>
+                  </div>
+                  {r.status === 'on_break' && r.pause_reason ? (
+                    <div className="mt-1 text-xs text-gray-400 dark:text-slate-500">{r.pause_reason}</div>
+                  ) : null}
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] text-gray-800 dark:text-slate-200">
+                    <div><dt className={cardLabel}>Brand</dt><dd>{r.brands.length ? r.brands.join(', ') : '—'}</dd></div>
+                    <div><dt className={cardLabel}>Branch</dt><dd>{r.branch_name ?? '—'}</dd></div>
+                    <div><dt className={cardLabel}>Base salary</dt><dd>{fmtMoney(r.base_salary)}</dd></div>
+                    <div><dt className={cardLabel}>Last check-in</dt><dd>{fmtDateTime(r.last_check_in_at)}</dd></div>
+                    <div><dt className={cardLabel}>Last check-out</dt><dd>{fmtDateTime(r.last_check_out_at)}</dd></div>
+                  </dl>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
         <TableScroll>
           <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
             <thead>
@@ -716,6 +809,7 @@ const RidersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({ filters }) 
             </tbody>
           </table>
         </TableScroll>
+        )
       )}
     </Card>
   );

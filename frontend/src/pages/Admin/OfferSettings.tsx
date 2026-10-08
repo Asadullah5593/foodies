@@ -69,7 +69,7 @@ const OfferSettings: React.FC = () => {
     <div className="w-full px-4 py-6 sm:px-6 lg:px-12">
       <div className="mx-auto max-w-[920px]">
         {/* Header */}
-        <div className="mb-7 flex items-start justify-between gap-5">
+        <div className="mb-7 flex items-start justify-between gap-5 max-sm:flex-wrap max-sm:gap-y-3">
           <div className="flex items-start gap-4">
             <span className="flex h-[46px] w-[46px] flex-none items-center justify-center rounded-xl bg-red-50 text-red-600">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">

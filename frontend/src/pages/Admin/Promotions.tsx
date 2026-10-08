@@ -398,7 +398,7 @@ const Promotions: React.FC = () => {
           {!editingPromotion && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Who gets this?</label>
-              <div className="flex gap-6">
+              <div className="flex gap-6 max-lg:flex-col max-lg:gap-3">
                 <label className="flex items-center gap-2">
                   <input
                     type="radio"
