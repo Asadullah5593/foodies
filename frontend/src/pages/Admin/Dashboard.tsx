@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
@@ -30,6 +30,8 @@ import { printContent } from '../../utils/print';
 import type { DashboardSummary, OrderSeriesResponse, RecentOrder, InventoryAlerts } from './dashboard/types';
 import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 import { useViewport } from '../../hooks/useViewport';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
 
 const BREAKDOWN_HEAD =
   'py-2.5 text-[11px] font-bold uppercase tracking-[0.05em] text-gray-400 dark:text-slate-500';
@@ -44,6 +46,50 @@ const EXPORT_BUTTON =
 
 const DAY_START = '00:00';
 const DAY_END = '23:59';
+
+/** Phones and tablets: Export CSV / PDF as one button beside the title (the filter card is a sheet there). */
+const ExportMenu: React.FC<{ disabled: boolean; onCsv: () => void; onPdf: () => void }> = ({ disabled, onCsv, onPdf }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('touchstart', onDown);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('touchstart', onDown);
+    };
+  }, [open]);
+  const item =
+    'flex min-h-[44px] w-full items-center px-4 text-left text-[14px] font-semibold text-gray-700 hover:bg-gray-50 dark:text-slate-200 dark:hover:bg-slate-700';
+  return (
+    <div ref={ref} className="relative flex-none">
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`${EXPORT_BUTTON} min-h-[44px]`}
+      >
+        Export ▾
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-xl dark:border-slate-700 dark:bg-slate-800">
+          <button type="button" role="menuitem" className={item} onClick={() => { setOpen(false); onCsv(); }}>
+            Export CSV
+          </button>
+          <button type="button" role="menuitem" className={item} onClick={() => { setOpen(false); onPdf(); }}>
+            Export PDF
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
 
 function buildReportParams(
   branchId: number | null,
@@ -71,7 +117,7 @@ function buildReportParams(
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
   // Phones get their own Sales-by-brand rows and a per-period trend (see below).
-  const { isPhone } = useViewport();
+  const { isPhone, isDesktop } = useViewport();
   const { theme } = useTheme();
   const initial = defaultRange();
   const [branchId, setBranchId] = useState<number | null>(null);
@@ -364,13 +410,144 @@ const Dashboard: React.FC = () => {
     [k, summary],
   );
 
-  return (
-    <div className="w-full px-4 py-6 sm:px-6 lg:px-10">
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="mb-[22px]"
-      >
+  const presetButtons = presetRanges().map((p) => (
+    <button
+      key={p.key}
+      onClick={() => {
+        setDateFrom(p.from);
+        setDateTo(p.to);
+        // A preset means the WHOLE of that period, so it clears any clock.
+        setTimeFrom(DAY_START);
+        setTimeTo(DAY_END);
+      }}
+      className={`rounded-full border-[1.5px] px-4 py-2 text-[13px] font-bold transition-colors max-lg:min-h-[40px] ${
+        activePreset === p.key
+          ? 'border-foodies-cta bg-foodies-cta text-white'
+          : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+      }`}
+    >
+      {p.label}
+    </button>
+  ));
+  const branchControl = (
+    <SearchableSelect
+      value={branchId ? String(branchId) : ''}
+      onChange={(v) => setBranchId(v ? Number(v) : null)}
+      options={[
+        { value: '', label: 'All branches' },
+        ...relevantBranches.map((b) => ({
+          value: String(b.id),
+          label: `${b.name} (${b.code})`,
+          inactive: isEntityInactive(b),
+        })),
+      ]}
+      placeholder="All branches"
+      minWidth="w-full"
+    />
+  );
+  const brandControl = (
+    <SearchableSelect
+      value={brandId ? String(brandId) : ''}
+      onChange={(v) => setBrandId(v ? Number(v) : null)}
+      options={[
+        { value: '', label: 'All brands' },
+        ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
+      ]}
+      placeholder="All brands"
+      minWidth="w-full"
+    />
+  );
+  const fromControl = (
+    <div className="flex gap-1.5">
+      <input
+        type="date"
+        value={dateFrom}
+        onChange={(e) => setDateFrom(e.target.value)}
+        className={`${FILTER_INPUT} flex-1`}
+      />
+      <input
+        type="time"
+        aria-label="From time"
+        value={timeFrom}
+        onChange={(e) => setTimeFrom(e.target.value || DAY_START)}
+        className={`${FILTER_INPUT} w-[90px]`}
+      />
+    </div>
+  );
+  const toControl = (
+    <div className="flex gap-1.5">
+      <input
+        type="date"
+        value={dateTo}
+        onChange={(e) => setDateTo(e.target.value)}
+        className={`${FILTER_INPUT} flex-1`}
+      />
+      <input
+        type="time"
+        aria-label="To time"
+        value={timeTo}
+        onChange={(e) => setTimeTo(e.target.value || DAY_END)}
+        className={`${FILTER_INPUT} w-[90px]`}
+      />
+    </div>
+  );
+
+  // Phones and tablets: what's applied, as chips (presets stay on screen, so a preset range isn't a chip).
+  const resetRange = () => {
+    const r = defaultRange();
+    setDateFrom(r.from);
+    setDateTo(r.to);
+    setTimeFrom(DAY_START);
+    setTimeTo(DAY_END);
+  };
+  const filterChips: FilterChip[] = [
+    ...(activePreset == null
+      ? [{ key: 'range', label: rangeChipLabel(dateFrom, dateTo) + (timeNarrowed ? ` · ${timeFrom}–${timeTo}` : ''), onRemove: resetRange }]
+      : []),
+    ...(showBranchFilter && branchId != null
+      ? [{ key: 'branch', label: relevantBranches.find((b) => b.id === branchId)?.name ?? 'Branch', onRemove: () => setBranchId(null) }]
+      : []),
+    ...(showBrandFilter && brandId != null
+      ? [{ key: 'brand', label: (brands ?? []).find((b) => b.id === brandId)?.name ?? 'Brand', onRemove: () => setBrandId(null) }]
+      : []),
+  ];
+  const filterFields: FilterField[] = [
+    {
+      key: 'range',
+      label: 'Date range',
+      node: (
+        <div>
+          <div className="mb-3 flex flex-wrap gap-2">{presetButtons}</div>
+          <label className={FILTER_LABEL}>From</label>
+          {fromControl}
+          <label className={`${FILTER_LABEL} mt-3`}>To</label>
+          {toControl}
+          {timeNarrowed && (
+            <button
+              type="button"
+              onClick={() => {
+                setTimeFrom(DAY_START);
+                setTimeTo(DAY_END);
+              }}
+              className="mt-2 min-h-[40px] text-[13px] font-semibold text-foodies-cta"
+            >
+              Clear time
+            </button>
+          )}
+        </div>
+      ),
+    },
+    ...(showBranchFilter ? [{ key: 'branch', label: 'Branch', node: branchControl }] : []),
+    ...(showBrandFilter ? [{ key: 'brand', label: 'Brand', node: brandControl }] : []),
+  ];
+  const clearAllFilters = () => {
+    resetRange();
+    if (showBranchFilter) setBranchId(null);
+    if (showBrandFilter) setBrandId(null);
+  };
+
+  const titleBlock = (
+    <>
         <h1 className="text-2xl font-extrabold tracking-tight text-gray-800 dark:text-slate-100 sm:text-[26px]">{dashboardTitle}</h1>
         <p className="mt-1.5 text-[13.5px] text-gray-500 dark:text-slate-400">
           Welcome back, <span className="font-bold text-foodies-cta">{user?.name}</span>!
@@ -382,30 +559,38 @@ const Dashboard: React.FC = () => {
             </span>
           )}
         </p>
+    </>
+  );
+
+  return (
+    <div className="w-full px-4 py-6 sm:px-6 lg:px-10">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mb-[22px]"
+      >
+        {isDesktop ? (
+          titleBlock
+        ) : (
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">{titleBlock}</div>
+            <ExportMenu disabled={!summary || summaryLoading} onCsv={handleExportCsv} onPdf={handleExportPdf} />
+          </div>
+        )}
       </motion.div>
 
-      {/* Filters — quick presets over an exact range (date + time-of-day). */}
+      {/* Filters — quick presets over an exact range (date + time-of-day). Below lg: a compact
+          bar (presets stay on screen) and a sheet with the rest; desktop renders the card as before. */}
+      <FilterBar
+        className="mb-[22px]"
+        primaryRow={presetButtons}
+        chips={filterChips}
+        fields={filterFields}
+        onClearAll={clearAllFilters}
+      >
       <div className="mb-[22px] rounded-[14px] border border-gray-200 bg-white px-[18px] py-4 shadow-[0_6px_18px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-800">
         <div className="mb-3.5 flex flex-wrap items-center gap-2">
-          {presetRanges().map((p) => (
-            <button
-              key={p.key}
-              onClick={() => {
-                setDateFrom(p.from);
-                setDateTo(p.to);
-                // A preset means the WHOLE of that period, so it clears any clock.
-                setTimeFrom(DAY_START);
-                setTimeTo(DAY_END);
-              }}
-              className={`rounded-full border-[1.5px] px-4 py-2 text-[13px] font-bold transition-colors ${
-                activePreset === p.key
-                  ? 'border-foodies-cta bg-foodies-cta text-white'
-                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
+          {presetButtons}
           <div className="ml-auto flex items-center gap-2.5">
             {timeNarrowed && (
               <button
@@ -441,75 +626,26 @@ const Dashboard: React.FC = () => {
           {showBranchFilter && (
             <div>
               <label className={FILTER_LABEL}>Branch</label>
-              <SearchableSelect
-                value={branchId ? String(branchId) : ''}
-                onChange={(v) => setBranchId(v ? Number(v) : null)}
-                options={[
-                  { value: '', label: 'All branches' },
-                  ...relevantBranches.map((b) => ({
-                    value: String(b.id),
-                    label: `${b.name} (${b.code})`,
-                    inactive: isEntityInactive(b),
-                  })),
-                ]}
-                placeholder="All branches"
-                minWidth="w-full"
-              />
+              {branchControl}
             </div>
           )}
           {showBrandFilter && (
             <div>
               <label className={FILTER_LABEL}>Brand</label>
-              <SearchableSelect
-                value={brandId ? String(brandId) : ''}
-                onChange={(v) => setBrandId(v ? Number(v) : null)}
-                options={[
-                  { value: '', label: 'All brands' },
-                  ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
-                ]}
-                placeholder="All brands"
-                minWidth="w-full"
-              />
+              {brandControl}
             </div>
           )}
           <div>
             <label className={FILTER_LABEL}>From</label>
-            <div className="flex gap-1.5">
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className={`${FILTER_INPUT} flex-1`}
-              />
-              <input
-                type="time"
-                aria-label="From time"
-                value={timeFrom}
-                onChange={(e) => setTimeFrom(e.target.value || DAY_START)}
-                className={`${FILTER_INPUT} w-[90px]`}
-              />
-            </div>
+            {fromControl}
           </div>
           <div>
             <label className={FILTER_LABEL}>To</label>
-            <div className="flex gap-1.5">
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className={`${FILTER_INPUT} flex-1`}
-              />
-              <input
-                type="time"
-                aria-label="To time"
-                value={timeTo}
-                onChange={(e) => setTimeTo(e.target.value || DAY_END)}
-                className={`${FILTER_INPUT} w-[90px]`}
-              />
-            </div>
+            {toControl}
           </div>
         </div>
       </div>
+      </FilterBar>
 
       {/* KPI row */}
       <div className="mb-5 grid grid-cols-2 gap-3.5 md:grid-cols-3 xl:grid-cols-4">

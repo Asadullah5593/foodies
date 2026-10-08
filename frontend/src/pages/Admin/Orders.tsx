@@ -34,6 +34,9 @@ import { ORDER_SOURCES, ORDER_SOURCE_LABEL, orderSourceLabel } from '../../utils
 import { deliveryStatusLabel } from '../../lib/deliveryStatus';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 import { labelWithStatus } from '../../utils/entityStatus';
+import { useViewport } from '../../hooks/useViewport';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
 
 type OrderPayment = { paymentMethod?: string; payment_method?: string; status?: string; amount?: number | string };
 
@@ -376,6 +379,8 @@ const Orders: React.FC = () => {
   const [ordersPage, setOrdersPage] = useState(1);
   const [pageSize, setPageSize] = useState(ORDERS_DEFAULT_PAGE_SIZE);
   const [search, setSearch] = useState('');
+  // Below lg the filters are a compact bar + sheet, and the status tiles move into the sheet.
+  const { isDesktop } = useViewport();
   const [customerInvoiceGroupId, setCustomerInvoiceGroupId] = useState<string | null>(null);
   const [customerInvoiceOrderId, setCustomerInvoiceOrderId] = useState<number | null>(null);
   const [riderModalOrderId, setRiderModalOrderId] = useState<number | null>(null);
@@ -1133,6 +1138,140 @@ const Orders: React.FC = () => {
     </>
   );
 
+  const searchBox = canFilterSearch && (
+    <div className="flex basis-full items-center gap-2 rounded-[10px] border-[1.5px] border-gray-100 bg-gray-50 px-3 dark:border-slate-600 dark:bg-slate-700 lg:min-w-[200px] lg:flex-1 lg:basis-0">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="text-gray-400">
+        <circle cx="7" cy="7" r="4.5" /><line x1="10.5" y1="10.5" x2="14" y2="14" />
+      </svg>
+      <input
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search order #, customer"
+        className="flex-1 border-none bg-transparent py-3 text-[15px] text-gray-800 outline-none dark:text-slate-100"
+      />
+    </div>
+  );
+  const branchSelect = canFilterBranch && (
+    <select value={branchId} onChange={(e) => setFilter('branch_id', e.target.value)} className={selectCls} aria-label="Branch">
+      <option value="">All branches</option>
+      {(branches ?? []).map((b) => <option key={b.id} value={String(b.id)}>{labelWithStatus(b.name, b)}</option>)}
+    </select>
+  );
+  const brandSelect = canFilterBrand && (
+    <select value={brandId} onChange={(e) => setFilter('brand_id', e.target.value)} className={selectCls} aria-label="Brand">
+      <option value="">All brands</option>
+      {(brands ?? []).map((b) => <option key={b.id} value={String(b.id)}>{labelWithStatus(b.name, b)}</option>)}
+    </select>
+  );
+  const typeSelect = canFilterOrderType && (
+    <select value={orderType} onChange={(e) => setFilter('order_type', e.target.value)} className={selectCls} aria-label="Order type">
+      <option value="">All types</option>
+      <option value="delivery">Delivery</option>
+      <option value="dine_in">Dine in</option>
+      <option value="takeaway">Takeaway</option>
+    </select>
+  );
+  const sourceSelect = canFilterSource && !ownSourceOnly && (
+    <select value={source} onChange={(e) => setFilter('source', e.target.value)} className={selectCls} aria-label="Source">
+      <option value="">All sources</option>
+      {ORDER_SOURCES.map((s) => <option key={s} value={s}>{ORDER_SOURCE_LABEL[s]}</option>)}
+    </select>
+  );
+  const paymentSelect = canFilterPayment && (
+    <select value={paymentMethod} onChange={(e) => setFilter('payment_method', e.target.value)} className={selectCls} aria-label="Payment type">
+      <option value="">All payments</option>
+      <option value="cash">Cash</option>
+      <option value="card">Card</option>
+      <option value="online_transfer">Online transfer</option>
+      <option value="cod">COD</option>
+    </select>
+  );
+  const discountSelect = canFilterDiscount && (
+    <select value={discount} onChange={(e) => setFilter('discount', e.target.value)} className={selectCls} aria-label="Discount">
+      <option value="">All discounts</option>
+      <option value="any">Discounted only</option>
+      <option value="none">Full price only</option>
+      {DISCOUNT_KINDS.map((k) => <option key={k.filter} value={k.filter}>{k.long}</option>)}
+    </select>
+  );
+  const dateFromInput = <input type="date" min={minDate} value={dateFrom} onChange={(e) => setFilter('date_from', e.target.value)} className={selectCls} aria-label="Date from" />;
+  const dateToInput = <input type="date" min={minDate} value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />;
+  const clearFilters = () => {
+    setSearch('');
+    // Clearing the filters keeps the customer whose history this is —
+    // leaving that view is the banner's job — and their full date range.
+    if (customerId) {
+      setSearchParams({ customer_id: customerId, ...(customerLabel && { customer_label: customerLabel }) });
+      return;
+    }
+    const t = localDateYYYYMMDD();
+    setSearchParams({ date_from: t, date_to: t });
+  };
+  const statusTileButtons = tiles.map((t) => {
+    const active = status === t.key || (t.key === '' && status === '');
+    const isAlert = 'alert' in t && t.alert;
+    return (
+      <button
+        key={t.key || 'all'}
+        onClick={() => setFilter('status', t.key)}
+        className={`flex items-center gap-2.5 rounded-xl border-[1.5px] px-4 py-3 transition-colors ${
+          active
+            ? isAlert
+              ? 'border-red-600 bg-red-50 dark:bg-red-900/30'
+              : 'border-gray-400 bg-gray-100 dark:border-slate-400 dark:bg-slate-700'
+            : isAlert
+              ? 'border-red-200 bg-red-50/40 hover:border-red-300 dark:border-red-900 dark:bg-red-900/10'
+              : 'border-gray-200 bg-white hover:border-gray-300 dark:border-slate-600 dark:bg-slate-800'
+        }`}
+      >
+        <span className={`h-2.5 w-2.5 flex-none rounded-full ${t.dot}`} />
+        <span className={`text-[14.5px] font-semibold ${isAlert ? 'text-red-700 dark:text-red-300' : active ? 'text-gray-800 dark:text-slate-100' : 'text-gray-500 dark:text-slate-400'}`}>
+          {t.label}
+        </span>
+        <span className={`text-[15px] font-extrabold tabular-nums ${isAlert ? 'text-red-600' : 'text-gray-800 dark:text-slate-100'}`}>{t.n}</span>
+      </button>
+    );
+  });
+
+  // Phones and tablets: applied filters as chips. The status tiles live in the sheet there, so
+  // an outstanding "Needs rider" count stays visible as a shortcut chip.
+  const optionLabel = (list: Array<{ id: number; name: string }> | undefined, id: string) =>
+    (list ?? []).find((x) => String(x.id) === id)?.name ?? id;
+  const needsRiderTile = tiles.find((t) => t.key === 'needs_rider');
+  const statusTile = tiles.find((t) => t.key === status);
+  const discountLabel = (d: string) =>
+    d === 'any' ? 'Discounted only' : d === 'none' ? 'Full price only' : DISCOUNT_KINDS.find((k) => k.filter === d)?.long ?? d;
+  const orderFilterChips: FilterChip[] = [
+    ...(canFilterStatus && status && statusTile ? [{ key: 'status', label: statusTile.label, onRemove: () => setFilter('status', '') }] : []),
+    ...(!customerId && (dateFrom !== defaultToday || dateTo !== defaultToday)
+      ? [{ key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { const p = new URLSearchParams(searchParams); p.delete('date_from'); p.delete('date_to'); setSearchParams(p); } }]
+      : []),
+    ...(customerId && (dateFrom || dateTo)
+      ? [{ key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { const p = new URLSearchParams(searchParams); p.delete('date_from'); p.delete('date_to'); setSearchParams(p); } }]
+      : []),
+    ...(canFilterBranch && branchId ? [{ key: 'branch', label: optionLabel(branches, branchId), onRemove: () => setFilter('branch_id', '') }] : []),
+    ...(canFilterBrand && brandId ? [{ key: 'brand', label: optionLabel(brands, brandId), onRemove: () => setFilter('brand_id', '') }] : []),
+    ...(canFilterOrderType && orderType ? [{ key: 'type', label: formatOrderType(orderType), onRemove: () => setFilter('order_type', '') }] : []),
+    ...(canFilterSource && !ownSourceOnly && source ? [{ key: 'source', label: orderSourceLabel(source), onRemove: () => setFilter('source', '') }] : []),
+    ...(canFilterPayment && paymentMethod
+      ? [{ key: 'payment', label: paymentMethod === 'cod' ? 'COD' : paymentMethod === 'online_transfer' ? 'Online transfer' : paymentMethod === 'card' ? 'Card' : 'Cash', onRemove: () => setFilter('payment_method', '') }]
+      : []),
+    ...(canFilterDiscount && discount ? [{ key: 'discount', label: discountLabel(discount), onRemove: () => setFilter('discount', '') }] : []),
+    ...(canFilterStatus && needsRiderTile && needsRiderTile.n > 0 && status !== 'needs_rider'
+      ? [{ key: 'needs-rider', label: `Needs rider ${needsRiderTile.n}`, tone: 'alert' as const, onSelect: () => setFilter('status', 'needs_rider') }]
+      : []),
+  ];
+  const orderFilterFields: FilterField[] = [
+    ...(canFilterStatus ? [{ key: 'status', label: 'Status', node: <div className="flex flex-wrap gap-2">{statusTileButtons}</div> }] : []),
+    { key: 'date', label: 'Date range', node: <div className="grid grid-cols-2 gap-2.5">{dateFromInput}{dateToInput}</div> },
+    ...(branchSelect ? [{ key: 'branch', label: 'Branch', node: branchSelect }] : []),
+    ...(brandSelect ? [{ key: 'brand', label: 'Brand', node: brandSelect }] : []),
+    ...(typeSelect ? [{ key: 'type', label: 'Order type', node: typeSelect }] : []),
+    ...(sourceSelect ? [{ key: 'source', label: 'Source', node: sourceSelect }] : []),
+    ...(paymentSelect ? [{ key: 'payment', label: 'Payment type', node: paymentSelect }] : []),
+    ...(discountSelect ? [{ key: 'discount', label: 'Discount', node: discountSelect }] : []),
+  ];
+
   return (
     <div className="w-full min-w-0 px-4 py-6 sm:px-6 lg:px-8">
       {/* Header */}
@@ -1224,23 +1363,23 @@ const Orders: React.FC = () => {
             <div className="min-w-0">
               <div className="text-[16px] font-bold text-gray-800 dark:text-slate-100">
                 Automatic rider assignment
-                <span className="ml-2 text-[14px] font-semibold text-gray-400 dark:text-slate-500">
+                <span className="ml-2 text-[14px] font-semibold text-gray-400 dark:text-slate-500 max-sm:ml-0 max-sm:block">
                   {onDutyRiders?.length ?? 0} rider{(onDutyRiders?.length ?? 0) === 1 ? '' : 's'} on duty
                 </span>
               </div>
-              <div className="truncate text-[14px] text-gray-500 dark:text-slate-400" title="Riders need an HR profile, check-in, fresh heartbeat/location, and the branch needs coordinates plus delivery radius.">
+              <div className="truncate text-[14px] text-gray-500 dark:text-slate-400 max-sm:line-clamp-2 max-sm:whitespace-normal" title="Riders need an HR profile, check-in, fresh heartbeat/location, and the branch needs coordinates plus delivery radius.">
                 Delivery orders get a rider automatically when the kitchen moves to <strong>Preparing</strong>. Riders need an HR profile, check-in, a fresh heartbeat, and a branch delivery radius.
               </div>
             </div>
           </div>
-          <div className="flex flex-none gap-2">
+          <div className="flex flex-none gap-2 max-lg:w-full max-lg:flex-wrap">
             {canOpenRiderHrm && (
-              <Link to="/admin/rider-hrm" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
+              <Link to="/admin/rider-hrm" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center max-lg:justify-center max-sm:flex-1">
                 Open Rider HRM
               </Link>
             )}
             {canConfigBranches && (
-              <Link to="/admin/branches" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200">
+              <Link to="/admin/branches" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center max-lg:justify-center max-sm:flex-1">
                 Configure Branch Radius
               </Link>
             )}
@@ -1248,97 +1387,37 @@ const Orders: React.FC = () => {
         </div>
       )}
 
-      {/* Filters row */}
+      {/* Filters row — below lg a compact bar (search + Filters) and a sheet that also holds the
+          status tiles; desktop renders the row as before. */}
+      <FilterBar
+        primary={searchBox || undefined}
+        chips={orderFilterChips}
+        fields={orderFilterFields}
+        onClearAll={clearFilters}
+        resultLabel={`Show ${totalCount} ${totalCount === 1 ? 'order' : 'orders'}`}
+      >
       <div className="mb-4 flex flex-wrap items-center gap-2.5 rounded-[14px] border border-gray-200 bg-white px-3.5 py-2.5 shadow-sm dark:border-slate-700 dark:bg-slate-800">
-        {canFilterSearch && <div className="flex basis-full items-center gap-2 rounded-[10px] border-[1.5px] border-gray-100 bg-gray-50 px-3 dark:border-slate-600 dark:bg-slate-700 lg:min-w-[200px] lg:flex-1 lg:basis-0">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="text-gray-400">
-            <circle cx="7" cy="7" r="4.5" /><line x1="10.5" y1="10.5" x2="14" y2="14" />
-          </svg>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search order #, customer"
-            className="flex-1 border-none bg-transparent py-3 text-[15px] text-gray-800 outline-none dark:text-slate-100"
-          />
-        </div>}
-        {canFilterBranch && <select value={branchId} onChange={(e) => setFilter('branch_id', e.target.value)} className={selectCls} aria-label="Branch">
-          <option value="">All branches</option>
-          {(branches ?? []).map((b) => <option key={b.id} value={String(b.id)}>{labelWithStatus(b.name, b)}</option>)}
-        </select>}
-        {canFilterBrand && <select value={brandId} onChange={(e) => setFilter('brand_id', e.target.value)} className={selectCls} aria-label="Brand">
-          <option value="">All brands</option>
-          {(brands ?? []).map((b) => <option key={b.id} value={String(b.id)}>{labelWithStatus(b.name, b)}</option>)}
-        </select>}
-        {canFilterOrderType && <select value={orderType} onChange={(e) => setFilter('order_type', e.target.value)} className={selectCls} aria-label="Order type">
-          <option value="">All types</option>
-          <option value="delivery">Delivery</option>
-          <option value="dine_in">Dine in</option>
-          <option value="takeaway">Takeaway</option>
-        </select>}
-        {canFilterSource && !ownSourceOnly && <select value={source} onChange={(e) => setFilter('source', e.target.value)} className={selectCls} aria-label="Source">
-          <option value="">All sources</option>
-          {ORDER_SOURCES.map((s) => <option key={s} value={s}>{ORDER_SOURCE_LABEL[s]}</option>)}
-        </select>}
-        {canFilterPayment && <select value={paymentMethod} onChange={(e) => setFilter('payment_method', e.target.value)} className={selectCls} aria-label="Payment type">
-          <option value="">All payments</option>
-          <option value="cash">Cash</option>
-          <option value="card">Card</option>
-          <option value="online_transfer">Online transfer</option>
-          <option value="cod">COD</option>
-        </select>}
-        {canFilterDiscount && <select value={discount} onChange={(e) => setFilter('discount', e.target.value)} className={selectCls} aria-label="Discount">
-          <option value="">All discounts</option>
-          <option value="any">Discounted only</option>
-          <option value="none">Full price only</option>
-          {DISCOUNT_KINDS.map((k) => <option key={k.filter} value={k.filter}>{k.long}</option>)}
-        </select>}
-        <input type="date" min={minDate} value={dateFrom} onChange={(e) => setFilter('date_from', e.target.value)} className={selectCls} aria-label="Date from" />
-        <input type="date" min={minDate} value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />
+        {searchBox}
+        {branchSelect}
+        {brandSelect}
+        {typeSelect}
+        {sourceSelect}
+        {paymentSelect}
+        {discountSelect}
+        {dateFromInput}
+        {dateToInput}
         <button
-          onClick={() => {
-            setSearch('');
-            // Clearing the filters keeps the customer whose history this is —
-            // leaving that view is the banner's job — and their full date range.
-            if (customerId) {
-              setSearchParams({ customer_id: customerId, ...(customerLabel && { customer_label: customerLabel }) });
-              return;
-            }
-            const t = localDateYYYYMMDD();
-            setSearchParams({ date_from: t, date_to: t });
-          }}
+          onClick={clearFilters}
           className="whitespace-nowrap rounded-[10px] bg-red-50 px-4 py-3 text-[14.5px] font-bold text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300"
         >
           Clear
         </button>
       </div>
+      </FilterBar>
 
-      {/* Status tiles */}
-      {canFilterStatus && <div className="mb-5 flex flex-wrap gap-2">
-        {tiles.map((t) => {
-          const active = status === t.key || (t.key === '' && status === '');
-          const isAlert = 'alert' in t && t.alert;
-          return (
-            <button
-              key={t.key || 'all'}
-              onClick={() => setFilter('status', t.key)}
-              className={`flex items-center gap-2.5 rounded-xl border-[1.5px] px-4 py-3 transition-colors ${
-                active
-                  ? isAlert
-                    ? 'border-red-600 bg-red-50 dark:bg-red-900/30'
-                    : 'border-gray-400 bg-gray-100 dark:border-slate-400 dark:bg-slate-700'
-                  : isAlert
-                    ? 'border-red-200 bg-red-50/40 hover:border-red-300 dark:border-red-900 dark:bg-red-900/10'
-                    : 'border-gray-200 bg-white hover:border-gray-300 dark:border-slate-600 dark:bg-slate-800'
-              }`}
-            >
-              <span className={`h-2.5 w-2.5 flex-none rounded-full ${t.dot}`} />
-              <span className={`text-[14.5px] font-semibold ${isAlert ? 'text-red-700 dark:text-red-300' : active ? 'text-gray-800 dark:text-slate-100' : 'text-gray-500 dark:text-slate-400'}`}>
-                {t.label}
-              </span>
-              <span className={`text-[15px] font-extrabold tabular-nums ${isAlert ? 'text-red-600' : 'text-gray-800 dark:text-slate-100'}`}>{t.n}</span>
-            </button>
-          );
-        })}
+      {/* Status tiles (desktop; below lg they are in the filter sheet) */}
+      {canFilterStatus && isDesktop && <div className="mb-5 flex flex-wrap gap-2">
+        {statusTileButtons}
       </div>}
 
       {/* Table: data grid on xl+, stacked cards below. While a filter/page
