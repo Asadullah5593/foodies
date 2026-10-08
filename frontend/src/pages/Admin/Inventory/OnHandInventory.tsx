@@ -226,7 +226,7 @@ const OnHandInventory: React.FC = () => {
           <h1 className="text-[26px] font-bold text-slate-900 dark:text-slate-100">Inventory</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5">Track on-hand stock as it flows from the branch into each brand.</p>
         </div>
-        <button onClick={refresh} disabled={refreshing} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60">
+        <button onClick={refresh} disabled={refreshing} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-60 max-lg:min-h-[44px]">
           <LuRefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} /> Refresh
         </button>
       </div>
@@ -328,7 +328,7 @@ const OnHandInventory: React.FC = () => {
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold" style={{ color: st.color, background: st.bg }}>{st.label}</span>
                     <div className="text-[11px] text-slate-400 mt-0.5">{st.sub}</div>
                   </div>
-                  <div className="text-right"><button onClick={() => setHistoryItemId(r.itemId)} className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">History</button></div>
+                  <div className="text-right"><button onClick={() => setHistoryItemId(r.itemId)} className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[44px]">History</button></div>
                 </div>
               );
             })}
@@ -337,11 +337,11 @@ const OnHandInventory: React.FC = () => {
             <div className="flex items-center justify-between px-4 py-3.5 text-[13px] text-slate-500 dark:text-slate-400">
               <span>{filteredRows.length === 0 ? 'No items' : `Showing ${(safePage - 1) * PAGE_SIZE + 1}–${Math.min(safePage * PAGE_SIZE, filteredRows.length)} of ${filteredRows.length} items`}</span>
               <div className="flex items-center gap-1.5">
-                <button disabled={safePage <= 1} onClick={() => setPage(safePage - 1)} className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-md disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700">‹</button>
+                <button disabled={safePage <= 1} onClick={() => setPage(safePage - 1)} className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-md disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[44px]">‹</button>
                 {Array.from({ length: totalPages }, (_, i) => i + 1).slice(0, 5).map((p) => (
-                  <button key={p} onClick={() => setPage(p)} className={`px-3 py-1.5 rounded-md font-semibold ${p === safePage ? 'bg-red-600 text-white' : 'border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>{p}</button>
+                  <button key={p} onClick={() => setPage(p)} className={`px-3 py-1.5 rounded-md font-semibold max-lg:min-h-[44px] ${p === safePage ? 'bg-red-600 text-white' : 'border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'}`}>{p}</button>
                 ))}
-                <button disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)} className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-md disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700">›</button>
+                <button disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)} className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-md disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[44px]">›</button>
               </div>
               <span>{PAGE_SIZE} per page</span>
             </div>

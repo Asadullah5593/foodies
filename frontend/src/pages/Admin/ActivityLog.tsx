@@ -372,7 +372,7 @@ const ActivityLog: React.FC = () => {
 
   // Filter controls, shared by the desktop card and the phone/tablet sheet (one tree renders).
   const periodGroup = (
-    <div className="flex h-10 overflow-hidden rounded-lg border border-[#D5D9E0]">
+    <div className="flex h-10 overflow-hidden rounded-lg border border-[#D5D9E0] max-lg:h-11">
       {PERIODS.map((period) => {
         const active =
           filters.date_from === period.from() && filters.date_to === period.to();
@@ -659,7 +659,7 @@ const ActivityLog: React.FC = () => {
                 title={OUTCOME_HINTS[key]}
                 aria-pressed={filters.outcome === key}
                 onClick={() => setFilter('outcome', filters.outcome === key ? '' : key)}
-                className={`rounded-full border px-3 py-1 text-[12.5px] font-semibold transition ${
+                className={`rounded-full border px-3 py-1 text-[12.5px] font-semibold transition max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center ${
                   OUTCOME_STYLES[key] ?? 'border-gray-200 bg-gray-50 text-gray-600'
                 } ${filters.outcome === key ? 'ring-2 ring-[#DC2A2A]/40 ring-offset-1' : 'hover:brightness-95'}`}
               >

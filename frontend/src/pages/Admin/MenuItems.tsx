@@ -1804,7 +1804,7 @@ const MenuItems: React.FC = () => {
                             (sum, g) => sum + (g.modifier_count ?? 0),
                             0,
                           );
-                          const linkClass = 'text-blue-600 dark:text-blue-400 hover:underline';
+                          const linkClass = 'text-blue-600 dark:text-blue-400 hover:underline max-lg:relative max-lg:before:absolute max-lg:before:-inset-x-1.5 max-lg:before:-inset-y-3 max-lg:before:content-[\'\']';
                           return (
                             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
                               <Link className={linkClass} to={`/admin/menu-variants?${[brandQs, `item_id=${item.id}`].filter(Boolean).join('&')}`}>

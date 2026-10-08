@@ -1889,7 +1889,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             <div className="flex flex-wrap items-end gap-3 mb-3 text-sm">
               <label className="min-w-[240px] flex-1">
                 <div className="text-xs font-medium text-slate-600 mb-1">Search item</div>
-                <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Item name or code…" value={onHandSearch} onChange={(e) => setOnHandSearch(e.target.value)} />
+                <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 max-lg:min-h-[44px]" placeholder="Item name or code…" value={onHandSearch} onChange={(e) => setOnHandSearch(e.target.value)} />
               </label>
               <label className="min-w-[200px]">
                 <div className="text-xs font-medium text-slate-600 mb-1">Brand bucket</div>
@@ -2215,7 +2215,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
             <div className="text-slate-500 dark:text-slate-400">Select a branch.</div>
           ) : (
             <div className="space-y-4">
-              <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm text-blue-800 dark:text-blue-200">
+              <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 px-3 py-2 text-sm text-blue-800 dark:text-blue-200 max-lg:min-h-[44px]">
                 Use this to <span className="font-medium">allocate received stock to a brand</span> (Branch pool → a brand),
                 move stock between brands, or transfer between branches. Pick the <span className="font-medium">source</span>{' '}
                 and <span className="font-medium">destination</span> brand buckets in the request — leave a side as
@@ -2228,7 +2228,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 </label>
                 <label className="min-w-[240px] flex-1">
                   <div className="text-xs font-medium text-slate-600 mb-1">Search request / order / branch</div>
-                  <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="REQ-/TO- number or branch…" value={transferSearch} onChange={(e) => setTransferSearch(e.target.value)} />
+                  <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 max-lg:min-h-[44px]" placeholder="REQ-/TO- number or branch…" value={transferSearch} onChange={(e) => setTransferSearch(e.target.value)} />
                 </label>
                 {(transferStatus || transferSearch) && (
                   <Button variant="secondary" onClick={() => { setTransferStatus(''); setTransferSearch(''); }}>Clear</Button>
@@ -2393,7 +2393,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                 </label>
                 <label className="min-w-[240px] flex-1">
                   <div className="text-xs font-medium text-slate-600 mb-1">Search reference / reason / item</div>
-                  <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="ADJ reference, reason or item…" value={adjustmentSearch} onChange={(e) => setAdjustmentSearch(e.target.value)} />
+                  <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 max-lg:min-h-[44px]" placeholder="ADJ reference, reason or item…" value={adjustmentSearch} onChange={(e) => setAdjustmentSearch(e.target.value)} />
                 </label>
                 {(adjustmentStatus || adjustmentSearch) && (
                   <Button variant="secondary" onClick={() => { setAdjustmentStatus(''); setAdjustmentSearch(''); }}>Clear</Button>
@@ -2572,7 +2572,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
           <div className="flex flex-wrap items-end gap-3 mb-3 text-sm">
             <label className="min-w-[240px] flex-1">
               <div className="text-xs font-medium text-slate-600 mb-1">Search unit</div>
-              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Code or name…" value={uomSearch} onChange={(e) => setUomSearch(e.target.value)} />
+              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 max-lg:min-h-[44px]" placeholder="Code or name…" value={uomSearch} onChange={(e) => setUomSearch(e.target.value)} />
             </label>
           </div>
           {uomsQ.isLoading ? (
@@ -2748,7 +2748,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
           <div className="flex flex-wrap items-end gap-3 mb-3 text-sm">
             <label className="min-w-[240px] flex-1">
               <div className="text-xs font-medium text-slate-600 mb-1">Search vendor</div>
-              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Name, type, email or phone…" value={vendorSearch} onChange={(e) => setVendorSearch(e.target.value)} />
+              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 max-lg:min-h-[44px]" placeholder="Name, type, email or phone…" value={vendorSearch} onChange={(e) => setVendorSearch(e.target.value)} />
             </label>
           </div>
           {vendorsQ.isLoading ? <Loader /> : (
@@ -2916,7 +2916,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
           <div className="flex flex-wrap items-end gap-3 mb-3 text-sm">
             <label className="min-w-[240px] flex-1">
               <div className="text-xs font-medium text-slate-600 mb-1">Search item</div>
-              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" placeholder="Item name or code…" value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} />
+              <input className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 max-lg:min-h-[44px]" placeholder="Item name or code…" value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} />
             </label>
           </div>
           {itemsQ.isLoading ? <Loader /> : (
@@ -3058,7 +3058,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                         {itemBaseUnitDropdownOpen && (
                           <div className="absolute z-20 mt-1 w-full rounded-lg border border-slate-200 bg-white shadow-lg p-2">
                             <input
-                              className="w-full border rounded-md p-2 bg-white border-slate-200 text-sm mb-2"
+                              className="w-full border rounded-md p-2 bg-white border-slate-200 text-sm mb-2 max-lg:min-h-[44px]"
                               placeholder="Search units..."
                               value={itemBaseUnitSearch}
                               onChange={(e) => setItemBaseUnitSearch(e.target.value)}

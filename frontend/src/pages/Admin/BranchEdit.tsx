@@ -834,12 +834,12 @@ const BranchEdit: React.FC = () => {
                           {isExpanded && (
                             <div className="px-4 pb-3 pt-0 border-t border-gray-100 dark:border-slate-700">
                               <div className="flex gap-2 mb-2 pt-2">
-                                <button type="button" onClick={() => setLinkedMenuItemIds((prev) => Array.from(new Set([...prev, ...items.map((mi) => mi.id)])))} className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline">Link all in category</button>
-                                <button type="button" onClick={() => setLinkedMenuItemIds((prev) => prev.filter((id) => !items.some((i) => i.id === id)))} className="text-xs font-medium text-gray-600 dark:text-slate-400 hover:underline">Unlink all in category</button>
+                                <button type="button" onClick={() => setLinkedMenuItemIds((prev) => Array.from(new Set([...prev, ...items.map((mi) => mi.id)])))} className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center">Link all in category</button>
+                                <button type="button" onClick={() => setLinkedMenuItemIds((prev) => prev.filter((id) => !items.some((i) => i.id === id)))} className="text-xs font-medium text-gray-600 dark:text-slate-400 hover:underline max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center">Unlink all in category</button>
                               </div>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
                                 {items.map((mi) => (
-                                  <label key={mi.id} className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 rounded px-2 py-1.5 -mx-2">
+                                  <label key={mi.id} className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 rounded px-2 py-1.5 -mx-2 max-lg:min-h-[44px]">
                                     <input type="checkbox" checked={linkedMenuItemIds.includes(mi.id)} onChange={(e) => setLinkedMenuItemIds((prev) => e.target.checked ? Array.from(new Set([...prev, mi.id])) : prev.filter((x) => x !== mi.id))} className="rounded border-gray-300 dark:border-slate-500 text-red-600 focus:ring-red-500" />
                                     <span className="flex-1 truncate">{mi.name}</span>
                                     <span className="text-gray-500 dark:text-slate-400 text-xs shrink-0">{formatCurrency(Number(mi.base_price))}</span>

@@ -9,7 +9,7 @@ import { inventoryService } from '../../../services/api/inventoryService';
 const card =
   'bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm';
 const field =
-  'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400';
+  'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 max-lg:min-h-[44px]';
 
 const fmt = (n: number) =>
   Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/\.?0+$/, '');

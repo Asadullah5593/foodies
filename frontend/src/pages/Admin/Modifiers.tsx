@@ -61,7 +61,7 @@ const SortableModifierRow: React.FC<SortableModifierRowProps> = ({ modifier, gro
       <span
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 select-none px-1"
+        className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 select-none px-1 max-lg:inline-flex max-lg:h-11 max-lg:w-8 max-lg:items-center max-lg:justify-center"
         title="Drag to reorder"
       >
         ⠿
@@ -121,7 +121,7 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
           <span
             {...attributes}
             {...(reorderDisabled ? {} : listeners)}
-            className={reorderDisabled ? 'text-gray-200 select-none text-xl mt-1 flex-shrink-0 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none text-xl mt-1 flex-shrink-0'}
+            className={`max-lg:flex max-lg:h-11 max-lg:w-8 max-lg:items-center max-lg:justify-center max-lg:mt-0 ${reorderDisabled ? 'text-gray-200 select-none text-xl mt-1 flex-shrink-0 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none text-xl mt-1 flex-shrink-0'}`}
             title={reorderDisabled ? 'Select a menu item from the filter to reorder groups per item' : 'Drag to reorder group'}
           >⠿</span>
           <div className="flex-1 min-w-0">
