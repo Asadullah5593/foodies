@@ -247,14 +247,14 @@ const KDS: React.FC = () => {
     >
     <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden">
       {/* Header: queue #, order #, status, Print KOT */}
-      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600 flex justify-between items-center">
+      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600 flex justify-between items-center max-lg:gap-2">
         <div className="flex items-center gap-3">
           <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-gray-900 dark:bg-gray-600 text-white font-bold text-base shrink-0" title="Queue position">
             {index + 1}
           </span>
           <div>
             <span className="text-lg font-bold text-gray-900 dark:text-gray-100">#{order.order_number}</span>
-            <span className="ml-2 px-2.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700">
+            <span className="ml-2 px-2.5 py-0.5 rounded-md text-xs font-semibold uppercase tracking-wide bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-700 max-sm:ml-0 max-sm:mt-1 max-sm:block max-sm:w-fit">
               {order.status}
             </span>
             {order.brand_name && (
@@ -265,6 +265,7 @@ const KDS: React.FC = () => {
         <Button
           size="small"
           variant="outline"
+          className="max-lg:flex-none max-lg:whitespace-nowrap"
           onClick={() => handlePrintKot(order.id)}
         >
           Print KOT
@@ -358,6 +359,7 @@ const KDS: React.FC = () => {
           <Button
             size="small"
             variant="primary"
+            className="max-sm:w-full max-sm:min-h-[48px] max-sm:text-base"
             onClick={() => updateStatusMutation.mutate({ orderId: order.id, status: nextStatus[order.status], orderNumber: order.order_number })}
             isLoading={updatingOrderId === order.id}
             disabled={updatingOrderId === order.id}

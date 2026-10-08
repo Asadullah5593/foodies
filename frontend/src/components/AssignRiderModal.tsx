@@ -141,7 +141,7 @@ const AssignRiderModal: React.FC<AssignRiderModalProps> = ({
             type="button"
             onClick={() => void refetch()}
             disabled={isFetching}
-            className="flex-none text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50 dark:text-red-400"
+            className="flex-none text-xs font-medium text-red-600 hover:text-red-700 disabled:opacity-50 dark:text-red-400 max-lg:relative max-lg:before:absolute max-lg:before:-inset-x-2 max-lg:before:-inset-y-3.5 max-lg:before:content-['']"
           >
             {isFetching ? 'Refreshing…' : '↻ Refresh availability'}
           </button>

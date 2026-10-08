@@ -214,7 +214,7 @@ const FOHPacking: React.FC = () => {
       transition={{ duration: 0.28, ease: 'easeOut' }}
     >
     <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden">
-      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600 flex justify-between items-start">
+      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600 flex justify-between items-start max-sm:flex-col max-sm:gap-2">
         {/* Left: order number + brand */}
         <div>
           <span className="text-lg font-bold text-gray-900 dark:text-gray-100">Order #{order.order_number}</span>
@@ -223,9 +223,9 @@ const FOHPacking: React.FC = () => {
           )}
         </div>
         {/* Right: order type (+ table if dine-in) on top, status below */}
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center gap-1.5">
-            <span className={`px-3 py-1 rounded-md text-sm font-bold uppercase tracking-wide border ${
+        <div className="flex flex-col items-end gap-1 max-sm:items-start">
+          <div className="flex items-center gap-1.5 max-sm:flex-wrap">
+            <span className={`px-3 py-1 rounded-md text-sm font-bold uppercase tracking-wide border max-sm:whitespace-nowrap ${
               order.order_type === 'dine_in' ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 border-green-200 dark:border-green-700' :
               order.order_type === 'delivery' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 border-blue-200 dark:border-blue-700' :
               order.order_type === 'takeaway' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700' :
@@ -234,7 +234,7 @@ const FOHPacking: React.FC = () => {
               {formatOrderType(order.order_type)}
             </span>
             {order.order_type === 'dine_in' && order.table_number && (
-              <span className="px-3 py-1 rounded-md bg-green-600 text-white text-sm font-bold">
+              <span className="px-3 py-1 rounded-md bg-green-600 text-white text-sm font-bold max-sm:whitespace-nowrap">
                 Table {order.table_number}
               </span>
             )}
@@ -317,6 +317,7 @@ const FOHPacking: React.FC = () => {
           <Button
             size="small"
             variant="primary"
+            className="max-sm:w-full max-sm:min-h-[48px] max-sm:text-base"
             onClick={() => updateStatusMutation.mutate({ orderId: order.id, status: 'completed' })}
             isLoading={updatingOrderId === order.id}
             disabled={updatingOrderId === order.id}
@@ -339,6 +340,7 @@ const FOHPacking: React.FC = () => {
             <Button
               size="small"
               variant="outline"
+              className="max-sm:w-full"
               onClick={() => {
                 setRiderModalOrderId(order.id);
                 setRiderModalBrandId(order.brand_id ?? null);
