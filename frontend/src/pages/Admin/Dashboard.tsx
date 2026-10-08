@@ -602,7 +602,7 @@ const Dashboard: React.FC = () => {
           title="Revenue & orders trend"
           subtitle={
             isPhone
-              ? `Completed revenue per ${pickTrendBucket(dateFrom, dateTo)}, one line per brand. Tap a brand below to focus it.`
+              ? `Revenue (completed) or orders per ${pickTrendBucket(dateFrom, dateTo)}, stacked by brand.`
               : 'Order-wise: every order as its own point, one line per brand (newest 200 plotted); totals cover the whole range. Click a line or a brand below to focus it.'
           }
           right={

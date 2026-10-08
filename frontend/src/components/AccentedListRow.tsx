@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useViewport } from '../hooks/useViewport';
 
@@ -42,6 +42,17 @@ const accentBarClass: Record<AccentVariant, string> = {
   active: 'bg-emerald-500 dark:bg-emerald-500',
   inactive: 'bg-rose-500 dark:bg-rose-500',
 };
+
+/**
+ * A one-line row whose title column would get less than this switches to the two-line layout
+ * (the phone/tablet one) at any screen width. With the sidebar open, laptop and iPad-landscape
+ * widths (1024–1279px) squeezed rows with 5–6 actions until the name was 0px wide.
+ */
+const MIN_TITLE_WIDTH = 220;
+// One-line layout from sm up: 1px borders + accent bar 8 + gap 24 + avatar 64 + gap 24
+// | title | gap 24 + [meta 128 + gap 24] + right block (status + 12 + actions) + right padding 24.
+const ONE_LINE_FIXED = 2 + 8 + 24 + 64 + 24 + 24 + 24;
+const META_COLUMN = 128 + 24;
 
 /** True for null / false / '' / an empty fragment — e.g. Deliveries passes `actions={<></>}`. */
 const isEmptyNode = (node: React.ReactNode): boolean => {
@@ -141,13 +152,41 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
   // second line, and the accent becomes the card's left border so it spans both. The desktop
   // (≥ lg) class strings are the originals, untouched.
   const { isDesktop, isPhone } = useViewport();
-  const stacked = !isDesktop;
+  const hasMeta = meta != null && meta !== '';
+  // Desktop rows stack only when their own one-line layout would leave the title too little
+  // room — measured from this row's real buttons, so rows that fit are left exactly as they were.
+  const rowRef = useRef<HTMLLIElement>(null);
+  const statusRef = useRef<HTMLSpanElement>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const [tooNarrow, setTooNarrow] = useState(false);
+  const measureRef = useRef<() => void>(() => undefined);
+  measureRef.current = () => {
+    const li = rowRef.current;
+    // Not laid out yet (hidden, or a test DOM with no layout): nothing to measure.
+    if (!li || !isDesktop || li.offsetWidth === 0) return;
+    const acts = actionsRef.current;
+    const kids = acts ? (Array.from(acts.children) as HTMLElement[]) : [];
+    const actionsWidth = kids.reduce((w, k) => w + k.offsetWidth, 0) + Math.max(0, kids.length - 1) * 8;
+    const statusWidth = statusRef.current && statusRef.current.offsetWidth > 0 ? statusRef.current.offsetWidth + 12 : 0;
+    const titleRoom = li.offsetWidth - ONE_LINE_FIXED - (hasMeta ? META_COLUMN : 0) - statusWidth - actionsWidth;
+    setTooNarrow(titleRoom < MIN_TITLE_WIDTH);
+  };
+  // Every render (labels such as Set active / Set inactive change button widths) …
+  useLayoutEffect(() => measureRef.current());
+  // … and whenever the row is resized (window, sidebar collapse).
+  useEffect(() => {
+    if (!isDesktop || typeof ResizeObserver === 'undefined' || !rowRef.current) return;
+    const ro = new ResizeObserver(() => measureRef.current());
+    ro.observe(rowRef.current);
+    return () => ro.disconnect();
+  }, [isDesktop]);
+  const stacked = !isDesktop || tooNarrow;
   // Second line starts under the title: avatar (56px / 64px from sm) + the 12px gap.
   const indent = isPhone ? 'pl-[4.25rem]' : 'pl-[4.75rem]';
 
   const showDualStatus = orderStatusLabel != null || deliveryStatusLabel != null;
   const statusContent = showDualStatus ? (
-    <span className={`${stacked ? 'flex' : 'hidden sm:flex'} items-center gap-2 flex-wrap`}>
+    <span ref={statusRef} className={`${stacked ? 'flex' : 'hidden sm:flex'} items-center gap-2 flex-wrap`}>
       {orderStatusLabel != null && orderStatusLabel !== '' && (
         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${statusPillClass[statusVariant]}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass[statusVariant]}`} />
@@ -162,7 +201,7 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
       )}
     </span>
   ) : statusLabel != null && statusLabel !== '' ? (
-    <span className={`${stacked ? 'inline-flex' : 'hidden sm:inline-flex'} items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${statusPillClass[statusVariant]}`}>
+    <span ref={statusRef} className={`${stacked ? 'inline-flex' : 'hidden sm:inline-flex'} items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${statusPillClass[statusVariant]}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass[statusVariant]}`} />
       {statusLabel}
     </span>
@@ -170,6 +209,7 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
 
   return (
     <motion.li
+      ref={rowRef}
       initial={{ opacity: 0, x: -12 }}
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0, x: 12 }}
@@ -201,7 +241,7 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
             </div>
           )}
         </div>
-        {meta != null && meta !== '' && (
+        {hasMeta && (
           <div className={stacked ? `basis-full flex items-center ${indent}` : 'flex-shrink-0 w-24 sm:w-32 py-4 flex items-center'}>
             {meta}
           </div>
@@ -211,7 +251,7 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
         {(!stacked || statusContent != null || !isEmptyNode(actions)) && (
           <div className={stacked ? `basis-full flex flex-wrap items-center gap-2 ${indent}` : 'flex-shrink-0 flex items-center gap-3 py-4 pr-4 sm:pr-6'}>
             {statusContent}
-            <div className={stacked ? 'flex flex-wrap gap-2' : 'flex gap-2'}>{actions}</div>
+            <div ref={actionsRef} className={stacked ? 'flex flex-wrap gap-2' : 'flex gap-2'}>{actions}</div>
           </div>
         )}
       </div>

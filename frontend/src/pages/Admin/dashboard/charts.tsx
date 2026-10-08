@@ -13,6 +13,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  ReferenceLine,
 } from 'recharts';
 import { formatCurrency } from '../../../utils/currency';
 import { useViewport } from '../../../hooks/useViewport';
@@ -145,7 +146,11 @@ export const bucketTrend = (
   const byKey = new Map<number, TrendPeriodRow>();
   for (let d = start, guard = 0; d <= end && guard < 400; d = nextBucket(d, bucket), guard++) {
     const row: TrendPeriodRow = { key: d.getTime(), label: bucketLabel(d, bucket), title: bucketTitle(d, bucket), orders: 0, completed: 0 };
-    for (const k of seriesKeys) row[k] = 0;
+    for (const k of seriesKeys) {
+      row[k] = 0;
+      row[`${k}__orders`] = 0;
+      row[`${k}__completed`] = 0;
+    }
     rows.push(row);
     byKey.set(row.key, row);
   }
@@ -154,14 +159,214 @@ export const bucketTrend = (
     if (Number.isNaN(t.getTime())) continue;
     const row = byKey.get(bucketStart(t, bucket).getTime());
     if (!row) continue;
+    const k = `brand_${o.brand_id ?? 'none'}`;
     row.orders += 1;
+    row[`${k}__orders`] = Number(row[`${k}__orders`] ?? 0) + 1;
     if (o.status === 'completed') {
-      const k = `brand_${o.brand_id ?? 'none'}`;
       row[k] = Number(row[k] ?? 0) + Number(o.total_amount);
+      row[`${k}__completed`] = Number(row[`${k}__completed`] ?? 0) + 1;
       row.completed += 1;
     }
   }
   return rows;
+};
+
+type TrendMetric = 'revenue' | 'orders';
+type TrendSeries = { key: string; name: string; color: string };
+
+/** Axis ticks on a phone: 950 · 1.2k · 14k · 1.3M. */
+const phoneCompact = (n: number) =>
+  n >= 1_000_000 ? `${(n / 1_000_000).toFixed(1)}M` : n >= 10_000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n));
+
+/**
+ * One stacked segment: a 2px surface gap where it touches a neighbour (the card shows through,
+ * no stroke) and a 4px rounded top when it is the top of its stack.
+ */
+const stackSegment = (renderedKeys: string[]) => {
+  const Segment = (props: { x?: number; y?: number; width?: number; height?: number; fill?: string; payload?: Record<string, unknown>; dataKey?: string }) => {
+    const { x = 0, y = 0, width = 0, height = 0, fill, payload = {}, dataKey = '' } = props;
+    if (!(height > 0) || !(width > 0)) return null;
+    const i = renderedKeys.indexOf(dataKey);
+    const above = renderedKeys.slice(i + 1).some((k) => Number(payload[k]) > 0);
+    const below = renderedKeys.slice(0, Math.max(0, i)).some((k) => Number(payload[k]) > 0);
+    const top = y + (above ? 1 : 0);
+    const bottom = y + height - (below ? 1 : 0);
+    const h = bottom - top;
+    if (h <= 0) return null;
+    const r = above ? 0 : Math.min(4, width / 2, h);
+    const d =
+      r > 0
+        ? `M${x},${bottom} L${x},${top + r} Q${x},${top} ${x + r},${top} L${x + width - r},${top} Q${x + width},${top} ${x + width},${top + r} L${x + width},${bottom} Z`
+        : `M${x},${top} h${width} v${h} h${-width} Z`;
+    return <path d={d} fill={fill} />;
+  };
+  return Segment;
+};
+
+/**
+ * Phones: the trend as one stacked column per day / week / month (picked from the range),
+ * split by brand — revenue (completed) or order count, never both on one axis. Tapping a
+ * column fills the panel under the chart with that period's figures; the panel's rows are
+ * also the legend, and tapping a brand shows only its columns so its own trend isn't
+ * flattened by a bigger brand's spike.
+ */
+const PhoneTrend: React.FC<{
+  data: OrderSeriesResponse['orders'];
+  theme: Theme;
+  series: TrendSeries[];
+  rangeFrom?: string;
+  rangeTo?: string;
+  totalOrders?: number;
+}> = ({ data, theme, series, rangeFrom, rangeTo, totalOrders }) => {
+  const [metric, setMetric] = useState<TrendMetric>('revenue');
+  const [focus, setFocus] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<number | null>(null);
+
+  const truncated = totalOrders != null && totalOrders > data.length;
+  const bucket = pickTrendBucket(rangeFrom, rangeTo);
+  const seriesKeys = series.map((s) => s.key).join('|');
+  const rows = useMemo(
+    () => bucketTrend(data, bucket, seriesKeys.split('|'), { from: rangeFrom, to: rangeTo, truncated }),
+    [data, bucket, seriesKeys, rangeFrom, rangeTo, truncated],
+  );
+
+  // A focus can't outlive its brand (filter or range change).
+  const focusShown = focus != null && series.some((s) => s.key === focus);
+  useEffect(() => {
+    if (focus != null && !focusShown) setFocus(null);
+  }, [focus, focusShown]);
+
+  const suffix = metric === 'orders' ? '__orders' : '';
+  const shown = focusShown ? series.filter((s) => s.key === focus) : series;
+  const renderedKeys = shown.map((s) => s.key + suffix);
+  const Segment = useMemo(() => stackSegment(renderedKeys), [renderedKeys.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Default selection: the latest period with something to show for this measure (revenue
+  // needs a completed order), so the panel never opens on a row of zeros.
+  const hasValue = (r: TrendPeriodRow) => shown.some((s) => Number(r[s.key + suffix] ?? 0) > 0);
+  const fallback = [...rows].reverse().find(hasValue) ?? rows[rows.length - 1];
+  const selected = rows.find((r) => r.key === selectedKey) ?? fallback;
+  const valueOf = (row: TrendPeriodRow | undefined, key: string) => Number(row?.[key + suffix] ?? 0);
+  const fmt = (n: number) => (metric === 'revenue' ? formatCurrency(n) : `${n} ${n === 1 ? 'order' : 'orders'}`);
+  const total = shown.reduce((sum, s) => sum + valueOf(selected, s.key), 0);
+  const ordersIn = focusShown ? Number(selected?.[`${focus}__orders`] ?? 0) : selected?.orders ?? 0;
+  const completedIn = focusShown ? Number(selected?.[`${focus}__completed`] ?? 0) : selected?.completed ?? 0;
+  const unit = bucket === 'day' ? 'day' : bucket === 'week' ? 'week' : 'month';
+
+  return (
+    <div>
+      <div className="mb-3 inline-flex rounded-lg bg-gray-100 p-0.5 dark:bg-slate-700/60" role="group" aria-label="Trend measure">
+        {(['revenue', 'orders'] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMetric(m)}
+            aria-pressed={metric === m}
+            className={`min-h-[40px] rounded-md px-4 text-[13px] font-semibold transition-colors ${
+              metric === m ? 'bg-white text-gray-900 shadow-sm dark:bg-slate-800 dark:text-slate-50' : 'text-gray-500 dark:text-slate-400'
+            }`}
+          >
+            {m === 'revenue' ? 'Revenue' : 'Orders'}
+          </button>
+        ))}
+      </div>
+
+      <Measured height={210}>
+        {(w, h) => (
+          <BarChart
+            width={w}
+            height={h}
+            data={rows}
+            margin={{ top: 6, right: 4, left: -8, bottom: 0 }}
+            barCategoryGap="22%"
+            onClick={(state) => {
+              const idx = state?.activeTooltipIndex;
+              if (idx != null && rows[idx]) setSelectedKey(rows[idx].key);
+            }}
+          >
+            <CartesianGrid stroke={gridColor(theme)} vertical={false} />
+            <XAxis
+              dataKey="key"
+              tickFormatter={(k) => rows.find((r) => r.key === k)?.label ?? ''}
+              tick={{ fontSize: 10, fill: axisColor(theme) }}
+              stroke={gridColor(theme)}
+              tickLine={false}
+              interval="preserveStartEnd"
+              minTickGap={12}
+              tickMargin={6}
+            />
+            <YAxis
+              tick={{ fontSize: 10, fill: axisColor(theme) }}
+              stroke={gridColor(theme)}
+              tickLine={false}
+              axisLine={false}
+              tickFormatter={phoneCompact}
+              width={38}
+              allowDecimals={false}
+            />
+            {selected && <ReferenceLine x={selected.key} stroke={axisColor(theme)} strokeOpacity={0.55} />}
+            <Tooltip content={() => null} cursor={{ fill: gridColor(theme), fillOpacity: 0.6 }} />
+            {shown.map((s) => (
+              <Bar key={s.key} dataKey={s.key + suffix} name={s.name} stackId="trend" fill={s.color} maxBarSize={24} shape={<Segment />} isAnimationActive={false} />
+            ))}
+          </BarChart>
+        )}
+      </Measured>
+
+      {/* The selected period's figures. Its rows are the legend and the brand focus control. */}
+      {selected && (
+        <div className="mt-3 rounded-xl border border-gray-100 bg-gray-50/70 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/40">
+          <div className="flex items-baseline justify-between gap-3">
+            <div className="min-w-0 truncate text-[13px] font-bold text-gray-800 dark:text-slate-100">{selected.title}</div>
+            <div className="flex-none text-[15px] font-extrabold text-gray-900 dark:text-slate-50">{fmt(total)}</div>
+          </div>
+          <div className="text-[11.5px] text-gray-500 dark:text-slate-400">
+            {ordersIn} {ordersIn === 1 ? 'order' : 'orders'} · {completedIn} completed
+            {focusShown ? ` · ${series.find((s) => s.key === focus)?.name ?? ''}` : ''}
+          </div>
+          <ul className="mt-1.5">
+            {series.map((s) => {
+              const on = focus === s.key;
+              const dim = focusShown && !on;
+              return (
+                <li key={s.key}>
+                  <button
+                    type="button"
+                    onClick={() => setFocus((f) => (f === s.key ? null : s.key))}
+                    aria-pressed={on}
+                    className={`flex min-h-[40px] w-full items-center justify-between gap-3 text-left transition-opacity ${dim ? 'opacity-40' : ''}`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="h-2.5 w-2.5 flex-none rounded-[3px]" style={{ background: s.color }} />
+                      <span className={`truncate text-[13px] ${on ? 'font-bold text-gray-900 dark:text-slate-50' : 'font-semibold text-gray-600 dark:text-slate-300'}`}>
+                        {s.name}
+                      </span>
+                    </span>
+                    <span className="flex-none text-[13px] font-semibold tabular-nums text-gray-800 dark:text-slate-100">
+                      {fmt(valueOf(selected, s.key))}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="mt-1 flex items-center justify-between gap-3 text-[11.5px] text-gray-400 dark:text-slate-500">
+            <span>Tap a column for its {unit}{series.length > 1 ? ', a brand to show only its columns' : ''}.</span>
+            {focusShown && (
+              <button type="button" onClick={() => setFocus(null)} className="min-h-[32px] flex-none font-semibold text-red-600 dark:text-red-400">
+                Show all
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {truncated && (
+        <p className="mt-2 text-[11.5px] text-gray-400 dark:text-slate-500">
+          Built from the latest {data.length.toLocaleString('en-US')} of {totalOrders?.toLocaleString('en-US')} orders.
+        </p>
+      )}
+    </div>
+  );
 };
 
 /**
@@ -224,89 +429,21 @@ export const OrderSeriesChart: React.FC<{
   const soloColor = series[0]?.color ?? REVENUE_COLOR;
   const gradientId = `revGradient-${soloColor.replace('#', '')}`;
 
-  const truncated = totalOrders != null && totalOrders > data.length;
-  const bucket = pickTrendBucket(rangeFrom, rangeTo);
-  const seriesKeys = series.map((s) => s.key).join('|');
-  const periodRows = useMemo(
-    () => (isPhone ? bucketTrend(data, bucket, seriesKeys.split('|'), { from: rangeFrom, to: rangeTo, truncated }) : []),
-    [isPhone, data, bucket, seriesKeys, rangeFrom, rangeTo, truncated],
-  );
-  const showDots = periodRows.length <= 20;
+  if (isPhone) {
+    return (
+      <PhoneTrend
+        data={data}
+        theme={theme}
+        series={series.map(({ key, name, color }) => ({ key, name, color }))}
+        rangeFrom={rangeFrom}
+        rangeTo={rangeTo}
+        totalOrders={totalOrders}
+      />
+    );
+  }
 
   return (
     <div>
-      {isPhone ? (
-        <Measured height={230}>
-          {(w, h) => (
-            <ComposedChart width={w} height={h} data={periodRows} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
-              <defs>
-                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor={soloColor} stopOpacity={0.35} />
-                  <stop offset="95%" stopColor={soloColor} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke={gridColor(theme)} vertical={false} />
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 10, fill: axisColor(theme) }}
-                stroke={axisColor(theme)}
-                interval="preserveStartEnd"
-                minTickGap={14}
-                tickMargin={6}
-              />
-              <YAxis
-                tick={{ fontSize: 10, fill: axisColor(theme) }}
-                stroke={axisColor(theme)}
-                tickFormatter={compactCurrency}
-                width={40}
-                allowDecimals={false}
-              />
-              <Tooltip
-                contentStyle={tooltipStyle(theme)}
-                formatter={(value) => formatCurrency(Number(value))}
-                labelFormatter={(_label, payload) => {
-                  const row = payload?.[0]?.payload as TrendPeriodRow | undefined;
-                  if (!row) return '';
-                  return `${row.title} · ${row.completed} completed of ${row.orders}`;
-                }}
-              />
-              {multiBrand ? (
-                series.map((s) => {
-                  const dim = dimmed(s.key);
-                  const lead = focus === s.key;
-                  return (
-                    <Line
-                      key={s.key}
-                      type="monotone"
-                      dataKey={s.key}
-                      name={s.name}
-                      stroke={s.color}
-                      strokeWidth={lead ? 3 : 2.25}
-                      strokeOpacity={dim ? 0.15 : 1}
-                      dot={
-                        showDots
-                          ? { r: 2.5, stroke: s.color, fill: s.color, strokeOpacity: dim ? 0.15 : 1, fillOpacity: dim ? 0.15 : 1 }
-                          : false
-                      }
-                      activeDot={{ r: 4 }}
-                    />
-                  );
-                })
-              ) : (
-                <Area
-                  type="monotone"
-                  dataKey={series[0]?.key ?? 'none'}
-                  name={series[0]?.name ?? 'Revenue'}
-                  stroke={soloColor}
-                  strokeWidth={2.25}
-                  fill={`url(#${gradientId})`}
-                  dot={showDots ? { r: 2.5, stroke: soloColor, fill: soloColor } : false}
-                />
-              )}
-            </ComposedChart>
-          )}
-        </Measured>
-      ) : (
       <Measured height={280}>
         {(w, h) => (
           <ComposedChart width={w} height={h} data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -383,12 +520,6 @@ export const OrderSeriesChart: React.FC<{
           </ComposedChart>
         )}
       </Measured>
-      )}
-      {isPhone && truncated && (
-        <p className="mt-2 text-[11.5px] text-gray-400 dark:text-slate-500">
-          Plotted from the latest {data.length.toLocaleString('en-US')} of {totalOrders?.toLocaleString('en-US')} orders.
-        </p>
-      )}
       {/* Legend doubles as the focus control — the line itself is a thin target. */}
       <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
         {series.map((s) =>
@@ -399,7 +530,7 @@ export const OrderSeriesChart: React.FC<{
               onClick={() => toggle(s.key)}
               aria-pressed={focus === s.key}
               title={focus === s.key ? `Show all brands` : `Focus ${s.name}`}
-              className={`inline-flex items-center gap-1.5 text-[12.5px] font-semibold transition-opacity max-sm:min-h-[40px] max-sm:text-[13px] ${
+              className={`inline-flex items-center gap-1.5 text-[12.5px] font-semibold transition-opacity ${
                 dimmed(s.key) ? 'opacity-40' : ''
               }`}
             >
