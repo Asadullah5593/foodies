@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Area,
   Line,
@@ -69,6 +69,101 @@ const shortOrderTime = (iso: string) => {
   return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
+/** Phones only: one trend point per day, week or month, picked from the selected range. */
+export type TrendBucket = 'day' | 'week' | 'month';
+
+const DAY_MS = 86_400_000;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+const parseLocalDate = (s?: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s ?? '');
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+};
+
+/** Up to a month → days, up to six months → weeks, longer → months (at most ~31 points on a phone). */
+export const pickTrendBucket = (dateFrom?: string, dateTo?: string): TrendBucket => {
+  const from = parseLocalDate(dateFrom);
+  const to = parseLocalDate(dateTo);
+  if (!from || !to) return 'day';
+  const days = Math.round((to.getTime() - from.getTime()) / DAY_MS) + 1;
+  return days <= 31 ? 'day' : days <= 183 ? 'week' : 'month';
+};
+
+const bucketStart = (d: Date, b: TrendBucket) => {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  if (b === 'week') x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); // Monday
+  if (b === 'month') x.setDate(1);
+  return x;
+};
+const nextBucket = (d: Date, b: TrendBucket) => {
+  const x = new Date(d);
+  if (b === 'day') x.setDate(x.getDate() + 1);
+  else if (b === 'week') x.setDate(x.getDate() + 7);
+  else x.setMonth(x.getMonth() + 1);
+  return x;
+};
+const bucketLabel = (d: Date, b: TrendBucket) => (b === 'month' ? MONTHS[d.getMonth()] : `${d.getDate()} ${MONTHS[d.getMonth()]}`);
+const bucketTitle = (d: Date, b: TrendBucket) =>
+  b === 'day'
+    ? `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`
+    : b === 'week'
+      ? `Week of ${d.getDate()} ${MONTHS[d.getMonth()]}`
+      : `${MONTHS_LONG[d.getMonth()]} ${d.getFullYear()}`;
+
+export interface TrendPeriodRow {
+  key: number;
+  label: string;
+  title: string;
+  orders: number;
+  completed: number;
+  [seriesKey: string]: number | string;
+}
+
+/**
+ * Completed revenue per period and brand, with every period of the range present (zero when
+ * nothing completed), so gaps read as gaps. When the order list was capped, the axis starts at
+ * the oldest order that came back instead of the start of the range.
+ */
+export const bucketTrend = (
+  orders: OrderSeriesResponse['orders'],
+  bucket: TrendBucket,
+  seriesKeys: string[],
+  opts: { from?: string; to?: string; truncated?: boolean } = {},
+): TrendPeriodRow[] => {
+  if (orders.length === 0) return [];
+  const times = orders.map((o) => new Date(o.placed_at).getTime()).filter((t) => !Number.isNaN(t));
+  if (times.length === 0) return [];
+  const oldest = new Date(Math.min(...times));
+  const newest = new Date(Math.max(...times));
+  const rangeFrom = parseLocalDate(opts.from);
+  const rangeTo = parseLocalDate(opts.to);
+  let start = bucketStart(opts.truncated || !rangeFrom ? oldest : rangeFrom, bucket);
+  let end = bucketStart(rangeTo ?? newest, bucket);
+  if (end < start) { start = bucketStart(oldest, bucket); end = bucketStart(newest, bucket); }
+  const rows: TrendPeriodRow[] = [];
+  const byKey = new Map<number, TrendPeriodRow>();
+  for (let d = start, guard = 0; d <= end && guard < 400; d = nextBucket(d, bucket), guard++) {
+    const row: TrendPeriodRow = { key: d.getTime(), label: bucketLabel(d, bucket), title: bucketTitle(d, bucket), orders: 0, completed: 0 };
+    for (const k of seriesKeys) row[k] = 0;
+    rows.push(row);
+    byKey.set(row.key, row);
+  }
+  for (const o of orders) {
+    const t = new Date(o.placed_at);
+    if (Number.isNaN(t.getTime())) continue;
+    const row = byKey.get(bucketStart(t, bucket).getTime());
+    if (!row) continue;
+    row.orders += 1;
+    if (o.status === 'completed') {
+      const k = `brand_${o.brand_id ?? 'none'}`;
+      row[k] = Number(row[k] ?? 0) + Number(o.total_amount);
+      row.completed += 1;
+    }
+  }
+  return rows;
+};
+
 /**
  * Order-wise trend: every order in the range is its own point (amount), in
  * time sequence. When the range mixes brands, each brand becomes its own line
@@ -83,8 +178,16 @@ export const OrderSeriesChart: React.FC<{
   theme: Theme;
   /** Tenant brand list — each brand's line color is keyed to its position here, so hues stay stable across filters. */
   brands?: Array<{ id: number; name: string }>;
-}> = ({ data, theme, brands }) => {
+  /** Selected range (YYYY-MM-DD). Phones use it to lay out one point per day / week / month. */
+  rangeFrom?: string;
+  rangeTo?: string;
+  /** Orders in the range (uncapped). When it exceeds `data.length` the list was capped. */
+  totalOrders?: number;
+}> = ({ data, theme, brands, rangeFrom, rangeTo, totalOrders }) => {
   const [focused, setFocused] = useState<string | null>(null);
+  // Phones: hundreds of per-order points on a ~300px chart can't be read, so phones plot
+  // completed revenue per period instead. Tablets and desktop keep the per-order chart.
+  const { isPhone } = useViewport();
   const brandIds = Array.from(new Set(data.map((d) => d.brand_id)));
   const multiBrand = brandIds.length > 1;
   // Per-series value keys: each row carries its amount under its own brand's
@@ -121,8 +224,89 @@ export const OrderSeriesChart: React.FC<{
   const soloColor = series[0]?.color ?? REVENUE_COLOR;
   const gradientId = `revGradient-${soloColor.replace('#', '')}`;
 
+  const truncated = totalOrders != null && totalOrders > data.length;
+  const bucket = pickTrendBucket(rangeFrom, rangeTo);
+  const seriesKeys = series.map((s) => s.key).join('|');
+  const periodRows = useMemo(
+    () => (isPhone ? bucketTrend(data, bucket, seriesKeys.split('|'), { from: rangeFrom, to: rangeTo, truncated }) : []),
+    [isPhone, data, bucket, seriesKeys, rangeFrom, rangeTo, truncated],
+  );
+  const showDots = periodRows.length <= 20;
+
   return (
     <div>
+      {isPhone ? (
+        <Measured height={230}>
+          {(w, h) => (
+            <ComposedChart width={w} height={h} data={periodRows} margin={{ top: 8, right: 8, left: -4, bottom: 0 }}>
+              <defs>
+                <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={soloColor} stopOpacity={0.35} />
+                  <stop offset="95%" stopColor={soloColor} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor(theme)} vertical={false} />
+              <XAxis
+                dataKey="label"
+                tick={{ fontSize: 10, fill: axisColor(theme) }}
+                stroke={axisColor(theme)}
+                interval="preserveStartEnd"
+                minTickGap={14}
+                tickMargin={6}
+              />
+              <YAxis
+                tick={{ fontSize: 10, fill: axisColor(theme) }}
+                stroke={axisColor(theme)}
+                tickFormatter={compactCurrency}
+                width={40}
+                allowDecimals={false}
+              />
+              <Tooltip
+                contentStyle={tooltipStyle(theme)}
+                formatter={(value) => formatCurrency(Number(value))}
+                labelFormatter={(_label, payload) => {
+                  const row = payload?.[0]?.payload as TrendPeriodRow | undefined;
+                  if (!row) return '';
+                  return `${row.title} · ${row.completed} completed of ${row.orders}`;
+                }}
+              />
+              {multiBrand ? (
+                series.map((s) => {
+                  const dim = dimmed(s.key);
+                  const lead = focus === s.key;
+                  return (
+                    <Line
+                      key={s.key}
+                      type="monotone"
+                      dataKey={s.key}
+                      name={s.name}
+                      stroke={s.color}
+                      strokeWidth={lead ? 3 : 2.25}
+                      strokeOpacity={dim ? 0.15 : 1}
+                      dot={
+                        showDots
+                          ? { r: 2.5, stroke: s.color, fill: s.color, strokeOpacity: dim ? 0.15 : 1, fillOpacity: dim ? 0.15 : 1 }
+                          : false
+                      }
+                      activeDot={{ r: 4 }}
+                    />
+                  );
+                })
+              ) : (
+                <Area
+                  type="monotone"
+                  dataKey={series[0]?.key ?? 'none'}
+                  name={series[0]?.name ?? 'Revenue'}
+                  stroke={soloColor}
+                  strokeWidth={2.25}
+                  fill={`url(#${gradientId})`}
+                  dot={showDots ? { r: 2.5, stroke: soloColor, fill: soloColor } : false}
+                />
+              )}
+            </ComposedChart>
+          )}
+        </Measured>
+      ) : (
       <Measured height={280}>
         {(w, h) => (
           <ComposedChart width={w} height={h} data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -199,6 +383,12 @@ export const OrderSeriesChart: React.FC<{
           </ComposedChart>
         )}
       </Measured>
+      )}
+      {isPhone && truncated && (
+        <p className="mt-2 text-[11.5px] text-gray-400 dark:text-slate-500">
+          Plotted from the latest {data.length.toLocaleString('en-US')} of {totalOrders?.toLocaleString('en-US')} orders.
+        </p>
+      )}
       {/* Legend doubles as the focus control — the line itself is a thin target. */}
       <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1.5">
         {series.map((s) =>
@@ -209,7 +399,7 @@ export const OrderSeriesChart: React.FC<{
               onClick={() => toggle(s.key)}
               aria-pressed={focus === s.key}
               title={focus === s.key ? `Show all brands` : `Focus ${s.name}`}
-              className={`inline-flex items-center gap-1.5 text-[12.5px] font-semibold transition-opacity ${
+              className={`inline-flex items-center gap-1.5 text-[12.5px] font-semibold transition-opacity max-sm:min-h-[40px] max-sm:text-[13px] ${
                 dimmed(s.key) ? 'opacity-40' : ''
               }`}
             >

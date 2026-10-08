@@ -777,13 +777,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       ? [{ key: 'orders', label: 'Orders', icon: <MdOutlineReceiptLong className="h-5 w-5" />, to: '/admin/orders', onSelect: () => handleNavLinkClick('/admin/orders') }]
       : []),
     {
-      key: 'keyboard',
-      label: 'On-screen keyboard',
-      icon: keyboardEnabled ? <MdOutlineKeyboard className="h-5 w-5" /> : <MdKeyboardHide className="h-5 w-5" />,
-      hint: keyboardEnabled ? 'On' : 'Off',
-      onSelect: toggleKeyboard,
-    },
-    {
       key: 'theme',
       label: theme === 'dark' ? 'Light mode' : 'Dark mode',
       icon: theme === 'dark' ? <MdOutlineLightMode className="h-5 w-5" /> : <MdOutlineDarkMode className="h-5 w-5" />,

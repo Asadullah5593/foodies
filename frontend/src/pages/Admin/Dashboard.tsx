@@ -11,6 +11,7 @@ import KpiCard from './dashboard/KpiCard';
 import ChartCard from './dashboard/ChartCard';
 import {
   OrderSeriesChart,
+  pickTrendBucket,
   OrdersByStatusChart,
   OrderTypeDonut,
   SourceSplitDonut,
@@ -28,6 +29,7 @@ import { dashboardCsv, dashboardReportHtml, downloadFile } from './dashboard/exp
 import { printContent } from '../../utils/print';
 import type { DashboardSummary, OrderSeriesResponse, RecentOrder, InventoryAlerts } from './dashboard/types';
 import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
+import { useViewport } from '../../hooks/useViewport';
 
 const BREAKDOWN_HEAD =
   'py-2.5 text-[11px] font-bold uppercase tracking-[0.05em] text-gray-400 dark:text-slate-500';
@@ -68,6 +70,8 @@ function buildReportParams(
 
 const Dashboard: React.FC = () => {
   const { user } = useAuth();
+  // Phones get their own Sales-by-brand rows and a per-period trend (see below).
+  const { isPhone } = useViewport();
   const { theme } = useTheme();
   const initial = defaultRange();
   const [branchId, setBranchId] = useState<number | null>(null);
@@ -120,10 +124,12 @@ const Dashboard: React.FC = () => {
   const [trendBrandId, setTrendBrandId] = useState<number | null>(null);
   const effectiveTrendBrand = trendBrandId ?? brandId;
   const { data: orderSeries, isLoading: orderSeriesLoading } = useQuery({
-    queryKey: ['orderSeries', branchId, effectiveTrendBrand, dateFrom, dateTo, timeFrom, timeTo],
+    queryKey: ['orderSeries', branchId, effectiveTrendBrand, dateFrom, dateTo, timeFrom, timeTo, isPhone],
     queryFn: async () => {
       const qs = buildReportParams(branchId, dateFrom, dateTo, undefined, effectiveTrendBrand, time);
-      const response = await apiClient.get<OrderSeriesResponse>(`/admin/reports/order-series?${qs}`);
+      // Phones sum orders per day / week / month, so they ask for the endpoint's maximum (1000)
+      // instead of the newest 200 the per-order desktop chart plots.
+      const response = await apiClient.get<OrderSeriesResponse>(`/admin/reports/order-series?${qs}${isPhone ? '&limit=1000' : ''}`);
       return response.data;
     },
     enabled: !!user,
@@ -526,7 +532,32 @@ const Dashboard: React.FC = () => {
             loading={summaryLoading}
             isEmpty={!summaryLoading && breakdownRows.length === 0}
           >
-            {breakdownRows.length > 0 && (
+            {breakdownRows.length > 0 && isPhone && (
+              // Phones: one row per brand — name and revenue on top, the counts underneath —
+              // instead of a five-column table that cannot fit 300px.
+              <ul className="-my-1">
+                {breakdownRows.map((row) => (
+                  <li key={row.id} className="border-b border-gray-100 py-3 last:border-0 dark:border-slate-700/60">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="flex min-w-0 items-center gap-2.5 text-sm font-bold text-gray-800 dark:text-slate-100">
+                        <span className="h-2.5 w-2.5 flex-none rounded-full" style={{ background: row.color }} />
+                        <span className="truncate">{row.name}</span>
+                      </span>
+                      <span className="flex-none text-sm font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
+                        {formatCurrency(row.revenue)}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 pl-5 text-[12.5px] tabular-nums text-gray-500 dark:text-slate-400">
+                      <span>{row.orders} orders</span>
+                      <span>{row.completed} completed</span>
+                      <span className={row.cancelled > 0 ? 'font-semibold text-red-500' : ''}>{row.cancelled} cancelled</span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {breakdownRows.length > 0 && !isPhone && (
+              <div className="max-lg:overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-gray-100 dark:border-slate-700">
@@ -559,6 +590,7 @@ const Dashboard: React.FC = () => {
                   ))}
                 </tbody>
               </table>
+              </div>
             )}
           </ChartCard>
         </div>
@@ -568,18 +600,22 @@ const Dashboard: React.FC = () => {
       <div className="mb-5">
         <ChartCard
           title="Revenue & orders trend"
-          subtitle="Order-wise: every order as its own point, one line per brand (newest 200 plotted); totals cover the whole range. Click a line or a brand below to focus it."
+          subtitle={
+            isPhone
+              ? `Completed revenue per ${pickTrendBucket(dateFrom, dateTo)}, one line per brand. Tap a brand below to focus it.`
+              : 'Order-wise: every order as its own point, one line per brand (newest 200 plotted); totals cover the whole range. Click a line or a brand below to focus it.'
+          }
           right={
-            <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1">
+            <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 max-sm:justify-start max-sm:gap-x-6">
               {orderSeries && (
                 <>
-                  <div className="text-right">
+                  <div className="text-right max-sm:text-left">
                     <div className="text-[11px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Orders</div>
                     <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">
                       {orderSeries.order_count.toLocaleString('en-US')}
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right max-sm:text-left">
                     <div className="text-[11px] uppercase tracking-wide text-gray-400 dark:text-slate-500">Revenue (completed)</div>
                     <div className="text-sm font-semibold text-gray-900 dark:text-slate-100">
                       {formatCurrency(orderSeries.completed_revenue)}
@@ -591,7 +627,7 @@ const Dashboard: React.FC = () => {
                 value={trendBrandId ?? ''}
                 onChange={(e) => setTrendBrandId(e.target.value ? Number(e.target.value) : null)}
                 aria-label="Revenue & orders trend brand"
-                className="rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-gray-700 dark:text-slate-200"
+                className="rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1 text-xs text-gray-700 dark:text-slate-200 max-sm:min-h-[40px] max-sm:w-full max-sm:text-sm"
               >
                 <option value="">
                   {brandId ? `${brands?.find((b) => b.id === brandId)?.name ?? 'Brand'} (dashboard filter)` : 'All brands'}
@@ -605,7 +641,16 @@ const Dashboard: React.FC = () => {
           loading={orderSeriesLoading || brandsLoading}
           isEmpty={!orderSeriesLoading && !brandsLoading && (orderSeries?.orders?.length ?? 0) === 0}
         >
-          {orderSeries && !brandsLoading && <OrderSeriesChart data={orderSeries.orders} theme={theme} brands={brands} />}
+          {orderSeries && !brandsLoading && (
+            <OrderSeriesChart
+              data={orderSeries.orders}
+              theme={theme}
+              brands={brands}
+              rangeFrom={dateFrom}
+              rangeTo={dateTo}
+              totalOrders={orderSeries.order_count}
+            />
+          )}
         </ChartCard>
       </div>
 
