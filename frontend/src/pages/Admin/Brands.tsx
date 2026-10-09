@@ -21,6 +21,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { labelWithStatus } from '../../utils/entityStatus';
+import { useViewport } from '../../hooks/useViewport';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
 
@@ -34,6 +35,8 @@ const initialFormData = { name: '', logo_url: '', description: '', status: 'acti
 
 const Brands: React.FC = () => {
   const { user } = useAuth();
+  // Below lg the list row is a card (one action + ⋯ sheet); it gets its own chips and detail grid.
+  const { isDesktop } = useViewport();
   const isSuperAdmin = user?.is_super_admin ?? false;
   /** Brand admins see only their own brand and may edit it (rules like the
    *  delivery fee) but cannot create or delete brands. */
@@ -559,11 +562,51 @@ const Brands: React.FC = () => {
                     }
                     statusLabel={brand.status}
                     statusVariant={brand.status === 'active' ? 'active' : 'inactive'}
+                    chips={
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-[3px] text-[11px] font-bold ${
+                          brand.online_status === 'open'
+                            ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                            : brand.online_status === 'closed' || brand.online_status === 'partial'
+                              ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                              : 'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-300'
+                        }`}
+                      >
+                        {brand.online_status === 'open'
+                          ? 'Online open'
+                          : brand.online_status === 'closed'
+                            ? 'Online closed'
+                            : brand.online_status === 'partial'
+                              ? 'Online partial'
+                              : 'No branches'}
+                        {(brand.online_branch_count ?? 0) > 0 && ` · ${brand.online_branch_count} branch${brand.online_branch_count === 1 ? '' : 'es'}`}
+                      </span>
+                    }
+                    mobileSubtitle={
+                      <div className="grid grid-cols-[auto_1fr] gap-x-2.5 gap-y-[3px]">
+                        {brand.tenant_name ? (
+                          <>
+                            <span className="text-gray-400 dark:text-slate-500">Tenant</span>
+                            <span className="text-gray-700 dark:text-slate-300">{brand.tenant_name}</span>
+                          </>
+                        ) : null}
+                        <span className="text-gray-400 dark:text-slate-500">Delivery fee</span>
+                        <span className="font-semibold text-gray-700 dark:text-slate-300">
+                          {formatCurrency(brand.delivery_flat_fee ?? 0)} <span className="font-normal text-gray-500 dark:text-slate-400">· per delivery order</span>
+                        </span>
+                        <span className="text-gray-400 dark:text-slate-500">Ratings</span>
+                        <span className="text-gray-700 dark:text-slate-300">
+                          {(brand.rating_count ?? 0) > 0
+                            ? `${brand.rating_average != null ? `${brand.rating_average.toFixed(1)} / 5` : '—'} · ${brand.rating_count} rating${brand.rating_count === 1 ? '' : 's'}`
+                            : 'No ratings yet'}
+                        </span>
+                      </div>
+                    }
                     animationIndex={i}
                     actions={
                       <>
                         {canEdit && <Button size="small" variant="edit" onClick={() => openEdit(brand)} disabled={updateMutation.isPending}>
-                          Edit
+                          {isDesktop ? 'Edit' : 'Edit brand'}
                         </Button>}
                         {canEdit && <Button
                           size="small"

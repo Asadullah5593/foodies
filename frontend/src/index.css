@@ -166,3 +166,24 @@ html.dark .swal2-popup .swal2-content {
   .scroll-row-bare { scrollbar-width: none; }
   .scroll-row-bare::-webkit-scrollbar { display: none; }
 }
+
+/* Below lg: the ⋯ sheet of a list row (AccentedListRow) lays the page's own action buttons out as
+   full-width rows — one per line, a dot in front, Delete keeps its red — whatever classes the page
+   gave them. The selectors outrank single utility classes, so no page needs to change. */
+@media not all and (min-width: 1024px) {
+  .row-action-sheet > button,
+  .row-action-sheet > a {
+    display: flex; align-items: center; justify-content: flex-start; gap: 12px;
+    width: 100%; min-height: 48px; padding: 12px 4px;
+    border: 0; border-bottom: 1px solid #F3F4F6; border-radius: 0; background: transparent; box-shadow: none;
+    font-size: 14.5px; font-weight: 600; text-align: left; color: #20242C;
+  }
+  .row-action-sheet > button:last-child,
+  .row-action-sheet > a:last-child { border-bottom: 0; }
+  .row-action-sheet > button::before,
+  .row-action-sheet > a::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; background: #9AA1AD; }
+  .row-action-sheet > .text-red-700 { color: #DC2A2A; }
+  .row-action-sheet > .text-red-700::before { background: #DC2A2A; }
+  .dark .row-action-sheet > button,
+  .dark .row-action-sheet > a { color: #E2E8F0; border-bottom-color: #334155; }
+}

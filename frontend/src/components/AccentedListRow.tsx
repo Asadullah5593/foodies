@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { createPortal } from 'react-dom';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useViewport } from '../hooks/useViewport';
 
 export type AccentVariant = 'active' | 'inactive';
@@ -30,8 +31,15 @@ export interface AccentedListRowProps {
    * Omitted by every other list, which keeps their layout unchanged.
    */
   meta?: React.ReactNode;
-  /** Action buttons or links (e.g. Edit, Delete) */
+  /**
+   * Action buttons or links (e.g. Edit, Delete). Below lg the FIRST one is the card's own
+   * full-width button and the rest open from a ⋯ sheet, so order them primary-first.
+   */
   actions: React.ReactNode;
+  /** Below lg only: extra status chips beside the status pill, under the title (e.g. "Online open"). Desktop ignores it. */
+  chips?: React.ReactNode;
+  /** Below lg only: shown on the card in place of `subtitle` (e.g. a label / value grid). Desktop ignores it. */
+  mobileSubtitle?: React.ReactNode;
   /** Index for stagger animation delay */
   animationIndex?: number;
   /** Optional content below the row (e.g. sub-list); renders inside same card with border-t */
@@ -79,9 +87,10 @@ const statusDotClass: Record<AccentVariant, string> = {
   inactive: 'bg-rose-500',
 };
 
-const AvatarImage: React.FC<{ imageUrl?: string | null; initial: string }> = ({
+const AvatarImage: React.FC<{ imageUrl?: string | null; initial: string; compact?: boolean }> = ({
   imageUrl,
   initial,
+  compact = false,
 }) => {
   const [isLoading, setIsLoading] = useState(Boolean(imageUrl));
   const [hasError, setHasError] = useState(false);
@@ -95,9 +104,9 @@ const AvatarImage: React.FC<{ imageUrl?: string | null; initial: string }> = ({
   const showInitial = !showImage || (!isLoading && hasError);
 
   return (
-    <div className="relative flex-shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gray-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden ring-2 ring-white dark:ring-slate-800 shadow-sm">
+    <div className={`relative flex-shrink-0 ${compact ? 'w-[46px] h-[46px] rounded-xl' : 'w-14 h-14 sm:w-16 sm:h-16 rounded-2xl'} bg-gray-100 dark:bg-slate-700 flex items-center justify-center overflow-hidden ring-2 ring-white dark:ring-slate-800 shadow-sm`}>
       {showInitial && (
-        <span className="text-xl sm:text-2xl font-bold text-gray-500 dark:text-slate-400 uppercase tracking-tight">
+        <span className={`${compact ? 'text-base' : 'text-xl sm:text-2xl'} font-bold text-gray-500 dark:text-slate-400 uppercase tracking-tight`}>
           {initial}
         </span>
       )}
@@ -145,13 +154,17 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
   statusVariant = accent,
   meta,
   actions,
+  chips,
+  mobileSubtitle,
   animationIndex = 0,
   footer,
 }) => {
-  // Below lg the row stacks: avatar + text on the first line, status + actions on a full-width
-  // second line, and the accent becomes the card's left border so it spans both. The desktop
-  // (≥ lg) class strings are the originals, untouched.
+  // Below lg the row is a card: a small avatar, the title with its status chips and a ⋯ button on
+  // the first line, the details under them, and ONE full-width action — the rest of the page's
+  // buttons open from a bottom sheet. Desktop (≥ lg) keeps its one-line row, and its own
+  // too-narrow fallback (`stacked`), with the original class strings untouched.
   const { isDesktop, isPhone } = useViewport();
+  const [sheetOpen, setSheetOpen] = useState(false);
   const hasMeta = meta != null && meta !== '';
   // Desktop rows stack only when their own one-line layout would leave the title too little
   // room — measured from this row's real buttons, so rows that fit are left exactly as they were.
@@ -180,32 +193,152 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
     ro.observe(rowRef.current);
     return () => ro.disconnect();
   }, [isDesktop]);
-  const stacked = !isDesktop || tooNarrow;
+  const card = !isDesktop;
+  const stacked = isDesktop && tooNarrow;
+  const compact = stacked || card;
+  // Card pills are small rounded chips; the desktop pill string is the original one.
+  const pillShape = card ? 'px-2 py-[3px] rounded-full text-[11px] font-bold capitalize' : 'px-2.5 py-1 rounded-md text-xs font-medium';
   // Second line starts under the title: avatar (56px / 64px from sm) + the 12px gap.
   const indent = isPhone ? 'pl-[4.25rem]' : 'pl-[4.75rem]';
 
   const showDualStatus = orderStatusLabel != null || deliveryStatusLabel != null;
   const statusContent = showDualStatus ? (
-    <span ref={statusRef} className={`${stacked ? 'flex' : 'hidden sm:flex'} items-center gap-2 flex-wrap`}>
+    <span ref={statusRef} className={`${compact ? 'flex' : 'hidden sm:flex'} items-center gap-2 flex-wrap`}>
       {orderStatusLabel != null && orderStatusLabel !== '' && (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${statusPillClass[statusVariant]}`}>
+        <span className={`inline-flex items-center gap-1.5 ${pillShape} ${statusPillClass[statusVariant]}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass[statusVariant]}`} />
           Order: {orderStatusLabel}
         </span>
       )}
       {deliveryStatusLabel != null && deliveryStatusLabel !== '' && (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${statusPillClass[statusVariant]}`}>
+        <span className={`inline-flex items-center gap-1.5 ${pillShape} ${statusPillClass[statusVariant]}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass[statusVariant]}`} />
           Delivery: {deliveryStatusLabel}
         </span>
       )}
     </span>
   ) : statusLabel != null && statusLabel !== '' ? (
-    <span ref={statusRef} className={`${stacked ? 'inline-flex' : 'hidden sm:inline-flex'} items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium ${statusPillClass[statusVariant]}`}>
+    <span ref={statusRef} className={`${compact ? 'inline-flex' : 'hidden sm:inline-flex'} items-center gap-1.5 ${pillShape} ${statusPillClass[statusVariant]}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${statusDotClass[statusVariant]}`} />
       {statusLabel}
     </span>
   ) : null;
+
+  if (card) {
+    // The page's buttons as given: the first stays on the card, the rest go to the sheet.
+    const actionNodes = React.Children.toArray(
+      React.isValidElement(actions) && actions.type === React.Fragment
+        ? (actions.props as { children?: React.ReactNode }).children
+        : actions,
+    );
+    const [primaryAction, ...moreActions] = actionNodes;
+    const details = mobileSubtitle ?? subtitle;
+    const panelMotion = isPhone
+      ? { initial: { y: '100%' }, animate: { y: '0%' }, exit: { y: '100%' } }
+      : { initial: { opacity: 0, y: 24 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: 24 } };
+    const sheet = createPortal(
+      <AnimatePresence>
+        {sheetOpen && moreActions.length > 0 && (
+          <div className="fixed inset-0 z-[60]">
+            <motion.div
+              className="absolute inset-0 bg-black/45"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              onClick={() => setSheetOpen(false)}
+              aria-hidden
+            />
+            <div className="absolute inset-x-0 bottom-0 flex sm:inset-x-auto sm:bottom-4 sm:left-1/2 sm:w-[min(480px,calc(100%-2rem))] sm:-translate-x-1/2">
+              <motion.div
+                role="dialog"
+                aria-modal="true"
+                aria-label={`Actions for ${title}`}
+                className="w-full rounded-t-[20px] bg-white px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2.5 shadow-2xl dark:bg-slate-800 sm:rounded-2xl"
+                {...panelMotion}
+                transition={{ type: 'tween', duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
+              >
+                <div className="mx-auto mb-3.5 h-1 w-10 rounded-full bg-gray-300 dark:bg-slate-600 sm:hidden" aria-hidden />
+                <div className="mb-1 truncate text-[14px] font-extrabold text-gray-900 dark:text-slate-50">{title}</div>
+                {/* The page's own buttons laid out as rows (index.css .row-action-sheet). Any tap
+                    closes the sheet; the button's own handler still runs. */}
+                <div className="row-action-sheet flex flex-col" onClickCapture={() => setSheetOpen(false)}>
+                  {moreActions}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSheetOpen(false)}
+                  className="mt-2 min-h-[48px] w-full rounded-xl bg-gray-100 text-[14px] font-bold text-gray-700 dark:bg-slate-700 dark:text-slate-200"
+                >
+                  Cancel
+                </button>
+              </motion.div>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>,
+      document.body,
+    );
+    return (
+      <motion.li
+        ref={rowRef}
+        initial={{ opacity: 0, x: -12 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: 12 }}
+        transition={{ delay: animationIndex * 0.04, duration: 0.25 }}
+        className={`rounded-[14px] border border-l-4 border-gray-200/80 bg-white dark:border-slate-700/80 dark:bg-slate-800/80 ${accentBorderClass[accent]} overflow-hidden`}
+        data-testid="list-card"
+      >
+        <div className="px-[13px] pb-3 pt-[13px]">
+          <div className="flex items-start gap-3">
+            <AvatarImage imageUrl={imageUrl} initial={initial} compact />
+            <div className="min-w-0 flex-1">
+              <h3 className="line-clamp-2 text-[15.5px] font-extrabold leading-tight text-gray-900 dark:text-slate-100" title={title}>
+                {title}
+              </h3>
+              {(statusContent != null || (chips != null && chips !== '')) && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                  {statusContent}
+                  {chips}
+                </div>
+              )}
+            </div>
+            {moreActions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSheetOpen(true)}
+                aria-label={`More actions for ${title}`}
+                aria-haspopup="dialog"
+                aria-expanded={sheetOpen}
+                className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white text-[#5A6473] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300"
+              >
+                <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
+                  <circle cx="3.5" cy="8" r="1.4" />
+                  <circle cx="8" cy="8" r="1.4" />
+                  <circle cx="12.5" cy="8" r="1.4" />
+                </svg>
+              </button>
+            )}
+          </div>
+          {details != null && details !== '' && (
+            <div className="mt-2.5 text-[12px] text-gray-500 dark:text-slate-400 [&>p]:leading-tight">{details}</div>
+          )}
+          {hasMeta && <div className="mt-2 flex items-center">{meta}</div>}
+          {primaryAction != null && (
+            <div className="mt-3 flex [&>*]:min-h-[42px] [&>*]:w-full [&>*]:flex-1 [&>*]:rounded-[10px] [&>*]:border-[1.5px] [&>*]:border-[#E2E5EA] [&>*]:text-[13.5px] [&>*]:font-bold dark:[&>*]:border-slate-600">
+              {primaryAction}
+            </div>
+          )}
+        </div>
+        {footer != null && footer !== '' && (
+          <div className="border-t border-gray-100 dark:border-slate-600 bg-gray-50/50 dark:bg-slate-700/30">
+            {footer}
+          </div>
+        )}
+        {sheet}
+      </motion.li>
+    );
+  }
 
   return (
     <motion.li
