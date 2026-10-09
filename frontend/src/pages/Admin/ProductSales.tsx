@@ -831,11 +831,7 @@ const ProductSales: React.FC = () => {
       />
     </div>
   );
-  const splitRow = (
-    <div className="mt-[13px] flex flex-wrap items-center gap-2.5 border-t border-[#F3F4F6] pt-[13px]">
-      <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#9AA1AD]">
-        Break down by
-      </span>
+  const breakdownGroup = (
       <div className="flex gap-[7px]">
         {SPLIT_OPTIONS.map((s) => {
           const on = splitBy === s.value;
@@ -860,7 +856,8 @@ const ProductSales: React.FC = () => {
           );
         })}
       </div>
-      <span className="flex-1" />
+  );
+  const toggleAllButton = (
       <button
         type="button"
         onClick={toggleAll}
@@ -869,9 +866,22 @@ const ProductSales: React.FC = () => {
       >
         {allOpen ? 'Collapse all' : 'Expand all'}
       </button>
+  );
+  const splitRow = (
+    <div className="mt-[13px] flex flex-wrap items-center gap-2.5 border-t border-[#F3F4F6] pt-[13px]">
+      <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-[#9AA1AD]">
+        Break down by
+      </span>
+      {breakdownGroup}
+      <span className="flex-1" />
+      {toggleAllButton}
     </div>
   );
   const psChips: FilterChip[] = [
+    // "Break down by" lives in the sheet below lg, so a non-default choice is a chip.
+    ...(splitBy !== 'variant'
+      ? [{ key: 'split', label: SPLIT_OPTIONS.find((s) => s.value === splitBy)?.label ?? 'Breakdown', onRemove: () => { setSplitBy('variant'); setExpanded(new Set()); setAllOpen(false); } }]
+      : []),
     ...(dateFrom !== today || dateTo !== today
       ? [{ key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { setDateFrom(today); setDateTo(today); resetPage(); } }]
       : []),
@@ -898,6 +908,7 @@ const ProductSales: React.FC = () => {
     { key: 'category', label: 'Category', node: categorySel },
     { key: 'status', label: 'Orders', node: statusSel },
     { key: 'discount', label: 'Discount', node: discountSel },
+    { key: 'split', label: 'Break down by', node: breakdownGroup },
   ];
 
   return (
@@ -968,9 +979,8 @@ const ProductSales: React.FC = () => {
         {splitRow}
       </div>
       </FilterBar>
-      {!isDesktop && (
-        <div className="mb-[18px] [&>div]:mt-0 [&>div]:border-t-0 [&>div]:pt-0">{splitRow}</div>
-      )}
+      {/* Below lg "Break down by" is in the sheet; Expand / Collapse all stays on screen. */}
+      {!isDesktop && <div className="mb-[18px] flex justify-end">{toggleAllButton}</div>}
 
       {/* Report body: while a filter change is fetching, the previous results
           stay mounted and a soft veil fades in over them

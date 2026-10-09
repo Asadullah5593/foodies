@@ -815,12 +815,12 @@ const Shifts: React.FC = () => {
       </div>
 
       {/* Summary strip */}
-      {/* Phones: each stat is one compact row (icon · label · value, note under the label). */}
-      <div className="mb-[22px] grid grid-cols-1 gap-[14px] sm:grid-cols-2 xl:grid-cols-4 max-sm:gap-2.5">
+      {/* Phones: a 2 × 2 grid of compact tiles, so the filters and the first shift stay on the first screen. */}
+      <div className="mb-[22px] grid grid-cols-1 gap-[14px] sm:grid-cols-2 xl:grid-cols-4 max-sm:grid-cols-2 max-sm:gap-2.5">
         {stats.map((s) => (
           <div
             key={s.label}
-            className="rounded-[14px] border border-[#ECEDF0] bg-white px-[17px] py-[15px] shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800 max-sm:grid max-sm:grid-cols-[minmax(0,1fr)_auto] max-sm:items-center max-sm:gap-x-3 max-sm:px-4 max-sm:py-3"
+            className="rounded-[14px] border border-[#ECEDF0] bg-white px-[17px] py-[15px] shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800 max-sm:px-3 max-sm:py-2.5"
           >
             <div className="flex items-center gap-2">
               <span
@@ -829,10 +829,10 @@ const Shifts: React.FC = () => {
               >
                 {s.icon}
               </span>
-              <span className="text-[11.5px] font-bold uppercase tracking-[.05em] text-[#9AA1AD]">{s.label}</span>
+              <span className="text-[11.5px] font-bold uppercase tracking-[.05em] text-[#9AA1AD] max-sm:text-[10.5px] max-sm:leading-tight">{s.label}</span>
             </div>
-            <div className="mt-[9px] text-[22px] font-black tabular-nums text-[#1A1D24] dark:text-slate-100 max-sm:col-start-2 max-sm:row-start-1 max-sm:row-span-2 max-sm:mt-0 max-sm:text-right max-sm:text-[18px]">{s.value}</div>
-            <div className="mt-px text-xs text-[#9AA1AD] max-sm:col-start-1 max-sm:mt-0 max-sm:pl-9">{s.sub}</div>
+            <div className="mt-[9px] text-[22px] font-black tabular-nums text-[#1A1D24] dark:text-slate-100 max-sm:mt-1.5 max-sm:text-[17px]">{s.value}</div>
+            <div className="mt-px text-xs text-[#9AA1AD] max-sm:text-[11px]">{s.sub}</div>
           </div>
         ))}
       </div>
