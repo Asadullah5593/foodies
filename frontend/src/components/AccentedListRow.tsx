@@ -71,6 +71,19 @@ const isEmptyNode = (node: React.ReactNode): boolean => {
   return false;
 };
 
+/**
+ * The action nodes a page passes, flattened through nested fragments (pages often wrap a permission
+ * group in its own `<>…</>`), re-keyed by position so the card and its sheet can render them apart.
+ */
+const flattenActions = (node: React.ReactNode): React.ReactNode[] =>
+  React.Children.toArray(node)
+    .flatMap((child) =>
+      React.isValidElement(child) && child.type === React.Fragment
+        ? flattenActions((child.props as { children?: React.ReactNode }).children)
+        : [child],
+    )
+    .map((child, i) => (React.isValidElement(child) ? React.cloneElement(child, { key: `action-${i}` }) : child));
+
 /** Below lg the accent is the card's own left border (spans the wrapped row). */
 const accentBorderClass: Record<AccentVariant, string> = {
   active: 'border-l-emerald-500 hover:border-l-emerald-500 dark:border-l-emerald-500 dark:hover:border-l-emerald-500',
@@ -226,11 +239,7 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
 
   if (card) {
     // The page's buttons as given: the first stays on the card, the rest go to the sheet.
-    const actionNodes = React.Children.toArray(
-      React.isValidElement(actions) && actions.type === React.Fragment
-        ? (actions.props as { children?: React.ReactNode }).children
-        : actions,
-    );
+    const actionNodes = flattenActions(actions);
     const [primaryAction, ...moreActions] = actionNodes;
     const details = mobileSubtitle ?? subtitle;
     const panelMotion = isPhone
