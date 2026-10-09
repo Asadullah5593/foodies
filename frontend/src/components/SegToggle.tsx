@@ -10,7 +10,7 @@ const SegToggle: React.FC<{
   ariaLabel?: string;
   size?: 'sm' | 'md';
 }> = ({ on, onChange, ariaLabel, size = 'md' }) => {
-  const pad = size === 'sm' ? 'px-2.5 py-1 text-[11px] max-lg:min-h-[44px] max-lg:px-4' : 'px-3 py-1 text-xs max-lg:min-h-[44px] max-lg:px-4';
+  const pad = size === 'sm' ? 'px-2.5 py-1 text-[11px] max-lg:min-h-[36px] max-lg:px-3.5' : 'px-3 py-1 text-xs max-lg:min-h-[36px] max-lg:px-3.5';
   return (
     <div
       role="group"

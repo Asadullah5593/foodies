@@ -301,7 +301,7 @@ const CustomerDisplay: React.FC = () => {
             type="button"
             onClick={() => setShowCompleted((v) => !v)}
             className={[
-              'px-3 py-2 rounded-lg text-sm font-medium transition-colors border max-lg:min-h-[44px]',
+              'px-3 py-2 rounded-lg text-sm font-medium transition-colors border max-lg:min-h-[40px]',
               showCompleted
                 ? 'bg-emerald-50 border-emerald-400 text-emerald-700 hover:bg-emerald-100'
                 : 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100',
@@ -314,7 +314,7 @@ const CustomerDisplay: React.FC = () => {
             <button
               type="button"
               onClick={requestFullscreen}
-              className="flex-shrink-0 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium transition-colors max-lg:min-h-[44px]"
+              className="flex-shrink-0 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium transition-colors max-lg:min-h-[40px]"
               title="Enter fullscreen"
             >
               Full screen

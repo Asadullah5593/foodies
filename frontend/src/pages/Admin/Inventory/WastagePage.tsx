@@ -86,7 +86,7 @@ const WastagePage: React.FC = () => {
         </div>
         <div className="flex items-center gap-3">
           <div className="relative"><span className="absolute left-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-red-500 pointer-events-none" /><select value={activeBranchId ?? ''} onChange={(e) => setBranchId(Number(e.target.value))} className="appearance-none pl-7 pr-9 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-slate-900 dark:text-slate-100 min-w-[200px]">{branches.map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(` ()`, b)}</option>)}</select></div>
-          {canRecord && <button onClick={() => { setF({ item: '', qty: '', uom: '', reason: 'spoilage', notes: '' }); setOpen(true); }} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm max-lg:min-h-[44px]"><LuPlus className="w-4 h-4" /> Record wastage</button>}
+          {canRecord && <button onClick={() => { setF({ item: '', qty: '', uom: '', reason: 'spoilage', notes: '' }); setOpen(true); }} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm max-lg:min-h-[40px]"><LuPlus className="w-4 h-4" /> Record wastage</button>}
         </div>
       </div>
 
@@ -138,7 +138,7 @@ const WastagePage: React.FC = () => {
           <div><div className="text-xs font-medium text-slate-500 mb-1">Reason</div><SearchableSelect value={f.reason} onChange={(v) => setF({ ...f, reason: v })} options={REASONS} minWidth="w-full" className="w-full" /></div>
           <div><div className="text-xs font-medium text-slate-500 mb-1">Notes (optional)</div><input className={field} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="What happened?" /></div>
           <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-700 dark:text-red-300 max-lg:min-h-[44px]">This posts immediately and removes the quantity from on-hand stock (FEFO). It cannot be undone — correct mistakes with a stock adjustment.</div>
-          <div className="flex justify-end gap-2 pt-1"><button onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm max-lg:min-h-[44px]">Cancel</button><button disabled={recordM.isPending} onClick={submit} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold disabled:opacity-50 max-lg:min-h-[44px]">Record wastage</button></div>
+          <div className="flex justify-end gap-2 pt-1"><button onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm max-lg:min-h-[40px]">Cancel</button><button disabled={recordM.isPending} onClick={submit} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold disabled:opacity-50 max-lg:min-h-[40px]">Record wastage</button></div>
         </div>
       </Modal>
     </div>

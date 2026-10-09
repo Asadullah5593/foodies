@@ -303,7 +303,7 @@ const BusinessSettings: React.FC = () => {
                     if (window.confirm('Enable FBR reporting on ALL branches that have credentials saved?'))
                       fbrBulkMutation.mutate(true);
                   }}
-                  className="rounded-[10px] border-[1.5px] border-emerald-500 px-3.5 py-2 text-[12.5px] font-bold text-emerald-600 max-lg:min-h-[44px] transition-colors hover:bg-emerald-50 disabled:opacity-60 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
+                  className="rounded-[10px] border-[1.5px] border-emerald-500 px-3.5 py-2 text-[12.5px] font-bold text-emerald-600 max-lg:min-h-[40px] transition-colors hover:bg-emerald-50 disabled:opacity-60 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
                 >
                   Enable on all
                 </button>
@@ -314,7 +314,7 @@ const BusinessSettings: React.FC = () => {
                     if (window.confirm('Disable FBR reporting on ALL branches? Receipts will reuse each branch’s last real FBR number.'))
                       fbrBulkMutation.mutate(false);
                   }}
-                  className="rounded-[10px] border-[1.5px] border-red-500 px-3.5 py-2 text-[12.5px] font-bold text-red-600 max-lg:min-h-[44px] transition-colors hover:bg-red-50 disabled:opacity-60 dark:text-red-400 dark:hover:bg-red-500/10"
+                  className="rounded-[10px] border-[1.5px] border-red-500 px-3.5 py-2 text-[12.5px] font-bold text-red-600 max-lg:min-h-[40px] transition-colors hover:bg-red-50 disabled:opacity-60 dark:text-red-400 dark:hover:bg-red-500/10"
                 >
                   Disable on all
                 </button>

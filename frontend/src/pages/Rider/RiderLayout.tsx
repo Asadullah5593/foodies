@@ -225,7 +225,7 @@ const RiderLayout: React.FC = () => {
           <div className="flex justify-between items-center h-14">
             <Link
               to="/rider"
-              className="text-lg font-bold text-gray-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center max-lg:gap-1"
+              className="text-lg font-bold text-gray-800 dark:text-slate-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors max-lg:inline-flex max-lg:min-h-[40px] max-lg:items-center max-lg:gap-1"
             >
               <MdOutlineDeliveryDining className="inline h-5 w-5 mr-1 align-text-bottom" /> Rider
             </Link>

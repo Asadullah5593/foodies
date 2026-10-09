@@ -85,7 +85,7 @@ const RowActionsMenu: React.FC<{ actions: RowAction[]; label?: string; ariaLabel
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-2 text-[12.5px] font-semibold max-lg:min-h-[44px] text-[#374151] hover:bg-[#F3F4F6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2A2A]/40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-2 text-[12.5px] font-semibold max-lg:min-h-[40px] text-[#374151] hover:bg-[#F3F4F6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2A2A]/40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
       >
         {label}
         <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

@@ -204,7 +204,7 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
               key={mode}
               type="button"
               onClick={() => onPaymentModeChange(mode)}
-              className={`px-4 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors max-lg:min-h-[44px] max-sm:px-3 ${
+              className={`px-4 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors max-lg:min-h-[40px] max-sm:px-3 ${
                 paymentMode === mode
                   ? 'border-foodies-primary bg-red-50 dark:bg-red-900/40 text-red-800 dark:text-red-200'
                   : 'border-foodies-border dark:border-slate-600 bg-foodies-surfaceMuted dark:bg-slate-700 text-foodies-textPrimary dark:text-slate-200 hover:border-foodies-primary hover:bg-red-50/50 dark:hover:bg-red-900/30'

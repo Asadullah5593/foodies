@@ -2081,7 +2081,7 @@ const OrderTaking: React.FC = () => {
                           aria-checked={selected}
                           disabled={isSubmittingOrder}
                           onClick={() => handleOrderTypeChange(opt.value)}
-                          className={`flex-1 rounded-md px-3 py-2 text-sm transition-colors disabled:opacity-50 max-lg:min-h-[44px] ${
+                          className={`flex-1 rounded-md px-3 py-2 text-sm transition-colors disabled:opacity-50 max-lg:min-h-[40px] ${
                             selected
                               ? 'bg-foodies-primary/10 font-bold text-foodies-primary shadow-sm'
                               : 'font-semibold text-foodies-textSecondary hover:text-foodies-textPrimary'

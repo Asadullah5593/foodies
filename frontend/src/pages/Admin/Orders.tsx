@@ -1374,12 +1374,12 @@ const Orders: React.FC = () => {
           </div>
           <div className="flex flex-none gap-2 max-lg:w-full max-lg:flex-wrap">
             {canOpenRiderHrm && (
-              <Link to="/admin/rider-hrm" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center max-lg:justify-center max-sm:flex-1">
+              <Link to="/admin/rider-hrm" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 max-lg:inline-flex max-lg:min-h-[40px] max-lg:items-center max-lg:justify-center max-sm:flex-1">
                 Open Rider HRM
               </Link>
             )}
             {canConfigBranches && (
-              <Link to="/admin/branches" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center max-lg:justify-center max-sm:flex-1">
+              <Link to="/admin/branches" className="rounded-[9px] border border-gray-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 max-lg:inline-flex max-lg:min-h-[40px] max-lg:items-center max-lg:justify-center max-sm:flex-1">
                 Configure Branch Radius
               </Link>
             )}

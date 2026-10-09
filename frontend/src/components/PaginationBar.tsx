@@ -22,7 +22,7 @@ export type PaginationBarProps = {
 };
 
 const btnCls =
-  'px-3 py-1.5 rounded-lg text-sm font-semibold text-white border border-transparent disabled:opacity-50 disabled:cursor-not-allowed !bg-[linear-gradient(90deg,#000000_0%,#B91C1C_50%,#000000_100%)] hover:brightness-110 active:brightness-95 transition-all max-lg:min-h-[44px] max-lg:px-4';
+  'px-3 py-1.5 rounded-lg text-sm font-semibold text-white border border-transparent disabled:opacity-50 disabled:cursor-not-allowed !bg-[linear-gradient(90deg,#000000_0%,#B91C1C_50%,#000000_100%)] hover:brightness-110 active:brightness-95 transition-all max-lg:min-h-[40px] max-lg:px-4';
 
 const PaginationBar: React.FC<PaginationBarProps> = ({
   totalCount,

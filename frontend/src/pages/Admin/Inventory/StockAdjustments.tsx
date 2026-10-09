@@ -253,7 +253,7 @@ const StockAdjustments: React.FC = () => {
 
   const Tab = ({ id, label, count }: any) => {
     const on = status === id;
-    return <button onClick={() => { setStatus(id); setPage(1); }} className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-2 max-lg:min-h-[44px] ${on ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400'}`}>{label}<span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${on ? 'bg-red-100 text-red-600' : 'bg-slate-200 dark:bg-slate-600 text-slate-500 dark:text-slate-300'}`}>{count}</span></button>;
+    return <button onClick={() => { setStatus(id); setPage(1); }} className={`px-3.5 py-1.5 rounded-lg text-sm font-semibold flex items-center gap-2 max-lg:min-h-[40px] ${on ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-slate-100' : 'text-slate-500 dark:text-slate-400'}`}>{label}<span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full ${on ? 'bg-red-100 text-red-600' : 'bg-slate-200 dark:bg-slate-600 text-slate-500 dark:text-slate-300'}`}>{count}</span></button>;
   };
 
   const loading = branchesQ.isLoading || adjustmentsQ.isLoading;
@@ -274,7 +274,7 @@ const StockAdjustments: React.FC = () => {
               {branches.map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(` ()`, b)}</option>)}
             </select>
           </div>
-          {canAdjust && <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm max-lg:min-h-[44px]"><LuPlus className="w-4 h-4" /> Create adjustment</button>}
+          {canAdjust && <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm max-lg:min-h-[40px]"><LuPlus className="w-4 h-4" /> Create adjustment</button>}
         </div>
       </div>
 
@@ -299,7 +299,7 @@ const StockAdjustments: React.FC = () => {
               <span className="text-[12.5px] text-slate-400 font-medium">Type</span>
               <div className="flex gap-1.5">
                 {([['all', 'All'], ['in', 'IN'], ['out', 'OUT'], ['in+out', 'IN + OUT']] as [any, string][]).map(([k, lbl]) => (
-                  <button key={k} onClick={() => { setTypeFilter(k); setPage(1); }} className={`px-3 py-1.5 rounded-lg text-[12.5px] font-semibold border max-lg:min-h-[44px] ${typeFilter === k ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}>{lbl}</button>
+                  <button key={k} onClick={() => { setTypeFilter(k); setPage(1); }} className={`px-3 py-1.5 rounded-lg text-[12.5px] font-semibold border max-lg:min-h-[40px] ${typeFilter === k ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}>{lbl}</button>
                 ))}
               </div>
             </div>
@@ -323,7 +323,7 @@ const StockAdjustments: React.FC = () => {
               return (
                 <div key={g.reference} className="grid items-center px-4 py-3 border-b border-slate-100 dark:border-slate-700 min-w-[920px]" style={{ gridTemplateColumns: '40px minmax(200px,1.7fr) 116px minmax(150px,1.3fr) 120px 64px 84px 150px 180px', borderLeft: `3px solid ${draft ? '#D97706' : 'transparent'}` }}>
                   <div className="text-[13px] text-slate-400 font-semibold">{(safePage - 1) * PAGE_SIZE + i + 1}</div>
-                  <div className="pr-3 min-w-0"><button onClick={() => setViewGroup(g)} className="text-[13px] font-bold text-red-600 hover:underline font-mono truncate block max-w-full text-left max-lg:min-h-[44px]">{g.reference}</button></div>
+                  <div className="pr-3 min-w-0"><button onClick={() => setViewGroup(g)} className="text-[13px] font-bold text-red-600 hover:underline font-mono truncate block max-w-full text-left max-lg:min-h-[40px]">{g.reference}</button></div>
                   <div><TypeBadge t={g.typeLabel} /></div>
                   <div className="text-[13.5px] text-slate-700 dark:text-slate-200 pr-3 truncate">{prettyReason(g.reason)}</div>
                   <div>
@@ -335,11 +335,11 @@ const StockAdjustments: React.FC = () => {
                   <div className="text-right pr-3 text-[13.5px] font-bold text-slate-900 dark:text-slate-100">{fmtNum(g.totalQtyBase)}</div>
                   <div className="text-[12.5px] text-slate-500 leading-tight pl-3">{d ? d.toLocaleDateString() : '—'}<br /><span className="text-slate-400">{d ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span></div>
                   <div className="flex gap-2 justify-end items-center">
-                    <button onClick={() => setViewGroup(g)} className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12.5px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[44px]">View</button>
+                    <button onClick={() => setViewGroup(g)} className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12.5px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">View</button>
                     {draft ? (
                       <>
-                        <button onClick={() => openEdit(g)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12.5px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[44px]"><LuPencil className="w-3.5 h-3.5" /></button>
-                        {canAdjust && <button disabled={busy} onClick={() => postGroup(g)} className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[12.5px] font-bold disabled:opacity-50 max-lg:min-h-[44px]">Post</button>}
+                        <button onClick={() => openEdit(g)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12.5px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]"><LuPencil className="w-3.5 h-3.5" /></button>
+                        {canAdjust && <button disabled={busy} onClick={() => postGroup(g)} className="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[12.5px] font-bold disabled:opacity-50 max-lg:min-h-[40px]">Post</button>}
                       </>
                     ) : <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[12.5px] font-semibold text-green-600"><LuCheck className="w-3.5 h-3.5" />Posted</span>}
                   </div>
@@ -349,9 +349,9 @@ const StockAdjustments: React.FC = () => {
             <div className="flex items-center justify-between px-4 py-3.5 text-[13px] text-slate-500">
               <span>Showing <strong className="text-slate-700 dark:text-slate-200">{pageRows.length}</strong> of {filtered.length} adjustments</span>
               <div className="flex items-center gap-1.5">
-                <button disabled={safePage <= 1} onClick={() => setPage(safePage - 1)} className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-md disabled:opacity-40 max-lg:min-h-[44px]">‹</button>
-                {Array.from({ length: totalPages }, (_, k) => k + 1).slice(0, 5).map((p) => <button key={p} onClick={() => setPage(p)} className={`px-3 py-1.5 rounded-md font-semibold max-lg:min-h-[44px] ${p === safePage ? 'bg-red-600 text-white' : 'border border-slate-200 dark:border-slate-700'}`}>{p}</button>)}
-                <button disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)} className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-md disabled:opacity-40 max-lg:min-h-[44px]">›</button>
+                <button disabled={safePage <= 1} onClick={() => setPage(safePage - 1)} className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-md disabled:opacity-40 max-lg:min-h-[40px]">‹</button>
+                {Array.from({ length: totalPages }, (_, k) => k + 1).slice(0, 5).map((p) => <button key={p} onClick={() => setPage(p)} className={`px-3 py-1.5 rounded-md font-semibold max-lg:min-h-[40px] ${p === safePage ? 'bg-red-600 text-white' : 'border border-slate-200 dark:border-slate-700'}`}>{p}</button>)}
+                <button disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)} className="px-2.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-md disabled:opacity-40 max-lg:min-h-[40px]">›</button>
               </div>
             </div>
           </TableScroll>
@@ -374,7 +374,7 @@ const StockAdjustments: React.FC = () => {
               <div><div className="text-xs font-medium text-slate-500 mb-1">Expiry {f.type === 'in' ? '(req)' : '(IN only)'}</div><input type="date" className={field} value={f.expiry} onChange={(e) => setF({ ...f, expiry: e.target.value })} disabled={f.type !== 'in'} /></div>
             </div>
           </div>
-          <button onClick={addLine} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[44px]">+ Add line</button>
+          <button onClick={addLine} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">+ Add line</button>
 
           {f.lines.length > 0 && (
             <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -399,9 +399,9 @@ const StockAdjustments: React.FC = () => {
           <div><div className="text-xs font-medium text-slate-500 mb-1">Reason</div><input className={field} value={f.reason} onChange={(e) => setF({ ...f, reason: e.target.value })} placeholder="e.g. Manual correction" /></div>
 
           <div className="flex justify-end gap-2 pt-1">
-            <button onClick={() => { setModalOpen(false); setEditingGroup(null); }} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm max-lg:min-h-[44px]">Cancel</button>
-            <button disabled={busy} onClick={() => (editingGroup ? submitEdit(false) : submitCreate(false))} className="rounded-lg border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 max-lg:min-h-[44px]">Save as draft</button>
-            <button disabled={busy} onClick={() => (editingGroup ? submitEdit(true) : submitCreate(true))} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold disabled:opacity-50 max-lg:min-h-[44px]">Save &amp; post</button>
+            <button onClick={() => { setModalOpen(false); setEditingGroup(null); }} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm max-lg:min-h-[40px]">Cancel</button>
+            <button disabled={busy} onClick={() => (editingGroup ? submitEdit(false) : submitCreate(false))} className="rounded-lg border border-slate-300 dark:border-slate-600 px-4 py-2 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 max-lg:min-h-[40px]">Save as draft</button>
+            <button disabled={busy} onClick={() => (editingGroup ? submitEdit(true) : submitCreate(true))} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold disabled:opacity-50 max-lg:min-h-[40px]">Save &amp; post</button>
           </div>
         </div>
       </Modal>
@@ -433,9 +433,9 @@ const StockAdjustments: React.FC = () => {
             </div>
             {viewGroup.status === 'draft' && (
               <div className="flex justify-end gap-2">
-                <button onClick={() => { const g = viewGroup; setViewGroup(null); deleteGroup(g); }} className="rounded-lg border border-red-200 text-red-600 px-4 py-2 text-sm font-medium hover:bg-red-50 max-lg:min-h-[44px]">Delete draft</button>
-                <button onClick={() => { const g = viewGroup; setViewGroup(null); openEdit(g); }} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm font-medium max-lg:min-h-[44px]">Edit</button>
-                <button onClick={() => { const g = viewGroup; setViewGroup(null); postGroup(g); }} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold max-lg:min-h-[44px]">Post</button>
+                <button onClick={() => { const g = viewGroup; setViewGroup(null); deleteGroup(g); }} className="rounded-lg border border-red-200 text-red-600 px-4 py-2 text-sm font-medium hover:bg-red-50 max-lg:min-h-[40px]">Delete draft</button>
+                <button onClick={() => { const g = viewGroup; setViewGroup(null); openEdit(g); }} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm font-medium max-lg:min-h-[40px]">Edit</button>
+                <button onClick={() => { const g = viewGroup; setViewGroup(null); postGroup(g); }} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold max-lg:min-h-[40px]">Post</button>
               </div>
             )}
           </div>

@@ -834,8 +834,8 @@ const BranchEdit: React.FC = () => {
                           {isExpanded && (
                             <div className="px-4 pb-3 pt-0 border-t border-gray-100 dark:border-slate-700">
                               <div className="flex gap-2 mb-2 pt-2">
-                                <button type="button" onClick={() => setLinkedMenuItemIds((prev) => Array.from(new Set([...prev, ...items.map((mi) => mi.id)])))} className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center">Link all in category</button>
-                                <button type="button" onClick={() => setLinkedMenuItemIds((prev) => prev.filter((id) => !items.some((i) => i.id === id)))} className="text-xs font-medium text-gray-600 dark:text-slate-400 hover:underline max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center">Unlink all in category</button>
+                                <button type="button" onClick={() => setLinkedMenuItemIds((prev) => Array.from(new Set([...prev, ...items.map((mi) => mi.id)])))} className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline max-lg:inline-flex max-lg:min-h-[40px] max-lg:items-center">Link all in category</button>
+                                <button type="button" onClick={() => setLinkedMenuItemIds((prev) => prev.filter((id) => !items.some((i) => i.id === id)))} className="text-xs font-medium text-gray-600 dark:text-slate-400 hover:underline max-lg:inline-flex max-lg:min-h-[40px] max-lg:items-center">Unlink all in category</button>
                               </div>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
                                 {items.map((mi) => (

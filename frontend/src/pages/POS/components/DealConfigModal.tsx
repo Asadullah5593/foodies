@@ -669,7 +669,7 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
               <button
                 type="button"
                 onClick={() => setCustomizeTarget({ slotIndex: slot.slot_index, pickIdx: 0 })}
-                className={`flex-none px-4 py-2 rounded-lg border-[1.5px] bg-white text-sm font-bold transition-colors max-lg:min-h-[44px] ${
+                className={`flex-none px-4 py-2 rounded-lg border-[1.5px] bg-white text-sm font-bold transition-colors max-lg:min-h-[40px] ${
                   needsOptions
                     ? 'border-amber-400 text-amber-700 hover:bg-amber-50'
                     : 'border-emerald-300 text-emerald-600 hover:bg-emerald-50'
@@ -754,7 +754,7 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
             <button
               type="button"
               onClick={() => setCustomizeTarget({ slotIndex: slot.slot_index, pickIdx: 0 })}
-              className="flex-none px-4 py-2 rounded-lg bg-amber-500 text-sm font-bold text-white hover:bg-amber-600 transition-colors max-lg:min-h-[44px]"
+              className="flex-none px-4 py-2 rounded-lg bg-amber-500 text-sm font-bold text-white hover:bg-amber-600 transition-colors max-lg:min-h-[40px]"
             >
               Customize
             </button>

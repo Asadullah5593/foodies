@@ -659,7 +659,7 @@ const ActivityLog: React.FC = () => {
                 title={OUTCOME_HINTS[key]}
                 aria-pressed={filters.outcome === key}
                 onClick={() => setFilter('outcome', filters.outcome === key ? '' : key)}
-                className={`rounded-full border px-3 py-1 text-[12.5px] font-semibold transition max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center ${
+                className={`rounded-full border px-3 py-1 text-[12.5px] font-semibold transition max-lg:inline-flex max-lg:min-h-[40px] max-lg:items-center ${
                   OUTCOME_STYLES[key] ?? 'border-gray-200 bg-gray-50 text-gray-600'
                 } ${filters.outcome === key ? 'ring-2 ring-[#DC2A2A]/40 ring-offset-1' : 'hover:brightness-95'}`}
               >

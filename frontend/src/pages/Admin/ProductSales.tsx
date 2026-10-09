@@ -851,8 +851,8 @@ const ProductSales: React.FC = () => {
               aria-pressed={on}
               className={
                 on
-                  ? 'whitespace-nowrap rounded-full border-[1.5px] border-[#DC2A2A] bg-[#DC2A2A] px-3.5 py-2 text-[12.5px] font-bold text-white max-lg:min-h-[44px]'
-                  : 'whitespace-nowrap rounded-full border-[1.5px] border-[#E2E5EA] bg-white px-3.5 py-2 text-[12.5px] font-semibold text-[#5A6473] transition hover:bg-[#F6F7F9] max-lg:min-h-[44px]'
+                  ? 'whitespace-nowrap rounded-full border-[1.5px] border-[#DC2A2A] bg-[#DC2A2A] px-3.5 py-2 text-[12.5px] font-bold text-white max-lg:min-h-[40px]'
+                  : 'whitespace-nowrap rounded-full border-[1.5px] border-[#E2E5EA] bg-white px-3.5 py-2 text-[12.5px] font-semibold text-[#5A6473] transition hover:bg-[#F6F7F9] max-lg:min-h-[40px]'
               }
             >
               {s.label}
@@ -865,7 +865,7 @@ const ProductSales: React.FC = () => {
         type="button"
         onClick={toggleAll}
         disabled={splitBy === 'none'}
-        className="whitespace-nowrap rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-3.5 py-2 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6] max-lg:min-h-[44px] disabled:cursor-not-allowed disabled:opacity-50"
+        className="whitespace-nowrap rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-3.5 py-2 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6] max-lg:min-h-[40px] disabled:cursor-not-allowed disabled:opacity-50"
       >
         {allOpen ? 'Collapse all' : 'Expand all'}
       </button>
@@ -1041,23 +1041,23 @@ const ProductSales: React.FC = () => {
               className="grid gap-3 border-b border-[#F1F2F5] bg-[#FBFBFC] px-5 py-[11px]"
             >
               <span className={headCell}>#</span>
-              <button type="button" onClick={() => toggleSort('name')} className={`${headCell} text-left max-lg:min-h-[44px]`}>
+              <button type="button" onClick={() => toggleSort('name')} className={`${headCell} text-left max-lg:min-h-[40px]`}>
                 Product{sortArrow('name')}
               </button>
               <span className={headCell}>Category</span>
               <span className={headCell}>Brand</span>
               <span className={headCell}>Branch</span>
-              <button type="button" onClick={() => toggleSort('quantity')} className={`${headCell} text-right max-lg:min-h-[44px]`}>
+              <button type="button" onClick={() => toggleSort('quantity')} className={`${headCell} text-right max-lg:min-h-[40px]`}>
                 Qty{sortArrow('quantity')}
               </button>
-              <button type="button" onClick={() => toggleSort('orders')} className={`${headCell} text-right max-lg:min-h-[44px]`}>
+              <button type="button" onClick={() => toggleSort('orders')} className={`${headCell} text-right max-lg:min-h-[40px]`}>
                 Orders{sortArrow('orders')}
               </button>
-              <button type="button" onClick={() => toggleSort('gross_sales')} className={`${headCell} text-right max-lg:min-h-[44px]`}>
+              <button type="button" onClick={() => toggleSort('gross_sales')} className={`${headCell} text-right max-lg:min-h-[40px]`}>
                 Gross{sortArrow('gross_sales')}
               </button>
               <span className={`${headCell} text-right`}>Discount</span>
-              <button type="button" onClick={() => toggleSort('net_sales')} className={`${headCell} text-right max-lg:min-h-[44px]`}>
+              <button type="button" onClick={() => toggleSort('net_sales')} className={`${headCell} text-right max-lg:min-h-[40px]`}>
                 Net{sortArrow('net_sales')}
               </button>
             </div>
@@ -1300,7 +1300,7 @@ const ProductSales: React.FC = () => {
               type="button"
               onClick={() => setPage(1)}
               disabled={currentPage === 1}
-              className="rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-2.5 py-1.5 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-40 max-lg:min-h-[44px]"
+              className="rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-2.5 py-1.5 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-40 max-lg:min-h-[40px]"
             >
               «
             </button>
@@ -1308,7 +1308,7 @@ const ProductSales: React.FC = () => {
               type="button"
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={currentPage === 1}
-              className="rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-40 max-lg:min-h-[44px]"
+              className="rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-40 max-lg:min-h-[40px]"
             >
               Prev
             </button>
@@ -1319,7 +1319,7 @@ const ProductSales: React.FC = () => {
               type="button"
               onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
               disabled={currentPage >= pageCount}
-              className="rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-40 max-lg:min-h-[44px]"
+              className="rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-1.5 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-40 max-lg:min-h-[40px]"
             >
               Next
             </button>
@@ -1327,7 +1327,7 @@ const ProductSales: React.FC = () => {
               type="button"
               onClick={() => setPage(pageCount)}
               disabled={currentPage >= pageCount}
-              className="rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-2.5 py-1.5 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-40 max-lg:min-h-[44px]"
+              className="rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-2.5 py-1.5 text-[12.5px] font-semibold text-[#374151] transition hover:bg-[#F3F4F6] disabled:cursor-not-allowed disabled:opacity-40 max-lg:min-h-[40px]"
             >
               »
             </button>

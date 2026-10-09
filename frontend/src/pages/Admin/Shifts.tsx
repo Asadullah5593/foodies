@@ -738,7 +738,7 @@ const Shifts: React.FC = () => {
             key={t.key}
             type="button"
             onClick={() => setStatusTab(t.key)}
-            className={`inline-flex cursor-pointer items-center gap-[7px] rounded-[10px] border-[1.5px] px-[15px] py-[9px] text-[13px] font-bold max-lg:min-h-[44px] ${
+            className={`inline-flex cursor-pointer items-center gap-[7px] rounded-[10px] border-[1.5px] px-[15px] py-[9px] text-[13px] font-bold max-lg:min-h-[40px] ${
               active ? '' : 'border-[#E2E5EA] text-[#4B5563] dark:border-slate-600 dark:text-slate-300'
             }`}
             style={active ? { borderColor: '#DC2A2A', background: '#FCEEEE', color: '#B5121B' } : undefined}

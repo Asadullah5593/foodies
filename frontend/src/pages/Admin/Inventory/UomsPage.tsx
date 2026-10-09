@@ -63,7 +63,7 @@ const UomsPage: React.FC = () => {
           <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Units of Measure</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-1.5 max-w-xl leading-relaxed">Define the units stock is counted in. A base unit stands alone; a derived unit converts into its base via a multiplier (e.g. 1 kg → 1000 g).</p>
         </div>
-        {canCreate && <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm max-lg:min-h-[44px]"><LuPlus className="w-4 h-4" /> Add unit</button>}
+        {canCreate && <button onClick={openCreate} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm max-lg:min-h-[40px]"><LuPlus className="w-4 h-4" /> Add unit</button>}
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -77,7 +77,7 @@ const UomsPage: React.FC = () => {
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3.5 border-b border-slate-100 dark:border-slate-700">
           <div className="flex gap-1.5">
             {[['', 'All'], ['base', 'Base units'], ['derived', 'Derived units']].map(([k, lbl]) => (
-              <button key={k} onClick={() => setBaseFilter(k)} className={`px-3 py-1.5 rounded-lg text-[12.5px] font-semibold border max-lg:min-h-[44px] ${baseFilter === k ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}>{lbl}</button>
+              <button key={k} onClick={() => setBaseFilter(k)} className={`px-3 py-1.5 rounded-lg text-[12.5px] font-semibold border max-lg:min-h-[40px] ${baseFilter === k ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100' : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'}`}>{lbl}</button>
             ))}
           </div>
           <div className="relative flex-1 min-w-[220px] max-w-[340px]"><LuSearch className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name or code…" className={`${field} pl-9`} /></div>
@@ -93,7 +93,7 @@ const UomsPage: React.FC = () => {
                   <td className="py-3 px-4"><span className={`px-2.5 py-1 rounded-full text-xs font-semibold capitalize ${KIND_PILL[u.kind] ?? 'bg-slate-100 text-slate-600'}`}>{u.kind ?? '—'}</span></td>
                   <td className="py-3 px-4">{u.baseUomId == null ? <span className="text-slate-400">Base unit</span> : (nameById.get(Number(u.baseUomId)) ?? `#${u.baseUomId}`)}</td>
                   <td className="py-3 px-4 text-slate-500">{u.baseUomId == null ? '—' : `× ${Number(u.multiplierToBase)} ${nameById.get(Number(u.baseUomId)) ?? ''}`}</td>
-                  <td className="py-3 px-4"><div className="flex gap-2 justify-end">{canEdit && <button onClick={() => openEdit(u)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[44px]"><LuPencil className="w-3.5 h-3.5" /></button>}{canDelete && <button onClick={() => { if (confirm(`Delete unit "${u.name}"?`)) deleteM.mutate(Number(u.id)); }} className="px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 max-lg:min-h-[44px]"><LuTrash2 className="w-3.5 h-3.5" /></button>}</div></td>
+                  <td className="py-3 px-4"><div className="flex gap-2 justify-end">{canEdit && <button onClick={() => openEdit(u)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]"><LuPencil className="w-3.5 h-3.5" /></button>}{canDelete && <button onClick={() => { if (confirm(`Delete unit "${u.name}"?`)) deleteM.mutate(Number(u.id)); }} className="px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 max-lg:min-h-[40px]"><LuTrash2 className="w-3.5 h-3.5" /></button>}</div></td>
                 </tr>
               ))}
             </tbody>
@@ -115,7 +115,7 @@ const UomsPage: React.FC = () => {
               <div><div className="text-xs font-medium text-slate-500 mb-1">Multiplier to base</div><input className={field} value={f.multiplier_to_base} onChange={(e) => setF({ ...f, multiplier_to_base: e.target.value })} placeholder="1000" disabled={!f.base_uom_id} /></div>
             </div>
           </div>
-          <div className="flex justify-end gap-2 pt-1"><button onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm max-lg:min-h-[44px]">Cancel</button><button onClick={submit} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold max-lg:min-h-[44px]">{editId ? 'Save changes' : 'Create unit'}</button></div>
+          <div className="flex justify-end gap-2 pt-1"><button onClick={() => setOpen(false)} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm max-lg:min-h-[40px]">Cancel</button><button onClick={submit} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold max-lg:min-h-[40px]">{editId ? 'Save changes' : 'Create unit'}</button></div>
         </div>
       </Modal>
     </div>
