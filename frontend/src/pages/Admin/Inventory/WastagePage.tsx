@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import ResponsiveSelect from '../../../components/ResponsiveSelect';
-import { labelWithStatus } from '../../../utils/entityStatus';
+import { isEntityInactive, labelWithStatus } from '../../../utils/entityStatus';
 import { useMutation, useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { LuPlus, LuSearch, LuTrash2 } from 'react-icons/lu';
@@ -43,7 +43,7 @@ const WastagePage: React.FC = () => {
 
   const itemById = useMemo(() => { const m = new Map<number, any>(); for (const it of itemsQ.data ?? []) m.set(Number(it.id), it); return m; }, [itemsQ.data]);
   const uomById = useMemo(() => { const m = new Map<number, any>(); for (const u of uomsQ.data ?? []) m.set(Number(u.id), u); return m; }, [uomsQ.data]);
-  const itemOptions = useMemo(() => (itemsQ.data ?? []).map((it: any) => ({ value: String(it.id), label: it.name })), [itemsQ.data]);
+  const itemOptions = useMemo(() => (itemsQ.data ?? []).map((it: any) => ({ value: String(it.id), label: it.name, inactive: isEntityInactive(it) })), [itemsQ.data]);
   const selItem = itemById.get(Number(f.item));
   const allowedUoms = (item: any) => { if (!item) return uomsQ.data ?? []; const ids = (Array.isArray(item.baseUomIds) && item.baseUomIds.length ? item.baseUomIds : [item.baseUomId]).map((x: any) => Number(x)).filter((x: number) => x > 0); if (item.baseUomId && !ids.includes(Number(item.baseUomId))) ids.unshift(Number(item.baseUomId)); const o = ids.map((id: number) => uomById.get(id)).filter(Boolean); return o.length ? o : (uomsQ.data ?? []); };
   const unitCode = (iid: number) => uomById.get(Number(itemById.get(iid)?.baseUomId))?.code ?? '';

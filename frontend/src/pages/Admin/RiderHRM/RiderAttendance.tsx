@@ -103,7 +103,7 @@ const RiderAttendance: React.FC = () => {
               <option value="">Select rider</option>
               {(riders ?? []).map((rider) => (
                 <option key={rider.id} value={rider.id}>
-                  {rider.name}
+                  {labelWithStatus(rider.name, rider)}
                 </option>
               ))}
             </ResponsiveSelect>

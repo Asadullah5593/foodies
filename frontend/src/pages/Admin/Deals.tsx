@@ -344,6 +344,7 @@ const Deals: React.FC = () => {
         ...(brands ?? []).map((b) => ({
           value: String(b.id),
           label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+          inactive: isEntityInactive(b),
         })),
       ]}
       placeholder="All brands"
@@ -561,6 +562,7 @@ const Deals: React.FC = () => {
                 ...(brands ?? []).map((b) => ({
                   value: String(b.id),
                   label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+                  inactive: isEntityInactive(b),
                 })),
               ]}
               placeholder="Select brand"

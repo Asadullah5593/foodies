@@ -355,7 +355,7 @@ const StockTransfers: React.FC = () => {
               <ResponsiveSelect className={field} value={nf.dbr ?? ''} onChange={(e) => setNf({ ...nf, dbr: e.target.value })}>{brandOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</ResponsiveSelect></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Item</div>
               <ResponsiveSelect className={field} value={nf.item ?? ''} onChange={(e) => { const it = itemById.get(Number(e.target.value)); setNf({ ...nf, item: e.target.value, uom: it?.baseUomId ? String(it.baseUomId) : '' }); }}>
-                <option value="">Select item…</option>{(itemsQ.data ?? []).map((it: any) => <option key={it.id} value={it.id}>{it.name}</option>)}
+                <option value="">Select item…</option>{(itemsQ.data ?? []).map((it: any) => <option key={it.id} value={it.id}>{labelWithStatus(it.name, it)}</option>)}
               </ResponsiveSelect></div>
             <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-2">
               <div><div className="text-xs font-medium text-slate-500 mb-1">Quantity</div><input className={field} placeholder="e.g. 5" value={nf.qty ?? ''} onChange={(e) => setNf({ ...nf, qty: e.target.value })} /></div>

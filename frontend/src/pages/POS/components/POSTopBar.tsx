@@ -1,3 +1,4 @@
+import { labelWithStatus } from '../../../utils/entityStatus';
 import React from 'react';
 import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { MdSearch } from 'react-icons/md';
@@ -67,7 +68,7 @@ const POSTopBar: React.FC<POSTopBarProps> = ({
           <option value="">Select branch</option>
           {(posBranches ?? []).map((b) => (
             <option key={b.id} value={b.id}>
-              {b.name} ({b.code})
+              {labelWithStatus(`${b.name} (${b.code})`, b)}
             </option>
           ))}
         </ResponsiveSelect>

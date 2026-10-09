@@ -4,6 +4,8 @@ import { useViewport } from '../hooks/useViewport';
 
 type Props = React.SelectHTMLAttributes<HTMLSelectElement> & { children?: React.ReactNode };
 
+const INACTIVE_SUFFIX = /\s*\(Inactive\)\s*$/;
+
 const textOf = (node: React.ReactNode): string =>
   React.Children.toArray(node)
     .map((n) => {
@@ -24,8 +26,16 @@ export const optionsFromChildren = (children: React.ReactNode): SearchableSelect
       return;
     }
     if (child.type !== 'option') return;
-    const label = textOf(props.children);
-    out.push({ value: props.value != null ? String(props.value) : label, label, disabled: props.disabled });
+    const raw = textOf(props.children);
+    // A native option can only say "inactive" in its text (utils/entityStatus labelWithStatus) or
+    // through data-inactive; here that becomes the badge SearchableSelect draws, text suffix dropped.
+    const flagged = Boolean((props as { 'data-inactive'?: boolean | string })['data-inactive']) || INACTIVE_SUFFIX.test(raw);
+    out.push({
+      value: props.value != null ? String(props.value) : raw,
+      label: flagged ? raw.replace(INACTIVE_SUFFIX, '') : raw,
+      disabled: props.disabled,
+      inactive: flagged || undefined,
+    });
   });
   return out;
 };

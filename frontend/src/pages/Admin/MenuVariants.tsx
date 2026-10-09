@@ -198,6 +198,7 @@ const MenuVariants: React.FC = () => {
         ...(brands ?? []).map((b: Brand & { tenant_name?: string }) => ({
           value: String(b.id),
           label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+          inactive: isEntityInactive(b),
         })),
       ]}
       placeholder="Select brand"

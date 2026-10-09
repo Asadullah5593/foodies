@@ -1,3 +1,4 @@
+import { labelWithStatus } from '../../../utils/entityStatus';
 import React, { useState, useEffect } from 'react';
 import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { motion } from 'framer-motion';
@@ -262,7 +263,7 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
               <option value="">No specific card</option>
               {bankCards.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.bank ? `${c.bank} — ${c.name}` : c.name}
+                  {labelWithStatus(c.bank ? `${c.bank} — ${c.name}` : c.name, c)}
                   {c.has_offer ? ' • offer' : ''}
                 </option>
               ))}

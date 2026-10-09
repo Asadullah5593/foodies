@@ -19,7 +19,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
-import { labelWithStatus } from '../../utils/entityStatus';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 
 const Branches: React.FC = () => {
   const navigate = useNavigate();
@@ -128,6 +128,7 @@ const Branches: React.FC = () => {
         ...(brands ?? []).map((brand: { id: number; name: string; tenant_name?: string }) => ({
           value: String(brand.id),
           label: brand.tenant_name ? `${brand.name} (${brand.tenant_name})` : brand.name,
+          inactive: isEntityInactive(brand),
         })),
       ]}
       placeholder="All brands"

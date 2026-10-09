@@ -24,7 +24,7 @@ import { confirmDialog } from '../../utils/sweetAlert';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
-import { labelWithStatus } from '../../utils/entityStatus';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 
 const MenuAddons: React.FC = () => {
   const { user } = useAuth();
@@ -180,6 +180,7 @@ const MenuAddons: React.FC = () => {
         ...(brands ?? []).map((b) => ({
           value: String(b.id),
           label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+          inactive: isEntityInactive(b),
         })),
       ]}
       placeholder="Select brand"
@@ -308,7 +309,7 @@ const MenuAddons: React.FC = () => {
               <option value="">Select brand</option>
               {brands?.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
+                  {labelWithStatus(b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name, b)}
                 </option>
               ))}
             </ResponsiveSelect>

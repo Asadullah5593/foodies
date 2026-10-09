@@ -21,7 +21,7 @@ import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
-import { labelWithStatus } from '../../utils/entityStatus';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 import { useViewport } from '../../hooks/useViewport';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/api\/?$/, '');
@@ -294,7 +294,7 @@ const Brands: React.FC = () => {
       onChange={setFilterTenantId}
       options={[
         { value: '', label: 'All tenants' },
-        ...(tenants ?? []).map((t) => ({ value: String(t.id), label: t.name })),
+        ...(tenants ?? []).map((t) => ({ value: String(t.id), label: t.name, inactive: isEntityInactive(t) })),
       ]}
       placeholder="All tenants"
       minWidth="min-w-[180px]"

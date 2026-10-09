@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import ResponsiveSelect from '../../../components/ResponsiveSelect';
-import { labelWithStatus } from '../../../utils/entityStatus';
+import { isEntityInactive, labelWithStatus } from '../../../utils/entityStatus';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { LuArrowUp, LuArrowDown, LuArrowDownUp, LuCheck, LuPlus, LuSearch, LuPencil, LuTrash2 } from 'react-icons/lu';
@@ -51,7 +51,7 @@ const StockAdjustments: React.FC = () => {
 
   const itemById = useMemo(() => { const m = new Map<number, any>(); for (const it of itemsQ.data ?? []) m.set(Number(it.id), it); return m; }, [itemsQ.data]);
   const uomById = useMemo(() => { const m = new Map<number, any>(); for (const u of uomsQ.data ?? []) m.set(Number(u.id), u); return m; }, [uomsQ.data]);
-  const itemOptions = useMemo(() => (itemsQ.data ?? []).map((it: any) => ({ value: String(it.id), label: it.name })), [itemsQ.data]);
+  const itemOptions = useMemo(() => (itemsQ.data ?? []).map((it: any) => ({ value: String(it.id), label: it.name, inactive: isEntityInactive(it) })), [itemsQ.data]);
   const selectedFormItem = itemById.get(Number(f.item));
 
   const invalidate = async () => {

@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import ResponsiveSelect from '../../../components/ResponsiveSelect';
-import { labelWithStatus } from '../../../utils/entityStatus';
+import { isEntityInactive, labelWithStatus } from '../../../utils/entityStatus';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { LuPackage, LuSlidersHorizontal, LuUtensils, LuTruck, LuTrash2, LuRotateCcw, LuArrowUp, LuArrowDown, LuDownload, LuExternalLink } from 'react-icons/lu';
@@ -86,7 +86,7 @@ const StockLedger: React.FC = () => {
   const itemById = useMemo(() => { const m = new Map<number, any>(); for (const it of itemsQ.data ?? []) m.set(Number(it.id), it); return m; }, [itemsQ.data]);
   const uomById = useMemo(() => { const m = new Map<number, any>(); for (const u of uomsQ.data ?? []) m.set(Number(u.id), u); return m; }, [uomsQ.data]);
   const brandById = useMemo(() => { const m = new Map<number, { name: string; color: string }>(); for (const b of brandsQ.data ?? []) m.set(Number(b.id), { name: b.name, color: BRAND_DOTS[Number(b.id) % BRAND_DOTS.length] }); return m; }, [brandsQ.data]);
-  const itemOptions = useMemo(() => [{ value: '', label: 'All items' }, ...(itemsQ.data ?? []).map((it: any) => ({ value: String(it.id), label: it.name }))], [itemsQ.data]);
+  const itemOptions = useMemo(() => [{ value: '', label: 'All items' }, ...(itemsQ.data ?? []).map((it: any) => ({ value: String(it.id), label: it.name, inactive: isEntityInactive(it) }))], [itemsQ.data]);
   const typeOptions = useMemo(() => [{ value: '', label: 'All movements' }, ...Object.entries(EVENT_META).map(([k, v]) => ({ value: k, label: v.name + (v.sub ? ` · ${v.sub}` : '') }))], []);
 
   const unitCode = (iid: number) => uomById.get(Number(itemById.get(iid)?.baseUomId))?.code ?? '';

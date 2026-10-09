@@ -688,6 +688,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
       availablePrBranches.map((b: any) => ({
         value: String(b.id),
         label: String(b.name ?? `Branch #${b.id}`),
+        inactive: isEntityInactive(b),
       })),
     [availablePrBranches],
   );
@@ -697,6 +698,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
       (vendorsQ.data ?? []).map((v: any) => ({
         value: String(v.id),
         label: String(v.name ?? `Vendor #${v.id}`),
+        inactive: isEntityInactive(v),
       })),
     [vendorsQ.data],
   );
@@ -706,6 +708,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
       (itemsQ.data ?? []).map((it: any) => ({
         value: String(it.id),
         label: String(it.name ?? it.code ?? `Item #${it.id}`),
+        inactive: isEntityInactive(it),
       })),
     [itemsQ.data],
   );

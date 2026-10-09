@@ -1,3 +1,4 @@
+import { isEntityInactive } from '../../utils/entityStatus';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
@@ -158,6 +159,7 @@ const Deliveries: React.FC = () => {
         { value: '', label: 'All riders' },
         ...(riders ?? []).map((r) => ({
           value: String(r.id),
+          inactive: isEntityInactive(r),
           label:
             (r.rating_count ?? 0) > 0 && r.rating_average != null
               ? `${r.name} (${r.rating_average.toFixed(1)}/5, ${r.rating_count})`

@@ -540,6 +540,7 @@ const Modifiers: React.FC = () => {
         ...(brands ?? []).map((b) => ({
           value: String(b.id),
           label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+          inactive: isEntityInactive(b),
         })),
       ]}
       placeholder="All brands"
@@ -903,7 +904,7 @@ const Modifiers: React.FC = () => {
             >
               <option value="">Select group</option>
               {(modifierGroups ?? []).map((g: ModifierGroupResponse) => (
-                <option key={g.id} value={g.id}>{g.name} {effectiveBrandId != null ? '' : `(${brands?.find((b) => b.id === g.brand_id)?.name ?? ''})`}</option>
+                <option key={g.id} value={g.id}>{labelWithStatus(g.name, g)} {effectiveBrandId != null ? '' : `(${brands?.find((b) => b.id === g.brand_id)?.name ?? ''})`}</option>
               ))}
             </ResponsiveSelect>
           </div>

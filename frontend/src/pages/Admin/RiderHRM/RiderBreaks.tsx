@@ -1,3 +1,4 @@
+import { labelWithStatus } from '../../../utils/entityStatus';
 import React, { useState } from 'react';
 import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { useQuery } from '@tanstack/react-query';
@@ -51,7 +52,7 @@ const RiderBreaks: React.FC = () => {
       <option value="">Select rider</option>
       {(riders ?? []).map((rider) => (
         <option key={rider.id} value={rider.id}>
-          {rider.name}
+          {labelWithStatus(rider.name, rider)}
         </option>
       ))}
     </ResponsiveSelect>

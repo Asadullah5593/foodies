@@ -29,6 +29,7 @@ function useSelectedBranchId(branches: Array<{ id: number; name: string; code?: 
       (branches ?? []).map((b) => ({
         value: String(b.id),
         label: `${b.name}${b.code ? ` (${b.code})` : ''}`,
+        inactive: isEntityInactive(b),
       })),
     [branches],
   );
@@ -591,6 +592,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
       (itemsQ.data ?? []).map((it: any) => ({
         value: String(it.id),
         label: `${it.name}${it.code ? ` (${it.code})` : ''}`,
+        inactive: isEntityInactive(it),
       })),
     [itemsQ.data],
   );
@@ -1009,6 +1011,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
       (branches ?? []).map((b: any) => ({
         value: String(b.id),
         label: `${b.name}${b.code ? ` (${b.code})` : ''}`,
+        inactive: isEntityInactive(b),
       })),
     [branches],
   );
@@ -1096,6 +1099,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
       ...(locationsQ.data ?? []).map((l: any) => ({
         value: String(l.id),
         label: l.name,
+        inactive: isEntityInactive(l),
       })),
     ],
     [locationsQ.data],

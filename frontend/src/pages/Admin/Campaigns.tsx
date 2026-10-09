@@ -91,7 +91,7 @@ const Campaigns: React.FC = () => {
   const categoryOpts = asOpts(categories);
   const brandOpts = asOpts(brands);
   const branchOpts = asOpts(branches);
-  const offerOpts: Opt[] = allOffers.map((o) => ({ value: String(o.id), label: `[${KIND_LABEL[o.offer_kind ?? 'discount'] ?? o.offer_kind}] ${o.name}` }));
+  const offerOpts: Opt[] = allOffers.map((o) => ({ value: String(o.id), label: `[${KIND_LABEL[o.offer_kind ?? 'discount'] ?? o.offer_kind}] ${o.name}`, inactive: isEntityInactive(o) }));
   const destOptionsFor = (t: string): Opt[] =>
     t === 'product' ? productOpts : t === 'deal' ? dealOpts : t === 'category' ? categoryOpts : t === 'brand' ? brandOpts : t === 'branch' ? branchOpts : [];
   const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name, inactive: isEntityInactive(b) }));

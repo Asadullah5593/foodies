@@ -731,6 +731,7 @@ const MenuItems: React.FC = () => {
         ...(brands ?? []).map((b) => ({
           value: String(b.id),
           label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+          inactive: isEntityInactive(b),
         })),
       ]}
       placeholder="Select brand"
@@ -892,7 +893,7 @@ const MenuItems: React.FC = () => {
                 <option value="">Select brand</option>
                 {brands?.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
+                    {labelWithStatus(b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name, b)}
                   </option>
                 ))}
               </ResponsiveSelect>
@@ -1086,7 +1087,7 @@ const MenuItems: React.FC = () => {
                 <option value="">Select brand</option>
                 {brands?.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
+                    {labelWithStatus(b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name, b)}
                   </option>
                 ))}
               </ResponsiveSelect>
@@ -1421,7 +1422,7 @@ const MenuItems: React.FC = () => {
               <option value="">Select brand</option>
               {brands?.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
+                  {labelWithStatus(b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name, b)}
                 </option>
               ))}
             </ResponsiveSelect>

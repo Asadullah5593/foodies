@@ -648,7 +648,7 @@ const BranchUsers: React.FC = () => {
             onChange={(v) => { setMbUserId(v); setMbBranchIds([]); }}
             options={[
               { value: '', label: 'Select user' },
-              ...(allUsers ?? []).map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})` })),
+              ...(allUsers ?? []).map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})`, inactive: isEntityInactive(u) })),
             ]}
             placeholder="Select user"
             searchPlaceholder="Search users..."
