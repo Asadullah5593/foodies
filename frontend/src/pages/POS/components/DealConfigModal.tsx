@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useViewport } from '../../../hooks/useViewport';
 import { MdCheck, MdCheckCircle, MdAdd, MdRemove, MdClose, MdLock } from 'react-icons/md';
 import { formatCurrency } from '../../../utils/currency';
 import { MenuItem } from '../../../types';
@@ -54,6 +55,9 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
   onConfirm,
 }) => {
   const [slotStates, setSlotStates] = useState<Map<number, SlotState>>(new Map());
+  // Below lg the dialog is the whole screen and the summary rail folds into one line above the
+  // total (a 266px rail left 92px for the choices on a phone). The desktop card is untouched.
+  const { isDesktop } = useViewport();
   const [customizeTarget, setCustomizeTarget] = useState<{ slotIndex: number; pickIdx: number } | null>(null);
   const [currentStep, setCurrentStep] = useState(0);
 
@@ -665,7 +669,7 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
               <button
                 type="button"
                 onClick={() => setCustomizeTarget({ slotIndex: slot.slot_index, pickIdx: 0 })}
-                className={`flex-none px-4 py-2 rounded-lg border-[1.5px] bg-white text-sm font-bold transition-colors ${
+                className={`flex-none px-4 py-2 rounded-lg border-[1.5px] bg-white text-sm font-bold transition-colors max-lg:min-h-[44px] ${
                   needsOptions
                     ? 'border-amber-400 text-amber-700 hover:bg-amber-50'
                     : 'border-emerald-300 text-emerald-600 hover:bg-emerald-50'
@@ -707,7 +711,7 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
             </span>
           </div>
         )}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
           {choiceItems.map((item) => {
             const surcharge = slotSurchargeFor(slot, item);
             if (multi) {
@@ -750,7 +754,7 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
             <button
               type="button"
               onClick={() => setCustomizeTarget({ slotIndex: slot.slot_index, pickIdx: 0 })}
-              className="flex-none px-4 py-2 rounded-lg bg-amber-500 text-sm font-bold text-white hover:bg-amber-600 transition-colors"
+              className="flex-none px-4 py-2 rounded-lg bg-amber-500 text-sm font-bold text-white hover:bg-amber-600 transition-colors max-lg:min-h-[44px]"
             >
               Customize
             </button>
@@ -772,10 +776,10 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
               exit={{ opacity: 0 }}
               onClick={handleClose}
             />
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 max-lg:p-0">
               <motion.div
-                className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden"
-                style={{ height: '90vh', maxHeight: '90vh' }}
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden max-lg:max-w-none max-lg:rounded-none"
+                style={isDesktop ? { height: '90vh', maxHeight: '90vh' } : { height: '100dvh', maxHeight: '100dvh' }}
                 initial={{ opacity: 0, scale: 0.96, y: 24 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.96, y: 24 }}
@@ -786,7 +790,7 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
                 <div className="h-1.5 bg-gradient-to-r from-red-500 via-red-600 to-rose-500 flex-none" />
 
                 {/* Header + progress */}
-                <div className="flex-none px-8 pt-6 pb-5 border-b border-gray-100">
+                <div className="flex-none px-8 pt-6 pb-5 border-b border-gray-100 max-lg:px-4 max-lg:pt-4 max-lg:pb-3">
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <span className="inline-block text-[10px] font-extrabold uppercase tracking-[0.15em] text-red-600 bg-red-50 rounded-full px-2.5 py-1">
@@ -800,7 +804,7 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
                     <button
                       type="button"
                       onClick={handleClose}
-                      className="flex-none w-10 h-10 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center transition-colors"
+                      className="flex-none w-10 h-10 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center transition-colors max-lg:h-11 max-lg:w-11"
                       aria-label="Close"
                     >
                       <MdClose className="w-5 h-5" />
@@ -817,7 +821,7 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
                             disabled={!done}
                             onClick={() => goToStep(i)}
                             aria-label={`Go to ${stepLabel(s, i)}`}
-                            className={`w-full h-2.5 rounded-full transition-all ${
+                            className={`w-full h-2.5 rounded-full transition-all max-lg:relative max-lg:before:absolute max-lg:before:inset-x-0 max-lg:before:-inset-y-[17px] max-lg:before:content-[''] ${
                               done
                                 ? 'bg-emerald-400 cursor-pointer hover:bg-emerald-500'
                                 : current
@@ -839,7 +843,7 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
                 </div>
 
                 {/* Step-title band */}
-                <div className="flex-none flex items-center justify-between gap-3 px-8 py-4 bg-gray-50 border-b border-gray-100">
+                <div className="flex-none flex items-center justify-between gap-3 px-8 py-4 bg-gray-50 border-b border-gray-100 max-lg:px-4 max-lg:py-3">
                   <h3 className="text-lg font-bold text-gray-900 truncate min-w-0">
                     {currentSlot ? stepTitle(currentSlot) : ''}
                   </h3>
@@ -847,18 +851,18 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
                 </div>
 
                 {/* Body: choice grid + side rail */}
-                <div className="flex-1 min-h-0 flex">
-                  <div className="flex-1 min-w-0 overflow-y-auto px-6 py-5">{renderStepBody()}</div>
+                <div className="flex-1 min-h-0 flex max-lg:flex-col">
+                  <div className="flex-1 min-w-0 overflow-y-auto px-6 py-5 max-lg:min-h-0 max-lg:px-4 max-lg:py-3">{renderStepBody()}</div>
 
-                  <aside className="w-[266px] flex-none border-l border-gray-100 bg-white flex flex-col">
-                    <div className="flex-none px-5 pt-4 pb-3 border-b border-gray-100">
+                  <aside className="w-[266px] flex-none border-l border-gray-100 bg-white flex flex-col max-lg:w-full max-lg:border-l-0 max-lg:border-t">
+                    <div className="flex-none px-5 pt-4 pb-3 border-b border-gray-100 max-lg:hidden">
                       <div className="text-[10.5px] font-bold uppercase tracking-wide text-gray-400">Your deal</div>
                       <div className="text-base font-bold text-gray-900 mt-1 truncate">{deal.name}</div>
                       <div className="text-[12.5px] text-gray-500">
                         {isBogo ? '2nd pizza ½ price' : `Fixed · ${formatCurrency(deal.price)}`}
                       </div>
                     </div>
-                    <div className="flex-1 min-h-0 overflow-y-auto px-5 py-2">
+                    <div className="flex-1 min-h-0 overflow-y-auto px-5 py-2 max-lg:hidden">
                       {summaryLines.length === 0 ? (
                         <div className="py-3 text-[13px] text-gray-400 leading-relaxed">
                           Items you pick will appear here.
@@ -887,7 +891,14 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
                         ))
                       )}
                     </div>
-                    <div className="flex-none border-t border-gray-100 px-5 py-3.5 bg-gray-50">
+                    <div className="flex-none border-t border-gray-100 px-5 py-3.5 bg-gray-50 max-lg:border-t-0 max-lg:px-4 max-lg:py-2.5">
+                      {!isDesktop && summaryLines.length > 0 && (
+                        <p className="mb-1 truncate text-[12.5px] text-gray-500" data-testid="deal-summary-strip">
+                          {summaryLines
+                            .map((ln) => `${ln.qty}× ${ln.name}${ln.variantName ? ` (${ln.variantName})` : ''}`)
+                            .join(' · ')}
+                        </p>
+                      )}
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="text-[11px] font-bold uppercase tracking-wide text-gray-500">Total</span>
                         <span className="text-[21px] font-black text-gray-900 tabular-nums">{formatCurrency(total)}</span>
@@ -897,12 +908,12 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
                 </div>
 
                 {/* Footer */}
-                <div className="flex-none flex items-center justify-end gap-3 px-8 py-4 bg-gray-50 border-t border-gray-200">
+                <div className="flex-none flex items-center justify-end gap-3 px-8 py-4 bg-gray-50 border-t border-gray-200 max-lg:px-4 max-lg:py-3 max-lg:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
                   {clampedStep > 0 && (
                     <button
                       type="button"
                       onClick={goBack}
-                      className="px-5 py-3 rounded-xl border-2 border-gray-300 bg-white text-[15px] font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                      className="px-5 py-3 rounded-xl border-2 border-gray-300 bg-white text-[15px] font-semibold text-gray-700 hover:bg-gray-50 transition-colors max-lg:min-h-[48px] max-sm:flex-1"
                     >
                       ← Back
                     </button>
@@ -911,7 +922,7 @@ const DealConfigModal: React.FC<DealConfigModalProps> = ({
                     type="button"
                     onClick={goNext}
                     disabled={!primaryEnabled}
-                    className={`px-7 py-3.5 rounded-xl text-[15px] font-bold transition-all ${
+                    className={`px-7 py-3.5 rounded-xl text-[15px] font-bold transition-all max-lg:min-h-[48px] max-sm:flex-1 ${
                       primaryEnabled
                         ? 'bg-red-600 text-white hover:bg-red-700 active:scale-95 shadow-md shadow-red-200'
                         : 'bg-gray-200 text-gray-400 cursor-not-allowed'
@@ -1066,7 +1077,7 @@ const DealChoiceCard: React.FC<DealChoiceCardProps> = ({
                 e.stopPropagation();
                 onCustomize();
               }}
-              className="text-[13px] font-semibold text-red-600 hover:text-red-700"
+              className="text-[13px] font-semibold text-red-600 hover:text-red-700 max-lg:inline-flex max-lg:min-h-[44px] max-lg:items-center max-lg:px-2"
             >
               Customize ›
             </button>
@@ -1079,7 +1090,7 @@ const DealChoiceCard: React.FC<DealChoiceCardProps> = ({
             type="button"
             aria-label="Remove one"
             onClick={stepper.onDec}
-            className="w-8 h-8 flex items-center justify-center text-red-600 hover:bg-red-50 transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-red-600 hover:bg-red-50 transition-colors max-lg:h-11 max-lg:w-11"
           >
             <MdRemove className="w-4 h-4" />
           </button>
@@ -1089,7 +1100,7 @@ const DealChoiceCard: React.FC<DealChoiceCardProps> = ({
             aria-label="Add one"
             onClick={stepper.onInc}
             disabled={!stepper.canInc}
-            className="w-8 h-8 flex items-center justify-center text-red-600 hover:bg-red-50 disabled:text-gray-300 disabled:hover:bg-transparent transition-colors"
+            className="w-8 h-8 flex items-center justify-center text-red-600 hover:bg-red-50 disabled:text-gray-300 disabled:hover:bg-transparent transition-colors max-lg:h-11 max-lg:w-11"
           >
             <MdAdd className="w-4 h-4" />
           </button>

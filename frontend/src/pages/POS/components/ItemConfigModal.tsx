@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { MdAdd, MdRemove, MdCheckCircle } from 'react-icons/md';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useViewport } from '../../../hooks/useViewport';
 import { formatCurrency } from '../../../utils/currency';
 import { MenuItem } from '../../../types';
 import { ItemConfig } from './types';
@@ -63,6 +64,9 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
   hideRunningTotal,
 }) => {
   const [step, setStep] = useState(0);
+  // Below lg the dialog is the whole screen — a 90vh card inside 16px gutters left ~300px for
+  // the options on a phone. The desktop card is untouched.
+  const { isDesktop } = useViewport();
   // Size restriction inside deals: `lockedSizeKey` pins one size (12"-only / 5-piece slot);
   // `allowedSizeKeys` limits the size step to a set (e.g. a BOGO slot offers only 12"/14").
   // If an item in the slot has no matching variant (e.g. a non-size side sharing the slot),
@@ -384,7 +388,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
               return (
                 <div
                   key={mod.id}
-                  className={`flex items-center gap-4 px-5 py-4 rounded-xl border-2 transition-all ${
+                  className={`flex items-center gap-4 px-5 py-4 rounded-xl border-2 transition-all max-lg:gap-3 max-lg:px-4 ${
                     isSelected
                       ? 'border-red-400 bg-red-50 shadow-sm'
                       : atMax && !isSingleSelect
@@ -397,7 +401,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                     type="button"
                     disabled={!isSelected && atMax && !isSingleSelect}
                     onClick={() => onToggleModifier(mod.id)}
-                    className="flex-none focus:outline-none"
+                    className="flex-none focus:outline-none max-lg:relative max-lg:before:absolute max-lg:before:-inset-3 max-lg:before:content-['']"
                     aria-label={isSelected ? `Deselect ${mod.name}` : `Select ${mod.name}`}
                   >
                     {isSingleSelect ? (
@@ -442,7 +446,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onUpdateModifierQuantity!(mod.id, (selected?.quantity || 1) - 1); }}
                         aria-label="Decrease"
-                        className="px-2 py-1.5 text-gray-600 hover:bg-gray-100 transition-colors"
+                        className="px-2 py-1.5 text-gray-600 hover:bg-gray-100 transition-colors max-lg:inline-flex max-lg:min-h-[44px] max-lg:min-w-[44px] max-lg:items-center max-lg:justify-center"
                       >
                         <MdRemove className="h-4 w-4" />
                       </button>
@@ -454,7 +458,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                         onClick={(e) => { e.stopPropagation(); onUpdateModifierQuantity!(mod.id, (selected?.quantity || 1) + 1); }}
                         disabled={atMax}
                         aria-label="Increase"
-                        className="px-2 py-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        className="px-2 py-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors max-lg:inline-flex max-lg:min-h-[44px] max-lg:min-w-[44px] max-lg:items-center max-lg:justify-center"
                       >
                         <MdAdd className="h-4 w-4" />
                       </button>
@@ -513,7 +517,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                         onClick={() => onUpdateAddonQuantity(addon.id, Math.max(1, (selectedAddon?.quantity || 1) - 1))}
                         disabled={(selectedAddon?.quantity || 1) <= 1}
                         aria-label="Decrease quantity"
-                        className="px-2.5 py-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                        className="px-2.5 py-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors max-lg:inline-flex max-lg:min-h-[44px] max-lg:min-w-[44px] max-lg:items-center max-lg:justify-center"
                       >
                         <MdRemove className="h-4 w-4" />
                       </button>
@@ -524,7 +528,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                         type="button"
                         onClick={() => onUpdateAddonQuantity(addon.id, (selectedAddon?.quantity || 1) + 1)}
                         aria-label="Increase quantity"
-                        className="px-2.5 py-1.5 text-gray-600 hover:bg-gray-100 transition-colors"
+                        className="px-2.5 py-1.5 text-gray-600 hover:bg-gray-100 transition-colors max-lg:inline-flex max-lg:min-h-[44px] max-lg:min-w-[44px] max-lg:items-center max-lg:justify-center"
                       >
                         <MdAdd className="h-4 w-4" />
                       </button>
@@ -574,10 +578,10 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
           />
 
           {/* Dialog */}
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 max-lg:p-0">
             <motion.div
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden"
-              style={{ height: '90vh', maxHeight: '90vh' }}
+              className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden max-lg:max-w-none max-lg:rounded-none"
+              style={isDesktop ? { height: '90vh', maxHeight: '90vh' } : { height: '100dvh', maxHeight: '100dvh' }}
               initial={{ opacity: 0, scale: 0.96, y: 24 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: 24 }}
@@ -588,7 +592,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
               <div className="h-1.5 bg-gradient-to-r from-red-500 via-red-600 to-rose-500 flex-none" />
 
               {/* ── Header ── */}
-              <div className="flex-none px-8 pt-6 pb-5 border-b border-gray-100">
+              <div className="flex-none px-8 pt-6 pb-5 border-b border-gray-100 max-lg:px-4 max-lg:pt-4 max-lg:pb-3">
                 {/* Top row: item info + close */}
                 <div className="flex items-start gap-4 mb-5">
                   {/* Item thumbnail */}
@@ -623,7 +627,8 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                   <button
                     type="button"
                     onClick={onClose}
-                    className="flex-none text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors rounded-full p-2 -mr-1 -mt-1"
+                    className="flex-none text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors rounded-full p-2 -mr-1 -mt-1 max-lg:inline-flex max-lg:min-h-[44px] max-lg:min-w-[44px] max-lg:items-center max-lg:justify-center"
+                    aria-label="Close"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -640,7 +645,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                         type="button"
                         disabled={i >= step}
                         aria-label={`Go to ${stepLabel(s)}`}
-                        className={`h-2.5 flex-1 rounded-full transition-all ${
+                        className={`h-2.5 flex-1 rounded-full transition-all max-lg:relative max-lg:before:absolute max-lg:before:inset-x-0 max-lg:before:-inset-y-[17px] max-lg:before:content-[''] ${
                           i < step
                             ? 'bg-emerald-400 cursor-pointer hover:bg-emerald-500'
                             : i === step
@@ -668,7 +673,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
               </div>
 
               {/* ── Step title row ── */}
-              <div className="flex-none px-8 py-5 flex items-center justify-between gap-3 bg-gray-50 border-b border-gray-100">
+              <div className="flex-none px-8 py-5 flex items-center justify-between gap-3 bg-gray-50 border-b border-gray-100 max-lg:px-4 max-lg:py-3">
                 <div className="min-w-0">
                   <h3 className="text-lg font-bold text-gray-900 truncate">
                     {currentStepDef ? stepLabel(currentStepDef) : ''}
@@ -699,18 +704,18 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
               </div>
 
               {/* ── Scrollable body ── */}
-              <div className="flex-1 overflow-y-auto px-8 py-6 min-h-[300px]">
+              <div className="flex-1 overflow-y-auto px-8 py-6 min-h-[300px] max-lg:min-h-0 max-lg:px-4 max-lg:py-4">
                 {renderStepContent()}
               </div>
 
               {/* ── Footer ── */}
-              <div className="flex-none border-t border-gray-200 bg-gray-50 px-8 py-5">
-                <div className="flex items-center gap-4">
+              <div className="flex-none border-t border-gray-200 bg-gray-50 px-8 py-5 max-lg:px-4 max-lg:py-3 max-lg:pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+                <div className="flex items-center gap-4 max-sm:flex-wrap max-sm:gap-3">
                   {/* Running total — hidden inside a deal (the deal price is fixed). */}
                   {hideRunningTotal ? (
-                    <div className="flex-1 min-w-0" />
+                    <div className="flex-1 min-w-0 max-sm:hidden" />
                   ) : (
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-0 max-sm:basis-full">
                       <p className="text-xs text-gray-500 font-medium uppercase tracking-wider leading-none mb-1">
                         Running Total
                       </p>
@@ -724,7 +729,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                   <button
                     type="button"
                     onClick={() => (isFirst ? onClose() : setStep((s) => s - 1))}
-                    className="px-5 py-2.5 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all"
+                    className="px-5 py-2.5 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-xl hover:border-gray-400 hover:bg-gray-50 transition-all max-lg:min-h-[48px] max-sm:flex-1"
                   >
                     {isFirst ? 'Cancel' : '← Back'}
                   </button>
@@ -735,7 +740,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                       type="button"
                       onClick={onConfirm}
                       disabled={anyRequiredIncomplete}
-                      className={`px-7 py-2.5 text-sm font-bold rounded-xl transition-all ${
+                      className={`px-7 py-2.5 text-sm font-bold rounded-xl transition-all max-lg:min-h-[48px] max-sm:flex-1 ${
                         anyRequiredIncomplete
                           ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                           : 'bg-red-600 text-white hover:bg-red-700 active:scale-95 shadow-md hover:shadow-lg shadow-red-200'
@@ -748,7 +753,7 @@ const ItemConfigModal: React.FC<ItemConfigModalProps> = ({
                       type="button"
                       onClick={() => setStep((s) => s + 1)}
                       disabled={!canAdvance}
-                      className={`px-7 py-2.5 text-sm font-bold rounded-xl transition-all ${
+                      className={`px-7 py-2.5 text-sm font-bold rounded-xl transition-all max-lg:min-h-[48px] max-sm:flex-1 ${
                         !canAdvance
                           ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
                           : 'bg-red-600 text-white hover:bg-red-700 active:scale-95 shadow-md hover:shadow-lg shadow-red-200'

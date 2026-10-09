@@ -10,6 +10,7 @@ import { InvoiceVM, InvoiceLayout } from '../invoices/types';
 import Modal from './Modal';
 import Loader from './Loader';
 import Button from './Button';
+import { useViewport } from '../hooks/useViewport';
 
 export type MainInvoiceLine = {
   name_snapshot?: string;
@@ -361,8 +362,12 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
       (singleInvoice as { auto_print_invoices?: boolean } | undefined)?.auto_print_invoices,
   );
   const autoPrintedFor = React.useRef<string | null>(null);
+  // Only the desktop till auto-prints: phone and tablet browsers block a print window that no tap
+  // opened, so there it would only raise the "allow pop-ups" alert twice. The Print and Print KOT
+  // buttons below work everywhere.
+  const { isDesktop } = useViewport();
   React.useEffect(() => {
-    if (!isOpen || !autoPrintOnOpen || !autoPrintEnabled || !invoiceData) return;
+    if (!isOpen || !autoPrintOnOpen || !autoPrintEnabled || !invoiceData || !isDesktop) return;
     const key = invoiceData.order_group_id;
     if (autoPrintedFor.current === key) return;
     autoPrintedFor.current = key;
@@ -371,7 +376,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
     handlePrint('auto');
     void handlePrintKot('auto');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, autoPrintOnOpen, autoPrintEnabled, invoiceData]);
+  }, [isOpen, autoPrintOnOpen, autoPrintEnabled, invoiceData, isDesktop]);
 
   return (
     <Modal

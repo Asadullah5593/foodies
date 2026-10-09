@@ -174,7 +174,7 @@ const CartPanel: React.FC<CartPanelProps> = ({
                           size="small"
                           variant="danger"
                           onClick={() => handleRemove(index)}
-                          className="min-w-[2rem]"
+                          className="min-w-[2rem] max-lg:min-w-[44px]"
                         >
                           ×
                         </Button>
@@ -334,7 +334,7 @@ const CartPanel: React.FC<CartPanelProps> = ({
                           aria-label="Decrease quantity"
                           disabled={item.quantity <= 1}
                           onClick={() => onUpdateQuantity(index, Math.max(1, item.quantity - 1))}
-                          className="px-3 py-1.5 text-lg leading-none text-foodies-textPrimary dark:text-slate-100 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="max-lg:min-h-[44px] max-lg:min-w-[44px] px-3 py-1.5 text-lg leading-none text-foodies-textPrimary dark:text-slate-100 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           −
                         </button>
@@ -345,7 +345,7 @@ const CartPanel: React.FC<CartPanelProps> = ({
                           type="button"
                           aria-label="Increase quantity"
                           onClick={() => onUpdateQuantity(index, item.quantity + 1)}
-                          className="px-3 py-1.5 text-lg leading-none text-foodies-textPrimary dark:text-slate-100 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700"
+                          className="max-lg:min-h-[44px] max-lg:min-w-[44px] px-3 py-1.5 text-lg leading-none text-foodies-textPrimary dark:text-slate-100 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700"
                         >
                           +
                         </button>

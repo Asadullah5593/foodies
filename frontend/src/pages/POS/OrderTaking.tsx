@@ -1802,7 +1802,7 @@ const OrderTaking: React.FC = () => {
 
   const checkoutSectionContent = (
       <>
-        <div className="flex-shrink-0 px-6 py-4 bg-foodies-surface dark:bg-slate-800 border-b border-foodies-border dark:border-slate-700">
+        <div className="flex-shrink-0 px-6 py-4 bg-foodies-surface dark:bg-slate-800 border-b border-foodies-border dark:border-slate-700 max-sm:px-4 max-sm:py-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <h2 className="text-xl font-bold text-foodies-textPrimary dark:text-slate-100 tracking-tight">Cart</h2>
@@ -1840,7 +1840,7 @@ const OrderTaking: React.FC = () => {
             </p>
           )}
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto p-6">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 max-sm:p-4">
           <CartPanel
             items={selectedItems}
             onUpdateQuantity={updateQuantity}
@@ -1851,7 +1851,7 @@ const OrderTaking: React.FC = () => {
             lineBreakdown={quote?.line_breakdown ?? undefined}
           />
         </div>
-        <div className="flex-shrink-0 p-6 border-t border-foodies-border dark:border-slate-700 bg-foodies-surface dark:bg-slate-800">
+        <div className="flex-shrink-0 p-6 border-t border-foodies-border dark:border-slate-700 bg-foodies-surface dark:bg-slate-800 max-sm:px-4 max-sm:pt-4 max-lg:pb-[max(1.5rem,env(safe-area-inset-bottom))]">
           {renderTenderPreview()}
           {/* Loyalty is redeemed against the ORDER, not a line, so the engine
               never attributes it in line_breakdown the way it does promos,
@@ -1879,7 +1879,7 @@ const OrderTaking: React.FC = () => {
           >
             Checkout
           </Button>
-          <p className="mt-2 text-xs text-foodies-textSecondary">
+          <p className="mt-2 text-xs text-foodies-textSecondary max-sm:hidden">
             Checkout to select customer, apply discount/loyalty, and take payment.
           </p>
         </div>
@@ -1960,7 +1960,7 @@ const OrderTaking: React.FC = () => {
               onCategoryChange={setSelectedCategoryId}
               brandChosen={brands.length > 1 ? selectedBrandId != null : true}
             />
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 max-sm:pb-24">
               {/* <RiderTrackingTestPanel /> */}
               <MenuGrid
                 menu={paginatedMenu}
@@ -2045,7 +2045,7 @@ const OrderTaking: React.FC = () => {
         title="Checkout"
         size="large"
       >
-        <div className="max-h-[75vh] overflow-y-auto space-y-6 p-1">
+        <div className="max-h-[75vh] overflow-y-auto space-y-6 p-1 max-sm:max-h-none max-sm:overflow-visible max-sm:space-y-4">
           <div className="rounded-xl border border-foodies-border bg-foodies-surface p-4">
             <div className="flex items-center justify-between text-sm text-foodies-textSecondary">
               <span>Items</span>
@@ -2081,7 +2081,7 @@ const OrderTaking: React.FC = () => {
                           aria-checked={selected}
                           disabled={isSubmittingOrder}
                           onClick={() => handleOrderTypeChange(opt.value)}
-                          className={`flex-1 rounded-md px-3 py-2 text-sm transition-colors disabled:opacity-50 ${
+                          className={`flex-1 rounded-md px-3 py-2 text-sm transition-colors disabled:opacity-50 max-lg:min-h-[44px] ${
                             selected
                               ? 'bg-foodies-primary/10 font-bold text-foodies-primary shadow-sm'
                               : 'font-semibold text-foodies-textSecondary hover:text-foodies-textPrimary'

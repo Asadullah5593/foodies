@@ -204,7 +204,7 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
               key={mode}
               type="button"
               onClick={() => onPaymentModeChange(mode)}
-              className={`px-4 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors ${
+              className={`px-4 py-2.5 rounded-xl text-sm font-semibold border-2 transition-colors max-lg:min-h-[44px] max-sm:px-3 ${
                 paymentMode === mode
                   ? 'border-foodies-primary bg-red-50 dark:bg-red-900/40 text-red-800 dark:text-red-200'
                   : 'border-foodies-border dark:border-slate-600 bg-foodies-surfaceMuted dark:bg-slate-700 text-foodies-textPrimary dark:text-slate-200 hover:border-foodies-primary hover:bg-red-50/50 dark:hover:bg-red-900/30'
@@ -232,7 +232,7 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
               value={cashReceived}
               onChange={(e) => setCashReceived(e.target.value)}
               placeholder="Amount handed over"
-              className="w-full px-3 py-2 border-2 border-foodies-border dark:border-slate-600 rounded-xl bg-foodies-surface dark:bg-slate-700 text-foodies-textPrimary dark:text-slate-100 text-sm focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
+              className="max-lg:min-h-[44px] w-full px-3 py-2 border-2 border-foodies-border dark:border-slate-600 rounded-xl bg-foodies-surface dark:bg-slate-700 text-foodies-textPrimary dark:text-slate-100 text-sm focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
             />
             {change !== null && (
               <div
@@ -256,7 +256,7 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
             <select
               value={bankCardId ?? ''}
               onChange={(e) => onBankCardChange?.(e.target.value ? Number(e.target.value) : null)}
-              className="w-full px-3 py-2 border-2 border-foodies-border dark:border-slate-600 rounded-xl text-sm bg-foodies-surface dark:bg-slate-700 text-foodies-textPrimary dark:text-slate-200"
+              className="max-lg:min-h-[44px] w-full px-3 py-2 border-2 border-foodies-border dark:border-slate-600 rounded-xl text-sm bg-foodies-surface dark:bg-slate-700 text-foodies-textPrimary dark:text-slate-200"
             >
               <option value="">No specific card</option>
               {bankCards.map((c) => (
@@ -306,7 +306,7 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
                 value={paymentCashAmount}
                 onChange={(e) => onPaymentCashAmountChange(clampSplit(e.target.value, paymentCardAmount))}
                 placeholder="0"
-                className="w-full px-3 py-2 border border-foodies-border dark:border-slate-600 rounded-xl bg-foodies-surface dark:bg-slate-800 text-foodies-textPrimary dark:text-slate-100 text-sm focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
+                className="max-lg:min-h-[44px] w-full px-3 py-2 border border-foodies-border dark:border-slate-600 rounded-xl bg-foodies-surface dark:bg-slate-800 text-foodies-textPrimary dark:text-slate-100 text-sm focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
               />
             </div>
             <div>
@@ -319,7 +319,7 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
                 value={paymentCardAmount}
                 onChange={(e) => onPaymentCardAmountChange(clampSplit(e.target.value, paymentCashAmount))}
                 placeholder="0"
-                className="w-full px-3 py-2 border border-foodies-border dark:border-slate-600 rounded-xl bg-foodies-surface dark:bg-slate-800 text-foodies-textPrimary dark:text-slate-100 text-sm focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
+                className="max-lg:min-h-[44px] w-full px-3 py-2 border border-foodies-border dark:border-slate-600 rounded-xl bg-foodies-surface dark:bg-slate-800 text-foodies-textPrimary dark:text-slate-100 text-sm focus:ring-2 focus:ring-foodies-primary/50 focus:border-foodies-primary"
               />
             </div>
             <p className={`col-span-2 text-xs ${splitMismatch ? 'text-red-600 dark:text-red-400 font-medium' : 'text-foodies-textSecondary dark:text-slate-400'}`}>

@@ -158,3 +158,11 @@ html.dark .swal2-popup .swal2-content {
     font-size: 16px;
   }
 }
+
+/* Below lg (same query as Tailwind's max-lg): a row that scrolls sideways with its bar hidden —
+   the POS brand and category strips. The 8px bar above would eat a line of the row, and a cut-off
+   last pill already says there is more. No rule at ≥1024px, where the rows wrap instead. */
+@media not all and (min-width: 1024px) {
+  .scroll-row-bare { scrollbar-width: none; }
+  .scroll-row-bare::-webkit-scrollbar { display: none; }
+}
