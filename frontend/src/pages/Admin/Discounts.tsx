@@ -305,7 +305,7 @@ const Discounts: React.FC = () => {
   const categoryOptions: SearchableMultiSelectOption[] = (categories ?? []).map(
     (c) => {
       const brandName = c.brandId != null ? brandNameById.get(c.brandId) : undefined;
-      return { id: c.id, name: brandName ? `${c.name} (${brandName})` : c.name };
+      return { id: c.id, name: brandName ? `${c.name} (${brandName})` : c.name, inactive: isEntityInactive(c) };
     },
   );
 

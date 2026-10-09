@@ -92,6 +92,7 @@ const Coupons: React.FC = () => {
   const custOptions: SearchableMultiSelectOption[] = custList.map((c) => ({
     id: c.id,
     name: `${c.name || 'Customer'}${c.phone ? ` · ${c.phone}` : ''}`,
+    inactive: isEntityInactive(c),
   }));
   const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name, inactive: isEntityInactive(b) }));
   const brandNameById = useMemo(

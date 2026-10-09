@@ -261,17 +261,26 @@ const SearchableMultiSelect: React.FC<SearchableMultiSelectProps> = ({
             role="option"
             aria-selected={selectedSet.has(opt.id)}
             onClick={() => toggle(opt.id)}
-            className={`px-4 py-2.5 text-sm cursor-pointer flex items-center gap-2 ${touch ? 'min-h-[44px]' : ''} ${
+            className={`px-4 py-2.5 text-sm cursor-pointer flex items-center ${touch ? 'min-h-[44px] gap-3' : 'gap-2'} ${
               selectedSet.has(opt.id)
-                ? 'bg-blue-50 text-blue-800'
+                ? touch
+                  ? 'bg-[#FFF7F7] text-[#20242C]'
+                  : 'bg-blue-50 text-blue-800'
                 : 'hover:bg-gray-50 text-gray-800'
             }`}
           >
+            {/* Below lg the box is the app's checkbox design (index.css draws the native ones the same way). */}
             <span
-              className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+              className={`flex items-center justify-center shrink-0 ${
+                touch ? 'h-5 w-5 rounded-[6px] border-[1.5px]' : 'w-4 h-4 rounded border'
+              } ${
                 selectedSet.has(opt.id)
-                  ? 'bg-blue-600 border-blue-600'
-                  : 'border-gray-300'
+                  ? touch
+                    ? 'bg-[#DC2A2A] border-[#DC2A2A]'
+                    : 'bg-blue-600 border-blue-600'
+                  : touch
+                    ? 'border-[#CBD0D8] bg-white'
+                    : 'border-gray-300'
               }`}
             >
               {selectedSet.has(opt.id) && (

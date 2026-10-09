@@ -162,6 +162,42 @@ html.dark .swal2-popup .swal2-content {
 /* Below lg (same query as Tailwind's max-lg): a row that scrolls sideways with its bar hidden —
    the POS brand and category strips. The 8px bar above would eat a line of the row, and a cut-off
    last pill already says there is more. No rule at ≥1024px, where the rows wrap instead. */
+/* Below lg every checkbox is the app's own: a 20px box with 6px corners and a 1.5px #CBD0D8 border,
+   filled #DC2A2A with a white tick when checked (a dash when indeterminate), 45% when disabled. The
+   native control is kept (focus, keyboard, form posting) and only drawn differently; hidden ones
+   (.sr-only / .hidden) stay hidden. Desktop keeps the browser's checkbox. */
+@media not all and (min-width: 1024px) {
+  input[type='checkbox']:not(.sr-only):not(.hidden) {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    flex: none;
+    margin: 0;
+    border-radius: 6px;
+    border: 1.5px solid #CBD0D8;
+    background: #fff center / 12px 12px no-repeat;
+    vertical-align: middle;
+    cursor: pointer;
+    transition: background-color 0.12s, border-color 0.12s;
+  }
+  input[type='checkbox']:not(.sr-only):not(.hidden):checked {
+    border-color: #DC2A2A;
+    background-color: #DC2A2A;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3,8.5 6.5,12 13,4.5'/%3E%3C/svg%3E");
+  }
+  input[type='checkbox']:not(.sr-only):not(.hidden):indeterminate {
+    border-color: #DC2A2A;
+    background-color: #DC2A2A;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2.8' stroke-linecap='round'%3E%3Cline x1='4' y1='8' x2='12' y2='8'/%3E%3C/svg%3E");
+  }
+  input[type='checkbox']:not(.sr-only):not(.hidden):disabled { opacity: 0.45; cursor: not-allowed; }
+  input[type='checkbox']:not(.sr-only):not(.hidden):focus-visible { outline: 2px solid rgba(220, 42, 42, 0.35); outline-offset: 2px; }
+  .dark input[type='checkbox']:not(.sr-only):not(.hidden) { border-color: #475569; background-color: #1e293b; }
+  .dark input[type='checkbox']:not(.sr-only):not(.hidden):checked,
+  .dark input[type='checkbox']:not(.sr-only):not(.hidden):indeterminate { border-color: #DC2A2A; background-color: #DC2A2A; }
+}
+
 /* Below lg every native select is a searchable one (ResponsiveSelect); inside the filter sheet
    its trigger button takes the full width, as the native select did. */
 @media not all and (min-width: 1024px) {
