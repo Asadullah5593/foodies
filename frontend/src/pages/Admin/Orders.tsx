@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
@@ -1152,47 +1153,47 @@ const Orders: React.FC = () => {
     </div>
   );
   const branchSelect = canFilterBranch && (
-    <select value={branchId} onChange={(e) => setFilter('branch_id', e.target.value)} className={selectCls} aria-label="Branch">
+    <ResponsiveSelect value={branchId} onChange={(e) => setFilter('branch_id', e.target.value)} className={selectCls} aria-label="Branch">
       <option value="">All branches</option>
       {(branches ?? []).map((b) => <option key={b.id} value={String(b.id)}>{labelWithStatus(b.name, b)}</option>)}
-    </select>
+    </ResponsiveSelect>
   );
   const brandSelect = canFilterBrand && (
-    <select value={brandId} onChange={(e) => setFilter('brand_id', e.target.value)} className={selectCls} aria-label="Brand">
+    <ResponsiveSelect value={brandId} onChange={(e) => setFilter('brand_id', e.target.value)} className={selectCls} aria-label="Brand">
       <option value="">All brands</option>
       {(brands ?? []).map((b) => <option key={b.id} value={String(b.id)}>{labelWithStatus(b.name, b)}</option>)}
-    </select>
+    </ResponsiveSelect>
   );
   const typeSelect = canFilterOrderType && (
-    <select value={orderType} onChange={(e) => setFilter('order_type', e.target.value)} className={selectCls} aria-label="Order type">
+    <ResponsiveSelect value={orderType} onChange={(e) => setFilter('order_type', e.target.value)} className={selectCls} aria-label="Order type">
       <option value="">All types</option>
       <option value="delivery">Delivery</option>
       <option value="dine_in">Dine in</option>
       <option value="takeaway">Takeaway</option>
-    </select>
+    </ResponsiveSelect>
   );
   const sourceSelect = canFilterSource && !ownSourceOnly && (
-    <select value={source} onChange={(e) => setFilter('source', e.target.value)} className={selectCls} aria-label="Source">
+    <ResponsiveSelect value={source} onChange={(e) => setFilter('source', e.target.value)} className={selectCls} aria-label="Source">
       <option value="">All sources</option>
       {ORDER_SOURCES.map((s) => <option key={s} value={s}>{ORDER_SOURCE_LABEL[s]}</option>)}
-    </select>
+    </ResponsiveSelect>
   );
   const paymentSelect = canFilterPayment && (
-    <select value={paymentMethod} onChange={(e) => setFilter('payment_method', e.target.value)} className={selectCls} aria-label="Payment type">
+    <ResponsiveSelect value={paymentMethod} onChange={(e) => setFilter('payment_method', e.target.value)} className={selectCls} aria-label="Payment type">
       <option value="">All payments</option>
       <option value="cash">Cash</option>
       <option value="card">Card</option>
       <option value="online_transfer">Online transfer</option>
       <option value="cod">COD</option>
-    </select>
+    </ResponsiveSelect>
   );
   const discountSelect = canFilterDiscount && (
-    <select value={discount} onChange={(e) => setFilter('discount', e.target.value)} className={selectCls} aria-label="Discount">
+    <ResponsiveSelect value={discount} onChange={(e) => setFilter('discount', e.target.value)} className={selectCls} aria-label="Discount">
       <option value="">All discounts</option>
       <option value="any">Discounted only</option>
       <option value="none">Full price only</option>
       {DISCOUNT_KINDS.map((k) => <option key={k.filter} value={k.filter}>{k.long}</option>)}
-    </select>
+    </ResponsiveSelect>
   );
   const dateFromInput = <input type="date" min={minDate} value={dateFrom} onChange={(e) => setFilter('date_from', e.target.value)} className={selectCls} aria-label="Date from" />;
   const dateToInput = <input type="date" min={minDate} value={dateTo} onChange={(e) => setFilter('date_to', e.target.value)} className={selectCls} aria-label="Date to" />;

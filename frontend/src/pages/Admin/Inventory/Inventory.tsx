@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
@@ -1893,7 +1894,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
               </label>
               <label className="min-w-[200px]">
                 <div className="text-xs font-medium text-slate-600 mb-1">Brand bucket</div>
-                <select
+                <ResponsiveSelect
                   className="w-full border rounded-lg p-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700"
                   value={onHandBrandFilter}
                   onChange={(e) => setOnHandBrandFilter(e.target.value)}
@@ -1901,7 +1902,7 @@ const Inventory: React.FC<{ initialTab?: InventoryTabKey; showTabs?: boolean }> 
                   <option value="">All brands (combined)</option>
                   <option value="pool">Branch pool (shared)</option>
                   {(brands ?? []).map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>)}
-                </select>
+                </ResponsiveSelect>
               </label>
             </div>
           )}

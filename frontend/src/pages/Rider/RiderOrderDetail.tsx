@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { MdOutlineLocationOn } from 'react-icons/md';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -281,7 +282,7 @@ const RiderOrderDetail: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">
                 New status
               </label>
-              <select
+              <ResponsiveSelect
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -292,7 +293,7 @@ const RiderOrderDetail: React.FC = () => {
                     {opt.label}
                   </option>
                 ))}
-              </select>
+              </ResponsiveSelect>
               {reasonField}
             </div>
             {statusActions}

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -576,13 +577,13 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
           />
         )}
         {fld.kind === 'select' && (
-          <select className={inputCls} value={fld.value} onChange={(e) => fld.onChange(e.target.value)}>
+          <ResponsiveSelect className={inputCls} value={fld.value} onChange={(e) => fld.onChange(e.target.value)}>
             {fld.options.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}
               </option>
             ))}
-          </select>
+          </ResponsiveSelect>
         )}
         {fld.kind === 'textarea' && (
           <textarea

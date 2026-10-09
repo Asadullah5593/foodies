@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { labelWithStatus } from '../../../utils/entityStatus';
 import { useQuery } from '@tanstack/react-query';
 import { LuSearch, LuPackage } from 'react-icons/lu';
@@ -73,7 +74,7 @@ const BrandStock: React.FC = () => {
           </p>
         </div>
         {(brandsQ.data ?? []).length > 1 && (
-          <select
+          <ResponsiveSelect
             className={`${field} w-auto`}
             value={activeBrandId ?? ''}
             onChange={(e) => setBrandId(Number(e.target.value))}
@@ -83,7 +84,7 @@ const BrandStock: React.FC = () => {
                 {labelWithStatus(b.name, b)}
               </option>
             ))}
-          </select>
+          </ResponsiveSelect>
         )}
       </div>
 

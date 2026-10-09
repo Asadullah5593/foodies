@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { MdCreditCard, MdEdit, MdDelete, MdAddCard, MdInfoOutline } from 'react-icons/md';
@@ -387,10 +388,10 @@ const BankCards: React.FC = () => {
             <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
               <div>
                 <label className={offerLabel}>Type</label>
-                <select value={form.discount_type} onChange={(e) => setForm({ ...form, discount_type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
+                <ResponsiveSelect value={form.discount_type} onChange={(e) => setForm({ ...form, discount_type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
                   <option value="percentage">Percentage</option>
                   <option value="flat">Flat Amount</option>
-                </select>
+                </ResponsiveSelect>
               </div>
               <div>
                 <label className={offerLabel}>Value</label>

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { useQuery } from '@tanstack/react-query';
 import Card from '../../../components/Card';
 import FilterBar, { type FilterChip } from '../../../components/FilterBar';
@@ -41,7 +42,7 @@ const RiderBreaks: React.FC = () => {
   // Each control once: desktop shows the grid, phones and tablets the rider picker
   // beside a Filters button (dates in the sheet). Only one renders.
   const riderSelect = (
-    <select
+    <ResponsiveSelect
       aria-label="Rider"
       value={filters.rider_user_id}
       onChange={(e) => setFilters((prev) => ({ ...prev, rider_user_id: e.target.value }))}
@@ -53,7 +54,7 @@ const RiderBreaks: React.FC = () => {
           {rider.name}
         </option>
       ))}
-    </select>
+    </ResponsiveSelect>
   );
   const fromInput = (
     <input

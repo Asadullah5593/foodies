@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -882,7 +883,7 @@ const MenuItems: React.FC = () => {
           >
             <div className="mb-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
-              <select
+              <ResponsiveSelect
                 value={categoryFormData.brand_id}
                 onChange={(e) => setCategoryFormData({ ...categoryFormData, brand_id: e.target.value })}
                 required
@@ -894,7 +895,7 @@ const MenuItems: React.FC = () => {
                     {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
                   </option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </div>
             <div className="grid grid-cols-3 max-sm:grid-cols-1 gap-2 mb-2">
               <input
@@ -1076,7 +1077,7 @@ const MenuItems: React.FC = () => {
           >
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
-              <select
+              <ResponsiveSelect
                 value={editFormData.brand_id}
                 onChange={(e) => setEditFormData((f) => ({ ...f, brand_id: e.target.value, category_id: '' }))}
                 required
@@ -1088,11 +1089,11 @@ const MenuItems: React.FC = () => {
                     {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
                   </option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
-              <select
+              <ResponsiveSelect
                 value={editFormData.category_id}
                 onChange={(e) => setEditFormData((f) => ({ ...f, category_id: e.target.value }))}
                 required
@@ -1102,7 +1103,7 @@ const MenuItems: React.FC = () => {
                 {(categoriesForEdit ?? []).map((c: { id: number; name: string }) => (
                   <option key={c.id} value={c.id}>{labelWithStatus(c.name, c)}</option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </div>
             <SortOrderField
               label="Sort order (position in its category)"
@@ -1249,14 +1250,14 @@ const MenuItems: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select
+                <ResponsiveSelect
                   value={editFormData.is_active ? 'active' : 'inactive'}
                   onChange={(e) => setEditFormData((f) => ({ ...f, is_active: e.target.value === 'active' }))}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
-                </select>
+                </ResponsiveSelect>
               </div>
             </div>
             <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
@@ -1411,7 +1412,7 @@ const MenuItems: React.FC = () => {
         }} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
-            <select
+            <ResponsiveSelect
               value={formData.brand_id}
               onChange={(e) => setFormData({ ...formData, brand_id: e.target.value, category_id: '' })}
               required
@@ -1423,7 +1424,7 @@ const MenuItems: React.FC = () => {
                   {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           <div>
             <div className="flex justify-between items-center mb-1">
@@ -1437,7 +1438,7 @@ const MenuItems: React.FC = () => {
                 + New Category
               </Button>}
             </div>
-            <select
+            <ResponsiveSelect
               value={formData.category_id}
               onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
               required
@@ -1454,7 +1455,7 @@ const MenuItems: React.FC = () => {
               {(categoriesForForm ?? []).map((category: { id: number; name: string }) => (
                 <option key={category.id} value={category.id}>{labelWithStatus(category.name, category)}</option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
 
           <SortOrderField
@@ -1609,14 +1610,14 @@ const MenuItems: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Status:</label>
-              <select
+              <ResponsiveSelect
                 value={formData.is_active ? 'active' : 'inactive'}
                 onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'active' })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
-              </select>
+              </ResponsiveSelect>
             </div>
           </div>
 

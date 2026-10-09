@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { QRCodeSVG } from 'qrcode.react';
 import { toast } from 'react-hot-toast';
@@ -214,9 +215,9 @@ const Coupons: React.FC = () => {
           <div className="mb-6 grid grid-cols-3 max-sm:grid-cols-1 gap-4">
             <div>
               <label className={offerLabel}>Type</label>
-              <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
+              <ResponsiveSelect value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
                 <option value="flat">Flat (Rs)</option><option value="percentage">Percentage</option>
-              </select>
+              </ResponsiveSelect>
             </div>
             <div>
               <label className={offerLabel}>Value</label>

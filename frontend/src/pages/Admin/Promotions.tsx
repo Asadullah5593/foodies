@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -347,7 +348,7 @@ const Promotions: React.FC = () => {
             <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Discount Type *</label>
-                <select
+                <ResponsiveSelect
                   value={formData.discount_type}
                   onChange={(e) => setFormData({ ...formData, discount_type: e.target.value as 'flat' | 'percentage' })}
                   required
@@ -356,7 +357,7 @@ const Promotions: React.FC = () => {
                 >
                   <option value="flat">Flat amount</option>
                   <option value="percentage">Percentage</option>
-                </select>
+                </ResponsiveSelect>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Value *</label>
@@ -379,7 +380,7 @@ const Promotions: React.FC = () => {
           {formData.promotion_type === 'free_item' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Free Menu Item *</label>
-              <select
+              <ResponsiveSelect
                 value={formData.free_menu_item_id}
                 onChange={(e) => setFormData({ ...formData, free_menu_item_id: e.target.value })}
                 required={!editingPromotion}
@@ -390,7 +391,7 @@ const Promotions: React.FC = () => {
                 {(menuItems ?? []).map((item) => (
                   <option key={item.id} value={item.id}>{labelWithStatus(item.name, item)}</option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </div>
           )}
 

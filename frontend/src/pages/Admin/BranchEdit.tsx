@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -495,7 +496,7 @@ const BranchEdit: React.FC = () => {
             </div>
             <div>
               <label className={labelClass}>Timezone</label>
-              <select
+              <ResponsiveSelect
                 value={formData.timezone}
                 onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
                 className={inputClass}
@@ -503,7 +504,7 @@ const BranchEdit: React.FC = () => {
                 {(TIMEZONE_OPTIONS.includes(formData.timezone) ? TIMEZONE_OPTIONS : [formData.timezone, ...TIMEZONE_OPTIONS]).map((tz) => (
                   <option key={tz} value={tz}>{tz}</option>
                 ))}
-              </select>
+              </ResponsiveSelect>
               <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                 The branch's local time. Time-restricted items &amp; deals (e.g. lunch offers) go live by this clock.
               </p>
@@ -642,14 +643,14 @@ const BranchEdit: React.FC = () => {
               </div>
               <div>
                 <label className={labelClass}>Environment</label>
-                <select
+                <ResponsiveSelect
                   value={formData.fbr_environment}
                   onChange={(e) => setFormData({ ...formData, fbr_environment: e.target.value })}
                   className={inputClass}
                 >
                   <option value="sandbox">Sandbox (testing)</option>
                   <option value="live">Live (production)</option>
-                </select>
+                </ResponsiveSelect>
               </div>
             </div>
             <div>
@@ -750,22 +751,22 @@ const BranchEdit: React.FC = () => {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 mb-3">
-                <select
+                <ResponsiveSelect
                   value={menuItemFilterBrand === '' ? '' : String(menuItemFilterBrand)}
                   onChange={(e) => { setMenuItemFilterBrand(e.target.value === '' ? '' : parseInt(e.target.value, 10)); setMenuItemFilterCategory(''); }}
                   className="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-red-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
                 >
                   <option value="">All brands</option>
                   {(brands as Brand[])?.filter((b) => formData.brand_ids.includes(b.id)).map((b) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>) ?? []}
-                </select>
-                <select
+                </ResponsiveSelect>
+                <ResponsiveSelect
                   value={menuItemFilterCategory === '' ? '' : String(menuItemFilterCategory)}
                   onChange={(e) => setMenuItemFilterCategory(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
                   className="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-red-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
                 >
                   <option value="">All categories</option>
                   {menuItemCategoriesForFilter.map((c) => <option key={c.id} value={c.id}>{labelWithStatus(c.name, c)}</option>)}
-                </select>
+                </ResponsiveSelect>
                 <div className="relative">
                   <input
                     type="search"

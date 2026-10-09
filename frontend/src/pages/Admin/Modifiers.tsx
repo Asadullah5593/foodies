@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -678,7 +679,7 @@ const Modifiers: React.FC = () => {
         >
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
-            <select
+            <ResponsiveSelect
               value={groupFormData.brand_id}
               onChange={(e) => setGroupFormData({ ...groupFormData, brand_id: e.target.value })}
               required
@@ -688,7 +689,7 @@ const Modifiers: React.FC = () => {
               {brands?.map((b) => (
                 <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Group name *</label>
@@ -894,7 +895,7 @@ const Modifiers: React.FC = () => {
         >
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Modifier group *</label>
-            <select
+            <ResponsiveSelect
               value={modifierFormData.modifier_group_id}
               onChange={(e) => setModifierFormData({ ...modifierFormData, modifier_group_id: e.target.value })}
               required
@@ -904,7 +905,7 @@ const Modifiers: React.FC = () => {
               {(modifierGroups ?? []).map((g: ModifierGroupResponse) => (
                 <option key={g.id} value={g.id}>{g.name} {effectiveBrandId != null ? '' : `(${brands?.find((b) => b.id === g.brand_id)?.name ?? ''})`}</option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>

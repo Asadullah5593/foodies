@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { activityLogService } from '../../services/api/activityLogService';
 import { useHasPermission } from '../../hooks/useHasPermission';
@@ -180,7 +181,7 @@ const ActivityLogSettingsPanel: React.FC = () => {
                 >
                   What to capture
                 </label>
-                <select
+                <ResponsiveSelect
                   id="al-capture"
                   aria-label="Capture level"
                   value={current.capture_level}
@@ -194,7 +195,7 @@ const ActivityLogSettingsPanel: React.FC = () => {
                       {l.label}
                     </option>
                   ))}
-                </select>
+                </ResponsiveSelect>
                 <p className="mt-1 text-[12px] text-[#8A92A0]">
                   {CAPTURE_LEVELS.find((l) => l.value === current.capture_level)?.hint}
                 </p>
@@ -208,7 +209,7 @@ const ActivityLogSettingsPanel: React.FC = () => {
                   >
                     Customer contacts
                   </label>
-                  <select
+                  <ResponsiveSelect
                     id="al-pii"
                     aria-label="PII mode"
                     value={current.pii_mode}
@@ -217,7 +218,7 @@ const ActivityLogSettingsPanel: React.FC = () => {
                   >
                     <option value="mask">Masked</option>
                     <option value="full">Stored in full</option>
-                  </select>
+                  </ResponsiveSelect>
                 </div>
                 <div>
                   <label

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -709,7 +710,7 @@ const Shifts: React.FC = () => {
     </div>
   );
   const shiftBranchSelect = (
-    <select
+    <ResponsiveSelect
       aria-label="Branch"
       value={branchFilter}
       onChange={(e) => setBranchFilter(e.target.value)}
@@ -721,7 +722,7 @@ const Shifts: React.FC = () => {
           {labelWithStatus(b.name, b)}
         </option>
       ))}
-    </select>
+    </ResponsiveSelect>
   );
   const shiftStatusTabs = (
     <div className="flex gap-[7px]">

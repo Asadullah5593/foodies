@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
@@ -382,7 +383,7 @@ const Categories: React.FC = () => {
           {!editingCategory && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
-              <select
+              <ResponsiveSelect
                 value={formData.brand_id}
                 onChange={(e) => setFormData({ ...formData, brand_id: e.target.value })}
                 required
@@ -392,7 +393,7 @@ const Categories: React.FC = () => {
                 {brands?.map((b) => (
                   <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </div>
           )}
           {editingCategory && (

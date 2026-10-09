@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
@@ -935,7 +936,7 @@ function SlotEditor({ slot, onChange, onRemove, categories, menuItems }: SlotEdi
   return (
     <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50/50">
       <div className="flex justify-between items-center">
-        <select
+        <ResponsiveSelect
           value={slot.type}
           onChange={(e) => onChange({ type: e.target.value as DealSlotType })}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500"
@@ -943,7 +944,7 @@ function SlotEditor({ slot, onChange, onRemove, categories, menuItems }: SlotEdi
           {(Object.keys(DEAL_TYPE_LABELS) as DealSlotType[]).map((t) => (
             <option key={t} value={t}>{DEAL_TYPE_LABELS[t]}</option>
           ))}
-        </select>
+        </ResponsiveSelect>
         <button type="button" onClick={onRemove} className="text-red-600 text-sm font-medium hover:underline">
           Remove slot
         </button>

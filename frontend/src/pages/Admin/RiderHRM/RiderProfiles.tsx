@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
@@ -111,7 +112,7 @@ const RiderProfiles: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="sm:col-span-2">
             <label className={labelClass}>Rider</label>
-            <select
+            <ResponsiveSelect
               value={profileForm.user_id}
               onChange={(e) => setProfileForm((prev) => ({ ...prev, user_id: e.target.value }))}
               className={inputClass}
@@ -122,12 +123,12 @@ const RiderProfiles: React.FC = () => {
                   {rider.name} {rider.phone ? `· ${rider.phone}` : ''}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           {SHOW_FULL_PROFILE_FIELDS && (
             <div>
               <label className={labelClass}>Salary type</label>
-              <select
+              <ResponsiveSelect
                 value={profileForm.salary_type}
                 onChange={(e) => setProfileForm((prev) => ({ ...prev, salary_type: e.target.value }))}
                 className={inputClass}
@@ -135,13 +136,13 @@ const RiderProfiles: React.FC = () => {
                 <option value="fixed">Fixed salary</option>
                 <option value="commission">Commission only</option>
                 <option value="hybrid">Base + per ride + extras</option>
-              </select>
+              </ResponsiveSelect>
             </div>
           )}
           {SHOW_FULL_PROFILE_FIELDS && (
             <div>
               <label className={labelClass}>Employment status</label>
-              <select
+              <ResponsiveSelect
                 value={profileForm.employment_status}
                 onChange={(e) =>
                   setProfileForm((prev) => ({ ...prev, employment_status: e.target.value }))
@@ -151,7 +152,7 @@ const RiderProfiles: React.FC = () => {
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
                 <option value="suspended">Suspended</option>
-              </select>
+              </ResponsiveSelect>
             </div>
           )}
           {SHOW_FULL_PROFILE_FIELDS && (

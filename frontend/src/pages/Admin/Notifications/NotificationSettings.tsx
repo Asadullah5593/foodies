@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { labelWithStatus } from '../../../utils/entityStatus';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -670,7 +671,7 @@ const EventCard: React.FC<{
           <div className="flex flex-wrap items-end gap-3.5 px-5 py-4">
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-500 max-sm:w-full">
               Branch
-              <select
+              <ResponsiveSelect
                 value={branchSel}
                 onChange={(e) => setBranchSel(e.target.value ? Number(e.target.value) : '')}
                 className="min-w-[170px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13.5px] font-semibold text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 max-sm:w-full max-sm:min-w-0"
@@ -681,11 +682,11 @@ const EventCard: React.FC<{
                     {labelWithStatus(b.name, b)}
                   </option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </label>
             <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-500">
               Brand <span className="font-medium text-slate-400">(optional)</span>
-              <select
+              <ResponsiveSelect
                 value={brandSel}
                 onChange={(e) => setBrandSel(e.target.value ? Number(e.target.value) : '')}
                 className="min-w-[150px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-[13.5px] font-semibold text-slate-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200"
@@ -696,7 +697,7 @@ const EventCard: React.FC<{
                     {labelWithStatus(b.name, b)}
                   </option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </label>
             <button
               type="button"

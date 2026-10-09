@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { createPortal } from 'react-dom';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import apiClient from '../../utils/apiClient';
@@ -1282,7 +1283,7 @@ const ProductSales: React.FC = () => {
             >
               Rows per page
             </label>
-            <select
+            <ResponsiveSelect
               id="ps-page-size"
               value={pageSize}
               onChange={(e) => {
@@ -1296,7 +1297,7 @@ const ProductSales: React.FC = () => {
                   {n === 0 ? 'All' : n}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
 
           <span className="text-[12.5px] tabular-nums text-[#8A92A0]">

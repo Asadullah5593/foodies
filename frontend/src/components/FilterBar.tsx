@@ -213,7 +213,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
                       </div>
                     )}
                     {/* Native controls go full width and 44px tall in the sheet. */}
-                    <div className="[&_select]:min-h-[44px] [&_select]:w-full [&_input[type=date]]:min-h-[44px] [&_input[type=time]]:min-h-[44px]">
+                    <div className="filter-sheet-fields [&_select]:min-h-[44px] [&_select]:w-full [&_input[type=date]]:min-h-[44px] [&_input[type=time]]:min-h-[44px]">
                       {f.node}
                     </div>
                   </section>

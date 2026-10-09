@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import BrandLockSelect from '../../components/BrandLockSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -547,7 +548,7 @@ const BranchUsers: React.FC = () => {
                         )}
                       </td>
                       <td className="p-2">
-                        <select
+                        <ResponsiveSelect
                           value={roleByUserId[user.id] ?? defaultRoleId}
                           onChange={(e) => setUserRole(user.id, parseInt(e.target.value, 10))}
                           disabled={!selectedUserIds.includes(user.id)}
@@ -558,7 +559,7 @@ const BranchUsers: React.FC = () => {
                               {role.name}
                             </option>
                           ))}
-                        </select>
+                        </ResponsiveSelect>
                       </td>
                       {assignBranchBrands.length > 1 && (
                         <td className="p-2">
@@ -657,14 +658,14 @@ const BranchUsers: React.FC = () => {
           <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
-              <select
+              <ResponsiveSelect
                 value={mbRoleId}
                 onChange={(e) => setMbRoleId(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select role</option>
                 {roles?.map((r) => <option key={r.id} value={String(r.id)}>{r.name}</option>)}
-              </select>
+              </ResponsiveSelect>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Brand lock</label>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -231,7 +232,7 @@ const LoyaltySettings: React.FC = () => {
                       onChange={(e) => setForm((f) => ({ ...f, expiry_period: Math.max(1, +e.target.value || 0) }))}
                       className={`${inputClass} w-28`}
                     />
-                    <select
+                    <ResponsiveSelect
                       value={form.expiry_unit}
                       onChange={(e) => setForm((f) => ({ ...f, expiry_unit: e.target.value as 'day' | 'month' | 'year' }))}
                       className={inputClass}
@@ -239,7 +240,7 @@ const LoyaltySettings: React.FC = () => {
                       <option value="day">Day(s)</option>
                       <option value="month">Month(s)</option>
                       <option value="year">Year(s)</option>
-                    </select>
+                    </ResponsiveSelect>
                   </div>
                 </div>
               </div>

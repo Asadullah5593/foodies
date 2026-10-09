@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ResponsiveSelect from './ResponsiveSelect';
 
 export const DEFAULT_PAGE_SIZE = 10;
 
@@ -60,7 +61,7 @@ const PaginationBar: React.FC<PaginationBarProps> = ({
       {showSizer && (
         <div className="flex items-center gap-1.5 mr-auto max-sm:mr-0 max-sm:w-full max-sm:justify-center">
           <span className="text-sm text-foodies-textSecondary">Show</span>
-          <select
+          <ResponsiveSelect
             value={pageSize}
             onChange={(e) => onPageSizeChange!(Number(e.target.value))}
             aria-label="Entries per page"
@@ -71,7 +72,7 @@ const PaginationBar: React.FC<PaginationBarProps> = ({
                 {n.toLocaleString()}
               </option>
             ))}
-          </select>
+          </ResponsiveSelect>
           <span className="text-sm text-foodies-textSecondary">entries</span>
         </div>
       )}

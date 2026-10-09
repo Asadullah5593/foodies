@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -298,7 +299,7 @@ const MenuAddons: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
-            <select
+            <ResponsiveSelect
               value={formData.brand_id}
               onChange={(e) => setFormData({ ...formData, brand_id: e.target.value })}
               required
@@ -310,7 +311,7 @@ const MenuAddons: React.FC = () => {
                   {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Addon Name *</label>

@@ -143,6 +143,8 @@ describe('Rider order page on a tablet or desktop', () => {
     const button = await screen.findByRole('button', { name: 'Update delivery status' });
     expect(button.closest('.fixed')).toBeNull();
     fireEvent.click(button);
-    expect(await screen.findByRole('combobox')).toBeInTheDocument();
+    // The status picker is a searchable dropdown below lg (a trigger button opening a listbox).
+    const trigger = await screen.findByRole('button', { name: 'Select...' });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'listbox');
   });
 });

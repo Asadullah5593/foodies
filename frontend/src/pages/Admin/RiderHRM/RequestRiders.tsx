@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { labelWithStatus } from '../../../utils/entityStatus';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -111,7 +112,7 @@ const RequestRiders: React.FC = () => {
       {brandOptions.length > 1 && (
         <Card className="dark:bg-slate-800 dark:border-slate-700">
           <label className={labelClass}>Brand</label>
-          <select
+          <ResponsiveSelect
             value={brandId ?? ''}
             onChange={(e) => setBrandId(Number(e.target.value))}
             className={inputClass}
@@ -121,7 +122,7 @@ const RequestRiders: React.FC = () => {
                 {labelWithStatus(b.name, b)}
               </option>
             ))}
-          </select>
+          </ResponsiveSelect>
         </Card>
       )}
 

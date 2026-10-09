@@ -145,8 +145,9 @@ describe('Customers on a phone', () => {
     await card(412);
     expect(cardIds()).toEqual([412, 7, 9]);
     openFilters();
-    const sort = screen.getByRole('combobox', { name: 'Sort by' });
-    fireEvent.change(sort, { target: { value: 'completed' } });
+    // The sort control is a searchable dropdown below lg: open it, pick the option.
+    fireEvent.click(screen.getByRole('button', { name: /^Sort by/ }));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Completed' }));
     await waitFor(() => expect(cardIds()).toEqual([9, 412, 7]));
     fireEvent.click(screen.getByRole('button', { name: '↓ Descending' }));
     await waitFor(() => expect(cardIds()).toEqual([7, 412, 9]));

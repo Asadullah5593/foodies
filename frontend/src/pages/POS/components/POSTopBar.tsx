@@ -1,4 +1,5 @@
 import React from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { MdSearch } from 'react-icons/md';
 import TypeaheadDropdown from '../../../components/TypeaheadDropdown';
 import type { TypeaheadOption } from '../../../hooks/useTypeaheadSuggestions';
@@ -57,7 +58,7 @@ const POSTopBar: React.FC<POSTopBarProps> = ({
     <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#F1F2F5] bg-foodies-surface px-5 py-3 dark:border-slate-700 dark:bg-slate-800 max-lg:justify-start max-lg:gap-2 max-sm:px-4 max-sm:py-2">
       <div className="flex flex-wrap items-center gap-2 max-lg:w-[44%] max-lg:flex-none">
 
-        <select
+        <ResponsiveSelect
           value={effectiveBranchId != null ? String(effectiveBranchId) : ''}
           onChange={(e) => onBranchChange(e.target.value === '' ? null : Number(e.target.value))}
           aria-label="Branch"
@@ -69,7 +70,7 @@ const POSTopBar: React.FC<POSTopBarProps> = ({
               {b.name} ({b.code})
             </option>
           ))}
-        </select>
+        </ResponsiveSelect>
       </div>
 
       <div className="flex flex-wrap items-center gap-2.5 max-lg:contents">

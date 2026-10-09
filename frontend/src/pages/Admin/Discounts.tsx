@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -377,11 +378,11 @@ const Discounts: React.FC = () => {
           <div className="mb-5 grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className={offerLabel}>Type <span className="text-red-500">*</span></label>
-              <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as 'flat' | 'percentage' | 'buy_x_get_y' })} className={offerInput}>
+              <ResponsiveSelect value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as 'flat' | 'percentage' | 'buy_x_get_y' })} className={offerInput}>
                 <option value="flat">Flat Amount</option>
                 <option value="percentage">Percentage</option>
                 <option value="buy_x_get_y">Buy X Get Y (BOGO)</option>
-              </select>
+              </ResponsiveSelect>
             </div>
             <div>
               <label className={offerLabel}>{formData.type === 'buy_x_get_y' ? 'Value (unused for BOGO)' : <>Value <span className="text-red-500">*</span></>}</label>

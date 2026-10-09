@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { motion } from 'framer-motion';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
@@ -770,7 +771,7 @@ const Dashboard: React.FC = () => {
                   </div>
                 </>
               )}
-              <select
+              <ResponsiveSelect
                 value={trendBrandId ?? ''}
                 onChange={(e) => setTrendBrandId(e.target.value ? Number(e.target.value) : null)}
                 aria-label="Revenue & orders trend brand"
@@ -782,7 +783,7 @@ const Dashboard: React.FC = () => {
                 {(brands ?? []).map((b) => (
                   <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </div>
           }
           loading={orderSeriesLoading || brandsLoading}
@@ -815,7 +816,7 @@ const Dashboard: React.FC = () => {
           title="Top items"
           subtitle="Best sellers by quantity (completed orders)."
           right={
-            <select
+            <ResponsiveSelect
               value={topItemsBrandId ?? ''}
               onChange={(e) => setTopItemsBrandId(e.target.value ? Number(e.target.value) : null)}
               aria-label="Top items brand"
@@ -827,7 +828,7 @@ const Dashboard: React.FC = () => {
               {(brands ?? []).map((b) => (
                 <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>
               ))}
-            </select>
+            </ResponsiveSelect>
           }
           loading={topItemsLoading}
           isEmpty={!topItemsLoading && (topItems?.length ?? 0) === 0}

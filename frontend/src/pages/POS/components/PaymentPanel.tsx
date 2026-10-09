@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { motion } from 'framer-motion';
 import Button from '../../../components/Button';
 import BankCardBinLookup from '../../../components/BankCardBinLookup';
@@ -253,7 +254,7 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
             <label className="block text-xs font-medium text-foodies-textSecondary dark:text-slate-400 mb-1">
               Bank card (for card offers)
             </label>
-            <select
+            <ResponsiveSelect
               value={bankCardId ?? ''}
               onChange={(e) => onBankCardChange?.(e.target.value ? Number(e.target.value) : null)}
               className="max-lg:min-h-[44px] w-full px-3 py-2 border-2 border-foodies-border dark:border-slate-600 rounded-xl text-sm bg-foodies-surface dark:bg-slate-700 text-foodies-textPrimary dark:text-slate-200"
@@ -265,7 +266,7 @@ const PaymentPanel: React.FC<PaymentPanelProps> = ({
                   {c.has_offer ? ' • offer' : ''}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
         )}
         {/* "Does the customer's card have a discount?" — check by BIN without

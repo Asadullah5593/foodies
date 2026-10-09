@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { labelWithStatus } from '../../../utils/entityStatus';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -92,7 +93,7 @@ const RiderAttendance: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className={labelClass}>Rider</label>
-            <select
+            <ResponsiveSelect
               value={attendanceForm.rider_user_id}
               onChange={(e) =>
                 setAttendanceForm((prev) => ({ ...prev, rider_user_id: e.target.value }))
@@ -105,11 +106,11 @@ const RiderAttendance: React.FC = () => {
                   {rider.name}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           <div>
             <label className={labelClass}>Branch</label>
-            <select
+            <ResponsiveSelect
               value={attendanceForm.branch_id}
               onChange={(e) =>
                 setAttendanceForm((prev) => ({ ...prev, branch_id: e.target.value }))
@@ -122,7 +123,7 @@ const RiderAttendance: React.FC = () => {
                   {labelWithStatus(branch.name, branch)}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           <div className="sm:col-span-2">
             <label className={labelClass}>Notes</label>

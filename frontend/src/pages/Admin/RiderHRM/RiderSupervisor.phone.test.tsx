@@ -89,8 +89,9 @@ describe('Rider supervisor on a phone', () => {
       expect(text).toContain(expected);
     }
     expect(text).toMatch(/1,450/);
-    const select = within(card).getByRole('combobox', { name: 'Update status for order FDS-TEST01' });
-    fireEvent.change(select, { target: { value: 'ready' } });
+    // A searchable dropdown below lg: open it from the card, pick the option from the portalled list.
+    fireEvent.click(within(card).getByRole('button', { name: /^Update status for order FDS-TEST01/ }));
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Ready' }));
     await waitFor(() => expect(updateOrderStatus).toHaveBeenCalledWith(1, 'ready'));
   });
 

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { labelWithStatus } from '../../../utils/entityStatus';
 import {
   useQuery,
@@ -127,7 +128,7 @@ const FilterSelect: React.FC<{
   allLabel: string;
   options: SupervisorFilterOption[];
 }> = ({ value, onChange, allLabel, options }) => (
-  <select
+  <ResponsiveSelect
     value={value}
     onChange={(e) => onChange(e.target.value ? Number(e.target.value) : '')}
     className="rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm px-2 py-1.5 text-gray-800 dark:text-slate-200 focus:ring-2 focus:ring-red-500"
@@ -139,7 +140,7 @@ const FilterSelect: React.FC<{
         {labelWithStatus(o.name, o)}
       </option>
     ))}
-  </select>
+  </ResponsiveSelect>
 );
 
 /** Today / the role's earliest reachable day, as YYYY-MM-DD for date inputs. */
@@ -463,7 +464,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
                 {canViewStatus && (
                   <div className="mt-2.5">
                     {canUpdateStatus ? (
-                      <select
+                      <ResponsiveSelect
                         value={o.status ?? ''}
                         disabled={updateStatus.isPending}
                         onChange={(e) => updateStatus.mutate({ id: o.id, status: e.target.value })}
@@ -475,7 +476,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
                             {s.label}
                           </option>
                         ))}
-                      </select>
+                      </ResponsiveSelect>
                     ) : (
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${orderStatusClasses(o.status ?? '')}`}>
                         {o.status ?? '—'}
@@ -534,7 +535,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
                   {canViewStatus && (
                     <td className={tdClass}>
                       {canUpdateStatus ? (
-                        <select
+                        <ResponsiveSelect
                           value={o.status ?? ''}
                           disabled={updateStatus.isPending}
                           onChange={(e) =>
@@ -548,7 +549,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
                               {s.label}
                             </option>
                           ))}
-                        </select>
+                        </ResponsiveSelect>
                       ) : (
                         <span
                           className={`px-2 py-0.5 rounded-full text-xs font-medium ${orderStatusClasses(o.status ?? '')}`}

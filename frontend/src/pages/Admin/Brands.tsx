@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { AnimatePresence } from 'framer-motion';
@@ -474,14 +475,14 @@ const Brands: React.FC = () => {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-            <select
+            <ResponsiveSelect
               value={formData.status}
               onChange={(e) => setFormData({ ...formData, status: (e.target.value === 'inactive' ? 'inactive' : 'active') })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             >
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
-            </select>
+            </ResponsiveSelect>
           </div>
           <div className="flex gap-2 justify-end">
             <Button type="button" variant="outline" onClick={closeForm}>

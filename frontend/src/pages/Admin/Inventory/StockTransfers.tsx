@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import {
@@ -276,14 +277,14 @@ const StockTransfers: React.FC = () => {
             <LuSearch className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input className={`${field} pl-9`} placeholder="Search by request/order, reference, branch…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
           </div>
-          <select className={`${field} w-auto`} value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}>
+          <ResponsiveSelect className={`${field} w-auto`} value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}>
             <option value="">All transfer types</option>
             {['Branch → Branch', 'Branch → Brand', 'Brand → Branch', 'Brand → Brand'].map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-          <select className={`${field} w-auto`} value={branchFilter} onChange={(e) => { setBranchFilter(e.target.value); setPage(1); }}>
+          </ResponsiveSelect>
+          <ResponsiveSelect className={`${field} w-auto`} value={branchFilter} onChange={(e) => { setBranchFilter(e.target.value); setPage(1); }}>
             <option value="">All branches</option>
             {(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>)}
-          </select>
+          </ResponsiveSelect>
           {(search || typeFilter || branchFilter) && (
             <button onClick={() => { setSearch(''); setTypeFilter(''); setBranchFilter(''); setPage(1); }} className="text-sm text-slate-500 hover:text-slate-700 px-2">Clear</button>
           )}
@@ -341,27 +342,27 @@ const StockTransfers: React.FC = () => {
         <div className="space-y-3">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div><div className="text-xs font-medium text-slate-500 mb-1">Source branch</div>
-              <select className={field} value={nf.sb ?? ''} onChange={(e) => setNf({ ...nf, sb: e.target.value })}>
+              <ResponsiveSelect className={field} value={nf.sb ?? ''} onChange={(e) => setNf({ ...nf, sb: e.target.value })}>
                 <option value="">Select branch…</option>{(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>)}
-              </select></div>
+              </ResponsiveSelect></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Source brand bucket</div>
-              <select className={field} value={nf.sbr ?? ''} onChange={(e) => setNf({ ...nf, sbr: e.target.value })}>{brandOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+              <ResponsiveSelect className={field} value={nf.sbr ?? ''} onChange={(e) => setNf({ ...nf, sbr: e.target.value })}>{brandOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</ResponsiveSelect></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Destination branch</div>
-              <select className={field} value={nf.db ?? ''} onChange={(e) => setNf({ ...nf, db: e.target.value })}>
+              <ResponsiveSelect className={field} value={nf.db ?? ''} onChange={(e) => setNf({ ...nf, db: e.target.value })}>
                 <option value="">Select branch…</option>{(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>)}
-              </select></div>
+              </ResponsiveSelect></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Destination brand bucket</div>
-              <select className={field} value={nf.dbr ?? ''} onChange={(e) => setNf({ ...nf, dbr: e.target.value })}>{brandOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+              <ResponsiveSelect className={field} value={nf.dbr ?? ''} onChange={(e) => setNf({ ...nf, dbr: e.target.value })}>{brandOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</ResponsiveSelect></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Item</div>
-              <select className={field} value={nf.item ?? ''} onChange={(e) => { const it = itemById.get(Number(e.target.value)); setNf({ ...nf, item: e.target.value, uom: it?.baseUomId ? String(it.baseUomId) : '' }); }}>
+              <ResponsiveSelect className={field} value={nf.item ?? ''} onChange={(e) => { const it = itemById.get(Number(e.target.value)); setNf({ ...nf, item: e.target.value, uom: it?.baseUomId ? String(it.baseUomId) : '' }); }}>
                 <option value="">Select item…</option>{(itemsQ.data ?? []).map((it: any) => <option key={it.id} value={it.id}>{it.name}</option>)}
-              </select></div>
+              </ResponsiveSelect></div>
             <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-2">
               <div><div className="text-xs font-medium text-slate-500 mb-1">Quantity</div><input className={field} placeholder="e.g. 5" value={nf.qty ?? ''} onChange={(e) => setNf({ ...nf, qty: e.target.value })} /></div>
               <div><div className="text-xs font-medium text-slate-500 mb-1">Unit</div>
-                <select className={field} value={nf.uom ?? ''} onChange={(e) => setNf({ ...nf, uom: e.target.value })} disabled={!nf.item}>
+                <ResponsiveSelect className={field} value={nf.uom ?? ''} onChange={(e) => setNf({ ...nf, uom: e.target.value })} disabled={!nf.item}>
                   <option value="">Unit…</option>{getItemAllowedUoms(itemById.get(Number(nf.item))).map((u: any) => <option key={u.id} value={u.id}>{u.code}</option>)}
-                </select></div>
+                </ResponsiveSelect></div>
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
@@ -410,9 +411,9 @@ const StockTransfers: React.FC = () => {
                       <div key={i} className="grid grid-cols-1 lg:grid-cols-[1fr_100px_120px_auto] gap-2 items-center">
                         <div className="text-sm">{item?.name ?? `Item #${al.inventory_item_id}`}</div>
                         <input className={field} value={al.qty} onChange={(e) => setActionLines(actionLines.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} />
-                        <select className={field} value={al.qty_uom_id} onChange={(e) => setActionLines(actionLines.map((x, j) => j === i ? { ...x, qty_uom_id: e.target.value } : x))}>
+                        <ResponsiveSelect className={field} value={al.qty_uom_id} onChange={(e) => setActionLines(actionLines.map((x, j) => j === i ? { ...x, qty_uom_id: e.target.value } : x))}>
                           {getItemAllowedUoms(item).map((u: any) => <option key={u.id} value={u.id}>{u.code}</option>)}
-                        </select>
+                        </ResponsiveSelect>
                         {detailMode === 'receive' && (
                           <input type="date" className={field} value={al.expiry_date} onChange={(e) => setActionLines(actionLines.map((x, j) => j === i ? { ...x, expiry_date: e.target.value } : x))} title={item?.trackExpiry ? 'Expiry required' : 'Expiry (optional)'} />
                         )}

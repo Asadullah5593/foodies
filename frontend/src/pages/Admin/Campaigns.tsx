@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -308,11 +309,11 @@ const Campaigns: React.FC = () => {
             <div className="mb-4">
               <label className={offerLabel}>Tapping the banner opens</label>
               <div className="grid grid-cols-2 max-sm:grid-cols-1 items-start gap-2.5">
-                <select value={itemForm.destination_type}
+                <ResponsiveSelect value={itemForm.destination_type}
                   onChange={(e) => setItemForm({ ...itemForm, destination_type: e.target.value, destination_id: '' })}
                   className={offerInput}>
                   {DEST_TYPES.map((d) => <option key={d} value={d}>{d === 'none' ? 'Nothing (view only)' : d}</option>)}
-                </select>
+                </ResponsiveSelect>
                 {itemForm.destination_type !== 'none' ? (
                   <SearchableSelect
                     value={itemForm.destination_id === '' ? '' : String(itemForm.destination_id)}

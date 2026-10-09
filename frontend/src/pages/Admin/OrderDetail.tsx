@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { orderModifiersWithNesting } from '../../utils/modifierNesting';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -352,7 +353,7 @@ const OrderDetail: React.FC = () => {
         )}
         {canUpdateStatus && <div className="flex items-center gap-3">
           <label className="text-sm font-medium text-gray-700 dark:text-slate-300">Update status</label>
-          <select
+          <ResponsiveSelect
             value={o.status}
             onChange={(e) => updateStatusMutation.mutate(e.target.value)}
             className="px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -363,7 +364,7 @@ const OrderDetail: React.FC = () => {
             <option value="ready">Ready</option>
             <option value="completed">Completed</option>
             {!noCancel && <option value="cancelled">Cancelled</option>}
-          </select>
+          </ResponsiveSelect>
         </div>}
       </Card>
 

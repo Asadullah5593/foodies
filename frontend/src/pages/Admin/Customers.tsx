@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -342,25 +343,25 @@ const Customers: React.FC = () => {
   );
 
   const brandSelect = (
-    <select aria-label="Brand" value={filters.brand} onChange={(e) => setFilter('brand', e.target.value)} className={`${cu.input} !w-auto cursor-pointer max-lg:!w-full`}>
+    <ResponsiveSelect aria-label="Brand" value={filters.brand} onChange={(e) => setFilter('brand', e.target.value)} className={`${cu.input} !w-auto cursor-pointer max-lg:!w-full`}>
       <option value="">All brands</option>
       {brandOptions.map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
-    </select>
+    </ResponsiveSelect>
   );
   const branchSelect = (
-    <select aria-label="Branch" value={filters.branch} onChange={(e) => setFilter('branch', e.target.value)} className={`${cu.input} !w-auto cursor-pointer max-lg:!w-full`}>
+    <ResponsiveSelect aria-label="Branch" value={filters.branch} onChange={(e) => setFilter('branch', e.target.value)} className={`${cu.input} !w-auto cursor-pointer max-lg:!w-full`}>
       <option value="">All branches</option>
       {branchOptions.map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
-    </select>
+    </ResponsiveSelect>
   );
 
   const moreFilterItems = (
     <>
       <div>
         <label htmlFor="cust-points" className={cu.fieldLabel}>Points</label>
-        <select id="cust-points" value={filters.points} onChange={(e) => setFilter('points', e.target.value)} className={`${cu.input} cursor-pointer`}>
+        <ResponsiveSelect id="cust-points" value={filters.points} onChange={(e) => setFilter('points', e.target.value)} className={`${cu.input} cursor-pointer`}>
           {POINTS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        </ResponsiveSelect>
       </div>
       <div>
         <label htmlFor="cust-min-points" className={cu.fieldLabel}>Min points</label>
@@ -368,15 +369,15 @@ const Customers: React.FC = () => {
       </div>
       <div>
         <label htmlFor="cust-last-order" className={cu.fieldLabel}>Last order</label>
-        <select id="cust-last-order" value={filters.lastOrder} onChange={(e) => setFilter('lastOrder', e.target.value)} className={`${cu.input} cursor-pointer`}>
+        <ResponsiveSelect id="cust-last-order" value={filters.lastOrder} onChange={(e) => setFilter('lastOrder', e.target.value)} className={`${cu.input} cursor-pointer`}>
           {LAST_ORDER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        </ResponsiveSelect>
       </div>
       <div>
         <label htmlFor="cust-orders" className={cu.fieldLabel}>Completed orders</label>
-        <select id="cust-orders" value={filters.orders} onChange={(e) => setFilter('orders', e.target.value)} className={`${cu.input} cursor-pointer`}>
+        <ResponsiveSelect id="cust-orders" value={filters.orders} onChange={(e) => setFilter('orders', e.target.value)} className={`${cu.input} cursor-pointer`}>
           {ORDERS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
+        </ResponsiveSelect>
       </div>
       <div>
         <label htmlFor="cust-min-orders" className={cu.fieldLabel}>Min orders</label>
@@ -470,7 +471,7 @@ const Customers: React.FC = () => {
   // Phones have no table header to sort by, so the sheet carries the sort.
   const sortField = (
     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2.5">
-      <select
+      <ResponsiveSelect
         aria-label="Sort by"
         value={sortKey}
         onChange={(e) => {
@@ -483,7 +484,7 @@ const Customers: React.FC = () => {
         {SORT_KEYS.filter((k) => k !== 'spent' || !hideTotals).map((k) => (
           <option key={k} value={k}>{SORT_LABEL[k]}</option>
         ))}
-      </select>
+      </ResponsiveSelect>
       <button
         type="button"
         disabled={!sortKey}

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -383,7 +384,7 @@ const PrintedVouchers: React.FC = () => {
             <label className={offerLabel} htmlFor="voucher-brand">
               Brand <span className="text-red-500">*</span>
             </label>
-            <select
+            <ResponsiveSelect
               id="voucher-brand"
               value={form.brand_id === '' ? '' : String(form.brand_id)}
               onChange={(e) => changeBrand(e.target.value)}
@@ -396,7 +397,7 @@ const PrintedVouchers: React.FC = () => {
                   {isEntityInactive(b) ? ' (inactive)' : ''}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
             <p className="mt-2 text-[12px] leading-snug text-gray-400">
               The checkout shows a voucher only when the cart is this brand&apos;s.
             </p>
@@ -407,7 +408,7 @@ const PrintedVouchers: React.FC = () => {
               <label className={offerLabel} htmlFor="voucher-type">
                 Type
               </label>
-              <select
+              <ResponsiveSelect
                 id="voucher-type"
                 value={form.voucher_type}
                 onChange={(e) =>
@@ -417,7 +418,7 @@ const PrintedVouchers: React.FC = () => {
               >
                 <option value="fixed_price">Fixed price for one item</option>
                 <option value="percentage">Percentage off</option>
-              </select>
+              </ResponsiveSelect>
             </div>
             <div>
               <label className={offerLabel} htmlFor="voucher-value">

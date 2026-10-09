@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -325,7 +326,7 @@ const Users: React.FC = () => {
           {isSuperAdmin && tenants && tenants.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Tenant *</label>
-              <select
+              <ResponsiveSelect
                 value={createData.tenant_id}
                 onChange={(e) => setCreateData({ ...createData, tenant_id: e.target.value })}
                 required
@@ -335,13 +336,13 @@ const Users: React.FC = () => {
                 {tenants.map((t) => (
                   <option key={t.id} value={t.id}>{t.name}</option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </div>
           )}
           {needsBrandChoice && brands && brands.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
-              <select
+              <ResponsiveSelect
                 value={createData.brand_id}
                 onChange={(e) => setCreateData({ ...createData, brand_id: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -350,7 +351,7 @@ const Users: React.FC = () => {
                 {brands.map((b) => (
                   <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>
                 ))}
-              </select>
+              </ResponsiveSelect>
               <p className="mt-1 text-xs text-gray-500">
                 Pick the brand this user belongs to so they can be assigned as a branch user for that brand. Leave as “All brands” for owner/manager accounts.
               </p>
