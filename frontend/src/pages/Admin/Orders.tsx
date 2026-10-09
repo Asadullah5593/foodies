@@ -23,6 +23,7 @@ import {
   selectableStatuses,
 } from '../../lib/orderStatusPermissions';
 import { canAccessPath } from '../../lib/pathPermissions';
+import { customerOrdersPath } from '../../utils/customerOrdersPath';
 import {
   ORDERS_GRID_MIN_PX,
   ordersCardColumns,
@@ -76,6 +77,8 @@ type OrderRow = Omit<Order, 'payments' | 'creator'> & {
   delivery_status?: string | null;
   delivery_failed_reason?: string | null;
   customer_name?: string | null;
+  customer_id?: number | null;
+  customer_phone?: string | null;
   table_number?: string | null;
   placed_at?: string | null;
   creator?: { id: number; name?: string | null } | null;
@@ -98,6 +101,7 @@ function normalizeOrder(o: OrderRow): OrderRow {
   const row = o as OrderRow & {
     riderId?: number; brandId?: number; deliveryStatus?: string; deliveryFailedReason?: string;
     customerName?: string | null; tableNumber?: string | null; placedAt?: string; createdAt?: string;
+    customerId?: number | null; customerPhone?: string | null;
   };
   return {
     ...o,
@@ -125,6 +129,8 @@ function normalizeOrder(o: OrderRow): OrderRow {
     delivery_failed_reason: o.delivery_failed_reason ?? row.deliveryFailedReason ?? null,
     source: o.source ?? 'pos',
     customer_name: o.customer_name ?? row.customerName ?? null,
+    customer_id: o.customer_id ?? row.customerId ?? null,
+    customer_phone: o.customer_phone ?? row.customerPhone ?? null,
     table_number: o.table_number ?? row.tableNumber ?? null,
     placed_at: o.placed_at ?? row.placedAt ?? row.createdAt ?? null,
     items_count: o.items_count ?? (Array.isArray(o.orderItems) ? o.orderItems.length : 0),
@@ -307,6 +313,25 @@ function customerText(o: OrderRow): string {
   if (o.table_number) return `Table ${o.table_number}`;
   return 'Walk-in';
 }
+
+/**
+ * The customer's name on a row opens their order history — this same page narrowed to them
+ * (the view the Customers page uses). Only a saved customer has one; a table or walk-in order
+ * shows plain text. The dotted underline is the app's cue for "tap to see more".
+ */
+const CustomerName: React.FC<{ o: OrderRow; className: string }> = ({ o, className }) => {
+  const text = customerText(o);
+  if (o.customer_id == null) return <span className={className}>{text}</span>;
+  return (
+    <Link
+      to={customerOrdersPath({ id: o.customer_id, name: o.customer_name, phone: o.customer_phone })}
+      title={`Open ${text}'s order history`}
+      className={`${className} underline decoration-dotted decoration-gray-300 underline-offset-[3px] hover:text-foodies-cta hover:decoration-foodies-cta dark:decoration-slate-500`}
+    >
+      {text}
+    </Link>
+  );
+};
 
 function createdByText(o: OrderRow): string {
   if (o.creator?.name) return o.creator.name;
@@ -895,7 +920,9 @@ const Orders: React.FC = () => {
         </div>
         {/* Customer */}
         <div className="min-w-0">
-          <div className="truncate text-[14px] font-semibold text-gray-800 dark:text-slate-100">{customerText(o)}</div>
+          <div className="truncate">
+            <CustomerName o={o} className="text-[14px] font-semibold text-gray-800 dark:text-slate-100" />
+          </div>
           <div className="truncate text-[12.5px] text-gray-400 dark:text-slate-500">by {createdByText(o)}</div>
         </div>
         {/* Source */}
@@ -1032,7 +1059,7 @@ const Orders: React.FC = () => {
         {/* customer + source */}
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <span className="text-[14px] font-semibold text-gray-800 dark:text-slate-100">{customerText(o)}</span>
+            <CustomerName o={o} className="text-[14px] font-semibold text-gray-800 dark:text-slate-100" />
             <span className="ml-1.5 text-[12.5px] text-gray-400 dark:text-slate-500">by {createdByText(o)}</span>
           </div>
           <span className={`inline-flex flex-none items-center rounded-md px-2.5 py-1 text-[12px] font-bold ${

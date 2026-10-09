@@ -24,6 +24,12 @@ describe('customerOrdersPath', () => {
     }
   });
 
+  it('names a customer with no phone on file by name alone, and skips the label when it knows neither', () => {
+    expect(parse(customerOrdersPath({ id: 3, name: 'Tahir', phone: null })).get('customer_label')).toBe('Tahir');
+    expect(parse(customerOrdersPath({ id: 3, name: 'Tahir' })).get('customer_label')).toBe('Tahir');
+    expect(parse(customerOrdersPath({ id: 3, name: ' ', phone: '' })).has('customer_label')).toBe(false);
+  });
+
   it('can narrow to one brand, one branch and one status', () => {
     const sp = parse(
       customerOrdersPath(
