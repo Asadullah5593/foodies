@@ -1,7 +1,7 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useViewport } from '../hooks/useViewport';
+import { ActionsSheet, MoreActionsButton, flattenActions } from './ActionsSheet';
 
 export type AccentVariant = 'active' | 'inactive';
 
@@ -70,19 +70,6 @@ const isEmptyNode = (node: React.ReactNode): boolean => {
   }
   return false;
 };
-
-/**
- * The action nodes a page passes, flattened through nested fragments (pages often wrap a permission
- * group in its own `<>…</>`), re-keyed by position so the card and its sheet can render them apart.
- */
-const flattenActions = (node: React.ReactNode): React.ReactNode[] =>
-  React.Children.toArray(node)
-    .flatMap((child) =>
-      React.isValidElement(child) && child.type === React.Fragment
-        ? flattenActions((child.props as { children?: React.ReactNode }).children)
-        : [child],
-    )
-    .map((child, i) => (React.isValidElement(child) ? React.cloneElement(child, { key: `action-${i}` }) : child));
 
 /** Below lg the accent is the card's own left border (spans the wrapped row). */
 const accentBorderClass: Record<AccentVariant, string> = {
@@ -242,52 +229,6 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
     const actionNodes = flattenActions(actions);
     const [primaryAction, ...moreActions] = actionNodes;
     const details = mobileSubtitle ?? subtitle;
-    const panelMotion = isPhone
-      ? { initial: { y: '100%' }, animate: { y: '0%' }, exit: { y: '100%' } }
-      : { initial: { opacity: 0, y: 24 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0, y: 24 } };
-    const sheet = createPortal(
-      <AnimatePresence>
-        {sheetOpen && moreActions.length > 0 && (
-          <div className="fixed inset-0 z-[60]">
-            <motion.div
-              className="absolute inset-0 bg-black/45"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              onClick={() => setSheetOpen(false)}
-              aria-hidden
-            />
-            <div className="absolute inset-x-0 bottom-0 flex sm:inset-x-auto sm:bottom-4 sm:left-1/2 sm:w-[min(480px,calc(100%-2rem))] sm:-translate-x-1/2">
-              <motion.div
-                role="dialog"
-                aria-modal="true"
-                aria-label={`Actions for ${title}`}
-                className="w-full rounded-t-[20px] bg-white px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-2.5 shadow-2xl dark:bg-slate-800 sm:rounded-2xl"
-                {...panelMotion}
-                transition={{ type: 'tween', duration: 0.22, ease: [0.2, 0.8, 0.2, 1] }}
-              >
-                <div className="mx-auto mb-3.5 h-1 w-10 rounded-full bg-gray-300 dark:bg-slate-600 sm:hidden" aria-hidden />
-                <div className="mb-1 truncate text-[14px] font-extrabold text-gray-900 dark:text-slate-50">{title}</div>
-                {/* The page's own buttons laid out as rows (index.css .row-action-sheet). Any tap
-                    closes the sheet; the button's own handler still runs. */}
-                <div className="row-action-sheet flex flex-col" onClickCapture={() => setSheetOpen(false)}>
-                  {moreActions}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSheetOpen(false)}
-                  className="mt-2 min-h-[48px] w-full rounded-xl bg-gray-100 text-[14px] font-bold text-gray-700 dark:bg-slate-700 dark:text-slate-200"
-                >
-                  Cancel
-                </button>
-              </motion.div>
-            </div>
-          </div>
-        )}
-      </AnimatePresence>,
-      document.body,
-    );
     return (
       <motion.li
         ref={rowRef}
@@ -313,20 +254,7 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
               )}
             </div>
             {moreActions.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setSheetOpen(true)}
-                aria-label={`More actions for ${title}`}
-                aria-haspopup="dialog"
-                aria-expanded={sheetOpen}
-                className="flex h-[38px] w-[38px] flex-none items-center justify-center rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white text-[#5A6473] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300"
-              >
-                <svg width="17" height="17" viewBox="0 0 16 16" fill="currentColor" aria-hidden>
-                  <circle cx="3.5" cy="8" r="1.4" />
-                  <circle cx="8" cy="8" r="1.4" />
-                  <circle cx="12.5" cy="8" r="1.4" />
-                </svg>
-              </button>
+              <MoreActionsButton title={title} onClick={() => setSheetOpen(true)} expanded={sheetOpen} />
             )}
           </div>
           {details != null && details !== '' && (
@@ -344,7 +272,11 @@ export const AccentedListRow: React.FC<AccentedListRowProps> = ({
             {footer}
           </div>
         )}
-        {sheet}
+        {moreActions.length > 0 && (
+          <ActionsSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={title}>
+            {moreActions}
+          </ActionsSheet>
+        )}
       </motion.li>
     );
   }

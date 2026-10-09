@@ -37,6 +37,8 @@ import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import SizeMapEditor from '../../components/SizeMapEditor';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
+import { useViewport } from '../../hooks/useViewport';
+import { ActionsSheet, MoreActionsButton } from '../../components/ActionsSheet';
 
 interface SortableModifierRowProps {
   modifier: ModifierResponse;
@@ -50,6 +52,9 @@ interface SortableModifierRowProps {
 
 const SortableModifierRow: React.FC<SortableModifierRowProps> = ({ modifier, group: _group, onEdit, onDelete, isDeleting, canEdit, canDelete }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: modifier.id });
+  // Below lg the row keeps one line: Edit / Delete sit behind a ⋯ sheet.
+  const { isDesktop } = useViewport();
+  const [moreOpen, setMoreOpen] = useState(false);
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -68,8 +73,22 @@ const SortableModifierRow: React.FC<SortableModifierRowProps> = ({ modifier, gro
       </span>
       <span className="flex-1">{modifier.name}</span>
       <span className="text-green-600 font-medium">{formatCurrency(Number(modifier.price))}</span>
-      {canEdit && <Button size="small" variant="edit" onClick={onEdit}>Edit</Button>}
-      {canDelete && <Button size="small" variant="danger" onClick={onDelete} isLoading={isDeleting}>Delete</Button>}
+      {isDesktop ? (
+        <>
+          {canEdit && <Button size="small" variant="edit" onClick={onEdit}>Edit</Button>}
+          {canDelete && <Button size="small" variant="danger" onClick={onDelete} isLoading={isDeleting}>Delete</Button>}
+        </>
+      ) : (
+        (canEdit || canDelete) && (
+          <>
+            <MoreActionsButton title={modifier.name} onClick={() => setMoreOpen(true)} expanded={moreOpen} />
+            <ActionsSheet open={moreOpen} onClose={() => setMoreOpen(false)} title={modifier.name}>
+              {canEdit && <Button size="small" variant="edit" onClick={onEdit}>Edit</Button>}
+              {canDelete && <Button size="small" variant="danger" onClick={onDelete} isLoading={isDeleting}>Delete</Button>}
+            </ActionsSheet>
+          </>
+        )
+      )}
     </li>
   );
 };
@@ -102,6 +121,9 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
   reorderDisabled, canCreate, canEdit, canDelete,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: group.id });
+  // Below lg the group card shows one action (Add modifier) and keeps the rest behind a ⋯ sheet.
+  const { isDesktop } = useViewport();
+  const [moreOpen, setMoreOpen] = useState(false);
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -139,13 +161,29 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
               </div>
             )}
           </div>
-          <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end max-lg:basis-full max-lg:justify-start">
-            {canEdit && <Button size="small" variant="edit" onClick={onLinkMenuItems}>Link to menu items</Button>}
-            {canCreate && <Button size="small" variant="secondary" onClick={() => onAddModifier(group.id)}>Add modifier</Button>}
-            {canEdit && <Button size="small" variant="edit" onClick={onEditGroup}>Edit group</Button>}
-            {canDelete && <Button size="small" variant="danger" onClick={onDeleteGroup} isLoading={isDeletingGroup}>Delete group</Button>}
-          </div>
+          {isDesktop ? (
+            <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end max-lg:basis-full max-lg:justify-start">
+              {canEdit && <Button size="small" variant="edit" onClick={onLinkMenuItems}>Link to menu items</Button>}
+              {canCreate && <Button size="small" variant="secondary" onClick={() => onAddModifier(group.id)}>Add modifier</Button>}
+              {canEdit && <Button size="small" variant="edit" onClick={onEditGroup}>Edit group</Button>}
+              {canDelete && <Button size="small" variant="danger" onClick={onDeleteGroup} isLoading={isDeletingGroup}>Delete group</Button>}
+            </div>
+          ) : (
+            (canEdit || canDelete) && <MoreActionsButton title={group.name} onClick={() => setMoreOpen(true)} expanded={moreOpen} />
+          )}
         </div>
+        {!isDesktop && canCreate && (
+          <div className="mt-3 flex [&>*]:min-h-[42px] [&>*]:w-full [&>*]:flex-1 [&>*]:rounded-[10px] [&>*]:border-[1.5px] [&>*]:border-[#E2E5EA] [&>*]:text-[13.5px] [&>*]:font-bold dark:[&>*]:border-slate-600">
+            <Button size="small" variant="secondary" onClick={() => onAddModifier(group.id)}>Add modifier</Button>
+          </div>
+        )}
+        {!isDesktop && (canEdit || canDelete) && (
+          <ActionsSheet open={moreOpen} onClose={() => setMoreOpen(false)} title={group.name}>
+            {canEdit && <Button size="small" variant="edit" onClick={onEditGroup}>Edit group</Button>}
+            {canEdit && <Button size="small" variant="edit" onClick={onLinkMenuItems}>Link to menu items</Button>}
+            {canDelete && <Button size="small" variant="danger" onClick={onDeleteGroup} isLoading={isDeletingGroup}>Delete group</Button>}
+          </ActionsSheet>
+        )}
         {sortedMods.length > 0 ? (
           <DndContext
             sensors={sensors}

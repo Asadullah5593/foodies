@@ -674,9 +674,14 @@ const ActivityLog: React.FC = () => {
     (list ?? []).find((x) => String(x.id) === id)?.name ?? id;
   const defaultFrom = isRecordLens ? daysAgoIso(365) : daysAgoIso(7);
   const activityChips: FilterChip[] = [
-    ...(PERIODS.some((p) => filters.date_from === p.from() && filters.date_to === p.to()) || (filters.date_from === defaultFrom && filters.date_to === todayIso())
-      ? []
-      : [{ key: 'dates', label: rangeChipLabel(filters.date_from, filters.date_to), onRemove: () => setFilters({ date_from: '', date_to: '' }) }]),
+    // The period presets live in the sheet, so the window is always a chip: a plain label for the
+    // default window, removable (back to the default) for any other preset or custom range.
+    ...(() => {
+      const preset = PERIODS.find((p) => filters.date_from === p.from() && filters.date_to === p.to());
+      const label = preset?.label ?? rangeChipLabel(filters.date_from, filters.date_to);
+      const isDefault = filters.date_from === defaultFrom && filters.date_to === todayIso();
+      return [isDefault ? { key: 'dates', label } : { key: 'dates', label, onRemove: () => setFilters({ date_from: '', date_to: '' }) }];
+    })(),
     ...(filters.actor_user_id
       ? [{ key: 'person', label: (options?.actors ?? []).find((a) => String(a.actor_user_id) === filters.actor_user_id)?.actor_label ?? 'Person', onRemove: () => setFilter('actor_user_id', '') }]
       : []),
@@ -692,7 +697,7 @@ const ActivityLog: React.FC = () => {
     ...(filters.outcome ? [{ key: 'outcome', label: outcomeLabel(filters.outcome), onRemove: () => setFilter('outcome', '') }] : []),
   ];
   const activityFields: FilterField[] = [
-    { key: 'dates', node: <div className="grid grid-cols-2 gap-2.5">{fromBlock}{toBlock}</div> },
+    { key: 'dates', node: <div className="space-y-3">{periodBlock}<div className="grid grid-cols-2 gap-2.5">{fromBlock}{toBlock}</div></div> },
     { key: 'who', node: <div className="space-y-3">{personBlock}{roleBlock}</div> },
     { key: 'where', node: <div className="space-y-3">{branchBlock}{brandBlock}{ipBlock}</div> },
     { key: 'what', node: <div className="space-y-3">{areaBlock}{recordBlocks}{resultBlock}{orderNote}</div> },
@@ -742,7 +747,6 @@ const ActivityLog: React.FC = () => {
       <FilterBar
         className="mb-[18px]"
         primary={searchInputEl}
-        primaryRow={periodGroup}
         chips={activityChips}
         fields={activityFields}
         onClearAll={clearAll}

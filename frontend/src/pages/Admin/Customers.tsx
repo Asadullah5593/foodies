@@ -495,12 +495,17 @@ const Customers: React.FC = () => {
     </div>
   );
   const customerChips: FilterChip[] = [
+    // The quick picks live in the sheet below lg, so the chosen one is a chip (All is the default).
+    ...(filters.segment
+      ? [{ key: 'segment', label: SEGMENTS.find((g) => g.key === filters.segment)?.label ?? 'Segment', onRemove: () => setFilter('segment', '') }]
+      : []),
     ...baseChips,
     ...(sortKey
       ? [{ key: 'sort', label: `Sorted by ${SORT_LABEL[sortKey].toLowerCase()} ${sortDir === 'asc' ? '↑' : '↓'}`, onRemove: () => setParams({ sort: '', dir: '' }) }]
       : []),
   ];
   const customerFields: FilterField[] = [
+    { key: 'segment', label: 'Quick filters', node: segmentGroup },
     { key: 'source', label: 'Source', node: sourceTabs },
     { key: 'brand', label: 'Brand', node: brandSelect },
     { key: 'branch', label: 'Branch', node: branchSelect },
@@ -635,7 +640,6 @@ const Customers: React.FC = () => {
       <FilterBar
         className=""
         primary={searchBox}
-        primaryRow={segmentGroup}
         chips={customerChips}
         fields={customerFields}
         onClearAll={clearAll}
@@ -694,7 +698,7 @@ const Customers: React.FC = () => {
         </div>
       </FilterBar>
 
-      {/* Quick picks (in the bar's swipe row below lg), and what the dotted underline is for. */}
+      {/* Quick picks (in the Filters sheet below lg), and what the dotted underline is for. */}
       <div className="mb-3 mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 max-lg:mt-3">
         {isDesktop && segmentGroup}
         {/* Says, right above the table, what the dotted underline in it is for. */}

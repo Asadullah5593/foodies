@@ -478,11 +478,14 @@ const KDS: React.FC = () => {
     </button>
   );
 
-  // Phones and tablets: the Ready / Completed toggles stay on screen; the rest is in the sheet.
+  // Phones and tablets: every control, the Ready / Completed toggles included, lives in the sheet;
+  // a section that is shown becomes a chip in the bar.
   const today = todayIsoDate();
   const branchName = (branches ?? []).find((b: { id: number }) => String(b.id) === branchId)?.name;
   const kdsChips: FilterChip[] = [
     ...(branchName ? [{ key: 'branch', label: branchName }] : []),
+    ...(showReady && statusFilter !== 'ready' ? [{ key: 'ready', label: 'Ready shown', onRemove: () => setShowReady(false) }] : []),
+    ...(showCompleted ? [{ key: 'completed', label: 'Completed shown', onRemove: () => setShowCompleted(false) }] : []),
     ...(dateFrom !== today || dateTo !== today
       ? [{ key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { setDateFrom(today); setDateTo(today); } }]
       : []),
@@ -490,6 +493,7 @@ const KDS: React.FC = () => {
     ...(statusFilter ? [{ key: 'status', label: statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1), onRemove: () => setStatusFilter('') }] : []),
   ];
   const kdsFields: FilterField[] = [
+    { key: 'show', label: 'Show', node: <div className="flex flex-wrap gap-2">{readyToggle}{completedToggle}</div> },
     { key: 'date', label: 'Date range', node: <div className="grid grid-cols-2 gap-2.5">{dateFromInput}{dateToInput}</div> },
     ...(canFilterBranch ? [{ key: 'branch', label: 'Branch', node: branchSelect() }] : []),
     ...(brands.length > 0 ? [{ key: 'brand', label: 'Brand', node: brandSelect() }] : []),
@@ -500,6 +504,8 @@ const KDS: React.FC = () => {
     setDateTo(today);
     setBrandId('');
     setStatusFilter('');
+    setShowReady(false);
+    setShowCompleted(false);
   };
 
   return (
@@ -512,7 +518,7 @@ const KDS: React.FC = () => {
               Brand-specific orders. Filter by brand to see only your orders.
             </p>
           </div>
-          <FilterBar className="w-full" primaryRow={<>{readyToggle}{completedToggle}</>} chips={kdsChips} fields={kdsFields} onClearAll={clearKdsFilters}>
+          <FilterBar className="w-full" chips={kdsChips} fields={kdsFields} onClearAll={clearKdsFilters}>
           <div className="flex flex-wrap gap-4 items-end">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">From date</label>

@@ -421,11 +421,13 @@ const FOHPacking: React.FC = () => {
     </button>
   );
 
-  // Phones and tablets: status stays one tap away in the bar; dates and branch go in the sheet.
+  // Phones and tablets: every control, the Completed toggle included, lives in the sheet; a
+  // shown Completed section becomes a chip in the bar.
   const today = todayIsoDate();
   const branchName = (branches ?? []).find((b: { id: number }) => String(b.id) === branchId)?.name;
   const fohChips: FilterChip[] = [
     ...(branchName ? [{ key: 'branch', label: branchName }] : []),
+    ...(showCompleted && statusFilter !== 'completed' ? [{ key: 'completed', label: 'Completed shown', onRemove: () => setShowCompleted(false) }] : []),
     ...(dateFrom !== today || dateTo !== today
       ? [{ key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { setDateFrom(today); setDateTo(today); } }]
       : []),
@@ -434,6 +436,7 @@ const FOHPacking: React.FC = () => {
       : []),
   ];
   const fohFields: FilterField[] = [
+    { key: 'show', label: 'Show', node: completedToggle },
     { key: 'status', label: 'Status', node: statusSelect() },
     { key: 'date', label: 'Date range', node: <div className="grid grid-cols-2 gap-2.5">{dateFromInput}{dateToInput}</div> },
     ...(canFilterBranch ? [{ key: 'branch', label: 'Branch', node: branchSelect() }] : []),
@@ -442,6 +445,7 @@ const FOHPacking: React.FC = () => {
     setDateFrom(today);
     setDateTo(today);
     setStatusFilter('ready');
+    setShowCompleted(false);
   };
 
   return (
@@ -454,7 +458,7 @@ const FOHPacking: React.FC = () => {
               Verify items before handing over. Pricing is hidden.
             </p>
           </div>
-          <FilterBar className="w-full" primaryRow={completedToggle} chips={fohChips} fields={fohFields} onClearAll={clearFohFilters}>
+          <FilterBar className="w-full" chips={fohChips} fields={fohFields} onClearAll={clearFohFilters}>
           <div className="flex flex-wrap gap-4 items-end">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">From date</label>

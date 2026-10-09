@@ -25,8 +25,6 @@ export interface FilterBarProps {
   children: React.ReactNode;
   /** Below lg: stays on screen beside the Filters button (e.g. the search box). */
   primary?: React.ReactNode;
-  /** Below lg: a swipeable row above the bar for the one-tap filter people change all day (date presets). */
-  primaryRow?: React.ReactNode;
   /** Below lg: what is applied, as removable chips (plus optional shortcut chips). */
   chips?: FilterChip[];
   /** The sheet's sections, top to bottom. They hold the page's own controls and state. */
@@ -55,7 +53,6 @@ const FilterIcon = () => (
 const FilterBar: React.FC<FilterBarProps> = ({
   children,
   primary,
-  primaryRow,
   chips = [],
   fields,
   onClearAll,
@@ -241,7 +238,6 @@ const FilterBar: React.FC<FilterBarProps> = ({
 
   return (
     <div className={className}>
-      {primaryRow && <div className="mb-2.5 flex gap-2 overflow-x-auto pb-0.5 [scrollbar-width:none] [&>*]:flex-none">{primaryRow}</div>}
       {/* Chips wrap rather than scroll: one pushed off-screen could not be seen or tapped. */}
       {primary ? (
         <>
