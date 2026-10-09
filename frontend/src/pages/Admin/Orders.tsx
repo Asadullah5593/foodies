@@ -319,8 +319,29 @@ function customerText(o: OrderRow): string {
  * (the view the Customers page uses). Only a saved customer has one; a table or walk-in order
  * shows plain text. The dotted underline is the app's cue for "tap to see more".
  */
-const CustomerName: React.FC<{ o: OrderRow; className: string }> = ({ o, className }) => {
+const CustomerName: React.FC<{ o: OrderRow; className: string; historyName?: string | null }> = ({ o, className, historyName }) => {
   const text = customerText(o);
+  // One customer's history: every row is theirs, so the record's name leads and needs no link.
+  // A customer is one phone number, so an order placed with that phone under another typed
+  // name (a family member, a typo, a test account) still belongs here — the row says so.
+  if (historyName) {
+    const typed = o.customer_name?.trim();
+    const differs = !!typed && typed.toLowerCase() !== historyName.toLowerCase();
+    return (
+      <>
+        <span className={className}>{historyName}</span>
+        {differs && (
+          <span
+            className="ml-1.5 text-[12px] font-medium text-amber-700 dark:text-amber-300 max-lg:ml-0 max-lg:block"
+            title={`Placed with this customer's phone under the name "${typed}"`}
+            data-testid="ordered-as"
+          >
+            ordered as {typed}
+          </span>
+        )}
+      </>
+    );
+  }
   if (o.customer_id == null) return <span className={className}>{text}</span>;
   return (
     <Link
@@ -476,6 +497,8 @@ const Orders: React.FC = () => {
   const customerIdRaw = searchParams.get('customer_id') || '';
   const customerId = /^[1-9]\d*$/.test(customerIdRaw) ? customerIdRaw : '';
   const customerLabel = searchParams.get('customer_label') || '';
+  // The record's name, from the banner label "Name (phone)"; rows in a history lead with it.
+  const historyCustomerName = customerId ? customerLabel.replace(/\s*\([^)]*\)\s*$/, '').trim() || null : null;
   const defaultToday = localDateYYYYMMDD();
   // A history is every order they ever placed, so it opens with no date bound
   // instead of the list's usual "today"; the pickers still narrow it.
@@ -921,7 +944,7 @@ const Orders: React.FC = () => {
         {/* Customer */}
         <div className="min-w-0">
           <div className="truncate">
-            <CustomerName o={o} className="text-[14px] font-semibold text-gray-800 dark:text-slate-100" />
+            <CustomerName o={o} historyName={historyCustomerName} className="text-[14px] font-semibold text-gray-800 dark:text-slate-100" />
           </div>
           <div className="truncate text-[12.5px] text-gray-400 dark:text-slate-500">by {createdByText(o)}</div>
         </div>
@@ -1059,7 +1082,7 @@ const Orders: React.FC = () => {
         {/* customer + source */}
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <CustomerName o={o} className="text-[14px] font-semibold text-gray-800 dark:text-slate-100" />
+            <CustomerName o={o} historyName={historyCustomerName} className="text-[14px] font-semibold text-gray-800 dark:text-slate-100" />
             <span className="ml-1.5 text-[12.5px] text-gray-400 dark:text-slate-500">by {createdByText(o)}</span>
           </div>
           <span className={`inline-flex flex-none items-center rounded-md px-2.5 py-1 text-[12px] font-bold ${

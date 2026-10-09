@@ -33,11 +33,12 @@ const order = (over: Record<string, unknown>) => ({
   brand: { id: 21, name: 'Fireaway' }, customer_id: null, customer_name: null, customer_phone: null, table_number: null,
   ...over,
 });
-const rows = [
+const defaultRows = [
   order({ id: 1, order_number: '041', customer_id: 412, customer_name: 'Abdullah Arshad', customer_phone: '03240201350' }),
   order({ id: 2, order_number: '042', customer_id: 7, customer_name: 'Tahir', customer_phone: null }),
   order({ id: 3, order_number: '022', table_number: '1' }),
 ];
+let rows: typeof defaultRows = defaultRows;
 vi.mock('../../utils/apiClient', () => ({
   default: {
     get: (url: string) => {
@@ -51,17 +52,17 @@ vi.mock('../../services/api/adminService', () => ({ adminService: { getOnDutyRid
 
 import Orders from './Orders';
 
-const renderPage = () =>
+const renderPage = (url = '/admin/orders') =>
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <MemoryRouter initialEntries={['/admin/orders']}>
+      <MemoryRouter initialEntries={[url]}>
         <Orders />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 
 describe("Orders — a customer's name opens their history", () => {
-  beforeEach(() => { permissions = ['orders:view']; });
+  beforeEach(() => { permissions = ['orders:view']; rows = defaultRows; });
 
   it('links a saved customer to this page narrowed to them, named for the banner', async () => {
     renderPage();
@@ -83,6 +84,20 @@ describe("Orders — a customer's name opens their history", () => {
       expect(sp.get('customer_id')).toBe('7');
       expect(sp.get('customer_label')).toBe('Tahir');
     }
+  });
+
+  it("in one customer's history, leads with the record's name and says when an order was typed under another", async () => {
+    rows = [
+      order({ id: 1, order_number: '002', customer_id: 10, customer_name: 'John Doe', customer_phone: '03001234567' }),
+      order({ id: 2, order_number: '001', customer_id: 10, customer_name: 'EPG Test', customer_phone: '03001234567', source: 'consumer_app' }),
+    ];
+    renderPage('/admin/orders?customer_id=10&customer_label=John+Doe+%2803001234567%29');
+    const notes = await screen.findAllByTestId('ordered-as');
+    expect(notes[0]).toHaveTextContent('ordered as EPG Test');
+    // Both rows lead with the record's name; nothing links back to the view already open.
+    expect(screen.getAllByText('John Doe').length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole('link', { name: 'John Doe' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'EPG Test' })).toBeNull();
   });
 
   it('leaves a table order as plain text', async () => {
