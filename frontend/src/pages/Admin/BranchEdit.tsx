@@ -16,7 +16,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import LocationPicker from '../../components/LocationPicker';
-import { labelWithStatus } from '../../utils/entityStatus';
+import { isEntityActive, labelWithStatus } from '../../utils/entityStatus';
 
 const inputClass =
   'w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-red-500/50 dark:focus:ring-red-500/40 focus:border-red-500 dark:focus:border-red-500 transition-colors';
@@ -217,6 +217,17 @@ const BranchEdit: React.FC = () => {
     },
     enabled: brandIdsForMenu.length > 0,
   });
+  // The category filter below is rebuilt from the items' category references, which carry only an
+  // id and a name. Whether a category is inactive is known only to the categories themselves, so
+  // they are fetched once and the filter's options read their status from here.
+  const { data: allCategoriesForStatus } = useQuery({
+    queryKey: ['categoriesStatusForBranchEdit'],
+    queryFn: () => adminService.getCategories(),
+  });
+  const categoryStatusById = React.useMemo(
+    () => new Map(((allCategoriesForStatus ?? []) as Array<{ id: number }>).map((c) => [c.id, c])),
+    [allCategoriesForStatus],
+  );
 
   type MenuItemWithMeta = MenuItem & { brand_id?: number | null; category?: { id: number; name: string } | null };
   const filteredMenuItems = React.useMemo(() => {
@@ -248,8 +259,10 @@ const BranchEdit: React.FC = () => {
       const cname = mi.category?.name ?? 'Uncategorised';
       if (cid && !seen.has(cid)) seen.set(cid, cname);
     });
-    return Array.from(seen.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [brandMenuItems, menuItemFilterBrand]);
+    return Array.from(seen.entries())
+      .map(([id, name]) => ({ id, name, is_active: isEntityActive(categoryStatusById.get(id)) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [brandMenuItems, menuItemFilterBrand, categoryStatusById]);
 
   const menuItemsGroupedByCategory = React.useMemo(() => {
     const byCat = new Map<number, { name: string; items: MenuItemWithMeta[] }>();
