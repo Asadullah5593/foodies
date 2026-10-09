@@ -24,7 +24,7 @@ import {
   RecentOrdersPanel,
   InventoryAlertsPanel,
 } from './dashboard/panels';
-import { defaultRange, matchPreset, presetRanges } from './dashboard/dateRanges';
+import { defaultRange, matchPreset, presetRanges, type PresetKey } from './dashboard/dateRanges';
 import { dashboardCsv, dashboardReportHtml, downloadFile } from './dashboard/exportReport';
 import { printContent } from '../../utils/print';
 import type { DashboardSummary, OrderSeriesResponse, RecentOrder, InventoryAlerts } from './dashboard/types';
@@ -492,7 +492,8 @@ const Dashboard: React.FC = () => {
     </div>
   );
 
-  // Phones and tablets: what's applied, as chips (presets stay on screen, so a preset range isn't a chip).
+  // Phones and tablets: what's applied, as chips. The presets live in the sheet, so the range is
+  // always a chip — a plain label for the default range, removable (back to the default) otherwise.
   const resetRange = () => {
     const r = defaultRange();
     setDateFrom(r.from);
@@ -500,10 +501,20 @@ const Dashboard: React.FC = () => {
     setTimeFrom(DAY_START);
     setTimeTo(DAY_END);
   };
+  const PRESET_CHIP_LABEL: Record<PresetKey, string> = { today: 'Today', '7d': 'Last 7 days', '30d': 'Last 30 days', month: 'This month' };
+  const isDefaultRange = (() => {
+    const d = defaultRange();
+    return !timeNarrowed && dateFrom === d.from && dateTo === d.to;
+  })();
   const filterChips: FilterChip[] = [
-    ...(activePreset == null
-      ? [{ key: 'range', label: rangeChipLabel(dateFrom, dateTo) + (timeNarrowed ? ` · ${timeFrom}–${timeTo}` : ''), onRemove: resetRange }]
-      : []),
+    {
+      key: 'range',
+      label:
+        activePreset != null
+          ? PRESET_CHIP_LABEL[activePreset]
+          : rangeChipLabel(dateFrom, dateTo) + (timeNarrowed ? ` · ${timeFrom}–${timeTo}` : ''),
+      ...(isDefaultRange ? {} : { onRemove: resetRange }),
+    },
     ...(showBranchFilter && branchId != null
       ? [{ key: 'branch', label: relevantBranches.find((b) => b.id === branchId)?.name ?? 'Branch', onRemove: () => setBranchId(null) }]
       : []),
@@ -579,11 +590,11 @@ const Dashboard: React.FC = () => {
         )}
       </motion.div>
 
-      {/* Filters — quick presets over an exact range (date + time-of-day). Below lg: a compact
-          bar (presets stay on screen) and a sheet with the rest; desktop renders the card as before. */}
+      {/* Filters — quick presets over an exact range (date + time-of-day). Below lg: a Filters
+          button with the applied range as a chip, and a sheet holding the presets and the rest;
+          desktop renders the card as before. */}
       <FilterBar
         className="mb-[22px]"
-        primaryRow={presetButtons}
         chips={filterChips}
         fields={filterFields}
         onClearAll={clearAllFilters}
