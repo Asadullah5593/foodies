@@ -3735,6 +3735,8 @@ export class OrdersService {
             notes: order.notes ?? null,
             customer_name: order.customerName,
             customer_phone: order.customerPhone,
+            // The saved customer behind the phone, so the page can open their profile.
+            customer_id: order.customerId ?? null,
             delivery_address: order.deliveryAddress,
             status: order.status,
             rider_id: order.riderId ?? null,
