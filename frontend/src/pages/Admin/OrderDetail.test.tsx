@@ -271,6 +271,18 @@ describe('OrderDetail — other kinds of order', () => {
     expect(totals).not.toContain('Points');
   });
 
+  it('an app order the rider collects cash for names COD before any payment is recorded', async () => {
+    currentOrder = { ...deliveryOrder, status: 'preparing', payments: [], pending_payment_method: 'cod' };
+    renderPage();
+    await screen.findByRole('heading', { level: 1, name: 'Order #040' });
+    const payment = card('payment-card');
+    expect(within(payment).getByTestId('payment-pill')).toHaveTextContent('Unpaid');
+    expect(payment).toHaveTextContent('Amount dueRs. 1348.68');
+    expect(within(payment).getByTestId('pending-tender')).toHaveTextContent('MethodCash on delivery (COD)');
+    expect(payment).toHaveTextContent('recorded here when the order is completed');
+    expect(payment).toHaveTextContent('No payments recorded for this order yet.');
+  });
+
   it('a failed delivery shows the rider’s reason', async () => {
     currentOrder = { ...deliveryOrder, delivery_status: 'delivery_failed', delivery_failed_reason: 'Customer unreachable', delivered_at: null, trip_duration_seconds: null };
     renderPage();

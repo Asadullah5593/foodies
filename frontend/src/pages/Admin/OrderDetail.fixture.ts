@@ -89,6 +89,7 @@ export const deliveryOrder = {
     },
   ],
   payments: [{ id: 5, method: 'cash', amount: 1348.68, status: 'completed', paid_at: '2026-10-09T12:35:00.000Z' }],
+  pending_payment_method: null as string | null,
 };
 
 export const dineInOrder = {

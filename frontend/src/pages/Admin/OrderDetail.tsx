@@ -102,6 +102,8 @@ type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   creator?: { id: number; name: string } | null;
   items?: OrderDetailItem[];
   payments?: Array<{ id: number; method?: string | null; payment_method?: string; amount: number; status: string; paid_at?: string | null }>;
+  /** The tender the order is due to be paid by before any is recorded ('cod' for an app order); null once tendered. */
+  pending_payment_method?: string | null;
   loyalty_points_earned?: number;
   loyalty_points_redeemed?: number;
   rider_id?: number | null;
@@ -214,6 +216,9 @@ const PAYMENT_PILL: Record<'paid' | 'partial' | 'unpaid', { cls: string; label: 
   partial: { cls: 'border-[#FBE4B8] bg-[#FFF6E6] text-[#B45309] dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300', label: 'Partly paid' },
   unpaid: { cls: 'border-[#FBE4B8] bg-[#FFF6E6] text-[#B45309] dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300', label: 'Unpaid' },
 };
+
+/** How a tender that is still to come reads; the server names only COD today. */
+const PENDING_TENDER_LABEL: Record<string, string> = { cod: 'Cash on delivery (COD)' };
 
 /** "cash" → "Cash", "bank_transfer" → "Bank transfer". */
 function tenderLabel(method: string | null | undefined): string {
@@ -885,6 +890,14 @@ const OrderDetail: React.FC = () => {
         </span>
       </div>
       {amountDue > 0 && row('Amount due', <span className={`font-extrabold ${cu.strong}`}>{formatCurrency(amountDue)}</span>)}
+      {/* An app order the rider (or the counter) collects cash for: the tender is known from the
+          moment it arrives, the money only once completion records it. */}
+      {o.pending_payment_method && (
+        <div data-testid="pending-tender">
+          {row('Method', <span className={`font-bold ${cu.strong}`}>{PENDING_TENDER_LABEL[o.pending_payment_method] ?? o.pending_payment_method}</span>)}
+          <p className={`mt-0.5 text-[12px] ${cu.muted}`}>Collected on delivery or at the counter, and recorded here when the order is completed.</p>
+        </div>
+      )}
       {o.payments && o.payments.length > 0 ? (
         <div className="mt-1">
           {o.payments.map((p) => (
