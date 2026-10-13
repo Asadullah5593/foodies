@@ -83,6 +83,8 @@ type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   creator?: { id: number; name: string };
   items?: OrderDetailItem[];
   payments?: Array<{ id: number; method?: string; payment_method?: string; amount: number; status: string; paid_at?: string }>;
+  /** The tender the order is due to be paid by before any is recorded ('cod' for an app order); null once tendered. */
+  pending_payment_method?: string | null;
   loyalty_points_earned?: number;
   loyalty_points_redeemed?: number;
   rider_id?: number | null;
@@ -105,6 +107,9 @@ function formatStars(n: number): string {
   const s = Math.max(1, Math.min(5, Math.round(Number(n) || 0)));
   return `${'★'.repeat(s)}${'☆'.repeat(5 - s)} (${s}/5)`;
 }
+
+/** How a tender that is still to come reads; the server names only COD today. */
+const PENDING_TENDER_LABEL: Record<string, string> = { cod: 'Cash on delivery (COD)' };
 
 function formatOrderSourceLabel(source: string | null | undefined): string {
   if (source === 'consumer_app') return 'Consumer app';
@@ -618,6 +623,17 @@ const OrderDetail: React.FC = () => {
                 )}
               </div>
             ))}
+          </div>
+        ) : o.pending_payment_method ? (
+          // An app order the rider (or the counter) collects cash for: the tender is known from
+          // the moment it arrives, the money only once completion records it.
+          <div className="text-sm" data-testid="pending-tender">
+            <p className="text-gray-800 dark:text-slate-200">
+              <span className="font-medium text-gray-500 dark:text-slate-400">Method:</span>{' '}
+              <span className="font-semibold">{PENDING_TENDER_LABEL[o.pending_payment_method] ?? o.pending_payment_method}</span>
+              <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Unpaid</span>
+            </p>
+            <p className="mt-1 text-gray-500 dark:text-slate-400">Collected on delivery or at the counter, and recorded here when the order is completed.</p>
           </div>
         ) : (
           <p className="text-gray-500 dark:text-slate-400 text-sm">No payments recorded for this order.</p>

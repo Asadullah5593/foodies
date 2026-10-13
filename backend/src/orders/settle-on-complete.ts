@@ -35,3 +35,21 @@ export function settleMethodsForTaxBasis(
     if (basis === 'card') return ['card', 'online_transfer'];
     return ['cash', 'card', 'online_transfer'];
 }
+
+/**
+ * The tender an order is due to be paid by before any money is recorded: a
+ * consumer-app order settles in cash at the door or the counter, which
+ * completion records as 'cod' (see recordCodTenderIfUntendered). Every other
+ * source tenders at placement or through the gateway, so nothing is known
+ * until a payment row exists. null once anything has been tendered, for a
+ * zero-total order, and for every other source.
+ */
+export function pendingPaymentMethod(
+    order: { source?: string | null; totalAmount?: number | string | null },
+    tendered: boolean,
+): 'cod' | null {
+    if (tendered) return null;
+    if (order.source !== 'consumer_app') return null;
+    if (!(Number(order.totalAmount ?? 0) > 0)) return null;
+    return 'cod';
+}
