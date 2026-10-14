@@ -85,6 +85,8 @@ type OrderRow = Omit<Order, 'payments' | 'creator'> & {
   orderItems?: unknown[];
   items_count?: number;
   payments?: OrderPayment[] | null;
+  /** The tender the order is due to be paid by before any is recorded ('cod' for an app order); null once tendered. */
+  pending_payment_method?: string | null;
 };
 
 /** Server-paginated envelope from GET /admin/orders. */
@@ -135,6 +137,7 @@ function normalizeOrder(o: OrderRow): OrderRow {
     placed_at: o.placed_at ?? row.placedAt ?? row.createdAt ?? null,
     items_count: o.items_count ?? (Array.isArray(o.orderItems) ? o.orderItems.length : 0),
     payments: o.payments ?? null,
+    pending_payment_method: o.pending_payment_method ?? null,
   };
 }
 
@@ -259,11 +262,19 @@ function ageText(m: number | null): string {
   return `${m}m ago`;
 }
 
-/** Distinct completed tender methods ("Cash + Card" for a split bill), '—' before any tender. */
+/**
+ * Distinct completed tender methods ("Cash + Card" for a split bill). Before any tender, the
+ * method the order is due to be paid by when the server knows it — "COD" for an app order the
+ * rider collects for — so the column reads COD from the moment the order arrives, not only once
+ * completion records the cash. '—' when neither is known.
+ */
 function paymentMethodText(o: OrderRow): string {
   const done = (o.payments ?? []).filter((p) => (p.status ?? '') === 'completed');
   const methods = [...new Set(done.map((p) => p.paymentMethod ?? p.payment_method).filter(Boolean))] as string[];
-  if (!methods.length) return '—';
+  if (!methods.length) {
+    const due = o.pending_payment_method;
+    return due ? (PAYMENT_METHOD_LABEL[due] ?? due) : '—';
+  }
   return methods.map((m) => PAYMENT_METHOD_LABEL[m] ?? m).join(' + ');
 }
 

@@ -120,6 +120,7 @@ import { resolveOfferSettings, OfferSettings } from './offer-settings';
 import { ORDER_SOURCES } from './order-sources';
 import { isOrderPaymentMethodFilter } from './payment-methods';
 import {
+    pendingPaymentMethod,
     requiresPaymentToComplete,
     settleMethodsForTaxBasis,
 } from './settle-on-complete';
@@ -268,8 +269,8 @@ export class OrdersService {
         source?: string | null;
         totalAmount: number | string;
     }): Promise<void> {
-        if (order.source !== 'consumer_app') return;
-        if (!(Number(order.totalAmount) > 0)) return;
+        // The same rule the admin list and detail read the pending tender by.
+        if (pendingPaymentMethod(order, false) !== 'cod') return;
         const tendered: unknown[] = await this.dataSource.query(
             `SELECT 1 FROM payments WHERE order_id = $1 LIMIT 1`,
             [order.id],
@@ -3748,6 +3749,11 @@ export class OrdersService {
             // Rider's pickup → delivered taps, and the time between them.
             ...tripTimeFields(order),
             source: order.source,
+            // The tender the order is due to be paid by before any is recorded.
+            pending_payment_method: pendingPaymentMethod(
+                order,
+                (order.payments ?? []).length > 0,
+            ),
             subtotal: Number(order.subtotal),
             discount_amount: Number(order.discountAmount),
             discount_code: order.discountCode,
@@ -4039,11 +4045,21 @@ export class OrdersService {
             if (
                 filters.payment_method &&
                 isOrderPaymentMethodFilter(filters.payment_method)
-            )
+            ) {
+                const tendered =
+                    'EXISTS (SELECT 1 FROM payments pm WHERE pm.order_id = o.id AND pm.payment_method = :pmMethod)';
+                // COD is also what an untendered app order is due to be paid by
+                // (pendingPaymentMethod), and the Payment column says so; a
+                // filter must not hide what the column shows.
+                const dueCod =
+                    "(o.source = 'consumer_app' AND o.totalAmount > 0 AND NOT EXISTS (SELECT 1 FROM payments pm2 WHERE pm2.order_id = o.id))";
                 qb.andWhere(
-                    'EXISTS (SELECT 1 FROM payments pm WHERE pm.order_id = o.id AND pm.payment_method = :pmMethod)',
+                    filters.payment_method === 'cod'
+                        ? `(${tendered} OR ${dueCod})`
+                        : tendered,
                     { pmMethod: filters.payment_method },
                 );
+            }
             // Discount filter: "show me the orders that were discounted", or
             // the ones that carried one particular kind of discount.
             if (isDiscountFilter(filters.discount)) {
@@ -4103,6 +4119,17 @@ export class OrdersService {
             .skip((page - 1) * pageSize)
             .take(pageSize);
         const [data, total] = await dataQb.getManyAndCount();
+        // The tender an untendered order is due to be paid by, so the list reads
+        // "COD" from the moment an app order arrives, not only once completion
+        // records the cash.
+        const rows = data.map((o) =>
+            Object.assign(o, {
+                pending_payment_method: pendingPaymentMethod(
+                    o,
+                    (o.payments ?? []).length > 0,
+                ),
+            }),
+        );
 
         // --- status-tile counts over the common filter set (all statuses) ----
         const countsQb = this.orderRepo
@@ -4129,7 +4156,7 @@ export class OrdersService {
         statusCounts['needs_rider'] = Number(nrRow?.count) || 0;
 
         return {
-            data,
+            data: rows,
             total,
             total_all: totalAll,
             page,
