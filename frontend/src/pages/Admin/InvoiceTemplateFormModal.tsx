@@ -847,9 +847,10 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
                 </div>
               </div>
 
-              {/* Footer */}
-              <div className="flex flex-none items-center justify-between gap-4 border-t border-gray-100 bg-gray-50 px-6 py-4">
-                <div className="flex items-center gap-6">
+              {/* Footer. Phones: the switches wrap onto their own line and the two buttons take a
+                  full-width row — on one row Cancel and Create sat past the screen edge. */}
+              <div className="flex flex-none items-center justify-between gap-4 border-t border-gray-100 bg-gray-50 px-6 py-4 max-sm:flex-wrap max-sm:gap-3 max-sm:px-4">
+                <div className="flex items-center gap-6 max-sm:w-full max-sm:flex-wrap max-sm:gap-x-5 max-sm:gap-y-1">
                   <div className="flex items-center gap-2.5">
                     <span className="text-[13.5px] font-semibold text-gray-700">Active</span>
                     <SegToggle
@@ -868,7 +869,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
                       key={key}
                       type="button"
                       onClick={() => setForm((f) => ({ ...f, [key]: !f[key] }))}
-                      className="flex items-center gap-2"
+                      className="flex items-center gap-2 max-sm:min-h-[40px]"
                     >
                       <span
                         className={`flex h-[19px] w-[19px] flex-none items-center justify-center rounded-md border-[1.5px] ${
@@ -885,11 +886,11 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
                     </button>
                   ))}
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-3 max-sm:w-full">
                   <button
                     type="button"
                     onClick={onClose}
-                    className="rounded-[11px] border-[1.5px] border-gray-300 bg-white px-5 py-[11px] text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+                    className="rounded-[11px] border-[1.5px] border-gray-300 bg-white px-5 py-[11px] text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 max-sm:min-h-[44px] max-sm:flex-1"
                   >
                     Cancel
                   </button>
@@ -897,7 +898,7 @@ const InvoiceTemplateFormModal: React.FC<Props> = ({
                     type="button"
                     onClick={onSubmit}
                     disabled={saving}
-                    className="rounded-[11px] bg-red-600 px-6 py-[11px] text-sm font-bold text-white shadow-lg shadow-red-600/25 transition-colors hover:bg-red-700 active:scale-[0.97] disabled:opacity-60"
+                    className="rounded-[11px] bg-red-600 px-6 py-[11px] text-sm font-bold text-white shadow-lg shadow-red-600/25 transition-colors hover:bg-red-700 active:scale-[0.97] disabled:opacity-60 max-sm:min-h-[44px] max-sm:flex-1"
                   >
                     {saving ? 'Saving…' : isEdit ? 'Update template' : 'Create template'}
                   </button>

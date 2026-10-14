@@ -21,6 +21,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { isEntityInactive } from '../../utils/entityStatus';
 import InactiveBadge from '../../components/InactiveBadge';
 import TableScroll from '../../components/TableScroll';
+import { useViewport } from '../../hooks/useViewport';
 
 interface RoleOption {
   id: number;
@@ -30,6 +31,7 @@ interface RoleOption {
 
 const BranchUsers: React.FC = () => {
   const queryClient = useQueryClient();
+  const { isPhone } = useViewport();
   const canAssign = useHasPermission('branch-users:assign');
   const canRemove = useHasPermission('branch-users:remove');
   const [showForm, setShowForm] = useState(false);
@@ -512,6 +514,82 @@ const BranchUsers: React.FC = () => {
                 className="w-full sm:w-64 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            {/* Phones: one block per user (tick, name, then the role and the rest below it) —
+                in the table the Role column sat past the screen edge, reachable only by
+                scrolling the table sideways for every row. Tablets keep the table. */}
+            {isPhone ? (
+              <div className="max-h-80 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-300" data-testid="assign-users-list">
+                {modalUsers.map((user) => {
+                  const included = selectedUserIds.includes(user.id);
+                  const assigned = branchAssignedUserIds.has(user.id);
+                  return (
+                    <div key={user.id} className="p-3">
+                      <label className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={included}
+                          onChange={(e) => toggleUser(user.id, e.target.checked)}
+                          disabled={assigned}
+                          title={assigned ? 'Already assigned — remove from the list page' : undefined}
+                          aria-label={`Include ${user.name}`}
+                          className="mt-0.5 h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium text-gray-800">
+                            {user.name}
+                            {assigned && (
+                              <span className="ml-2 inline-block rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-700">
+                                Assigned
+                              </span>
+                            )}
+                          </span>
+                          <span className="block truncate text-[12.5px] text-gray-500">{user.email}</span>
+                        </span>
+                      </label>
+                      {included && (
+                        <div className="mt-2 space-y-2 pl-8">
+                          <ResponsiveSelect
+                            value={roleByUserId[user.id] ?? defaultRoleId}
+                            onChange={(e) => setUserRole(user.id, parseInt(e.target.value, 10))}
+                            aria-label={`Role for ${user.name}`}
+                            className="w-full rounded border border-gray-300 px-2 py-2 focus:ring-2 focus:ring-blue-500"
+                          >
+                            {roles?.map((role) => (
+                              <option key={role.id} value={role.id}>
+                                {role.name}
+                              </option>
+                            ))}
+                          </ResponsiveSelect>
+                          {assignBranchBrands.length > 1 && (
+                            <BrandLockSelect
+                              brands={assignBranchBrands}
+                              value={brandByUserId[user.id] ?? []}
+                              onChange={(ids: number[]) => setUserBrands(user.id, ids)}
+                              disabled={false}
+                              ariaLabel={`Brands for ${user.name ?? 'user'}`}
+                            />
+                          )}
+                          {showPhoneColumn && isRiderRole(roleByUserId[user.id] ?? defaultRoleId) && (
+                            <input
+                              type="tel"
+                              value={phoneOf(user.id)}
+                              onChange={(e) =>
+                                setPhoneByUserId((prev) => ({ ...prev, [user.id]: e.target.value }))
+                              }
+                              placeholder="Phone — required for riders"
+                              aria-label={`Phone for ${user.name}`}
+                              className={`w-full rounded border px-2 py-2 focus:ring-2 focus:ring-blue-500 ${
+                                phoneOf(user.id).trim() ? 'border-gray-300' : 'border-red-400 bg-red-50 placeholder-red-400'
+                              }`}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
             <TableScroll className="max-h-80 overflow-y-auto border border-gray-300 rounded-lg">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 sticky top-0">
@@ -600,6 +678,7 @@ const BranchUsers: React.FC = () => {
                 </tbody>
               </table>
             </TableScroll>
+            )}
             {allUsers?.length === 0 && (
               <p className="text-gray-500 text-sm p-2">No users found. Create users in the Users page first.</p>
             )}
