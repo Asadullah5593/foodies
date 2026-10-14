@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { OptionalCustomerJwtAuthGuard } from '../auth/optional-customer-jwt-auth.guard';
+import { normalizeOrderBody } from '../orders/legacy-deal-payload';
 import { CreatePaymentSessionDto } from './dto/create-payment-session.dto';
 import { EpgService } from './epg.service';
 
@@ -38,6 +39,11 @@ export class PaymentsEpgController {
         @Req() req: { user?: { id?: number } | null },
         @Body() dto: CreatePaymentSessionDto,
     ) {
+        // Same shim as the app's cash route (POST /public/consumer/orders): the
+        // shipped app sends deals as `deal_items`. Translate before the cart is
+        // priced or stored, so the order created once the bank confirms carries
+        // the converted deal too. See legacy-deal-payload.ts.
+        normalizeOrderBody(dto, '/public/consumer/payments/session');
         return this.epgService.createSession({
             cart: dto as unknown as Record<string, unknown>,
             customerId: req.user?.id ?? null,
