@@ -43,6 +43,7 @@ export default function TypeaheadDropdown({
           <li key={opt.id} role="option" aria-selected={idx === activeIndex}>
             <button
               type="button"
+              className="max-lg:block max-lg:w-full max-lg:text-left"
               onMouseEnter={() => onHoverIndex(idx)}
               onMouseDown={(e) => {
                 e.preventDefault();

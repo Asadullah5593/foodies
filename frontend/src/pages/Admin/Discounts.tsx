@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -304,7 +305,7 @@ const Discounts: React.FC = () => {
   const categoryOptions: SearchableMultiSelectOption[] = (categories ?? []).map(
     (c) => {
       const brandName = c.brandId != null ? brandNameById.get(c.brandId) : undefined;
-      return { id: c.id, name: brandName ? `${c.name} (${brandName})` : c.name };
+      return { id: c.id, name: brandName ? `${c.name} (${brandName})` : c.name, inactive: isEntityInactive(c) };
     },
   );
 
@@ -314,7 +315,7 @@ const Discounts: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Discounts</h1>
         {canCreatePerm && <Button onClick={() => {
@@ -374,14 +375,14 @@ const Discounts: React.FC = () => {
             </p>
           </div>
 
-          <div className="mb-5 grid grid-cols-2 gap-4">
+          <div className="mb-5 grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className={offerLabel}>Type <span className="text-red-500">*</span></label>
-              <select value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as 'flat' | 'percentage' | 'buy_x_get_y' })} className={offerInput}>
+              <ResponsiveSelect value={formData.type} onChange={(e) => setFormData({ ...formData, type: e.target.value as 'flat' | 'percentage' | 'buy_x_get_y' })} className={offerInput}>
                 <option value="flat">Flat Amount</option>
                 <option value="percentage">Percentage</option>
                 <option value="buy_x_get_y">Buy X Get Y (BOGO)</option>
-              </select>
+              </ResponsiveSelect>
             </div>
             <div>
               <label className={offerLabel}>{formData.type === 'buy_x_get_y' ? 'Value (unused for BOGO)' : <>Value <span className="text-red-500">*</span></>}</label>
@@ -428,7 +429,7 @@ const Discounts: React.FC = () => {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className={offerLabel}>Min order amount</label>
               <input type="number" step="0.01" min="0" value={formData.min_order_amount} onChange={(e) => setFormData({ ...formData, min_order_amount: e.target.value })} placeholder="No minimum" className={offerInput} />
@@ -513,7 +514,7 @@ const Discounts: React.FC = () => {
           </div>
 
           {/* Date + time + day window */}
-          <div className="mb-5 grid grid-cols-2 gap-4">
+          <div className="mb-5 grid grid-cols-2 gap-4 max-sm:grid-cols-1">
             <div>
               <label className={offerLabel}>Valid from</label>
               <input type="date" value={formData.valid_from} onChange={(e) => setFormData({ ...formData, valid_from: e.target.value })} className={offerInput} />

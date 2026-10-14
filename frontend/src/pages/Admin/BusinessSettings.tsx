@@ -122,7 +122,7 @@ const BusinessSettings: React.FC = () => {
 
   if (user?.tenant_id == null) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 max-w-7xl mx-auto">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 max-w-7xl mx-auto">
         <Card className="p-6">
           <p className="text-gray-600 dark:text-slate-400">Business settings are only available for tenant users. Super admins manage tenants from the Tenants module.</p>
         </Card>
@@ -303,7 +303,7 @@ const BusinessSettings: React.FC = () => {
                     if (window.confirm('Enable FBR reporting on ALL branches that have credentials saved?'))
                       fbrBulkMutation.mutate(true);
                   }}
-                  className="rounded-[10px] border-[1.5px] border-emerald-500 px-3.5 py-2 text-[12.5px] font-bold text-emerald-600 transition-colors hover:bg-emerald-50 disabled:opacity-60 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
+                  className="rounded-[10px] border-[1.5px] border-emerald-500 px-3.5 py-2 text-[12.5px] font-bold text-emerald-600 max-lg:min-h-[40px] transition-colors hover:bg-emerald-50 disabled:opacity-60 dark:text-emerald-400 dark:hover:bg-emerald-500/10"
                 >
                   Enable on all
                 </button>
@@ -314,7 +314,7 @@ const BusinessSettings: React.FC = () => {
                     if (window.confirm('Disable FBR reporting on ALL branches? Receipts will reuse each branch’s last real FBR number.'))
                       fbrBulkMutation.mutate(false);
                   }}
-                  className="rounded-[10px] border-[1.5px] border-red-500 px-3.5 py-2 text-[12.5px] font-bold text-red-600 transition-colors hover:bg-red-50 disabled:opacity-60 dark:text-red-400 dark:hover:bg-red-500/10"
+                  className="rounded-[10px] border-[1.5px] border-red-500 px-3.5 py-2 text-[12.5px] font-bold text-red-600 max-lg:min-h-[40px] transition-colors hover:bg-red-50 disabled:opacity-60 dark:text-red-400 dark:hover:bg-red-500/10"
                 >
                   Disable on all
                 </button>

@@ -27,7 +27,7 @@ const ChartCard: React.FC<ChartCardProps> = ({
     <div
       className={`flex flex-col rounded-2xl border border-gray-200 bg-white px-[22px] py-5 shadow-[0_6px_18px_rgba(15,23,42,0.04)] dark:border-slate-700 dark:bg-slate-800 ${className}`}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3 max-sm:flex-col max-sm:items-stretch">
         <div>
           <h3 className="text-[15.5px] font-bold text-gray-800 dark:text-slate-100">{title}</h3>
           {subtitle && (

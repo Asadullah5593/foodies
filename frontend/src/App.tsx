@@ -39,6 +39,9 @@ import {
   MdOutlineNotificationsActive,
   MdOutlineKeyboard,
   MdKeyboardHide,
+  MdOutlineLightMode,
+  MdOutlineDarkMode,
+  MdLogout,
 } from 'react-icons/md';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
@@ -46,6 +49,8 @@ import {
   OnScreenKeyboardProvider,
   useOnScreenKeyboard,
 } from './contexts/OnScreenKeyboardContext';
+import { useViewport } from './hooks/useViewport';
+import HeaderOverflowMenu, { type HeaderMenuItem } from './components/HeaderOverflowMenu';
 import Login from './pages/Admin/Login';
 import Dashboard from './pages/Admin/Dashboard';
 import Tenants from './pages/Admin/Tenants';
@@ -279,6 +284,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const location = useLocation();
   const queryClient = useQueryClient();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Below lg the header swaps its row of quick icons for a bell + "more" menu, and the
+  // sidebar is the slide-in drawer. At lg and up everything renders exactly as before.
+  const { isDesktop } = useViewport();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
@@ -316,6 +324,49 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const t = setTimeout(() => setRouteChanging(false), 400);
     return () => clearTimeout(t);
   }, [location.pathname]);
+
+  // Drawer (below lg only — the hamburger that opens it is lg:hidden): close it whenever the
+  // route changes or Escape is pressed, and keep the page from scrolling behind it.
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (isDesktop) setSidebarOpen(false);
+  }, [isDesktop]);
+
+  // The drawer stays mounted (it slides), so while closed it is made inert: its links leave
+  // the Tab order and screen readers skip it. Opening moves focus to its close button;
+  // closing hands focus back to the hamburger.
+  const drawerRef = useRef<HTMLElement>(null);
+  const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const hamburgerRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+    if (sidebarOpen) {
+      drawer.removeAttribute('inert');
+      drawerCloseRef.current?.focus({ preventScroll: true });
+    } else {
+      const hadFocus = drawer.contains(document.activeElement);
+      drawer.setAttribute('inert', '');
+      if (hadFocus) hamburgerRef.current?.focus({ preventScroll: true });
+    }
+  }, [sidebarOpen]);
+
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSidebarOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [sidebarOpen]);
 
   const handleLogout = async () => {
     queryClient.clear();
@@ -563,10 +614,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const sidebarInactive = isDarkSidebar ? 'text-slate-300 hover:bg-white/10 hover:text-white' : 'text-slate-600 hover:bg-slate-200 hover:text-slate-900';
   const sidebarLogoText = isDarkSidebar ? 'text-white' : 'text-slate-800';
 
-  const renderSidebarContent = (collapsed: boolean) => (
+  // `drawer` is the below-lg slide-in: it gets a close button, 44px rows and no desktop
+  // Collapse control (which would otherwise flip the desktop sidebar's stored state).
+  const renderSidebarContent = (collapsed: boolean, drawer = false) => (
     <>
       {/* Logo — top of sidebar */}
-      <div className={`flex-shrink-0 border-b ${sidebarBorder} ${collapsed ? 'px-0 py-4 flex justify-center' : 'px-4 pt-6 pb-5'}`}>
+      <div className={`flex-shrink-0 border-b ${sidebarBorder} ${collapsed ? 'px-0 py-4 flex justify-center' : 'px-4 pt-6 pb-5'} ${drawer ? 'relative' : ''}`}>
         <Link
           to="/admin/dashboard"
           className={`flex items-center ${collapsed ? 'justify-center' : 'justify-center gap-3'}`}
@@ -582,6 +635,19 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             <span className={`text-xl font-semibold ${sidebarLogoText} tracking-tight`}>Foodies</span>
           )}
         </Link>
+        {drawer && (
+          <button
+            ref={drawerCloseRef}
+            type="button"
+            onClick={() => setSidebarOpen(false)}
+            className={`absolute right-2 top-2 flex h-11 w-11 items-center justify-center rounded-lg ${sidebarMuted} ${isDarkSidebar ? 'hover:bg-white/10 hover:text-white' : 'hover:bg-slate-200 hover:text-slate-800'}`}
+            aria-label="Close menu"
+          >
+            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Nav links — scrollable */}
@@ -596,7 +662,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 title={collapsed ? item.label : undefined}
                 className={`flex items-center rounded-lg text-sm font-medium transition-all duration-200 ${
                   collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3 py-2.5'
-                } ${
+                } ${drawer ? 'min-h-[44px]' : ''} ${
                   isActive(item.path) ? 'bg-red-600 text-white shadow-lg shadow-red-600/30' : sidebarInactive
                 }`}
               >
@@ -631,7 +697,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               <button
                 type="button"
                 onClick={() => setExpandedGroups((p) => ({ ...p, [item.id]: !p[item.id] }))}
-                className={`w-full flex items-center rounded-lg text-sm font-medium transition-all duration-200 gap-3 px-3 py-2.5 ${
+                className={`w-full flex items-center rounded-lg text-sm font-medium transition-all duration-200 gap-3 px-3 py-2.5 ${drawer ? 'min-h-[44px]' : ''} ${
                   groupActive ? 'bg-red-600 text-white shadow-lg shadow-red-600/30' : sidebarInactive
                 }`}
               >
@@ -662,7 +728,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                           key={c.path}
                           to={c.path}
                           onClick={() => setSidebarOpen(false)}
-                          className={`block rounded-lg text-sm font-medium px-3 py-2 transition-colors ${
+                          className={`block rounded-lg text-sm font-medium px-3 py-2 transition-colors ${drawer ? 'min-h-[44px] flex items-center' : ''} ${
                             isActive(c.path)
                               ? theme === 'dark'
                                 ? 'bg-white/15 text-white'
@@ -683,6 +749,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       </nav>
 
       {/* Collapse/expand toggle — same position in both states so sequence stays consistent */}
+      {!drawer && (
       <div className={`flex-shrink-0 ${collapsed ? 'px-2 pb-2' : 'px-3 pb-2'}`}>
         <button
           type="button"
@@ -707,6 +774,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           )}
         </button>
       </div>
+      )}
 
       {/* Theme toggle — above user/logout */}
       <div className={`flex-shrink-0 ${collapsed ? 'px-2 pb-2' : 'px-3 pb-2'}`}>
@@ -715,7 +783,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           onClick={toggleTheme}
           className={`w-full flex items-center rounded-lg font-medium text-sm transition-colors ${sidebarMuted} ${isDarkSidebar ? 'hover:bg-white/10 hover:text-white' : 'hover:bg-slate-200 hover:text-slate-800'} ${
             collapsed ? 'justify-center p-2.5' : 'justify-center gap-2 px-3 py-2.5'
-          }`}
+          } ${drawer ? 'min-h-[44px]' : ''}`}
           title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
         >
@@ -744,7 +812,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           title={collapsed ? 'Logout' : undefined}
           className={`w-full flex items-center rounded-lg font-medium text-sm transition-all duration-200 text-white border-0 !bg-[linear-gradient(90deg,#000000_0%,#B91C1C_50%,#000000_100%)] hover:brightness-110 active:brightness-95 ${
             collapsed ? 'justify-center p-2.5' : 'justify-center gap-2 px-3 py-2.5'
-          }`}
+          } ${drawer ? 'min-h-[44px]' : ''}`}
         >
           <svg className="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -756,6 +824,24 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   );
 
   const desktopSidebarWidth = sidebarCollapsed ? SIDEBAR_COLLAPSED_WIDTH : SIDEBAR_WIDTH;
+
+  // Below lg: everything the desktop header shows as quick icons, in one menu (same gating).
+  const mobileMenuItems: HeaderMenuItem[] = [
+    ...(canAccessPath(user, '/pos/orders')
+      ? [{ key: 'pos', label: 'POS', icon: <MdOutlineShoppingCart className="h-5 w-5" />, to: '/pos/orders', onSelect: () => handleNavLinkClick('/pos/orders') }]
+      : []),
+    ...(canAccessPath(user, '/admin/orders')
+      ? [{ key: 'orders', label: 'Orders', icon: <MdOutlineReceiptLong className="h-5 w-5" />, to: '/admin/orders', onSelect: () => handleNavLinkClick('/admin/orders') }]
+      : []),
+    {
+      key: 'theme',
+      label: theme === 'dark' ? 'Light mode' : 'Dark mode',
+      icon: theme === 'dark' ? <MdOutlineLightMode className="h-5 w-5" /> : <MdOutlineDarkMode className="h-5 w-5" />,
+      onSelect: toggleTheme,
+    },
+    // The POS has no hamburger, so without this a till user on a phone could not sign out.
+    { key: 'logout', label: 'Logout', icon: <MdLogout className="h-5 w-5" />, onSelect: handleLogout },
+  ];
 
   return (
     <POSOrderTypeProvider>
@@ -773,6 +859,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       </motion.aside>
 
       {/* Mobile overlay */}
+      <AnimatePresence>
       {sidebarOpen && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -782,18 +869,25 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           onClick={() => setSidebarOpen(false)}
         />
       )}
+      </AnimatePresence>
 
-      {/* Mobile: slide-in drawer (always expanded, theme-aware) */}
+      {/* Mobile: slide-in drawer (always expanded, theme-aware). 100dvh, not 100vh, so the
+          logout row isn't hidden behind the phone browser's toolbar. */}
       <motion.aside
+        ref={drawerRef}
         initial={false}
         animate={{ x: sidebarOpen ? 0 : -SIDEBAR_WIDTH }}
         transition={{ type: 'tween', duration: 0.25 }}
-        className={`flex flex-col fixed top-0 left-0 h-screen w-[280px] max-w-[85vw] z-50 shadow-2xl lg:hidden ${
+        className={`flex flex-col fixed top-0 left-0 h-[100dvh] w-[280px] max-w-[85vw] z-50 shadow-2xl lg:hidden ${
           theme === 'dark' ? 'bg-slate-900' : 'bg-slate-100'
         }`}
         style={{ width: SIDEBAR_WIDTH }}
+        role="dialog"
+        aria-modal={sidebarOpen || undefined}
+        aria-label="Menu"
+        aria-hidden={!sidebarOpen}
       >
-        {renderSidebarContent(false)}
+        {renderSidebarContent(false, true)}
       </motion.aside>
 
       {/* Main content — margin matches desktop sidebar width (mobile: no sidebar) */}
@@ -814,13 +908,14 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </div>
         <div className="flex-1 flex flex-col min-h-0">
           {/* Top bar: mobile menu + POS back */}
-          <header className="flex-shrink-0 flex items-center justify-between h-14 px-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 lg:px-6">
-            <div className="flex items-center gap-3">
+          <header className="flex-shrink-0 flex items-center justify-between h-14 px-4 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 lg:px-6 max-lg:sticky max-lg:top-0 max-lg:z-30">
+            <div className="flex items-center gap-3 min-w-0">
               {!isPOS && (
                 <>
                   <button
+                    ref={hamburgerRef}
                     onClick={() => setSidebarOpen(true)}
-                    className="lg:hidden p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                    className="lg:hidden p-2.5 -ml-1 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
                     aria-label="Open menu"
                   >
                     <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -845,21 +940,25 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               {isPOS && (
                 <Link
                   to="/admin/orders"
-                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors max-sm:px-2.5 max-sm:min-h-[44px]"
+                  aria-label="Back to Orders"
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
                   </svg>
-                  Back to Orders
+                  <span className="max-sm:hidden">Back to Orders</span>
                 </Link>
               )}
-              <span className="text-slate-600 dark:text-slate-300 font-medium lg:hidden">
+              <span className={`text-slate-600 dark:text-slate-300 font-medium lg:hidden truncate ${isPOS ? 'max-sm:hidden' : ''}`}>
                 {isPOS ? 'POS' : 'Foodies'}
               </span>
             </div>
             {/* POS order type lives here; the POS page publishes it (see
                 POSOrderTypeContext) and it renders nowhere else. */}
             {isPOS && <OrderTypeNavTabs />}
+            {/* Desktop keeps its row of quick icons; below lg they live in HeaderOverflowMenu
+                next to the bell, so a 360px phone no longer scrolls sideways. */}
+            {isDesktop ? (
             <div className="flex items-center gap-2">
               {/* Quick jumps between the two screens floor staff live in.
                   Gated the same way as the sidebar, so a user without the
@@ -939,6 +1038,12 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </button>
               <span className="text-sm text-slate-600 dark:text-slate-400 truncate max-w-[120px] lg:hidden">{user?.name}</span>
             </div>
+            ) : (
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <NotificationBell />
+                <HeaderOverflowMenu items={mobileMenuItems} userName={user?.name} />
+              </div>
+            )}
           </header>
 
           <main className="flex-1 p-4 lg:p-6 min-h-0 overflow-auto">

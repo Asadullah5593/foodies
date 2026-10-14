@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -11,6 +12,7 @@ import FetchingOverlay from '../../components/FetchingOverlay';
 import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import SearchableSelect from '../../components/SearchableSelect';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
@@ -718,11 +720,116 @@ const MenuItems: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading menu items...'} />;
   }
 
+  // Filter controls, shared by the desktop card and the phone/tablet sheet (one tree renders).
+  const brandFilter = (label?: string, minWidth = 'w-full') => (
+    <SearchableSelect
+      label={label}
+      value={filters.brand_id}
+      onChange={(v) => setFilters((f) => ({ ...f, brand_id: v }))}
+      options={[
+        { value: '', label: 'Select brand' },
+        ...(brands ?? []).map((b) => ({
+          value: String(b.id),
+          label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+          inactive: isEntityInactive(b),
+        })),
+      ]}
+      placeholder="Select brand"
+      minWidth={minWidth}
+    />
+  );
+  const categoryFilter = (label?: string, minWidth = 'w-full') => (
+    <SearchableSelect
+      label={label}
+      value={filters.category_id}
+      onChange={(v) => setFilters((f) => ({ ...f, category_id: v }))}
+      options={[
+        { value: '', label: 'All categories' },
+        ...categoriesForFilter.map((c: { id: number; name: string }) => ({
+          value: String(c.id),
+          label: c.name, inactive: isEntityInactive(c),
+        })),
+      ]}
+      placeholder="All categories"
+      minWidth={minWidth}
+    />
+  );
+  const statusFilter = (label?: string, minWidth = 'w-full') => (
+    <SearchableSelect
+      label={label}
+      value={filters.status}
+      onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
+      options={[
+        { value: '', label: 'All' },
+        { value: 'active', label: 'Active' },
+        { value: 'inactive', label: 'Inactive' },
+      ]}
+      placeholder="All"
+      minWidth={minWidth}
+    />
+  );
+  const searchFilter = (
+    <div className="relative">
+      <label className="block text-xs font-medium text-gray-500 mb-1 max-lg:hidden">Search item name</label>
+      <input
+        type="text"
+        value={filters.search}
+        onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+        onFocus={() => menuItemSearchTypeahead.setOpen(true)}
+        onKeyDown={(e) => {
+          const suggestions = menuItemSearchTypeahead.suggestions;
+          if (!suggestions.length) return;
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            menuItemSearchTypeahead.setActiveIndex(Math.min(menuItemSearchTypeahead.activeIndex + 1, suggestions.length - 1));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            menuItemSearchTypeahead.setActiveIndex(Math.max(menuItemSearchTypeahead.activeIndex - 1, 0));
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const opt = suggestions[menuItemSearchTypeahead.activeIndex];
+            if (opt?.label) setFilters((f) => ({ ...f, search: opt.label }));
+            menuItemSearchTypeahead.setOpen(false);
+          } else if (e.key === 'Escape') {
+            menuItemSearchTypeahead.setOpen(false);
+          }
+        }}
+        placeholder="Item name..."
+        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48 max-lg:w-full max-lg:min-h-[44px]"
+        aria-label="Search item name"
+      />
+      <TypeaheadDropdown
+        open={menuItemSearchTypeahead.open && filters.search.trim().length >= 2}
+        suggestions={menuItemSearchTypeahead.suggestions}
+        activeIndex={menuItemSearchTypeahead.activeIndex}
+        onHoverIndex={menuItemSearchTypeahead.setActiveIndex}
+        onSelect={(opt) => {
+          setFilters((f) => ({ ...f, search: opt.label }));
+          menuItemSearchTypeahead.setOpen(false);
+        }}
+        onClose={() => menuItemSearchTypeahead.setOpen(false)}
+      />
+    </div>
+  );
+  const clearMenuFilters = () => setFilters({ brand_id: '', category_id: '', status: '', search: '' });
+  const menuChips: FilterChip[] = [
+    ...(filters.brand_id ? [{ key: 'brand', label: (brands ?? []).find((b) => String(b.id) === filters.brand_id)?.name ?? 'Brand', onRemove: () => setFilters((f) => ({ ...f, brand_id: '' })) }] : []),
+    ...(filters.category_id
+      ? [{ key: 'category', label: categoriesForFilter.find((c: { id: number; name: string }) => String(c.id) === filters.category_id)?.name ?? 'Category', onRemove: () => setFilters((f) => ({ ...f, category_id: '' })) }]
+      : []),
+    ...(filters.status ? [{ key: 'status', label: filters.status === 'active' ? 'Active' : 'Inactive', onRemove: () => setFilters((f) => ({ ...f, status: '' })) }] : []),
+  ];
+  const menuFields: FilterField[] = [
+    { key: 'brand', label: 'Brand', node: brandFilter() },
+    { key: 'category', label: 'Category', node: categoryFilter() },
+    { key: 'status', label: 'Status', node: statusFilter() },
+  ];
+
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Menu Items</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 max-sm:flex-wrap">
           {canCreateCategory && <Button variant="secondary" onClick={() => setShowCategoryForm(true)}>+ New Category</Button>}
           {canEdit && (
             <Button
@@ -738,91 +845,17 @@ const MenuItems: React.FC = () => {
         </div>
       </div>
 
+      <FilterBar className="mb-4" primary={searchFilter} chips={menuChips} fields={menuFields} onClearAll={clearMenuFilters}>
       <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-3 items-end">
-          <SearchableSelect
-            label="Brand"
-            value={filters.brand_id}
-            onChange={(v) => setFilters((f) => ({ ...f, brand_id: v }))}
-            options={[
-              { value: '', label: 'Select brand' },
-              ...(brands ?? []).map((b) => ({
-                value: String(b.id),
-                label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
-              })),
-            ]}
-            placeholder="Select brand"
-            minWidth="min-w-[180px]"
-          />
-          <SearchableSelect
-            label="Category"
-            value={filters.category_id}
-            onChange={(v) => setFilters((f) => ({ ...f, category_id: v }))}
-            options={[
-              { value: '', label: 'All categories' },
-              ...categoriesForFilter.map((c: { id: number; name: string }) => ({
-                value: String(c.id),
-                label: c.name, inactive: isEntityInactive(c),
-              })),
-            ]}
-            placeholder="All categories"
-            minWidth="min-w-[140px]"
-          />
-          <SearchableSelect
-            label="Status"
-            value={filters.status}
-            onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
-            options={[
-              { value: '', label: 'All' },
-              { value: 'active', label: 'Active' },
-              { value: 'inactive', label: 'Inactive' },
-            ]}
-            placeholder="All"
-            minWidth="min-w-[120px]"
-          />
-          <div className="relative">
-            <label className="block text-xs font-medium text-gray-500 mb-1">Search item name</label>
-            <input
-              type="text"
-              value={filters.search}
-              onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-              onFocus={() => menuItemSearchTypeahead.setOpen(true)}
-              onKeyDown={(e) => {
-                const suggestions = menuItemSearchTypeahead.suggestions;
-                if (!suggestions.length) return;
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  menuItemSearchTypeahead.setActiveIndex(Math.min(menuItemSearchTypeahead.activeIndex + 1, suggestions.length - 1));
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  menuItemSearchTypeahead.setActiveIndex(Math.max(menuItemSearchTypeahead.activeIndex - 1, 0));
-                } else if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const opt = suggestions[menuItemSearchTypeahead.activeIndex];
-                  if (opt?.label) setFilters((f) => ({ ...f, search: opt.label }));
-                  menuItemSearchTypeahead.setOpen(false);
-                } else if (e.key === 'Escape') {
-                  menuItemSearchTypeahead.setOpen(false);
-                }
-              }}
-              placeholder="Item name..."
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48"
-            />
-            <TypeaheadDropdown
-              open={menuItemSearchTypeahead.open && filters.search.trim().length >= 2}
-              suggestions={menuItemSearchTypeahead.suggestions}
-              activeIndex={menuItemSearchTypeahead.activeIndex}
-              onHoverIndex={menuItemSearchTypeahead.setActiveIndex}
-              onSelect={(opt) => {
-                setFilters((f) => ({ ...f, search: opt.label }));
-                menuItemSearchTypeahead.setOpen(false);
-              }}
-              onClose={() => menuItemSearchTypeahead.setOpen(false)}
-            />
-          </div>
-          <ClearFiltersButton onClick={() => setFilters({ brand_id: '', category_id: '', status: '', search: '' })} />
+          {brandFilter('Brand', 'min-w-[180px]')}
+          {categoryFilter('Category', 'min-w-[140px]')}
+          {statusFilter('Status', 'min-w-[120px]')}
+          {searchFilter}
+          <ClearFiltersButton onClick={clearMenuFilters} />
         </div>
       </Card>
+      </FilterBar>
 
       {showCategoryForm && (
         <Card className="mb-4 bg-blue-50 border-blue-300">
@@ -851,7 +884,7 @@ const MenuItems: React.FC = () => {
           >
             <div className="mb-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
-              <select
+              <ResponsiveSelect
                 value={categoryFormData.brand_id}
                 onChange={(e) => setCategoryFormData({ ...categoryFormData, brand_id: e.target.value })}
                 required
@@ -860,12 +893,12 @@ const MenuItems: React.FC = () => {
                 <option value="">Select brand</option>
                 {brands?.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
+                    {labelWithStatus(b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name, b)}
                   </option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </div>
-            <div className="grid grid-cols-3 gap-2 mb-2">
+            <div className="grid grid-cols-3 max-sm:grid-cols-1 gap-2 mb-2">
               <input
                 type="text"
                 value={categoryFormData.name}
@@ -1045,7 +1078,7 @@ const MenuItems: React.FC = () => {
           >
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
-              <select
+              <ResponsiveSelect
                 value={editFormData.brand_id}
                 onChange={(e) => setEditFormData((f) => ({ ...f, brand_id: e.target.value, category_id: '' }))}
                 required
@@ -1054,14 +1087,14 @@ const MenuItems: React.FC = () => {
                 <option value="">Select brand</option>
                 {brands?.map((b) => (
                   <option key={b.id} value={b.id}>
-                    {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
+                    {labelWithStatus(b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name, b)}
                   </option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Category *</label>
-              <select
+              <ResponsiveSelect
                 value={editFormData.category_id}
                 onChange={(e) => setEditFormData((f) => ({ ...f, category_id: e.target.value }))}
                 required
@@ -1071,7 +1104,7 @@ const MenuItems: React.FC = () => {
                 {(categoriesForEdit ?? []).map((c: { id: number; name: string }) => (
                   <option key={c.id} value={c.id}>{labelWithStatus(c.name, c)}</option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </div>
             <SortOrderField
               label="Sort order (position in its category)"
@@ -1203,7 +1236,7 @@ const MenuItems: React.FC = () => {
                 {editGalleryUploading && <p className="text-xs text-amber-600 mt-2 font-medium">Uploading gallery…</p>}
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Price *</label>
                 <input
@@ -1218,17 +1251,17 @@ const MenuItems: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                <select
+                <ResponsiveSelect
                   value={editFormData.is_active ? 'active' : 'inactive'}
                   onChange={(e) => setEditFormData((f) => ({ ...f, is_active: e.target.value === 'active' }))}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
-                </select>
+                </ResponsiveSelect>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Allergens (comma-separated)</label>
                 <input type="text" value={editFormData.allergens}
@@ -1252,7 +1285,7 @@ const MenuItems: React.FC = () => {
             </div>
             <div className="rounded-lg border border-gray-200 p-3 space-y-2">
               <p className="text-xs text-gray-500">Available only at certain times (branch timezone) — leave blank for all day.</p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
                 <input type="time" value={editFormData.available_time_start}
                   onChange={(e) => setEditFormData((f) => ({ ...f, available_time_start: e.target.value }))}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
@@ -1380,7 +1413,7 @@ const MenuItems: React.FC = () => {
         }} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
-            <select
+            <ResponsiveSelect
               value={formData.brand_id}
               onChange={(e) => setFormData({ ...formData, brand_id: e.target.value, category_id: '' })}
               required
@@ -1389,10 +1422,10 @@ const MenuItems: React.FC = () => {
               <option value="">Select brand</option>
               {brands?.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
+                  {labelWithStatus(b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name, b)}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           <div>
             <div className="flex justify-between items-center mb-1">
@@ -1406,7 +1439,7 @@ const MenuItems: React.FC = () => {
                 + New Category
               </Button>}
             </div>
-            <select
+            <ResponsiveSelect
               value={formData.category_id}
               onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
               required
@@ -1423,7 +1456,7 @@ const MenuItems: React.FC = () => {
               {(categoriesForForm ?? []).map((category: { id: number; name: string }) => (
                 <option key={category.id} value={category.id}>{labelWithStatus(category.name, category)}</option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
 
           <SortOrderField
@@ -1561,7 +1594,7 @@ const MenuItems: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Price: *</label>
               <input
@@ -1578,14 +1611,14 @@ const MenuItems: React.FC = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Status:</label>
-              <select
+              <ResponsiveSelect
                 value={formData.is_active ? 'active' : 'inactive'}
                 onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'active' })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
-              </select>
+              </ResponsiveSelect>
             </div>
           </div>
 
@@ -1600,7 +1633,7 @@ const MenuItems: React.FC = () => {
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Allergens (comma-separated)</label>
               <input
@@ -1624,7 +1657,7 @@ const MenuItems: React.FC = () => {
           </div>
           <div className="rounded-lg border border-gray-200 p-3 space-y-2">
             <p className="text-xs text-gray-500">Available only at certain times (branch timezone) — leave blank for all day. Used for lunch-only items/deals.</p>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
               <input type="time" value={formData.available_time_start}
                 onChange={(e) => setFormData({ ...formData, available_time_start: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg" />
@@ -1773,7 +1806,7 @@ const MenuItems: React.FC = () => {
                             (sum, g) => sum + (g.modifier_count ?? 0),
                             0,
                           );
-                          const linkClass = 'text-blue-600 dark:text-blue-400 hover:underline';
+                          const linkClass = 'text-blue-600 dark:text-blue-400 hover:underline max-lg:relative max-lg:before:absolute max-lg:before:-inset-x-1.5 max-lg:before:-inset-y-3.5 max-lg:before:content-[\'\']';
                           return (
                             <p className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-0.5">
                               <Link className={linkClass} to={`/admin/menu-variants?${[brandQs, `item_id=${item.id}`].filter(Boolean).join('&')}`}>

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import BrandLockSelect from '../../components/BrandLockSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -10,6 +11,7 @@ import Button from '../../components/Button';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -18,6 +20,8 @@ import { confirmDialog } from '../../utils/sweetAlert';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { isEntityInactive } from '../../utils/entityStatus';
 import InactiveBadge from '../../components/InactiveBadge';
+import TableScroll from '../../components/TableScroll';
+import { useViewport } from '../../hooks/useViewport';
 
 interface RoleOption {
   id: number;
@@ -27,6 +31,7 @@ interface RoleOption {
 
 const BranchUsers: React.FC = () => {
   const queryClient = useQueryClient();
+  const { isPhone } = useViewport();
   const canAssign = useHasPermission('branch-users:assign');
   const canRemove = useHasPermission('branch-users:remove');
   const [showForm, setShowForm] = useState(false);
@@ -382,11 +387,52 @@ const BranchUsers: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading branch users...'} />;
   }
 
+  // Each filter control once: desktop shows the card below, phones and tablets the
+  // compact bar + sheet (only one renders).
+  const branchFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={selectedBranch != null ? String(selectedBranch) : ''}
+      onChange={(v) => setSelectedBranch(v ? parseInt(v, 10) : null)}
+      options={[
+        { value: '', label: 'All branches' },
+        ...(branches ?? []).map((branch) => ({
+          value: String(branch.id),
+          label: `${branch.name} (${branch.code})`,
+          inactive: isEntityInactive(branch),
+        })),
+      ]}
+      placeholder="All branches"
+      minWidth="min-w-[200px]"
+    />
+  );
+  const searchFilter = (
+    <div className="flex-1 min-w-[200px] max-lg:min-w-0">
+      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 max-lg:hidden">Search</label>
+      <input
+        type="text"
+        aria-label="Search branch users"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Name, email, branch, role or brand..."
+        className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 max-lg:min-h-[44px] max-lg:w-full max-lg:min-w-0"
+      />
+    </div>
+  );
+  const filterChips: FilterChip[] = [
+    ...(selectedBranch != null
+      ? [{ key: 'branch', label: (branches ?? []).find((b) => b.id === selectedBranch)?.name ?? 'Branch', onRemove: () => setSelectedBranch(null) }]
+      : []),
+  ];
+  const filterFields: FilterField[] = [
+    { key: 'branchFilter', label: 'Branch', node: branchFilter() },
+  ];
+
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Branch Users</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 max-sm:flex-wrap">
           {canAssign && <Button variant="outline" onClick={() => { setMbUserId(''); setMbBranchIds([]); setMbRoleId(String(defaultRoleId)); setMbBrandIds([]); setShowMultiBranchForm(true); }}>
             Assign to Branches
           </Button>}
@@ -394,41 +440,29 @@ const BranchUsers: React.FC = () => {
         </div>
       </div>
 
-      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap gap-3 items-end">
-          <SearchableSelect
-            label="Filter by Branch"
-            value={selectedBranch != null ? String(selectedBranch) : ''}
-            onChange={(v) => setSelectedBranch(v ? parseInt(v, 10) : null)}
-            options={[
-              { value: '', label: 'All branches' },
-              ...(branches ?? []).map((branch) => ({
-                value: String(branch.id),
-                label: `${branch.name} (${branch.code})`,
-                inactive: isEntityInactive(branch),
-              })),
-            ]}
-            placeholder="All branches"
-            minWidth="min-w-[200px]"
-          />
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Search</label>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Name, email, branch, role or brand..."
-              className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+      <FilterBar
+        className="mb-4"
+        primary={searchFilter}
+        chips={filterChips}
+        fields={filterFields}
+        onClearAll={() => {
+          setSelectedBranch(null);
+          setSearch('');
+        }}
+      >
+        <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap gap-3 items-end">
+            {branchFilter('Filter by Branch')}
+            {searchFilter}
+            <ClearFiltersButton
+              onClick={() => {
+                setSelectedBranch(null);
+                setSearch('');
+              }}
             />
           </div>
-          <ClearFiltersButton
-            onClick={() => {
-              setSelectedBranch(null);
-              setSearch('');
-            }}
-          />
-        </div>
-      </Card>
+        </Card>
+      </FilterBar>
 
       <Modal
         isOpen={showForm}
@@ -480,7 +514,83 @@ const BranchUsers: React.FC = () => {
                 className="w-full sm:w-64 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <div className="max-h-80 overflow-y-auto border border-gray-300 rounded-lg">
+            {/* Phones: one block per user (tick, name, then the role and the rest below it) —
+                in the table the Role column sat past the screen edge, reachable only by
+                scrolling the table sideways for every row. Tablets keep the table. */}
+            {isPhone ? (
+              <div className="max-h-80 divide-y divide-gray-100 overflow-y-auto rounded-lg border border-gray-300" data-testid="assign-users-list">
+                {modalUsers.map((user) => {
+                  const included = selectedUserIds.includes(user.id);
+                  const assigned = branchAssignedUserIds.has(user.id);
+                  return (
+                    <div key={user.id} className="p-3">
+                      <label className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={included}
+                          onChange={(e) => toggleUser(user.id, e.target.checked)}
+                          disabled={assigned}
+                          title={assigned ? 'Already assigned — remove from the list page' : undefined}
+                          aria-label={`Include ${user.name}`}
+                          className="mt-0.5 h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium text-gray-800">
+                            {user.name}
+                            {assigned && (
+                              <span className="ml-2 inline-block rounded bg-green-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-700">
+                                Assigned
+                              </span>
+                            )}
+                          </span>
+                          <span className="block truncate text-[12.5px] text-gray-500">{user.email}</span>
+                        </span>
+                      </label>
+                      {included && (
+                        <div className="mt-2 space-y-2 pl-8">
+                          <ResponsiveSelect
+                            value={roleByUserId[user.id] ?? defaultRoleId}
+                            onChange={(e) => setUserRole(user.id, parseInt(e.target.value, 10))}
+                            aria-label={`Role for ${user.name}`}
+                            className="w-full rounded border border-gray-300 px-2 py-2 focus:ring-2 focus:ring-blue-500"
+                          >
+                            {roles?.map((role) => (
+                              <option key={role.id} value={role.id}>
+                                {role.name}
+                              </option>
+                            ))}
+                          </ResponsiveSelect>
+                          {assignBranchBrands.length > 1 && (
+                            <BrandLockSelect
+                              brands={assignBranchBrands}
+                              value={brandByUserId[user.id] ?? []}
+                              onChange={(ids: number[]) => setUserBrands(user.id, ids)}
+                              disabled={false}
+                              ariaLabel={`Brands for ${user.name ?? 'user'}`}
+                            />
+                          )}
+                          {showPhoneColumn && isRiderRole(roleByUserId[user.id] ?? defaultRoleId) && (
+                            <input
+                              type="tel"
+                              value={phoneOf(user.id)}
+                              onChange={(e) =>
+                                setPhoneByUserId((prev) => ({ ...prev, [user.id]: e.target.value }))
+                              }
+                              placeholder="Phone — required for riders"
+                              aria-label={`Phone for ${user.name}`}
+                              className={`w-full rounded border px-2 py-2 focus:ring-2 focus:ring-blue-500 ${
+                                phoneOf(user.id).trim() ? 'border-gray-300' : 'border-red-400 bg-red-50 placeholder-red-400'
+                              }`}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+            <TableScroll className="max-h-80 overflow-y-auto border border-gray-300 rounded-lg">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>
@@ -516,7 +626,7 @@ const BranchUsers: React.FC = () => {
                         )}
                       </td>
                       <td className="p-2">
-                        <select
+                        <ResponsiveSelect
                           value={roleByUserId[user.id] ?? defaultRoleId}
                           onChange={(e) => setUserRole(user.id, parseInt(e.target.value, 10))}
                           disabled={!selectedUserIds.includes(user.id)}
@@ -527,7 +637,7 @@ const BranchUsers: React.FC = () => {
                               {role.name}
                             </option>
                           ))}
-                        </select>
+                        </ResponsiveSelect>
                       </td>
                       {assignBranchBrands.length > 1 && (
                         <td className="p-2">
@@ -567,7 +677,8 @@ const BranchUsers: React.FC = () => {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableScroll>
+            )}
             {allUsers?.length === 0 && (
               <p className="text-gray-500 text-sm p-2">No users found. Create users in the Users page first.</p>
             )}
@@ -616,24 +727,24 @@ const BranchUsers: React.FC = () => {
             onChange={(v) => { setMbUserId(v); setMbBranchIds([]); }}
             options={[
               { value: '', label: 'Select user' },
-              ...(allUsers ?? []).map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})` })),
+              ...(allUsers ?? []).map((u) => ({ value: String(u.id), label: `${u.name} (${u.email})`, inactive: isEntityInactive(u) })),
             ]}
             placeholder="Select user"
             searchPlaceholder="Search users..."
             minWidth="min-w-full"
           />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Role *</label>
-              <select
+              <ResponsiveSelect
                 value={mbRoleId}
                 onChange={(e) => setMbRoleId(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select role</option>
                 {roles?.map((r) => <option key={r.id} value={String(r.id)}>{r.name}</option>)}
-              </select>
+              </ResponsiveSelect>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Brand lock</label>
@@ -664,7 +775,7 @@ const BranchUsers: React.FC = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Branches *</label>
-            <div className="max-h-64 overflow-y-auto border border-gray-300 rounded-lg">
+            <TableScroll className="max-h-64 overflow-y-auto border border-gray-300 rounded-lg">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>
@@ -710,7 +821,7 @@ const BranchUsers: React.FC = () => {
                   })}
                 </tbody>
               </table>
-            </div>
+            </TableScroll>
           </div>
 
           <div className="flex gap-2 justify-end">

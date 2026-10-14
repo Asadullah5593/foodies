@@ -10,8 +10,12 @@ import FetchingOverlay from '../../components/FetchingOverlay';
 import { Branch, PrintedVoucherReport as ReportData } from '../../types';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 import { isEntityInactive } from '../../utils/entityStatus';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
 import { formatOrderType } from '../../utils/format';
 import { prettyDay, voucherFace } from '../../utils/voucherText';
+import TableScroll from '../../components/TableScroll';
+import { useViewport } from '../../hooks/useViewport';
 
 const PAGE_SIZE = 25;
 
@@ -60,6 +64,9 @@ const PRINT_CSS = `
  * what they took off. Counts orders placed in the range; cancelled ones are
  * left out.
  */
+/** Phone cards: column headings become small labels over each value. */
+const cardLabel = 'text-[10.5px] font-bold uppercase tracking-wide text-gray-400';
+
 const PrintedVoucherReport: React.FC = () => {
   const today = new Date().toISOString().split('T')[0];
   const [dateFrom, setDateFrom] = useState(today);
@@ -68,6 +75,8 @@ const PrintedVoucherReport: React.FC = () => {
   const [brandId, setBrandId] = useState<number | null>(null);
   const [voucherId, setVoucherId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
+  // Phones get card lists in place of the three tables (every column kept).
+  const { isPhone } = useViewport();
   const [printing, setPrinting] = useState(false);
 
   // The sheet is only in the DOM while a print is in flight.
@@ -187,6 +196,105 @@ const PrintedVoucherReport: React.FC = () => {
 
   const hasData = (totals?.papers ?? 0) > 0 || (totals?.redemptions ?? 0) > 0;
 
+  // Filter controls, shared by the desktop grid and the phone/tablet sheet (one tree renders).
+  const fromBlock = (
+    <label className="block">
+      <span className={filterLabel}>From</span>
+      <input
+        type="date"
+        value={dateFrom}
+        max={dateTo || undefined}
+        onChange={(e) => setDateFrom(e.target.value || today)}
+        className={dateInput}
+      />
+    </label>
+  );
+  const toBlock = (
+    <label className="block">
+      <span className={filterLabel}>To</span>
+      <input
+        type="date"
+        value={dateTo}
+        min={dateFrom || undefined}
+        onChange={(e) => setDateTo(e.target.value || today)}
+        className={dateInput}
+      />
+    </label>
+  );
+  const branchBlock = (
+    <div>
+      <span className={filterLabel}>Branch</span>
+      <SearchableSelect
+        value={branchId != null ? String(branchId) : ''}
+        onChange={(v) => setBranchId(v ? Number(v) : null)}
+        options={[
+          { value: '', label: 'All branches' },
+          ...(branches ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
+        ]}
+        triggerClassName={selectTrigger}
+        ariaLabel="Branch"
+      />
+    </div>
+  );
+  const brandBlock = (
+    <div>
+      <span className={filterLabel}>Brand</span>
+      <SearchableSelect
+        value={brandId != null ? String(brandId) : ''}
+        onChange={(v) => {
+          setBrandId(v ? Number(v) : null);
+          setVoucherId(null);
+        }}
+        options={[
+          { value: '', label: 'All brands' },
+          ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
+        ]}
+        triggerClassName={selectTrigger}
+        ariaLabel="Brand"
+      />
+    </div>
+  );
+  const voucherBlock = (
+    <div>
+      <span className={filterLabel}>Voucher</span>
+      <SearchableSelect
+        value={voucherId != null ? String(voucherId) : ''}
+        onChange={(v) => setVoucherId(v ? Number(v) : null)}
+        options={[
+          { value: '', label: 'All vouchers' },
+          ...voucherOptions.map((v) => ({
+            value: String(v.id),
+            label: `${v.name} (${voucherFace(v)})`,
+            inactive: !v.is_active,
+          })),
+        ]}
+        triggerClassName={selectTrigger}
+        ariaLabel="Voucher"
+      />
+    </div>
+  );
+  const pvChips: FilterChip[] = [
+    ...(dateFrom !== today || dateTo !== today
+      ? [{ key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { setDateFrom(today); setDateTo(today); } }]
+      : []),
+    ...(branchId != null ? [{ key: 'branch', label: (branches ?? []).find((b) => b.id === branchId)?.name ?? 'Branch', onRemove: () => setBranchId(null) }] : []),
+    ...(brandId != null ? [{ key: 'brand', label: (brands ?? []).find((b) => b.id === brandId)?.name ?? 'Brand', onRemove: () => { setBrandId(null); setVoucherId(null); } }] : []),
+    ...(voucherId != null ? [{ key: 'voucher', label: voucherOptions.find((v) => v.id === voucherId)?.name ?? 'Voucher', onRemove: () => setVoucherId(null) }] : []),
+  ];
+  const pvFields: FilterField[] = [
+    { key: 'date', node: <div className="grid grid-cols-2 gap-2.5">{fromBlock}{toBlock}</div> },
+    { key: 'branch', node: branchBlock },
+    { key: 'brand', node: brandBlock },
+    { key: 'voucher', node: voucherBlock },
+  ];
+  const clearPvFilters = () => {
+    setDateFrom(today);
+    setDateTo(today);
+    setBranchId(null);
+    setBrandId(null);
+    setVoucherId(null);
+  };
+
   return (
     <div className="w-full px-4 py-6 sm:px-6 lg:px-12">
       {/* Header */}
@@ -227,75 +335,16 @@ const PrintedVoucherReport: React.FC = () => {
         </div>
       </div>
 
-      {/* Filters */}
+      {/* Filters — below lg a compact bar + sheet; desktop keeps the grid. */}
+      <FilterBar className="mb-5" chips={pvChips} fields={pvFields} onClearAll={clearPvFilters}>
       <div className="mb-5 grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-5">
-        <label className="block">
-          <span className={filterLabel}>From</span>
-          <input
-            type="date"
-            value={dateFrom}
-            max={dateTo || undefined}
-            onChange={(e) => setDateFrom(e.target.value || today)}
-            className={dateInput}
-          />
-        </label>
-        <label className="block">
-          <span className={filterLabel}>To</span>
-          <input
-            type="date"
-            value={dateTo}
-            min={dateFrom || undefined}
-            onChange={(e) => setDateTo(e.target.value || today)}
-            className={dateInput}
-          />
-        </label>
-        <div>
-          <span className={filterLabel}>Branch</span>
-          <SearchableSelect
-            value={branchId != null ? String(branchId) : ''}
-            onChange={(v) => setBranchId(v ? Number(v) : null)}
-            options={[
-              { value: '', label: 'All branches' },
-              ...(branches ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
-            ]}
-            triggerClassName={selectTrigger}
-            ariaLabel="Branch"
-          />
-        </div>
-        <div>
-          <span className={filterLabel}>Brand</span>
-          <SearchableSelect
-            value={brandId != null ? String(brandId) : ''}
-            onChange={(v) => {
-              setBrandId(v ? Number(v) : null);
-              setVoucherId(null);
-            }}
-            options={[
-              { value: '', label: 'All brands' },
-              ...(brands ?? []).map((b) => ({ value: String(b.id), label: b.name, inactive: isEntityInactive(b) })),
-            ]}
-            triggerClassName={selectTrigger}
-            ariaLabel="Brand"
-          />
-        </div>
-        <div>
-          <span className={filterLabel}>Voucher</span>
-          <SearchableSelect
-            value={voucherId != null ? String(voucherId) : ''}
-            onChange={(v) => setVoucherId(v ? Number(v) : null)}
-            options={[
-              { value: '', label: 'All vouchers' },
-              ...voucherOptions.map((v) => ({
-                value: String(v.id),
-                label: `${v.name} (${voucherFace(v)})`,
-                inactive: !v.is_active,
-              })),
-            ]}
-            triggerClassName={selectTrigger}
-            ariaLabel="Voucher"
-          />
-        </div>
+        {fromBlock}
+        {toBlock}
+        {branchBlock}
+        {brandBlock}
+        {voucherBlock}
       </div>
+      </FilterBar>
 
       {isLoading ? (
         <div className="py-12 text-center text-gray-500">Loading…</div>
@@ -331,56 +380,94 @@ const PrintedVoucherReport: React.FC = () => {
               {/* By voucher */}
               <section className="mb-5 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
                 <h2 className="border-b border-gray-100 px-4 py-3 text-[14px] font-bold text-gray-800">By voucher</h2>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className={th}>Voucher</th>
-                        <th className={th}>Brand</th>
-                        <th className={th}>Worth</th>
-                        <th className={`${th} ${num}`}>Papers</th>
-                        <th className={`${th} ${num}`}>Orders</th>
-                        <th className={`${th} ${num}`}>Discount given</th>
-                        <th className={`${th} ${num}`}>Charged</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {data!.by_voucher.map((v) => (
-                        <tr key={`${v.voucher_id ?? 'deleted'}-${v.voucher_name}-${v.brand_name}`}>
-                          <td className={`${td} font-semibold text-gray-800`}>
-                            {v.voucher_name}
-                            {v.voucher_id == null && (
-                              <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10.5px] font-bold uppercase text-gray-500">
-                                Deleted
-                              </span>
-                            )}
-                          </td>
-                          <td className={td}>{v.brand_name ?? '—'}</td>
-                          <td className={td}>
-                            {v.voucher_type != null && v.value != null
-                              ? voucherFace({ voucher_type: v.voucher_type, value: v.value })
-                              : '—'}
-                          </td>
-                          <td className={`${td} ${num} font-semibold`}>{v.papers}</td>
-                          <td className={`${td} ${num}`}>{v.redemptions}</td>
-                          <td className={`${td} ${num}`}>{money(v.discount)}</td>
-                          <td className={`${td} ${num}`}>{money(v.total)}</td>
+                {isPhone ? (
+                  <ul className="divide-y divide-gray-100" data-testid="pv-voucher-cards">
+                    {data!.by_voucher.map((v) => (
+                      <li key={`${v.voucher_id ?? 'deleted'}-${v.voucher_name}-${v.brand_name}`} className="px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-[14px] font-semibold text-gray-800">
+                              {v.voucher_name}
+                              {v.voucher_id == null && (
+                                <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10.5px] font-bold uppercase text-gray-500">
+                                  Deleted
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-0.5 text-[12.5px] text-gray-500">
+                              {v.brand_name ?? '—'} ·{' '}
+                              {v.voucher_type != null && v.value != null
+                                ? voucherFace({ voucher_type: v.voucher_type, value: v.value })
+                                : '—'}
+                            </div>
+                          </div>
+                          <div className="flex-none text-right text-[13px]">
+                            <div className="font-semibold text-gray-800">{v.papers} {v.papers === 1 ? 'paper' : 'papers'}</div>
+                            <div className="text-gray-500">{v.redemptions} {v.redemptions === 1 ? 'order' : 'orders'}</div>
+                          </div>
+                        </div>
+                        <dl className="mt-2 grid grid-cols-2 gap-x-3 text-[13px] text-gray-800">
+                          <div><dt className={cardLabel}>Discount given</dt><dd className="font-semibold tabular-nums">{money(v.discount)}</dd></div>
+                          <div><dt className={cardLabel}>Charged</dt><dd className="tabular-nums">{money(v.total)}</dd></div>
+                        </dl>
+                      </li>
+                    ))}
+                    <li className="bg-gray-50 px-4 py-3 text-[13px] text-gray-800">
+                      <span className="font-bold">Total</span> · {totals!.papers} papers · {totals!.redemptions} orders · {money(totals!.discount)} given · {money(totals!.total)} charged
+                    </li>
+                  </ul>
+                ) : (
+                  <TableScroll>
+                    <table className="min-w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className={th}>Voucher</th>
+                          <th className={th}>Brand</th>
+                          <th className={th}>Worth</th>
+                          <th className={`${th} ${num}`}>Papers</th>
+                          <th className={`${th} ${num}`}>Orders</th>
+                          <th className={`${th} ${num}`}>Discount given</th>
+                          <th className={`${th} ${num}`}>Charged</th>
                         </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 border-gray-200 bg-gray-50">
-                        <td className={`${td} font-bold text-gray-800`} colSpan={3}>
-                          Total
-                        </td>
-                        <td className={`${td} ${num} font-bold text-gray-800`}>{totals!.papers}</td>
-                        <td className={`${td} ${num} font-bold text-gray-800`}>{totals!.redemptions}</td>
-                        <td className={`${td} ${num} font-bold text-gray-800`}>{money(totals!.discount)}</td>
-                        <td className={`${td} ${num} font-bold text-gray-800`}>{money(totals!.total)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {data!.by_voucher.map((v) => (
+                          <tr key={`${v.voucher_id ?? 'deleted'}-${v.voucher_name}-${v.brand_name}`}>
+                            <td className={`${td} font-semibold text-gray-800`}>
+                              {v.voucher_name}
+                              {v.voucher_id == null && (
+                                <span className="ml-2 rounded bg-gray-100 px-1.5 py-0.5 text-[10.5px] font-bold uppercase text-gray-500">
+                                  Deleted
+                                </span>
+                              )}
+                            </td>
+                            <td className={td}>{v.brand_name ?? '—'}</td>
+                            <td className={td}>
+                              {v.voucher_type != null && v.value != null
+                                ? voucherFace({ voucher_type: v.voucher_type, value: v.value })
+                                : '—'}
+                            </td>
+                            <td className={`${td} ${num} font-semibold`}>{v.papers}</td>
+                            <td className={`${td} ${num}`}>{v.redemptions}</td>
+                            <td className={`${td} ${num}`}>{money(v.discount)}</td>
+                            <td className={`${td} ${num}`}>{money(v.total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-gray-200 bg-gray-50">
+                          <td className={`${td} font-bold text-gray-800`} colSpan={3}>
+                            Total
+                          </td>
+                          <td className={`${td} ${num} font-bold text-gray-800`}>{totals!.papers}</td>
+                          <td className={`${td} ${num} font-bold text-gray-800`}>{totals!.redemptions}</td>
+                          <td className={`${td} ${num} font-bold text-gray-800`}>{money(totals!.discount)}</td>
+                          <td className={`${td} ${num} font-bold text-gray-800`}>{money(totals!.total)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </TableScroll>
+                )}
               </section>
 
               {/* By day and branch */}
@@ -391,32 +478,55 @@ const PrintedVoucherReport: React.FC = () => {
                     the count to match against the paper vouchers collected
                   </span>
                 </h2>
-                <div className="max-h-[420px] overflow-auto">
-                  <table className="min-w-full">
-                    <thead className="sticky top-0 bg-gray-50">
-                      <tr>
-                        <th className={th}>Day</th>
-                        <th className={th}>Branch</th>
-                        <th className={th}>Voucher</th>
-                        <th className={`${th} ${num}`}>Papers</th>
-                        <th className={`${th} ${num}`}>Orders</th>
-                        <th className={`${th} ${num}`}>Discount given</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {data!.by_day.map((d) => (
-                        <tr key={`${d.day}-${d.branch_name}-${d.voucher_name}`}>
-                          <td className={`${td} whitespace-nowrap`}>{prettyDay(d.day)}</td>
-                          <td className={td}>{d.branch_name ?? '—'}</td>
-                          <td className={td}>{d.voucher_name}</td>
-                          <td className={`${td} ${num} font-semibold`}>{d.papers}</td>
-                          <td className={`${td} ${num}`}>{d.redemptions}</td>
-                          <td className={`${td} ${num}`}>{money(d.discount)}</td>
+                {isPhone ? (
+                  <ul className="max-h-[420px] divide-y divide-gray-100 overflow-y-auto" data-testid="pv-day-cards">
+                    {data!.by_day.map((d) => (
+                      <li key={`${d.day}-${d.branch_name}-${d.voucher_name}`} className="px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-[13.5px] font-semibold text-gray-800">
+                              {prettyDay(d.day)} · {d.branch_name ?? '—'}
+                            </div>
+                            <div className="mt-0.5 text-[12.5px] text-gray-500">{d.voucher_name}</div>
+                          </div>
+                          <div className="flex-none text-right text-[13px]">
+                            <div className="font-semibold text-gray-800">{d.papers} {d.papers === 1 ? 'paper' : 'papers'}</div>
+                            <div className="text-gray-500">
+                              {d.redemptions} {d.redemptions === 1 ? 'order' : 'orders'} · {money(d.discount)}
+                            </div>
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <TableScroll className="max-h-[420px] overflow-auto">
+                    <table className="min-w-full">
+                      <thead className="sticky top-0 bg-gray-50">
+                        <tr>
+                          <th className={th}>Day</th>
+                          <th className={th}>Branch</th>
+                          <th className={th}>Voucher</th>
+                          <th className={`${th} ${num}`}>Papers</th>
+                          <th className={`${th} ${num}`}>Orders</th>
+                          <th className={`${th} ${num}`}>Discount given</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {data!.by_day.map((d) => (
+                          <tr key={`${d.day}-${d.branch_name}-${d.voucher_name}`}>
+                            <td className={`${td} whitespace-nowrap`}>{prettyDay(d.day)}</td>
+                            <td className={td}>{d.branch_name ?? '—'}</td>
+                            <td className={td}>{d.voucher_name}</td>
+                            <td className={`${td} ${num} font-semibold`}>{d.papers}</td>
+                            <td className={`${td} ${num}`}>{d.redemptions}</td>
+                            <td className={`${td} ${num}`}>{money(d.discount)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </TableScroll>
+                )}
               </section>
 
               {/* Order by order */}
@@ -428,55 +538,92 @@ const PrintedVoucherReport: React.FC = () => {
                     {data!.rows_truncated ? ' shown — narrow the range to list the rest' : ''}
                   </span>
                 </h2>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className={th}>Placed</th>
-                        <th className={th}>Order</th>
-                        <th className={th}>Branch</th>
-                        <th className={th}>Vouchers</th>
-                        <th className={`${th} ${num}`}>Papers</th>
-                        <th className={th}>Customer</th>
-                        <th className={th}>Type</th>
-                        <th className={`${th} ${num}`}>Subtotal</th>
-                        <th className={`${th} ${num}`}>Voucher</th>
-                        <th className={`${th} ${num}`}>Charged</th>
-                        <th className={th}>Applied by</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {pageRows.map((r) => (
-                        <tr key={r.id}>
-                          <td className={`${td} whitespace-nowrap`}>{dateTime(r.placed_at)}</td>
-                          <td className={`${td} whitespace-nowrap`}>
-                            <Link to={`/admin/orders/${r.id}`} className="font-semibold text-red-600 hover:underline">
+                {isPhone ? (
+                  <ul className="divide-y divide-gray-100" data-testid="pv-order-cards">
+                    {pageRows.map((r) => (
+                      <li key={r.id} className="px-4 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <Link to={`/admin/orders/${r.id}`} className="text-[14px] font-semibold text-red-600 hover:underline">
                               #{r.order_number ?? r.id}
                             </Link>
-                            {r.order_id && <span className="block text-[11.5px] text-gray-400">{r.order_id}</span>}
-                          </td>
-                          <td className={td}>
-                            {r.branch_name ?? '—'}
-                            <span className="block text-[11.5px] text-gray-400">{r.brand_name ?? ''}</span>
-                          </td>
-                          <td className={`${td} font-semibold text-gray-800`}>{r.voucher_name}</td>
-                          <td className={`${td} ${num}`}>{r.papers}</td>
-                          <td className={td}>
-                            {r.customer_name ?? '—'}
-                            {r.customer_phone && (
-                              <span className="block text-[11.5px] text-gray-400">{r.customer_phone}</span>
-                            )}
-                          </td>
-                          <td className={`${td} whitespace-nowrap`}>{formatOrderType(r.order_type)}</td>
-                          <td className={`${td} ${num}`}>{money(r.subtotal)}</td>
-                          <td className={`${td} ${num} font-semibold text-amber-700`}>−{money(r.discount)}</td>
-                          <td className={`${td} ${num}`}>{money(r.total)}</td>
-                          <td className={td}>{r.applied_by ?? '—'}</td>
+                            {r.order_id && <span className="ml-1.5 text-[11.5px] text-gray-400">{r.order_id}</span>}
+                            <div className="mt-0.5 text-[12.5px] text-gray-500">
+                              {dateTime(r.placed_at)} · {formatOrderType(r.order_type)}
+                            </div>
+                            <div className="text-[12.5px] text-gray-500">
+                              {r.branch_name ?? '—'}
+                              {r.brand_name ? ` · ${r.brand_name}` : ''}
+                            </div>
+                          </div>
+                          <div className="flex-none text-right text-[13px]">
+                            <div className="font-semibold text-gray-800">{r.voucher_name}</div>
+                            <div className="text-gray-500">{r.papers} {r.papers === 1 ? 'paper' : 'papers'}</div>
+                          </div>
+                        </div>
+                        <dl className="mt-2 grid grid-cols-3 gap-x-2 text-[13px] text-gray-800">
+                          <div><dt className={cardLabel}>Subtotal</dt><dd className="tabular-nums">{money(r.subtotal)}</dd></div>
+                          <div><dt className={cardLabel}>Voucher</dt><dd className="font-semibold tabular-nums text-amber-700">−{money(r.discount)}</dd></div>
+                          <div><dt className={cardLabel}>Charged</dt><dd className="tabular-nums">{money(r.total)}</dd></div>
+                        </dl>
+                        <div className="mt-2 text-[12.5px] text-gray-500">
+                          {r.customer_name ?? '—'}
+                          {r.customer_phone ? ` · ${r.customer_phone}` : ''} · applied by {r.applied_by ?? '—'}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <TableScroll>
+                    <table className="min-w-full">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className={th}>Placed</th>
+                          <th className={th}>Order</th>
+                          <th className={th}>Branch</th>
+                          <th className={th}>Vouchers</th>
+                          <th className={`${th} ${num}`}>Papers</th>
+                          <th className={th}>Customer</th>
+                          <th className={th}>Type</th>
+                          <th className={`${th} ${num}`}>Subtotal</th>
+                          <th className={`${th} ${num}`}>Voucher</th>
+                          <th className={`${th} ${num}`}>Charged</th>
+                          <th className={th}>Applied by</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {pageRows.map((r) => (
+                          <tr key={r.id}>
+                            <td className={`${td} whitespace-nowrap`}>{dateTime(r.placed_at)}</td>
+                            <td className={`${td} whitespace-nowrap`}>
+                              <Link to={`/admin/orders/${r.id}`} className="font-semibold text-red-600 hover:underline">
+                                #{r.order_number ?? r.id}
+                              </Link>
+                              {r.order_id && <span className="block text-[11.5px] text-gray-400">{r.order_id}</span>}
+                            </td>
+                            <td className={td}>
+                              {r.branch_name ?? '—'}
+                              <span className="block text-[11.5px] text-gray-400">{r.brand_name ?? ''}</span>
+                            </td>
+                            <td className={`${td} font-semibold text-gray-800`}>{r.voucher_name}</td>
+                            <td className={`${td} ${num}`}>{r.papers}</td>
+                            <td className={td}>
+                              {r.customer_name ?? '—'}
+                              {r.customer_phone && (
+                                <span className="block text-[11.5px] text-gray-400">{r.customer_phone}</span>
+                              )}
+                            </td>
+                            <td className={`${td} whitespace-nowrap`}>{formatOrderType(r.order_type)}</td>
+                            <td className={`${td} ${num}`}>{money(r.subtotal)}</td>
+                            <td className={`${td} ${num} font-semibold text-amber-700`}>−{money(r.discount)}</td>
+                            <td className={`${td} ${num}`}>{money(r.total)}</td>
+                            <td className={td}>{r.applied_by ?? '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </TableScroll>
+                )}
                 {totalPages > 1 && (
                   <div className="flex items-center justify-between border-t border-gray-100 px-4 py-3 text-[13px] text-gray-600">
                     <span>

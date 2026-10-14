@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -11,6 +12,8 @@ import { printContent } from '../../utils/print';
 import Button from '../../components/Button';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
 import Modal from '../../components/Modal';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 import RecordHistoryLink from '../../components/RecordHistoryLink';
@@ -680,8 +683,123 @@ const Shifts: React.FC = () => {
           ? { headline: 'Over', color: '#2563EB', amount: `+${fmtMoney(detailVariance)}`, panelBg: '#EEF4FF', icon: I.varUp, countedTone: 'normal' as const }
           : { headline: 'Short', color: '#C21F1F', amount: `−${fmtMoney(Math.abs(detailVariance))}`, panelBg: '#FDECEC', icon: I.varDown, countedTone: 'short' as const };
 
+  // The toolbar's controls, each once: desktop shows the toolbar, phones and tablets
+  // the search box + a sheet with the rest (only one renders).
+  const onFromDate = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    if (!v) return; // cleared: keep the previous date
+    setFromDate(v);
+    if (v > toDate) setToDate(v);
+  };
+  const onToDate = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = e.target.value;
+    if (!v) return; // cleared: keep the previous date
+    setToDate(v);
+    if (v < fromDate) setFromDate(v);
+  };
+  const shiftSearch = (
+    <div className="flex min-w-[200px] flex-1 items-center gap-[9px] max-lg:min-h-[44px] max-lg:min-w-0 rounded-[10px] border-[1.5px] border-[#EEEFF2] bg-[#F6F7F9] px-3 dark:border-slate-600 dark:bg-slate-700">
+      {I.search}
+      <input
+        aria-label="Search shifts"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        placeholder="Search shift #, brand, staff…"
+        className="flex-1 border-none bg-transparent py-2.5 text-[13.5px] text-[#1A1D24] outline-none dark:text-slate-100"
+      />
+    </div>
+  );
+  const shiftBranchSelect = (
+    <ResponsiveSelect
+      aria-label="Branch"
+      value={branchFilter}
+      onChange={(e) => setBranchFilter(e.target.value)}
+      className="cursor-pointer rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-[13px] py-2.5 text-[13px] text-[#374151] outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+    >
+      <option value="">All branches</option>
+      {(branches ?? []).map((b) => (
+        <option key={b.id} value={String(b.id)}>
+          {labelWithStatus(b.name, b)}
+        </option>
+      ))}
+    </ResponsiveSelect>
+  );
+  const shiftStatusTabs = (
+    <div className="flex gap-[7px]">
+      {(
+        [
+          { key: 'all', label: 'All', dot: null },
+          { key: 'open', label: 'Open', dot: '#2FB86B' },
+          { key: 'closed', label: 'Closed', dot: '#B6BCC6' },
+        ] as const
+      ).map((t) => {
+        const active = statusTab === t.key;
+        return (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setStatusTab(t.key)}
+            className={`inline-flex cursor-pointer items-center gap-[7px] rounded-[10px] border-[1.5px] px-[15px] py-[9px] text-[13px] font-bold max-lg:min-h-[40px] ${
+              active ? '' : 'border-[#E2E5EA] text-[#4B5563] dark:border-slate-600 dark:text-slate-300'
+            }`}
+            style={active ? { borderColor: '#DC2A2A', background: '#FCEEEE', color: '#B5121B' } : undefined}
+          >
+            {t.dot && <span className="h-[7px] w-[7px] rounded-full" style={{ background: t.dot }} />}
+            {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+  const sheetDateCls =
+    'w-full rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-2.5 text-[13.5px] font-semibold text-[#374151] outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200';
+  const resetShiftFilters = () => {
+    setFromDate(today);
+    setToDate(today);
+    setBranchFilter('');
+    setStatusTab('all');
+    setSearch('');
+  };
+  const shiftChips: FilterChip[] = [
+    ...(!isTodaySelected
+      ? [{ key: 'date', label: rangeChipLabel(fromDate, toDate), onRemove: () => { setFromDate(today); setToDate(today); } }]
+      : []),
+    ...(branchFilter
+      ? [{ key: 'branch', label: (branches ?? []).find((b) => String(b.id) === branchFilter)?.name ?? 'Branch', onRemove: () => setBranchFilter('') }]
+      : []),
+    ...(statusTab !== 'all' ? [{ key: 'status', label: statusTab === 'open' ? 'Open' : 'Closed', onRemove: () => setStatusTab('all') }] : []),
+  ];
+  const shiftFields: FilterField[] = [
+    { key: 'status', label: 'Status', node: shiftStatusTabs },
+    {
+      key: 'date',
+      label: 'Date range',
+      node: (
+        <>
+          <div className="grid grid-cols-2 gap-2.5">
+            <input type="date" aria-label="From date" value={fromDate} onChange={onFromDate} className={sheetDateCls} />
+            <input type="date" aria-label="To date" value={toDate} onChange={onToDate} className={sheetDateCls} />
+          </div>
+          {!isTodaySelected && (
+            <button
+              type="button"
+              onClick={() => {
+                setFromDate(today);
+                setToDate(today);
+              }}
+              className="mt-2 min-h-[40px] text-[13px] font-bold text-[#DC2A2A]"
+            >
+              Back to today
+            </button>
+          )}
+        </>
+      ),
+    },
+    { key: 'branch', label: 'Branch', node: shiftBranchSelect },
+  ];
+
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       {/* Header */}
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -698,11 +816,12 @@ const Shifts: React.FC = () => {
       </div>
 
       {/* Summary strip */}
-      <div className="mb-[22px] grid grid-cols-1 gap-[14px] sm:grid-cols-2 xl:grid-cols-4">
+      {/* Phones: a 2 × 2 grid of compact tiles, so the filters and the first shift stay on the first screen. */}
+      <div className="mb-[22px] grid grid-cols-1 gap-[14px] sm:grid-cols-2 xl:grid-cols-4 max-sm:grid-cols-2 max-sm:gap-2.5">
         {stats.map((s) => (
           <div
             key={s.label}
-            className="rounded-[14px] border border-[#ECEDF0] bg-white px-[17px] py-[15px] shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800"
+            className="rounded-[14px] border border-[#ECEDF0] bg-white px-[17px] py-[15px] shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800 max-sm:px-3 max-sm:py-2.5"
           >
             <div className="flex items-center gap-2">
               <span
@@ -711,105 +830,56 @@ const Shifts: React.FC = () => {
               >
                 {s.icon}
               </span>
-              <span className="text-[11.5px] font-bold uppercase tracking-[.05em] text-[#9AA1AD]">{s.label}</span>
+              <span className="text-[11.5px] font-bold uppercase tracking-[.05em] text-[#9AA1AD] max-sm:text-[10.5px] max-sm:leading-tight">{s.label}</span>
             </div>
-            <div className="mt-[9px] text-[22px] font-black tabular-nums text-[#1A1D24] dark:text-slate-100">{s.value}</div>
-            <div className="mt-px text-xs text-[#9AA1AD]">{s.sub}</div>
+            <div className="mt-[9px] text-[22px] font-black tabular-nums text-[#1A1D24] dark:text-slate-100 max-sm:mt-1.5 max-sm:text-[17px]">{s.value}</div>
+            <div className="mt-px text-xs text-[#9AA1AD] max-sm:text-[11px]">{s.sub}</div>
           </div>
         ))}
       </div>
 
-      {/* Toolbar */}
-      <div className="mb-[18px] flex flex-wrap items-center gap-[11px] rounded-[14px] border border-[#ECEDF0] bg-white px-[15px] py-3 shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800">
-        <div className="flex min-w-[200px] flex-1 items-center gap-[9px] rounded-[10px] border-[1.5px] border-[#EEEFF2] bg-[#F6F7F9] px-3 dark:border-slate-600 dark:bg-slate-700">
-          {I.search}
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search shift #, brand, staff…"
-            className="flex-1 border-none bg-transparent py-2.5 text-[13.5px] text-[#1A1D24] outline-none dark:text-slate-100"
-          />
-        </div>
-        <div className="flex items-center gap-2 rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-[11px] dark:border-slate-600 dark:bg-slate-800">
-          {I.calendar}
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (!v) return; // cleared: keep the previous date
-              setFromDate(v);
-              if (v > toDate) setToDate(v);
-            }}
-            className="cursor-pointer border-none bg-transparent py-[9px] text-[13px] font-semibold text-[#374151] outline-none dark:text-slate-200"
-          />
-          <span className="text-[13px] text-[#C0C5CD]">→</span>
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => {
-              const v = e.target.value;
-              if (!v) return; // cleared: keep the previous date
-              setToDate(v);
-              if (v < fromDate) setFromDate(v);
-            }}
-            className="cursor-pointer border-none bg-transparent py-[9px] text-[13px] font-semibold text-[#374151] outline-none dark:text-slate-200"
-          />
-          {isTodaySelected ? (
-            <span className="rounded-md bg-[#E7F7EE] px-[7px] py-0.5 text-[10.5px] font-extrabold uppercase tracking-[.04em] text-[#0F9D58]">
-              Today
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setFromDate(today);
-                setToDate(today);
-              }}
-              className="whitespace-nowrap border-none bg-transparent text-[11.5px] font-bold text-[#DC2A2A] cursor-pointer"
-            >
-              Today
-            </button>
-          )}
-        </div>
-        <select
-          value={branchFilter}
-          onChange={(e) => setBranchFilter(e.target.value)}
-          className="cursor-pointer rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-[13px] py-2.5 text-[13px] text-[#374151] outline-none dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
-        >
-          <option value="">All branches</option>
-          {(branches ?? []).map((b) => (
-            <option key={b.id} value={String(b.id)}>
-              {labelWithStatus(b.name, b)}
-            </option>
-          ))}
-        </select>
-        <div className="flex gap-[7px]">
-          {(
-            [
-              { key: 'all', label: 'All', dot: null },
-              { key: 'open', label: 'Open', dot: '#2FB86B' },
-              { key: 'closed', label: 'Closed', dot: '#B6BCC6' },
-            ] as const
-          ).map((t) => {
-            const active = statusTab === t.key;
-            return (
+      {/* Toolbar — phones and tablets get the compact bar and sheet instead. */}
+      <FilterBar primary={shiftSearch} chips={shiftChips} fields={shiftFields} onClearAll={resetShiftFilters} resultLabel={`Show ${filtered.length} ${filtered.length === 1 ? 'shift' : 'shifts'}`}>
+        <div className="mb-[18px] flex flex-wrap items-center gap-[11px] rounded-[14px] border border-[#ECEDF0] bg-white px-[15px] py-3 shadow-[0_6px_18px_rgba(15,23,42,.04)] dark:border-slate-700 dark:bg-slate-800">
+          {shiftSearch}
+          <div className="flex items-center gap-2 rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-[11px] dark:border-slate-600 dark:bg-slate-800">
+            {I.calendar}
+            <input
+              type="date"
+              aria-label="From date"
+              value={fromDate}
+              onChange={onFromDate}
+              className="cursor-pointer border-none bg-transparent py-[9px] text-[13px] font-semibold text-[#374151] outline-none dark:text-slate-200"
+            />
+            <span className="text-[13px] text-[#C0C5CD]">→</span>
+            <input
+              type="date"
+              aria-label="To date"
+              value={toDate}
+              onChange={onToDate}
+              className="cursor-pointer border-none bg-transparent py-[9px] text-[13px] font-semibold text-[#374151] outline-none dark:text-slate-200"
+            />
+            {isTodaySelected ? (
+              <span className="rounded-md bg-[#E7F7EE] px-[7px] py-0.5 text-[10.5px] font-extrabold uppercase tracking-[.04em] text-[#0F9D58]">
+                Today
+              </span>
+            ) : (
               <button
-                key={t.key}
                 type="button"
-                onClick={() => setStatusTab(t.key)}
-                className={`inline-flex cursor-pointer items-center gap-[7px] rounded-[10px] border-[1.5px] px-[15px] py-[9px] text-[13px] font-bold ${
-                  active ? '' : 'border-[#E2E5EA] text-[#4B5563] dark:border-slate-600 dark:text-slate-300'
-                }`}
-                style={active ? { borderColor: '#DC2A2A', background: '#FCEEEE', color: '#B5121B' } : undefined}
+                onClick={() => {
+                  setFromDate(today);
+                  setToDate(today);
+                }}
+                className="whitespace-nowrap border-none bg-transparent text-[11.5px] font-bold text-[#DC2A2A] cursor-pointer"
               >
-                {t.dot && <span className="h-[7px] w-[7px] rounded-full" style={{ background: t.dot }} />}
-                {t.label}
+                Today
               </button>
-            );
-          })}
+            )}
+          </div>
+          {shiftBranchSelect}
+          {shiftStatusTabs}
         </div>
-      </div>
+      </FilterBar>
 
       {/* Shift cards. While a date-range change is fetching, the previous
           results stay mounted and a soft veil fades in over them
@@ -930,12 +1000,12 @@ const Shifts: React.FC = () => {
       {detailShiftId != null && (
         <div
           onClick={() => setDetailShiftId(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center p-[30px]"
+          className="fixed inset-0 z-50 flex items-center justify-center p-[30px] max-sm:items-end max-sm:p-0"
           style={{ background: 'rgba(20,17,18,.55)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="flex max-h-[92vh] w-[660px] max-w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_40px_90px_rgba(0,0,0,.5)] dark:bg-slate-800"
+            className="flex max-h-[92vh] w-[660px] max-w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_40px_90px_rgba(0,0,0,.5)] dark:bg-slate-800 max-lg:max-h-[92dvh] max-sm:rounded-b-none"
           >
             <div className="h-1.5 flex-none" style={{ background: 'linear-gradient(90deg,#EF4444,#DC2A2A 55%,#F43F5E)' }} />
             {!detail ? (
@@ -1395,13 +1465,13 @@ const Shifts: React.FC = () => {
       {showCloseForm && selectedShift && (
         <div
           onClick={() => setShowCloseForm(false)}
-          className="fixed inset-0 z-[60] flex items-center justify-center p-[30px]"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-[30px] max-sm:items-end max-sm:p-0"
           style={{ background: 'rgba(20,17,18,.55)', backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' }}
         >
           <form
             onSubmit={handleCloseShift}
             onClick={(e) => e.stopPropagation()}
-            className="flex max-h-[92vh] w-[720px] max-w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_40px_90px_rgba(0,0,0,.5)] dark:bg-slate-800"
+            className="flex max-h-[92vh] w-[720px] max-w-full flex-col overflow-hidden rounded-[18px] bg-white shadow-[0_40px_90px_rgba(0,0,0,.5)] dark:bg-slate-800 max-lg:max-h-[92dvh] max-sm:rounded-b-none"
           >
             <div className="h-1.5 flex-none" style={{ background: 'linear-gradient(90deg,#EF4444,#DC2A2A 55%,#F43F5E)' }} />
             {/* Header */}

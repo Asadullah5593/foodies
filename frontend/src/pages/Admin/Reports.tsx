@@ -10,6 +10,9 @@ import SearchableSelect from '../../components/SearchableSelect';
 import { formatCurrency } from '../../utils/currency';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 import { isEntityInactive } from '../../utils/entityStatus';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
+import TableScroll from '../../components/TableScroll';
 
 /** GET /admin/reports/discounts — where the discounts went. */
 interface DiscountsReport {
@@ -110,70 +113,89 @@ const Reports: React.FC = () => {
 
   if (loadingSales || loadingTopItems) return <Loader fullScreen text="Loading reports..." />;
 
+  const branchSelect = (label?: string, minWidth = 'w-full') => (
+    <SearchableSelect
+      label={label}
+      value={selectedBranch ? String(selectedBranch) : ''}
+      onChange={(v) => setSelectedBranch(v ? parseInt(v, 10) : null)}
+      options={[
+        { value: '', label: 'All Branches' },
+        ...(branches ?? []).map((branch) => ({
+          value: String(branch.id),
+          label: `${branch.name} (${branch.code})`,
+          inactive: isEntityInactive(branch),
+        })),
+      ]}
+      placeholder="All Branches"
+      minWidth={minWidth}
+    />
+  );
+  const brandSelect = (label?: string, minWidth = 'w-full') => (
+    <SearchableSelect
+      label={label}
+      value={selectedBrand ? String(selectedBrand) : ''}
+      onChange={(v) => setSelectedBrand(v ? parseInt(v, 10) : null)}
+      options={[
+        { value: '', label: 'All Brands' },
+        ...(brands ?? []).map((brand) => ({
+          value: String(brand.id),
+          label: brand.name, inactive: isEntityInactive(brand),
+        })),
+      ]}
+      placeholder="All Brands"
+      minWidth={minWidth}
+    />
+  );
+  const dateInputCls = 'w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500';
+  const dateFromInput = <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={dateInputCls} aria-label="From date" />;
+  const dateToInput = <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={dateInputCls} aria-label="To date" />;
+  const todayIso = () => new Date().toISOString().split('T')[0];
+  const clearReportFilters = () => {
+    setSelectedBranch(null);
+    setSelectedBrand(null);
+    const today = todayIso();
+    setDateFrom(today);
+    setDateTo(today);
+  };
+  // Phones and tablets: the filter card becomes a compact bar + sheet (FilterBar).
+  const reportChips: FilterChip[] = [
+    ...(dateFrom !== todayIso() || dateTo !== todayIso()
+      ? [{ key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { setDateFrom(todayIso()); setDateTo(todayIso()); } }]
+      : []),
+    ...(selectedBranch != null
+      ? [{ key: 'branch', label: (branches ?? []).find((b) => b.id === selectedBranch)?.name ?? 'Branch', onRemove: () => setSelectedBranch(null) }]
+      : []),
+    ...(selectedBrand != null
+      ? [{ key: 'brand', label: (brands ?? []).find((b) => b.id === selectedBrand)?.name ?? 'Brand', onRemove: () => setSelectedBrand(null) }]
+      : []),
+  ];
+  const reportFields: FilterField[] = [
+    { key: 'date', label: 'Date range', node: <div className="grid grid-cols-2 gap-2.5">{dateFromInput}{dateToInput}</div> },
+    { key: 'branch', label: 'Branch', node: branchSelect() },
+    { key: 'brand', label: 'Brand', node: brandSelect() },
+  ];
+
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <div className="p-6 max-w-7xl mx-auto max-lg:px-0 max-lg:py-2">
       <h1 className="text-3xl font-bold text-gray-800 mb-6">Reports</h1>
 
+      <FilterBar className="mb-6" chips={reportChips} fields={reportFields} onClearAll={clearReportFilters}>
       <Card className="mb-6 p-4 dark:bg-slate-800 dark:border-slate-700">
         <div className="flex flex-wrap gap-4 items-end">
-          <SearchableSelect
-            label="Branch"
-            value={selectedBranch ? String(selectedBranch) : ''}
-            onChange={(v) => setSelectedBranch(v ? parseInt(v, 10) : null)}
-            options={[
-              { value: '', label: 'All Branches' },
-              ...(branches ?? []).map((branch) => ({
-                value: String(branch.id),
-                label: `${branch.name} (${branch.code})`,
-                inactive: isEntityInactive(branch),
-              })),
-            ]}
-            placeholder="All Branches"
-            minWidth="min-w-[180px]"
-          />
-          <SearchableSelect
-            label="Brand"
-            value={selectedBrand ? String(selectedBrand) : ''}
-            onChange={(v) => setSelectedBrand(v ? parseInt(v, 10) : null)}
-            options={[
-              { value: '', label: 'All Brands' },
-              ...(brands ?? []).map((brand) => ({
-                value: String(brand.id),
-                label: brand.name, inactive: isEntityInactive(brand),
-              })),
-            ]}
-            placeholder="All Brands"
-            minWidth="min-w-[160px]"
-          />
+          {branchSelect('Branch', 'min-w-[180px]')}
+          {brandSelect('Brand', 'min-w-[160px]')}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">From Date</label>
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
+            {dateFromInput}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">To Date</label>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
+            {dateToInput}
           </div>
-          <ClearFiltersButton
-            onClick={() => {
-              setSelectedBranch(null);
-              setSelectedBrand(null);
-              const today = new Date().toISOString().split('T')[0];
-              setDateFrom(today);
-              setDateTo(today);
-            }}
-          />
+          <ClearFiltersButton onClick={clearReportFilters} />
         </div>
       </Card>
+      </FilterBar>
 
       <FetchingOverlay active={summaryRefreshing} label="Updating sales summary…">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
@@ -263,7 +285,7 @@ const Reports: React.FC = () => {
         {discounts != null && discounts.cards.length > 0 && (
           <Card>
             <h3 className="mb-3 text-sm font-medium text-gray-500">By bank card</h3>
-            <div className="overflow-x-auto">
+            <TableScroll>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-400">
@@ -295,7 +317,7 @@ const Reports: React.FC = () => {
                   ))}
                 </tbody>
               </table>
-            </div>
+            </TableScroll>
           </Card>
         )}
         </FetchingOverlay>

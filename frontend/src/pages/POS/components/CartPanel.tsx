@@ -174,7 +174,7 @@ const CartPanel: React.FC<CartPanelProps> = ({
                           size="small"
                           variant="danger"
                           onClick={() => handleRemove(index)}
-                          className="min-w-[2rem]"
+                          className="min-w-[2rem] max-lg:min-w-[44px]"
                         >
                           ×
                         </Button>
@@ -325,7 +325,9 @@ const CartPanel: React.FC<CartPanelProps> = ({
                         <p className="text-xs text-foodies-textSecondary italic">Note: {item.notes}</p>
                       )}
                   </div>
-                  <div className="flex items-center justify-between gap-2">
+                  {/* The tablet cart pane is 18rem: when the stepper and the amount no longer
+                      share a row, the amount drops to its own line rather than breaking mid-figure. */}
+                  <div className="flex items-center justify-between gap-2 sm:max-lg:flex-wrap">
                     <div className="flex items-center gap-2">
                       <span className="text-sm text-foodies-textSecondary">Qty</span>
                       <div className="flex items-center rounded-lg border border-foodies-border dark:border-slate-600 overflow-hidden">
@@ -334,7 +336,7 @@ const CartPanel: React.FC<CartPanelProps> = ({
                           aria-label="Decrease quantity"
                           disabled={item.quantity <= 1}
                           onClick={() => onUpdateQuantity(index, Math.max(1, item.quantity - 1))}
-                          className="px-3 py-1.5 text-lg leading-none text-foodies-textPrimary dark:text-slate-100 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                          className="max-lg:min-h-[44px] max-lg:min-w-[44px] px-3 py-1.5 text-lg leading-none text-foodies-textPrimary dark:text-slate-100 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           −
                         </button>
@@ -345,13 +347,13 @@ const CartPanel: React.FC<CartPanelProps> = ({
                           type="button"
                           aria-label="Increase quantity"
                           onClick={() => onUpdateQuantity(index, item.quantity + 1)}
-                          className="px-3 py-1.5 text-lg leading-none text-foodies-textPrimary dark:text-slate-100 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700"
+                          className="max-lg:min-h-[44px] max-lg:min-w-[44px] px-3 py-1.5 text-lg leading-none text-foodies-textPrimary dark:text-slate-100 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700"
                         >
                           +
                         </button>
                       </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right sm:max-lg:ml-auto">
                       {lineDiscount > 0 ? (
                         <>
                           <div className="text-sm text-foodies-textSecondary line-through">{formatCurrency(originalAmount)}</div>
@@ -372,10 +374,10 @@ const CartPanel: React.FC<CartPanelProps> = ({
                           ) : (
                             <div className="text-xs text-foodies-cta">−{formatCurrency(lineDiscount)}</div>
                           )}
-                          <div className="text-lg font-bold text-foodies-cta">{formatCurrency(afterDiscount)}</div>
+                          <div className="text-lg font-bold text-foodies-cta max-lg:whitespace-nowrap">{formatCurrency(afterDiscount)}</div>
                         </>
                       ) : (
-                        <span className="text-lg font-bold text-foodies-cta">{formatCurrency(itemTotal)}</span>
+                        <span className="text-lg font-bold text-foodies-cta max-lg:whitespace-nowrap">{formatCurrency(itemTotal)}</span>
                       )}
                     </div>
                   </div>

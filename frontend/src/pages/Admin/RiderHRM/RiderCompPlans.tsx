@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { labelWithStatus } from '../../../utils/entityStatus';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -119,7 +120,7 @@ const RiderCompPlans: React.FC = () => {
   };
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 space-y-6">
       <RiderHrmHeader
         title="Compensation Plans"
         subtitle="The rider pay rulebook — versioned, branch- or tenant-scoped plans built from earning components (per-ride, timely-delivery, rating-threshold bonuses)."
@@ -146,7 +147,7 @@ const RiderCompPlans: React.FC = () => {
           </div>
           <div>
             <label className={labelClass}>Pay method</label>
-            <select
+            <ResponsiveSelect
               value={planForm.pay_method}
               onChange={(e) => setPlanForm((prev) => ({ ...prev, pay_method: e.target.value }))}
               className={inputClass}
@@ -154,11 +155,11 @@ const RiderCompPlans: React.FC = () => {
               <option value="fixed">Fixed salary</option>
               <option value="commission">Commission only</option>
               <option value="hybrid">Hybrid</option>
-            </select>
+            </ResponsiveSelect>
           </div>
           <div>
             <label className={labelClass}>Branch scope</label>
-            <select
+            <ResponsiveSelect
               value={planForm.branch_id}
               onChange={(e) => setPlanForm((prev) => ({ ...prev, branch_id: e.target.value }))}
               className={inputClass}
@@ -169,7 +170,7 @@ const RiderCompPlans: React.FC = () => {
                   {labelWithStatus(branch.name, branch)}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           <div>
             <label className={labelClass}>Effective from</label>
@@ -228,7 +229,7 @@ const RiderCompPlans: React.FC = () => {
                   className={inputClass}
                   placeholder="component_key"
                 />
-                <select
+                <ResponsiveSelect
                   value={component.calc_basis}
                   onChange={(e) =>
                     setPlanForm((prev) => ({
@@ -244,7 +245,7 @@ const RiderCompPlans: React.FC = () => {
                   <option value="per_ride">Per ride</option>
                   <option value="timely_delivery">Timely delivery</option>
                   <option value="rating_threshold_bonus">Rating threshold bonus</option>
-                </select>
+                </ResponsiveSelect>
                 <input
                   type="number"
                   value={component.value}

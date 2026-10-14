@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { labelWithStatus } from '../../../utils/entityStatus';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -90,7 +91,7 @@ const RequestRiders: React.FC = () => {
 
   if (!isBrandAdmin) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
         <Card className="dark:bg-slate-800 dark:border-slate-700">
           <p className="text-sm text-gray-600 dark:text-slate-300">
             Requesting riders is for brand admins. Manage the shared pool from{' '}
@@ -102,7 +103,7 @@ const RequestRiders: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 space-y-6">
       <RiderHrmHeader
         title="Request Riders"
         subtitle="Browse Foodies-pool riders and request them for your brand. The owner approves before a rider becomes available to you."
@@ -111,7 +112,7 @@ const RequestRiders: React.FC = () => {
       {brandOptions.length > 1 && (
         <Card className="dark:bg-slate-800 dark:border-slate-700">
           <label className={labelClass}>Brand</label>
-          <select
+          <ResponsiveSelect
             value={brandId ?? ''}
             onChange={(e) => setBrandId(Number(e.target.value))}
             className={inputClass}
@@ -121,7 +122,7 @@ const RequestRiders: React.FC = () => {
                 {labelWithStatus(b.name, b)}
               </option>
             ))}
-          </select>
+          </ResponsiveSelect>
         </Card>
       )}
 

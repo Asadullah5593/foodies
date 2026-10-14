@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { adminService } from '../../services/api/adminService';
@@ -145,7 +146,7 @@ const ProductPromotions: React.FC = () => {
   if (isLoading) return <Loader fullScreen text="Loading product promotions..." />;
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Product Promotions</h1>
         {canCreatePerm && <Button onClick={() => { setEditing(null); setForm({ ...emptyForm }); setShowForm(true); }}>Add Promotion</Button>}
@@ -183,20 +184,20 @@ const ProductPromotions: React.FC = () => {
                 <label className={offerLabel}>Name <span className="text-red-500">*</span></label>
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. 10% off wings" className={offerInput} />
               </div>
-              <div className="grid grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3.5">
                 <div>
                   <label className={offerLabel}>Type</label>
-                  <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
+                  <ResponsiveSelect value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
                     <option value="percentage">Percentage</option>
                     <option value="flat">Flat Amount</option>
-                  </select>
+                  </ResponsiveSelect>
                 </div>
                 <div>
                   <label className={offerLabel}>Value</label>
                   <input type="number" min={0} value={form.value} onChange={(e) => setForm({ ...form, value: Number(e.target.value) })} className={offerInput} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3.5">
+              <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3.5">
                 <div>
                   <label className={offerLabel}>Max discount (Rs)</label>
                   <input type="number" min={0} value={form.max_discount_amount} onChange={(e) => setForm({ ...form, max_discount_amount: e.target.value === '' ? '' : Number(e.target.value) })} placeholder="none" className={offerInput} />

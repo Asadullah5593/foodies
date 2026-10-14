@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import ResponsiveSelect from './ResponsiveSelect';
 import { toast } from 'react-hot-toast';
 import Modal from './Modal';
 import Button from './Button';
@@ -88,7 +89,7 @@ const PaymentRequiredModal: React.FC<PaymentRequiredModalProps> = ({
           </p>
           <label className="block">
             <span className="block text-sm font-medium text-gray-700 mb-1">Payment method</span>
-            <select
+            <ResponsiveSelect
               value={method}
               onChange={(e) => setMethod(e.target.value as SettleMethod | '')}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
@@ -102,7 +103,7 @@ const PaymentRequiredModal: React.FC<PaymentRequiredModalProps> = ({
                   {METHOD_LABELS[m] ?? m}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </label>
           {payment.payment_methods.length < 3 && (
             <p className="text-xs text-gray-500">

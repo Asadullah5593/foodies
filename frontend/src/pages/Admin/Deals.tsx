@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
@@ -9,6 +10,7 @@ import { adminService } from '../../services/api/adminService';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -330,73 +332,103 @@ const Deals: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading deals...'} />;
   }
 
+  // Each filter control once: desktop shows the card below, phones and tablets the
+  // compact bar + sheet (only one renders).
+  const brandSelect = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={brandFilter}
+      onChange={setBrandFilter}
+      options={[
+        { value: '', label: 'All brands' },
+        ...(brands ?? []).map((b) => ({
+          value: String(b.id),
+          label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+          inactive: isEntityInactive(b),
+        })),
+      ]}
+      placeholder="All brands"
+      minWidth="min-w-[180px]"
+    />
+  );
+  const searchFilter = (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1 max-lg:hidden">Search deal name</label>
+      <div className="relative">
+        <input
+          type="text"
+          aria-label="Search deals"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onFocus={() => dealTypeahead.setOpen(true)}
+          onKeyDown={(e) => {
+            const suggestions = dealTypeahead.suggestions;
+            if (!suggestions.length) return;
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              dealTypeahead.setActiveIndex(Math.min(dealTypeahead.activeIndex + 1, suggestions.length - 1));
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              dealTypeahead.setActiveIndex(Math.max(dealTypeahead.activeIndex - 1, 0));
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              const opt = suggestions[dealTypeahead.activeIndex];
+              if (opt?.label) setSearch(opt.label);
+              dealTypeahead.setOpen(false);
+            } else if (e.key === 'Escape') {
+              dealTypeahead.setOpen(false);
+            }
+          }}
+          placeholder="Deal name..."
+          className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 max-lg:min-h-[44px] max-lg:w-full max-lg:min-w-0"
+        />
+        <TypeaheadDropdown
+          open={dealTypeahead.open && search.trim().length >= 2}
+          suggestions={dealTypeahead.suggestions}
+          activeIndex={dealTypeahead.activeIndex}
+          onHoverIndex={dealTypeahead.setActiveIndex}
+          onSelect={(opt) => {
+            setSearch(opt.label);
+            dealTypeahead.setOpen(false);
+          }}
+          onClose={() => dealTypeahead.setOpen(false)}
+        />
+      </div>
+    </div>
+  );
+  const filterChips: FilterChip[] = [
+    ...(brandFilter
+      ? [{ key: 'brand', label: (brands ?? []).find((b) => String(b.id) === brandFilter)?.name ?? 'Brand', onRemove: () => setBrandFilter('') }]
+      : []),
+  ];
+  const filterFields: FilterField[] = [
+    { key: 'brandSelect', label: 'Brand', node: brandSelect() },
+  ];
+
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Deals</h1>
         <Button variant="primary" onClick={openAdd}>Add deal</Button>
       </div>
 
-      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap gap-3 items-end">
-          <SearchableSelect
-            label="Brand"
-            value={brandFilter}
-            onChange={setBrandFilter}
-            options={[
-              { value: '', label: 'All brands' },
-              ...(brands ?? []).map((b) => ({
-                value: String(b.id),
-                label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
-              })),
-            ]}
-            placeholder="All brands"
-            minWidth="min-w-[180px]"
-          />
-          <div>
-            <label className="block text-xs font-medium text-gray-500 dark:text-slate-400 mb-1">Search deal name</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                onFocus={() => dealTypeahead.setOpen(true)}
-                onKeyDown={(e) => {
-                  const suggestions = dealTypeahead.suggestions;
-                  if (!suggestions.length) return;
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    dealTypeahead.setActiveIndex(Math.min(dealTypeahead.activeIndex + 1, suggestions.length - 1));
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    dealTypeahead.setActiveIndex(Math.max(dealTypeahead.activeIndex - 1, 0));
-                  } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const opt = suggestions[dealTypeahead.activeIndex];
-                    if (opt?.label) setSearch(opt.label);
-                    dealTypeahead.setOpen(false);
-                  } else if (e.key === 'Escape') {
-                    dealTypeahead.setOpen(false);
-                  }
-                }}
-                placeholder="Deal name..."
-                className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-              />
-              <TypeaheadDropdown
-                open={dealTypeahead.open && search.trim().length >= 2}
-                suggestions={dealTypeahead.suggestions}
-                activeIndex={dealTypeahead.activeIndex}
-                onHoverIndex={dealTypeahead.setActiveIndex}
-                onSelect={(opt) => {
-                  setSearch(opt.label);
-                  dealTypeahead.setOpen(false);
-                }}
-                onClose={() => dealTypeahead.setOpen(false)}
-              />
-            </div>
+      <FilterBar
+        className="mb-4"
+        primary={searchFilter}
+        chips={filterChips}
+        fields={filterFields}
+        onClearAll={() => {
+          setBrandFilter('');
+          setSearch('');
+        }}
+      >
+        <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap gap-3 items-end">
+            {brandSelect('Brand')}
+            {searchFilter}
           </div>
-        </div>
-      </Card>
+        </Card>
+      </FilterBar>
 
       <div className="w-full space-y-3">
         {filteredDeals.length === 0 ? (
@@ -530,6 +562,7 @@ const Deals: React.FC = () => {
                 ...(brands ?? []).map((b) => ({
                   value: String(b.id),
                   label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+                  inactive: isEntityInactive(b),
                 })),
               ]}
               placeholder="Select brand"
@@ -905,7 +938,7 @@ function SlotEditor({ slot, onChange, onRemove, categories, menuItems }: SlotEdi
   return (
     <div className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50/50">
       <div className="flex justify-between items-center">
-        <select
+        <ResponsiveSelect
           value={slot.type}
           onChange={(e) => onChange({ type: e.target.value as DealSlotType })}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium focus:ring-2 focus:ring-blue-500"
@@ -913,7 +946,7 @@ function SlotEditor({ slot, onChange, onRemove, categories, menuItems }: SlotEdi
           {(Object.keys(DEAL_TYPE_LABELS) as DealSlotType[]).map((t) => (
             <option key={t} value={t}>{DEAL_TYPE_LABELS[t]}</option>
           ))}
-        </select>
+        </ResponsiveSelect>
         <button type="button" onClick={onRemove} className="text-red-600 text-sm font-medium hover:underline">
           Remove slot
         </button>

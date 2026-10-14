@@ -258,7 +258,7 @@ const CustomerDisplay: React.FC = () => {
       </AnimatePresence>
 
       {/* Compact customer-facing header: no branch filter */}
-      <header className="flex-shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between bg-white">
+      <header className="flex-shrink-0 px-4 sm:px-6 py-3 sm:py-4 border-b border-gray-200 flex items-center justify-between bg-white max-lg:flex-wrap max-lg:gap-y-3">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -278,14 +278,14 @@ const CustomerDisplay: React.FC = () => {
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2 flex-wrap justify-end">
+        <div className="flex items-center gap-2 flex-wrap justify-end max-lg:w-full max-lg:justify-start">
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
             <label className="text-xs text-gray-600 font-medium">From</label>
             <input
               type="date"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
-              className="bg-white border border-gray-300 text-gray-900 rounded-md px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              className="bg-white border border-gray-300 text-gray-900 rounded-md px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none max-lg:min-h-[44px]"
             />
           </div>
           <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
@@ -294,14 +294,14 @@ const CustomerDisplay: React.FC = () => {
               type="date"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
-              className="bg-white border border-gray-300 text-gray-900 rounded-md px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              className="bg-white border border-gray-300 text-gray-900 rounded-md px-2 py-1 text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none max-lg:min-h-[44px]"
             />
           </div>
           <button
             type="button"
             onClick={() => setShowCompleted((v) => !v)}
             className={[
-              'px-3 py-2 rounded-lg text-sm font-medium transition-colors border',
+              'px-3 py-2 rounded-lg text-sm font-medium transition-colors border max-lg:min-h-[40px]',
               showCompleted
                 ? 'bg-emerald-50 border-emerald-400 text-emerald-700 hover:bg-emerald-100'
                 : 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100',
@@ -314,7 +314,7 @@ const CustomerDisplay: React.FC = () => {
             <button
               type="button"
               onClick={requestFullscreen}
-              className="flex-shrink-0 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium transition-colors"
+              className="flex-shrink-0 px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium transition-colors max-lg:min-h-[40px]"
               title="Enter fullscreen"
             >
               Full screen

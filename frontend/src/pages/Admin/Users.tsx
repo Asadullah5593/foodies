@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
@@ -12,6 +13,7 @@ import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
 import { confirmDialog } from '../../utils/sweetAlert';
@@ -209,77 +211,104 @@ const Users: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading users...'} />;
   }
 
+  // Each filter control once: desktop shows the card below, phones and tablets the
+  // compact bar + sheet (only one renders).
+  const roleFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filterRole}
+      onChange={setFilterRole}
+      options={[
+        { value: '', label: 'All roles' },
+        // Owner / super admin are not selectable in the Users module.
+        ...(roles ?? [])
+          .filter((r) => !['owner', 'super_admin'].includes(r.slug.toLowerCase()))
+          .map((r) => ({ value: r.slug, label: r.name })),
+      ]}
+      placeholder="All roles"
+      minWidth="min-w-[180px]"
+    />
+  );
+  const searchFilter = (
+    <div className="flex-1 min-w-[200px] relative max-lg:min-w-0">
+      <label className="block text-sm font-medium text-gray-700 mb-1 max-lg:hidden">Search</label>
+      <input
+        type="text"
+        aria-label="Search users"
+        value={filterSearch}
+        onChange={(e) => setFilterSearch(e.target.value)}
+        onFocus={() => userSearchTypeahead.setOpen(true)}
+        onKeyDown={(e) => {
+          const suggestions = userSearchTypeahead.suggestions;
+          if (!suggestions.length) return;
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            userSearchTypeahead.setActiveIndex(Math.min(userSearchTypeahead.activeIndex + 1, suggestions.length - 1));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            userSearchTypeahead.setActiveIndex(Math.max(userSearchTypeahead.activeIndex - 1, 0));
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const opt = suggestions[userSearchTypeahead.activeIndex];
+            if (opt?.label) setFilterSearch(opt.label);
+            userSearchTypeahead.setOpen(false);
+          } else if (e.key === 'Escape') {
+            userSearchTypeahead.setOpen(false);
+          }
+        }}
+        placeholder="Name or email..."
+        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 max-lg:min-h-[44px] max-lg:w-full max-lg:min-w-0"
+      />
+      <TypeaheadDropdown
+        open={userSearchTypeahead.open && filterSearch.trim().length >= 2}
+        suggestions={userSearchTypeahead.suggestions}
+        activeIndex={userSearchTypeahead.activeIndex}
+        onHoverIndex={userSearchTypeahead.setActiveIndex}
+        onSelect={(opt) => {
+          setFilterSearch(opt.label);
+          userSearchTypeahead.setOpen(false);
+        }}
+        onClose={() => userSearchTypeahead.setOpen(false)}
+      />
+    </div>
+  );
+  const filterChips: FilterChip[] = [
+    ...(filterRole ? [{ key: 'role', label: (roles ?? []).find((r) => r.slug === filterRole)?.name ?? 'Role', onRemove: () => setFilterRole('') }] : []),
+  ];
+  const filterFields: FilterField[] = [
+    { key: 'roleFilter', label: 'Role', node: roleFilter() },
+  ];
+
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Users</h1>
         {canCreate && <Button variant="primary" onClick={() => setShowCreate(true)}>Add User</Button>}
       </div>
 
-      <Card className="mb-6 p-4 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap gap-4 items-end">
-          <SearchableSelect
-            label="Role"
-            value={filterRole}
-            onChange={setFilterRole}
-            options={[
-              { value: '', label: 'All roles' },
-              // Owner / super admin are not selectable in the Users module.
-              ...(roles ?? [])
-                .filter((r) => !['owner', 'super_admin'].includes(r.slug.toLowerCase()))
-                .map((r) => ({ value: r.slug, label: r.name })),
-            ]}
-            placeholder="All roles"
-            minWidth="min-w-[180px]"
-          />
-          <div className="flex-1 min-w-[200px] relative">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
-            <input
-              type="text"
-              value={filterSearch}
-              onChange={(e) => setFilterSearch(e.target.value)}
-              onFocus={() => userSearchTypeahead.setOpen(true)}
-              onKeyDown={(e) => {
-                const suggestions = userSearchTypeahead.suggestions;
-                if (!suggestions.length) return;
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  userSearchTypeahead.setActiveIndex(Math.min(userSearchTypeahead.activeIndex + 1, suggestions.length - 1));
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  userSearchTypeahead.setActiveIndex(Math.max(userSearchTypeahead.activeIndex - 1, 0));
-                } else if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const opt = suggestions[userSearchTypeahead.activeIndex];
-                  if (opt?.label) setFilterSearch(opt.label);
-                  userSearchTypeahead.setOpen(false);
-                } else if (e.key === 'Escape') {
-                  userSearchTypeahead.setOpen(false);
-                }
+      <FilterBar
+        className="mb-4"
+        primary={searchFilter}
+        chips={filterChips}
+        fields={filterFields}
+        onClearAll={() => {
+          setFilterRole('');
+          setFilterSearch('');
+        }}
+      >
+        <Card className="mb-6 p-4 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap gap-4 items-end">
+            {roleFilter('Role')}
+            {searchFilter}
+            <ClearFiltersButton
+              onClick={() => {
+                setFilterRole('');
+                setFilterSearch('');
               }}
-              placeholder="Name or email..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            />
-            <TypeaheadDropdown
-              open={userSearchTypeahead.open && filterSearch.trim().length >= 2}
-              suggestions={userSearchTypeahead.suggestions}
-              activeIndex={userSearchTypeahead.activeIndex}
-              onHoverIndex={userSearchTypeahead.setActiveIndex}
-              onSelect={(opt) => {
-                setFilterSearch(opt.label);
-                userSearchTypeahead.setOpen(false);
-              }}
-              onClose={() => userSearchTypeahead.setOpen(false)}
             />
           </div>
-          <ClearFiltersButton
-            onClick={() => {
-              setFilterRole('');
-              setFilterSearch('');
-            }}
-          />
-        </div>
-      </Card>
+        </Card>
+      </FilterBar>
 
       {/* Create User Modal */}
       <Modal isOpen={showCreate} onClose={() => setShowCreate(false)} title="Create User" size="medium">
@@ -297,7 +326,7 @@ const Users: React.FC = () => {
           {isSuperAdmin && tenants && tenants.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Tenant *</label>
-              <select
+              <ResponsiveSelect
                 value={createData.tenant_id}
                 onChange={(e) => setCreateData({ ...createData, tenant_id: e.target.value })}
                 required
@@ -305,15 +334,15 @@ const Users: React.FC = () => {
               >
                 <option value="">Select tenant</option>
                 {tenants.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
+                  <option key={t.id} value={t.id}>{labelWithStatus(t.name, t)}</option>
                 ))}
-              </select>
+              </ResponsiveSelect>
             </div>
           )}
           {needsBrandChoice && brands && brands.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Brand</label>
-              <select
+              <ResponsiveSelect
                 value={createData.brand_id}
                 onChange={(e) => setCreateData({ ...createData, brand_id: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
@@ -322,7 +351,7 @@ const Users: React.FC = () => {
                 {brands.map((b) => (
                   <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>
                 ))}
-              </select>
+              </ResponsiveSelect>
               <p className="mt-1 text-xs text-gray-500">
                 Pick the brand this user belongs to so they can be assigned as a branch user for that brand. Leave as “All brands” for owner/manager accounts.
               </p>
