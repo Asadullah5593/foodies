@@ -1028,6 +1028,9 @@ const Orders: React.FC = () => {
 
   /* ------------------------------------------------ card (below xl) ------ */
 
+  /** Undo `truncate` below lg: long order numbers (BR-23-…-0003) and brand names wrap instead. */
+  const noTruncateBelowLg = 'max-lg:overflow-visible max-lg:whitespace-normal max-lg:text-clip max-lg:[overflow-wrap:anywhere]';
+
   const renderCard = (o: OrderRow, opts: { showPerOrderRiderButton: boolean }) => {
     const type = getOrderType(o);
     const tm = TYPE_META[type] ?? TYPE_META.takeaway;
@@ -1041,15 +1044,16 @@ const Orders: React.FC = () => {
     return (
       <div
         key={o.id}
-        className={`rounded-xl border border-l-4 p-3.5 ${
+        className={`rounded-xl border border-l-4 p-3.5 max-sm:px-3 ${
           rowNeeds
             ? 'border-gray-200 border-l-red-600 bg-red-50/30 dark:border-slate-700 dark:bg-red-900/10'
             : 'border-gray-200 border-l-gray-200 bg-white dark:border-slate-700 dark:border-l-slate-600 dark:bg-slate-800'
         }`}
       >
-        {/* top: serial + type + order · total */}
+        {/* top: serial + type + order · total. Below lg nothing truncates: the order number and
+            brand wrap, and the card grows instead. */}
         <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2 max-lg:flex-wrap max-lg:gap-y-1">
             <span className="text-[13px] font-bold tabular-nums text-gray-400 dark:text-slate-500">
               {serialByOrderId.get(o.id) ?? '—'}
             </span>
@@ -1059,16 +1063,16 @@ const Orders: React.FC = () => {
             >
               {tm.icon}{tm.short}
             </span>
-            <Link to={`/admin/orders/${o.id}`} className="truncate text-[15px] font-extrabold text-gray-800 hover:text-red-600 dark:text-slate-100">
+            <Link to={`/admin/orders/${o.id}`} className={`truncate text-[15px] font-extrabold text-gray-800 hover:text-red-600 dark:text-slate-100 ${noTruncateBelowLg}`}>
               #{o.order_number}
             </Link>
-            <span className="truncate text-[12.5px] text-gray-400 dark:text-slate-500">· {o.brand?.name ?? o.brand_name ?? '—'}</span>
+            <span className={`truncate text-[12.5px] text-gray-400 dark:text-slate-500 ${noTruncateBelowLg}`}>· {o.brand?.name ?? o.brand_name ?? '—'}</span>
           </div>
           <span className="flex-none text-right">
             <span className="block text-[15px] font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
               {formatCurrency(Number(o.total_amount ?? 0))}
             </span>
-            {Number(o.discount_amount ?? 0) > 0 && (
+            {isDesktop && Number(o.discount_amount ?? 0) > 0 && (
               <span className="block text-[11px] font-bold tabular-nums text-amber-700 dark:text-amber-400">
                 −{formatCurrency(Number(o.discount_amount ?? 0))}
                 {' '}
@@ -1079,6 +1083,18 @@ const Orders: React.FC = () => {
             )}
           </span>
         </div>
+        {/* Below lg the discount and what made it (voucher names can be long) get a full-width
+            row; beside the total they pushed the order number off the card. */}
+        {!isDesktop && Number(o.discount_amount ?? 0) > 0 && (
+          <div className="mt-1 text-[12px] leading-snug" data-testid="card-discount">
+            <span className="font-bold tabular-nums text-amber-700 dark:text-amber-400">
+              −{formatCurrency(Number(o.discount_amount ?? 0))}
+            </span>{' '}
+            <span className="font-medium text-gray-500 [overflow-wrap:anywhere] dark:text-slate-400">
+              {discountKinds(o).map((d) => d.label).join(', ')}
+            </span>
+          </div>
+        )}
         {/* customer + source */}
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="min-w-0">
@@ -1324,7 +1340,7 @@ const Orders: React.FC = () => {
   ];
 
   return (
-    <div className="w-full min-w-0 px-4 py-6 sm:px-6 lg:px-8">
+    <div className="w-full min-w-0 px-4 py-6 sm:px-6 lg:px-8 max-sm:-mx-2 max-sm:w-auto max-sm:px-0">
       {/* Header */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-baseline gap-3">
@@ -1475,7 +1491,7 @@ const Orders: React.FC = () => {
           change is fetching, the previous results stay mounted and a soft
           veil fades in over them (see useResultsRefreshing — background polls stay silent). */}
       <FetchingOverlay active={ordersRefreshing} label="Updating orders…" className="rounded-2xl">
-      <div ref={setTableEl} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
+      <div ref={setTableEl} className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800 max-sm:rounded-none max-sm:border-0 max-sm:bg-transparent max-sm:shadow-none max-sm:dark:bg-transparent">
         {/* Wide enough for all 13 columns: data grid. overflow-x-auto is kept as a
             backstop only — at this width nothing should actually need to scroll. */}
         <div className={showGrid ? 'block' : 'hidden'}>
@@ -1534,7 +1550,7 @@ const Orders: React.FC = () => {
             <p className="py-14 text-center text-gray-500 dark:text-slate-400">No orders found.</p>
           ) : (
             <div
-              className="grid gap-3 p-3"
+              className="grid gap-3 p-3 max-sm:gap-2.5 max-sm:p-0"
               style={{ gridTemplateColumns: `repeat(${cardColumns}, minmax(0, 1fr))` }}
             >
               {displayGroups.map(({ orderGroupId: gid, orders: groupOrders }) => {
@@ -1559,7 +1575,7 @@ const Orders: React.FC = () => {
         </div>
 
         {/* Footer (both layouts) */}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/80 px-5 py-3 dark:border-slate-700 dark:bg-slate-900/40">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-gray-50/80 px-5 py-3 dark:border-slate-700 dark:bg-slate-900/40 max-sm:mt-2.5 max-sm:rounded-xl max-sm:border max-sm:border-gray-200 max-sm:px-3.5 max-sm:dark:border-slate-700">
           <span className="text-[14px] font-bold text-gray-500 dark:text-slate-400">
             {visibleOrders.length} on this page · {totalCount} total
           </span>
