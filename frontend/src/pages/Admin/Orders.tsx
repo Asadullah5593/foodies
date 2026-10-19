@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { Link, useSearchParams } from 'react-router-dom';
+import { flushSync } from 'react-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api/adminService';
@@ -38,6 +39,7 @@ import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 import { labelWithStatus } from '../../utils/entityStatus';
 import { useViewport } from '../../hooks/useViewport';
 import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { ActionsSheet } from '../../components/ActionsSheet';
 import { rangeChipLabel } from '../../utils/rangeChipLabel';
 
 type OrderPayment = { paymentMethod?: string; payment_method?: string; status?: string; amount?: number | string };
@@ -149,6 +151,9 @@ const ORDER_STATUS_LABELS: Record<string, string> = {
   completed: 'Completed',
   cancelled: 'Cancelled',
 };
+
+/** The kitchen flow the phone card's step buttons walk. Cancelled sits outside it (sheet only). */
+const STATUS_FLOW = ['placed', 'accepted', 'preparing', 'ready', 'completed'];
 
 
 /* ------------------------------------------------------------------ meta -- */
@@ -387,6 +392,7 @@ const SOURCE_BADGE: Record<string, string> = {
 
 const Orders: React.FC = () => {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const canAssignRider = useHasPermission(['orders:assign-rider', 'customer-display:update']);
   const canFilterBranch = useHasPermission('orders:filter:branch');
@@ -438,7 +444,7 @@ const Orders: React.FC = () => {
   const [pageSize, setPageSize] = useState(ORDERS_DEFAULT_PAGE_SIZE);
   const [search, setSearch] = useState('');
   // Below lg the filters are a compact bar + sheet, and the status tiles move into the sheet.
-  const { isDesktop } = useViewport();
+  const { isDesktop, isPhone } = useViewport();
   const [customerInvoiceGroupId, setCustomerInvoiceGroupId] = useState<string | null>(null);
   const [customerInvoiceOrderId, setCustomerInvoiceOrderId] = useState<number | null>(null);
   const [riderModalOrderId, setRiderModalOrderId] = useState<number | null>(null);
@@ -496,6 +502,12 @@ const Orders: React.FC = () => {
   const [statusMenu, setStatusMenu] = useState<{
     orderId: number; orderNumber?: string; current: string; x: number; y: number; openUp: boolean;
   } | null>(null);
+  // Phones (design "Orders Mobile 2a"): which compact cards are open, the kitchen-status sheet,
+  // and whether the search field is showing.
+  const [openCards, setOpenCards] = useState<Set<number>>(() => new Set());
+  const [statusSheet, setStatusSheet] = useState<{ orderId: number; orderNumber?: string; current: string } | null>(null);
+  const [phoneSearchOpen, setPhoneSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const branchId = searchParams.get('branch_id') || '';
   const brandId = searchParams.get('brand_id') || '';
   const status = searchParams.get('status') || '';
@@ -771,7 +783,9 @@ const Orders: React.FC = () => {
     return m;
   }, [displayGroups, ordersPage]);
 
-  const isSubmitting = assignRiderMutation.isPending || updateStatusMutation.isPending;
+  // A phone keeps the list on screen while a status saves (the card says "Saving…"), so a step
+  // button never throws the reader back to the top of a long list.
+  const isSubmitting = assignRiderMutation.isPending || (updateStatusMutation.isPending && !isPhone);
   if (isLoading || isSubmitting) {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading orders...'} />;
   }
@@ -1037,12 +1051,268 @@ const Orders: React.FC = () => {
     );
   };
 
+  /* ---------------------------------------------- phone card (2a) ------- */
+
+  const phoneBtn = 'inline-flex min-h-[40px] items-center justify-center rounded-[10px] px-2 text-[12.5px] disabled:opacity-60';
+  const phoneBtnOutline = `${phoneBtn} border-[1.5px] border-gray-200 bg-white font-semibold text-gray-700 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200`;
+  const phoneBtnPrimary = `${phoneBtn} bg-red-600 font-bold text-white`;
+
+  const toggleCard = (id: number) =>
+    setOpenCards((was) => {
+      const next = new Set(was);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  /**
+   * Phones (design "Orders Mobile 2a"): three lines per order — number, brand and total; who and
+   * when; status, payment, discount and rider — and every other fact plus the actions one tap
+   * away. Tapping the card opens it; the links and buttons inside keep their own job.
+   */
+  const renderPhoneCard = (o: OrderRow, opts: { showPerOrderRiderButton: boolean }) => {
+    const type = getOrderType(o);
+    const tm = TYPE_META[type] ?? TYPE_META.takeaway;
+    const delivery = isDeliveryOrder(o);
+    const rowNeeds = needsRider(o);
+    const age = ageMinutes(o.placed_at);
+    const overdue = rowNeeds && (age ?? 0) > 15;
+    const payState = paymentState(o);
+    const method = paymentMethodText(o);
+    const dm = o.delivery_status ? DELIVERY_META[o.delivery_status] : null;
+    const canAssign = canAssignFor(o, opts.showPerOrderRiderButton);
+    const canRetry = !o.rider_id && delivery;
+    const discountAmount = Number(o.discount_amount ?? 0);
+    const kinds = discountKinds(o);
+    const open = openCards.has(o.id);
+    const detailsId = `order-card-${o.id}-details`;
+    const current = String(o.status ?? 'placed');
+    const sm = STATUS_META[current] ?? STATUS_META.placed;
+    const statusLabel = ORDER_STATUS_LABELS[current] ?? current;
+    // One step either way along the kitchen flow. A delivery stops at Ready going forward: the
+    // rider's "Delivered" completes it (the sheet still reaches Completed).
+    const at = STATUS_FLOW.indexOf(current);
+    const back = at > 0 ? STATUS_FLOW[at - 1] : null;
+    const forward = at >= 0 && at < STATUS_FLOW.length - 1 && !(delivery && current === 'ready') ? STATUS_FLOW[at + 1] : null;
+    const saving = updateStatusMutation.isPending;
+    const savingTo = saving && updateStatusMutation.variables?.id === o.id ? updateStatusMutation.variables.status : null;
+    const step = (to: string) => updateStatusMutation.mutate({ id: o.id, status: to });
+
+    const pillBody = (
+      <>
+        <span className={`h-1.5 w-1.5 flex-none rounded-full ${sm.dot}`} />
+        {statusLabel}
+      </>
+    );
+    const pillCls = `inline-flex min-h-[30px] items-center gap-1.5 rounded-full px-2.5 text-[12px] font-bold ${sm.bg} ${sm.color}`;
+
+    return (
+      <div
+        key={o.id}
+        data-testid="order-phone-card"
+        className={`overflow-hidden rounded-[14px] border ${rowNeeds ? 'border-l-4 border-l-red-600' : ''} ${
+          open ? 'border-red-200 dark:border-red-900/70' : 'border-gray-200 dark:border-slate-700'
+        } ${rowNeeds ? 'bg-red-50/30 dark:bg-red-900/10' : 'bg-white dark:bg-slate-800'}`}
+      >
+        <div
+          className="cursor-pointer px-3.5 py-3"
+          onClick={(e) => {
+            if ((e.target as HTMLElement).closest('a, button')) return;
+            toggleCard(o.id);
+          }}
+        >
+          {/* serial · type · number and brand (they wrap, never cut short) · total */}
+          <div className="flex items-center gap-2">
+            <span className="flex-none text-[12px] font-bold tabular-nums text-gray-400 dark:text-slate-500">
+              {serialByOrderId.get(o.id) ?? '—'}
+            </span>
+            <span
+              title={formatOrderType(type)}
+              className={`flex-none rounded-md px-[7px] py-[3px] text-[10.5px] font-extrabold uppercase ${tm.bg} ${tm.color}`}
+            >
+              {tm.short}
+            </span>
+            <div className="min-w-0 flex-1 leading-tight [overflow-wrap:anywhere]">
+              <span className="text-[16px] font-extrabold text-gray-800 dark:text-slate-100">#{o.order_number}</span>{' '}
+              <span className="text-[12.5px] text-gray-400 dark:text-slate-500">{o.brand?.name ?? o.brand_name ?? '—'}</span>
+            </div>
+            <span className="flex-none text-[15px] font-extrabold tabular-nums text-gray-800 dark:text-slate-100">
+              {formatCurrency(Number(o.total_amount ?? 0))}
+            </span>
+          </div>
+          {/* who · when */}
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            <div className="min-w-0 [overflow-wrap:anywhere]">
+              <CustomerName o={o} historyName={historyCustomerName} className="text-[13.5px] font-semibold text-gray-700 dark:text-slate-200" />
+            </div>
+            <span className="flex-none text-[12px] text-gray-400 dark:text-slate-500">
+              {placedTimeText(o.placed_at)}
+              {age != null && (
+                <>
+                  {' · '}
+                  <span className={overdue ? 'font-bold text-red-600' : ''}>{ageText(age)}</span>
+                </>
+              )}
+            </span>
+          </div>
+          {/* status · payment · discount · delivery and rider · open/close */}
+          <div className="mt-2.5 flex items-center gap-2">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">
+              {canUpdateStatus ? (
+                <button
+                  type="button"
+                  aria-label={`Kitchen status for order #${o.order_number}`}
+                  aria-haspopup="dialog"
+                  onClick={() => setStatusSheet({ orderId: o.id, orderNumber: o.order_number, current })}
+                  className={pillCls}
+                >
+                  {pillBody}
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" className="opacity-70" aria-hidden>
+                    <path d="M3 4.5l3 3 3-3" />
+                  </svg>
+                </button>
+              ) : (
+                <span aria-label={`Kitchen status for order #${o.order_number}: ${statusLabel}`} className={pillCls}>
+                  {pillBody}
+                </span>
+              )}
+              <span className="text-[12px] font-bold">
+                {method !== '—' && <span className="font-semibold text-gray-500 dark:text-slate-400">{method} · </span>}
+                <span className={payState === 'paid' ? 'text-emerald-600' : payState === 'partial' ? 'text-amber-600' : 'text-amber-700 dark:text-amber-400'}>
+                  {payState === 'paid' ? 'Paid' : payState === 'partial' ? 'Partial' : 'Unpaid'}
+                </span>
+                {/* The kinds of discount; amounts and voucher names are in the details. */}
+                {discountAmount > 0 && (
+                  <span className="text-amber-700 dark:text-amber-400">
+                    {' · '}
+                    {DISCOUNT_KINDS.filter((k) => Number((o as unknown as Record<string, unknown>)[k.key] ?? 0) > 0).map((k) => k.label).join(', ') || 'Discount'}
+                  </span>
+                )}
+              </span>
+              {delivery && o.delivery_status && (
+                <span
+                  className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${
+                    dm ? `${dm.bg} ${dm.color}` : 'bg-gray-100 text-gray-500 dark:bg-slate-700 dark:text-slate-400'
+                  }`}
+                >
+                  {deliveryStatusLabel(o.delivery_status, { short: true })}
+                </span>
+              )}
+              {delivery && (
+                <span className={`text-[12px] font-semibold ${o.rider ? 'text-gray-600 dark:text-slate-300' : 'text-red-600'}`}>
+                  {o.rider?.name ?? 'Unassigned'}
+                </span>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleCard(o.id)}
+              aria-expanded={open}
+              aria-controls={detailsId}
+              aria-label={`${open ? 'Hide' : 'Show'} details for order #${o.order_number}`}
+              className="-my-2 -mr-2 flex h-10 w-10 flex-none items-center justify-center rounded-lg text-gray-300 dark:text-slate-500"
+            >
+              <svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden>
+                <path d="M3 4.5l3 3 3-3" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {open && (
+          <div id={detailsId} className="px-3.5 pb-3.5">
+            <div className="flex flex-col gap-1.5 rounded-[10px] bg-gray-50 px-3 py-2.5 text-[12.5px] leading-snug text-gray-500 dark:bg-slate-900/60 dark:text-slate-400">
+              {discountAmount > 0 && (
+                <div data-testid="card-discount" className="[overflow-wrap:anywhere]">
+                  <span className="font-bold tabular-nums text-amber-700 dark:text-amber-400">−{formatCurrency(discountAmount)}</span>{' '}
+                  {kinds.map((d) => d.label).join(', ') || 'Discount'}
+                </div>
+              )}
+              {o.delivery_status === 'delivery_failed' && o.delivery_failed_reason && (
+                <div className="font-semibold text-red-600 dark:text-red-400">Delivery failed: {o.delivery_failed_reason}</div>
+              )}
+              <div className="[overflow-wrap:anywhere]">
+                {o.branch?.name && <span className="font-semibold text-gray-700 dark:text-slate-200">{o.branch.name} · </span>}
+                {o.items_count ?? 0} item{(o.items_count ?? 0) === 1 ? '' : 's'} · {orderSourceLabel(o.source)} · by {createdByText(o)}
+              </div>
+            </div>
+
+            {canUpdateStatus && (back || forward) && (
+              <div className="mt-2.5 grid grid-cols-2 gap-2">
+                {back && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => step(back)}
+                    aria-label={`Move order #${o.order_number} back to ${ORDER_STATUS_LABELS[back]}`}
+                    className={`${phoneBtnOutline} ${forward ? '' : 'col-span-2'}`}
+                  >
+                    {savingTo === back ? 'Saving…' : `← ${ORDER_STATUS_LABELS[back]}`}
+                  </button>
+                )}
+                {forward && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => step(forward)}
+                    aria-label={`Move order #${o.order_number} to ${ORDER_STATUS_LABELS[forward]}`}
+                    className={`${phoneBtnPrimary} ${back ? '' : 'col-span-2'}`}
+                  >
+                    {savingTo === forward ? 'Saving…' : `${forward === 'completed' ? 'Complete' : ORDER_STATUS_LABELS[forward]} →`}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {(canAssign || canRetry) && (
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                {canAssign && (
+                  <button
+                    type="button"
+                    onClick={() => openRiderModal({
+                      orderId: o.id, groupId: null, isChange: !!o.rider_id,
+                      brandId: o.brand_id ?? null, brandName: o.brand_name ?? o.brand?.name ?? null,
+                      riderId: o.rider_id ?? null,
+                    })}
+                    className={`${o.rider_id ? phoneBtnOutline : phoneBtnPrimary} ${canRetry ? '' : 'col-span-2'}`}
+                  >
+                    {o.rider_id ? 'Change rider' : 'Assign rider'}
+                  </button>
+                )}
+                {canRetry && (
+                  <button
+                    type="button"
+                    disabled={retryAutoAssignMutation.isPending}
+                    onClick={() => retryAutoAssignMutation.mutate(o.id)}
+                    className={`${phoneBtnOutline} ${canAssign ? '' : 'col-span-2'}`}
+                  >
+                    Retry auto-assign
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => openInvoice(o)} className={phoneBtnOutline}>
+                Invoice
+              </button>
+              <Link to={`/admin/orders/${o.id}`} className={phoneBtnOutline}>
+                View
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   /* ------------------------------------------------ card (below xl) ------ */
 
   /** Undo `truncate` below lg: long order numbers (BR-23-…-0003) and brand names wrap instead. */
   const noTruncateBelowLg = 'max-lg:overflow-visible max-lg:whitespace-normal max-lg:text-clip max-lg:[overflow-wrap:anywhere]';
 
   const renderCard = (o: OrderRow, opts: { showPerOrderRiderButton: boolean }) => {
+    if (isPhone) return renderPhoneCard(o, opts);
     const type = getOrderType(o);
     const tm = TYPE_META[type] ?? TYPE_META.takeaway;
     const rowNeeds = needsRider(o);
@@ -1222,6 +1492,7 @@ const Orders: React.FC = () => {
         <circle cx="7" cy="7" r="4.5" /><line x1="10.5" y1="10.5" x2="14" y2="14" />
       </svg>
       <input
+        ref={searchInputRef}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Search order #, customer"
@@ -1335,10 +1606,81 @@ const Orders: React.FC = () => {
       ? [{ key: 'payment', label: paymentMethod === 'cod' ? 'COD' : paymentMethod === 'online_transfer' ? 'Online transfer' : paymentMethod === 'card' ? 'Card' : 'Cash', onRemove: () => setFilter('payment_method', '') }]
       : []),
     ...(canFilterDiscount && discount ? [{ key: 'discount', label: discountLabel(discount), onRemove: () => setFilter('discount', '') }] : []),
-    ...(canFilterStatus && needsRiderTile && needsRiderTile.n > 0 && status !== 'needs_rider'
-      ? [{ key: 'needs-rider', label: `Needs rider ${needsRiderTile.n}`, tone: 'alert' as const, onSelect: () => setFilter('status', 'needs_rider') }]
-      : []),
   ];
+  const needsRiderChip: FilterChip[] =
+    canFilterStatus && needsRiderTile && needsRiderTile.n > 0 && status !== 'needs_rider'
+      ? [{ key: 'needs-rider', label: `Needs rider ${needsRiderTile.n}`, tone: 'alert', onSelect: () => setFilter('status', 'needs_rider') }]
+      : [];
+  // Phones (design 2a): the auto-assign pill and the rider banner become chips ahead of the
+  // applied filters — auto-assign opens the branch settings, the on-duty count opens Rider HRM.
+  const ridersOnDuty = onDutyRiders?.length ?? 0;
+  const phoneChips: FilterChip[] = [
+    ...(canConfigBranches
+      ? [{
+          key: 'auto-assign',
+          label: autoAssign.label,
+          tone: autoAssign.tone === 'on' ? ('good' as const) : autoAssign.tone === 'partial' ? ('warn' as const) : ('default' as const),
+          onSelect: () => navigate(autoAssign.branchId ? `/admin/branches/${autoAssign.branchId}` : '/admin/branches'),
+        }]
+      : []),
+    ...needsRiderChip,
+    ...(canOpenRiderHrm || canConfigBranches
+      ? [{
+          key: 'riders-on-duty',
+          label: `${ridersOnDuty} rider${ridersOnDuty === 1 ? '' : 's'} on duty`,
+          ...(canOpenRiderHrm && { onSelect: () => navigate('/admin/rider-hrm') }),
+        }]
+      : []),
+    ...orderFilterChips,
+  ];
+  const searchShown = phoneSearchOpen || !!search;
+  const phoneIconBtn = 'flex h-11 w-11 flex-none items-center justify-center rounded-xl border-[1.5px] bg-white dark:bg-slate-800';
+  // Phones (design 2a): title, count and dates with search and refresh as icons; the page's
+  // Filters button sits beside them (FilterBar `iconOnly`).
+  const phoneHeader = (
+    <div className="flex items-center gap-2">
+      <div className="min-w-0 flex-1">
+        <h1 className="text-[20px] font-extrabold leading-tight tracking-tight text-gray-800 dark:text-slate-100">Orders</h1>
+        <div className="text-[12px] leading-snug text-gray-400 dark:text-slate-500">
+          {totalCount.toLocaleString('en-US')} {totalCount === 1 ? 'order' : 'orders'} · {rangeChipLabel(dateFrom, dateTo)}
+        </div>
+      </div>
+      {canFilterSearch && (
+        <button
+          type="button"
+          aria-label="Search orders"
+          aria-expanded={searchShown}
+          onClick={() => {
+            if (searchShown && !search) {
+              setPhoneSearchOpen(false);
+              return;
+            }
+            // Mounted synchronously so the focus lands inside the tap and the keyboard opens.
+            flushSync(() => setPhoneSearchOpen(true));
+            searchInputRef.current?.focus();
+          }}
+          className={`${phoneIconBtn} ${
+            searchShown ? 'border-red-300 text-red-600 dark:border-red-800 dark:text-red-300' : 'border-gray-200 text-gray-600 dark:border-slate-600 dark:text-slate-300'
+          }`}
+        >
+          <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" aria-hidden>
+            <circle cx="7" cy="7" r="4.5" /><path d="M10.5 10.5L14 14" />
+          </svg>
+        </button>
+      )}
+      <button
+        type="button"
+        title="Refresh"
+        aria-label="Refresh"
+        onClick={() => queryClient.invalidateQueries({ queryKey: ['admin-orders'] })}
+        className={`${phoneIconBtn} border-gray-200 text-gray-600 dark:border-slate-600 dark:text-slate-300`}
+      >
+        <svg width="17" height="17" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <path d="M15 4v4h-4M3 14v-4h4" /><path d="M14 8a5 5 0 0 0-9-2M4 10a5 5 0 0 0 9 2" />
+        </svg>
+      </button>
+    </div>
+  );
   const orderFilterFields: FilterField[] = [
     ...(canFilterStatus ? [{ key: 'status', label: 'Status', node: <div className="flex flex-wrap gap-2">{statusTileButtons}</div> }] : []),
     { key: 'date', label: 'Date range', node: <div className="grid grid-cols-2 gap-2.5">{dateFromInput}{dateToInput}</div> },
@@ -1349,88 +1691,93 @@ const Orders: React.FC = () => {
     ...(paymentSelect ? [{ key: 'payment', label: 'Payment type', node: paymentSelect }] : []),
     ...(discountSelect ? [{ key: 'discount', label: 'Discount', node: discountSelect }] : []),
   ];
+  orderFilterChips.push(...needsRiderChip);
 
-  return (
-    <div className="w-full min-w-0 px-4 py-6 sm:px-6 lg:px-8 max-sm:-mx-2 max-sm:w-auto max-sm:px-0">
-      {/* Header */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-extrabold tracking-tight text-gray-800 dark:text-slate-100 sm:text-3xl">Orders</h1>
-          <span className="text-[15px] text-gray-400 dark:text-slate-500">
-            {totalCount} {totalCount === 1 ? 'order' : 'orders'} · {dateRangeLabel(dateFrom, dateTo)}
+  const customerBanner = customerId ? (
+      <div
+        data-testid="customer-history-banner"
+        className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-indigo-200 bg-indigo-50 px-4 py-3 dark:border-indigo-800 dark:bg-indigo-900/30"
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-white text-indigo-600 dark:bg-indigo-900/60 dark:text-indigo-200">
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="8" cy="5.5" r="2.5" /><path d="M3 13.5c.6-2.3 2.6-3.5 5-3.5s4.4 1.2 5 3.5" />
+            </svg>
           </span>
+          <div className="min-w-0">
+            <div className="text-[12px] font-bold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">Order history</div>
+            <div className="truncate text-[16px] font-bold text-gray-800 dark:text-slate-100">
+              {customerLabel || `Customer #${customerId}`}
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-2.5">
-          {canConfigBranches && (
-            <Link
-              to={autoAssign.branchId ? `/admin/branches/${autoAssign.branchId}` : '/admin/branches'}
-              title={autoAssign.title}
-              className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-[14.5px] font-semibold ${
-                autoAssign.tone === 'on'
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
-                  : autoAssign.tone === 'off'
-                    ? 'border-gray-200 bg-gray-100 text-gray-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                    : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
-              }`}
-            >
-              <span
-                className={`h-2 w-2 rounded-full ${
-                  autoAssign.tone === 'on' ? 'bg-emerald-500' : autoAssign.tone === 'off' ? 'bg-gray-400' : 'bg-amber-500'
-                }`}
-              />
-              {autoAssign.label}
+        <div className="flex flex-none gap-2">
+          {canAccessPath(user, '/admin/customers') && (
+            <Link to="/admin/customers" className="rounded-[9px] border border-indigo-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:bg-slate-800 dark:text-indigo-200">
+              Back to customers
             </Link>
           )}
           <button
-            title="Refresh"
-            onClick={() => queryClient.invalidateQueries({ queryKey: ['admin-orders'] })}
-            className="flex h-[42px] w-[42px] items-center justify-center rounded-[10px] border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+            onClick={() => { setSearch(''); setSearchParams({}); }}
+            className="rounded-[9px] border border-indigo-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-indigo-700 dark:bg-slate-800 dark:text-slate-200"
           >
-            <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M15 4v4h-4M3 14v-4h4" /><path d="M14 8a5 5 0 0 0-9-2M4 10a5 5 0 0 0 9 2" />
-            </svg>
+            Show all orders
           </button>
         </div>
       </div>
+  ) : null;
 
-      {/* Customer history banner — this list is one customer's orders. */}
-      {customerId && (
-        <div
-          data-testid="customer-history-banner"
-          className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-indigo-200 bg-indigo-50 px-4 py-3 dark:border-indigo-800 dark:bg-indigo-900/30"
-        >
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-white text-indigo-600 dark:bg-indigo-900/60 dark:text-indigo-200">
-              <svg width="20" height="20" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="8" cy="5.5" r="2.5" /><path d="M3 13.5c.6-2.3 2.6-3.5 5-3.5s4.4 1.2 5 3.5" />
-              </svg>
+  return (
+    <div className="w-full min-w-0 px-4 py-6 sm:px-6 lg:px-8 max-sm:-mx-2 max-sm:w-auto max-sm:px-0">
+      {/* Header (phones: in the filter bar, below) */}
+      {!isPhone && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-2xl font-extrabold tracking-tight text-gray-800 dark:text-slate-100 sm:text-3xl">Orders</h1>
+            <span className="text-[15px] text-gray-400 dark:text-slate-500">
+              {totalCount} {totalCount === 1 ? 'order' : 'orders'} · {dateRangeLabel(dateFrom, dateTo)}
             </span>
-            <div className="min-w-0">
-              <div className="text-[12px] font-bold uppercase tracking-wide text-indigo-500 dark:text-indigo-300">Order history</div>
-              <div className="truncate text-[16px] font-bold text-gray-800 dark:text-slate-100">
-                {customerLabel || `Customer #${customerId}`}
-              </div>
-            </div>
           </div>
-          <div className="flex flex-none gap-2">
-            {canAccessPath(user, '/admin/customers') && (
-              <Link to="/admin/customers" className="rounded-[9px] border border-indigo-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-indigo-700 hover:bg-indigo-50 dark:border-indigo-700 dark:bg-slate-800 dark:text-indigo-200">
-                Back to customers
+          <div className="flex items-center gap-2.5">
+            {canConfigBranches && (
+              <Link
+                to={autoAssign.branchId ? `/admin/branches/${autoAssign.branchId}` : '/admin/branches'}
+                title={autoAssign.title}
+                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-[14.5px] font-semibold ${
+                  autoAssign.tone === 'on'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : autoAssign.tone === 'off'
+                      ? 'border-gray-200 bg-gray-100 text-gray-500 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                      : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    autoAssign.tone === 'on' ? 'bg-emerald-500' : autoAssign.tone === 'off' ? 'bg-gray-400' : 'bg-amber-500'
+                  }`}
+                />
+                {autoAssign.label}
               </Link>
             )}
             <button
-              onClick={() => { setSearch(''); setSearchParams({}); }}
-              className="rounded-[9px] border border-indigo-200 bg-white px-4 py-2.5 text-[14px] font-semibold text-gray-600 hover:bg-gray-50 dark:border-indigo-700 dark:bg-slate-800 dark:text-slate-200"
+              title="Refresh"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['admin-orders'] })}
+              className="flex h-[42px] w-[42px] items-center justify-center rounded-[10px] border border-gray-200 bg-white text-gray-500 hover:bg-gray-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
             >
-              Show all orders
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M15 4v4h-4M3 14v-4h4" /><path d="M14 8a5 5 0 0 0-9-2M4 10a5 5 0 0 0 9 2" />
+              </svg>
             </button>
           </div>
         </div>
       )}
 
+      {/* Customer history banner — this list is one customer's orders. */}
+      {!isPhone && customerBanner}
+
       {/* Rider banner — shown only if the user can reach at least one of its
           actions (Rider HRM or branch config). */}
-      {(canOpenRiderHrm || canConfigBranches) && (
+      {!isPhone && (canOpenRiderHrm || canConfigBranches) && (
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-gray-200 bg-white px-4 py-3 shadow-sm dark:border-slate-700 dark:bg-slate-800">
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex h-11 w-11 flex-none items-center justify-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300">
@@ -1468,8 +1815,10 @@ const Orders: React.FC = () => {
       {/* Filters row — below lg a compact bar (search + Filters) and a sheet that also holds the
           status tiles; desktop renders the row as before. */}
       <FilterBar
-        primary={searchBox || undefined}
-        chips={orderFilterChips}
+        primary={isPhone ? phoneHeader : searchBox || undefined}
+        chips={isPhone ? phoneChips : orderFilterChips}
+        iconOnly={isPhone}
+        className={isPhone ? 'mb-3' : undefined}
         fields={orderFilterFields}
         onClearAll={clearFilters}
         resultLabel={`Show ${totalCount} ${totalCount === 1 ? 'order' : 'orders'}`}
@@ -1492,6 +1841,9 @@ const Orders: React.FC = () => {
         </button>
       </div>
       </FilterBar>
+
+      {isPhone && searchShown && searchBox && <div className="mb-3 flex">{searchBox}</div>}
+      {isPhone && customerBanner}
 
       {/* Status tiles (desktop; below lg they are in the filter sheet) */}
       {canFilterStatus && isDesktop && <div className="mb-5 flex flex-wrap gap-2">
@@ -1662,6 +2014,49 @@ const Orders: React.FC = () => {
             })}
           </div>
         </>
+      )}
+
+      {/* Phones: the kitchen-status sheet a card's pill opens — every status, back as well as forward. */}
+      {isPhone && (
+        <ActionsSheet
+          open={!!statusSheet}
+          onClose={() => setStatusSheet(null)}
+          title={`Order #${statusSheet?.orderNumber ?? ''} · Kitchen status`}
+        >
+          {/* One wrapper, so the sheet's row styling (a grey dot per button) leaves these alone. */}
+          <div className="flex flex-col">
+            {statusSheet &&
+              selectableStatuses(Object.keys(ORDER_STATUS_LABELS), noCancel).map((value) => {
+                const m = STATUS_META[value] ?? STATUS_META.placed;
+                const isCurrent = statusSheet.current === value;
+                const target = statusSheet;
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-current={isCurrent || undefined}
+                    onClick={() => {
+                      if (!isCurrent) updateStatusMutation.mutate({ id: target.orderId, status: value });
+                    }}
+                    className={`flex min-h-[48px] w-full items-center gap-3 border-b border-gray-100 px-1 text-left text-[14.5px] font-semibold last:border-0 dark:border-slate-700 ${
+                      isCurrent ? m.color : 'text-gray-800 dark:text-slate-100'
+                    }`}
+                  >
+                    <span className={`h-2.5 w-2.5 flex-none rounded-full ${m.dot}`} />
+                    <span className="flex-1">{ORDER_STATUS_LABELS[value]}</span>
+                    {isCurrent && (
+                      <span className="inline-flex items-center gap-1 text-[12px] font-bold">
+                        Current
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                          <path d="M3 8.5l3.5 3.5L13 5" />
+                        </svg>
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+          </div>
+        </ActionsSheet>
       )}
 
       <CustomerInvoiceModal
