@@ -10,7 +10,8 @@ export interface FilterChip {
   onRemove?: () => void;
   /** A shortcut rather than an applied filter (e.g. "Needs rider 3"): tapping applies it. */
   onSelect?: () => void;
-  tone?: 'default' | 'alert';
+  /** A shortcut's colour: alert = red (needs action), warn = amber, good = green. */
+  tone?: 'default' | 'alert' | 'warn' | 'good';
 }
 
 export interface FilterField {
@@ -35,6 +36,8 @@ export interface FilterBarProps {
   resultLabel?: string;
   /** Badge on the Filters button. Defaults to the number of removable chips. */
   activeCount?: number;
+  /** Below lg: the Filters button as a 44px icon (badge kept), for a header with no room for the word. */
+  iconOnly?: boolean;
   /** Wrapper spacing below lg. */
   className?: string;
 }
@@ -58,6 +61,7 @@ const FilterBar: React.FC<FilterBarProps> = ({
   onClearAll,
   resultLabel,
   activeCount,
+  iconOnly = false,
   className = 'mb-4',
 }) => {
   const { isDesktop, isPhone } = useViewport();
@@ -120,16 +124,39 @@ const FilterBar: React.FC<FilterBarProps> = ({
             className={`inline-flex min-h-[38px] flex-none items-center gap-1.5 whitespace-nowrap rounded-full border-[1.5px] px-3.5 text-[13px] font-bold ${
               c.tone === 'alert'
                 ? 'border-red-600 bg-white text-red-700 dark:bg-slate-800 dark:text-red-300'
-                : 'border-gray-200 bg-white text-gray-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300'
+                : c.tone === 'warn'
+                  ? 'border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                  : c.tone === 'good'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : 'border-gray-200 bg-white text-gray-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300'
             }`}
           >
             {c.tone === 'alert' && <span aria-hidden className="h-2 w-2 rounded-full bg-red-600" />}
+            {c.tone === 'warn' && <span aria-hidden className="h-2 w-2 rounded-full bg-amber-500" />}
+            {c.tone === 'good' && <span aria-hidden className="h-2 w-2 rounded-full bg-emerald-500" />}
             {c.label}
           </button>
         ),
   );
 
-  const filtersButton = (
+  const filtersButton = iconOnly ? (
+    <button
+      ref={openerRef}
+      type="button"
+      onClick={() => setOpen(true)}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      aria-label={count > 0 ? `Filters (${count} applied)` : 'Filters'}
+      className="relative flex h-11 w-11 flex-none items-center justify-center self-center rounded-xl border-[1.5px] border-gray-200 bg-white text-gray-600 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300"
+    >
+      <FilterIcon />
+      {count > 0 && (
+        <span aria-hidden className="absolute -right-1.5 -top-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10.5px] font-extrabold text-white">
+          {count}
+        </span>
+      )}
+    </button>
+  ) : (
     <button
       ref={openerRef}
       type="button"
