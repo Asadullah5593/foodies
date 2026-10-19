@@ -70,4 +70,26 @@ describe('FilterBar', () => {
     // shortcuts don't count as applied filters
     expect(screen.getByRole('button', { name: /^Filters$/ })).toBeInTheDocument();
   });
+
+  it('can show the Filters button as an icon that keeps its count and opens the sheet', () => {
+    setWidth(390);
+    renderBar({ iconOnly: true });
+    const button = screen.getByRole('button', { name: 'Filters (1 applied)' });
+    expect(button).not.toHaveTextContent('Filters');
+    expect(button).toHaveTextContent('1');
+    fireEvent.click(button);
+    expect(screen.getByRole('dialog', { name: 'Filters' })).toBeInTheDocument();
+  });
+
+  it('colours warn and good shortcut chips with a dot', () => {
+    setWidth(390);
+    renderBar({
+      chips: [
+        { key: 'a', label: 'Auto-assign off at 2 branches', onSelect: vi.fn(), tone: 'warn' },
+        { key: 'b', label: 'Auto-assign on', onSelect: vi.fn(), tone: 'good' },
+      ],
+    });
+    expect(screen.getByRole('button', { name: 'Auto-assign off at 2 branches' }).className).toContain('bg-amber-50');
+    expect(screen.getByRole('button', { name: 'Auto-assign on' }).className).toContain('bg-emerald-50');
+  });
 });
