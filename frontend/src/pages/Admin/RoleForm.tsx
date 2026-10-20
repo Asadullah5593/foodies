@@ -5,6 +5,7 @@ import apiClient from '../../utils/apiClient';
 import { toast } from 'react-hot-toast';
 import Loader from '../../components/Loader';
 import Button from '../../components/Button';
+import { useViewport } from '../../hooks/useViewport';
 import {
   Permission,
   Role,
@@ -28,6 +29,17 @@ const RoleForm: React.FC = () => {
 
   const [name, setName] = useState('');
   const [permissionIds, setPermissionIds] = useState<number[]>([]);
+  const { isDesktop } = useViewport();
+  // Below lg each permission group folds behind its title (257 permissions one per line is
+  // some 60 phone screens); desktop shows every group open, as it always has.
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set());
+  const toggleGroup = (resource: string) =>
+    setOpenGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(resource)) next.delete(resource);
+      else next.add(resource);
+      return next;
+    });
   /** Blank = unlimited history. Kept as a string so the field can be cleared. */
   const [historyDays, setHistoryDays] = useState('');
   /**
@@ -182,7 +194,7 @@ const RoleForm: React.FC = () => {
 
   if (isEdit && (roleError || !role)) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
         <p className="text-gray-500 dark:text-slate-400">Role not found.</p>
         <Button variant="outline" className="mt-4" onClick={() => navigate('/admin/roles')}>
           ← Back to Roles
@@ -194,7 +206,7 @@ const RoleForm: React.FC = () => {
   const pageTitle = isViewOnly ? 'View Role' : isEdit ? 'Edit Role' : 'Create Role';
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-wrap items-center gap-4 mb-6">
         <Button size="small" variant="outline" onClick={() => navigate('/admin/roles')}>
           ← Back
@@ -311,23 +323,84 @@ const RoleForm: React.FC = () => {
             </div>
           </div>
 
-          {/* Permission sections: title | select all | permissions */}
+          {/* Permission sections: title | select all | permissions. Below lg the sections fold
+              behind their titles (with the selected count), one column, and a single control
+              opens or closes them all. */}
+          {!isDesktop && sortedResources.length > 0 && (
+            <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-4 py-2 text-[13px] text-slate-500 dark:border-slate-700 dark:text-slate-400">
+              <span>{sortedResources.length} permission groups</span>
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenGroups(
+                    sortedResources.every((r) => openGroups.has(r)) ? new Set() : new Set(sortedResources),
+                  )
+                }
+                className="min-h-[40px] px-2 font-semibold text-blue-600 dark:text-blue-400"
+              >
+                {sortedResources.every((r) => openGroups.has(r)) ? 'Collapse all' : 'Expand all'}
+              </button>
+            </div>
+          )}
           <div className="divide-y divide-gray-200 dark:divide-slate-700">
             {sortedResources.map((resource) => {
               const perms = groupedPermissions.get(resource) ?? [];
               const allSelected = perms.every((p) => permissionIds.includes(p.id));
               const someSelected = perms.some((p) => permissionIds.includes(p.id));
+              const selectedCount = perms.filter((p) => permissionIds.includes(p.id)).length;
+              const open = isDesktop || openGroups.has(resource);
               return (
                 <div
                   key={resource}
-                  className="px-4 sm:px-8 py-6 grid grid-cols-1 md:grid-cols-[13rem_11rem_minmax(0,1fr)] gap-4 md:gap-6"
+                  className={
+                    isDesktop
+                      ? 'px-4 sm:px-8 py-6 grid grid-cols-1 md:grid-cols-[13rem_11rem_minmax(0,1fr)] gap-4 md:gap-6'
+                      : 'px-4 sm:px-8 py-2'
+                  }
+                  data-testid="permission-group"
                 >
-                  <h2 className="text-lg font-medium text-gray-800 dark:text-slate-100">
-                    {resourceLabel(resource)}
-                  </h2>
+                  {isDesktop ? (
+                    <h2 className="text-lg font-medium text-gray-800 dark:text-slate-100">
+                      {resourceLabel(resource)}
+                    </h2>
+                  ) : (
+                    <h2 className="text-lg font-medium text-gray-800 dark:text-slate-100">
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        onClick={() => toggleGroup(resource)}
+                        className="flex min-h-[48px] w-full items-center justify-between gap-3 text-left"
+                      >
+                        <span className="min-w-0 truncate">{resourceLabel(resource)}</span>
+                        <span className="flex flex-none items-center gap-2 text-[12.5px] font-semibold text-slate-500 dark:text-slate-400">
+                          {selectedCount > 0 && (
+                            <span className="rounded-full bg-[#FCEEEE] px-2 py-0.5 text-[#B5121B] dark:bg-red-900/30 dark:text-red-300">
+                              {selectedCount}/{perms.length}
+                            </span>
+                          )}
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 16 16"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth={1.8}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                            className={`transition-transform ${open ? 'rotate-180' : ''}`}
+                          >
+                            <path d="M4 6l4 4 4-4" />
+                          </svg>
+                        </span>
+                      </button>
+                    </h2>
+                  )}
+                  {open && (
+                  <>
                   <div>
                     {perms.length > 1 && (
-                      <label className="inline-flex items-center gap-3 cursor-pointer">
+                      <label className="inline-flex items-center gap-3 cursor-pointer max-lg:min-h-[44px]">
                         <input
                           type="checkbox"
                           checked={allSelected}
@@ -344,12 +417,13 @@ const RoleForm: React.FC = () => {
                       </label>
                     )}
                   </div>
-                  <div className="space-y-4">
+                  {/* Below lg each row is 44px tall, so the rows need no gap of their own. */}
+                  <div className="space-y-4 max-lg:space-y-0">
                     {nestPermissions(perms).map(({ permission: p, children }) => (
-                      <div key={p.id} className="space-y-3">
+                      <div key={p.id} className="space-y-3 max-lg:space-y-0">
                         <label
                           title={p.name}
-                          className="flex items-start gap-3 cursor-pointer"
+                          className="flex items-start gap-3 cursor-pointer max-lg:py-2.5"
                         >
                           <input
                             type="checkbox"
@@ -358,19 +432,19 @@ const RoleForm: React.FC = () => {
                             disabled={isViewOnly}
                             className="mt-0.5 h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                           />
-                          <span className="text-[15px] leading-6 text-slate-600 dark:text-slate-300">
+                          <span className="text-[15px] leading-6 text-slate-600 dark:text-slate-300 max-lg:[overflow-wrap:anywhere]">
                             {p.description || p.name}
                           </span>
                         </label>
                         {/* Narrowing permissions read as qualifiers of the one
                             above them, so they sit indented beneath it. */}
                         {children.length > 0 && (
-                          <div className="ml-8 space-y-3 border-l border-gray-200 pl-4 dark:border-slate-700">
+                          <div className="ml-8 space-y-3 border-l border-gray-200 pl-4 dark:border-slate-700 max-lg:space-y-0">
                             {children.map((c) => (
                               <label
                                 key={c.id}
                                 title={c.name}
-                                className="flex items-start gap-3 cursor-pointer"
+                                className="flex items-start gap-3 cursor-pointer max-lg:py-2.5"
                               >
                                 <input
                                   type="checkbox"
@@ -379,7 +453,7 @@ const RoleForm: React.FC = () => {
                                   disabled={isViewOnly}
                                   className="mt-0.5 h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                                 />
-                                <span className="text-[14px] leading-6 text-slate-500 dark:text-slate-400">
+                                <span className="text-[14px] leading-6 text-slate-500 dark:text-slate-400 max-lg:[overflow-wrap:anywhere]">
                                   {c.description || c.name}
                                 </span>
                               </label>
@@ -389,6 +463,8 @@ const RoleForm: React.FC = () => {
                       </div>
                     ))}
                   </div>
+                  </>
+                  )}
                 </div>
               );
             })}

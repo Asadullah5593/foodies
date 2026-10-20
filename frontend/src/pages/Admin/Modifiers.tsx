@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -27,6 +28,7 @@ import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -36,6 +38,8 @@ import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import SizeMapEditor from '../../components/SizeMapEditor';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
+import { useViewport } from '../../hooks/useViewport';
+import { ActionsSheet, MoreActionsButton } from '../../components/ActionsSheet';
 
 interface SortableModifierRowProps {
   modifier: ModifierResponse;
@@ -49,6 +53,9 @@ interface SortableModifierRowProps {
 
 const SortableModifierRow: React.FC<SortableModifierRowProps> = ({ modifier, group: _group, onEdit, onDelete, isDeleting, canEdit, canDelete }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: modifier.id });
+  // Below lg the row keeps one line: Edit / Delete sit behind a ⋯ sheet.
+  const { isDesktop } = useViewport();
+  const [moreOpen, setMoreOpen] = useState(false);
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -60,15 +67,29 @@ const SortableModifierRow: React.FC<SortableModifierRowProps> = ({ modifier, gro
       <span
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 select-none px-1"
+        className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 select-none px-1 max-lg:inline-flex max-lg:h-11 max-lg:w-8 max-lg:items-center max-lg:justify-center"
         title="Drag to reorder"
       >
         ⠿
       </span>
       <span className="flex-1">{modifier.name}</span>
       <span className="text-green-600 font-medium">{formatCurrency(Number(modifier.price))}</span>
-      {canEdit && <Button size="small" variant="edit" onClick={onEdit}>Edit</Button>}
-      {canDelete && <Button size="small" variant="danger" onClick={onDelete} isLoading={isDeleting}>Delete</Button>}
+      {isDesktop ? (
+        <>
+          {canEdit && <Button size="small" variant="edit" onClick={onEdit}>Edit</Button>}
+          {canDelete && <Button size="small" variant="danger" onClick={onDelete} isLoading={isDeleting}>Delete</Button>}
+        </>
+      ) : (
+        (canEdit || canDelete) && (
+          <>
+            <MoreActionsButton title={modifier.name} onClick={() => setMoreOpen(true)} expanded={moreOpen} />
+            <ActionsSheet open={moreOpen} onClose={() => setMoreOpen(false)} title={modifier.name}>
+              {canEdit && <Button size="small" variant="edit" onClick={onEdit}>Edit</Button>}
+              {canDelete && <Button size="small" variant="danger" onClick={onDelete} isLoading={isDeleting}>Delete</Button>}
+            </ActionsSheet>
+          </>
+        )
+      )}
     </li>
   );
 };
@@ -101,6 +122,9 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
   reorderDisabled, canCreate, canEdit, canDelete,
 }) => {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: group.id });
+  // Below lg the group card shows one action (Add modifier) and keeps the rest behind a ⋯ sheet.
+  const { isDesktop } = useViewport();
+  const [moreOpen, setMoreOpen] = useState(false);
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -115,11 +139,12 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
   return (
     <div ref={setNodeRef} style={style}>
       <Card hover>
-        <div className="flex justify-between items-start gap-2">
+        {/* Below lg the action buttons drop to their own full-width line, so the title keeps its width. */}
+        <div className="flex justify-between items-start gap-2 max-lg:flex-wrap">
           <span
             {...attributes}
             {...(reorderDisabled ? {} : listeners)}
-            className={reorderDisabled ? 'text-gray-200 select-none text-xl mt-1 flex-shrink-0 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none text-xl mt-1 flex-shrink-0'}
+            className={`max-lg:flex max-lg:h-11 max-lg:w-8 max-lg:items-center max-lg:justify-center max-lg:mt-0 ${reorderDisabled ? 'text-gray-200 select-none text-xl mt-1 flex-shrink-0 cursor-not-allowed' : 'cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 select-none text-xl mt-1 flex-shrink-0'}`}
             title={reorderDisabled ? 'Select a menu item from the filter to reorder groups per item' : 'Drag to reorder group'}
           >⠿</span>
           <div className="flex-1 min-w-0">
@@ -137,13 +162,29 @@ const SortableGroupCard: React.FC<SortableGroupCardProps> = ({
               </div>
             )}
           </div>
-          <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end">
-            {canEdit && <Button size="small" variant="edit" onClick={onLinkMenuItems}>Link to menu items</Button>}
-            {canCreate && <Button size="small" variant="secondary" onClick={() => onAddModifier(group.id)}>Add modifier</Button>}
-            {canEdit && <Button size="small" variant="edit" onClick={onEditGroup}>Edit group</Button>}
-            {canDelete && <Button size="small" variant="danger" onClick={onDeleteGroup} isLoading={isDeletingGroup}>Delete group</Button>}
-          </div>
+          {isDesktop ? (
+            <div className="flex gap-2 flex-shrink-0 flex-wrap justify-end max-lg:basis-full max-lg:justify-start">
+              {canEdit && <Button size="small" variant="edit" onClick={onLinkMenuItems}>Link to menu items</Button>}
+              {canCreate && <Button size="small" variant="secondary" onClick={() => onAddModifier(group.id)}>Add modifier</Button>}
+              {canEdit && <Button size="small" variant="edit" onClick={onEditGroup}>Edit group</Button>}
+              {canDelete && <Button size="small" variant="danger" onClick={onDeleteGroup} isLoading={isDeletingGroup}>Delete group</Button>}
+            </div>
+          ) : (
+            (canEdit || canDelete) && <MoreActionsButton title={group.name} onClick={() => setMoreOpen(true)} expanded={moreOpen} />
+          )}
         </div>
+        {!isDesktop && canCreate && (
+          <div className="mt-3 flex [&>*]:min-h-[42px] [&>*]:w-full [&>*]:flex-1 [&>*]:rounded-[10px] [&>*]:border-[1.5px] [&>*]:border-[#E2E5EA] [&>*]:text-[13.5px] [&>*]:font-bold dark:[&>*]:border-slate-600">
+            <Button size="small" variant="secondary" onClick={() => onAddModifier(group.id)}>Add modifier</Button>
+          </div>
+        )}
+        {!isDesktop && (canEdit || canDelete) && (
+          <ActionsSheet open={moreOpen} onClose={() => setMoreOpen(false)} title={group.name}>
+            {canEdit && <Button size="small" variant="edit" onClick={onEditGroup}>Edit group</Button>}
+            {canEdit && <Button size="small" variant="edit" onClick={onLinkMenuItems}>Link to menu items</Button>}
+            {canDelete && <Button size="small" variant="danger" onClick={onDeleteGroup} isLoading={isDeletingGroup}>Delete group</Button>}
+          </ActionsSheet>
+        )}
         {sortedMods.length > 0 ? (
           <DndContext
             sensors={sensors}
@@ -487,11 +528,104 @@ const Modifiers: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading modifiers...'} />;
   }
 
+  // Each filter control once: desktop shows the card below, phones and tablets the
+  // compact bar + sheet (only one renders).
+  const brandFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filters.brand_id}
+      onChange={(v) => setFilters((f) => ({ ...f, brand_id: v, menu_item_id: '' }))}
+      options={[
+        { value: '', label: 'All brands' },
+        ...(brands ?? []).map((b) => ({
+          value: String(b.id),
+          label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+          inactive: isEntityInactive(b),
+        })),
+      ]}
+      placeholder="All brands"
+      minWidth="min-w-[180px]"
+    />
+  );
+  const menuItemFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filters.menu_item_id}
+      onChange={(v) => setFilters((f) => ({ ...f, menu_item_id: v }))}
+      options={[
+        { value: '', label: 'All items' },
+        ...(menuItemsForFilter ?? []).map((mi: { id: number; name: string }) => ({
+          value: String(mi.id),
+          label: mi.name, inactive: isEntityInactive(mi),
+        })),
+      ]}
+      placeholder="All items"
+      minWidth="min-w-[180px]"
+    />
+  );
+  const searchFilter = (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1 max-lg:hidden">Search</label>
+      <div className="relative">
+        <input
+          type="text"
+          aria-label="Search modifiers"
+          value={filters.search}
+          onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+          onFocus={() => modifierSearchTypeahead.setOpen(true)}
+          onKeyDown={(e) => {
+            const suggestions = modifierSearchTypeahead.suggestions;
+            if (!suggestions.length) return;
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              modifierSearchTypeahead.setActiveIndex(Math.min(modifierSearchTypeahead.activeIndex + 1, suggestions.length - 1));
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              modifierSearchTypeahead.setActiveIndex(Math.max(modifierSearchTypeahead.activeIndex - 1, 0));
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              const opt = suggestions[modifierSearchTypeahead.activeIndex];
+              if (opt?.label) setFilters((f) => ({ ...f, search: opt.label }));
+              modifierSearchTypeahead.setOpen(false);
+            } else if (e.key === 'Escape') {
+              modifierSearchTypeahead.setOpen(false);
+            }
+          }}
+          placeholder="Group or modifier name..."
+          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48 max-lg:min-h-[44px] max-lg:w-full max-lg:min-w-0"
+        />
+        <TypeaheadDropdown
+          open={modifierSearchTypeahead.open && filters.search.trim().length >= 2}
+          suggestions={modifierSearchTypeahead.suggestions}
+          activeIndex={modifierSearchTypeahead.activeIndex}
+          onHoverIndex={modifierSearchTypeahead.setActiveIndex}
+          onSelect={(opt) => {
+            setFilters((f) => ({ ...f, search: opt.label }));
+            modifierSearchTypeahead.setOpen(false);
+          }}
+          onClose={() => modifierSearchTypeahead.setOpen(false)}
+        />
+      </div>
+    </div>
+  );
+  const filterChips: FilterChip[] = [
+    ...(!singleBrand && filters.brand_id
+      ? [{ key: 'brand', label: (brands ?? []).find((b) => String(b.id) === filters.brand_id)?.name ?? 'Brand', onRemove: () => setFilters((f) => ({ ...f, brand_id: '', menu_item_id: '' })) }]
+      : []),
+    ...(filters.menu_item_id
+      ? [{ key: 'item', label: (menuItemsForFilter ?? []).find((mi: { id: number; name: string }) => String(mi.id) === filters.menu_item_id)?.name ?? 'Menu item', onRemove: () => setFilters((f) => ({ ...f, menu_item_id: '' })) }]
+      : []),
+  ];
+  const filterFields: FilterField[] = [
+    ...(!singleBrand ? [{ key: 'brandFilter', label: 'Brand', node: brandFilter() }] : []),
+    ...(effectiveBrandId != null ? [{ key: 'menuItemFilter', label: 'Menu Item', node: menuItemFilter() }] : []),
+  ];
+
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Modifiers</h1>
-        <div className="flex gap-2">
+        <div className="flex gap-2 max-sm:flex-wrap">
           {canCreate && <Button variant="secondary" onClick={() => setShowModifierForm(true)}>
             + Add Modifier
           </Button>}
@@ -499,85 +633,20 @@ const Modifiers: React.FC = () => {
         </div>
       </div>
 
-      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap gap-3 items-end">
-          {!singleBrand && (
-            <SearchableSelect
-              label="Brand"
-              value={filters.brand_id}
-              onChange={(v) => setFilters((f) => ({ ...f, brand_id: v, menu_item_id: '' }))}
-              options={[
-                { value: '', label: 'All brands' },
-                ...(brands ?? []).map((b) => ({
-                  value: String(b.id),
-                  label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
-                })),
-              ]}
-              placeholder="All brands"
-              minWidth="min-w-[180px]"
-            />
-          )}
-          {effectiveBrandId != null && (
-            <SearchableSelect
-              label="Menu Item"
-              value={filters.menu_item_id}
-              onChange={(v) => setFilters((f) => ({ ...f, menu_item_id: v }))}
-              options={[
-                { value: '', label: 'All items' },
-                ...(menuItemsForFilter ?? []).map((mi: { id: number; name: string }) => ({
-                  value: String(mi.id),
-                  label: mi.name, inactive: isEntityInactive(mi),
-                })),
-              ]}
-              placeholder="All items"
-              minWidth="min-w-[180px]"
-            />
-          )}
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Search</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={filters.search}
-                onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-                onFocus={() => modifierSearchTypeahead.setOpen(true)}
-                onKeyDown={(e) => {
-                  const suggestions = modifierSearchTypeahead.suggestions;
-                  if (!suggestions.length) return;
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    modifierSearchTypeahead.setActiveIndex(Math.min(modifierSearchTypeahead.activeIndex + 1, suggestions.length - 1));
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    modifierSearchTypeahead.setActiveIndex(Math.max(modifierSearchTypeahead.activeIndex - 1, 0));
-                  } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const opt = suggestions[modifierSearchTypeahead.activeIndex];
-                    if (opt?.label) setFilters((f) => ({ ...f, search: opt.label }));
-                    modifierSearchTypeahead.setOpen(false);
-                  } else if (e.key === 'Escape') {
-                    modifierSearchTypeahead.setOpen(false);
-                  }
-                }}
-                placeholder="Group or modifier name..."
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48"
-              />
-              <TypeaheadDropdown
-                open={modifierSearchTypeahead.open && filters.search.trim().length >= 2}
-                suggestions={modifierSearchTypeahead.suggestions}
-                activeIndex={modifierSearchTypeahead.activeIndex}
-                onHoverIndex={modifierSearchTypeahead.setActiveIndex}
-                onSelect={(opt) => {
-                  setFilters((f) => ({ ...f, search: opt.label }));
-                  modifierSearchTypeahead.setOpen(false);
-                }}
-                onClose={() => modifierSearchTypeahead.setOpen(false)}
-              />
-            </div>
+      <FilterBar className="mb-4" primary={searchFilter} chips={filterChips} fields={filterFields} onClearAll={() => setFilters(singleBrand ? { brand_id: String(singleBrand.id), search: '', menu_item_id: '' } : { brand_id: '', search: '', menu_item_id: '' })}>
+        <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap gap-3 items-end">
+            {!singleBrand && (
+              brandFilter('Brand')
+            )}
+            {effectiveBrandId != null && (
+              menuItemFilter('Menu Item')
+            )}
+            {searchFilter}
+            <ClearFiltersButton onClick={() => setFilters(singleBrand ? { brand_id: String(singleBrand.id), search: '', menu_item_id: '' } : { brand_id: '', search: '', menu_item_id: '' })} />
           </div>
-          <ClearFiltersButton onClick={() => setFilters(singleBrand ? { brand_id: String(singleBrand.id), search: '', menu_item_id: '' } : { brand_id: '', search: '', menu_item_id: '' })} />
-        </div>
-      </Card>
+        </Card>
+      </FilterBar>
 
       {/* Add Modifier Group modal */}
       <Modal
@@ -611,7 +680,7 @@ const Modifiers: React.FC = () => {
         >
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
-            <select
+            <ResponsiveSelect
               value={groupFormData.brand_id}
               onChange={(e) => setGroupFormData({ ...groupFormData, brand_id: e.target.value })}
               required
@@ -621,7 +690,7 @@ const Modifiers: React.FC = () => {
               {brands?.map((b) => (
                 <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Group name *</label>
@@ -634,7 +703,7 @@ const Modifiers: React.FC = () => {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Min select</label>
               <input
@@ -734,7 +803,7 @@ const Modifiers: React.FC = () => {
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Min select</label>
                 <input
@@ -827,7 +896,7 @@ const Modifiers: React.FC = () => {
         >
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Modifier group *</label>
-            <select
+            <ResponsiveSelect
               value={modifierFormData.modifier_group_id}
               onChange={(e) => setModifierFormData({ ...modifierFormData, modifier_group_id: e.target.value })}
               required
@@ -835,9 +904,9 @@ const Modifiers: React.FC = () => {
             >
               <option value="">Select group</option>
               {(modifierGroups ?? []).map((g: ModifierGroupResponse) => (
-                <option key={g.id} value={g.id}>{g.name} {effectiveBrandId != null ? '' : `(${brands?.find((b) => b.id === g.brand_id)?.name ?? ''})`}</option>
+                <option key={g.id} value={g.id}>{labelWithStatus(g.name, g)} {effectiveBrandId != null ? '' : `(${brands?.find((b) => b.id === g.brand_id)?.name ?? ''})`}</option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Name *</label>

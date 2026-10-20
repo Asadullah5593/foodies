@@ -32,6 +32,8 @@ export function brandMonogram(name: string): string {
  * dropdown, and on a touch screen a tab is one tap where the select was three.
  * Each tab carries how many items it holds for the order type in hand, so the
  * choice is made without opening anything.
+ * Below lg the strip scrolls sideways with smaller tiles, one tab never narrower
+ * than 140px, so a phone keeps its screen for the menu, not a wall of tabs.
  *
  * Behaviour is unchanged from the dropdown it replaced: All comes first and
  * stays selected until something else is picked.
@@ -79,7 +81,7 @@ const BrandTiles: React.FC<{
       aria-label={ariaLabel}
       title={ariaLabel}
       onClick={onClick}
-      className={`flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-[13px] border-none px-3 py-4 transition ${
+      className={`flex min-w-0 flex-1 cursor-pointer items-center justify-center gap-[13px] border-none px-3 py-4 transition max-lg:min-w-[140px] max-lg:gap-2.5 max-lg:px-2.5 max-lg:py-2 ${
         active ? 'bg-[#FCEEEE]' : 'bg-transparent hover:bg-[#FAFAFB]'
       } ${inactive ? 'opacity-45 grayscale' : ''}`}
       style={{ borderBottom: `3px solid ${active ? '#DC2A2A' : 'transparent'}` }}
@@ -87,13 +89,13 @@ const BrandTiles: React.FC<{
       {tile}
       <span className="min-w-0 text-left">
         <span
-          className="block truncate text-[14.5px] font-bold"
+          className="block truncate text-[14.5px] font-bold max-lg:text-[13px]"
           style={{ color: active ? '#B5121B' : '#374151' }}
         >
           {label}
         </span>
         <span
-          className="mt-0.5 block text-[12px]"
+          className="mt-0.5 block text-[12px] max-lg:text-[11px]"
           style={{ color: active ? '#C2696C' : '#9AA1AD' }}
         >
           {count} items
@@ -114,7 +116,7 @@ const BrandTiles: React.FC<{
     <div
       role="group"
       aria-label="Brand"
-      className="flex items-stretch border-b border-[#F1F2F5] bg-[#FCFCFD] dark:border-slate-700 dark:bg-slate-800"
+      className="flex items-stretch border-b border-[#F1F2F5] bg-[#FCFCFD] dark:border-slate-700 dark:bg-slate-800 max-lg:overflow-x-auto scroll-row-bare"
     >
       {!single &&
         tab(
@@ -122,7 +124,7 @@ const BrandTiles: React.FC<{
         allActive,
         false,
         <span
-          className="flex h-[52px] w-[52px] flex-none items-center justify-center rounded-[13px]"
+          className="flex h-[52px] w-[52px] flex-none items-center justify-center rounded-[13px] max-lg:h-10 max-lg:w-10 max-lg:rounded-[10px]"
           style={{
             background: allActive ? '#DC2A2A' : '#EEF0F3',
             color: allActive ? '#fff' : '#8A92A0',
@@ -149,18 +151,18 @@ const BrandTiles: React.FC<{
           active,
           inactive,
           <span
-            className="flex h-[52px] w-[52px] flex-none items-center justify-center rounded-[13px] bg-white"
+            className="flex h-[52px] w-[52px] flex-none items-center justify-center rounded-[13px] bg-white max-lg:h-10 max-lg:w-10 max-lg:rounded-[10px]"
             style={{ border: `1px solid ${active ? '#F3D6D6' : '#ECEDF0'}` }}
           >
             {logo ? (
               <img
                 src={logo}
                 alt=""
-                className="h-[38px] w-[38px] rounded-[10px] object-contain"
+                className="h-[38px] w-[38px] rounded-[10px] object-contain max-lg:h-7 max-lg:w-7 max-lg:rounded-[8px]"
                 onError={() => setFailed((f) => ({ ...f, [b.id]: true }))}
               />
             ) : (
-              <span className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-[#B6BCC6] text-[14px] font-extrabold tracking-[-0.01em] text-white">
+              <span className="flex h-[38px] w-[38px] items-center justify-center rounded-[10px] bg-[#B6BCC6] text-[14px] font-extrabold tracking-[-0.01em] text-white max-lg:h-7 max-lg:w-7 max-lg:rounded-[8px] max-lg:text-[11px]">
                 {brandMonogram(b.name)}
               </span>
             )}

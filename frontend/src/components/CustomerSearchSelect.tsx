@@ -144,7 +144,7 @@ const CustomerSearchSelect: React.FC<CustomerSearchSelectProps> = ({
           role="combobox"
           aria-expanded={open}
           aria-autocomplete="list"
-          className={`flex-1 px-3 py-2 border rounded-lg bg-white min-h-[42px] ${
+          className={`flex-1 px-3 py-2 border rounded-lg bg-white min-h-[42px] max-lg:min-h-[44px] ${
             open ? 'ring-2 ring-blue-500 border-blue-500' : 'border-gray-300'
           } ${disabled ? 'opacity-60 cursor-not-allowed' : ''} focus:outline-none`}
         />
@@ -153,7 +153,7 @@ const CustomerSearchSelect: React.FC<CustomerSearchSelectProps> = ({
           onClick={() => onAddClick(open ? search : '')}
           disabled={disabled}
           title="Add new customer"
-          className="flex-shrink-0 w-10 h-[42px] flex items-center justify-center border border-gray-300 rounded-lg bg-white hover:bg-gray-50 hover:border-blue-400 text-gray-600 hover:text-blue-600 font-bold text-lg disabled:opacity-50"
+          className="flex-shrink-0 w-10 h-[42px] max-lg:h-11 max-lg:w-11 flex items-center justify-center border border-gray-300 rounded-lg bg-white hover:bg-gray-50 hover:border-blue-400 text-gray-600 hover:text-blue-600 font-bold text-lg disabled:opacity-50"
         >
           +
         </button>

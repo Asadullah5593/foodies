@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
+import { useViewport } from '../../../hooks/useViewport';
 
 export type PillOption = {
   /** null = the "All items" pill. */
@@ -18,6 +19,9 @@ export type POSPillFiltersProps = {
 /**
  * Category filters as wrapping pills: a till is touch-driven, so every category
  * stays one tap away, and they wrap rather than scroll so none hide off-screen.
+ * Below lg (phones, tablets) the same pills sit in one sideways-scrolling row —
+ * eight wrapped rows pushed the first menu card off a phone screen — and the
+ * active pill is scrolled into view, so the selection is never off-screen.
  *
  * Nothing renders until a brand is chosen — with several brands on one branch
  * the combined category list is long and mixes brands, so brand is the first
@@ -33,7 +37,7 @@ const Pill: React.FC<{
     type="button"
     onClick={onClick}
     aria-pressed={active}
-    className={`inline-flex min-h-[30px] cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors ${
+    className={`inline-flex min-h-[30px] cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-[12px] font-medium transition-colors max-lg:min-h-[40px] max-lg:flex-none max-lg:px-3.5 max-lg:text-[13px] ${
       active
         ? 'border-foodies-primary bg-foodies-primary text-white'
         : 'border-[#E6E8EC] bg-white text-[#4B5563] hover:bg-[#F6F7F9] dark:border-slate-600 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600'
@@ -58,11 +62,19 @@ const POSPillFilters: React.FC<POSPillFiltersProps> = ({
   onCategoryChange,
   brandChosen,
 }) => {
+  const { isDesktop } = useViewport();
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isDesktop) return;
+    const active = rowRef.current?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    active?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' });
+  }, [isDesktop, selectedCategoryId]);
+
   if (!brandChosen || categoryPills.length === 0) return null;
 
   return (
-    <div className="flex-shrink-0 border-b border-foodies-border bg-foodies-surface px-5 py-2.5 dark:border-slate-700 dark:bg-slate-800">
-      <div className="flex flex-wrap gap-1.5">
+    <div className="flex-shrink-0 border-b border-foodies-border bg-foodies-surface px-5 py-2.5 dark:border-slate-700 dark:bg-slate-800 max-sm:px-4">
+      <div ref={rowRef} className="flex flex-wrap gap-1.5 max-lg:flex-nowrap max-lg:overflow-x-auto max-lg:pb-0.5 scroll-row-bare">
         {categoryPills.map((p) => (
           <Pill
             key={p.id ?? 'all'}

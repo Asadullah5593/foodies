@@ -58,6 +58,9 @@ const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const { theme } = useTheme();
+  // Below lg a button keeps a touch-friendly floor without the desktop-sized padding growing
+  // further: 36px for small (row actions), 40px for medium; large is taller than that already.
+  // Desktop density is unchanged.
   const baseStyles =
     'font-medium rounded-lg transition-all duration-200 focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed';
 
@@ -67,8 +70,8 @@ const Button: React.FC<ButtonProps> = ({
   const resolvedStyles = isGradient ? BUTTON_GRADIENT : variantStyles;
 
   const sizeStyles = {
-    small: 'px-3 py-1.5 text-sm',
-    medium: 'px-4 py-2 text-base',
+    small: 'px-3 py-1.5 text-sm max-lg:min-h-[36px]',
+    medium: 'px-4 py-2 text-base max-lg:min-h-[40px]',
     large: 'px-6 py-3 text-lg',
   };
 

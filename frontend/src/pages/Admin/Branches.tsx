@@ -10,6 +10,7 @@ import FetchingOverlay from '../../components/FetchingOverlay';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import Card from '../../components/Card';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
 import { AccentedList, AccentedListRow } from '../../components/AccentedListRow';
@@ -18,7 +19,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
-import { labelWithStatus } from '../../utils/entityStatus';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 
 const Branches: React.FC = () => {
   const navigate = useNavigate();
@@ -115,84 +116,110 @@ const Branches: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Deleting...' : 'Loading branches...'} />;
   }
 
+  // Each filter control once: desktop shows the card below, phones and tablets the
+  // compact bar + sheet (only one renders).
+  const brandFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filterBrandId}
+      onChange={setFilterBrandId}
+      options={[
+        { value: '', label: 'All brands' },
+        ...(brands ?? []).map((brand: { id: number; name: string; tenant_name?: string }) => ({
+          value: String(brand.id),
+          label: brand.tenant_name ? `${brand.name} (${brand.tenant_name})` : brand.name,
+          inactive: isEntityInactive(brand),
+        })),
+      ]}
+      placeholder="All brands"
+      minWidth="min-w-[200px]"
+    />
+  );
+  const statusFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filterStatus}
+      onChange={setFilterStatus}
+      options={[
+        { value: '', label: 'All' },
+        { value: 'active', label: 'Active' },
+        { value: 'inactive', label: 'Inactive' },
+      ]}
+      placeholder="All"
+      minWidth="min-w-[120px]"
+    />
+  );
+  const searchFilter = (
+    <div className="relative">
+      <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1 max-lg:hidden">Search</label>
+      <input
+        type="text"
+        aria-label="Search branches"
+        value={filterSearch}
+        onChange={(e) => setFilterSearch(e.target.value)}
+        onFocus={() => branchSearchTypeahead.setOpen(true)}
+        onKeyDown={(e) => {
+          const suggestions = branchSearchTypeahead.suggestions;
+          if (!suggestions.length) return;
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            branchSearchTypeahead.setActiveIndex(Math.min(branchSearchTypeahead.activeIndex + 1, suggestions.length - 1));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            branchSearchTypeahead.setActiveIndex(Math.max(branchSearchTypeahead.activeIndex - 1, 0));
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const opt = suggestions[branchSearchTypeahead.activeIndex];
+            if (opt?.label) setFilterSearch(opt.label);
+            branchSearchTypeahead.setOpen(false);
+          } else if (e.key === 'Escape') {
+            branchSearchTypeahead.setOpen(false);
+          }
+        }}
+        placeholder="Name or code..."
+        className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-red-500 min-w-[200px] bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 max-lg:min-h-[44px] max-lg:w-full max-lg:min-w-0"
+      />
+      <TypeaheadDropdown
+        open={branchSearchTypeahead.open && filterSearch.trim().length >= 2}
+        suggestions={branchSearchTypeahead.suggestions}
+        activeIndex={branchSearchTypeahead.activeIndex}
+        onHoverIndex={branchSearchTypeahead.setActiveIndex}
+        onSelect={(opt) => {
+          setFilterSearch(opt.label);
+          branchSearchTypeahead.setOpen(false);
+        }}
+        onClose={() => branchSearchTypeahead.setOpen(false)}
+      />
+    </div>
+  );
+  const filterChips: FilterChip[] = [
+    ...(filterBrandId
+      ? [{ key: 'brand', label: (brands ?? []).find((b: { id: number; name: string }) => String(b.id) === filterBrandId)?.name ?? 'Brand', onRemove: () => setFilterBrandId('') }]
+      : []),
+    ...(filterStatus ? [{ key: 'status', label: filterStatus === 'active' ? 'Active' : 'Inactive', onRemove: () => setFilterStatus('') }] : []),
+  ];
+  const filterFields: FilterField[] = [
+    { key: 'brandFilter', label: 'Brand', node: brandFilter() },
+    { key: 'statusFilter', label: 'Status', node: statusFilter() },
+  ];
+
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Branches</h1>
         {canCreate && <Button variant="primary" onClick={() => navigate('/admin/branches/new')}>Add Branch</Button>}
       </div>
 
-      <Card className="mb-6 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap items-end gap-4">
-          <SearchableSelect
-            label="Brand"
-            value={filterBrandId}
-            onChange={setFilterBrandId}
-            options={[
-              { value: '', label: 'All brands' },
-              ...(brands ?? []).map((brand: { id: number; name: string; tenant_name?: string }) => ({
-                value: String(brand.id),
-                label: brand.tenant_name ? `${brand.name} (${brand.tenant_name})` : brand.name,
-              })),
-            ]}
-            placeholder="All brands"
-            minWidth="min-w-[200px]"
-          />
-          <SearchableSelect
-            label="Status"
-            value={filterStatus}
-            onChange={setFilterStatus}
-            options={[
-              { value: '', label: 'All' },
-              { value: 'active', label: 'Active' },
-              { value: 'inactive', label: 'Inactive' },
-            ]}
-            placeholder="All"
-            minWidth="min-w-[120px]"
-          />
-          <div className="relative">
-            <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">Search</label>
-            <input
-              type="text"
-              value={filterSearch}
-              onChange={(e) => setFilterSearch(e.target.value)}
-              onFocus={() => branchSearchTypeahead.setOpen(true)}
-              onKeyDown={(e) => {
-                const suggestions = branchSearchTypeahead.suggestions;
-                if (!suggestions.length) return;
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  branchSearchTypeahead.setActiveIndex(Math.min(branchSearchTypeahead.activeIndex + 1, suggestions.length - 1));
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  branchSearchTypeahead.setActiveIndex(Math.max(branchSearchTypeahead.activeIndex - 1, 0));
-                } else if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const opt = suggestions[branchSearchTypeahead.activeIndex];
-                  if (opt?.label) setFilterSearch(opt.label);
-                  branchSearchTypeahead.setOpen(false);
-                } else if (e.key === 'Escape') {
-                  branchSearchTypeahead.setOpen(false);
-                }
-              }}
-              placeholder="Name or code..."
-              className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-red-500 min-w-[200px] bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
-            />
-            <TypeaheadDropdown
-              open={branchSearchTypeahead.open && filterSearch.trim().length >= 2}
-              suggestions={branchSearchTypeahead.suggestions}
-              activeIndex={branchSearchTypeahead.activeIndex}
-              onHoverIndex={branchSearchTypeahead.setActiveIndex}
-              onSelect={(opt) => {
-                setFilterSearch(opt.label);
-                branchSearchTypeahead.setOpen(false);
-              }}
-              onClose={() => branchSearchTypeahead.setOpen(false)}
-            />
+      <FilterBar className="mb-4" primary={searchFilter} chips={filterChips} fields={filterFields} onClearAll={clearFilters}>
+        <Card className="mb-6 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap items-end gap-4">
+            {brandFilter('Brand')}
+            {statusFilter('Status')}
+            {searchFilter}
+            <ClearFiltersButton onClick={clearFilters} />
           </div>
-          <ClearFiltersButton onClick={clearFilters} />
-        </div>
-      </Card>
+        </Card>
+      </FilterBar>
 
       {/* While the brand filter is fetching, the previous results stay mounted
           and a soft veil fades in over them (see useResultsRefreshing — background polls stay silent). */}

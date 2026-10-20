@@ -11,6 +11,8 @@ import Loader from '../../components/Loader';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
 import AssignRiderModal from '../../components/AssignRiderModal';
 import { usePaymentRequiredPrompt } from '../../components/PaymentRequiredModal';
 import ScrollToTopButton from '../../components/ScrollToTopButton';
@@ -212,7 +214,7 @@ const FOHPacking: React.FC = () => {
       transition={{ duration: 0.28, ease: 'easeOut' }}
     >
     <Card className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg overflow-hidden">
-      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600 flex justify-between items-start">
+      <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-600 flex justify-between items-start max-sm:flex-col max-sm:gap-2">
         {/* Left: order number + brand */}
         <div>
           <span className="text-lg font-bold text-gray-900 dark:text-gray-100">Order #{order.order_number}</span>
@@ -221,9 +223,9 @@ const FOHPacking: React.FC = () => {
           )}
         </div>
         {/* Right: order type (+ table if dine-in) on top, status below */}
-        <div className="flex flex-col items-end gap-1">
-          <div className="flex items-center gap-1.5">
-            <span className={`px-3 py-1 rounded-md text-sm font-bold uppercase tracking-wide border ${
+        <div className="flex flex-col items-end gap-1 max-sm:items-start">
+          <div className="flex items-center gap-1.5 max-sm:flex-wrap">
+            <span className={`px-3 py-1 rounded-md text-sm font-bold uppercase tracking-wide border max-sm:whitespace-nowrap ${
               order.order_type === 'dine_in' ? 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 border-green-200 dark:border-green-700' :
               order.order_type === 'delivery' ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 border-blue-200 dark:border-blue-700' :
               order.order_type === 'takeaway' ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-700' :
@@ -232,7 +234,7 @@ const FOHPacking: React.FC = () => {
               {formatOrderType(order.order_type)}
             </span>
             {order.order_type === 'dine_in' && order.table_number && (
-              <span className="px-3 py-1 rounded-md bg-green-600 text-white text-sm font-bold">
+              <span className="px-3 py-1 rounded-md bg-green-600 text-white text-sm font-bold max-sm:whitespace-nowrap">
                 Table {order.table_number}
               </span>
             )}
@@ -315,6 +317,7 @@ const FOHPacking: React.FC = () => {
           <Button
             size="small"
             variant="primary"
+            className="max-sm:w-full max-sm:min-h-[48px] max-sm:text-base"
             onClick={() => updateStatusMutation.mutate({ orderId: order.id, status: 'completed' })}
             isLoading={updatingOrderId === order.id}
             disabled={updatingOrderId === order.id}
@@ -337,6 +340,7 @@ const FOHPacking: React.FC = () => {
             <Button
               size="small"
               variant="outline"
+              className="max-sm:w-full"
               onClick={() => {
                 setRiderModalOrderId(order.id);
                 setRiderModalBrandId(order.brand_id ?? null);
@@ -353,8 +357,99 @@ const FOHPacking: React.FC = () => {
     </motion.div>
   );
 
+  const dateInputCls =
+    'w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500';
+  const dateFromInput = (
+    <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className={dateInputCls} aria-label="From date" />
+  );
+  const dateToInput = (
+    <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className={dateInputCls} aria-label="To date" />
+  );
+  const branchSelect = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={branchId}
+      onChange={(v) => setBranchId(v)}
+      options={[
+        { value: '', label: 'Select branch' },
+        ...(branches ?? []).map((b: { id: number; name: string }) => ({
+          value: String(b.id),
+          label: b.name, inactive: isEntityInactive(b),
+        })),
+      ]}
+      placeholder="Select branch"
+    />
+  );
+  const statusSelect = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={statusFilter}
+      onChange={(v) => {
+        setStatusFilter(v);
+        if (v === 'completed') setShowCompleted(true);
+      }}
+      options={[
+        { value: 'preparing', label: 'Preparing' },
+        { value: 'ready', label: 'Ready' },
+        { value: 'completed', label: 'Completed' },
+      ]}
+      placeholder="Select status"
+    />
+  );
+  const completedToggle = (
+    <button
+      type="button"
+      onClick={() => {
+        if (completedVisible) {
+          setShowCompleted(false);
+          // Otherwise the status filter would keep the section open and
+          // the button would appear to do nothing.
+          if (statusFilter === 'completed') setStatusFilter('ready');
+        } else {
+          setShowCompleted(true);
+        }
+      }}
+      className={[
+        'px-4 py-2 rounded-lg border text-sm font-medium transition-colors max-lg:min-h-[40px]',
+        completedVisible
+          ? 'bg-emerald-50 dark:bg-emerald-900/40 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-200'
+          : 'bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700',
+      ].join(' ')}
+      title="Toggle completed orders"
+    >
+      {completedVisible ? 'Hide Completed' : 'Show Completed'}
+    </button>
+  );
+
+  // Phones and tablets: every control, the Completed toggle included, lives in the sheet; a
+  // shown Completed section becomes a chip in the bar.
+  const today = todayIsoDate();
+  const branchName = (branches ?? []).find((b: { id: number }) => String(b.id) === branchId)?.name;
+  const fohChips: FilterChip[] = [
+    ...(branchName ? [{ key: 'branch', label: branchName }] : []),
+    ...(showCompleted && statusFilter !== 'completed' ? [{ key: 'completed', label: 'Completed shown', onRemove: () => setShowCompleted(false) }] : []),
+    ...(dateFrom !== today || dateTo !== today
+      ? [{ key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { setDateFrom(today); setDateTo(today); } }]
+      : []),
+    ...(statusFilter && statusFilter !== 'ready'
+      ? [{ key: 'status', label: statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1), onRemove: () => setStatusFilter('ready') }]
+      : []),
+  ];
+  const fohFields: FilterField[] = [
+    { key: 'show', label: 'Show', node: completedToggle },
+    { key: 'status', label: 'Status', node: statusSelect() },
+    { key: 'date', label: 'Date range', node: <div className="grid grid-cols-2 gap-2.5">{dateFromInput}{dateToInput}</div> },
+    ...(canFilterBranch ? [{ key: 'branch', label: 'Branch', node: branchSelect() }] : []),
+  ];
+  const clearFohFilters = () => {
+    setDateFrom(today);
+    setDateTo(today);
+    setStatusFilter('ready');
+    setShowCompleted(false);
+  };
+
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 text-gray-900 dark:text-gray-100">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 text-gray-900 dark:text-gray-100">
       <div className="w-full">
         <div ref={pageTopRef} className="flex justify-between items-center mb-6 flex-wrap gap-4 scroll-mt-6">
           <div>
@@ -363,77 +458,21 @@ const FOHPacking: React.FC = () => {
               Verify items before handing over. Pricing is hidden.
             </p>
           </div>
+          <FilterBar className="w-full" chips={fohChips} fields={fohFields} onClearAll={clearFohFilters}>
           <div className="flex flex-wrap gap-4 items-end">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">From date</label>
-              <input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+              {dateFromInput}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1">To date</label>
-              <input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
+              {dateToInput}
             </div>
-            {canFilterBranch && (
-              <SearchableSelect
-                label="Branch"
-                value={branchId}
-                onChange={(v) => setBranchId(v)}
-                options={[
-                  { value: '', label: 'Select branch' },
-                  ...(branches ?? []).map((b: { id: number; name: string }) => ({
-                    value: String(b.id),
-                    label: b.name, inactive: isEntityInactive(b),
-                  })),
-                ]}
-                placeholder="Select branch"
-              />
-            )}
-            <SearchableSelect
-              label="Status"
-              value={statusFilter}
-              onChange={(v) => {
-                setStatusFilter(v);
-                if (v === 'completed') setShowCompleted(true);
-              }}
-              options={[
-                { value: 'preparing', label: 'Preparing' },
-                { value: 'ready', label: 'Ready' },
-                { value: 'completed', label: 'Completed' },
-              ]}
-              placeholder="Select status"
-            />
-            <button
-              type="button"
-              onClick={() => {
-                if (completedVisible) {
-                  setShowCompleted(false);
-                  // Otherwise the status filter would keep the section open and
-                  // the button would appear to do nothing.
-                  if (statusFilter === 'completed') setStatusFilter('ready');
-                } else {
-                  setShowCompleted(true);
-                }
-              }}
-              className={[
-                'px-4 py-2 rounded-lg border text-sm font-medium transition-colors',
-                completedVisible
-                  ? 'bg-emerald-50 dark:bg-emerald-900/40 border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-200'
-                  : 'bg-white dark:bg-slate-800 border-gray-300 dark:border-slate-600 text-gray-700 dark:text-slate-200 hover:bg-gray-50 dark:hover:bg-slate-700',
-              ].join(' ')}
-              title="Toggle completed orders"
-            >
-              {completedVisible ? 'Hide Completed' : 'Show Completed'}
-            </button>
+            {canFilterBranch && branchSelect('Branch')}
+            {statusSelect('Status')}
+            {completedToggle}
           </div>
+          </FilterBar>
         </div>
 
         {!branchId ? (

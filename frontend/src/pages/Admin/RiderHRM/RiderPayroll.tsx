@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { labelWithStatus } from '../../../utils/entityStatus';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -63,7 +64,7 @@ const RiderPayroll: React.FC = () => {
   });
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 space-y-6">
       <RiderHrmHeader
         title="Payroll Runs"
         subtitle="Combine attendance, completed rides, timely deliveries and ratings against the active compensation plan to produce per-rider payroll for a period. Finalize or reverse."
@@ -99,7 +100,7 @@ const RiderPayroll: React.FC = () => {
           </div>
           <div>
             <label className={labelClass}>Branch scope</label>
-            <select
+            <ResponsiveSelect
               value={payrollForm.branch_id}
               onChange={(e) => setPayrollForm((prev) => ({ ...prev, branch_id: e.target.value }))}
               className={inputClass}
@@ -110,7 +111,7 @@ const RiderPayroll: React.FC = () => {
                   {labelWithStatus(branch.name, branch)}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           <div>
             <label className={labelClass}>Timely minutes</label>

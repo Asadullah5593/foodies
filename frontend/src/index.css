@@ -141,3 +141,91 @@ html.dark .swal2-popup .swal2-content {
 .dark ::-webkit-scrollbar-track { background: #1e293b; }
 .dark ::-webkit-scrollbar-thumb { background: #475569; }
 .dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* Phones only (same query as Tailwind's max-sm): iOS Safari zooms the whole page into a text
+   field whose text is under 16px. Text fields, selects and textareas get 16px unless a class on
+   the element already makes them 16px or larger (listed here: every such class the app uses). */
+@media not all and (min-width: 640px) {
+  :is(
+    input:not([type='checkbox'], [type='radio'], [type='range'], [type='color'], [type='file'], [type='button'], [type='submit'], [type='reset'], [type='image'], [type='hidden']),
+    select,
+    textarea
+  ):not(
+    .text-base, .text-lg, .text-xl, .text-2xl, .text-3xl, .text-4xl, .text-5xl, .text-6xl,
+    .text-\[16px\], .text-\[17px\], .text-\[18px\], .text-\[19px\], .text-\[20px\], .text-\[21px\], .text-\[22px\],
+    .text-\[23px\], .text-\[25px\], .text-\[26px\], .text-\[27px\], .text-\[28px\]
+  ) {
+    font-size: 16px;
+  }
+}
+
+/* Below lg (same query as Tailwind's max-lg): a row that scrolls sideways with its bar hidden —
+   the POS brand and category strips. The 8px bar above would eat a line of the row, and a cut-off
+   last pill already says there is more. No rule at ≥1024px, where the rows wrap instead. */
+/* Below lg every checkbox is the app's own: a 20px box with 6px corners and a 1.5px #CBD0D8 border,
+   filled #DC2A2A with a white tick when checked (a dash when indeterminate), 45% when disabled. The
+   native control is kept (focus, keyboard, form posting) and only drawn differently; hidden ones
+   (.sr-only / .hidden) stay hidden. Desktop keeps the browser's checkbox. */
+@media not all and (min-width: 1024px) {
+  input[type='checkbox']:not(.sr-only):not(.hidden) {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    flex: none;
+    margin: 0;
+    border-radius: 6px;
+    border: 1.5px solid #CBD0D8;
+    background: #fff center / 12px 12px no-repeat;
+    vertical-align: middle;
+    cursor: pointer;
+    transition: background-color 0.12s, border-color 0.12s;
+  }
+  input[type='checkbox']:not(.sr-only):not(.hidden):checked {
+    border-color: #DC2A2A;
+    background-color: #DC2A2A;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='3,8.5 6.5,12 13,4.5'/%3E%3C/svg%3E");
+  }
+  input[type='checkbox']:not(.sr-only):not(.hidden):indeterminate {
+    border-color: #DC2A2A;
+    background-color: #DC2A2A;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23fff' stroke-width='2.8' stroke-linecap='round'%3E%3Cline x1='4' y1='8' x2='12' y2='8'/%3E%3C/svg%3E");
+  }
+  input[type='checkbox']:not(.sr-only):not(.hidden):disabled { opacity: 0.45; cursor: not-allowed; }
+  input[type='checkbox']:not(.sr-only):not(.hidden):focus-visible { outline: 2px solid rgba(220, 42, 42, 0.35); outline-offset: 2px; }
+  .dark input[type='checkbox']:not(.sr-only):not(.hidden) { border-color: #475569; background-color: #1e293b; }
+  .dark input[type='checkbox']:not(.sr-only):not(.hidden):checked,
+  .dark input[type='checkbox']:not(.sr-only):not(.hidden):indeterminate { border-color: #DC2A2A; background-color: #DC2A2A; }
+}
+
+/* Below lg every native select is a searchable one (ResponsiveSelect); inside the filter sheet
+   its trigger button takes the full width, as the native select did. */
+@media not all and (min-width: 1024px) {
+  .filter-sheet-fields button[aria-haspopup='listbox'] { width: 100%; }
+}
+
+@media not all and (min-width: 1024px) {
+  .scroll-row-bare { scrollbar-width: none; }
+  .scroll-row-bare::-webkit-scrollbar { display: none; }
+}
+
+/* Below lg: the ⋯ sheet of a list row (AccentedListRow) lays the page's own action buttons out as
+   full-width rows — one per line, a dot in front, Delete keeps its red — whatever classes the page
+   gave them. The selectors outrank single utility classes, so no page needs to change. */
+@media not all and (min-width: 1024px) {
+  .row-action-sheet > button,
+  .row-action-sheet > a {
+    display: flex; align-items: center; justify-content: flex-start; gap: 12px;
+    width: 100%; min-height: 48px; padding: 12px 4px;
+    border: 0; border-bottom: 1px solid #F3F4F6; border-radius: 0; background: transparent; box-shadow: none;
+    font-size: 14.5px; font-weight: 600; text-align: left; color: #20242C;
+  }
+  .row-action-sheet > button:last-child,
+  .row-action-sheet > a:last-child { border-bottom: 0; }
+  .row-action-sheet > button::before,
+  .row-action-sheet > a::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; background: #9AA1AD; }
+  .row-action-sheet > .text-red-700 { color: #DC2A2A; }
+  .row-action-sheet > .text-red-700::before { background: #DC2A2A; }
+  .dark .row-action-sheet > button,
+  .dark .row-action-sheet > a { color: #E2E8F0; border-bottom-color: #334155; }
+}

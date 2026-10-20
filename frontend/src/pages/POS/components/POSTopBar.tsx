@@ -1,4 +1,6 @@
+import { labelWithStatus } from '../../../utils/entityStatus';
 import React from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { MdSearch } from 'react-icons/md';
 import TypeaheadDropdown from '../../../components/TypeaheadDropdown';
 import type { TypeaheadOption } from '../../../hooks/useTypeaheadSuggestions';
@@ -24,7 +26,7 @@ export type POSTopBarProps = {
 };
 
 const selectCls =
-  'max-w-[220px] flex-none cursor-pointer rounded-lg border border-[#E2E5EA] bg-white px-2.5 py-1.5 text-[12px] text-[#374151] outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200';
+  'max-w-[220px] flex-none cursor-pointer rounded-lg border border-[#E2E5EA] bg-white px-2.5 py-1.5 text-[12px] text-[#374151] outline-none dark:border-slate-600 dark:bg-slate-700 dark:text-slate-200 max-lg:min-h-[44px] max-lg:w-full max-lg:max-w-none max-lg:text-[14px]';
 
 /**
  * POS header strip: what you are selling from (brand, branch) on the left,
@@ -32,6 +34,8 @@ const selectCls =
  * number sits next to the open badge so a cashier can quote it (or match it to
  * a printed X/Z report) without opening the Shifts screen. Navigation back to
  * orders lives in the app navbar, not here.
+ * Below lg the branch select and the search share the first row (44 / 56) and
+ * the shift chips take a second row of their own, so nothing stacks one per line.
  */
 const POSTopBar: React.FC<POSTopBarProps> = ({
   search,
@@ -52,10 +56,10 @@ const POSTopBar: React.FC<POSTopBarProps> = ({
   const shiftLabel = openShift ? (openShift.shift_number ?? `#${openShift.id}`) : null;
 
   return (
-    <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#F1F2F5] bg-foodies-surface px-5 py-3 dark:border-slate-700 dark:bg-slate-800">
-      <div className="flex flex-wrap items-center gap-2">
+    <div className="flex-shrink-0 flex flex-wrap items-center justify-between gap-3 border-b border-[#F1F2F5] bg-foodies-surface px-5 py-3 dark:border-slate-700 dark:bg-slate-800 max-lg:justify-start max-lg:gap-2 max-sm:px-4 max-sm:py-2">
+      <div className="flex flex-wrap items-center gap-2 max-lg:w-[44%] max-lg:flex-none">
 
-        <select
+        <ResponsiveSelect
           value={effectiveBranchId != null ? String(effectiveBranchId) : ''}
           onChange={(e) => onBranchChange(e.target.value === '' ? null : Number(e.target.value))}
           aria-label="Branch"
@@ -64,15 +68,15 @@ const POSTopBar: React.FC<POSTopBarProps> = ({
           <option value="">Select branch</option>
           {(posBranches ?? []).map((b) => (
             <option key={b.id} value={b.id}>
-              {b.name} ({b.code})
+              {labelWithStatus(`${b.name} (${b.code})`, b)}
             </option>
           ))}
-        </select>
+        </ResponsiveSelect>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2.5">
-        <div className="relative">
-          <div className="flex w-[250px] max-w-full items-center gap-[9px] rounded-[11px] border-[1.5px] border-[#EEEFF2] bg-[#F6F7F9] px-[13px] dark:border-slate-600 dark:bg-slate-700">
+      <div className="flex flex-wrap items-center gap-2.5 max-lg:contents">
+        <div className="relative max-lg:w-[calc(56%-0.5rem)]">
+          <div className="flex w-[250px] max-w-full items-center gap-[9px] rounded-[11px] border-[1.5px] border-[#EEEFF2] bg-[#F6F7F9] px-[13px] dark:border-slate-600 dark:bg-slate-700 max-lg:w-full max-lg:min-h-[44px]">
             <MdSearch className="h-4 w-4 flex-none text-[#9AA1AD]" />
             <input
               ref={searchInputRef}
@@ -101,7 +105,7 @@ const POSTopBar: React.FC<POSTopBarProps> = ({
                   setSearchSuggestionsOpen?.(false);
                 }
               }}
-              className="flex-1 border-none bg-transparent py-2.5 text-[13.5px] text-[#1F2430] outline-none placeholder:text-[#A9AFB9] dark:text-slate-100"
+              className="max-lg:min-w-0 flex-1 border-none bg-transparent py-2.5 text-[13.5px] text-[#1F2430] outline-none placeholder:text-[#A9AFB9] dark:text-slate-100"
             />
           </div>
           <TypeaheadDropdown

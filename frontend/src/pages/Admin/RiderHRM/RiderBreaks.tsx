@@ -1,6 +1,10 @@
+import { labelWithStatus } from '../../../utils/entityStatus';
 import React, { useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { useQuery } from '@tanstack/react-query';
 import Card from '../../../components/Card';
+import FilterBar, { type FilterChip } from '../../../components/FilterBar';
+import { rangeChipLabel } from '../../../utils/rangeChipLabel';
 import { adminService } from '../../../services/api/adminService';
 import { RiderBreakSession } from '../../../types';
 import RiderHrmHeader from './RiderHrmHeader';
@@ -36,8 +40,48 @@ const RiderBreaks: React.FC = () => {
     enabled: riderUserId != null,
   });
 
+  // Each control once: desktop shows the grid, phones and tablets the rider picker
+  // beside a Filters button (dates in the sheet). Only one renders.
+  const riderSelect = (
+    <ResponsiveSelect
+      aria-label="Rider"
+      value={filters.rider_user_id}
+      onChange={(e) => setFilters((prev) => ({ ...prev, rider_user_id: e.target.value }))}
+      className={`${inputClass} max-lg:min-h-[44px]`}
+    >
+      <option value="">Select rider</option>
+      {(riders ?? []).map((rider) => (
+        <option key={rider.id} value={rider.id}>
+          {labelWithStatus(rider.name, rider)}
+        </option>
+      ))}
+    </ResponsiveSelect>
+  );
+  const fromInput = (
+    <input
+      type="date"
+      aria-label="From"
+      value={filters.from}
+      onChange={(e) => setFilters((prev) => ({ ...prev, from: e.target.value }))}
+      className={inputClass}
+    />
+  );
+  const toInput = (
+    <input
+      type="date"
+      aria-label="To"
+      value={filters.to}
+      onChange={(e) => setFilters((prev) => ({ ...prev, to: e.target.value }))}
+      className={inputClass}
+    />
+  );
+  const breakChips: FilterChip[] =
+    filters.from || filters.to
+      ? [{ key: 'date', label: rangeChipLabel(filters.from, filters.to), onRemove: () => setFilters((prev) => ({ ...prev, from: '', to: '' })) }]
+      : [];
+
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 space-y-6">
       <RiderHrmHeader
         title="Breaks"
         subtitle="Pause / resume history within rider shifts. Use for attendance audits and payroll adjustments."
@@ -52,41 +96,27 @@ const RiderBreaks: React.FC = () => {
             newest first
           </span>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div>
-            <label className={labelClass}>Rider</label>
-            <select
-              value={filters.rider_user_id}
-              onChange={(e) => setFilters((prev) => ({ ...prev, rider_user_id: e.target.value }))}
-              className={inputClass}
-            >
-              <option value="">Select rider</option>
-              {(riders ?? []).map((rider) => (
-                <option key={rider.id} value={rider.id}>
-                  {rider.name}
-                </option>
-              ))}
-            </select>
+        <FilterBar
+          primary={riderSelect}
+          chips={breakChips}
+          fields={[{ key: 'date', label: 'Date range', node: <div className="grid grid-cols-2 gap-2.5">{fromInput}{toInput}</div> }]}
+          onClearAll={() => setFilters({ rider_user_id: '', from: '', to: '' })}
+        >
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className={labelClass}>Rider</label>
+              {riderSelect}
+            </div>
+            <div>
+              <label className={labelClass}>From</label>
+              {fromInput}
+            </div>
+            <div>
+              <label className={labelClass}>To</label>
+              {toInput}
+            </div>
           </div>
-          <div>
-            <label className={labelClass}>From</label>
-            <input
-              type="date"
-              value={filters.from}
-              onChange={(e) => setFilters((prev) => ({ ...prev, from: e.target.value }))}
-              className={inputClass}
-            />
-          </div>
-          <div>
-            <label className={labelClass}>To</label>
-            <input
-              type="date"
-              value={filters.to}
-              onChange={(e) => setFilters((prev) => ({ ...prev, to: e.target.value }))}
-              className={inputClass}
-            />
-          </div>
-        </div>
+        </FilterBar>
 
         <div className="mt-6 border-t border-gray-200 dark:border-slate-700 pt-4 space-y-3">
           {riderUserId == null ? (

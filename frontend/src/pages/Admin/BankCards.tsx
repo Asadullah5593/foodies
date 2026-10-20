@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { MdCreditCard, MdEdit, MdDelete, MdAddCard, MdInfoOutline } from 'react-icons/md';
@@ -258,12 +259,12 @@ const BankCards: React.FC = () => {
                   <span className="text-[12px] font-extrabold uppercase tracking-[0.1em] text-white/80">{c.network || ''}</span>
                   <div className="flex gap-1.5">
                     {canEditPerm && canEdit(c.manage_scope) && (
-                      <button type="button" onClick={() => startEdit(c)} title="Edit" className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-white/[0.14] text-white transition-colors hover:bg-white/25">
+                      <button type="button" onClick={() => startEdit(c)} title="Edit" className="flex h-[30px] w-[30px] items-center justify-center rounded-lg max-lg:h-11 max-lg:w-11 bg-white/[0.14] text-white transition-colors hover:bg-white/25">
                         <MdEdit size={15} />
                       </button>
                     )}
                     {canDeletePerm && c.manage_scope !== 'read_only' && (
-                      <button type="button" onClick={async () => { if (await confirmDialog(removeDialog(c.manage_scope, 'card', c.name))) deleteMutation.mutate(c.id); }} title={removeLabel(c.manage_scope)} className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-white/[0.14] text-red-200 transition-colors hover:bg-red-500/60">
+                      <button type="button" onClick={async () => { if (await confirmDialog(removeDialog(c.manage_scope, 'card', c.name))) deleteMutation.mutate(c.id); }} title={removeLabel(c.manage_scope)} className="flex h-[30px] w-[30px] items-center justify-center rounded-lg max-lg:h-11 max-lg:w-11 bg-white/[0.14] text-red-200 transition-colors hover:bg-red-500/60">
                         <MdDelete size={15} />
                       </button>
                     )}
@@ -343,7 +344,7 @@ const BankCards: React.FC = () => {
             <label className={offerLabel}>Card name <span className="text-red-500">*</span></label>
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={offerInput} placeholder="HBL Premium Debit" autoFocus />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
             <div>
               <label className={offerLabel}>Bank</label>
               <input value={form.bank} onChange={(e) => setForm({ ...form, bank: e.target.value })} className={offerInput} placeholder="HBL" />
@@ -384,20 +385,20 @@ const BankCards: React.FC = () => {
             <p className="mb-3 mt-0.5 text-[12px] leading-snug text-gray-400">
               What the customer gets for paying with this card. Leave the value empty for a card you only want to record at the till.
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
               <div>
                 <label className={offerLabel}>Type</label>
-                <select value={form.discount_type} onChange={(e) => setForm({ ...form, discount_type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
+                <ResponsiveSelect value={form.discount_type} onChange={(e) => setForm({ ...form, discount_type: e.target.value as 'flat' | 'percentage' })} className={offerInput}>
                   <option value="percentage">Percentage</option>
                   <option value="flat">Flat Amount</option>
-                </select>
+                </ResponsiveSelect>
               </div>
               <div>
                 <label className={offerLabel}>Value</label>
                 <input type="number" min={0} value={form.discount_value} onChange={(e) => setForm({ ...form, discount_value: e.target.value === '' ? '' : Number(e.target.value) })} className={offerInput} placeholder="none" />
               </div>
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-3">
+            <div className="mt-3 grid grid-cols-2 max-sm:grid-cols-1 gap-3">
               <div>
                 <label className={offerLabel}>Min order (Rs)</label>
                 <input type="number" min={0} value={form.min_order_amount} onChange={(e) => setForm({ ...form, min_order_amount: e.target.value === '' ? '' : Number(e.target.value) })} className={offerInput} placeholder="none" />

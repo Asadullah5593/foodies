@@ -21,6 +21,7 @@ import { formatPhone, formatPoints, formatRs, nameInitials } from '../../utils/c
 import { daysAgoLabel, formatDay } from '../../utils/dateDisplay';
 import { customerStatus, type CustomerStatus } from '../../utils/customerFilters';
 import { cu, STATUS_PILL, STATUS_TEXT } from './customersUi';
+import TableScroll from '../../components/TableScroll';
 
 const cardCls = `${cu.card} rounded-[16px]`;
 const titleCls = `text-[15.5px] font-bold ${cu.strong}`;
@@ -163,7 +164,8 @@ const CustomerDetail: React.FC = () => {
   };
 
   const mixTable = (title: string, firstCol: string, lines: CustomerBreakdownLine[], labelOf: (l: CustomerBreakdownLine) => string) => (
-    <div>
+    // Below lg the table may be wider than a phone card: it scrolls sideways, with the edge hint.
+    <TableScroll className="max-lg:overflow-x-auto">
       <h2 className={`mb-3 ${titleCls}`}>{title}</h2>
       {lines.length === 0 ? (
         <p className={`text-[13px] ${cu.muted}`}>No finished orders yet.</p>
@@ -189,7 +191,7 @@ const CustomerDetail: React.FC = () => {
           </tbody>
         </table>
       )}
-    </div>
+    </TableScroll>
   );
 
   return (
@@ -276,7 +278,7 @@ const CustomerDetail: React.FC = () => {
         {c.breakdown.length === 0 ? (
           <p className={`border-t border-[#F1F2F5] px-[22px] py-5 text-[13px] dark:border-slate-700 ${cu.muted}`}>No finished orders yet.</p>
         ) : (
-          <div className="overflow-x-auto">
+          <TableScroll>
             <table className="w-full min-w-[640px] border-collapse" data-testid="customer-breakdown">
               <thead>
                 <tr className="border-y border-[#F1F2F5] bg-[#FBFBFC] dark:border-slate-700 dark:bg-slate-900/40">
@@ -317,7 +319,7 @@ const CustomerDetail: React.FC = () => {
                 })}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
         )}
       </div>
 
@@ -346,7 +348,8 @@ const CustomerDetail: React.FC = () => {
 
       {/* How they order */}
       <div className={`${cardCls} px-[22px] pb-5 pt-[18px]`}>
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-x-[34px] gap-y-5">
+        {/* Phones: one block under the other (a 300px column would run past the card). */}
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(300px,1fr))] gap-x-[34px] gap-y-5 max-sm:grid-cols-1">
           {mixTable('By order type', 'Type', c.by_order_type, (l) => formatOrderType(l.order_type))}
           {mixTable('By channel', 'Channel', c.by_source, (l) => orderSourceLabel(l.source))}
         </div>

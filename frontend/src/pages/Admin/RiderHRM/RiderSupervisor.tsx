@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { labelWithStatus } from '../../../utils/entityStatus';
 import {
   useQuery,
@@ -8,6 +9,9 @@ import {
 } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import Card from '../../../components/Card';
+import FilterBar, { type FilterChip, type FilterField } from '../../../components/FilterBar';
+import { rangeChipLabel } from '../../../utils/rangeChipLabel';
+import { useViewport } from '../../../hooks/useViewport';
 import Button from '../../../components/Button';
 import Loader from '../../../components/Loader';
 import { useHasPermission } from '../../../hooks/useHasPermission';
@@ -15,6 +19,7 @@ import { adminService } from '../../../services/api/adminService';
 import { usePaymentRequiredPrompt } from '../../../components/PaymentRequiredModal';
 import { formatTripDuration } from '../../../utils/tripTime';
 import RiderHrmHeader from './RiderHrmHeader';
+import TableScroll from '../../../components/TableScroll';
 import {
   riderSupervisorService,
   SupervisorDeliveryOrder,
@@ -123,7 +128,7 @@ const FilterSelect: React.FC<{
   allLabel: string;
   options: SupervisorFilterOption[];
 }> = ({ value, onChange, allLabel, options }) => (
-  <select
+  <ResponsiveSelect
     value={value}
     onChange={(e) => onChange(e.target.value ? Number(e.target.value) : '')}
     className="rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm px-2 py-1.5 text-gray-800 dark:text-slate-200 focus:ring-2 focus:ring-red-500"
@@ -135,7 +140,7 @@ const FilterSelect: React.FC<{
         {labelWithStatus(o.name, o)}
       </option>
     ))}
-  </select>
+  </ResponsiveSelect>
 );
 
 /** Today / the role's earliest reachable day, as YYYY-MM-DD for date inputs. */
@@ -155,30 +160,33 @@ const DateRangeFilter: React.FC<{
   onFrom: (v: string) => void;
   onTo: (v: string) => void;
   historyDays: number | null;
-}> = ({ from, to, onFrom, onTo, historyDays }) => {
+  /** The phone/tablet filter sheet: two full-width boxes side by side. */
+  stacked?: boolean;
+}> = ({ from, to, onFrom, onTo, historyDays, stacked = false }) => {
   const min = earliestIso(historyDays);
   const max = todayIso();
   const cls =
     'rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-sm px-2 py-1.5 text-gray-800 dark:text-slate-200 focus:ring-2 focus:ring-red-500';
+  const inputCls = stacked ? `${cls} w-full` : cls;
   return (
-    <div className="flex items-center gap-1.5">
+    <div className={stacked ? 'grid grid-cols-2 gap-2.5' : 'flex items-center gap-1.5'}>
       <input
         type="date"
         value={from}
         min={min}
         max={to || max}
         onChange={(e) => onFrom(e.target.value)}
-        className={cls}
+        className={inputCls}
         aria-label="Orders placed from"
       />
-      <span className="text-xs text-gray-500 dark:text-slate-400">to</span>
+      {!stacked && <span className="text-xs text-gray-500 dark:text-slate-400">to</span>}
       <input
         type="date"
         value={to}
         min={from || min}
         max={max}
         onChange={(e) => onTo(e.target.value)}
-        className={cls}
+        className={inputCls}
         aria-label="Orders placed to"
       />
       {(from || to) && (
@@ -188,7 +196,7 @@ const DateRangeFilter: React.FC<{
             onFrom('');
             onTo('');
           }}
-          className="text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 underline"
+          className={`text-xs font-medium text-gray-500 hover:text-gray-700 dark:text-slate-400 dark:hover:text-slate-200 underline${stacked ? ' col-span-2 min-h-[40px] justify-self-start' : ''}`}
         >
           Clear
         </button>
@@ -200,12 +208,15 @@ const DateRangeFilter: React.FC<{
 const thClass =
   'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-slate-400 whitespace-nowrap';
 const tdClass = 'px-3 py-2 text-sm text-gray-800 dark:text-slate-200 whitespace-nowrap';
+/** Phone cards: the column headings become small labels over each value. */
+const cardLabel = 'text-[10.5px] font-bold uppercase tracking-wide text-gray-400 dark:text-slate-500';
 
 /* ── Delivery orders tab ─────────────────────────────────────────────────── */
 
 const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
   filters,
 }) => {
+  const { isPhone } = useViewport();
   const queryClient = useQueryClient();
   // Order status is its own grant on this surface; the server withholds the
   // data as well, so this only decides what to render.
@@ -274,73 +285,118 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // Each filter once: desktop shows the row below, phones and tablets a bar + sheet.
+  const statusPills = canViewStatus
+    ? ORDER_STATUS_TABS.map((t) => (
+        <Pill
+          key={t.key}
+          active={status === t.key}
+          label={t.label}
+          count={counts ? counts[t.key] : undefined}
+          onClick={() => {
+            setStatus(t.key);
+            setPage(1);
+          }}
+        />
+      ))
+    : null;
+  const brandSelect =
+    (filters.brands ?? []).length > 1 ? (
+      <FilterSelect
+        value={brandId}
+        onChange={(v) => {
+          setBrandId(v);
+          setPage(1);
+        }}
+        allLabel="All brands"
+        options={filters.brands ?? []}
+      />
+    ) : null;
+  const branchSelect =
+    (filters.branches ?? []).length > 1 ? (
+      <FilterSelect
+        value={branchId}
+        onChange={(v) => {
+          setBranchId(v);
+          setPage(1);
+        }}
+        allLabel="All branches"
+        options={filters.branches ?? []}
+      />
+    ) : null;
+  const riderSelect =
+    (filters.riders ?? []).length > 1 ? (
+      <FilterSelect
+        value={riderId}
+        onChange={(v) => {
+          setRiderId(v);
+          setPage(1);
+        }}
+        allLabel="All riders"
+        options={filters.riders ?? []}
+      />
+    ) : null;
+  const dateRange = (stacked = false) => (
+    <DateRangeFilter
+      from={dateFrom}
+      to={dateTo}
+      onFrom={(v) => {
+        setDateFrom(v);
+        setPage(1);
+      }}
+      onTo={(v) => {
+        setDateTo(v);
+        setPage(1);
+      }}
+      historyDays={filters.history_days ?? null}
+      stacked={stacked}
+    />
+  );
+  const nameOf = (list: SupervisorFilterOption[] | undefined, id: number | '') => (list ?? []).find((o) => o.id === id)?.name;
+  const windowLabel = filters.history_days != null ? `Last ${filters.history_days} days` : 'Last 30 days';
+  const deliveryChips: FilterChip[] = [
+    ...(canViewStatus && status !== 'all'
+      ? [{ key: 'status', label: ORDER_STATUS_TABS.find((t) => t.key === status)?.label ?? status, onRemove: () => { setStatus('all'); setPage(1); } }]
+      : []),
+    ...(brandId !== '' ? [{ key: 'brand', label: nameOf(filters.brands, brandId) ?? 'Brand', onRemove: () => { setBrandId(''); setPage(1); } }] : []),
+    ...(branchId !== '' ? [{ key: 'branch', label: nameOf(filters.branches, branchId) ?? 'Branch', onRemove: () => { setBranchId(''); setPage(1); } }] : []),
+    ...(riderId !== '' ? [{ key: 'rider', label: nameOf(filters.riders, riderId) ?? 'Rider', onRemove: () => { setRiderId(''); setPage(1); } }] : []),
+    dateFrom || dateTo
+      ? { key: 'date', label: rangeChipLabel(dateFrom, dateTo), onRemove: () => { setDateFrom(''); setDateTo(''); setPage(1); } }
+      : // The default window is context, not a filter you can drop.
+        { key: 'window', label: filters.history_days != null ? `${windowLabel} · role limit` : windowLabel },
+  ];
+  const deliveryFields: FilterField[] = [
+    ...(statusPills ? [{ key: 'status', label: 'Status', node: <div className="flex flex-wrap gap-2 [&>button]:min-h-[40px]">{statusPills}</div> }] : []),
+    { key: 'date', label: 'Order date', node: dateRange(true) },
+    ...(brandSelect ? [{ key: 'brand', label: 'Brand', node: brandSelect }] : []),
+    ...(branchSelect ? [{ key: 'branch', label: 'Branch', node: branchSelect }] : []),
+    ...(riderSelect ? [{ key: 'rider', label: 'Rider', node: riderSelect }] : []),
+  ];
+  const clearDeliveryFilters = () => {
+    setStatus('all');
+    setBrandId('');
+    setBranchId('');
+    setRiderId('');
+    setDateFrom('');
+    setDateTo('');
+    setPage(1);
+  };
+
   return (
     <Card className="dark:bg-slate-800 dark:border-slate-700">
+      <FilterBar chips={deliveryChips} fields={deliveryFields} onClearAll={clearDeliveryFilters} resultLabel={`Show ${total} ${total === 1 ? 'order' : 'orders'}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
         {/* Status filter pills are part of the status permission — without it
             the buckets would reveal exactly what the hidden column shows. */}
         <div className="flex flex-wrap gap-2">
-          {canViewStatus &&
-            ORDER_STATUS_TABS.map((t) => (
-              <Pill
-                key={t.key}
-                active={status === t.key}
-                label={t.label}
-                count={counts ? counts[t.key] : undefined}
-                onClick={() => {
-                  setStatus(t.key);
-                  setPage(1);
-                }}
-              />
-            ))}
+          {statusPills}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {(filters.brands ?? []).length > 1 ? (
-            <FilterSelect
-              value={brandId}
-              onChange={(v) => {
-                setBrandId(v);
-                setPage(1);
-              }}
-              allLabel="All brands"
-              options={filters.brands ?? []}
-            />
-          ) : null}
-          {(filters.branches ?? []).length > 1 ? (
-            <FilterSelect
-              value={branchId}
-              onChange={(v) => {
-                setBranchId(v);
-                setPage(1);
-              }}
-              allLabel="All branches"
-              options={filters.branches ?? []}
-            />
-          ) : null}
-          {(filters.riders ?? []).length > 1 ? (
-            <FilterSelect
-              value={riderId}
-              onChange={(v) => {
-                setRiderId(v);
-                setPage(1);
-              }}
-              allLabel="All riders"
-              options={filters.riders ?? []}
-            />
-          ) : null}
-          <DateRangeFilter
-            from={dateFrom}
-            to={dateTo}
-            onFrom={(v) => {
-              setDateFrom(v);
-              setPage(1);
-            }}
-            onTo={(v) => {
-              setDateTo(v);
-              setPage(1);
-            }}
-            historyDays={filters.history_days ?? null}
-          />
+          {brandSelect}
+          {branchSelect}
+          {riderSelect}
+          {dateRange()}
           <span className="text-xs text-gray-500 dark:text-slate-400">
             {dateFrom || dateTo
               ? 'by order date'
@@ -358,6 +414,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
           </span>
         </div>
       </div>
+      </FilterBar>
 
       {/* Average of the trips matching the filters above (not the status
           tab), so picking a rider shows that rider's average. */}
@@ -389,7 +446,63 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
           No delivery orders in this view.
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        isPhone ? (
+          <ul className="space-y-2.5" data-testid="supervisor-order-cards">
+            {orders.map((o) => (
+              <li key={o.id} className="rounded-xl border border-gray-200 bg-white p-3.5 dark:border-slate-700 dark:bg-slate-800">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[14px] font-semibold text-gray-800 dark:text-slate-100">{o.order_id ?? `#${o.order_number}`}</div>
+                    {o.order_id ? <div className="text-xs text-gray-400 dark:text-slate-500">#{o.order_number}</div> : null}
+                    <div className="mt-0.5 text-xs text-gray-500 dark:text-slate-400">Placed {fmtDateTime(o.placed_at)}</div>
+                  </div>
+                  <div className="flex-none text-right">
+                    <div className="text-[14px] font-semibold tabular-nums text-gray-800 dark:text-slate-100">{fmtMoney(o.total_amount)}</div>
+                    <div className="text-xs text-gray-500 dark:text-slate-400">{o.delivery_status ?? '—'}</div>
+                  </div>
+                </div>
+                {canViewStatus && (
+                  <div className="mt-2.5">
+                    {canUpdateStatus ? (
+                      <ResponsiveSelect
+                        value={o.status ?? ''}
+                        disabled={updateStatus.isPending}
+                        onChange={(e) => updateStatus.mutate({ id: o.id, status: e.target.value })}
+                        aria-label={`Update status for order ${o.order_id ?? o.order_number}`}
+                        className="min-h-[44px] w-full rounded-lg border border-gray-300 bg-white px-3 text-[14px] text-gray-800 focus:ring-2 focus:ring-red-500 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+                      >
+                        {ORDER_STATUS_OPTIONS.map((s) => (
+                          <option key={s.value} value={s.value}>
+                            {s.label}
+                          </option>
+                        ))}
+                      </ResponsiveSelect>
+                    ) : (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${orderStatusClasses(o.status ?? '')}`}>
+                        {o.status ?? '—'}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] text-gray-800 dark:text-slate-200">
+                  <div><dt className={cardLabel}>Rider</dt><dd>{o.rider_name ?? '—'}</dd></div>
+                  <div><dt className={cardLabel}>Trip time</dt><dd className="font-medium">{formatTripDuration(o.trip_duration_seconds)}</dd></div>
+                  <div><dt className={cardLabel}>Picked up</dt><dd>{fmtDateTime(o.picked_up_at)}</dd></div>
+                  <div><dt className={cardLabel}>Delivered</dt><dd>{fmtDateTime(o.delivered_at)}</dd></div>
+                  <div><dt className={cardLabel}>Brand · Branch</dt><dd>{o.brand_name ?? '—'} · {o.branch_name ?? '—'}</dd></div>
+                  <div>
+                    <dt className={cardLabel}>Customer</dt>
+                    <dd>
+                      {o.customer_name ?? '—'}
+                      {o.customer_phone ? <span className="block text-xs text-gray-400 dark:text-slate-500">{o.customer_phone}</span> : null}
+                    </dd>
+                  </div>
+                </dl>
+              </li>
+            ))}
+          </ul>
+        ) : (
+        <TableScroll>
           <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
             <thead>
               <tr>
@@ -422,7 +535,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
                   {canViewStatus && (
                     <td className={tdClass}>
                       {canUpdateStatus ? (
-                        <select
+                        <ResponsiveSelect
                           value={o.status ?? ''}
                           disabled={updateStatus.isPending}
                           onChange={(e) =>
@@ -436,7 +549,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
                               {s.label}
                             </option>
                           ))}
-                        </select>
+                        </ResponsiveSelect>
                       ) : (
                         <span
                           className={`px-2 py-0.5 rounded-full text-xs font-medium ${orderStatusClasses(o.status ?? '')}`}
@@ -469,7 +582,8 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
               ))}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
+        )
       )}
 
       {total > PAGE_SIZE ? (
@@ -505,6 +619,7 @@ const DeliveryOrdersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({
 /* ── Riders tab ──────────────────────────────────────────────────────────── */
 
 const RidersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({ filters }) => {
+  const { isPhone } = useViewport();
   const [status, setStatus] = useState<'all' | SupervisorRiderStatus>('all');
   const [brandId, setBrandId] = useState<number | ''>('');
   const [riderId, setRiderId] = useState<number | ''>('');
@@ -536,37 +651,64 @@ const RidersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({ filters }) 
     [riders, status]
   );
 
+  // Each filter once: desktop shows the row below, phones and tablets a bar + sheet.
+  const riderStatusPills = RIDER_STATUS_TABS.map((t) => (
+    <Pill
+      key={t.key}
+      active={status === t.key}
+      label={t.label}
+      count={counts[t.key]}
+      onClick={() => setStatus(t.key)}
+    />
+  ));
+  const brandSelect =
+    (filters.brands ?? []).length > 1 ? (
+      <FilterSelect
+        value={brandId}
+        onChange={setBrandId}
+        allLabel="All brands"
+        options={filters.brands ?? []}
+      />
+    ) : null;
+  const riderSelect =
+    (filters.riders ?? []).length > 1 ? (
+      <FilterSelect
+        value={riderId}
+        onChange={setRiderId}
+        allLabel="All riders"
+        options={filters.riders ?? []}
+      />
+    ) : null;
+  const nameOf = (list: SupervisorFilterOption[] | undefined, id: number | '') => (list ?? []).find((o) => o.id === id)?.name;
+  const riderChips: FilterChip[] = [
+    ...(status !== 'all'
+      ? [{ key: 'status', label: RIDER_STATUS_TABS.find((t) => t.key === status)?.label ?? status, onRemove: () => setStatus('all') }]
+      : []),
+    ...(brandId !== '' ? [{ key: 'brand', label: nameOf(filters.brands, brandId) ?? 'Brand', onRemove: () => setBrandId('') }] : []),
+    ...(riderId !== '' ? [{ key: 'rider', label: nameOf(filters.riders, riderId) ?? 'Rider', onRemove: () => setRiderId('') }] : []),
+    { key: 'live', label: 'Live · every 30s' },
+  ];
+  const riderFields: FilterField[] = [
+    { key: 'status', label: 'Status', node: <div className="flex flex-wrap gap-2 [&>button]:min-h-[40px]">{riderStatusPills}</div> },
+    ...(brandSelect ? [{ key: 'brand', label: 'Brand', node: brandSelect }] : []),
+    ...(riderSelect ? [{ key: 'rider', label: 'Rider', node: riderSelect }] : []),
+  ];
+  const clearRiderFilters = () => {
+    setStatus('all');
+    setBrandId('');
+    setRiderId('');
+  };
+
   return (
     <Card className="dark:bg-slate-800 dark:border-slate-700">
+      <FilterBar chips={riderChips} fields={riderFields} onClearAll={clearRiderFilters} resultLabel={`Show ${visible.length} ${visible.length === 1 ? 'rider' : 'riders'}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
         <div className="flex flex-wrap gap-2">
-          {RIDER_STATUS_TABS.map((t) => (
-            <Pill
-              key={t.key}
-              active={status === t.key}
-              label={t.label}
-              count={counts[t.key]}
-              onClick={() => setStatus(t.key)}
-            />
-          ))}
+          {riderStatusPills}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {(filters.brands ?? []).length > 1 ? (
-            <FilterSelect
-              value={brandId}
-              onChange={setBrandId}
-              allLabel="All brands"
-              options={filters.brands ?? []}
-            />
-          ) : null}
-          {(filters.riders ?? []).length > 1 ? (
-            <FilterSelect
-              value={riderId}
-              onChange={setRiderId}
-              allLabel="All riders"
-              options={filters.riders ?? []}
-            />
-          ) : null}
+          {brandSelect}
+          {riderSelect}
           {/* No date filter here on purpose: this is live attendance state,
               not order history — dates would read as a period report. */}
           <span className="text-xs text-gray-500 dark:text-slate-400">
@@ -574,6 +716,7 @@ const RidersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({ filters }) 
           </span>
         </div>
       </div>
+      </FilterBar>
 
       {isLoading ? (
         <div className="py-12 flex justify-center">
@@ -588,7 +731,38 @@ const RidersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({ filters }) 
           No riders in this view.
         </p>
       ) : (
-        <div className="overflow-x-auto">
+        isPhone ? (
+          <ul className="space-y-2.5" data-testid="supervisor-rider-cards">
+            {visible.map((r) => {
+              const meta = RIDER_STATUS_META[r.status];
+              return (
+                <li key={r.rider_user_id} className="rounded-xl border border-gray-200 bg-white p-3.5 dark:border-slate-700 dark:bg-slate-800">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[14px] font-semibold text-gray-800 dark:text-slate-100">{r.name}</div>
+                      <div className="mt-0.5 text-xs text-gray-500 dark:text-slate-400">
+                        {r.phone ?? '—'}
+                        {r.email ? ` · ${r.email}` : ''}
+                      </div>
+                    </div>
+                    <span className={`flex-none px-2 py-0.5 rounded-full text-xs font-medium ${meta.classes}`}>{meta.label}</span>
+                  </div>
+                  {r.status === 'on_break' && r.pause_reason ? (
+                    <div className="mt-1 text-xs text-gray-400 dark:text-slate-500">{r.pause_reason}</div>
+                  ) : null}
+                  <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-[13px] text-gray-800 dark:text-slate-200">
+                    <div><dt className={cardLabel}>Brand</dt><dd>{r.brands.length ? r.brands.join(', ') : '—'}</dd></div>
+                    <div><dt className={cardLabel}>Branch</dt><dd>{r.branch_name ?? '—'}</dd></div>
+                    <div><dt className={cardLabel}>Base salary</dt><dd>{fmtMoney(r.base_salary)}</dd></div>
+                    <div><dt className={cardLabel}>Last check-in</dt><dd>{fmtDateTime(r.last_check_in_at)}</dd></div>
+                    <div><dt className={cardLabel}>Last check-out</dt><dd>{fmtDateTime(r.last_check_out_at)}</dd></div>
+                  </dl>
+                </li>
+              );
+            })}
+          </ul>
+        ) : (
+        <TableScroll>
           <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
             <thead>
               <tr>
@@ -635,7 +809,8 @@ const RidersTab: React.FC<{ filters: SupervisorFilterOptions }> = ({ filters }) 
               })}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
+        )
       )}
     </Card>
   );
@@ -661,7 +836,7 @@ const RiderSupervisor: React.FC = () => {
   const filterOptions = filters ?? EMPTY_FILTERS;
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 space-y-6">
       <RiderHrmHeader
         title="Rider Supervisor"
         subtitle="Read-only oversight — recent delivery orders and the live rider roster with attendance and base salary. Salary edits and user accounts are managed on the admin side."

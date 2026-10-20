@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -14,6 +15,7 @@ import { formatCurrency } from '../../utils/currency';
 import Button from '../../components/Button';
 import ClearFiltersButton from '../../components/ClearFiltersButton';
 import SearchableSelect from '../../components/SearchableSelect';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
 import Card from '../../components/Card';
 import Modal from '../../components/Modal';
 import PaginationBar, { DEFAULT_PAGE_SIZE } from '../../components/PaginationBar';
@@ -22,7 +24,7 @@ import { confirmDialog } from '../../utils/sweetAlert';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
-import { labelWithStatus } from '../../utils/entityStatus';
+import { isEntityInactive, labelWithStatus } from '../../utils/entityStatus';
 
 const MenuAddons: React.FC = () => {
   const { user } = useAuth();
@@ -166,8 +168,97 @@ const MenuAddons: React.FC = () => {
     return <Loader fullScreen text={isSubmitting ? 'Saving...' : 'Loading addons...'} />;
   }
 
+  // Each filter control once: desktop shows the card below, phones and tablets the
+  // compact bar + sheet (only one renders).
+  const brandFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filters.brand_id}
+      onChange={(v) => setFilters((f) => ({ ...f, brand_id: v }))}
+      options={[
+        { value: '', label: 'Select brand' },
+        ...(brands ?? []).map((b) => ({
+          value: String(b.id),
+          label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
+          inactive: isEntityInactive(b),
+        })),
+      ]}
+      placeholder="Select brand"
+      minWidth="min-w-[180px]"
+    />
+  );
+  const statusFilter = (label?: string) => (
+    <SearchableSelect
+      label={label}
+      value={filters.status}
+      onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
+      options={[
+        { value: '', label: 'All' },
+        { value: 'active', label: 'Active' },
+        { value: 'inactive', label: 'Inactive' },
+      ]}
+      placeholder="All"
+      minWidth="min-w-[120px]"
+    />
+  );
+  const searchFilter = (
+    <div>
+      <label className="block text-xs font-medium text-gray-500 mb-1 max-lg:hidden">Search by name</label>
+      <div className="relative">
+        <input
+          type="text"
+          aria-label="Search add-ons"
+          value={filters.search}
+          onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
+          onFocus={() => addonSearchTypeahead.setOpen(true)}
+          onKeyDown={(e) => {
+            const suggestions = addonSearchTypeahead.suggestions;
+            if (!suggestions.length) return;
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              addonSearchTypeahead.setActiveIndex(Math.min(addonSearchTypeahead.activeIndex + 1, suggestions.length - 1));
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              addonSearchTypeahead.setActiveIndex(Math.max(addonSearchTypeahead.activeIndex - 1, 0));
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              const opt = suggestions[addonSearchTypeahead.activeIndex];
+              if (opt?.label) setFilters((f) => ({ ...f, search: opt.label }));
+              addonSearchTypeahead.setOpen(false);
+            } else if (e.key === 'Escape') {
+              addonSearchTypeahead.setOpen(false);
+            }
+          }}
+          placeholder="Addon name..."
+          className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48 max-lg:min-h-[44px] max-lg:w-full max-lg:min-w-0"
+        />
+        <TypeaheadDropdown
+          open={addonSearchTypeahead.open && filters.search.trim().length >= 2}
+          suggestions={addonSearchTypeahead.suggestions}
+          activeIndex={addonSearchTypeahead.activeIndex}
+          onHoverIndex={addonSearchTypeahead.setActiveIndex}
+          onSelect={(opt) => {
+            setFilters((f) => ({ ...f, search: opt.label }));
+            addonSearchTypeahead.setOpen(false);
+          }}
+          onClose={() => addonSearchTypeahead.setOpen(false)}
+        />
+      </div>
+    </div>
+  );
+  const filterChips: FilterChip[] = [
+    ...(filters.brand_id
+      ? [{ key: 'brand', label: (brands ?? []).find((b: { id: number; name: string }) => String(b.id) === filters.brand_id)?.name ?? 'Brand', onRemove: () => setFilters((f) => ({ ...f, brand_id: '' })) }]
+      : []),
+    ...(filters.status ? [{ key: 'status', label: filters.status === 'active' ? 'Active' : 'Inactive', onRemove: () => setFilters((f) => ({ ...f, status: '' })) }] : []),
+  ];
+  const filterFields: FilterField[] = [
+    { key: 'brandFilter', label: 'Brand', node: brandFilter() },
+    { key: 'statusFilter', label: 'Status', node: statusFilter() },
+  ];
+
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold text-gray-800">Menu Addons</h1>
         {canCreate && <Button
@@ -181,84 +272,21 @@ const MenuAddons: React.FC = () => {
         </Button>}
       </div>
 
-      <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
-        <div className="flex flex-wrap gap-3 items-end">
-          <SearchableSelect
-            label="Brand"
-            value={filters.brand_id}
-            onChange={(v) => setFilters((f) => ({ ...f, brand_id: v }))}
-            options={[
-              { value: '', label: 'Select brand' },
-              ...(brands ?? []).map((b) => ({
-                value: String(b.id),
-                label: b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name,
-              })),
-            ]}
-            placeholder="Select brand"
-            minWidth="min-w-[180px]"
-          />
-          <SearchableSelect
-            label="Status"
-            value={filters.status}
-            onChange={(v) => setFilters((f) => ({ ...f, status: v }))}
-            options={[
-              { value: '', label: 'All' },
-              { value: 'active', label: 'Active' },
-              { value: 'inactive', label: 'Inactive' },
-            ]}
-            placeholder="All"
-            minWidth="min-w-[120px]"
-          />
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Search by name</label>
-            <div className="relative">
-              <input
-                type="text"
-                value={filters.search}
-                onChange={(e) => setFilters((f) => ({ ...f, search: e.target.value }))}
-                onFocus={() => addonSearchTypeahead.setOpen(true)}
-                onKeyDown={(e) => {
-                  const suggestions = addonSearchTypeahead.suggestions;
-                  if (!suggestions.length) return;
-                  if (e.key === 'ArrowDown') {
-                    e.preventDefault();
-                    addonSearchTypeahead.setActiveIndex(Math.min(addonSearchTypeahead.activeIndex + 1, suggestions.length - 1));
-                  } else if (e.key === 'ArrowUp') {
-                    e.preventDefault();
-                    addonSearchTypeahead.setActiveIndex(Math.max(addonSearchTypeahead.activeIndex - 1, 0));
-                  } else if (e.key === 'Enter') {
-                    e.preventDefault();
-                    const opt = suggestions[addonSearchTypeahead.activeIndex];
-                    if (opt?.label) setFilters((f) => ({ ...f, search: opt.label }));
-                    addonSearchTypeahead.setOpen(false);
-                  } else if (e.key === 'Escape') {
-                    addonSearchTypeahead.setOpen(false);
-                  }
-                }}
-                placeholder="Addon name..."
-                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm w-48"
-              />
-              <TypeaheadDropdown
-                open={addonSearchTypeahead.open && filters.search.trim().length >= 2}
-                suggestions={addonSearchTypeahead.suggestions}
-                activeIndex={addonSearchTypeahead.activeIndex}
-                onHoverIndex={addonSearchTypeahead.setActiveIndex}
-                onSelect={(opt) => {
-                  setFilters((f) => ({ ...f, search: opt.label }));
-                  addonSearchTypeahead.setOpen(false);
-                }}
-                onClose={() => addonSearchTypeahead.setOpen(false)}
-              />
-            </div>
+      <FilterBar className="mb-4" primary={searchFilter} chips={filterChips} fields={filterFields} onClearAll={() => setFilters({ brand_id: '', status: '', search: '' })}>
+        <Card className="mb-4 p-4 dark:bg-slate-800 dark:border-slate-700">
+          <div className="flex flex-wrap gap-3 items-end">
+            {brandFilter('Brand')}
+            {statusFilter('Status')}
+            {searchFilter}
+            {isFetching && (
+              <span className="text-xs text-gray-500 dark:text-slate-400 pb-1">
+                Updating…
+              </span>
+            )}
+            <ClearFiltersButton onClick={() => setFilters({ brand_id: '', status: '', search: '' })} />
           </div>
-          {isFetching && (
-            <span className="text-xs text-gray-500 dark:text-slate-400 pb-1">
-              Updating…
-            </span>
-          )}
-          <ClearFiltersButton onClick={() => setFilters({ brand_id: '', status: '', search: '' })} />
-        </div>
-      </Card>
+        </Card>
+      </FilterBar>
 
       <Modal
         isOpen={showForm}
@@ -272,7 +300,7 @@ const MenuAddons: React.FC = () => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Brand *</label>
-            <select
+            <ResponsiveSelect
               value={formData.brand_id}
               onChange={(e) => setFormData({ ...formData, brand_id: e.target.value })}
               required
@@ -281,10 +309,10 @@ const MenuAddons: React.FC = () => {
               <option value="">Select brand</option>
               {brands?.map((b) => (
                 <option key={b.id} value={b.id}>
-                  {b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name}
+                  {labelWithStatus(b.tenant_name ? `${b.name} (${b.tenant_name})` : b.name, b)}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Addon Name *</label>

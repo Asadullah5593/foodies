@@ -12,6 +12,7 @@ import { formatCurrency } from '../../../utils/currency';
 import RiderHrmHeader from './RiderHrmHeader';
 import { inputClass, useRiders } from './shared';
 import { useSensitivePageView } from '../../../hooks/useSensitivePageView';
+import TableScroll from '../../../components/TableScroll';
 
 /**
  * One-page base-salary CRUD: every rider in a table with their current salary,
@@ -142,7 +143,7 @@ const RiderProfilesTable: React.FC = () => {
   // overwrite a real salary the admin was never shown.
   if (ridersError || profilesError) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 space-y-6">
         <RiderHrmHeader
           title="Rider Profiles"
           subtitle="Each rider's base salary — use Edit to set or change it."
@@ -174,7 +175,7 @@ const RiderProfilesTable: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 space-y-6">
       <RiderHrmHeader
         title="Rider Profiles"
         subtitle="Each rider's base salary — use Edit to set or change it."
@@ -199,7 +200,7 @@ const RiderProfilesTable: React.FC = () => {
             {search ? 'No riders match your search.' : 'No riders yet — add rider users first.'}
           </p>
         ) : (
-          <div className="overflow-x-auto">
+          <TableScroll>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-700">
@@ -253,7 +254,7 @@ const RiderProfilesTable: React.FC = () => {
                 })}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
         )}
       </Card>
 

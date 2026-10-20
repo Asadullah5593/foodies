@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { MdOutlineLocationOn } from 'react-icons/md';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -7,6 +8,8 @@ import { riderService, RiderOrder } from '../../services/api/riderService';
 import Loader from '../../components/Loader';
 import Card from '../../components/Card';
 import Button from '../../components/Button';
+import Modal from '../../components/Modal';
+import { useViewport } from '../../hooks/useViewport';
 import { formatCurrency } from '../../utils/currency';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
 import { deliveryStatusLabel } from '../../lib/deliveryStatus';
@@ -29,6 +32,8 @@ const RiderOrderDetail: React.FC = () => {
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [failedReason, setFailedReason] = useState('');
   const [navigatingBack, setNavigatingBack] = useState(false);
+  // Phones pin the update button to the bottom of the screen and pick the next status in a sheet.
+  const { isPhone } = useViewport();
 
   const orderId = id ? parseInt(id, 10) : 0;
 
@@ -89,6 +94,48 @@ const RiderOrderDetail: React.FC = () => {
     o.delivery_status &&
     o.delivery_status !== 'delivered' &&
     o.delivery_status !== 'delivery_failed';
+
+  const statusOptions = getStatusOptions(o.delivery_status);
+  const closeStatusModal = () => {
+    setStatusModal(false);
+    setSelectedStatus('');
+    setFailedReason('');
+  };
+  const reasonField =
+    selectedStatus === 'delivery_failed' && (
+      <div>
+        <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mt-2">
+          Reason (required)
+        </label>
+        <textarea
+          value={failedReason}
+          onChange={(e) => setFailedReason(e.target.value)}
+          placeholder="e.g. Customer not available, wrong address"
+          rows={3}
+          className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+    );
+  const statusActions = (
+    <div className="flex gap-2 mt-6">
+      <Button variant="outline" onClick={closeStatusModal} className="flex-1">
+        Cancel
+      </Button>
+      <Button
+        variant="primary"
+        onClick={handleUpdateStatus}
+        disabled={
+          !selectedStatus ||
+          (selectedStatus === 'delivery_failed' && !failedReason.trim()) ||
+          updateStatusMutation.isPending
+        }
+        isLoading={updateStatusMutation.isPending}
+        className="flex-1"
+      >
+        Update
+      </Button>
+    </div>
+  );
 
   return (
     <div className="w-full px-4 sm:px-6 lg:px-8 py-6 max-w-2xl mx-auto">
@@ -162,7 +209,7 @@ const RiderOrderDetail: React.FC = () => {
                   <span className="text-gray-500 dark:text-slate-400">Phone:</span>{' '}
                   <a
                     href={`tel:${o.customer_phone}`}
-                    className="text-blue-600 dark:text-blue-400 hover:underline"
+                    className="text-blue-600 dark:text-blue-400 hover:underline max-lg:relative max-lg:before:absolute max-lg:before:-inset-x-2 max-lg:before:-inset-y-3.5 max-lg:before:content-['']"
                   >
                     {o.customer_phone}
                   </a>
@@ -210,7 +257,7 @@ const RiderOrderDetail: React.FC = () => {
             </section>
           )}
 
-          {canUpdateStatus && (
+          {canUpdateStatus && !isPhone && (
             <div className="pt-2">
               <Button
                 variant="primary"
@@ -225,7 +272,7 @@ const RiderOrderDetail: React.FC = () => {
         </div>
       </Card>
 
-      {statusModal && (
+      {statusModal && !isPhone && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50">
           <Card className="w-full max-w-md p-6 dark:bg-slate-800 dark:border-slate-700">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-slate-100 mb-4">
@@ -235,61 +282,68 @@ const RiderOrderDetail: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 dark:text-slate-300">
                 New status
               </label>
-              <select
+              <ResponsiveSelect
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value)}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500"
               >
                 <option value="">Select...</option>
-                {getStatusOptions(o.delivery_status).map((opt) => (
+                {statusOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>
                 ))}
-              </select>
-              {selectedStatus === 'delivery_failed' && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-slate-300 mt-2">
-                    Reason (required)
-                  </label>
-                  <textarea
-                    value={failedReason}
-                    onChange={(e) => setFailedReason(e.target.value)}
-                    placeholder="e.g. Customer not available, wrong address"
-                    rows={3}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-slate-600 dark:bg-slate-700 dark:text-slate-100 rounded-lg focus:ring-2 focus:ring-blue-500 mt-1"
-                  />
-                </div>
-              )}
+              </ResponsiveSelect>
+              {reasonField}
             </div>
-            <div className="flex gap-2 mt-6">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setStatusModal(false);
-                  setSelectedStatus('');
-                  setFailedReason('');
-                }}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                onClick={handleUpdateStatus}
-                disabled={
-                  !selectedStatus ||
-                  (selectedStatus === 'delivery_failed' && !failedReason.trim()) ||
-                  updateStatusMutation.isPending
-                }
-                isLoading={updateStatusMutation.isPending}
-                className="flex-1"
-              >
-                Update
-              </Button>
-            </div>
+            {statusActions}
           </Card>
         </div>
+      )}
+
+      {/* Phones: the update button is pinned to the bottom edge (clear of the home bar) and the
+          next status is chosen in a bottom sheet, one large option per status. */}
+      {isPhone && canUpdateStatus && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(15,23,42,.08)] backdrop-blur dark:border-slate-700 dark:bg-slate-800/95">
+          <Button variant="primary" onClick={() => setStatusModal(true)} className="w-full" size="large">
+            Update delivery status
+          </Button>
+        </div>
+      )}
+      {isPhone && (
+        <Modal isOpen={statusModal} onClose={closeStatusModal} title="Update status">
+          <div role="radiogroup" aria-label="New status" className="space-y-2.5">
+            {statusOptions.map((opt) => {
+              const selected = selectedStatus === opt.value;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => setSelectedStatus(opt.value)}
+                  className={`flex min-h-[56px] w-full items-center gap-3 rounded-xl border-2 px-4 text-left text-base font-semibold transition-colors ${
+                    selected
+                      ? 'border-red-500 bg-red-50 text-red-700 dark:border-red-400 dark:bg-red-950/30 dark:text-red-200'
+                      : 'border-gray-200 bg-white text-gray-800 dark:border-slate-600 dark:bg-slate-700/50 dark:text-slate-100'
+                  }`}
+                >
+                  <span
+                    aria-hidden
+                    className={`flex h-5 w-5 flex-none items-center justify-center rounded-full border-2 ${
+                      selected ? 'border-red-500 dark:border-red-400' : 'border-gray-300 dark:border-slate-500'
+                    }`}
+                  >
+                    {selected && <span className="h-2.5 w-2.5 rounded-full bg-red-500 dark:bg-red-400" />}
+                  </span>
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+          {reasonField && <div className="mt-3">{reasonField}</div>}
+          {statusActions}
+        </Modal>
       )}
     </div>
   );

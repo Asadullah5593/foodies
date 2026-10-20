@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useViewport } from '../hooks/useViewport';
+import { ActionsSheet, MoreActionsButton } from './ActionsSheet';
 
 export type RowAction = {
   label: string;
@@ -11,7 +13,7 @@ export type RowAction = {
 /**
  * One "Actions" button for a table row, opening a small menu of what can be
  * done with that record. Keeps a row to a single line however many actions it
- * has.
+ * has. Below lg it is the ⋯ button and bottom sheet every list card uses.
  *
  * The menu is rendered into <body> with fixed positioning: a table that
  * scrolls sideways clips anything absolutely positioned inside it. Clicks are
@@ -29,6 +31,7 @@ const RowActionsMenu: React.FC<{ actions: RowAction[]; label?: string; ariaLabel
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const close = useCallback(() => setOpen(false), []);
+  const { isDesktop } = useViewport();
 
   // Place the menu under the button, right edges aligned; flip above when
   // there is no room below.
@@ -46,7 +49,7 @@ const RowActionsMenu: React.FC<{ actions: RowAction[]; label?: string; ariaLabel
   }, [open, actions.length]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !isDesktop) return;
     const onDown = (e: MouseEvent) => {
       const t = e.target as Node;
       if (menuRef.current?.contains(t) || buttonRef.current?.contains(t)) return;
@@ -69,9 +72,33 @@ const RowActionsMenu: React.FC<{ actions: RowAction[]; label?: string; ariaLabel
       window.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
     };
-  }, [open, close]);
+  }, [open, close, isDesktop]);
 
   if (actions.length === 0) return null;
+
+  if (!isDesktop) {
+    const title = ariaLabel?.replace(/^Actions for /, '') ?? label;
+    return (
+      <>
+        <MoreActionsButton title={title} ariaLabel={ariaLabel ?? label} onClick={() => setOpen(true)} expanded={open} />
+        <ActionsSheet open={open} onClose={close} title={title}>
+          {actions.map((a) => (
+            <button
+              key={a.label}
+              type="button"
+              className={a.danger ? 'text-red-700' : ''}
+              onClick={(e) => {
+                e.stopPropagation();
+                a.onSelect();
+              }}
+            >
+              {a.label}
+            </button>
+          ))}
+        </ActionsSheet>
+      </>
+    );
+  }
 
   return (
     <>
@@ -85,7 +112,7 @@ const RowActionsMenu: React.FC<{ actions: RowAction[]; label?: string; ariaLabel
           e.stopPropagation();
           setOpen((v) => !v);
         }}
-        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-2 text-[12.5px] font-semibold text-[#374151] hover:bg-[#F3F4F6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2A2A]/40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-[9px] border-[1.5px] border-[#E2E5EA] bg-white px-3 py-2 text-[12.5px] font-semibold max-lg:min-h-[40px] text-[#374151] hover:bg-[#F3F4F6] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#DC2A2A]/40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
       >
         {label}
         <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

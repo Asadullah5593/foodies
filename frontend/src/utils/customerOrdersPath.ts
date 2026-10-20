@@ -7,14 +7,15 @@
  * "12 completed at Fireaway · Pine Avenue" opens exactly those 12.
  */
 export function customerOrdersPath(
-  c: { id: number; name?: string | null; phone: string },
+  c: { id: number; name?: string | null; phone?: string | null },
   narrow: { brandId?: number | null; branchId?: number | null; status?: string } = {},
 ): string {
   const name = c.name?.trim();
-  const sp = new URLSearchParams({
-    customer_id: String(c.id),
-    customer_label: name ? `${name} (${c.phone})` : c.phone,
-  });
+  const phone = c.phone?.trim();
+  // An order row may know the customer by name only; the banner then shows just that.
+  const label = name && phone ? `${name} (${phone})` : name || phone || '';
+  const sp = new URLSearchParams({ customer_id: String(c.id) });
+  if (label) sp.set('customer_label', label);
   if (narrow.brandId != null) sp.set('brand_id', String(narrow.brandId));
   if (narrow.branchId != null) sp.set('branch_id', String(narrow.branchId));
   if (narrow.status) sp.set('status', narrow.status);

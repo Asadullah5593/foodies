@@ -160,8 +160,8 @@ const InvoiceTemplates: React.FC = () => {
   const list = (templates as TemplateRow[]) ?? [];
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
+      <div className="flex justify-between items-center mb-6 max-sm:flex-wrap max-sm:gap-3">
         <div>
           <h1 className="text-3xl font-bold text-gray-800 dark:text-slate-100">Invoice Templates</h1>
           <p className="text-sm text-gray-500 dark:text-slate-400">

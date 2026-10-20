@@ -149,15 +149,15 @@ const RiderDashboard: React.FC = () => {
                             {formatCurrency(order.total_amount)}
                           </span>
                         </Link>
-                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-shrink-0">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 flex-shrink-0 max-sm:w-full max-sm:flex-shrink">
                           <span className="text-xs text-gray-500 dark:text-slate-400">
                             Order: <span className="font-medium text-gray-700 dark:text-slate-200">{ORDER_STATUS_LABELS[order.status ?? ''] ?? order.status ?? 'Placed'}</span>
                           </span>
                           <span className="text-xs text-gray-500 dark:text-slate-400">
                             Delivery: <span className="font-medium text-gray-700 dark:text-slate-200">{formatDeliveryStatus(order.delivery_status, { fallback: 'Assigned' })}</span>
                           </span>
-                          <Link to={`/rider/orders/${order.id}`}>
-                            <Button size="small" variant="view">View & update</Button>
+                          <Link to={`/rider/orders/${order.id}`} className="max-sm:block max-sm:w-full">
+                            <Button size="small" variant="view" className="max-sm:w-full">View & update</Button>
                           </Link>
                         </div>
                       </div>

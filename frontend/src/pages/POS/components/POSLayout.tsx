@@ -18,8 +18,9 @@ export type POSLayoutProps = {
 
 /**
  * Responsive POS shell.
- * Desktop (lg+): 2-pane — center (menu), right (checkout).
- * Touch: top bar + menu; checkout in bottom sheet, opened via Cart FAB.
+ * Desktop (lg+) and tablets (sm–lg): 2-pane — center (menu), right (checkout);
+ * tablets get a narrower checkout pane so the menu keeps two columns.
+ * Phones (<sm): top bar + menu; checkout in bottom sheet, opened via Cart FAB.
  */
 const POSLayout: React.FC<POSLayoutProps> = ({
   centerSection,
@@ -30,10 +31,13 @@ const POSLayout: React.FC<POSLayoutProps> = ({
   onDrawerClose,
 }) => {
   // App has a sticky navbar (h-16). Keep POS within remaining viewport to avoid double scrollbars.
+  // Below lg the navbar is 56px (h-14) under a 4px route-progress bar, and the shell's <main> pads
+  // 16px: the negative margin takes the padding back and the height is the viewport minus those
+  // 60px, so the page itself never scrolls — only the menu does.
   return (
-    <div className="flex h-[calc(100vh-4rem)] bg-foodies-surfaceMuted dark:bg-slate-900">
-      {/* Desktop: 3-pane (lg and up) */}
-      <div className="hidden lg:flex flex-1 min-w-0 w-full h-full">
+    <div className="flex h-[calc(100vh-4rem)] bg-foodies-surfaceMuted dark:bg-slate-900 max-lg:-m-4 max-lg:h-[calc(100dvh-3.75rem)]">
+      {/* Desktop and tablets: 2-pane (sm and up) */}
+      <div className="hidden sm:flex flex-1 min-w-0 w-full h-full">
         {/* Center — menu */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-foodies-surface dark:bg-slate-800 shadow-sm border-r border-transparent dark:border-slate-700">
           {centerSection}
@@ -42,13 +46,13 @@ const POSLayout: React.FC<POSLayoutProps> = ({
         {/* Sized by breakpoint rather than a flat 30rem: a hard 480px floor left
             the menu column unusably narrow between 1024px and 1280px, where the
             sidebar is already taking its share. */}
-        <div className="flex-shrink-0 flex flex-col w-[20rem] xl:w-[24rem] 2xl:w-[30rem] border-l border-foodies-border dark:border-slate-700 bg-foodies-surfaceMuted dark:bg-slate-900 overflow-hidden">
+        <div className="flex-shrink-0 flex flex-col w-[20rem] xl:w-[24rem] 2xl:w-[30rem] sm:max-lg:w-[18rem] border-l border-foodies-border dark:border-slate-700 bg-foodies-surfaceMuted dark:bg-slate-900 overflow-hidden">
           {checkoutSection}
         </div>
       </div>
 
-      {/* Touch: single column + bottom sheet */}
-      <div className="flex flex-col w-full h-full lg:hidden">
+      {/* Phones: single column + bottom sheet */}
+      <div className="flex flex-col w-full h-full sm:hidden">
         {/* Top + menu */}
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-foodies-surface dark:bg-slate-800">
           {centerSection}
@@ -57,7 +61,7 @@ const POSLayout: React.FC<POSLayoutProps> = ({
         <button
           type="button"
           onClick={onDrawerOpen}
-          className="fixed bottom-6 right-6 z-20 flex items-center justify-center w-14 h-14 rounded-full text-white shadow-lg !bg-[linear-gradient(135deg,#000000_0%,#B91C1C_50%,#000000_100%)] hover:brightness-110 active:brightness-95 focus:outline-none focus:ring-2 focus:ring-foodies-primary focus:ring-offset-2"
+          className="fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] right-6 z-20 flex items-center justify-center w-14 h-14 rounded-full text-white shadow-lg !bg-[linear-gradient(135deg,#000000_0%,#B91C1C_50%,#000000_100%)] hover:brightness-110 active:brightness-95 focus:outline-none focus:ring-2 focus:ring-foodies-primary focus:ring-offset-2"
           aria-label="Open cart"
         >
           <span className="relative">
@@ -78,7 +82,7 @@ const POSLayout: React.FC<POSLayoutProps> = ({
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.2 }}
-                className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+                className="fixed inset-0 z-30 bg-black/40 sm:hidden"
                 onClick={onDrawerClose}
                 aria-hidden
               />
@@ -87,7 +91,7 @@ const POSLayout: React.FC<POSLayoutProps> = ({
                 animate={{ y: 0 }}
                 exit={{ y: '100%' }}
                 transition={{ type: 'tween', duration: 0.25 }}
-                className="fixed inset-x-0 bottom-0 top-12 z-40 flex flex-col rounded-t-2xl bg-foodies-surfaceMuted dark:bg-slate-900 border-t border-foodies-border dark:border-slate-700 shadow-2xl lg:hidden overflow-hidden"
+                className="fixed inset-x-0 bottom-0 top-12 z-40 flex flex-col rounded-t-2xl bg-foodies-surfaceMuted dark:bg-slate-900 border-t border-foodies-border dark:border-slate-700 shadow-2xl sm:hidden overflow-hidden"
                 role="dialog"
                 aria-label="Cart and checkout"
               >
@@ -95,13 +99,13 @@ const POSLayout: React.FC<POSLayoutProps> = ({
                   <button
                     type="button"
                     onClick={onDrawerClose}
-                    className="p-2 rounded-lg text-foodies-textSecondary dark:text-slate-400 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700 hover:text-foodies-textPrimary dark:hover:text-slate-100"
+                    className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center p-2 rounded-lg text-foodies-textSecondary dark:text-slate-400 hover:bg-foodies-surfaceMuted dark:hover:bg-slate-700 hover:text-foodies-textPrimary dark:hover:text-slate-100"
                     aria-label="Close"
                   >
                     <MdClose />
                   </button>
                 </div>
-                <div className="flex-1 min-h-0 overflow-y-auto">
+                <div className="flex-1 min-h-0 flex flex-col">
                   {checkoutSection}
                 </div>
               </motion.div>

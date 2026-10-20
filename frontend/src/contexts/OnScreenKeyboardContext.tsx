@@ -10,6 +10,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import Keyboard from 'react-simple-keyboard';
 import { MdKeyboardHide } from 'react-icons/md';
 import 'react-simple-keyboard/build/css/index.css';
+import { useViewport } from '../hooks/useViewport';
 
 const KEYBOARD_KEY = 'foodies-onscreen-keyboard';
 
@@ -330,11 +331,16 @@ export const OnScreenKeyboardProvider: React.FC<{ children: React.ReactNode }> =
 
   const setEnabled = (v: boolean) => setEnabledState(v);
   const toggle = () => setEnabledState((p) => !p);
+  // Below lg (phones, tablets) the device has its own keyboard; ours would set
+  // inputmode="none" on fields and dock over half the screen. It is simply off there.
+  // The stored choice is left alone, so a till that uses it keeps it.
+  const { isDesktop } = useViewport();
+  const active = enabled && isDesktop;
 
   return (
-    <OnScreenKeyboardContext.Provider value={{ enabled, setEnabled, toggle }}>
+    <OnScreenKeyboardContext.Provider value={{ enabled: active, setEnabled, toggle }}>
       {children}
-      {enabled && <DockedKeyboard />}
+      {active && <DockedKeyboard />}
     </OnScreenKeyboardContext.Provider>
   );
 };

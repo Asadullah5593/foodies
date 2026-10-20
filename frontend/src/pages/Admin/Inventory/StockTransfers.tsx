@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import {
@@ -23,7 +24,7 @@ import { useHasPermission } from '../../../hooks/useHasPermission';
 import { isEntityInactive, labelWithStatus } from '../../../utils/entityStatus';
 
 const card = 'bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm';
-const field = 'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400';
+const field = 'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 max-lg:min-h-[44px]';
 
 type TabKey = 'all' | 'requests' | 'dispatch' | 'receive' | 'completed';
 
@@ -229,10 +230,10 @@ const StockTransfers: React.FC = () => {
         </div>
         <div className="flex items-center gap-2">
           <a href="/docs/inventory" onClick={(e) => { e.preventDefault(); toast('Create a request → approve → dispatch → receive.'); }}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50">
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 max-lg:min-h-[40px]">
             <LuLightbulb className="w-4 h-4" /> Learn how it works
           </a>
-          {canRequest && <button onClick={() => { setNf({}); setNewOpen(true); }} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold">
+          {canRequest && <button onClick={() => { setNf({}); setNewOpen(true); }} className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold max-lg:min-h-[40px]">
             <LuPlus className="w-4 h-4" /> New transfer
           </button>}
         </div>
@@ -266,7 +267,7 @@ const StockTransfers: React.FC = () => {
         <div className="flex flex-wrap gap-1 px-4 pt-3 border-b border-slate-100 dark:border-slate-700">
           {([['all', 'All'], ['requests', 'Requests'], ['dispatch', 'Dispatch orders'], ['receive', 'Receive orders'], ['completed', 'Completed']] as [TabKey, string][]).map(([k, label]) => (
             <button key={k} onClick={() => { setTab(k); setPage(1); }}
-              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${tab === k ? 'border-red-600 text-red-600' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}>{label}</button>
+              className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px max-lg:min-h-[40px] ${tab === k ? 'border-red-600 text-red-600' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700'}`}>{label}</button>
           ))}
         </div>
 
@@ -276,14 +277,14 @@ const StockTransfers: React.FC = () => {
             <LuSearch className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input className={`${field} pl-9`} placeholder="Search by request/order, reference, branch…" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
           </div>
-          <select className={`${field} w-auto`} value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}>
+          <ResponsiveSelect className={`${field} w-auto`} value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}>
             <option value="">All transfer types</option>
             {['Branch → Branch', 'Branch → Brand', 'Brand → Branch', 'Brand → Brand'].map((t) => <option key={t} value={t}>{t}</option>)}
-          </select>
-          <select className={`${field} w-auto`} value={branchFilter} onChange={(e) => { setBranchFilter(e.target.value); setPage(1); }}>
+          </ResponsiveSelect>
+          <ResponsiveSelect className={`${field} w-auto`} value={branchFilter} onChange={(e) => { setBranchFilter(e.target.value); setPage(1); }}>
             <option value="">All branches</option>
             {(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>)}
-          </select>
+          </ResponsiveSelect>
           {(search || typeFilter || branchFilter) && (
             <button onClick={() => { setSearch(''); setTypeFilter(''); setBranchFilter(''); setPage(1); }} className="text-sm text-slate-500 hover:text-slate-700 px-2">Clear</button>
           )}
@@ -319,10 +320,10 @@ const StockTransfers: React.FC = () => {
                     <td className="py-3 px-4 text-slate-500 dark:text-slate-400">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '—'}</td>
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-end gap-2">
-                        {canApprove && r.statusLabel === 'Pending dispatch' && <button onClick={() => openDetail(r, 'dispatch')} className="rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 text-xs font-semibold">Dispatch</button>}
-                        {canRequest && r.statusLabel === 'Pending receipt' && <button onClick={() => openDetail(r, 'receive')} className="rounded-lg bg-green-50 text-green-700 hover:bg-green-100 px-3 py-1.5 text-xs font-semibold">Receive</button>}
-                        {canApprove && r.statusLabel === 'Pending approval' && <button onClick={() => openDetail(r, 'view')} className="rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 px-3 py-1.5 text-xs font-semibold">Review</button>}
-                        <button onClick={() => openDetail(r, 'view')} className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">View</button>
+                        {canApprove && r.statusLabel === 'Pending dispatch' && <button onClick={() => openDetail(r, 'dispatch')} className="rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-1.5 text-xs font-semibold max-lg:min-h-[40px]">Dispatch</button>}
+                        {canRequest && r.statusLabel === 'Pending receipt' && <button onClick={() => openDetail(r, 'receive')} className="rounded-lg bg-green-50 text-green-700 hover:bg-green-100 px-3 py-1.5 text-xs font-semibold max-lg:min-h-[40px]">Receive</button>}
+                        {canApprove && r.statusLabel === 'Pending approval' && <button onClick={() => openDetail(r, 'view')} className="rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 px-3 py-1.5 text-xs font-semibold max-lg:min-h-[40px]">Review</button>}
+                        <button onClick={() => openDetail(r, 'view')} className="rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">View</button>
                       </div>
                     </td>
                   </tr>
@@ -341,37 +342,37 @@ const StockTransfers: React.FC = () => {
         <div className="space-y-3">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div><div className="text-xs font-medium text-slate-500 mb-1">Source branch</div>
-              <select className={field} value={nf.sb ?? ''} onChange={(e) => setNf({ ...nf, sb: e.target.value })}>
+              <ResponsiveSelect className={field} value={nf.sb ?? ''} onChange={(e) => setNf({ ...nf, sb: e.target.value })}>
                 <option value="">Select branch…</option>{(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>)}
-              </select></div>
+              </ResponsiveSelect></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Source brand bucket</div>
-              <select className={field} value={nf.sbr ?? ''} onChange={(e) => setNf({ ...nf, sbr: e.target.value })}>{brandOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+              <ResponsiveSelect className={field} value={nf.sbr ?? ''} onChange={(e) => setNf({ ...nf, sbr: e.target.value })}>{brandOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</ResponsiveSelect></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Destination branch</div>
-              <select className={field} value={nf.db ?? ''} onChange={(e) => setNf({ ...nf, db: e.target.value })}>
+              <ResponsiveSelect className={field} value={nf.db ?? ''} onChange={(e) => setNf({ ...nf, db: e.target.value })}>
                 <option value="">Select branch…</option>{(branchesQ.data ?? []).map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>)}
-              </select></div>
+              </ResponsiveSelect></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Destination brand bucket</div>
-              <select className={field} value={nf.dbr ?? ''} onChange={(e) => setNf({ ...nf, dbr: e.target.value })}>{brandOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</select></div>
+              <ResponsiveSelect className={field} value={nf.dbr ?? ''} onChange={(e) => setNf({ ...nf, dbr: e.target.value })}>{brandOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}</ResponsiveSelect></div>
             <div><div className="text-xs font-medium text-slate-500 mb-1">Item</div>
-              <select className={field} value={nf.item ?? ''} onChange={(e) => { const it = itemById.get(Number(e.target.value)); setNf({ ...nf, item: e.target.value, uom: it?.baseUomId ? String(it.baseUomId) : '' }); }}>
-                <option value="">Select item…</option>{(itemsQ.data ?? []).map((it: any) => <option key={it.id} value={it.id}>{it.name}</option>)}
-              </select></div>
-            <div className="grid grid-cols-2 gap-2">
+              <ResponsiveSelect className={field} value={nf.item ?? ''} onChange={(e) => { const it = itemById.get(Number(e.target.value)); setNf({ ...nf, item: e.target.value, uom: it?.baseUomId ? String(it.baseUomId) : '' }); }}>
+                <option value="">Select item…</option>{(itemsQ.data ?? []).map((it: any) => <option key={it.id} value={it.id}>{labelWithStatus(it.name, it)}</option>)}
+              </ResponsiveSelect></div>
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-2">
               <div><div className="text-xs font-medium text-slate-500 mb-1">Quantity</div><input className={field} placeholder="e.g. 5" value={nf.qty ?? ''} onChange={(e) => setNf({ ...nf, qty: e.target.value })} /></div>
               <div><div className="text-xs font-medium text-slate-500 mb-1">Unit</div>
-                <select className={field} value={nf.uom ?? ''} onChange={(e) => setNf({ ...nf, uom: e.target.value })} disabled={!nf.item}>
+                <ResponsiveSelect className={field} value={nf.uom ?? ''} onChange={(e) => setNf({ ...nf, uom: e.target.value })} disabled={!nf.item}>
                   <option value="">Unit…</option>{getItemAllowedUoms(itemById.get(Number(nf.item))).map((u: any) => <option key={u.id} value={u.id}>{u.code}</option>)}
-                </select></div>
+                </ResponsiveSelect></div>
             </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
-            <button onClick={() => setNewOpen(false)} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm">Cancel</button>
+            <button onClick={() => setNewOpen(false)} className="rounded-lg border border-slate-200 dark:border-slate-700 px-4 py-2 text-sm max-lg:min-h-[40px]">Cancel</button>
             <button onClick={() => {
               if (!nf.sb || !nf.db || !nf.item || !nf.qty || !nf.uom) { toast.error('Fill all required fields'); return; }
               const sbr = nf.sbr ? Number(nf.sbr) : null, dbr = nf.dbr ? Number(nf.dbr) : null;
               if (Number(nf.sb) === Number(nf.db) && sbr === dbr) { toast.error('Source and destination (branch, brand) must differ'); return; }
               createM.mutate({ source_branch_id: Number(nf.sb), destination_branch_id: Number(nf.db), source_brand_id: sbr, destination_brand_id: dbr, lines: [{ inventory_item_id: Number(nf.item), requested_qty: Number(nf.qty), requested_uom_id: Number(nf.uom) }] });
-            }} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold">Create request</button>
+            }} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold max-lg:min-h-[40px]">Create request</button>
           </div>
         </div>
       </Modal>
@@ -380,7 +381,7 @@ const StockTransfers: React.FC = () => {
       <Modal isOpen={detailRow != null} onClose={() => setDetailRow(null)} title={detailRow ? `${detailRow.ref} · ${transferType(detailRow.sourceBrandId, detailRow.destinationBrandId)}` : ''} size="large">
         {detailRow && (
           <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
               <div><div className="text-xs text-slate-500">From</div><div className="font-medium">{bucketLabel(detailRow.sourceBranchId, detailRow.sourceBrandId)} <span className="text-xs text-slate-400">({bucketKind(detailRow.sourceBrandId)})</span></div></div>
               <div><div className="text-xs text-slate-500">To</div><div className="font-medium">{bucketLabel(detailRow.destinationBranchId, detailRow.destinationBrandId)} <span className="text-xs text-slate-400">({bucketKind(detailRow.destinationBrandId)})</span></div></div>
               <div><div className="text-xs text-slate-500">Status</div><span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${PILL[detailRow.color]}`}>{detailRow.statusLabel}</span></div>
@@ -410,9 +411,9 @@ const StockTransfers: React.FC = () => {
                       <div key={i} className="grid grid-cols-1 lg:grid-cols-[1fr_100px_120px_auto] gap-2 items-center">
                         <div className="text-sm">{item?.name ?? `Item #${al.inventory_item_id}`}</div>
                         <input className={field} value={al.qty} onChange={(e) => setActionLines(actionLines.map((x, j) => j === i ? { ...x, qty: e.target.value } : x))} />
-                        <select className={field} value={al.qty_uom_id} onChange={(e) => setActionLines(actionLines.map((x, j) => j === i ? { ...x, qty_uom_id: e.target.value } : x))}>
+                        <ResponsiveSelect className={field} value={al.qty_uom_id} onChange={(e) => setActionLines(actionLines.map((x, j) => j === i ? { ...x, qty_uom_id: e.target.value } : x))}>
                           {getItemAllowedUoms(item).map((u: any) => <option key={u.id} value={u.id}>{u.code}</option>)}
-                        </select>
+                        </ResponsiveSelect>
                         {detailMode === 'receive' && (
                           <input type="date" className={field} value={al.expiry_date} onChange={(e) => setActionLines(actionLines.map((x, j) => j === i ? { ...x, expiry_date: e.target.value } : x))} title={item?.trackExpiry ? 'Expiry required' : 'Expiry (optional)'} />
                         )}
@@ -428,25 +429,25 @@ const StockTransfers: React.FC = () => {
             <div className="flex justify-end gap-2 pt-1">
               {canApprove && detailMode === 'view' && detailRow.kind === 'request' && detailRow.status === 'submitted' && (
                 <>
-                  <button onClick={() => rejectM.mutate(detailRow.id)} className="rounded-lg border border-red-200 text-red-600 px-4 py-2 text-sm font-medium hover:bg-red-50">Reject</button>
-                  <button onClick={() => approveM.mutate(detailRow.id)} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold">Approve</button>
+                  <button onClick={() => rejectM.mutate(detailRow.id)} className="rounded-lg border border-red-200 text-red-600 px-4 py-2 text-sm font-medium hover:bg-red-50 max-lg:min-h-[40px]">Reject</button>
+                  <button onClick={() => approveM.mutate(detailRow.id)} className="rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2 text-sm font-semibold max-lg:min-h-[40px]">Approve</button>
                 </>
               )}
               {canApprove && detailMode === 'view' && detailRow.statusLabel === 'Pending dispatch' && (
-                <button onClick={() => setDetailMode('dispatch')} className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-semibold">Dispatch…</button>
+                <button onClick={() => setDetailMode('dispatch')} className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-semibold max-lg:min-h-[40px]">Dispatch…</button>
               )}
               {canRequest && detailMode === 'view' && detailRow.statusLabel === 'Pending receipt' && (
-                <button onClick={() => openDetail(detailRow, 'receive')} className="rounded-lg bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-semibold">Receive…</button>
+                <button onClick={() => openDetail(detailRow, 'receive')} className="rounded-lg bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-semibold max-lg:min-h-[40px]">Receive…</button>
               )}
               {detailMode === 'dispatch' && (
                 <button onClick={() => dispatchM.mutate({ id: detailRow.id, lines: actionLines.filter((l) => Number(l.qty) > 0).map((l) => ({ inventory_item_id: Number(l.inventory_item_id), qty: Number(l.qty), qty_uom_id: Number(l.qty_uom_id), location_id: null })) })}
-                  className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-semibold">Confirm dispatch</button>
+                  className="rounded-lg bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 text-sm font-semibold max-lg:min-h-[40px]">Confirm dispatch</button>
               )}
               {detailMode === 'receive' && (
                 <button onClick={() => {
                   for (const l of actionLines) { const it = itemById.get(Number(l.inventory_item_id)); if (it?.trackExpiry && !l.expiry_date && Number(l.qty) > 0) { toast.error(`Expiry required for ${it.name}`); return; } }
                   receiveM.mutate({ id: detailRow.id, lines: actionLines.filter((l) => Number(l.qty) > 0).map((l) => ({ inventory_item_id: Number(l.inventory_item_id), received_qty: Number(l.qty), received_uom_id: Number(l.qty_uom_id), lot_code: l.lot_code || null, expiry_date: l.expiry_date || null })) });
-                }} className="rounded-lg bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-semibold">Confirm receipt</button>
+                }} className="rounded-lg bg-green-600 hover:bg-green-700 text-white px-4 py-2 text-sm font-semibold max-lg:min-h-[40px]">Confirm receipt</button>
               )}
             </div>
           </div>

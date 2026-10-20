@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -11,6 +12,10 @@ import PaginationBar from '../../components/PaginationBar';
 import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
+import FilterBar, { type FilterChip, type FilterField } from '../../components/FilterBar';
+import { useViewport } from '../../hooks/useViewport';
+import { rangeChipLabel } from '../../utils/rangeChipLabel';
+import TableScroll from '../../components/TableScroll';
 import {
   CUSTOMER_SOURCES,
   CUSTOMER_SOURCE_BADGE,
@@ -56,6 +61,11 @@ type Customer = CustomerRow;
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const DEFAULT_TABLE_PAGE_SIZE = 25;
+
+/** Column names, for the phone sort control and its chip. */
+const SORT_LABEL: Record<SortKey, string> = {
+  name: 'Customer', points: 'Points', completed: 'Completed', cancelled: 'Cancelled', spent: 'Spent', last_order: 'Last order',
+};
 
 /** The two-way arrow in a sortable heading; the lit half is the current direction. */
 const SortIcon: React.FC<{ state: 'none' | 'asc' | 'desc' }> = ({ state }) => (
@@ -115,6 +125,7 @@ const Customers: React.FC = () => {
   // `orders:view:no-totals` takes money aggregates away; the server sends no
   // spend figure to such an account, so there is nothing to show or filter on.
   const hideTotals = useHasRestriction(NO_TOTALS_PERMISSION);
+  const { isDesktop, isPhone } = useViewport();
 
   // Filters and sort live in the URL, so a narrowed view can be shared.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -256,6 +267,348 @@ const Customers: React.FC = () => {
     return <Loader fullScreen text="Loading customers..." />;
   }
 
+  // The filter controls, each defined once: desktop lays them out in the card
+  // below, phones and tablets get the search box plus a sheet holding the rest
+  // (only one of the two ever renders, so ids stay unique).
+  const searchBox = (
+    <div className="relative flex min-w-[240px] flex-1 items-center max-lg:min-h-[44px] max-lg:min-w-0 gap-[9px] rounded-[10px] border-[1.5px] border-[#EEEFF2] bg-[#F6F7F9] px-3 focus-within:border-[#DC2A2A] dark:border-slate-600 dark:bg-slate-700/60">
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="flex-none text-[#9AA1AD]" aria-hidden="true">
+        <circle cx="7" cy="7" r="4.5" /><line x1="10.5" y1="10.5" x2="14" y2="14" />
+      </svg>
+      <input
+        type="text"
+        aria-label="Search"
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
+        onFocus={() => customerNameTypeahead.setOpen(true)}
+        onKeyDown={(e) => {
+          const suggestions = customerNameTypeahead.suggestions;
+          if (!suggestions.length) return;
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            customerNameTypeahead.setActiveIndex(Math.min(customerNameTypeahead.activeIndex + 1, suggestions.length - 1));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            customerNameTypeahead.setActiveIndex(Math.max(customerNameTypeahead.activeIndex - 1, 0));
+          } else if (e.key === 'Enter') {
+            e.preventDefault();
+            const opt = suggestions[customerNameTypeahead.activeIndex];
+            if (opt?.label) setSearchText(opt.label);
+            customerNameTypeahead.setOpen(false);
+          } else if (e.key === 'Escape') {
+            customerNameTypeahead.setOpen(false);
+          }
+        }}
+        placeholder="Search name, phone or email…"
+        className="min-w-0 flex-1 border-none bg-transparent py-2.5 text-[13.5px] text-[#1F2430] outline-none placeholder:text-[#A9AFB9] dark:text-slate-100 dark:placeholder:text-slate-500"
+      />
+      <TypeaheadDropdown
+        open={customerNameTypeahead.open && searchText.trim().length >= 2}
+        suggestions={customerNameTypeahead.suggestions}
+        activeIndex={customerNameTypeahead.activeIndex}
+        onHoverIndex={customerNameTypeahead.setActiveIndex}
+        onSelect={(opt) => {
+          setSearchText(opt.label);
+          customerNameTypeahead.setOpen(false);
+        }}
+        onClose={() => customerNameTypeahead.setOpen(false)}
+      />
+    </div>
+  );
+
+  /* Where they registered — every channel, each with its head count. */
+  const sourceTabs = (
+    <div role="group" aria-label="Source" className="flex flex-wrap gap-0.5 rounded-[10px] bg-[#F3F4F6] p-[3px] dark:bg-slate-700">
+      {[{ value: '', label: 'All', count: all.length }, ...CUSTOMER_SOURCES.map((s) => ({ value: s as string, label: CUSTOMER_SOURCE_LABEL[s], count: sourceCounts[s] ?? 0 }))].map((s) => {
+        const on = filters.source === s.value;
+        return (
+          <button
+            key={s.value || 'all'}
+            type="button"
+            aria-pressed={on}
+            aria-label={`${s.label} (${s.count})`}
+            onClick={() => setFilter('source', s.value)}
+            className={`whitespace-nowrap rounded-[8px] px-[13px] py-[7px] text-[12.5px] font-bold max-lg:min-h-[40px] ${
+              on
+                ? 'bg-white text-[#20242C] shadow-[0_1px_3px_rgba(15,23,42,.12)] dark:bg-slate-900 dark:text-slate-100'
+                : 'text-[#8A92A0] hover:text-[#5A6473] dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            {s.label}
+            <span className="ml-1.5 font-semibold tabular-nums opacity-70">{s.count}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const brandSelect = (
+    <ResponsiveSelect aria-label="Brand" value={filters.brand} onChange={(e) => setFilter('brand', e.target.value)} className={`${cu.input} !w-auto cursor-pointer max-lg:!w-full`}>
+      <option value="">All brands</option>
+      {brandOptions.map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
+    </ResponsiveSelect>
+  );
+  const branchSelect = (
+    <ResponsiveSelect aria-label="Branch" value={filters.branch} onChange={(e) => setFilter('branch', e.target.value)} className={`${cu.input} !w-auto cursor-pointer max-lg:!w-full`}>
+      <option value="">All branches</option>
+      {branchOptions.map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
+    </ResponsiveSelect>
+  );
+
+  const moreFilterItems = (
+    <>
+      <div>
+        <label htmlFor="cust-points" className={cu.fieldLabel}>Points</label>
+        <ResponsiveSelect id="cust-points" value={filters.points} onChange={(e) => setFilter('points', e.target.value)} className={`${cu.input} cursor-pointer`}>
+          {POINTS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </ResponsiveSelect>
+      </div>
+      <div>
+        <label htmlFor="cust-min-points" className={cu.fieldLabel}>Min points</label>
+        <input id="cust-min-points" type="number" min={0} inputMode="numeric" value={filters.minPoints} onChange={(e) => setFilter('minPoints', e.target.value)} placeholder="e.g. 1000" className={cu.input} />
+      </div>
+      <div>
+        <label htmlFor="cust-last-order" className={cu.fieldLabel}>Last order</label>
+        <ResponsiveSelect id="cust-last-order" value={filters.lastOrder} onChange={(e) => setFilter('lastOrder', e.target.value)} className={`${cu.input} cursor-pointer`}>
+          {LAST_ORDER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </ResponsiveSelect>
+      </div>
+      <div>
+        <label htmlFor="cust-orders" className={cu.fieldLabel}>Completed orders</label>
+        <ResponsiveSelect id="cust-orders" value={filters.orders} onChange={(e) => setFilter('orders', e.target.value)} className={`${cu.input} cursor-pointer`}>
+          {ORDERS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </ResponsiveSelect>
+      </div>
+      <div>
+        <label htmlFor="cust-min-orders" className={cu.fieldLabel}>Min orders</label>
+        <input id="cust-min-orders" type="number" min={0} inputMode="numeric" value={filters.minOrders} onChange={(e) => setFilter('minOrders', e.target.value)} placeholder="e.g. 5" className={cu.input} />
+      </div>
+      {!hideTotals && (
+        <div>
+          <label htmlFor="cust-min-spend" className={cu.fieldLabel}>Min spend (Rs.)</label>
+          <input id="cust-min-spend" type="number" min={0} inputMode="numeric" value={filters.minSpend} onChange={(e) => setFilter('minSpend', e.target.value)} placeholder="e.g. 10000" className={cu.input} />
+        </div>
+      )}
+      <div>
+        <label htmlFor="cust-reg-from" className={cu.fieldLabel}>Registered from</label>
+        <input id="cust-reg-from" type="date" value={filters.regFrom} max={filters.regTo || undefined} onChange={(e) => setFilter('regFrom', e.target.value)} className={cu.input} />
+      </div>
+      <div>
+        <label htmlFor="cust-reg-to" className={cu.fieldLabel}>Registered to</label>
+        <input id="cust-reg-to" type="date" value={filters.regTo} min={filters.regFrom || undefined} onChange={(e) => setFilter('regTo', e.target.value)} className={cu.input} />
+      </div>
+    </>
+  );
+
+  /* Quick picks — each with how many customers it would show. */
+  const segmentGroup = (
+    <div role="group" aria-label="Quick filters" className="flex flex-wrap items-center gap-2">
+      {SEGMENTS.map((g) => {
+        const on = filters.segment === g.key;
+        return (
+          <button
+            key={g.key || 'all'}
+            type="button"
+            aria-pressed={on}
+            aria-label={`${g.label} (${chipCounts[g.key]})`}
+            onClick={() => setFilter('segment', g.key)}
+            className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border-[1.5px] px-3.5 py-2 text-[12.5px] font-bold max-lg:min-h-[40px] ${
+              on
+                ? 'border-[#1F2430] bg-[#1F2430] text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
+                : 'border-[#E2E5EA] bg-white text-[#5A6473] hover:border-[#C7CCD6] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-500'
+            }`}
+          >
+            {g.label}
+            <span
+              className={`rounded-full px-[7px] py-px text-[11px] font-extrabold tabular-nums ${
+                on ? 'bg-white/[.18] text-white dark:bg-slate-900/20 dark:text-slate-900' : 'bg-[#F1F2F5] text-[#8A92A0] dark:bg-slate-700 dark:text-slate-400'
+              }`}
+            >
+              {chipCounts[g.key]}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const optionLabel = (opts: Array<{ value: string; label: string }>, v: string) => opts.find((o) => o.value === v)?.label ?? v;
+  const lowerFirst = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
+  const baseChips: FilterChip[] = [
+    ...(filters.source ? [{ key: 'source', label: customerSourceLabel(filters.source), onRemove: () => setFilter('source', '') }] : []),
+    ...(filters.brand
+      ? [{ key: 'brand', label: brandOptions.find((b) => String(b.id) === filters.brand)?.name ?? 'Brand', onRemove: () => setFilter('brand', '') }]
+      : []),
+    ...(filters.branch
+      ? [{ key: 'branch', label: branchOptions.find((b) => String(b.id) === filters.branch)?.name ?? 'Branch', onRemove: () => setFilter('branch', '') }]
+      : []),
+    ...(filters.lastOrder
+      ? [{
+          key: 'lastOrder',
+          label: filters.lastOrder === 'never' ? 'Never ordered' : `Last order: ${lowerFirst(optionLabel(LAST_ORDER_OPTIONS, filters.lastOrder))}`,
+          onRemove: () => setFilter('lastOrder', ''),
+        }]
+      : []),
+    ...(filters.points ? [{ key: 'points', label: optionLabel(POINTS_OPTIONS, filters.points), onRemove: () => setFilter('points', '') }] : []),
+    ...(filters.minPoints
+      ? [{ key: 'minPoints', label: `${Number(filters.minPoints).toLocaleString('en-US')}+ points`, onRemove: () => setFilter('minPoints', '') }]
+      : []),
+    ...(filters.orders
+      ? [{ key: 'orders', label: `Orders: ${lowerFirst(optionLabel(ORDERS_OPTIONS, filters.orders))}`, onRemove: () => setFilter('orders', '') }]
+      : []),
+    ...(filters.minOrders ? [{ key: 'minOrders', label: `${filters.minOrders}+ orders`, onRemove: () => setFilter('minOrders', '') }] : []),
+    ...(filters.minSpend
+      ? [{ key: 'minSpend', label: `Spent ${formatRs(Number(filters.minSpend))}+`, onRemove: () => setFilter('minSpend', '') }]
+      : []),
+    ...(filters.regFrom || filters.regTo
+      ? [{
+          key: 'registered',
+          label: `Registered: ${rangeChipLabel(filters.regFrom, filters.regTo)}`,
+          onRemove: () => setParams({ [FILTER_PARAM.regFrom]: '', [FILTER_PARAM.regTo]: '' }),
+        }]
+      : []),
+  ];
+  // Phones have no table header to sort by, so the sheet carries the sort.
+  const sortField = (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2.5">
+      <ResponsiveSelect
+        aria-label="Sort by"
+        value={sortKey}
+        onChange={(e) => {
+          const k = e.target.value as SortKey | '';
+          setParams(k ? { sort: k, dir: defaultSortDir(k) } : { sort: '', dir: '' });
+        }}
+        className={`${cu.input} cursor-pointer`}
+      >
+        <option value="">Default order</option>
+        {SORT_KEYS.filter((k) => k !== 'spent' || !hideTotals).map((k) => (
+          <option key={k} value={k}>{SORT_LABEL[k]}</option>
+        ))}
+      </ResponsiveSelect>
+      <button
+        type="button"
+        disabled={!sortKey}
+        onClick={() => setParams({ sort: sortKey, dir: sortDir === 'asc' ? 'desc' : 'asc' })}
+        className="min-h-[44px] whitespace-nowrap rounded-[10px] border-[1.5px] border-[#E2E5EA] bg-white px-3.5 text-[13px] font-bold text-[#374151] disabled:opacity-40 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200"
+      >
+        {sortDir === 'asc' ? '↑ Ascending' : '↓ Descending'}
+      </button>
+    </div>
+  );
+  const customerChips: FilterChip[] = [
+    // The quick picks live in the sheet below lg, so the chosen one is a chip (All is the default).
+    ...(filters.segment
+      ? [{ key: 'segment', label: SEGMENTS.find((g) => g.key === filters.segment)?.label ?? 'Segment', onRemove: () => setFilter('segment', '') }]
+      : []),
+    ...baseChips,
+    ...(sortKey
+      ? [{ key: 'sort', label: `Sorted by ${SORT_LABEL[sortKey].toLowerCase()} ${sortDir === 'asc' ? '↑' : '↓'}`, onRemove: () => setParams({ sort: '', dir: '' }) }]
+      : []),
+  ];
+  const customerFields: FilterField[] = [
+    { key: 'segment', label: 'Quick filters', node: segmentGroup },
+    { key: 'source', label: 'Source', node: sourceTabs },
+    { key: 'brand', label: 'Brand', node: brandSelect },
+    { key: 'branch', label: 'Branch', node: branchSelect },
+    { key: 'more', label: 'More filters', node: <div className="grid grid-cols-2 gap-x-3 gap-y-3">{moreFilterItems}</div> },
+    ...(isPhone ? [{ key: 'sort', label: 'Sort by', node: sortField }] : []),
+  ];
+
+  // Phones: one card per customer, carrying every column the table has.
+  const stop = (e: React.MouseEvent) => e.stopPropagation();
+  const cardList = (
+    <ul className="space-y-2.5" data-testid="customer-cards">
+      {pageRows.map((c) => {
+        const stats = c.orderStats;
+        const completed = stats?.completed_count ?? 0;
+        const cancelled = stats?.cancelled_count ?? 0;
+        const label = c.name?.trim() || c.phone;
+        const status = customerStatus(stats?.last_order_at);
+        return (
+          <li
+            key={c.id}
+            data-testid={`customer-card-${c.id}`}
+            onClick={() => navigate(profilePath(c))}
+            className={`${cu.card} cursor-pointer rounded-[14px] px-4 pb-3.5 pt-3`}
+          >
+            <div className="flex items-start gap-3">
+              <span aria-hidden="true" className="mt-0.5 flex h-[34px] w-[34px] flex-none items-center justify-center rounded-full bg-[#F1F2F5] text-[13px] font-extrabold text-[#5A6473] dark:bg-slate-700 dark:text-slate-300">
+                {nameInitials(c.name, 1)}
+              </span>
+              <div className="min-w-0 flex-1">
+                <Link
+                  to={profilePath(c)}
+                  onClick={stop}
+                  title={c.name ?? undefined}
+                  className={`block truncate text-[15px] font-bold ${c.name?.trim() ? cu.strong : cu.muted}`}
+                >
+                  {c.name?.trim() || 'No name'}
+                </Link>
+                <div className={`mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] tabular-nums ${cu.soft}`}>
+                  <span>{c.phone}</span>
+                  <span
+                    className={`inline-block whitespace-nowrap rounded-[7px] px-[9px] py-0.5 text-[11px] font-bold ${
+                      CUSTOMER_SOURCE_BADGE[String(c.source ?? 'pos')] ?? CUSTOMER_SOURCE_BADGE.pos
+                    }`}
+                  >
+                    {customerSourceLabel(c.source ?? 'pos')}
+                  </span>
+                </div>
+              </div>
+              {/* Using the menu must not also open the profile. */}
+              <div className="flex-none" onClick={stop}>
+                <RowActionsMenu actions={actionsFor(c)} ariaLabel={`Actions for ${label}`} />
+              </div>
+            </div>
+            {/* Figures as plain columns: the spend takes the width that is left, so it never truncates. */}
+            <dl className="mt-3 grid grid-cols-[auto_auto_minmax(0,1fr)] gap-x-4 border-t border-[#F1F2F5] pt-3 dark:border-slate-700">
+              <div>
+                <dt className={cu.label}>Completed</dt>
+                <dd className={`mt-0.5 text-[15px] font-bold tabular-nums ${completed > 0 ? cu.strong : cu.faint}`}>{completed}</dd>
+              </div>
+              <div>
+                <dt className={cu.label}>Cancelled</dt>
+                <dd className={`mt-0.5 text-[15px] tabular-nums ${cancelled > 0 ? `font-bold ${cu.danger}` : cu.faint}`}>{cancelled}</dd>
+              </div>
+              {!hideTotals && (
+                <div className="min-w-0">
+                  <dt className={cu.label}>Spent</dt>
+                  <dd className={`mt-0.5 whitespace-nowrap text-[14px] font-bold tabular-nums ${stats?.spent != null && completed > 0 ? cu.strong : cu.faint}`}>
+                    {stats?.spent != null && completed > 0 ? formatRs(stats.spent) : '—'}
+                  </dd>
+                </div>
+              )}
+            </dl>
+            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
+              <div onClick={stop}>
+                <dt className={cu.label}>Points</dt>
+                <dd className="mt-1"><LoyaltyPointsCell wallets={c.loyaltyWallets} /></dd>
+              </div>
+              <div>
+                <dt className={cu.label}>Last order</dt>
+                <dd className={`mt-1 text-[13px] font-semibold ${stats?.last_order_at ? cu.text : STATUS_TEXT.never}`}>
+                  {stats?.last_order_at ? formatDay(stats.last_order_at) : 'Never'}
+                  {stats?.last_order_at && (
+                    <span className={`ml-1.5 text-[11.5px] font-bold ${STATUS_TEXT[status.key]}`}>{daysAgoLabel(stats.last_order_at)}</span>
+                  )}
+                </dd>
+              </div>
+              {/* Tapping "+N more" must not open the profile. */}
+              <div className="min-w-0" onClick={stop}>
+                <dt className={cu.label}>Brands</dt>
+                <dd className="mt-1"><NameList items={c.brands} noun="brand" /></dd>
+              </div>
+              <div className="min-w-0" onClick={stop}>
+                <dt className={cu.label}>Branches</dt>
+                <dd className="mt-1"><NameList items={c.branches} noun="branch" /></dd>
+              </div>
+            </dl>
+          </li>
+        );
+      })}
+    </ul>
+  );
+
   return (
     <div className={cu.page}>
       {/* Heading */}
@@ -284,202 +637,76 @@ const Customers: React.FC = () => {
         )}
       </div>
 
-      {/* Filters */}
-      <div className={`${cu.card} rounded-[14px] px-3.5 py-3`}>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative flex min-w-[240px] flex-1 items-center gap-[9px] rounded-[10px] border-[1.5px] border-[#EEEFF2] bg-[#F6F7F9] px-3 focus-within:border-[#DC2A2A] dark:border-slate-600 dark:bg-slate-700/60">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="flex-none text-[#9AA1AD]" aria-hidden="true">
-              <circle cx="7" cy="7" r="4.5" /><line x1="10.5" y1="10.5" x2="14" y2="14" />
-            </svg>
-            <input
-              type="text"
-              aria-label="Search"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              onFocus={() => customerNameTypeahead.setOpen(true)}
-              onKeyDown={(e) => {
-                const suggestions = customerNameTypeahead.suggestions;
-                if (!suggestions.length) return;
-                if (e.key === 'ArrowDown') {
-                  e.preventDefault();
-                  customerNameTypeahead.setActiveIndex(Math.min(customerNameTypeahead.activeIndex + 1, suggestions.length - 1));
-                } else if (e.key === 'ArrowUp') {
-                  e.preventDefault();
-                  customerNameTypeahead.setActiveIndex(Math.max(customerNameTypeahead.activeIndex - 1, 0));
-                } else if (e.key === 'Enter') {
-                  e.preventDefault();
-                  const opt = suggestions[customerNameTypeahead.activeIndex];
-                  if (opt?.label) setSearchText(opt.label);
-                  customerNameTypeahead.setOpen(false);
-                } else if (e.key === 'Escape') {
-                  customerNameTypeahead.setOpen(false);
-                }
-              }}
-              placeholder="Search name, phone or email…"
-              className="min-w-0 flex-1 border-none bg-transparent py-2.5 text-[13.5px] text-[#1F2430] outline-none placeholder:text-[#A9AFB9] dark:text-slate-100 dark:placeholder:text-slate-500"
-            />
-            <TypeaheadDropdown
-              open={customerNameTypeahead.open && searchText.trim().length >= 2}
-              suggestions={customerNameTypeahead.suggestions}
-              activeIndex={customerNameTypeahead.activeIndex}
-              onHoverIndex={customerNameTypeahead.setActiveIndex}
-              onSelect={(opt) => {
-                setSearchText(opt.label);
-                customerNameTypeahead.setOpen(false);
-              }}
-              onClose={() => customerNameTypeahead.setOpen(false)}
-            />
-          </div>
+      {/* Filters — phones and tablets get the compact bar and sheet instead. */}
+      <FilterBar
+        className=""
+        primary={searchBox}
+        chips={customerChips}
+        fields={customerFields}
+        onClearAll={clearAll}
+        resultLabel={`Show ${filtered.length.toLocaleString('en-US')} ${filtered.length === 1 ? 'customer' : 'customers'}`}
+      >
+        <div className={`${cu.card} rounded-[14px] px-3.5 py-3`}>
+          <div className="flex flex-wrap items-center gap-2.5">
+            {searchBox}
 
-          {/* Where they registered — every channel, each with its head count. */}
-          <div role="group" aria-label="Source" className="flex flex-wrap gap-0.5 rounded-[10px] bg-[#F3F4F6] p-[3px] dark:bg-slate-700">
-            {[{ value: '', label: 'All', count: all.length }, ...CUSTOMER_SOURCES.map((s) => ({ value: s as string, label: CUSTOMER_SOURCE_LABEL[s], count: sourceCounts[s] ?? 0 }))].map((s) => {
-              const on = filters.source === s.value;
-              return (
-                <button
-                  key={s.value || 'all'}
-                  type="button"
-                  aria-pressed={on}
-                  aria-label={`${s.label} (${s.count})`}
-                  onClick={() => setFilter('source', s.value)}
-                  className={`whitespace-nowrap rounded-[8px] px-[13px] py-[7px] text-[12.5px] font-bold ${
-                    on
-                      ? 'bg-white text-[#20242C] shadow-[0_1px_3px_rgba(15,23,42,.12)] dark:bg-slate-900 dark:text-slate-100'
-                      : 'text-[#8A92A0] hover:text-[#5A6473] dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {s.label}
-                  <span className="ml-1.5 font-semibold tabular-nums opacity-70">{s.count}</span>
-                </button>
-              );
-            })}
-          </div>
+            {sourceTabs}
 
-          <select aria-label="Brand" value={filters.brand} onChange={(e) => setFilter('brand', e.target.value)} className={`${cu.input} !w-auto cursor-pointer`}>
-            <option value="">All brands</option>
-            {brandOptions.map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
-          </select>
-          <select aria-label="Branch" value={filters.branch} onChange={(e) => setFilter('branch', e.target.value)} className={`${cu.input} !w-auto cursor-pointer`}>
-            <option value="">All branches</option>
-            {branchOptions.map((b) => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
-          </select>
+            {brandSelect}
+            {branchSelect}
 
-          <button
-            type="button"
-            aria-expanded={showMore}
-            aria-controls="customer-more-filters"
-            onClick={() => setShowMore((v) => !v)}
-            className={`inline-flex items-center gap-2 whitespace-nowrap rounded-[10px] border-[1.5px] px-3.5 py-2.5 text-[13px] font-bold ${
-              showMore || hiddenCount > 0
-                ? 'border-[#DC2A2A] bg-[#FCEEEE] text-[#B5121B] dark:border-red-500 dark:bg-red-900/30 dark:text-red-300'
-                : 'border-[#E2E5EA] bg-white text-[#374151] hover:bg-[#F3F4F6] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
-            }`}
-          >
-            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" aria-hidden="true">
-              <path d="M2.5 4h11M4.5 8h7M6.5 12h3" />
-            </svg>
-            More filters
-            {hiddenCount > 0 && (
-              <span data-testid="more-filters-count" className="rounded-full bg-[#DC2A2A] px-[7px] py-px text-[11px] font-extrabold text-white">
-                {hiddenCount}
-              </span>
-            )}
-          </button>
-
-          {activeCount > 0 && (
             <button
               type="button"
-              onClick={clearAll}
-              className="whitespace-nowrap rounded-[10px] px-3 py-2.5 text-[13px] font-bold text-[#B5121B] hover:bg-[#FCEEEE] dark:text-red-300 dark:hover:bg-red-900/30"
+              aria-expanded={showMore}
+              aria-controls="customer-more-filters"
+              onClick={() => setShowMore((v) => !v)}
+              className={`inline-flex items-center gap-2 whitespace-nowrap rounded-[10px] border-[1.5px] px-3.5 py-2.5 text-[13px] font-bold ${
+                showMore || hiddenCount > 0
+                  ? 'border-[#DC2A2A] bg-[#FCEEEE] text-[#B5121B] dark:border-red-500 dark:bg-red-900/30 dark:text-red-300'
+                  : 'border-[#E2E5EA] bg-white text-[#374151] hover:bg-[#F3F4F6] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+              }`}
             >
-              Clear ({activeCount})
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" aria-hidden="true">
+                <path d="M2.5 4h11M4.5 8h7M6.5 12h3" />
+              </svg>
+              More filters
+              {hiddenCount > 0 && (
+                <span data-testid="more-filters-count" className="rounded-full bg-[#DC2A2A] px-[7px] py-px text-[11px] font-extrabold text-white">
+                  {hiddenCount}
+                </span>
+              )}
             </button>
+
+            {activeCount > 0 && (
+              <button
+                type="button"
+                onClick={clearAll}
+                className="whitespace-nowrap rounded-[10px] px-3 py-2.5 text-[13px] font-bold text-[#B5121B] hover:bg-[#FCEEEE] dark:text-red-300 dark:hover:bg-red-900/30"
+              >
+                Clear ({activeCount})
+              </button>
+            )}
+          </div>
+
+          {showMore && (
+            <div
+              id="customer-more-filters"
+              className="mt-[13px] grid grid-cols-2 gap-x-3.5 gap-y-3 border-t border-[#F1F2F5] pt-3.5 md:grid-cols-4 dark:border-slate-700"
+            >
+              {moreFilterItems}
+            </div>
           )}
         </div>
+      </FilterBar>
 
-        {showMore && (
-          <div
-            id="customer-more-filters"
-            className="mt-[13px] grid grid-cols-2 gap-x-3.5 gap-y-3 border-t border-[#F1F2F5] pt-3.5 md:grid-cols-4 dark:border-slate-700"
-          >
-            <div>
-              <label htmlFor="cust-points" className={cu.fieldLabel}>Points</label>
-              <select id="cust-points" value={filters.points} onChange={(e) => setFilter('points', e.target.value)} className={`${cu.input} cursor-pointer`}>
-                {POINTS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="cust-min-points" className={cu.fieldLabel}>Min points</label>
-              <input id="cust-min-points" type="number" min={0} inputMode="numeric" value={filters.minPoints} onChange={(e) => setFilter('minPoints', e.target.value)} placeholder="e.g. 1000" className={cu.input} />
-            </div>
-            <div>
-              <label htmlFor="cust-last-order" className={cu.fieldLabel}>Last order</label>
-              <select id="cust-last-order" value={filters.lastOrder} onChange={(e) => setFilter('lastOrder', e.target.value)} className={`${cu.input} cursor-pointer`}>
-                {LAST_ORDER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="cust-orders" className={cu.fieldLabel}>Completed orders</label>
-              <select id="cust-orders" value={filters.orders} onChange={(e) => setFilter('orders', e.target.value)} className={`${cu.input} cursor-pointer`}>
-                {ORDERS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="cust-min-orders" className={cu.fieldLabel}>Min orders</label>
-              <input id="cust-min-orders" type="number" min={0} inputMode="numeric" value={filters.minOrders} onChange={(e) => setFilter('minOrders', e.target.value)} placeholder="e.g. 5" className={cu.input} />
-            </div>
-            {!hideTotals && (
-              <div>
-                <label htmlFor="cust-min-spend" className={cu.fieldLabel}>Min spend (Rs.)</label>
-                <input id="cust-min-spend" type="number" min={0} inputMode="numeric" value={filters.minSpend} onChange={(e) => setFilter('minSpend', e.target.value)} placeholder="e.g. 10000" className={cu.input} />
-              </div>
-            )}
-            <div>
-              <label htmlFor="cust-reg-from" className={cu.fieldLabel}>Registered from</label>
-              <input id="cust-reg-from" type="date" value={filters.regFrom} max={filters.regTo || undefined} onChange={(e) => setFilter('regFrom', e.target.value)} className={cu.input} />
-            </div>
-            <div>
-              <label htmlFor="cust-reg-to" className={cu.fieldLabel}>Registered to</label>
-              <input id="cust-reg-to" type="date" value={filters.regTo} min={filters.regFrom || undefined} onChange={(e) => setFilter('regTo', e.target.value)} className={cu.input} />
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* Quick picks — each with how many customers it would show. */}
-      <div className="mb-3 mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <div role="group" aria-label="Quick filters" className="flex flex-wrap items-center gap-2">
-          {SEGMENTS.map((g) => {
-            const on = filters.segment === g.key;
-            return (
-              <button
-                key={g.key || 'all'}
-                type="button"
-                aria-pressed={on}
-                aria-label={`${g.label} (${chipCounts[g.key]})`}
-                onClick={() => setFilter('segment', g.key)}
-                className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border-[1.5px] px-3.5 py-2 text-[12.5px] font-bold ${
-                  on
-                    ? 'border-[#1F2430] bg-[#1F2430] text-white dark:border-slate-100 dark:bg-slate-100 dark:text-slate-900'
-                    : 'border-[#E2E5EA] bg-white text-[#5A6473] hover:border-[#C7CCD6] dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:border-slate-500'
-                }`}
-              >
-                {g.label}
-                <span
-                  className={`rounded-full px-[7px] py-px text-[11px] font-extrabold tabular-nums ${
-                    on ? 'bg-white/[.18] text-white dark:bg-slate-900/20 dark:text-slate-900' : 'bg-[#F1F2F5] text-[#8A92A0] dark:bg-slate-700 dark:text-slate-400'
-                  }`}
-                >
-                  {chipCounts[g.key]}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+      {/* Quick picks (in the Filters sheet below lg), and what the dotted underline is for. */}
+      <div className="mb-3 mt-4 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 max-lg:mt-3">
+        {isDesktop && segmentGroup}
         {/* Says, right above the table, what the dotted underline in it is for. */}
         <p className={`text-[12.5px] ${cu.muted}`} data-testid="hover-hint">
           <span className={`font-semibold ${cu.soft} ${HOVER_CUE}`}>Dotted underline</span>
-          {' '}= hover to see every brand, branch or point balance
+          {/* One text run, as before, so desktop renders the line exactly as it did. */}
+          {' '}{`= ${isDesktop ? 'hover' : 'tap'} to see every brand, branch or point balance`}
         </p>
       </div>
 
@@ -489,7 +716,8 @@ const Customers: React.FC = () => {
         <div className={`${cu.card} rounded-[16px] p-12 text-center text-[14px] ${cu.muted}`}>No customers match these filters.</div>
       ) : (
         <>
-          <div className="overflow-x-auto rounded-[16px] border border-[#ECEDF0] bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
+          {isPhone ? cardList : (
+          <TableScroll className="overflow-x-auto rounded-[16px] border border-[#ECEDF0] bg-white shadow-[0_10px_30px_rgba(15,23,42,.05)] dark:border-slate-700 dark:bg-slate-800">
             <table className="min-w-full border-collapse">
               <thead>
                 <tr className={cu.headRow}>
@@ -588,7 +816,8 @@ const Customers: React.FC = () => {
                 })}
               </tbody>
             </table>
-          </div>
+          </TableScroll>
+          )}
           <PaginationBar
             totalCount={filtered.length}
             page={page}

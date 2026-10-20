@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -277,7 +278,7 @@ const PrintedVouchers: React.FC = () => {
                             onClick={() => startEdit(v)}
                             title="Edit"
                             aria-label={`Edit ${v.name}`}
-                            className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-gray-100 text-gray-600 transition-colors hover:bg-gray-200"
+                            className="flex h-[30px] w-[30px] items-center justify-center rounded-lg max-lg:h-11 max-lg:w-11 bg-gray-100 text-gray-600 transition-colors hover:bg-gray-200"
                           >
                             <MdEdit size={15} />
                           </button>
@@ -297,7 +298,7 @@ const PrintedVouchers: React.FC = () => {
                             }}
                             title="Delete"
                             aria-label={`Delete ${v.name}`}
-                            className="flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-gray-100 text-red-500 transition-colors hover:bg-red-100"
+                            className="flex h-[30px] w-[30px] items-center justify-center rounded-lg max-lg:h-11 max-lg:w-11 bg-gray-100 text-red-500 transition-colors hover:bg-red-100"
                           >
                             <MdDelete size={15} />
                           </button>
@@ -383,7 +384,7 @@ const PrintedVouchers: React.FC = () => {
             <label className={offerLabel} htmlFor="voucher-brand">
               Brand <span className="text-red-500">*</span>
             </label>
-            <select
+            <ResponsiveSelect
               id="voucher-brand"
               value={form.brand_id === '' ? '' : String(form.brand_id)}
               onChange={(e) => changeBrand(e.target.value)}
@@ -396,18 +397,18 @@ const PrintedVouchers: React.FC = () => {
                   {isEntityInactive(b) ? ' (inactive)' : ''}
                 </option>
               ))}
-            </select>
+            </ResponsiveSelect>
             <p className="mt-2 text-[12px] leading-snug text-gray-400">
               The checkout shows a voucher only when the cart is this brand&apos;s.
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 max-sm:grid-cols-1 gap-3">
             <div>
               <label className={offerLabel} htmlFor="voucher-type">
                 Type
               </label>
-              <select
+              <ResponsiveSelect
                 id="voucher-type"
                 value={form.voucher_type}
                 onChange={(e) =>
@@ -417,7 +418,7 @@ const PrintedVouchers: React.FC = () => {
               >
                 <option value="fixed_price">Fixed price for one item</option>
                 <option value="percentage">Percentage off</option>
-              </select>
+              </ResponsiveSelect>
             </div>
             <div>
               <label className={offerLabel} htmlFor="voucher-value">
@@ -536,7 +537,7 @@ const PrintedVouchers: React.FC = () => {
 
           <OfferOrderTypesField value={form.order_types} onChange={(v) => setForm({ ...form, order_types: v })} />
 
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3 max-sm:grid-cols-1">
             <div>
               <label className={offerLabel} htmlFor="voucher-from">
                 Valid from

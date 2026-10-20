@@ -19,6 +19,7 @@ import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { procurementService } from '../../../services/api/procurementService';
 import { useAuth } from '../../../contexts/AuthContext';
+import TableScroll from '../../../components/TableScroll';
 
 export type ProcurementTabKey = 'prs' | 'pos' | 'grns';
 
@@ -61,7 +62,7 @@ const readApiError = (error: any, fallback: string) => {
 const PAGE_SIZE = 10;
 const card = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl';
 const field =
-  'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400';
+  'w-full border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 bg-white dark:bg-slate-800 text-sm text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 max-lg:min-h-[44px]';
 
 type StatusMeta = { label: string; color: string; bg: string; dot: string; accent: string };
 const FALLBACK_STATUS = (raw?: string): StatusMeta => ({
@@ -116,7 +117,7 @@ const FilterTabs: React.FC<{
         <button
           key={t.key}
           onClick={() => onChange(t.key)}
-          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold border ${
+          className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold border max-lg:min-h-[40px] ${
             on
               ? 'bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 border-slate-900 dark:border-slate-100'
               : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700'
@@ -243,15 +244,15 @@ const Pagination: React.FC<{ shown: number; total: number; page: number; totalPa
       <button
         disabled={page <= 1}
         onClick={() => onPage(page - 1)}
-        className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700"
+        className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]"
       >
         Prev
       </button>
-      <span className="px-3.5 py-1.5 rounded-lg bg-red-600 text-white font-semibold">{page}</span>
+      <span className="px-3.5 py-1.5 rounded-lg bg-red-600 text-white font-semibold max-lg:min-h-[44px]">{page}</span>
       <button
         disabled={page >= totalPages}
         onClick={() => onPage(page + 1)}
-        className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700"
+        className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]"
       >
         Next
       </button>
@@ -687,6 +688,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
       availablePrBranches.map((b: any) => ({
         value: String(b.id),
         label: String(b.name ?? `Branch #${b.id}`),
+        inactive: isEntityInactive(b),
       })),
     [availablePrBranches],
   );
@@ -696,6 +698,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
       (vendorsQ.data ?? []).map((v: any) => ({
         value: String(v.id),
         label: String(v.name ?? `Vendor #${v.id}`),
+        inactive: isEntityInactive(v),
       })),
     [vendorsQ.data],
   );
@@ -705,6 +708,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
       (itemsQ.data ?? []).map((it: any) => ({
         value: String(it.id),
         label: String(it.name ?? it.code ?? `Item #${it.id}`),
+        inactive: isEntityInactive(it),
       })),
     [itemsQ.data],
   );
@@ -1329,7 +1333,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               action={
                 hasPrCreatePermission && <button
                   onClick={openCreatePRModal}
-                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm"
+                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm max-lg:min-h-[40px]"
                 >
                   <LuPlus className="w-4 h-4" /> Create requisition
                 </button>
@@ -1353,7 +1357,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                     <input aria-label="Search purchase requisitions" value={prSearchText} onChange={(e) => { setPrSearchText(e.target.value); setPrPage(1); }} placeholder="Search PR, vendor or branch…" className={`${field} pl-9`} />
                   </div>
                   {(prFilterStatus || prFilterBranch || prSearchText) && (
-                    <button onClick={() => { setPrFilterStatus(''); setPrFilterBranch(''); setPrSearchText(''); setPrPage(1); }} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Clear filters</button>
+                    <button onClick={() => { setPrFilterStatus(''); setPrFilterBranch(''); setPrSearchText(''); setPrPage(1); }} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">Clear filters</button>
                   )}
                 </div>
               </div>
@@ -1361,7 +1365,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               {prsQ.isLoading ? (
                 <div className="p-10"><Loader /></div>
               ) : (
-                <div className="overflow-x-auto">
+                <TableScroll>
                   <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1100px]" style={{ gridTemplateColumns: gridCols }}>
                     <div>#</div><div>PR number</div><div>Vendor</div><div>Created by</div><div className="text-right">Items</div><div className="text-right">Qty</div><div>Dates</div><div>Notes</div><div>Status</div><div className="text-right">Actions</div>
                   </div>
@@ -1375,7 +1379,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                       <div key={pr.id} className="grid items-center px-4 py-3 border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50/60 dark:hover:bg-slate-700/30 min-w-[1100px]" style={{ gridTemplateColumns: gridCols, borderLeft: `3px solid ${meta.accent}` }}>
                         <div className="text-[13px] text-slate-400 font-semibold">{(safePage - 1) * PAGE_SIZE + idx + 1}</div>
                         <div className="min-w-0 pr-2">
-                          <button onClick={() => setSelectedPR(pr)} className="text-[13px] font-bold font-mono text-red-600 hover:underline truncate block text-left">{pr.prNumber ?? `PR-${pr.id}`}</button>
+                          <button onClick={() => setSelectedPR(pr)} className="text-[13px] font-bold font-mono text-red-600 hover:underline truncate block text-left max-lg:min-h-[40px]">{pr.prNumber ?? `PR-${pr.id}`}</button>
                           <div className="text-[11.5px] text-slate-400 truncate">{branchById.get(Number(pr.requestingBranchId))?.name ?? '—'}</div>
                         </div>
                         <div className="text-[13.5px] text-slate-700 dark:text-slate-200 truncate pr-2">{vendorById.get(Number(pr.requestedFromVendorId))?.name ?? '—'}</div>
@@ -1390,18 +1394,18 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                           <div style={{ color: pr.approvedAt ? '#0F8A4F' : '#B45309' }}>{pr.approvedAt ? `Approved ${prettyDate(pr.approvedAt)}` : 'Awaiting approval'}</div>
                         </div>
                         <div className={`text-[12.5px] truncate pr-2 ${pr.notes?.trim() ? 'text-slate-600 dark:text-slate-300' : 'text-slate-400 dark:text-slate-500 italic'}`} title={pr.notes ?? ''}>{pr.notes?.trim() ? pr.notes : 'No notes'}</div>
-                        <div><button type="button" onClick={() => setSelectedPRForStatus(pr)} title="Update status"><StatusPill meta={meta} /></button></div>
+                        <div><button type="button" onClick={() => setSelectedPRForStatus(pr)} title="Update status" className="max-lg:min-h-[40px]"><StatusPill meta={meta} /></button></div>
                         <div className="flex gap-1.5 justify-end">
-                          <button onClick={() => setSelectedPR(pr)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">View</button>
+                          <button onClick={() => setSelectedPR(pr)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">View</button>
                           {canEditPRRow(pr) && (
-                            <button onClick={() => openEditPRModal(pr)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Edit</button>
+                            <button onClick={() => openEditPRModal(pr)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">Edit</button>
                           )}
                         </div>
                       </div>
                     );
                   })}
                   <Pagination shown={pageRows.length} total={totalRows} page={safePage} totalPages={totalPages} onPage={setPrPage} />
-                </div>
+                </TableScroll>
               )}
             </div>
           </>
@@ -1451,7 +1455,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                     <input aria-label="Search purchase orders" value={poSearchText} onChange={(e) => { setPoSearchText(e.target.value); setPoPage(1); }} placeholder="Search PO, PR or vendor…" className={`${field} pl-9`} />
                   </div>
                   {(poFilterStatus || poFilterBranch || poSearchText) && (
-                    <button onClick={() => { setPoFilterStatus(''); setPoFilterBranch(''); setPoSearchText(''); setPoPage(1); }} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Clear filters</button>
+                    <button onClick={() => { setPoFilterStatus(''); setPoFilterBranch(''); setPoSearchText(''); setPoPage(1); }} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">Clear filters</button>
                   )}
                 </div>
               </div>
@@ -1459,7 +1463,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               {posQ.isLoading ? (
                 <div className="p-10"><Loader /></div>
               ) : (
-                <div className="overflow-x-auto">
+                <TableScroll>
                   <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1000px]" style={{ gridTemplateColumns: gridCols }}>
                     <div>PO number</div><div>PR reference</div><div>Buyer branch</div><div>Vendor</div><div>Status</div><div className="text-right">Action</div>
                   </div>
@@ -1472,21 +1476,21 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                       <div key={po.id} className="grid items-center px-4 py-3.5 border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50/60 dark:hover:bg-slate-700/30 min-w-[1000px]" style={{ gridTemplateColumns: gridCols, borderLeft: `3px solid ${meta.accent}` }}>
                         <div className="flex items-center gap-2.5 min-w-0 pr-2">
                           <span className="w-8 h-8 rounded-lg flex items-center justify-center flex-none" style={{ color: meta.color, background: meta.bg }}><LuFileText className="w-4 h-4" /></span>
-                          <button onClick={() => setSelectedPO(po)} className="text-[13px] font-bold font-mono text-slate-900 dark:text-slate-100 hover:underline truncate text-left">{po.poNumber}</button>
+                          <button onClick={() => setSelectedPO(po)} className="text-[13px] font-bold font-mono text-slate-900 dark:text-slate-100 hover:underline truncate text-left max-lg:min-h-[40px]">{po.poNumber}</button>
                         </div>
                         <div className="text-[12.5px] font-semibold font-mono text-red-600 truncate pr-2">{po.purchaseRequisition?.prNumber ?? '—'}</div>
                         <div className="text-[13.5px] text-slate-700 dark:text-slate-200 truncate pr-2">{branchById.get(Number(po.buyerBranchId))?.name ?? '—'}</div>
                         <div className="text-[13.5px] text-slate-700 dark:text-slate-200 truncate pr-2">{vendorById.get(Number(po.vendorId))?.name ?? '—'}</div>
                         <div><StatusPill meta={meta} /></div>
                         <div className="flex gap-1.5 justify-end">
-                          <button onClick={() => setSelectedPO(po)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">View</button>
-                          <button onClick={() => editable && openEditPOModal(po)} disabled={!editable} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed">Edit</button>
+                          <button onClick={() => setSelectedPO(po)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">View</button>
+                          <button onClick={() => editable && openEditPOModal(po)} disabled={!editable} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed max-lg:min-h-[40px]">Edit</button>
                         </div>
                       </div>
                     );
                   })}
                   <Pagination shown={pageRows.length} total={totalRows} page={safePage} totalPages={totalPages} onPage={setPoPage} />
-                </div>
+                </TableScroll>
               )}
             </div>
           </>
@@ -1525,7 +1529,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                     setGrnForm({ grn_id: '', grn_number: '', purchase_order_id: '', notes: '', lines: [] });
                     setIsCreateGRNOpen(true);
                   }}
-                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm"
+                  className="inline-flex items-center gap-2 rounded-lg bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 text-sm font-semibold shadow-sm max-lg:min-h-[40px]"
                 >
                   <LuPlus className="w-4 h-4" /> Receive delivery
                 </button>
@@ -1576,7 +1580,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                     <input aria-label="Search goods receipt notes" value={grnSearchText} onChange={(e) => { setGrnSearchText(e.target.value); setGrnPage(1); }} placeholder="Search GRN, PO or PR…" className={`${field} pl-9`} />
                   </div>
                   {(grnFilterStatus || grnFilterBranch || grnSearchText || grnFilterFrom || grnFilterTo) && (
-                    <button onClick={() => { setGrnFilterStatus(''); setGrnFilterBranch(''); setGrnSearchText(''); setGrnFilterFrom(''); setGrnFilterTo(''); setGrnPage(1); }} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Clear filters</button>
+                    <button onClick={() => { setGrnFilterStatus(''); setGrnFilterBranch(''); setGrnSearchText(''); setGrnFilterFrom(''); setGrnFilterTo(''); setGrnPage(1); }} className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">Clear filters</button>
                   )}
                 </div>
               </div>
@@ -1584,7 +1588,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
               {grnsQ.isLoading ? (
                 <div className="p-10"><Loader /></div>
               ) : (
-                <div className="overflow-x-auto">
+                <TableScroll>
                   <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1000px]" style={{ gridTemplateColumns: gridCols }}>
                     <div>GRN number</div><div>PR reference</div><div>PO number</div><div>Branch</div><div className="text-right">Lines</div><div>Status</div><div className="text-right">Actions</div>
                   </div>
@@ -1596,29 +1600,29 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
                     const isPosted = String(g.status) === 'posted';
                     return (
                       <div key={g.id} className="grid items-center px-4 py-3.5 border-b border-slate-100 dark:border-slate-700 hover:bg-slate-50/60 dark:hover:bg-slate-700/30 min-w-[1000px]" style={{ gridTemplateColumns: gridCols, borderLeft: `3px solid ${meta.accent}` }}>
-                        <button onClick={() => setSelectedGRN(g)} className="text-[13px] font-bold font-mono text-slate-900 dark:text-slate-100 hover:underline truncate text-left pr-2">{g.grnNumber ?? `GRN-${g.id}`}</button>
+                        <button onClick={() => setSelectedGRN(g)} className="text-[13px] font-bold font-mono text-slate-900 dark:text-slate-100 hover:underline truncate text-left pr-2 max-lg:min-h-[40px]">{g.grnNumber ?? `GRN-${g.id}`}</button>
                         <div className="text-[12.5px] font-semibold font-mono text-red-600 truncate pr-2">{g.purchaseOrder?.purchaseRequisition?.prNumber ?? '—'}</div>
                         <div className="text-[12.5px] font-mono text-slate-600 dark:text-slate-300 truncate pr-2">{g.purchaseOrder?.poNumber ?? poById.get(Number(g.purchaseOrderId))?.poNumber ?? '—'}</div>
                         <div className="text-[13.5px] text-slate-700 dark:text-slate-200 truncate pr-2">{branchById.get(Number(g.branchId))?.name ?? '—'}</div>
                         <div className="text-right text-[13.5px] font-semibold text-slate-900 dark:text-slate-100">{(g.lines ?? []).length}</div>
                         <div><StatusPill meta={meta} /></div>
                         <div className="flex gap-1.5 justify-end flex-wrap">
-                          <button onClick={() => setSelectedGRN(g)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">View</button>
+                          <button onClick={() => setSelectedGRN(g)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">View</button>
                           {isDraft && hasGrnPostPermission && (
                             <>
-                              <button onClick={() => openEditGRNModal(g)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700">Edit</button>
-                              <button onClick={() => setConfirmPostGrnId(Number(g.id))} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[12px] font-bold">Post</button>
+                              <button onClick={() => openEditGRNModal(g)} className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 text-[12px] font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">Edit</button>
+                              <button onClick={() => setConfirmPostGrnId(Number(g.id))} className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-[12px] font-bold max-lg:min-h-[40px]">Post</button>
                             </>
                           )}
                           {isPosted && hasGrnReversePermission && (
-                            <button onClick={() => setConfirmReverseGrnId(Number(g.id))} className="px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-[12px] font-bold">Reverse</button>
+                            <button onClick={() => setConfirmReverseGrnId(Number(g.id))} className="px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-[12px] font-bold max-lg:min-h-[40px]">Reverse</button>
                           )}
                         </div>
                       </div>
                     );
                   })}
                   <Pagination shown={pageRows.length} total={totalRows} page={safePage} totalPages={totalPages} onPage={setGrnPage} />
-                </div>
+                </TableScroll>
               )}
             </div>
           </>
@@ -1709,7 +1713,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
           </div>
 
           <div className="border rounded-lg">
-            <div className="px-3 py-2 text-xs font-medium text-slate-600 border-b">
+            <div className="px-3 py-2 text-xs font-medium text-slate-600 border-b max-lg:min-h-[44px]">
               Requested products ({(prForm.lines ?? []).length})
             </div>
             {(prForm.lines ?? []).length === 0 ? (
@@ -2095,7 +2099,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
             </div>
           </div>
           <div className="border rounded-lg">
-            <div className="px-3 py-2 text-xs font-medium text-slate-600 border-b">
+            <div className="px-3 py-2 text-xs font-medium text-slate-600 border-b max-lg:min-h-[44px]">
               Lines from purchase order — enter received quantities
             </div>
             {(grnForm.lines ?? []).length === 0 ? (
@@ -2380,7 +2384,7 @@ const Procurement: React.FC<{ initialTab?: ProcurementTabKey; showTabs?: boolean
           </div>
 
           <div className="border rounded-lg">
-            <div className="px-3 py-2 text-xs font-medium text-slate-600 border-b">
+            <div className="px-3 py-2 text-xs font-medium text-slate-600 border-b max-lg:min-h-[44px]">
               PO lines ({(poForm.lines ?? []).length})
             </div>
             {(poForm.lines ?? []).length === 0 ? (

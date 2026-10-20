@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { labelWithStatus } from '../../../utils/entityStatus';
+import ResponsiveSelect from '../../../components/ResponsiveSelect';
+import { isEntityInactive, labelWithStatus } from '../../../utils/entityStatus';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { LuPackage, LuSlidersHorizontal, LuUtensils, LuTruck, LuTrash2, LuRotateCcw, LuArrowUp, LuArrowDown, LuDownload, LuExternalLink } from 'react-icons/lu';
@@ -10,9 +11,10 @@ import apiClient from '../../../utils/apiClient';
 import { inventoryService } from '../../../services/api/inventoryService';
 import { recordBeacon } from '../../../utils/activityBeacon';
 import { useResultsRefreshing } from '../../../components/useResultsRefreshing';
+import TableScroll from '../../../components/TableScroll';
 
 const card = 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl';
-const fieldBox = 'flex items-center gap-2 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm';
+const fieldBox = 'flex items-center gap-2 px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-sm max-lg:min-h-[44px]';
 const BRAND_DOTS = ['#16A34A', '#7C3AED', '#EA580C', '#2563EB', '#DB2777', '#0891B2', '#CA8A04', '#4F46E5'];
 
 // eventType -> label/sub/icon-category. Direction (in/out) comes from qtyDelta sign.
@@ -84,7 +86,7 @@ const StockLedger: React.FC = () => {
   const itemById = useMemo(() => { const m = new Map<number, any>(); for (const it of itemsQ.data ?? []) m.set(Number(it.id), it); return m; }, [itemsQ.data]);
   const uomById = useMemo(() => { const m = new Map<number, any>(); for (const u of uomsQ.data ?? []) m.set(Number(u.id), u); return m; }, [uomsQ.data]);
   const brandById = useMemo(() => { const m = new Map<number, { name: string; color: string }>(); for (const b of brandsQ.data ?? []) m.set(Number(b.id), { name: b.name, color: BRAND_DOTS[Number(b.id) % BRAND_DOTS.length] }); return m; }, [brandsQ.data]);
-  const itemOptions = useMemo(() => [{ value: '', label: 'All items' }, ...(itemsQ.data ?? []).map((it: any) => ({ value: String(it.id), label: it.name }))], [itemsQ.data]);
+  const itemOptions = useMemo(() => [{ value: '', label: 'All items' }, ...(itemsQ.data ?? []).map((it: any) => ({ value: String(it.id), label: it.name, inactive: isEntityInactive(it) }))], [itemsQ.data]);
   const typeOptions = useMemo(() => [{ value: '', label: 'All movements' }, ...Object.entries(EVENT_META).map(([k, v]) => ({ value: k, label: v.name + (v.sub ? ` · ${v.sub}` : '') }))], []);
 
   const unitCode = (iid: number) => uomById.get(Number(itemById.get(iid)?.baseUomId))?.code ?? '';
@@ -140,7 +142,7 @@ const StockLedger: React.FC = () => {
 
   const DirTab = ({ id, label, color }: any) => {
     const on = dir === id;
-    return <button onClick={() => { setDir(id); setPage(1); }} className={`px-3.5 py-1.5 rounded-md text-[13px] font-semibold ${on ? 'bg-white dark:bg-slate-700 shadow-sm' : ''}`} style={{ color: on ? color : '#7A828F' }}>{label}</button>;
+    return <button onClick={() => { setDir(id); setPage(1); }} className={`px-3.5 py-1.5 rounded-md text-[13px] font-semibold max-lg:min-h-[40px] ${on ? 'bg-white dark:bg-slate-700 shadow-sm' : ''}`} style={{ color: on ? color : '#7A828F' }}>{label}</button>;
   };
 
   return (
@@ -154,9 +156,9 @@ const StockLedger: React.FC = () => {
         </div>
         <div className="relative">
           <span className="absolute left-3 top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full bg-red-500 pointer-events-none" />
-          <select value={activeBranchId ?? ''} onChange={(e) => { setBranchId(Number(e.target.value)); setPage(1); }} className="appearance-none pl-7 pr-9 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-slate-900 dark:text-slate-100 min-w-[210px]">
+          <ResponsiveSelect value={activeBranchId ?? ''} onChange={(e) => { setBranchId(Number(e.target.value)); setPage(1); }} className="appearance-none pl-7 pr-9 py-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm font-semibold text-slate-900 dark:text-slate-100 min-w-[210px]">
             {branches.map((b: any) => <option key={b.id} value={b.id}>{labelWithStatus(` ()`, b)}</option>)}
-          </select>
+          </ResponsiveSelect>
         </div>
       </div>
 
@@ -173,8 +175,8 @@ const StockLedger: React.FC = () => {
         <div className="flex items-center justify-between gap-4 px-4 py-4 border-b border-slate-100 dark:border-slate-700 flex-wrap">
           <div><div className="text-[15px] font-bold text-slate-900 dark:text-slate-100">Movements</div><div className="text-[12.5px] text-slate-400 mt-0.5">Filter by date, item, type or reference</div></div>
           <div className="flex gap-2">
-            <button onClick={exportCsv} disabled={filtered.length === 0} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50"><LuDownload className="w-3.5 h-3.5" /> Export CSV</button>
-            <button onClick={clearFilters} className="px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700">Clear filters</button>
+            <button onClick={exportCsv} disabled={filtered.length === 0} className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 max-lg:min-h-[40px]"><LuDownload className="w-3.5 h-3.5" /> Export CSV</button>
+            <button onClick={clearFilters} className="px-3.5 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-[13px] font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">Clear filters</button>
           </div>
         </div>
 
@@ -191,7 +193,7 @@ const StockLedger: React.FC = () => {
 
         {loading ? <div className="p-10"><Loader /></div> : (
           <FetchingOverlay active={ledgerRefreshing} label="Updating movements…" className="rounded-b-xl">
-          <div className="overflow-x-auto">
+          <TableScroll>
             <div className="grid items-center px-4 py-3 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-100 dark:border-slate-700 text-[11.5px] font-bold uppercase tracking-wide text-slate-400 min-w-[1020px]" style={{ gridTemplateColumns: '150px minmax(180px,1.3fr) 130px 140px minmax(150px,1fr) 110px 120px 110px' }}>
               <div>Time</div><div>Type</div><div>Item</div><div>Location</div><div>Lot / Expiry</div><div className="text-right pr-2">Qty Δ</div><div className="pl-3">Reference</div><div>By</div>
             </div>
@@ -233,11 +235,11 @@ const StockLedger: React.FC = () => {
                     </> : <span className="text-slate-300">—</span>}
                   </div>
                   <div className="text-right">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[13.5px] font-bold" style={{ color: isIn ? '#0F8A4F' : '#DC2626', background: isIn ? '#E6F6EE' : '#FCE9E9' }}>{isIn ? <LuArrowUp className="w-3 h-3" /> : <LuArrowDown className="w-3 h-3" />}{isIn ? '+' : '−'}{fmtNum(Math.abs(Number(r.qtyDelta ?? 0)))} {uc}</span>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[13.5px] font-bold max-lg:min-h-[44px]" style={{ color: isIn ? '#0F8A4F' : '#DC2626', background: isIn ? '#E6F6EE' : '#FCE9E9' }}>{isIn ? <LuArrowUp className="w-3 h-3" /> : <LuArrowDown className="w-3 h-3" />}{isIn ? '+' : '−'}{fmtNum(Math.abs(Number(r.qtyDelta ?? 0)))} {uc}</span>
                   </div>
                   <div className="pl-3">
                     {rm.path
-                      ? <button onClick={() => navigate(rm.path as string)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[12.5px] font-bold font-mono text-red-600 bg-red-50 hover:bg-red-100">{rm.label}<LuExternalLink className="w-3 h-3" /></button>
+                      ? <button onClick={() => navigate(rm.path as string)} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[12.5px] font-bold font-mono text-red-600 bg-red-50 hover:bg-red-100 max-lg:min-h-[40px]">{rm.label}<LuExternalLink className="w-3 h-3" /></button>
                       : <span className="text-[12.5px] font-mono text-slate-400">{rm.label}</span>}
                   </div>
                   <div className="flex items-center gap-2 min-w-0"><span className="w-6 h-6 rounded-full bg-slate-800 text-white flex items-center justify-center text-[11px] font-bold flex-none uppercase">{(by[0] ?? '?')}</span><span className="text-[12.5px] text-slate-500 dark:text-slate-400 truncate">{by}</span></div>
@@ -248,11 +250,11 @@ const StockLedger: React.FC = () => {
             <div className="flex items-center justify-between px-4 py-3.5 text-[13px] text-slate-500 flex-wrap gap-3">
               <span>Showing <strong className="text-slate-700 dark:text-slate-200">{pageRows.length}</strong> of {filtered.length} rows · Page {safePage}/{totalPages}</span>
               <div className="flex gap-1.5">
-                <button disabled={safePage <= 1} onClick={() => setPage(safePage - 1)} className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700">Prev</button>
-                <button disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)} className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700">Next</button>
+                <button disabled={safePage <= 1} onClick={() => setPage(safePage - 1)} className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">Prev</button>
+                <button disabled={safePage >= totalPages} onClick={() => setPage(safePage + 1)} className="px-3.5 py-1.5 border border-slate-200 dark:border-slate-700 rounded-lg font-semibold disabled:opacity-40 hover:bg-slate-50 dark:hover:bg-slate-700 max-lg:min-h-[40px]">Next</button>
               </div>
             </div>
-          </div>
+          </TableScroll>
           </FetchingOverlay>
         )}
       </div>

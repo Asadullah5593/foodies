@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';
@@ -96,7 +97,7 @@ const LoyaltySettings: React.FC = () => {
 
   if (effectiveBrandId == null && tenantId == null) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6 max-w-7xl mx-auto">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 max-w-7xl mx-auto">
         <Card className="p-6">
           <p className="text-gray-600 dark:text-slate-400">You need a tenant context to manage loyalty settings.</p>
         </Card>
@@ -110,7 +111,7 @@ const LoyaltySettings: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 max-w-7xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 max-w-7xl mx-auto">
       <div className="mb-8">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800 dark:text-slate-100">Reward Point Settings</h1>
         <p className="mt-1 text-sm text-gray-500 dark:text-slate-400">Configure how customers earn and redeem reward points for each brand. Each brand runs its own program.</p>
@@ -146,7 +147,8 @@ const LoyaltySettings: React.FC = () => {
                   Enable Reward Points
                 </label>
               </div>
-              <div className="min-w-0 flex-1 max-w-md">
+              {/* Phones: the name field takes its own line instead of squeezing beside the checkbox. */}
+              <div className="min-w-0 flex-1 max-w-md max-sm:basis-full">
                 <label className={labelClass}>Reward Point display name</label>
                 <input
                   type="text"
@@ -230,7 +232,7 @@ const LoyaltySettings: React.FC = () => {
                       onChange={(e) => setForm((f) => ({ ...f, expiry_period: Math.max(1, +e.target.value || 0) }))}
                       className={`${inputClass} w-28`}
                     />
-                    <select
+                    <ResponsiveSelect
                       value={form.expiry_unit}
                       onChange={(e) => setForm((f) => ({ ...f, expiry_unit: e.target.value as 'day' | 'month' | 'year' }))}
                       className={inputClass}
@@ -238,7 +240,7 @@ const LoyaltySettings: React.FC = () => {
                       <option value="day">Day(s)</option>
                       <option value="month">Month(s)</option>
                       <option value="year">Year(s)</option>
-                    </select>
+                    </ResponsiveSelect>
                   </div>
                 </div>
               </div>

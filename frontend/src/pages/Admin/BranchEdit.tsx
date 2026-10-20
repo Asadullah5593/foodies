@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
@@ -15,7 +16,7 @@ import { useDebouncedValue } from '../../hooks/useDebouncedValue';
 import { useTypeaheadSuggestions } from '../../hooks/useTypeaheadSuggestions';
 import TypeaheadDropdown from '../../components/TypeaheadDropdown';
 import LocationPicker from '../../components/LocationPicker';
-import { labelWithStatus } from '../../utils/entityStatus';
+import { isEntityActive, labelWithStatus } from '../../utils/entityStatus';
 
 const inputClass =
   'w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100 placeholder-gray-400 dark:placeholder-slate-500 focus:ring-2 focus:ring-red-500/50 dark:focus:ring-red-500/40 focus:border-red-500 dark:focus:border-red-500 transition-colors';
@@ -216,6 +217,17 @@ const BranchEdit: React.FC = () => {
     },
     enabled: brandIdsForMenu.length > 0,
   });
+  // The category filter below is rebuilt from the items' category references, which carry only an
+  // id and a name. Whether a category is inactive is known only to the categories themselves, so
+  // they are fetched once and the filter's options read their status from here.
+  const { data: allCategoriesForStatus } = useQuery({
+    queryKey: ['categoriesStatusForBranchEdit'],
+    queryFn: () => adminService.getCategories(),
+  });
+  const categoryStatusById = React.useMemo(
+    () => new Map(((allCategoriesForStatus ?? []) as Array<{ id: number }>).map((c) => [c.id, c])),
+    [allCategoriesForStatus],
+  );
 
   type MenuItemWithMeta = MenuItem & { brand_id?: number | null; category?: { id: number; name: string } | null };
   const filteredMenuItems = React.useMemo(() => {
@@ -247,8 +259,10 @@ const BranchEdit: React.FC = () => {
       const cname = mi.category?.name ?? 'Uncategorised';
       if (cid && !seen.has(cid)) seen.set(cid, cname);
     });
-    return Array.from(seen.entries()).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
-  }, [brandMenuItems, menuItemFilterBrand]);
+    return Array.from(seen.entries())
+      .map(([id, name]) => ({ id, name, is_active: isEntityActive(categoryStatusById.get(id)) }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [brandMenuItems, menuItemFilterBrand, categoryStatusById]);
 
   const menuItemsGroupedByCategory = React.useMemo(() => {
     const byCat = new Map<number, { name: string; items: MenuItemWithMeta[] }>();
@@ -367,7 +381,7 @@ const BranchEdit: React.FC = () => {
   const isSubmitting = createMutation.isPending || updateMutation.isPending;
   if (!isNew && (branchId == null || isNaN(branchId))) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
         <p className="text-gray-600 dark:text-slate-400">Invalid branch ID.</p>
         <Link to="/admin/branches" className="text-red-600 dark:text-red-400 hover:underline mt-2 inline-block">← Back to Branches</Link>
       </div>
@@ -378,7 +392,7 @@ const BranchEdit: React.FC = () => {
   }
   if (!isNew && branchId && !branch && !loadingBranch) {
     return (
-      <div className="w-full px-4 sm:px-6 lg:px-8 py-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6">
         <p className="text-gray-600 dark:text-slate-400">Branch not found.</p>
         <Link to="/admin/branches" className="text-red-600 dark:text-red-400 hover:underline mt-2 inline-block">← Back to Branches</Link>
       </div>
@@ -386,7 +400,7 @@ const BranchEdit: React.FC = () => {
   }
 
   return (
-    <div className="w-full px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto">
+    <div className="w-full px-4 sm:px-6 lg:px-8 max-lg:px-0 py-6 max-w-5xl mx-auto">
       <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <Link to="/admin/branches" className="text-sm text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200 mb-2 inline-block">← Back to Branches</Link>
@@ -495,7 +509,7 @@ const BranchEdit: React.FC = () => {
             </div>
             <div>
               <label className={labelClass}>Timezone</label>
-              <select
+              <ResponsiveSelect
                 value={formData.timezone}
                 onChange={(e) => setFormData({ ...formData, timezone: e.target.value })}
                 className={inputClass}
@@ -503,7 +517,7 @@ const BranchEdit: React.FC = () => {
                 {(TIMEZONE_OPTIONS.includes(formData.timezone) ? TIMEZONE_OPTIONS : [formData.timezone, ...TIMEZONE_OPTIONS]).map((tz) => (
                   <option key={tz} value={tz}>{tz}</option>
                 ))}
-              </select>
+              </ResponsiveSelect>
               <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
                 The branch's local time. Time-restricted items &amp; deals (e.g. lunch offers) go live by this clock.
               </p>
@@ -536,9 +550,9 @@ const BranchEdit: React.FC = () => {
             <div>
               <span className={labelClass}>Supported order types</span>
               <div className="flex flex-wrap gap-4 pt-1">
-                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.supports_dine_in} onChange={(e) => setFormData({ ...formData, supports_dine_in: e.target.checked })} /> Dine-in</label>
-                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.supports_takeaway} onChange={(e) => setFormData({ ...formData, supports_takeaway: e.target.checked })} /> Takeaway</label>
-                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={formData.supports_delivery} onChange={(e) => setFormData({ ...formData, supports_delivery: e.target.checked })} /> Delivery</label>
+                <label className="flex items-center gap-2 cursor-pointer max-lg:min-h-[44px]"><input type="checkbox" checked={formData.supports_dine_in} onChange={(e) => setFormData({ ...formData, supports_dine_in: e.target.checked })} /> Dine-in</label>
+                <label className="flex items-center gap-2 cursor-pointer max-lg:min-h-[44px]"><input type="checkbox" checked={formData.supports_takeaway} onChange={(e) => setFormData({ ...formData, supports_takeaway: e.target.checked })} /> Takeaway</label>
+                <label className="flex items-center gap-2 cursor-pointer max-lg:min-h-[44px]"><input type="checkbox" checked={formData.supports_delivery} onChange={(e) => setFormData({ ...formData, supports_delivery: e.target.checked })} /> Delivery</label>
               </div>
             </div>
             <div>
@@ -560,7 +574,7 @@ const BranchEdit: React.FC = () => {
               </p>
             </div>
             <div className="sm:col-span-2">
-              <label className="flex items-start gap-2 cursor-pointer max-w-xl">
+              <label className="flex items-start gap-2 cursor-pointer max-w-xl max-lg:py-1.5">
                 <input
                   type="checkbox"
                   checked={formData.auto_dispatch_enabled}
@@ -584,7 +598,7 @@ const BranchEdit: React.FC = () => {
           <h2 className="text-sm font-semibold uppercase tracking-wider text-gray-500 dark:text-slate-400 border-b border-gray-200 dark:border-slate-600 pb-2 mb-4">Status</h2>
           <div className="space-y-4">
             <div className="flex flex-wrap items-start gap-6">
-              <label className="flex items-start gap-2 cursor-pointer max-w-md">
+              <label className="flex items-start gap-2 cursor-pointer max-w-md max-lg:py-1.5">
                 <input type="checkbox" checked={formData.is_active} onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })} className="mt-1 rounded border-gray-300 dark:border-slate-500 text-red-600 focus:ring-red-500" />
                 <span>
                   <span className="text-sm font-medium text-gray-700 dark:text-slate-300">Branch active</span>
@@ -612,7 +626,7 @@ const BranchEdit: React.FC = () => {
             )}
           </div>
           <div className="space-y-4">
-            <label className="flex items-start gap-2 cursor-pointer max-w-2xl">
+            <label className="flex items-start gap-2 cursor-pointer max-w-2xl max-lg:py-1.5">
               <input
                 type="checkbox"
                 checked={formData.fbr_enabled}
@@ -642,14 +656,14 @@ const BranchEdit: React.FC = () => {
               </div>
               <div>
                 <label className={labelClass}>Environment</label>
-                <select
+                <ResponsiveSelect
                   value={formData.fbr_environment}
                   onChange={(e) => setFormData({ ...formData, fbr_environment: e.target.value })}
                   className={inputClass}
                 >
                   <option value="sandbox">Sandbox (testing)</option>
                   <option value="live">Live (production)</option>
-                </select>
+                </ResponsiveSelect>
               </div>
             </div>
             <div>
@@ -750,22 +764,22 @@ const BranchEdit: React.FC = () => {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 mb-3">
-                <select
+                <ResponsiveSelect
                   value={menuItemFilterBrand === '' ? '' : String(menuItemFilterBrand)}
                   onChange={(e) => { setMenuItemFilterBrand(e.target.value === '' ? '' : parseInt(e.target.value, 10)); setMenuItemFilterCategory(''); }}
                   className="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-red-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
                 >
                   <option value="">All brands</option>
                   {(brands as Brand[])?.filter((b) => formData.brand_ids.includes(b.id)).map((b) => <option key={b.id} value={b.id}>{labelWithStatus(b.name, b)}</option>) ?? []}
-                </select>
-                <select
+                </ResponsiveSelect>
+                <ResponsiveSelect
                   value={menuItemFilterCategory === '' ? '' : String(menuItemFilterCategory)}
                   onChange={(e) => setMenuItemFilterCategory(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
                   className="px-3 py-2 text-sm border border-gray-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-red-500 bg-white dark:bg-slate-800 text-gray-900 dark:text-slate-100"
                 >
                   <option value="">All categories</option>
                   {menuItemCategoriesForFilter.map((c) => <option key={c.id} value={c.id}>{labelWithStatus(c.name, c)}</option>)}
-                </select>
+                </ResponsiveSelect>
                 <div className="relative">
                   <input
                     type="search"
@@ -834,12 +848,12 @@ const BranchEdit: React.FC = () => {
                           {isExpanded && (
                             <div className="px-4 pb-3 pt-0 border-t border-gray-100 dark:border-slate-700">
                               <div className="flex gap-2 mb-2 pt-2">
-                                <button type="button" onClick={() => setLinkedMenuItemIds((prev) => Array.from(new Set([...prev, ...items.map((mi) => mi.id)])))} className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline">Link all in category</button>
-                                <button type="button" onClick={() => setLinkedMenuItemIds((prev) => prev.filter((id) => !items.some((i) => i.id === id)))} className="text-xs font-medium text-gray-600 dark:text-slate-400 hover:underline">Unlink all in category</button>
+                                <button type="button" onClick={() => setLinkedMenuItemIds((prev) => Array.from(new Set([...prev, ...items.map((mi) => mi.id)])))} className="text-xs font-medium text-red-600 dark:text-red-400 hover:underline max-lg:inline-flex max-lg:min-h-[40px] max-lg:items-center">Link all in category</button>
+                                <button type="button" onClick={() => setLinkedMenuItemIds((prev) => prev.filter((id) => !items.some((i) => i.id === id)))} className="text-xs font-medium text-gray-600 dark:text-slate-400 hover:underline max-lg:inline-flex max-lg:min-h-[40px] max-lg:items-center">Unlink all in category</button>
                               </div>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
                                 {items.map((mi) => (
-                                  <label key={mi.id} className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 rounded px-2 py-1.5 -mx-2">
+                                  <label key={mi.id} className="flex items-center gap-2 text-sm text-gray-700 dark:text-slate-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700/50 rounded px-2 py-1.5 -mx-2 max-lg:min-h-[44px]">
                                     <input type="checkbox" checked={linkedMenuItemIds.includes(mi.id)} onChange={(e) => setLinkedMenuItemIds((prev) => e.target.checked ? Array.from(new Set([...prev, mi.id])) : prev.filter((x) => x !== mi.id))} className="rounded border-gray-300 dark:border-slate-500 text-red-600 focus:ring-red-500" />
                                     <span className="flex-1 truncate">{mi.name}</span>
                                     <span className="text-gray-500 dark:text-slate-400 text-xs shrink-0">{formatCurrency(Number(mi.base_price))}</span>
