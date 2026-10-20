@@ -96,7 +96,15 @@ describe('Repeated Customers report', () => {
     renderPage();
     expect(await screen.findByText('John Doe')).toBeInTheDocument();
     const { from, to } = defaultRange();
-    expect(getRepeatedCustomers).toHaveBeenCalledWith({ date_from: from, date_to: to, branch_id: null, brand_id: null });
+    // Every order status counts unless one is picked.
+    expect(getRepeatedCustomers).toHaveBeenCalledWith({
+      date_from: from,
+      date_to: to,
+      branch_id: null,
+      brand_id: null,
+      status: null,
+    });
+    expect(screen.getByRole('button', { name: 'Order status: All statuses' })).toBeInTheDocument();
     expect(pageViews).toHaveBeenCalledWith('repeated-customers');
 
     const tile = (label: string) => screen.getByText(label, { selector: 'div' }).parentElement as HTMLElement;
@@ -132,6 +140,7 @@ describe('Repeated Customers report', () => {
       date_to: '2026-07-31',
       branch_id: 10,
       brand_id: 25,
+      status: null,
     });
 
     fireEvent.click(screen.getByRole('link', { name: 'John Doe' }));
@@ -142,6 +151,44 @@ describe('Repeated Customers report', () => {
     expect(sp.get('date_to')).toBe('2026-07-31');
     expect(sp.get('branch_id')).toBe('10');
     expect(sp.get('brand_id')).toBe('25');
+    // All statuses ⇒ the Orders page shows every status too.
+    expect(sp.has('status')).toBe(false);
+  });
+
+  it('counts only the picked order status, and opens the orders of that status', async () => {
+    renderPage('/admin/reports/repeated-customers?date_from=2026-07-01&date_to=2026-07-31');
+    await screen.findByText('John Doe');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Order status: All statuses' }));
+    // The dropdown picks on mouse-down (so the search box keeps focus).
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Completed' }));
+    await waitFor(() =>
+      expect(getRepeatedCustomers).toHaveBeenLastCalledWith({
+        date_from: '2026-07-01',
+        date_to: '2026-07-31',
+        branch_id: null,
+        brand_id: null,
+        status: 'completed',
+      }),
+    );
+    expect(screen.getByRole('button', { name: 'Order status: Completed' })).toBeInTheDocument();
+    expect(screen.getByText(/All branches · All brands · Completed/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('link', { name: 'John Doe' }));
+    const sp = new URLSearchParams(screen.getByTestId('orders-page').textContent ?? '');
+    expect(sp.get('status')).toBe('completed');
+    expect(sp.get('date_from')).toBe('2026-07-01');
+  });
+
+  it('reads the status from the address, and ignores one that is not a status', async () => {
+    renderPage('/admin/reports/repeated-customers?status=cancelled');
+    await screen.findByText('John Doe');
+    expect(getRepeatedCustomers).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'cancelled' }));
+
+    getRepeatedCustomers.mockClear();
+    renderPage('/admin/reports/repeated-customers?status=needs_rider');
+    await waitFor(() => expect(getRepeatedCustomers).toHaveBeenCalled());
+    expect(getRepeatedCustomers).toHaveBeenLastCalledWith(expect.objectContaining({ status: null }));
   });
 
   it('keeps the name as plain text for someone who cannot open Orders', async () => {

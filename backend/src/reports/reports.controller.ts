@@ -159,6 +159,7 @@ export class ReportsController {
         @Query('brand_id') brandId: string,
         @Query('date_from') dateFrom: string,
         @Query('date_to') dateTo: string,
+        @Query('status') status: string,
     ) {
         return this.service.repeatedCustomers(
             user.tenantId,
@@ -167,6 +168,7 @@ export class ReportsController {
                 brand_id: brandId ? +brandId : undefined,
                 date_from: dateFrom,
                 date_to: dateTo,
+                status: status || undefined,
             },
             user.allowedBranchIds,
             user.allowedBrandIds,

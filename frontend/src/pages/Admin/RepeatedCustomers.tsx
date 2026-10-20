@@ -21,6 +21,17 @@ const PAGE_SIZE = 25;
 
 type SortKey = 'days' | 'spend' | 'name';
 
+/** The Orders page's statuses, in the same order; '' = every status (the default). */
+const STATUS_OPTIONS = [
+  { value: '', label: 'All statuses' },
+  { value: 'placed', label: 'Placed' },
+  { value: 'accepted', label: 'Accepted' },
+  { value: 'preparing', label: 'Preparing' },
+  { value: 'ready', label: 'Ready' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'cancelled', label: 'Cancelled' },
+];
+
 const money = (n: number): string =>
   `Rs. ${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -67,9 +78,10 @@ const PRINT_CSS = `
  *
  * Customers who ordered on two or more DIFFERENT days in the range. Several
  * orders on one day are one visit, so the number is days, not orders.
- * Cancelled orders are left out; spend is the total of the orders counted.
- * Each name opens the Orders page on that customer, narrowed to the same
- * range, branch and brand, so the list there shows the days counted here.
+ * Every order status counts unless the Order status filter picks one; spend
+ * never includes cancelled orders. Each name opens the Orders page on that
+ * customer, narrowed to the same range, branch, brand and status, so the list
+ * there shows the days counted here.
  *
  * The filters live in the URL: going back from a customer's orders lands on
  * the same report, not a reset one.
@@ -87,6 +99,8 @@ const RepeatedCustomers: React.FC = () => {
   const branchId = /^\d+$/.test(searchParams.get('branch_id') ?? '') ? Number(searchParams.get('branch_id')) : null;
   const brandId = /^\d+$/.test(searchParams.get('brand_id') ?? '') ? Number(searchParams.get('brand_id')) : null;
   const search = searchParams.get('q') ?? '';
+  const statusParam = searchParams.get('status') ?? '';
+  const status = STATUS_OPTIONS.some((o) => o.value === statusParam) ? statusParam : '';
 
   const [sortKey, setSortKey] = useState<SortKey>('days');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
@@ -123,17 +137,23 @@ const RepeatedCustomers: React.FC = () => {
     queryFn: async () => (await apiClient.get<Array<{ id: number; name: string }>>('/admin/brands')).data,
   });
 
-  const reportKey = ['repeated-customers-report', dateFrom, dateTo, branchId, brandId];
+  const reportKey = ['repeated-customers-report', dateFrom, dateTo, branchId, brandId, status];
   const { data, isLoading, isError, isFetching } = useQuery<RepeatedCustomersReport>({
     queryKey: reportKey,
     queryFn: () =>
-      adminService.getRepeatedCustomers({ date_from: dateFrom, date_to: dateTo, branch_id: branchId, brand_id: brandId }),
+      adminService.getRepeatedCustomers({
+        date_from: dateFrom,
+        date_to: dateTo,
+        branch_id: branchId,
+        brand_id: brandId,
+        status: status || null,
+      }),
     placeholderData: keepPreviousData,
   });
   const refreshing = useResultsRefreshing(reportKey, isFetching);
 
   // A new selection starts on its first page.
-  useEffect(() => setPage(1), [dateFrom, dateTo, branchId, brandId, search, sortKey, sortDir]);
+  useEffect(() => setPage(1), [dateFrom, dateTo, branchId, brandId, status, search, sortKey, sortDir]);
 
   const rows = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -171,6 +191,7 @@ const RepeatedCustomers: React.FC = () => {
   const scopeText = [
     branchId != null ? ((branches ?? []).find((b) => b.id === branchId)?.name ?? 'One branch') : 'All branches',
     brandId != null ? ((brands ?? []).find((b) => b.id === brandId)?.name ?? 'One brand') : 'All brands',
+    STATUS_OPTIONS.find((o) => o.value === status)?.label ?? 'All statuses',
   ].join(' · ');
 
   const toggleSort = (key: SortKey) => {
@@ -185,10 +206,13 @@ const RepeatedCustomers: React.FC = () => {
   const ariaSort = (key: SortKey): 'ascending' | 'descending' | 'none' =>
     sortKey === key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none';
 
-  // Same range as the report, so the list there shows the days counted here
-  // (the Orders page drops its date chip for the whole history).
+  // Same range and status as the report, so the list there shows the days
+  // counted here (the Orders page drops its date chip for the whole history).
   const ordersLink = (r: RepeatedCustomerRow): string => {
-    const path = customerOrdersPath({ id: r.customer_id, name: r.name, phone: r.phone ?? '' }, { brandId, branchId });
+    const path = customerOrdersPath(
+      { id: r.customer_id, name: r.name, phone: r.phone ?? '' },
+      { brandId, branchId, status: status || undefined },
+    );
     return `${path}&${new URLSearchParams({ date_from: dateFrom, date_to: dateTo }).toString()}`;
   };
 
@@ -243,8 +267,8 @@ const RepeatedCustomers: React.FC = () => {
           </h1>
           <p className="max-w-[760px] text-[14px] leading-relaxed text-gray-500">
             Customers who ordered on two or more different days in the range. Several orders on the same day count as
-            one day. Cancelled orders are left out, and spend is the total of the orders counted. Click a name to see
-            those orders.
+            one day. Every order status counts unless you pick one; spend leaves out cancelled orders. Click a name to
+            see those orders.
           </p>
         </div>
         <div className="flex flex-none gap-2">
@@ -268,7 +292,7 @@ const RepeatedCustomers: React.FC = () => {
       </div>
 
       {/* Filters */}
-      <div className="mb-5 grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-5">
+      <div className="mb-5 grid grid-cols-1 gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-6">
         <label className="block">
           <span className={filterLabel}>Search</span>
           <input
@@ -327,6 +351,17 @@ const RepeatedCustomers: React.FC = () => {
             ariaLabel="Brand"
           />
         </div>
+        <div>
+          <span className={filterLabel}>Order status</span>
+          <SearchableSelect
+            value={status}
+            onChange={(v) => setParam('status', v || null)}
+            options={STATUS_OPTIONS}
+            triggerClassName={selectTrigger}
+            searchPlaceholder="Search statuses…"
+            ariaLabel="Order status"
+          />
+        </div>
       </div>
 
       {isLoading ? (
@@ -340,7 +375,7 @@ const RepeatedCustomers: React.FC = () => {
             {(
               [
                 ['Repeated customers', customerCount.toLocaleString('en-US'), 'Ordered on 2 or more different days'],
-                ['Their spend', money(spendTotal), 'Total of the orders counted'],
+                ['Their spend', money(spendTotal), 'Orders counted, cancelled ones left out'],
               ] as Array<[string, string, string]>
             ).map(([label, value, hint]) => (
               <div key={label} className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -473,7 +508,7 @@ const RepeatedCustomers: React.FC = () => {
             </table>
             <p className="rc-foot">
               A repeated customer ordered on two or more different days in the range; several orders on one day count as
-              one. Cancelled orders are left out.
+              one. Spend leaves out cancelled orders.
             </p>
           </div>,
           document.body,

@@ -7,6 +7,32 @@
  * days on the branch clock, not orders.
  */
 
+/** The statuses an order can be in — the ones the report can be narrowed to. */
+export const REPEATED_CUSTOMER_STATUSES = [
+    'placed',
+    'accepted',
+    'preparing',
+    'ready',
+    'completed',
+    'cancelled',
+] as const;
+
+export type RepeatedCustomerStatus =
+    (typeof REPEATED_CUSTOMER_STATUSES)[number];
+
+/**
+ * The status filter, or null for every status. An unknown value means no
+ * filter, never "match nothing" — the same rule as the discount filter.
+ */
+export function repeatedCustomersStatus(
+    value: string | null | undefined,
+): RepeatedCustomerStatus | null {
+    const v = (value ?? '').trim().toLowerCase();
+    return (REPEATED_CUSTOMER_STATUSES as readonly string[]).includes(v)
+        ? (v as RepeatedCustomerStatus)
+        : null;
+}
+
 /** One row as the grouped query returns it (Postgres numbers come back as strings). */
 export interface RepeatedCustomerRaw {
     customer_id: number | string;
@@ -24,9 +50,9 @@ export interface RepeatedCustomerRow {
     /** Record name, else the latest typed order name; null when neither exists (the page shows the phone). */
     name: string | null;
     phone: string | null;
-    /** Distinct days with at least one non-cancelled order in the window. */
+    /** Distinct days with at least one order (of the picked status, if any) in the window. */
     days: number;
-    /** Total of those same orders. */
+    /** Total of those orders, cancelled ones left out. */
     spend: number;
 }
 

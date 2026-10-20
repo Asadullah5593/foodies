@@ -19,6 +19,7 @@ import {
     compareRepeatedCustomers,
     mapRepeatedCustomerRow,
     RepeatedCustomerRaw,
+    repeatedCustomersStatus,
 } from './repeated-customers';
 
 /**
@@ -1201,8 +1202,9 @@ export class ReportsService {
      *
      *  - Intake clock (`placed_at`), the same day the admin Orders list filters
      *    on, so the customer's list opened from a row shows the same days.
-     *  - Cancelled orders don't count; every other status does. `spend` is the
-     *    total of exactly those orders.
+     *  - Every order status counts towards the days unless `status` picks one
+     *    (owner, 2026-10-20). `spend` never includes cancelled orders: a
+     *    cancelled order is not money spent, whichever status is picked.
      *  - A customer is the customer record (one per phone). Orders with no
      *    record can't be told apart or opened as a history, so they are left
      *    out. Shared walk-in numbers count like anyone else (owner, 2026-10-20).
@@ -1214,6 +1216,8 @@ export class ReportsService {
             brand_id?: number;
             date_from?: string;
             date_to?: string;
+            /** One order status; anything else (or nothing) ⇒ every status. */
+            status?: string;
         },
         allowedBranchIds?: number[] | null,
         allowedBrandIds?: number[] | null,
@@ -1221,6 +1225,7 @@ export class ReportsService {
         this.assertBranchAccess(allowedBranchIds, filters.branch_id);
         this.assertBrandAccess(allowedBrandIds, filters.brand_id);
         const { dateFrom, dateTo } = this.resolveDayRange(filters);
+        const status = repeatedCustomersStatus(filters.status);
 
         // placed_at is a local-clock timestamp, so DATE() is the branch day.
         const daysExpr = 'COUNT(DISTINCT DATE(o.placedAt))';
@@ -1235,12 +1240,15 @@ export class ReportsService {
                 'order_name',
             )
             .addSelect(daysExpr, 'days')
-            .addSelect('COALESCE(SUM(o.totalAmount), 0)', 'spend')
+            .addSelect(
+                "COALESCE(SUM(CASE WHEN o.status <> 'cancelled' THEN o.totalAmount ELSE 0 END), 0)",
+                'spend',
+            )
             .where('o.placedAt BETWEEN :dateFrom AND :dateTo', {
                 dateFrom,
                 dateTo,
-            })
-            .andWhere("o.status <> 'cancelled'");
+            });
+        if (status) qb.andWhere('o.status = :rcStatus', { rcStatus: status });
         this.applyOrderScope(
             qb,
             'o',
@@ -1263,6 +1271,7 @@ export class ReportsService {
         return {
             date_from: localDay(dateFrom),
             date_to: localDay(dateTo),
+            status,
             total_customers: rows.length,
             total_spend:
                 Math.round(rows.reduce((sum, r) => sum + r.spend, 0) * 100) /

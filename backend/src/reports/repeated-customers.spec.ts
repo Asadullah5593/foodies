@@ -2,7 +2,35 @@ import {
     compareRepeatedCustomers,
     mapRepeatedCustomerRow,
     RepeatedCustomerRow,
+    repeatedCustomersStatus,
 } from './repeated-customers';
+
+describe('repeatedCustomersStatus', () => {
+    it('keeps a real order status', () => {
+        for (const s of [
+            'placed',
+            'accepted',
+            'preparing',
+            'ready',
+            'completed',
+            'cancelled',
+        ])
+            expect(repeatedCustomersStatus(s)).toBe(s);
+        expect(repeatedCustomersStatus(' Completed ')).toBe('completed');
+    });
+
+    it('reads nothing, blank or an unknown value as every status', () => {
+        for (const s of [
+            undefined,
+            null,
+            '',
+            'all',
+            'needs_rider',
+            "x' OR 1=1",
+        ])
+            expect(repeatedCustomersStatus(s)).toBeNull();
+    });
+});
 
 describe('mapRepeatedCustomerRow', () => {
     it('turns the query strings into numbers and rounds spend to paisa', () => {
