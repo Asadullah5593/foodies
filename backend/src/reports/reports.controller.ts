@@ -150,17 +150,17 @@ export class ReportsController {
      * Gated per route (not the whole controller — Dashboard users may hold
      * only dashboard:view): it lists names and phone numbers.
      */
-    @Get('repeat-customers')
+    @Get('repeated-customers')
     @UseGuards(RequirePermissionGuard)
     @RequirePermission(Permissions.REPORTS_VIEW)
-    repeatCustomers(
+    repeatedCustomers(
         @CurrentUser() user: ReportsUser,
         @Query('branch_id') branchId: string,
         @Query('brand_id') brandId: string,
         @Query('date_from') dateFrom: string,
         @Query('date_to') dateTo: string,
     ) {
-        return this.service.repeatCustomers(
+        return this.service.repeatedCustomers(
             user.tenantId,
             {
                 branch_id: branchId ? +branchId : undefined,

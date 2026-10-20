@@ -16,10 +16,10 @@ import { InventoryOnHand } from '../entities/inventory-on-hand.entity';
 import { WastageEvent } from '../entities/wastage-event.entity';
 import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
 import {
-    compareRepeatCustomers,
-    mapRepeatCustomerRow,
-    RepeatCustomerRaw,
-} from './repeat-customers';
+    compareRepeatedCustomers,
+    mapRepeatedCustomerRow,
+    RepeatedCustomerRaw,
+} from './repeated-customers';
 
 /**
  * Nudges a per-stage discount split so it adds up to the total exactly.
@@ -1195,7 +1195,7 @@ export class ReportsService {
     }
 
     /**
-     * Repeat customers: customers who ordered on two or more DIFFERENT days in
+     * Repeated customers: customers who ordered on two or more DIFFERENT days in
      * the window. Several orders on one day are one visit, so the count is of
      * distinct calendar days, not orders.
      *
@@ -1207,7 +1207,7 @@ export class ReportsService {
      *    record can't be told apart or opened as a history, so they are left
      *    out. Shared walk-in numbers count like anyone else (owner, 2026-10-20).
      */
-    async repeatCustomers(
+    async repeatedCustomers(
         tenantId: number | null,
         filters: {
             branch_id?: number;
@@ -1252,8 +1252,10 @@ export class ReportsService {
         );
         qb.groupBy('c.id').having(`${daysExpr} >= 2`);
 
-        const raw = await qb.getRawMany<RepeatCustomerRaw>();
-        const rows = raw.map(mapRepeatCustomerRow).sort(compareRepeatCustomers);
+        const raw = await qb.getRawMany<RepeatedCustomerRaw>();
+        const rows = raw
+            .map(mapRepeatedCustomerRow)
+            .sort(compareRepeatedCustomers);
 
         const localDay = (d: Date): string =>
             `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;

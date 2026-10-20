@@ -1,13 +1,13 @@
 import {
-    compareRepeatCustomers,
-    mapRepeatCustomerRow,
-    RepeatCustomerRow,
-} from './repeat-customers';
+    compareRepeatedCustomers,
+    mapRepeatedCustomerRow,
+    RepeatedCustomerRow,
+} from './repeated-customers';
 
-describe('mapRepeatCustomerRow', () => {
+describe('mapRepeatedCustomerRow', () => {
     it('turns the query strings into numbers and rounds spend to paisa', () => {
         expect(
-            mapRepeatCustomerRow({
+            mapRepeatedCustomerRow({
                 customer_id: '10',
                 record_name: 'John Doe',
                 order_name: 'Johnny',
@@ -25,7 +25,7 @@ describe('mapRepeatCustomerRow', () => {
     });
 
     it('falls back to the name typed on the order when the record has none', () => {
-        const row = mapRepeatCustomerRow({
+        const row = mapRepeatedCustomerRow({
             customer_id: 3,
             record_name: '   ',
             order_name: ' Sara ',
@@ -37,7 +37,7 @@ describe('mapRepeatCustomerRow', () => {
     });
 
     it('leaves the name null when neither exists, so the page can show the phone', () => {
-        const row = mapRepeatCustomerRow({
+        const row = mapRepeatedCustomerRow({
             customer_id: 4,
             record_name: null,
             order_name: null,
@@ -50,13 +50,13 @@ describe('mapRepeatCustomerRow', () => {
     });
 });
 
-describe('compareRepeatCustomers', () => {
+describe('compareRepeatedCustomers', () => {
     const row = (
         id: number,
         days: number,
         spend: number,
         name: string | null,
-    ): RepeatCustomerRow => ({
+    ): RepeatedCustomerRow => ({
         customer_id: id,
         name,
         phone: `0300000000${id}`,
@@ -70,7 +70,7 @@ describe('compareRepeatCustomers', () => {
             row(2, 5, 100, 'Ali'),
             row(3, 2, 900, 'Bilal'),
             row(4, 2, 500, 'Asma'),
-        ].sort(compareRepeatCustomers);
+        ].sort(compareRepeatedCustomers);
         expect(sorted.map((r) => r.customer_id)).toEqual([2, 3, 4, 1]);
     });
 
@@ -79,7 +79,7 @@ describe('compareRepeatCustomers', () => {
             row(7, 2, 100, 'Same'),
             row(6, 2, 100, 'Same'),
             row(5, 2, 100, null),
-        ].sort(compareRepeatCustomers);
+        ].sort(compareRepeatedCustomers);
         expect(sorted.map((r) => r.customer_id)).toEqual([5, 6, 7]);
     });
 });

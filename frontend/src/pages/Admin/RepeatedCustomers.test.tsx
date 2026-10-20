@@ -3,14 +3,14 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import RepeatCustomers from './RepeatCustomers';
-import { RepeatCustomersReport } from '../../types';
+import RepeatedCustomers from './RepeatedCustomers';
+import { RepeatedCustomersReport } from '../../types';
 import { defaultRange } from './dashboard/dateRanges';
 
-const getRepeatCustomers = vi.fn();
+const getRepeatedCustomers = vi.fn();
 vi.mock('../../services/api', () => ({
   adminService: {
-    getRepeatCustomers: (p: unknown) => getRepeatCustomers(p),
+    getRepeatedCustomers: (p: unknown) => getRepeatedCustomers(p),
   },
 }));
 vi.mock('../../utils/apiClient', () => ({
@@ -45,7 +45,7 @@ vi.mock('../../utils/activityBeacon', () => ({
   recordBeacon: (e: unknown) => recordBeacon(e),
 }));
 
-const REPORT: RepeatCustomersReport = {
+const REPORT: RepeatedCustomersReport = {
   date_from: '2026-07-01',
   date_to: '2026-07-31',
   total_customers: 3,
@@ -64,13 +64,13 @@ const OrdersProbe: React.FC = () => {
   return <div data-testid="orders-page">{location.search}</div>;
 };
 
-const renderPage = (entry = '/admin/reports/repeat-customers') => {
+const renderPage = (entry = '/admin/reports/repeated-customers') => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[entry]}>
         <Routes>
-          <Route path="/admin/reports/repeat-customers" element={<RepeatCustomers />} />
+          <Route path="/admin/reports/repeated-customers" element={<RepeatedCustomers />} />
           <Route path="/admin/orders" element={<OrdersProbe />} />
         </Routes>
       </MemoryRouter>
@@ -81,11 +81,11 @@ const renderPage = (entry = '/admin/reports/repeat-customers') => {
 const bodyRows = () => within(screen.getAllByRole('rowgroup')[1]).getAllByRole('row');
 const firstCells = () => bodyRows().map((r) => within(r).getAllByRole('cell')[0].textContent);
 
-describe('Repeat Customers report', () => {
+describe('Repeated Customers report', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     permissions = ['reports:view', 'orders:view'];
-    getRepeatCustomers.mockResolvedValue(REPORT);
+    getRepeatedCustomers.mockResolvedValue(REPORT);
   });
   afterEach(() => {
     vi.restoreAllMocks();
@@ -96,11 +96,11 @@ describe('Repeat Customers report', () => {
     renderPage();
     expect(await screen.findByText('John Doe')).toBeInTheDocument();
     const { from, to } = defaultRange();
-    expect(getRepeatCustomers).toHaveBeenCalledWith({ date_from: from, date_to: to, branch_id: null, brand_id: null });
-    expect(pageViews).toHaveBeenCalledWith('repeat-customers');
+    expect(getRepeatedCustomers).toHaveBeenCalledWith({ date_from: from, date_to: to, branch_id: null, brand_id: null });
+    expect(pageViews).toHaveBeenCalledWith('repeated-customers');
 
     const tile = (label: string) => screen.getByText(label, { selector: 'div' }).parentElement as HTMLElement;
-    expect(within(tile('Repeat customers')).getByText('3')).toBeInTheDocument();
+    expect(within(tile('Repeated customers')).getByText('3')).toBeInTheDocument();
     expect(within(tile('Their spend')).getByText('Rs. 10,650.00')).toBeInTheDocument();
 
     expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
@@ -124,10 +124,10 @@ describe('Repeat Customers report', () => {
 
   it('opens that customer\'s orders for the same range, branch and brand', async () => {
     renderPage(
-      '/admin/reports/repeat-customers?date_from=2026-07-01&date_to=2026-07-31&branch_id=10&brand_id=25',
+      '/admin/reports/repeated-customers?date_from=2026-07-01&date_to=2026-07-31&branch_id=10&brand_id=25',
     );
     await screen.findByText('John Doe');
-    expect(getRepeatCustomers).toHaveBeenCalledWith({
+    expect(getRepeatedCustomers).toHaveBeenCalledWith({
       date_from: '2026-07-01',
       date_to: '2026-07-31',
       branch_id: 10,
@@ -159,7 +159,7 @@ describe('Repeat Customers report', () => {
     fireEvent.change(box, { target: { value: 'amir' } });
     expect(firstCells()).toEqual(['Amir Khan03406477263']);
     const tile = (label: string) => screen.getByText(label, { selector: 'div' }).parentElement as HTMLElement;
-    expect(within(tile('Repeat customers')).getByText('1')).toBeInTheDocument();
+    expect(within(tile('Repeated customers')).getByText('1')).toBeInTheDocument();
     expect(within(tile('Their spend')).getByText('Rs. 2,650.00')).toBeInTheDocument();
 
     // Typed the way people say numbers.
@@ -167,7 +167,7 @@ describe('Repeat Customers report', () => {
     expect(firstCells()).toEqual(['03001112222']);
 
     fireEvent.change(box, { target: { value: 'nobody' } });
-    expect(screen.getByText('No repeat customer matches this search')).toBeInTheDocument();
+    expect(screen.getByText('No repeated customer matches this search')).toBeInTheDocument();
   });
 
   it('sorts by spend and by name from the column headers', async () => {
@@ -184,7 +184,7 @@ describe('Repeat Customers report', () => {
   });
 
   it('says so when nobody came back on another day', async () => {
-    getRepeatCustomers.mockResolvedValue({ ...REPORT, total_customers: 0, total_spend: 0, rows: [] });
+    getRepeatedCustomers.mockResolvedValue({ ...REPORT, total_customers: 0, total_spend: 0, rows: [] });
     renderPage();
     expect(await screen.findByText('No customer ordered on more than one day in this range')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled();
@@ -192,7 +192,7 @@ describe('Repeat Customers report', () => {
   });
 
   it('pages through long lists 25 at a time', async () => {
-    getRepeatCustomers.mockResolvedValue({
+    getRepeatedCustomers.mockResolvedValue({
       ...REPORT,
       rows: Array.from({ length: 30 }, (_, i) => ({
         customer_id: i + 1,
@@ -233,7 +233,7 @@ describe('Repeat Customers report', () => {
     );
     vi.stubGlobal('URL', { createObjectURL: () => 'blob:x', revokeObjectURL: vi.fn() });
 
-    renderPage('/admin/reports/repeat-customers?date_from=2026-07-01&date_to=2026-07-31');
+    renderPage('/admin/reports/repeated-customers?date_from=2026-07-01&date_to=2026-07-31');
     await screen.findByText('John Doe');
     fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
 
@@ -246,15 +246,15 @@ describe('Repeat Customers report', () => {
     // The page's own <Link>s are anchors too; the download is the one with a file name.
     const download = created.filter((a) => a.download);
     expect(download).toHaveLength(1);
-    expect(download[0].download).toBe('repeat-customers_2026-07-01_to_2026-07-31.csv');
+    expect(download[0].download).toBe('repeated-customers_2026-07-01_to_2026-07-31.csv');
     expect(download[0].click).toHaveBeenCalled();
-    expect(recordBeacon).toHaveBeenCalledWith({ action: 'client.export', subject: 'repeat-customers' });
+    expect(recordBeacon).toHaveBeenCalledWith({ action: 'client.export', subject: 'repeated-customers' });
   });
 
   it('prints every listed customer, not just the page, and records the print', async () => {
     const print = vi.fn();
     vi.stubGlobal('print', print);
-    renderPage('/admin/reports/repeat-customers?date_from=2026-07-01&date_to=2026-07-31&brand_id=25');
+    renderPage('/admin/reports/repeated-customers?date_from=2026-07-01&date_to=2026-07-31&brand_id=25');
     await screen.findByText('John Doe');
     // The brand list has loaded, so the paper can name the brand.
     await screen.findByText(/All branches · Fireaway/);
@@ -266,7 +266,7 @@ describe('Repeat Customers report', () => {
     expect(paper.getByText(/All branches · Fireaway/)).toBeInTheDocument();
     expect(paper.getAllByRole('row', { hidden: true })).toHaveLength(1 + 3 + 1);
     expect(paper.queryByRole('button', { hidden: true })).toBeNull();
-    expect(recordBeacon).toHaveBeenCalledWith({ action: 'client.print', subject: 'repeat-customers' });
+    expect(recordBeacon).toHaveBeenCalledWith({ action: 'client.print', subject: 'repeated-customers' });
     await waitFor(() => expect(print).toHaveBeenCalled());
 
     fireEvent(window, new Event('afterprint'));

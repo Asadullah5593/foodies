@@ -683,8 +683,8 @@ export interface PrintedVoucherFormOptions {
   branches: Array<{ id: number; name: string; is_active: boolean }>;
 }
 
-/** One customer in GET /admin/reports/repeat-customers. */
-export interface RepeatCustomerRow {
+/** One customer in GET /admin/reports/repeated-customers. */
+export interface RepeatedCustomerRow {
   customer_id: number;
   /** Record name, else the name typed on their latest order; null ⇒ show the phone. */
   name: string | null;
@@ -695,13 +695,13 @@ export interface RepeatCustomerRow {
   spend: number;
 }
 
-/** GET /admin/reports/repeat-customers — customers who ordered on 2+ different days. */
-export interface RepeatCustomersReport {
+/** GET /admin/reports/repeated-customers — customers who ordered on 2+ different days. */
+export interface RepeatedCustomersReport {
   date_from: string;
   date_to: string;
   total_customers: number;
   total_spend: number;
-  rows: RepeatCustomerRow[];
+  rows: RepeatedCustomerRow[];
 }
 
 /** GET /admin/printed-vouchers/report */

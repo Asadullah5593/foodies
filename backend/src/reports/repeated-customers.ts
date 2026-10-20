@@ -1,14 +1,14 @@
 /**
- * Repeat Customers report — the pure parts (row shaping and order), kept out
+ * Repeated Customers report — the pure parts (row shaping and order), kept out
  * of ReportsService so they can be tested without a database.
  *
- * A repeat customer ordered on two or more DIFFERENT days in the window.
+ * A repeated customer ordered on two or more DIFFERENT days in the window.
  * Several orders on one day are one visit, so `days` counts distinct calendar
  * days on the branch clock, not orders.
  */
 
 /** One row as the grouped query returns it (Postgres numbers come back as strings). */
-export interface RepeatCustomerRaw {
+export interface RepeatedCustomerRaw {
     customer_id: number | string;
     /** The customer record's name. */
     record_name: string | null;
@@ -19,7 +19,7 @@ export interface RepeatCustomerRaw {
     spend: number | string | null;
 }
 
-export interface RepeatCustomerRow {
+export interface RepeatedCustomerRow {
     customer_id: number;
     /** Record name, else the latest typed order name; null when neither exists (the page shows the phone). */
     name: string | null;
@@ -35,7 +35,9 @@ const cleaned = (s: string | null | undefined): string | null => {
     return t.length > 0 ? t : null;
 };
 
-export function mapRepeatCustomerRow(r: RepeatCustomerRaw): RepeatCustomerRow {
+export function mapRepeatedCustomerRow(
+    r: RepeatedCustomerRaw,
+): RepeatedCustomerRow {
     return {
         customer_id: Number(r.customer_id),
         name: cleaned(r.record_name) ?? cleaned(r.order_name),
@@ -46,9 +48,9 @@ export function mapRepeatCustomerRow(r: RepeatCustomerRaw): RepeatCustomerRow {
 }
 
 /** Most days first; ties by spend, then name, then id so the order is stable. */
-export function compareRepeatCustomers(
-    a: RepeatCustomerRow,
-    b: RepeatCustomerRow,
+export function compareRepeatedCustomers(
+    a: RepeatedCustomerRow,
+    b: RepeatedCustomerRow,
 ): number {
     if (b.days !== a.days) return b.days - a.days;
     if (b.spend !== a.spend) return b.spend - a.spend;

@@ -7,7 +7,7 @@ import apiClient from '../../utils/apiClient';
 import { adminService } from '../../services/api';
 import SearchableSelect from '../../components/SearchableSelect';
 import FetchingOverlay from '../../components/FetchingOverlay';
-import { Branch, RepeatCustomerRow, RepeatCustomersReport } from '../../types';
+import { Branch, RepeatedCustomerRow, RepeatedCustomersReport } from '../../types';
 import { useResultsRefreshing } from '../../components/useResultsRefreshing';
 import { useHasPermission } from '../../hooks/useHasPermission';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
@@ -25,7 +25,7 @@ const money = (n: number): string =>
   `Rs. ${Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** What the row is called on screen, in the CSV and on paper. */
-const customerName = (r: RepeatCustomerRow): string => r.name ?? r.phone ?? `Customer #${r.customer_id}`;
+const customerName = (r: RepeatedCustomerRow): string => r.name ?? r.phone ?? `Customer #${r.customer_id}`;
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -63,7 +63,7 @@ const PRINT_CSS = `
 `;
 
 /**
- * Reports → Repeat Customers.
+ * Reports → Repeated Customers.
  *
  * Customers who ordered on two or more DIFFERENT days in the range. Several
  * orders on one day are one visit, so the number is days, not orders.
@@ -74,8 +74,8 @@ const PRINT_CSS = `
  * The filters live in the URL: going back from a customer's orders lands on
  * the same report, not a reset one.
  */
-const RepeatCustomers: React.FC = () => {
-  useSensitivePageView('repeat-customers');
+const RepeatedCustomers: React.FC = () => {
+  useSensitivePageView('repeated-customers');
   const canOpenOrders = useHasPermission('orders:view');
   const [searchParams, setSearchParams] = useSearchParams();
   const fallback = useMemo(() => defaultRange(), []);
@@ -123,11 +123,11 @@ const RepeatCustomers: React.FC = () => {
     queryFn: async () => (await apiClient.get<Array<{ id: number; name: string }>>('/admin/brands')).data,
   });
 
-  const reportKey = ['repeat-customers-report', dateFrom, dateTo, branchId, brandId];
-  const { data, isLoading, isError, isFetching } = useQuery<RepeatCustomersReport>({
+  const reportKey = ['repeated-customers-report', dateFrom, dateTo, branchId, brandId];
+  const { data, isLoading, isError, isFetching } = useQuery<RepeatedCustomersReport>({
     queryKey: reportKey,
     queryFn: () =>
-      adminService.getRepeatCustomers({ date_from: dateFrom, date_to: dateTo, branch_id: branchId, brand_id: brandId }),
+      adminService.getRepeatedCustomers({ date_from: dateFrom, date_to: dateTo, branch_id: branchId, brand_id: brandId }),
     placeholderData: keepPreviousData,
   });
   const refreshing = useResultsRefreshing(reportKey, isFetching);
@@ -187,7 +187,7 @@ const RepeatCustomers: React.FC = () => {
 
   // Same range as the report, so the list there shows the days counted here
   // (the Orders page drops its date chip for the whole history).
-  const ordersLink = (r: RepeatCustomerRow): string => {
+  const ordersLink = (r: RepeatedCustomerRow): string => {
     const path = customerOrdersPath({ id: r.customer_id, name: r.name, phone: r.phone ?? '' }, { brandId, branchId });
     return `${path}&${new URLSearchParams({ date_from: dateFrom, date_to: dateTo }).toString()}`;
   };
@@ -203,17 +203,17 @@ const RepeatCustomers: React.FC = () => {
     ];
     // A download never reaches the server, so this is the only place it can
     // be recorded — and this file is a list of customer phone numbers.
-    recordBeacon({ action: 'client.export', subject: 'repeat-customers' });
+    recordBeacon({ action: 'client.export', subject: 'repeated-customers' });
     const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' }));
     const link = document.createElement('a');
     link.href = url;
-    link.download = `repeat-customers_${dateFrom}_to_${dateTo}.csv`;
+    link.download = `repeated-customers_${dateFrom}_to_${dateTo}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
   const printReport = () => {
-    recordBeacon({ action: 'client.print', subject: 'repeat-customers' });
+    recordBeacon({ action: 'client.print', subject: 'repeated-customers' });
     setPrinting(true);
   };
 
@@ -239,7 +239,7 @@ const RepeatCustomers: React.FC = () => {
         </span>
         <div className="min-w-[240px] flex-1">
           <h1 className="mb-1.5 text-2xl font-extrabold tracking-tight text-gray-800 sm:text-[28px]">
-            Repeat Customers
+            Repeated Customers
           </h1>
           <p className="max-w-[760px] text-[14px] leading-relaxed text-gray-500">
             Customers who ordered on two or more different days in the range. Several orders on the same day count as
@@ -332,14 +332,14 @@ const RepeatCustomers: React.FC = () => {
       {isLoading ? (
         <div className="py-12 text-center text-gray-500">Loading…</div>
       ) : isError ? (
-        <p className="py-8 text-center text-sm text-red-600">Failed to load the repeat customers report.</p>
+        <p className="py-8 text-center text-sm text-red-600">Failed to load the repeated customers report.</p>
       ) : (
         <FetchingOverlay active={refreshing} label="Updating report…">
           {/* Summary */}
           <div className="mb-5 grid grid-cols-2 gap-3">
             {(
               [
-                ['Repeat customers', customerCount.toLocaleString('en-US'), 'Ordered on 2 or more different days'],
+                ['Repeated customers', customerCount.toLocaleString('en-US'), 'Ordered on 2 or more different days'],
                 ['Their spend', money(spendTotal), 'Total of the orders counted'],
               ] as Array<[string, string, string]>
             ).map(([label, value, hint]) => (
@@ -355,7 +355,7 @@ const RepeatCustomers: React.FC = () => {
             <div className="rounded-2xl border-[1.5px] border-dashed border-gray-300 bg-gray-50 px-6 py-12 text-center">
               <p className="text-[15px] font-semibold text-gray-700">
                 {search.trim()
-                  ? 'No repeat customer matches this search'
+                  ? 'No repeated customer matches this search'
                   : 'No customer ordered on more than one day in this range'}
               </p>
               <p className="mt-1 text-[13px] text-gray-500">Try a wider date range or clear the filters.</p>
@@ -437,7 +437,7 @@ const RepeatCustomers: React.FC = () => {
         createPortal(
           <div id="rc-print-root">
             <style>{PRINT_CSS}</style>
-            <h1>Repeat Customers</h1>
+            <h1>Repeated Customers</h1>
             <p className="rc-sub">
               {rangeText} · {scopeText}
               {search.trim() ? ` · Search: “${search.trim()}”` : ''} · {customerCount}{' '}
@@ -472,7 +472,7 @@ const RepeatCustomers: React.FC = () => {
               </tfoot>
             </table>
             <p className="rc-foot">
-              A repeat customer ordered on two or more different days in the range; several orders on one day count as
+              A repeated customer ordered on two or more different days in the range; several orders on one day count as
               one. Cancelled orders are left out.
             </p>
           </div>,
@@ -482,4 +482,4 @@ const RepeatCustomers: React.FC = () => {
   );
 };
 
-export default RepeatCustomers;
+export default RepeatedCustomers;
