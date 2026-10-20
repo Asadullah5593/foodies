@@ -21,6 +21,7 @@ import {
   PrintedVoucherPayload,
   PrintedVoucherFormOptions,
   PrintedVoucherReport,
+  RepeatCustomersReport,
   TillVoucher,
   Shift,
   ShiftOrdersResponse,
@@ -1253,6 +1254,23 @@ export const adminService = {
       },
     });
     return response.data as PrintedVoucherReport;
+  },
+
+  getRepeatCustomers: async (params: {
+    date_from: string;
+    date_to: string;
+    branch_id?: number | null;
+    brand_id?: number | null;
+  }): Promise<RepeatCustomersReport> => {
+    const response = await apiClient.get('/admin/reports/repeat-customers', {
+      params: {
+        date_from: params.date_from,
+        date_to: params.date_to,
+        ...(params.branch_id != null ? { branch_id: params.branch_id } : {}),
+        ...(params.brand_id != null ? { brand_id: params.brand_id } : {}),
+      },
+    });
+    return response.data as RepeatCustomersReport;
   },
 
   // Business settings (tenant users: get/update their own business details)

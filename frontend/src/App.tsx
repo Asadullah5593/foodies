@@ -77,6 +77,7 @@ import RoleForm from './pages/Admin/RoleForm';
 import Shifts from './pages/Admin/Shifts';
 import Reports from './pages/Admin/Reports';
 import ProductSales from './pages/Admin/ProductSales';
+import RepeatCustomers from './pages/Admin/RepeatCustomers';
 import ActivityLog from './pages/Admin/ActivityLog';
 import Orders from './pages/Admin/Orders';
 import OrderDetail from './pages/Admin/OrderDetail';
@@ -398,6 +399,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         // Keeps the original /admin/reports URL so existing links still land here.
         { path: '/admin/reports', label: 'Sales Overview' },
         { path: '/admin/reports/product-sales', label: 'Product-wise Sales' },
+        { path: '/admin/reports/repeat-customers', label: 'Repeat Customers' },
         { path: '/admin/reports/printed-vouchers', label: 'Printed Vouchers' },
       ],
     },
@@ -1234,6 +1236,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><ProductSales /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/reports/repeat-customers"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><RepeatCustomers /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />

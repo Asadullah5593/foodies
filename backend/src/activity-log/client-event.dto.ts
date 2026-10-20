@@ -32,6 +32,7 @@ export const CLIENT_EVENT_SUBJECTS = [
     'inventory-ledger',
     'inventory-items',
     'product-sales',
+    'repeat-customers',
     'activity-log',
     'customers',
     'rider-profiles',
