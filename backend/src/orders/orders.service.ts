@@ -35,6 +35,7 @@ import {
 import { InvoiceTemplatesService } from '../invoices/invoice-templates.service';
 import { FbrService } from '../fbr/fbr.service';
 import { User } from '../entities/user.entity';
+import { Customer } from '../entities/customer.entity';
 import { MenuService } from '../menu/menu.service';
 import {
     LoyaltyService,
@@ -4119,6 +4120,24 @@ export class OrdersService {
             .skip((page - 1) * pageSize)
             .take(pageSize);
         const [data, total] = await dataQb.getManyAndCount();
+        // The saved customer's own name, so the list can lead with it and flag an
+        // order typed under another name ("ordered as …"), the way one customer's
+        // history reads. One lookup for the page, outside the paginated query.
+        const customerIds = [
+            ...new Set(
+                data
+                    .map((o) => o.customerId)
+                    .filter((id): id is number => id != null),
+            ),
+        ];
+        const recordNames = new Map<number, string | null>();
+        if (customerIds.length > 0) {
+            const found = await this.dataSource.getRepository(Customer).find({
+                where: { id: In(customerIds) },
+                select: { id: true, name: true },
+            });
+            for (const c of found) recordNames.set(c.id, c.name?.trim() || null);
+        }
         // The tender an untendered order is due to be paid by, so the list reads
         // "COD" from the moment an app order arrives, not only once completion
         // records the cash.
@@ -4128,6 +4147,10 @@ export class OrdersService {
                     o,
                     (o.payments ?? []).length > 0,
                 ),
+                customer_record_name:
+                    o.customerId != null
+                        ? (recordNames.get(o.customerId) ?? null)
+                        : null,
             }),
         );
 
