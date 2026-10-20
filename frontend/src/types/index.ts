@@ -943,3 +943,369 @@ export interface OrderItem {
   notes?: string;
   addons?: Array<{ name: string; unit_price: number; quantity: number }>;
 }
+
+// —— Push notifications (admin → customer app) ——————————————————————————————
+// Shapes of /api/admin/push-notifications. The audience rules are data-driven:
+// GET /meta lists them, and the composer draws its inputs from that list.
+
+export type PushRuleParamType =
+  | 'brands'
+  | 'branches'
+  | 'branch'
+  | 'categories'
+  | 'items'
+  | 'order_types'
+  | 'sources'
+  | 'platform'
+  | 'phone'
+  | 'phones'
+  | 'message'
+  | 'int'
+  | 'money';
+
+export interface PushRuleParam {
+  name: string;
+  type: PushRuleParamType;
+  label: string;
+  required: boolean;
+  min?: number;
+  max?: number;
+  default?: number;
+  suffix?: string;
+  hint?: string;
+}
+
+export type PushRuleGroup = 'who' | 'where' | 'when' | 'how_much' | 'what' | 'loyalty' | 'cart' | 'phone';
+
+export interface PushRuleDef {
+  key: string;
+  group: PushRuleGroup;
+  label: string;
+  description: string;
+  params: PushRuleParam[];
+}
+
+export interface PushAudienceRule {
+  rule: string;
+  params?: Record<string, unknown>;
+}
+
+export interface PushAudienceSpec {
+  match: 'all' | 'any';
+  include: PushAudienceRule[];
+  exclude: PushAudienceRule[];
+}
+
+export type PushRepeatFrequency = 'daily' | 'weekly' | 'monthly' | 'every_n_days';
+
+export interface PushRepeatRule {
+  frequency: PushRepeatFrequency;
+  time: string;
+  weekdays?: number[];
+  month_day?: number;
+  interval_days?: number;
+  starts_on: string;
+  ends: 'never' | 'on' | 'after';
+  ends_on?: string | null;
+  max_runs?: number | null;
+}
+
+export type PushScheduleType = 'now' | 'once' | 'repeat';
+export type PushPerCustomer = 'every' | 'once' | 'days';
+export type PushMessageStatus =
+  | 'draft'
+  | 'scheduled'
+  | 'active'
+  | 'paused'
+  | 'sending'
+  | 'sent'
+  | 'completed'
+  | 'cancelled'
+  | 'failed';
+
+export interface PushSettings {
+  timezone: string;
+  quiet_hours_enabled: boolean;
+  quiet_start: string;
+  quiet_end: string;
+  cap_per_day: number | null;
+  cap_per_week: number | null;
+  default_expiry_hours: number;
+  skip_order_in_progress: boolean;
+  test_phones: string[];
+  updated_at: string | null;
+}
+
+export interface PushOption {
+  id: number;
+  name: string;
+  is_active?: boolean;
+  brand_id?: number;
+  brand_name?: string;
+  has_location?: boolean;
+}
+
+export interface PushMeta {
+  rules: PushRuleDef[];
+  options: {
+    brands: PushOption[];
+    branches: PushOption[];
+    categories: PushOption[];
+    items: PushOption[];
+    messages: Array<{ id: number; label: string; last_run_at: string | null }>;
+    order_types: string[];
+    sources: string[];
+    platforms: string[];
+  };
+  personal_tokens: Array<{ key: string; label: string; example: string }>;
+  settings: PushSettings;
+  firebase_configured: boolean;
+  devices_synced_at: string | null;
+  brand_locked: boolean;
+  limits: { title: number; body: number };
+}
+
+export type PushSkipReason = 'no_app' | 'rider' | 'opt_out' | 'repeat' | 'in_progress' | 'cap';
+
+export interface PushAudienceCounts {
+  matched: number;
+  with_app: number;
+  eligible: number;
+  phones: number;
+  skipped: Record<PushSkipReason, number>;
+  sample: Array<{ id: number; name: string | null; phone: string; phones: number }>;
+  devices_synced_at: string | null;
+}
+
+export interface PushMoment {
+  at: string;
+  local_date: string;
+  local_time: string;
+  weekday: number;
+  held_until: string | null;
+}
+
+export interface PushMessage {
+  id: number;
+  name: string | null;
+  brand_id: number | null;
+  title: string;
+  body: string;
+  image_url: string | null;
+  expiry_hours: number;
+  replace_previous: boolean;
+  audience: PushAudienceSpec;
+  audience_id: number | null;
+  audience_name: string | null;
+  skip_order_in_progress: boolean;
+  respect_cap: boolean;
+  per_customer: PushPerCustomer;
+  per_customer_days: number | null;
+  schedule_type: PushScheduleType;
+  send_at: string | null;
+  repeat: PushRepeatRule | null;
+  timezone: string;
+  status: PushMessageStatus;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  runs_count: number;
+  skip_dates: string[];
+  variant_b: { title: string; body: string } | null;
+  ab_split: number | null;
+  holdout_percent: number;
+  created_at: string;
+  updated_at: string;
+  created_by_name: string | null;
+  cancelled_at: string | null;
+  personalized: boolean;
+}
+
+export interface PushRun {
+  id: number;
+  scheduled_for: string;
+  started_at: string | null;
+  finished_at: string | null;
+  status: 'sending' | 'sent' | 'failed' | 'skipped';
+  matched: number;
+  with_app: number;
+  recipients: number;
+  phones: number;
+  sent: number;
+  failed: number;
+  skipped_opt_out: number;
+  skipped_cap: number;
+  skipped_in_progress: number;
+  skipped_repeat: number;
+  skipped_rider: number;
+  holdout: number;
+  note: string | null;
+}
+
+/** Orders by the people in one group of one send (sent, or held back), per window. */
+export interface PushResultRow {
+  run_id: number;
+  variant: 'A' | 'B' | null;
+  holdout: boolean;
+  customers: number;
+  buyers_24h: number;
+  orders_24h: number;
+  revenue_24h: number;
+  buyers_72h: number;
+  orders_72h: number;
+  revenue_72h: number;
+  buyers_7d: number;
+  orders_7d: number;
+  revenue_7d: number;
+}
+
+export interface PushMessageDetail {
+  message: PushMessage;
+  runs: PushRun[];
+  upcoming: PushMoment[];
+  results: PushResultRow[];
+  by_brand: Array<{ id: number | null; name: string | null; orders: number; revenue: number }>;
+}
+
+export interface PushMessageListRow {
+  id: number;
+  name: string | null;
+  title: string;
+  body: string;
+  status: PushMessageStatus;
+  schedule_type: PushScheduleType;
+  brand_id: number | null;
+  brand_name: string | null;
+  send_at: string | null;
+  repeat: PushRepeatRule | null;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  runs_count: number;
+  created_at: string;
+  created_by_name: string | null;
+  audience_id: number | null;
+  audience_name: string | null;
+  audience: PushAudienceSpec;
+  ab_test: boolean;
+  recipients: number;
+  sent: number;
+  failed: number;
+  orders_7d: number;
+  revenue_7d: number;
+}
+
+export type PushListTab = 'scheduled' | 'repeating' | 'sent' | 'drafts' | 'cancelled';
+
+export interface PushMessageList {
+  data: PushMessageListRow[];
+  total: number;
+  page: number;
+  limit: number;
+  counts: Record<PushListTab, number>;
+}
+
+export interface PushRecipientRow {
+  id: string;
+  run_id: number;
+  customer_id: number;
+  customer_name: string | null;
+  phone: string;
+  variant: 'A' | 'B' | null;
+  status: 'pending' | 'sending' | 'sent' | 'failed' | 'unknown' | 'holdout' | 'cancelled';
+  phones: number;
+  sent: number;
+  failed: number;
+  error: string | null;
+  sent_at: string | null;
+  first_order_id: number | null;
+  first_order_at: string | null;
+  first_order_total: string | number | null;
+  first_order_brand: string | null;
+}
+
+export interface PushOverview {
+  reach: {
+    customers_with_app: number;
+    reachable: number;
+    phones: number;
+    opted_out: number;
+    platforms: Array<{ platform: string | null; n: number }>;
+  };
+  last_30_days: { sends: number; recipients: number; delivered: number; orders: number; revenue: number };
+  upcoming: Array<{ id: number; name: string | null; title: string; next_run_at: string; schedule_type: PushScheduleType }>;
+  top: Array<{ id: number; name: string | null; title: string; orders: number; revenue: number; recipients: number }>;
+  devices_synced_at: string | null;
+  firebase_configured: boolean;
+}
+
+export interface PushSavedAudience {
+  id: number;
+  name: string;
+  description: string | null;
+  rules: PushAudienceSpec;
+  brand_id: number | null;
+  created_by_name?: string | null;
+  used_by?: number;
+  updated_at?: string;
+}
+
+export interface PushTemplate {
+  id: number;
+  name: string;
+  title: string;
+  body: string;
+  imageUrl: string | null;
+  brandId: number | null;
+  updatedAt?: string;
+}
+
+export interface PushCustomerInfo {
+  opt_out: boolean;
+  opt_out_at: string | null;
+  opt_out_by: string | null;
+  phones: Array<{ platform: string | null }>;
+  history: Array<{
+    id: string;
+    message_id: number;
+    name: string | null;
+    title: string;
+    variant: 'A' | 'B' | null;
+    status: PushRecipientRow['status'];
+    sent: number;
+    failed: number;
+    sent_at: string | null;
+    brand_name: string | null;
+  }>;
+}
+
+export interface PushTestResult {
+  phone: string;
+  customer: { id: number; name: string | null } | null;
+  phones: number;
+  sent: number;
+  failed: number;
+  error: string | null;
+}
+
+/** POST / PUT /admin/push-notifications/messages */
+export interface PushMessagePayload {
+  action: 'draft' | 'schedule';
+  name?: string | null;
+  brand_id?: number | null;
+  title: string;
+  body: string;
+  image_url?: string | null;
+  expiry_hours: number;
+  replace_previous: boolean;
+  audience?: PushAudienceSpec;
+  audience_id?: number | null;
+  skip_order_in_progress: boolean;
+  respect_cap: boolean;
+  per_customer: PushPerCustomer;
+  per_customer_days?: number | null;
+  schedule_type: PushScheduleType;
+  send_at?: string | null;
+  repeat?: PushRepeatRule | null;
+  variant_b?: { title: string; body: string } | null;
+  ab_split?: number | null;
+  holdout_percent: number;
+}
