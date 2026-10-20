@@ -32,6 +32,9 @@ export const PATH_PERMISSIONS: Record<string, string[] | null> = {
   // The paper coupon book. Its own right too — applied by cashiers at the till
   // (printed-vouchers:apply), managed here by whoever holds :view.
   '/admin/printed-vouchers': ['printed-vouchers:view'],
+  // Promos to the customer app: its own rights, Owner only until granted.
+  '/admin/push-notifications': ['push-notifications:view'],
+  '/admin/push-notifications/new': ['push-notifications:send'],
   '/admin/loyalty-settings': ['loyalty:manage', 'loyalty:view'],
   '/admin/invoice-templates': ['business-settings:access', 'invoice-templates:view'],
   '/admin/delivery-tiers': ['deliveries:manage', 'delivery-tiers:view'],
