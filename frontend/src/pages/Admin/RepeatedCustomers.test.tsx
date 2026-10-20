@@ -1,0 +1,378 @@
+import React from 'react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import RepeatedCustomers from './RepeatedCustomers';
+import { RepeatedCustomersReport } from '../../types';
+import { addDays, defaultRange, toIso } from './dashboard/dateRanges';
+
+const getRepeatedCustomers = vi.fn();
+vi.mock('../../services/api', () => ({
+  adminService: {
+    getRepeatedCustomers: (p: unknown) => getRepeatedCustomers(p),
+  },
+}));
+vi.mock('../../utils/apiClient', () => ({
+  default: {
+    get: (url: string) =>
+      Promise.resolve({
+        data: url.includes('branches')
+          ? [
+              { id: 10, name: 'Pine Avenue' },
+              { id: 17, name: 'Johar Town' },
+            ]
+          : [
+              { id: 23, name: 'Peperi Co' },
+              { id: 25, name: 'Fireaway' },
+            ],
+      }),
+  },
+}));
+let permissions: string[] = ['reports:view', 'orders:view'];
+vi.mock('../../hooks/useHasPermission', () => ({
+  useHasPermission: (need: string | string[]) => {
+    const list = Array.isArray(need) ? need : [need];
+    return list.some((p) => permissions.includes(p));
+  },
+}));
+const pageViews = vi.fn();
+vi.mock('../../hooks/useSensitivePageView', () => ({
+  useSensitivePageView: (subject: string) => pageViews(subject),
+}));
+const recordBeacon = vi.fn();
+vi.mock('../../utils/activityBeacon', () => ({
+  recordBeacon: (e: unknown) => recordBeacon(e),
+}));
+
+const REPORT: RepeatedCustomersReport = {
+  date_from: '2026-07-01',
+  date_to: '2026-07-31',
+  total_customers: 3,
+  total_spend: 10650,
+  // The server sends most days first.
+  rows: [
+    { customer_id: 10, name: 'John Doe', phone: '03001234567', days: 6, spend: 5540 },
+    { customer_id: 17, name: 'Amir Khan', phone: '03406477263', days: 3, spend: 2650 },
+    { customer_id: 63, name: null, phone: '03001112222', days: 2, spend: 2460 },
+  ],
+};
+
+/** Shows where a customer link landed, so the test can read its query string. */
+const OrdersProbe: React.FC = () => {
+  const location = useLocation();
+  return <div data-testid="orders-page">{location.search}</div>;
+};
+
+const renderPage = (entry = '/admin/reports/repeated-customers') => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <MemoryRouter initialEntries={[entry]}>
+        <Routes>
+          <Route path="/admin/reports/repeated-customers" element={<RepeatedCustomers />} />
+          <Route path="/admin/orders" element={<OrdersProbe />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+};
+
+const rowEls = () => screen.getAllByTestId('rc-row');
+const names = () => screen.getAllByTestId('rc-name').map((n) => n.textContent);
+const tile = (label: string) => screen.getByText(label, { selector: 'div' }).parentElement as HTMLElement;
+
+describe('Repeated Customers report', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    permissions = ['reports:view', 'orders:view'];
+    getRepeatedCustomers.mockResolvedValue(REPORT);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it('opens on the last 30 days and lists most days first, with spend and spend per day', async () => {
+    renderPage();
+    expect(await screen.findByText('John Doe')).toBeInTheDocument();
+    const { from, to } = defaultRange();
+    // Every order status counts unless one is picked.
+    expect(getRepeatedCustomers).toHaveBeenCalledWith({
+      date_from: from,
+      date_to: to,
+      branch_id: null,
+      brand_id: null,
+      status: null,
+    });
+    expect(pageViews).toHaveBeenCalledWith('repeated-customers');
+    expect(screen.getByRole('button', { name: 'Order status: All statuses' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '30d' })).toHaveAttribute('aria-pressed', 'true');
+
+    expect(within(tile('Repeated customers')).getByText('3')).toBeInTheDocument();
+    expect(within(tile('Their spend')).getByText('Rs. 10,650.00')).toBeInTheDocument();
+    expect(within(tile('Avg spend per customer')).getByText('Rs. 3,550.00')).toBeInTheDocument();
+    expect(within(tile('Avg spend per customer')).getByText('3.7 days each on average')).toBeInTheDocument();
+
+    expect(screen.getByRole('button', { name: 'Customer' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Days ordered ▾' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Spend' })).toBeInTheDocument();
+    expect(screen.getByText('Avg per day')).toBeInTheDocument();
+
+    expect(names()).toEqual(['John Doe', 'Amir Khan', '03001112222']);
+    const first = rowEls()[0];
+    expect(first).toHaveTextContent('John Doe');
+    expect(first).toHaveTextContent('03001234567');
+    expect(first).toHaveTextContent('6 days');
+    expect(first).toHaveTextContent('Rs. 5,540.00');
+    expect(first).toHaveTextContent('Rs. 923.33/day');
+    expect(screen.getByText(/· 3 of 3$/)).toBeInTheDocument();
+    // Footer: the hint and the total of what is listed.
+    expect(screen.getByText('Click a customer to see their orders')).toBeInTheDocument();
+    expect(screen.getByText('Total').querySelector('span')).toHaveTextContent('Rs. 10,650.00');
+  });
+
+  it('shows how often they come back', async () => {
+    renderPage();
+    await screen.findByText('John Doe');
+    expect(
+      screen.getByRole('img', {
+        name: 'Customers by days ordered: 2 days: 1, 3 days: 1, 4 to 5 days: 0, 6 or more days: 1',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('shows the phone as the name when the customer has none', async () => {
+    renderPage();
+    await screen.findByText('John Doe');
+    // Once, as the name — not repeated underneath.
+    expect(within(rowEls()[2]).getAllByText('03001112222')).toHaveLength(1);
+  });
+
+  it('opens that customer\'s orders for the same range, branch and brand', async () => {
+    renderPage(
+      '/admin/reports/repeated-customers?date_from=2026-07-01&date_to=2026-07-31&branch_id=10&brand_id=25',
+    );
+    await screen.findByText('John Doe');
+    expect(getRepeatedCustomers).toHaveBeenCalledWith({
+      date_from: '2026-07-01',
+      date_to: '2026-07-31',
+      branch_id: 10,
+      brand_id: 25,
+      status: null,
+    });
+    expect(screen.getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-pressed', 'true');
+
+    // The whole row is the link.
+    fireEvent.click(screen.getByRole('link', { name: /John Doe/ }));
+    const sp = new URLSearchParams(screen.getByTestId('orders-page').textContent ?? '');
+    expect(sp.get('customer_id')).toBe('10');
+    expect(sp.get('customer_label')).toBe('John Doe (03001234567)');
+    expect(sp.get('date_from')).toBe('2026-07-01');
+    expect(sp.get('date_to')).toBe('2026-07-31');
+    expect(sp.get('branch_id')).toBe('10');
+    expect(sp.get('brand_id')).toBe('25');
+    // All statuses ⇒ the Orders page shows every status too.
+    expect(sp.has('status')).toBe(false);
+  });
+
+  it('counts only the picked order status, and opens the orders of that status', async () => {
+    renderPage('/admin/reports/repeated-customers?date_from=2026-07-01&date_to=2026-07-31');
+    await screen.findByText('John Doe');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Order status: All statuses' }));
+    // The dropdown picks on mouse-down (so the search box keeps focus).
+    fireEvent.mouseDown(screen.getByRole('option', { name: 'Completed' }));
+    await waitFor(() =>
+      expect(getRepeatedCustomers).toHaveBeenLastCalledWith({
+        date_from: '2026-07-01',
+        date_to: '2026-07-31',
+        branch_id: null,
+        brand_id: null,
+        status: 'completed',
+      }),
+    );
+    expect(screen.getByRole('button', { name: 'Order status: Completed' })).toBeInTheDocument();
+    expect(screen.getByText(/All branches · All brands · Completed/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('link', { name: /John Doe/ }));
+    const sp = new URLSearchParams(screen.getByTestId('orders-page').textContent ?? '');
+    expect(sp.get('status')).toBe('completed');
+    expect(sp.get('date_from')).toBe('2026-07-01');
+  });
+
+  it('reads the status from the address, and ignores one that is not a status', async () => {
+    renderPage('/admin/reports/repeated-customers?status=cancelled');
+    await screen.findByText('John Doe');
+    expect(getRepeatedCustomers).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'cancelled' }));
+
+    getRepeatedCustomers.mockClear();
+    renderPage('/admin/reports/repeated-customers?status=needs_rider');
+    await waitFor(() => expect(getRepeatedCustomers).toHaveBeenCalled());
+    expect(getRepeatedCustomers).toHaveBeenLastCalledWith(expect.objectContaining({ status: null }));
+  });
+
+  it('switches the range with the quick buttons', async () => {
+    renderPage('/admin/reports/repeated-customers?date_from=2026-07-01&date_to=2026-07-31');
+    await screen.findByText('John Doe');
+    const now = new Date();
+
+    fireEvent.click(screen.getByRole('button', { name: '7d' }));
+    await waitFor(() =>
+      expect(getRepeatedCustomers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ date_from: toIso(addDays(now, -6)), date_to: toIso(now) }),
+      ),
+    );
+    expect(screen.getByRole('button', { name: '7d' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Custom' })).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(screen.getByRole('button', { name: '90d' }));
+    await waitFor(() =>
+      expect(getRepeatedCustomers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ date_from: toIso(addDays(now, -89)), date_to: toIso(now) }),
+      ),
+    );
+  });
+
+  it('keeps the rows as plain text for someone who cannot open Orders', async () => {
+    permissions = ['reports:view'];
+    renderPage();
+    await screen.findByText('John Doe');
+    expect(screen.queryAllByRole('link')).toHaveLength(0);
+    expect(rowEls()).toHaveLength(3);
+    expect(screen.queryByText('Click a customer to see their orders')).toBeNull();
+  });
+
+  it('searches by name or by phone; the list narrows, the tiles describe the whole report', async () => {
+    renderPage();
+    await screen.findByText('John Doe');
+    const box = screen.getByRole('searchbox', { name: 'Search customers' });
+
+    fireEvent.change(box, { target: { value: 'amir' } });
+    expect(names()).toEqual(['Amir Khan']);
+    expect(screen.getByText(/· 1 of 3$/)).toBeInTheDocument();
+    expect(screen.getByText('Total').querySelector('span')).toHaveTextContent('Rs. 2,650.00');
+    expect(within(tile('Repeated customers')).getByText('3')).toBeInTheDocument();
+
+    // Typed the way people say numbers.
+    fireEvent.change(box, { target: { value: '0300 111-2222' } });
+    expect(names()).toEqual(['03001112222']);
+
+    fireEvent.change(box, { target: { value: 'nobody' } });
+    expect(screen.getByText('No repeated customer matches this search')).toBeInTheDocument();
+  });
+
+  it('sorts with the Sort by buttons and the column headers', async () => {
+    renderPage();
+    await screen.findByText('John Doe');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sort by spend' }));
+    expect(screen.getByRole('button', { name: 'Sort by spend' })).toHaveAttribute('aria-pressed', 'true');
+    expect(names()).toEqual(['John Doe', 'Amir Khan', '03001112222']);
+    expect(rowEls()[0]).toHaveTextContent(/^1/);
+
+    // The header flips it.
+    fireEvent.click(screen.getByRole('button', { name: 'Spend ▾' }));
+    expect(names()).toEqual(['03001112222', 'Amir Khan', 'John Doe']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Customer' }));
+    expect(names()).toEqual(['03001112222', 'Amir Khan', 'John Doe']);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sort by days ordered' }));
+    expect(names()).toEqual(['John Doe', 'Amir Khan', '03001112222']);
+  });
+
+  it('says so when nobody came back on another day', async () => {
+    getRepeatedCustomers.mockResolvedValue({ ...REPORT, total_customers: 0, total_spend: 0, rows: [] });
+    renderPage();
+    expect(await screen.findByText('No customer ordered on more than one day in this range')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export CSV' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Print' })).toBeDisabled();
+    expect(within(tile('Avg spend per customer')).getByText('Rs. 0.00')).toBeInTheDocument();
+  });
+
+  it('pages through long lists 25 at a time', async () => {
+    getRepeatedCustomers.mockResolvedValue({
+      ...REPORT,
+      rows: Array.from({ length: 30 }, (_, i) => ({
+        customer_id: i + 1,
+        name: `Customer ${String(i + 1).padStart(2, '0')}`,
+        phone: `0300000${String(i + 1).padStart(4, '0')}`,
+        days: 40 - i,
+        spend: 1000,
+      })),
+    });
+    renderPage();
+    await screen.findByText('Customer 01');
+    expect(rowEls()).toHaveLength(25);
+    expect(screen.getByText('Showing 1–25 of 30')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(rowEls()).toHaveLength(5);
+    expect(screen.getByText('Customer 26')).toBeInTheDocument();
+    // Ranks carry on from the first page.
+    expect(rowEls()[0]).toHaveTextContent(/^26/);
+  });
+
+  it('exports the listed customers to CSV and records the export', async () => {
+    const created: HTMLAnchorElement[] = [];
+    const realCreate = document.createElement.bind(document);
+    vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+      const el = realCreate(tag);
+      if (tag === 'a') {
+        (el as HTMLAnchorElement).click = vi.fn();
+        created.push(el as HTMLAnchorElement);
+      }
+      return el;
+    });
+    let csv = '';
+    vi.stubGlobal(
+      'Blob',
+      class {
+        constructor(parts: string[]) {
+          csv = parts.join('');
+        }
+      },
+    );
+    vi.stubGlobal('URL', { createObjectURL: () => 'blob:x', revokeObjectURL: vi.fn() });
+
+    renderPage('/admin/reports/repeated-customers?date_from=2026-07-01&date_to=2026-07-31');
+    await screen.findByText('John Doe');
+    fireEvent.click(screen.getByRole('button', { name: 'Export CSV' }));
+
+    expect(csv.split('\n')).toEqual([
+      'Customer,Phone,Days ordered,Spend,Avg per day',
+      'John Doe,03001234567,6,5540.00,923.33',
+      'Amir Khan,03406477263,3,2650.00,883.33',
+      '03001112222,03001112222,2,2460.00,1230.00',
+    ]);
+    // The page's own <Link>s are anchors too; the download is the one with a file name.
+    const download = created.filter((a) => a.download);
+    expect(download).toHaveLength(1);
+    expect(download[0].download).toBe('repeated-customers_2026-07-01_to_2026-07-31.csv');
+    expect(download[0].click).toHaveBeenCalled();
+    expect(recordBeacon).toHaveBeenCalledWith({ action: 'client.export', subject: 'repeated-customers' });
+  });
+
+  it('prints every listed customer, not just the page, and records the print', async () => {
+    const print = vi.fn();
+    vi.stubGlobal('print', print);
+    renderPage('/admin/reports/repeated-customers?date_from=2026-07-01&date_to=2026-07-31&brand_id=25');
+    await screen.findByText('John Doe');
+    // The brand list has loaded, so the paper can name the brand.
+    await screen.findByText(/All branches · Fireaway/);
+    expect(document.getElementById('rc-print-root')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+    await waitFor(() => expect(document.getElementById('rc-print-root')).not.toBeNull());
+    const paper = within(document.getElementById('rc-print-root') as HTMLElement);
+    expect(paper.getByText(/All branches · Fireaway/)).toBeInTheDocument();
+    expect(paper.getAllByRole('row', { hidden: true })).toHaveLength(1 + 3 + 1);
+    expect(paper.getByText('Rs. 923.33')).toBeInTheDocument();
+    expect(paper.queryByRole('button', { hidden: true })).toBeNull();
+    expect(recordBeacon).toHaveBeenCalledWith({ action: 'client.print', subject: 'repeated-customers' });
+    await waitFor(() => expect(print).toHaveBeenCalled());
+
+    fireEvent(window, new Event('afterprint'));
+    await waitFor(() => expect(document.getElementById('rc-print-root')).toBeNull());
+  });
+});

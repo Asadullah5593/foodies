@@ -36,6 +36,9 @@ const SKIP_PREFIXES = [
     // own row, so logging the POST as well said the same thing twice — and,
     // being an `activity-log.` action, did it with an immediate write.
     '/admin/activity-logs/events',
+    // The push composer's live counters: read-only POSTs fired while typing.
+    '/admin/push-notifications/audience/preview',
+    '/admin/push-notifications/schedule/preview',
 ];
 
 /**

@@ -4,6 +4,9 @@ import { ReportsService } from './reports.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RoleAccessGuard } from '../auth/role-access.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
+import { RequirePermission } from '../roles/require-permission.decorator';
+import { RequirePermissionGuard } from '../roles/require-permission.guard';
+import { Permissions } from '../roles/permissions.dto';
 
 type ReportsUser = {
     id: number;
@@ -136,6 +139,36 @@ export class ReportsController {
                     : undefined,
                 sort_dir: sortDir === 'asc' ? 'asc' : 'desc',
                 limit: limit ? +limit : undefined,
+            },
+            user.allowedBranchIds,
+            user.allowedBrandIds,
+        );
+    }
+
+    /**
+     * Customers who ordered on two or more different days in the window.
+     * Gated per route (not the whole controller — Dashboard users may hold
+     * only dashboard:view): it lists names and phone numbers.
+     */
+    @Get('repeated-customers')
+    @UseGuards(RequirePermissionGuard)
+    @RequirePermission(Permissions.REPORTS_VIEW)
+    repeatedCustomers(
+        @CurrentUser() user: ReportsUser,
+        @Query('branch_id') branchId: string,
+        @Query('brand_id') brandId: string,
+        @Query('date_from') dateFrom: string,
+        @Query('date_to') dateTo: string,
+        @Query('status') status: string,
+    ) {
+        return this.service.repeatedCustomers(
+            user.tenantId,
+            {
+                branch_id: branchId ? +branchId : undefined,
+                brand_id: brandId ? +brandId : undefined,
+                date_from: dateFrom,
+                date_to: dateTo,
+                status: status || undefined,
             },
             user.allowedBranchIds,
             user.allowedBrandIds,

@@ -20,6 +20,7 @@ import { InvoicesModule } from './invoices/invoices.module';
 import { BankCardsModule } from './bank-cards/bank-cards.module';
 import { StaffDiscountsModule } from './staff-discounts/staff-discounts.module';
 import { PrintedVouchersModule } from './printed-vouchers/printed-vouchers.module';
+import { PushMessagesModule } from './push-messages/push-messages.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { ReportsModule } from './reports/reports.module';
 import { ActivityLogModule } from './activity-log/activity-log.module';
@@ -93,6 +94,7 @@ import { PaymentsEpgModule } from './payments-epg/payments-epg.module';
         BankCardsModule,
         StaffDiscountsModule,
         PrintedVouchersModule,
+        PushMessagesModule,
         ShiftsModule,
         ReportsModule,
         ActivityLogModule,

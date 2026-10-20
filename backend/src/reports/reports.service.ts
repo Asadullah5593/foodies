@@ -15,6 +15,12 @@ import { RiderPresence } from '../entities/rider-presence.entity';
 import { InventoryOnHand } from '../entities/inventory-on-hand.entity';
 import { WastageEvent } from '../entities/wastage-event.entity';
 import { discountFilterSql, isDiscountFilter } from '../common/discount-filter';
+import {
+    compareRepeatedCustomers,
+    mapRepeatedCustomerRow,
+    RepeatedCustomerRaw,
+    repeatedCustomersStatus,
+} from './repeated-customers';
 
 /**
  * Nudges a per-stage discount split so it adds up to the total exactly.
@@ -1185,6 +1191,91 @@ export class ReportsService {
             date_from: localDay(dateFrom),
             date_to: localDay(dateTo),
             totals,
+            rows,
+        };
+    }
+
+    /**
+     * Repeated customers: customers who ordered on two or more DIFFERENT days in
+     * the window. Several orders on one day are one visit, so the count is of
+     * distinct calendar days, not orders.
+     *
+     *  - Intake clock (`placed_at`), the same day the admin Orders list filters
+     *    on, so the customer's list opened from a row shows the same days.
+     *  - Every order status counts towards the days unless `status` picks one
+     *    (owner, 2026-10-20). `spend` never includes cancelled orders: a
+     *    cancelled order is not money spent, whichever status is picked.
+     *  - A customer is the customer record (one per phone). Orders with no
+     *    record can't be told apart or opened as a history, so they are left
+     *    out. Shared walk-in numbers count like anyone else (owner, 2026-10-20).
+     */
+    async repeatedCustomers(
+        tenantId: number | null,
+        filters: {
+            branch_id?: number;
+            brand_id?: number;
+            date_from?: string;
+            date_to?: string;
+            /** One order status; anything else (or nothing) ⇒ every status. */
+            status?: string;
+        },
+        allowedBranchIds?: number[] | null,
+        allowedBrandIds?: number[] | null,
+    ) {
+        this.assertBranchAccess(allowedBranchIds, filters.branch_id);
+        this.assertBrandAccess(allowedBrandIds, filters.brand_id);
+        const { dateFrom, dateTo } = this.resolveDayRange(filters);
+        const status = repeatedCustomersStatus(filters.status);
+
+        // placed_at is a local-clock timestamp, so DATE() is the branch day.
+        const daysExpr = 'COUNT(DISTINCT DATE(o.placedAt))';
+        const qb = this.orderRepo
+            .createQueryBuilder('o')
+            .innerJoin('o.customer', 'c')
+            .select('c.id', 'customer_id')
+            .addSelect('c.name', 'record_name')
+            .addSelect('c.phone', 'phone')
+            .addSelect(
+                "(ARRAY_REMOVE(ARRAY_AGG(NULLIF(TRIM(o.customerName), '') ORDER BY o.placedAt DESC), NULL))[1]",
+                'order_name',
+            )
+            .addSelect(daysExpr, 'days')
+            .addSelect(
+                "COALESCE(SUM(CASE WHEN o.status <> 'cancelled' THEN o.totalAmount ELSE 0 END), 0)",
+                'spend',
+            )
+            .where('o.placedAt BETWEEN :dateFrom AND :dateTo', {
+                dateFrom,
+                dateTo,
+            });
+        if (status) qb.andWhere('o.status = :rcStatus', { rcStatus: status });
+        this.applyOrderScope(
+            qb,
+            'o',
+            tenantId,
+            allowedBranchIds,
+            filters.branch_id,
+            allowedBrandIds,
+            filters.brand_id,
+        );
+        qb.groupBy('c.id').having(`${daysExpr} >= 2`);
+
+        const raw = await qb.getRawMany<RepeatedCustomerRaw>();
+        const rows = raw
+            .map(mapRepeatedCustomerRow)
+            .sort(compareRepeatedCustomers);
+
+        const localDay = (d: Date): string =>
+            `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+        return {
+            date_from: localDay(dateFrom),
+            date_to: localDay(dateTo),
+            status,
+            total_customers: rows.length,
+            total_spend:
+                Math.round(rows.reduce((sum, r) => sum + r.spend, 0) * 100) /
+                100,
             rows,
         };
     }

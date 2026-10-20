@@ -7,6 +7,7 @@ import Loader from '../../components/Loader';
 import { LoyaltyWalletList, pointsTotal } from '../../components/LoyaltyWallets';
 import CustomerVouchersModal from '../../components/CustomerVouchersModal';
 import CustomerFormModal from '../../components/CustomerFormModal';
+import CustomerPushCard from './PushNotifications/CustomerPushCard';
 import { useHasPermission, useHasRestriction } from '../../hooks/useHasPermission';
 import { useSensitivePageView } from '../../hooks/useSensitivePageView';
 import { useAuth } from '../../contexts/AuthContext';
@@ -341,6 +342,9 @@ const CustomerDetail: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {/* Push notifications — only for holders of push-notifications:view */}
+      <CustomerPushCard customerId={customerId} className={`${cardCls} mb-4 px-[22px] py-[18px]`} titleClassName={titleCls} />
 
       {/* How they order */}
       <div className={`${cardCls} px-[22px] pb-5 pt-[18px]`}>

@@ -70,6 +70,9 @@ import BankCards from './pages/Admin/BankCards';
 import StaffDiscounts from './pages/Admin/StaffDiscounts';
 import PrintedVouchers from './pages/Admin/PrintedVouchers';
 import PrintedVoucherReport from './pages/Admin/PrintedVoucherReport';
+import PushNotifications from './pages/Admin/PushNotifications/PushNotifications';
+import PushComposer from './pages/Admin/PushNotifications/PushComposer';
+import PushMessageDetail from './pages/Admin/PushNotifications/PushMessageDetail';
 import Banners from './pages/Admin/Banners';
 import Promotions from './pages/Admin/Promotions';
 import ProductPromotions from './pages/Admin/ProductPromotions';
@@ -82,6 +85,7 @@ import RoleForm from './pages/Admin/RoleForm';
 import Shifts from './pages/Admin/Shifts';
 import Reports from './pages/Admin/Reports';
 import ProductSales from './pages/Admin/ProductSales';
+import RepeatedCustomers from './pages/Admin/RepeatedCustomers';
 import ActivityLog from './pages/Admin/ActivityLog';
 import Orders from './pages/Admin/Orders';
 import OrderDetail from './pages/Admin/OrderDetail';
@@ -398,6 +402,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { path: '/admin/printed-vouchers', label: 'Printed Vouchers' },
         { path: '/admin/bank-cards', label: 'Bank Cards' },
         { path: '/admin/campaigns', label: 'Campaigns' },
+        // Promos to the customer app (order-status pushes are automatic, not here).
+        { path: '/admin/push-notifications', label: 'Push Notifications' },
         { path: '/admin/offer-settings', label: 'Offer Settings' },
       ],
     },
@@ -449,6 +455,7 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         // Keeps the original /admin/reports URL so existing links still land here.
         { path: '/admin/reports', label: 'Sales Overview' },
         { path: '/admin/reports/product-sales', label: 'Product-wise Sales' },
+        { path: '/admin/reports/repeated-customers', label: 'Repeated Customers' },
         { path: '/admin/reports/printed-vouchers', label: 'Printed Vouchers' },
       ],
     },
@@ -1198,6 +1205,38 @@ const AppRoutes: React.FC = () => {
         }
       />
       <Route
+        path="/admin/push-notifications"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><PushNotifications /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/push-notifications/new"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><PushComposer /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/push-notifications/:id/edit"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><PushComposer /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/push-notifications/:id"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><PushMessageDetail /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
         path="/admin/loyalty-settings"
         element={
           <ProtectedRoute>
@@ -1339,6 +1378,14 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><ProductSales /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/reports/repeated-customers"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><RepeatedCustomers /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />
