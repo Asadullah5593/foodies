@@ -81,6 +81,8 @@ type OrderRow = Omit<Order, 'payments' | 'creator'> & {
   customer_name?: string | null;
   customer_id?: number | null;
   customer_phone?: string | null;
+  /** The saved customer's own name (it can differ from the name typed on the order). */
+  customer_record_name?: string | null;
   table_number?: string | null;
   placed_at?: string | null;
   creator?: { id: number; name?: string | null } | null;
@@ -135,6 +137,7 @@ function normalizeOrder(o: OrderRow): OrderRow {
     customer_name: o.customer_name ?? row.customerName ?? null,
     customer_id: o.customer_id ?? row.customerId ?? null,
     customer_phone: o.customer_phone ?? row.customerPhone ?? null,
+    customer_record_name: o.customer_record_name ?? null,
     table_number: o.table_number ?? row.tableNumber ?? null,
     placed_at: o.placed_at ?? row.placedAt ?? row.createdAt ?? null,
     items_count: o.items_count ?? (Array.isArray(o.orderItems) ? o.orderItems.length : 0),
@@ -261,8 +264,31 @@ function ageMinutes(iso: string | null | undefined): number | null {
   return Math.max(0, Math.floor((Date.now() - t) / 60000));
 }
 
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/**
+ * The day an order was placed: "20 Oct", with the year when it isn't this one ("3 Sep 2025").
+ * Spelled out by hand: the browser's en-GB short month is "Sept" for September only.
+ */
+function placedDateText(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const day = `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  return d.getFullYear() === new Date().getFullYear() ? day : `${day} ${d.getFullYear()}`;
+}
+
+/** Day and time on one line: "20 Oct, 9:08 PM". */
+function placedText(iso: string | null | undefined): string {
+  const day = placedDateText(iso);
+  const time = placedTimeText(iso);
+  return day ? `${day}, ${time}` : time;
+}
+
 function ageText(m: number | null): string {
   if (m == null) return '';
+  // A day or more: whole days. The placed day beside it says exactly when.
+  if (m >= 24 * 60) return `${Math.floor(m / (24 * 60))}d ago`;
   if (m >= 60) return `${Math.floor(m / 60)}h ${m % 60}m ago`;
   return `${m}m ago`;
 }
@@ -330,43 +356,54 @@ function customerText(o: OrderRow): string {
   return 'Walk-in';
 }
 
+/** "ordered as …": the name typed on an order placed with a saved customer's phone, when it isn't theirs. */
+const OrderedAs: React.FC<{ typed: string }> = ({ typed }) => (
+  <span
+    className="ml-1.5 text-[12px] font-medium text-amber-700 dark:text-amber-300 max-lg:ml-0 max-lg:block"
+    title={`Placed with this customer's phone under the name "${typed}"`}
+    data-testid="ordered-as"
+  >
+    ordered as {typed}
+  </span>
+);
+
 /**
  * The customer's name on a row opens their order history — this same page narrowed to them
  * (the view the Customers page uses). Only a saved customer has one; a table or walk-in order
  * shows plain text. The dotted underline is the app's cue for "tap to see more".
+ *
+ * A customer is one phone number, so an order placed with that phone under another typed name
+ * (a family member, a typo, a test account) still belongs to them. The saved customer's own name
+ * leads, and the row says what the order was typed as — in the full list and in one history.
  */
 const CustomerName: React.FC<{ o: OrderRow; className: string; historyName?: string | null }> = ({ o, className, historyName }) => {
   const text = customerText(o);
+  const typed = o.customer_name?.trim();
   // One customer's history: every row is theirs, so the record's name leads and needs no link.
-  // A customer is one phone number, so an order placed with that phone under another typed
-  // name (a family member, a typo, a test account) still belongs here — the row says so.
   if (historyName) {
-    const typed = o.customer_name?.trim();
     const differs = !!typed && typed.toLowerCase() !== historyName.toLowerCase();
     return (
       <>
         <span className={className}>{historyName}</span>
-        {differs && (
-          <span
-            className="ml-1.5 text-[12px] font-medium text-amber-700 dark:text-amber-300 max-lg:ml-0 max-lg:block"
-            title={`Placed with this customer's phone under the name "${typed}"`}
-            data-testid="ordered-as"
-          >
-            ordered as {typed}
-          </span>
-        )}
+        {differs && <OrderedAs typed={typed} />}
       </>
     );
   }
   if (o.customer_id == null) return <span className={className}>{text}</span>;
+  const record = o.customer_record_name?.trim() || null;
+  const shown = record ?? text;
+  const differs = !!record && !!typed && typed.toLowerCase() !== record.toLowerCase();
   return (
-    <Link
-      to={customerOrdersPath({ id: o.customer_id, name: o.customer_name, phone: o.customer_phone })}
-      title={`Open ${text}'s order history`}
-      className={`${className} underline decoration-dotted decoration-gray-300 underline-offset-[3px] hover:text-foodies-cta hover:decoration-foodies-cta dark:decoration-slate-500`}
-    >
-      {text}
-    </Link>
+    <>
+      <Link
+        to={customerOrdersPath({ id: o.customer_id, name: record ?? o.customer_name, phone: o.customer_phone })}
+        title={`Open ${shown}'s order history`}
+        className={`${className} underline decoration-dotted decoration-gray-300 underline-offset-[3px] hover:text-foodies-cta hover:decoration-foodies-cta dark:decoration-slate-500`}
+      >
+        {shown}
+      </Link>
+      {differs && <OrderedAs typed={typed} />}
+    </>
   );
 };
 
@@ -987,9 +1024,12 @@ const Orders: React.FC = () => {
             {o.items_count ?? 0}
           </span>
         </div>
-        {/* Placed */}
+        {/* Placed — day, time, and how long ago */}
         <div>
-          <div className="text-[13px] text-gray-700 dark:text-slate-300">{placedTimeText(o.placed_at)}</div>
+          {placedDateText(o.placed_at) && (
+            <div className="text-[13px] text-gray-700 dark:text-slate-300">{placedDateText(o.placed_at)}</div>
+          )}
+          <div className="text-[12.5px] text-gray-500 dark:text-slate-400">{placedTimeText(o.placed_at)}</div>
           <div className={`text-[11.5px] font-bold ${overdue ? 'text-red-600' : 'text-gray-400 dark:text-slate-500'}`}>{ageText(age)}</div>
         </div>
         {/* Total */}
@@ -1146,7 +1186,7 @@ const Orders: React.FC = () => {
               <CustomerName o={o} historyName={historyCustomerName} className="text-[13.5px] font-semibold text-gray-700 dark:text-slate-200" />
             </div>
             <span className="flex-none text-[12px] text-gray-400 dark:text-slate-500">
-              {placedTimeText(o.placed_at)}
+              {placedText(o.placed_at)}
               {age != null && (
                 <>
                   {' · '}
@@ -1393,7 +1433,7 @@ const Orders: React.FC = () => {
           {o.branch?.name && (
             <span className="font-semibold text-gray-700 dark:text-slate-200">{o.branch.name} ·</span>
           )}
-          <span>{placedTimeText(o.placed_at)}</span>
+          <span>{placedText(o.placed_at)}</span>
           <span className={`font-bold ${overdue ? 'text-red-600' : 'text-gray-400 dark:text-slate-500'}`}>{ageText(age)}</span>
           <span>· {o.items_count ?? 0} item{(o.items_count ?? 0) === 1 ? '' : 's'}</span>
           <span>· {paymentMethodText(o)}</span>
