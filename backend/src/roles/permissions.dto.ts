@@ -240,6 +240,12 @@ export const Permissions = {
     /** Apply one to an order at the till. */
     PRINTED_VOUCHERS_APPLY: 'printed-vouchers:apply',
 
+    // — Push notifications to app customers (no umbrella: Owner only until
+    //   granted on the Roles page; settings hold the per-customer limits) —
+    PUSH_NOTIFICATIONS_VIEW: 'push-notifications:view',
+    PUSH_NOTIFICATIONS_SEND: 'push-notifications:send',
+    PUSH_NOTIFICATIONS_SETTINGS: 'push-notifications:settings',
+
     // — Campaigns (umbrella: campaigns:manage) —
     CAMPAIGNS_VIEW: 'campaigns:view',
     CAMPAIGNS_CREATE: 'campaigns:create',
