@@ -71,6 +71,9 @@ import BankCards from './pages/Admin/BankCards';
 import StaffDiscounts from './pages/Admin/StaffDiscounts';
 import PrintedVouchers from './pages/Admin/PrintedVouchers';
 import PrintedVoucherReport from './pages/Admin/PrintedVoucherReport';
+import PushNotifications from './pages/Admin/PushNotifications/PushNotifications';
+import PushComposer from './pages/Admin/PushNotifications/PushComposer';
+import PushMessageDetail from './pages/Admin/PushNotifications/PushMessageDetail';
 import Banners from './pages/Admin/Banners';
 import Promotions from './pages/Admin/Promotions';
 import ProductPromotions from './pages/Admin/ProductPromotions';
@@ -416,6 +419,8 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { path: '/admin/printed-vouchers', label: 'Printed Vouchers' },
         { path: '/admin/bank-cards', label: 'Bank Cards' },
         { path: '/admin/campaigns', label: 'Campaigns' },
+        // Promos to the customer app (order-status pushes are automatic, not here).
+        { path: '/admin/push-notifications', label: 'Push Notifications' },
         { path: '/admin/offer-settings', label: 'Offer Settings' },
       ],
     },
@@ -1266,6 +1271,38 @@ const AppRoutes: React.FC = () => {
         element={
           <ProtectedRoute>
             <AdminOnlyRoute><Layout><PrintedVouchers /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/push-notifications"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><PushNotifications /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/push-notifications/new"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><PushComposer /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/push-notifications/:id/edit"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><PushComposer /></Layout></AdminOnlyRoute>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/admin/push-notifications/:id"
+        element={
+          <ProtectedRoute>
+            <AdminOnlyRoute><Layout><PushMessageDetail /></Layout></AdminOnlyRoute>
           </ProtectedRoute>
         }
       />

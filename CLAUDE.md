@@ -58,7 +58,14 @@ Tenant (tenant_id; super admin requests have tenantId = null)
 │    item per paper, a percentage voucher stands alone — and they replace
 │    every other discount; order_printed_vouchers holds what an order
 │    used; never reaches the app or the website)
-└─ GLOBAL: users, permissions, otp_codes
+├─ TENANT (+ optional brand): push_messages (admin promos to the customer
+│    app: now / once / repeat, audience rules, A/B, hold-back),
+│    push_message_runs + push_message_recipients (each send and each
+│    customer in it), push_audiences, push_templates, push_settings
+│    (quiet hours, per-customer caps, expiry, test phones);
+│    customers.push_opt_out stops promos only
+└─ GLOBAL: users, permissions, otp_codes, push_devices (our copy of the
+     app's Firestore tokens users/{id}/tokens — customer AND rider ids)
 ```
 
 User assignment: `users` is global; `tenant_users` ties a user to a tenant; `branch_users` (branchId + userId + roleId + **nullable brandId**) ties them to branches. A non-null `brand_id` on every `branch_users` row = **brand-locked user**.
@@ -69,7 +76,7 @@ User assignment: `users` is global; `tenant_users` ties a user to a tenant; `bra
   - `tenantId` (null ⇒ super admin, no scoping)
   - `allowedBranchIds` — null = all branches (user has `all-branches:access` permission, e.g. GM/owner); else the branch IDs from `branch_users`
   - `allowedBrandIds` — null = unrestricted; an array only when the user is brand-locked (every `branch_users` row has `brand_id`; GM/owner never locked)
-- Brand lock is enforced server-side in: kitchen/KDS, admin orders, POS quote/order, reports/dashboard, discounts, customers (via brand order history), users/branch-users, menu admin CRUD (items/categories/variants/addons/modifiers/deals), branch-menu-items, shifts, printed vouchers (and their report), and the admin brands list. The "Brand Admin" role (slug `brand_admin`) bundles the brand-scoped permissions; demo accounts: `peperi@demo.com`, `wokandgo@demo.com`, `fireaway@demo.com` (password `brand123`, seeded by `npm run seed:brand-admins`).
+- Brand lock is enforced server-side in: kitchen/KDS, admin orders, POS quote/order, reports/dashboard, discounts, customers (via brand order history), users/branch-users, menu admin CRUD (items/categories/variants/addons/modifiers/deals), branch-menu-items, shifts, printed vouchers (and their report), push notifications (author's brand/branch reach is stored on the message and applied at every send), and the admin brands list. The "Brand Admin" role (slug `brand_admin`) bundles the brand-scoped permissions; demo accounts: `peperi@demo.com`, `wokandgo@demo.com`, `fireaway@demo.com` (password `brand123`, seeded by `npm run seed:brand-admins`).
 - Reports/dashboard (`backend/src/reports/`) scope by `tenantId + allowedBranchIds + allowedBrandIds + optional branch_id/brand_id` via `applyOrderScope()`/`applyBrandScope()`; `dashboard-summary` returns a `sales_by_brand` breakdown for the owner.
 - Delivery fee is configured per **brand** (`brands.delivery_flat_fee`); each split web order charges its own brand's fee. A rider carries exactly one active order at a time (auto-dispatch and manual assignment both enforce it).
 - Guards/decorators: `JwtAuthGuard`, `RoleAccessGuard`, `CustomerJwtAuthGuard` (consumer), `@CurrentUser()`, `@RequirePermission()`.
@@ -100,5 +107,6 @@ Production: PM2 + Nginx on EC2, no Docker — `docs/EC2_DEPLOYMENT_RUNBOOK.md`. 
 - `docs/DATABASE_OVERVIEW.md` + `docs/DATABASE_ERD.md` — schema reference
 - `docs/DISCOUNTS.md` — discount eligibility rules
 - `docs/PRINTED_VOUCHERS.md` — the paper coupon book: pricing rules, exclusivity, report
+- `docs/PUSH_NOTIFICATIONS.md` — admin push notifications: the app's token contract, audiences, schedules, sending engine, results
 - `docs/SYSTEM_FUNCTIONALITIES_AND_FLOW.md` — roles & order lifecycle
 - `docs/POS_GOOGLE_PLACES.md` — POS address autocomplete & delivery coordinates
