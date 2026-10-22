@@ -38,6 +38,14 @@ import {
 import { useHasPermission } from '../../hooks/useHasPermission';
 import RecordHistoryLink from '../../components/RecordHistoryLink';
 import { isEntityInactive } from '../../utils/entityStatus';
+import {
+  offerTimezone,
+  windowEndToApi,
+  windowEndToForm,
+  windowProblem,
+  windowSummary,
+} from './discountWindow';
+import { zoneLabel } from './PushNotifications/pushTime';
 
 interface Option {
   id: number;
@@ -73,7 +81,11 @@ const Discounts: React.FC = () => {
     channels: [...ALL_OFFER_CHANNELS] as string[],
     order_types: [...ALL_OFFER_ORDER_TYPES] as string[],
     valid_from: '',
+    /** Optional time on the start date ("HH:mm"); empty = from the start of the day. */
+    valid_from_time: '',
     valid_until: '',
+    /** Optional time on the end date; empty = to the end of the day. */
+    valid_until_time: '',
     valid_time_start: '',
     valid_time_end: '',
     valid_days_of_week: [] as number[],
@@ -98,7 +110,7 @@ const Discounts: React.FC = () => {
   const { data: branches } = useQuery({
     queryKey: ['branches'],
     queryFn: async () => {
-      const res = await apiClient.get<Option[]>('/admin/branches');
+      const res = await apiClient.get<Array<Option & { timezone?: string | null }>>('/admin/branches');
       return res.data;
     },
   });
@@ -115,6 +127,33 @@ const Discounts: React.FC = () => {
     const start = (page - 1) * DEFAULT_PAGE_SIZE;
     return discountList.slice(start, start + DEFAULT_PAGE_SIZE);
   }, [discountList, page]);
+
+  // Picked times are read on the clock of the branches the offer is limited to.
+  const tz = offerTimezone(branches, formData.eligibility_branch_ids);
+  const windowForm = {
+    from: { date: formData.valid_from, time: formData.valid_from_time },
+    until: { date: formData.valid_until, time: formData.valid_until_time },
+    dailyStart: formData.valid_time_start,
+    dailyEnd: formData.valid_time_end,
+  };
+  const formWindowSummary = windowSummary(
+    { ...windowForm, days: formData.valid_days_of_week },
+    tz,
+  );
+  /** The saved window in words, for the list. */
+  const savedWindowSummary = (d: Discount) => {
+    const dTz = offerTimezone(branches, d.eligibility_branch_ids ?? []);
+    return windowSummary(
+      {
+        from: windowEndToForm(d.valid_from, dTz),
+        until: windowEndToForm(d.valid_until, dTz),
+        dailyStart: d.valid_time_start ?? '',
+        dailyEnd: d.valid_time_end ?? '',
+        days: d.valid_days_of_week ?? [],
+      },
+      dTz,
+    );
+  };
 
   const createMutation = useMutation({
     mutationFn: adminService.createDiscount,
@@ -173,7 +212,9 @@ const Discounts: React.FC = () => {
       channels: [...ALL_OFFER_CHANNELS],
       order_types: [...ALL_OFFER_ORDER_TYPES],
       valid_from: '',
+      valid_from_time: '',
       valid_until: '',
+      valid_until_time: '',
       valid_time_start: '',
       valid_time_end: '',
       valid_days_of_week: [],
@@ -186,6 +227,9 @@ const Discounts: React.FC = () => {
 
   const handleEdit = (discount: Discount) => {
     setEditingDiscount(discount);
+    const editTz = offerTimezone(branches, discount.eligibility_branch_ids ?? []);
+    const from = windowEndToForm(discount.valid_from, editTz);
+    const until = windowEndToForm(discount.valid_until, editTz);
     setFormData({
       name: discount.name,
       code: discount.code ?? '',
@@ -205,8 +249,10 @@ const Discounts: React.FC = () => {
       is_active: discount.is_active,
       channels: channelsToForm(discount.channels),
       order_types: orderTypesToForm(discount.order_types),
-      valid_from: discount.valid_from ? discount.valid_from.split('T')[0] : '',
-      valid_until: discount.valid_until ? discount.valid_until.split('T')[0] : '',
+      valid_from: from.date,
+      valid_from_time: from.time,
+      valid_until: until.date,
+      valid_until_time: until.time,
       valid_time_start: discount.valid_time_start ?? '',
       valid_time_end: discount.valid_time_end ?? '',
       valid_days_of_week: discount.valid_days_of_week ?? [],
@@ -231,6 +277,11 @@ const Discounts: React.FC = () => {
     }
     if (formData.channels.length === 0) {
       toast.error('Select at least one channel (POS / app / web / kiosk).');
+      return;
+    }
+    const windowError = windowProblem(windowForm, tz);
+    if (windowError) {
+      toast.error(windowError);
       return;
     }
 
@@ -266,8 +317,9 @@ const Discounts: React.FC = () => {
       is_active: formData.is_active,
       channels: channelsToApi(formData.channels),
       order_types: orderTypesToApi(formData.order_types),
-      valid_from: formData.valid_from || undefined,
-      valid_until: formData.valid_until || undefined,
+      // null clears a removed date (undefined left the old one in place).
+      valid_from: windowEndToApi(windowForm.from, 'from', tz),
+      valid_until: windowEndToApi(windowForm.until, 'until', tz),
       valid_time_start: formData.valid_time_start || null,
       valid_time_end: formData.valid_time_end || null,
       valid_days_of_week: formData.valid_days_of_week.length
@@ -513,23 +565,79 @@ const Discounts: React.FC = () => {
             </div>
           </div>
 
-          {/* Date + time + day window */}
-          <div className="mb-5 grid grid-cols-2 gap-4 max-sm:grid-cols-1">
-            <div>
-              <label className={offerLabel}>Valid from</label>
-              <input type="date" value={formData.valid_from} onChange={(e) => setFormData({ ...formData, valid_from: e.target.value })} className={offerInput} />
+          {/* Start + end: a date and an optional time each, on the branch clock */}
+          <div className="mb-5">
+            <div className="text-[13px] font-semibold text-gray-700">When it runs</div>
+            <div className="mb-3 text-[12.5px] text-gray-400">
+              {zoneLabel(tz)}. Leave a time empty for the whole day.
             </div>
-            <div>
-              <label className={offerLabel}>Valid until</label>
-              <input type="date" value={formData.valid_until} onChange={(e) => setFormData({ ...formData, valid_until: e.target.value })} className={offerInput} />
+            <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
+              {([
+                ['valid_from', 'valid_from_time', 'Valid from', 'Start of day'],
+                ['valid_until', 'valid_until_time', 'Valid until', 'End of day'],
+              ] as const).map(([dateKey, timeKey, label, wholeDay]) => (
+                <div key={dateKey}>
+                  <label className={offerLabel}>{label}</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      aria-label={`${label} date`}
+                      value={formData[dateKey]}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          [dateKey]: e.target.value,
+                          // A time means nothing without its date.
+                          ...(e.target.value ? {} : { [timeKey]: '' }),
+                        })
+                      }
+                      className={`${offerInput} min-w-0 flex-[3]`}
+                    />
+                    <input
+                      type="time"
+                      aria-label={`${label} time`}
+                      value={formData[timeKey]}
+                      onChange={(e) => setFormData({ ...formData, [timeKey]: e.target.value })}
+                      disabled={!formData[dateKey]}
+                      title={`Empty = ${wholeDay.toLowerCase()}`}
+                      className={`${offerInput} min-w-0 flex-[2]`}
+                    />
+                  </div>
+                  {formData[timeKey] ? (
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ ...formData, [timeKey]: '' })}
+                      className="mt-1.5 text-[12px] font-semibold text-red-600 hover:underline"
+                    >
+                      Clear time ({wholeDay.toLowerCase()})
+                    </button>
+                  ) : (
+                    formData[dateKey] && (
+                      <p className="mt-1.5 text-[12px] text-gray-400">{wholeDay}</p>
+                    )
+                  )}
+                </div>
+              ))}
             </div>
-            <div>
-              <label className={offerLabel}>Valid time from</label>
-              <input type="time" value={formData.valid_time_start} onChange={(e) => setFormData({ ...formData, valid_time_start: e.target.value })} className={offerInput} />
+          </div>
+
+          {/* Daily hours: repeat on every day the offer runs */}
+          <div className="mb-5">
+            <div className="text-[13px] font-semibold text-gray-700">
+              Daily hours <span className="font-normal text-gray-400">— optional, empty = all day</span>
             </div>
-            <div>
-              <label className={offerLabel}>Valid time until</label>
-              <input type="time" value={formData.valid_time_end} onChange={(e) => setFormData({ ...formData, valid_time_end: e.target.value })} className={offerInput} />
+            <div className="mb-3 text-[12.5px] text-gray-400">
+              Repeats on every day it runs, e.g. 6:00 PM – 11:00 PM for a dinner offer. Cannot run past midnight.
+            </div>
+            <div className="grid grid-cols-2 gap-4 max-sm:grid-cols-1">
+              <div>
+                <label className={offerLabel}>Each day from</label>
+                <input type="time" value={formData.valid_time_start} onChange={(e) => setFormData({ ...formData, valid_time_start: e.target.value })} className={offerInput} />
+              </div>
+              <div>
+                <label className={offerLabel}>Each day until</label>
+                <input type="time" value={formData.valid_time_end} onChange={(e) => setFormData({ ...formData, valid_time_end: e.target.value })} className={offerInput} />
+              </div>
             </div>
           </div>
 
@@ -558,6 +666,12 @@ const Discounts: React.FC = () => {
               })}
             </div>
           </div>
+
+          {formWindowSummary && (
+            <p className="mb-5 rounded-[10px] bg-gray-50 px-3.5 py-2.5 text-[12.5px] leading-snug text-gray-600">
+              {formWindowSummary}
+            </p>
+          )}
 
           <OfferChannelsField value={formData.channels} onChange={(channels) => setFormData({ ...formData, channels })} />
           <OfferOrderTypesField value={formData.order_types} onChange={(order_types) => setFormData({ ...formData, order_types })} />
@@ -589,6 +703,7 @@ const Discounts: React.FC = () => {
                         />
                       </p>
                       {discount.min_order_amount && <p>Min order: {formatCurrency(discount.min_order_amount)}</p>}
+                      {savedWindowSummary(discount) && <p>{savedWindowSummary(discount)}</p>}
                       <BrandScopeNotice manageScope={discount.manage_scope} noun="discount" />
                     </>
                   }
