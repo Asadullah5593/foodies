@@ -119,6 +119,8 @@ export interface OrderQuoteResponse {
   tax_basis?: 'cash' | 'card' | 'split';
   tax_rate_cash?: number;
   tax_rate_card?: number;
+  /** What the GST is charged on: the menu price when Business Settings taxes before discounts, else the discounted price. */
+  tax_base?: number;
   service_charge: number;
   delivery_fee: number;
   total_amount: number;

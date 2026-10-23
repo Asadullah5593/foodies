@@ -399,6 +399,8 @@ export type InvoiceOrderVM = {
   discount_code?: string | null;
   tax_amount: number;
   tax_rate?: number | null;
+  /** What the GST was charged on, when Business Settings taxes the menu price; null = the discounted price. */
+  tax_base?: number | null;
   service_charge: number;
   delivery_fee: number;
   total_amount: number;

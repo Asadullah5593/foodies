@@ -54,6 +54,7 @@ export class TenantsService {
             legal_name?: string;
             gst_rate_cash?: number | null;
             gst_rate_card?: number | null;
+            tax_on_menu_price?: boolean;
             loyalty_enabled?: boolean;
             auto_print_invoices?: boolean;
         },
@@ -176,6 +177,7 @@ export class TenantsService {
             default_timezone?: string;
             gst_rate_cash?: number | null;
             gst_rate_card?: number | null;
+            tax_on_menu_price?: boolean;
             loyalty_enabled?: boolean;
             auto_print_invoices?: boolean;
         },
@@ -200,6 +202,8 @@ export class TenantsService {
             tenant.gstRateCash = dto.gst_rate_cash;
         if (dto.gst_rate_card !== undefined)
             tenant.gstRateCard = dto.gst_rate_card;
+        if (typeof dto.tax_on_menu_price === 'boolean')
+            tenant.taxOnMenuPrice = dto.tax_on_menu_price;
         // defaultServiceCharge is deprecated; keep it at 0 for all tenants.
         tenant.defaultServiceCharge = 0;
         if (dto.loyalty_enabled !== undefined)
@@ -329,6 +333,7 @@ export class TenantsService {
             legal_name: t.legalName,
             gst_rate_cash: t.gstRateCash != null ? Number(t.gstRateCash) : null,
             gst_rate_card: t.gstRateCard != null ? Number(t.gstRateCard) : null,
+            tax_on_menu_price: !!t.taxOnMenuPrice,
             default_service_charge: 0,
             loyalty_enabled: t.loyaltyEnabled,
             auto_print_invoices: t.autoPrintInvoices,

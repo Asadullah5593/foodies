@@ -74,6 +74,7 @@ import {
 import {
     resolveGstRates,
     computeTenderTax,
+    taxBaseFor,
     type TenderSplit,
 } from './tax-pricing';
 import { RiderDispatchState } from '../entities/rider-dispatch-state.entity';
@@ -2169,8 +2170,15 @@ export class OrdersService {
                     },
                     tenant,
                 );
-                const tax = computeTenderTax(
+                // Same base rule as quote(): the menu price when the business
+                // taxes before discounts, else the discounted price.
+                const brandTaxBase = taxBaseFor({
+                    menuPrice: brandSubtotal,
                     afterDiscount,
+                    taxOnMenuPrice: tenant.taxOnMenuPrice,
+                });
+                const tax = computeTenderTax(
+                    brandTaxBase,
                     paymentSplit,
                     gstRates.cash,
                     gstRates.card,
@@ -2310,6 +2318,11 @@ export class OrdersService {
                                 taxRateCash: gstRates.cash,
                                 taxRateCard: gstRates.card,
                                 taxBasis: tax.basis,
+                                // Only when the menu-price rule priced it: null keeps
+                                // receipts and FBR on the discounted-price reading.
+                                taxBase: tenant.taxOnMenuPrice
+                                    ? brandTaxBase
+                                    : null,
                                 serviceCharge: brandServiceCharge,
                                 deliveryFee: brandDeliveryFee,
                                 deliveryTier: deliveryResolved.tier,
@@ -3412,6 +3425,8 @@ export class OrdersService {
             tax_amount: Number(order.taxAmount),
             tax_rate: effectiveTaxRate(order),
             tax_basis: order.taxBasis ?? null,
+            /** Set when GST was charged on the menu price; null = on the discounted price. */
+            tax_base: order.taxBase != null ? Number(order.taxBase) : null,
             service_charge: Number(order.serviceCharge),
             delivery_fee: Number(order.deliveryFee),
             delivery_tier: order.deliveryTier ?? null,
@@ -3441,6 +3456,17 @@ export class OrdersService {
     /** Main customer-facing invoice: breakdown by brand plus gross total. */
     async getOrderGroupMainInvoice(orderGroupId: string) {
         const group = await this.getOrderGroup(orderGroupId);
+        // What each order's GST was charged on, for the receipt's "on Rs …"
+        // wording. Read here rather than added to getOrderGroup, which is also
+        // the app's order response and keeps the shape it shipped with.
+        const taxBaseById = new Map(
+            (
+                await this.orderRepo.find({
+                    where: { orderGroupId },
+                    select: ['id', 'taxBase'],
+                })
+            ).map((o) => [o.id, o.taxBase != null ? Number(o.taxBase) : null]),
+        );
         const firstOrder = await this.orderRepo.findOne({
             where: { orderGroupId },
             relations: ['tenant', 'branch'],
@@ -3501,6 +3527,8 @@ export class OrdersService {
                 tax_amount: o.tax_amount,
                 tax_rate: o.tax_rate,
                 tax_basis: o.tax_basis,
+                /** Set when GST was charged on the menu price; null = on the discounted price. */
+                tax_base: taxBaseById.get(o.id) ?? null,
                 service_charge: o.service_charge,
                 delivery_fee: o.delivery_fee,
                 delivery_tier: o.delivery_tier ?? null,
@@ -5439,8 +5467,15 @@ export class OrdersService {
                       (Number(dto.payment_split.online_transfer_amount) || 0),
               }
             : null;
-        const tax = computeTenderTax(
+        // Same base rule as createOrder: the menu price when the business taxes
+        // before discounts, else the discounted price.
+        const taxBase = taxBaseFor({
+            menuPrice: subtotal,
             afterDiscount,
+            taxOnMenuPrice: tenant.taxOnMenuPrice,
+        });
+        const tax = computeTenderTax(
+            taxBase,
             paymentSplit,
             gstRates.cash,
             gstRates.card,
@@ -5613,6 +5648,9 @@ export class OrdersService {
             tax_basis: tax.basis,
             tax_rate_cash: gstRates.cash,
             tax_rate_card: gstRates.card,
+            // The till's cash-vs-card preview needs the base; the app and the
+            // website keep the response they shipped with (no new fields).
+            ...(isStaffTill(source) ? { tax_base: taxBase } : {}),
             service_charge: serviceCharge,
             delivery_fee: deliveryFee,
             ...(deliveryOptions ? { delivery_options: deliveryOptions } : {}),

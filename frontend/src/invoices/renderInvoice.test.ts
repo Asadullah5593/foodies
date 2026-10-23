@@ -131,6 +131,21 @@ describe('renderInvoiceHtml — field toggles drive output', () => {
     expect(render({ showTax: true, showTaxRate: true })).toContain('(15%)');
   });
 
+  it('says what the tax was charged on when the order was taxed on its menu price', () => {
+    const invoice = sampleInvoice();
+    invoice.orders[0] = { ...invoice.orders[0], tax_base: 1000 };
+    const html = renderInvoiceHtml(invoice, 'thermal_classic', cfg({ showTax: true, showTaxRate: true })).html;
+    expect(html).toMatch(/Tax \(15% on [^)]*1,?000[^)]*\)/);
+    // Without the rate, the base still shows.
+    const noRate = renderInvoiceHtml(invoice, 'thermal_classic', cfg({ showTax: true, showTaxRate: false })).html;
+    expect(noRate).toMatch(/Tax \(on [^)]*1,?000[^)]*\)/);
+  });
+
+  it('leaves the tax line as it was for an order taxed on its discounted price', () => {
+    const html = render({ showTax: true, showTaxRate: true });
+    expect(html).toContain('Tax (15%)');
+  });
+
   it('respects header and footer text', () => {
     const html = render({ headerText: 'NTN 1234567', footerText: 'No refunds' });
     expect(html).toContain('NTN 1234567');

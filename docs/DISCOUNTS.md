@@ -23,6 +23,8 @@ In the POS order panel you now see:
 - **Discount** – amount taken off when a valid discount code is applied (and the code name if applied).
 - **Total payable** – final amount (original − discount, then + tax + service charge + delivery when applicable).
 
+**What GST is charged on.** By default, the price after every discount and loyalty redemption. Business Settings → Tax & Charges → **"Charge GST on the menu price"** switches that to the menu price of everything ordered, extras included: discounts, BOGO, coupons, card offers, staff discount, printed vouchers and loyalty points then lower the bill but not the tax (a deal counts at its deal price — that is its menu price). Example, Rs 1,000 at 50% off with 16% GST: off = 500 + 80 = 580, on = 500 + 160 = 660. Orders without a discount are unchanged. The rule is `taxBaseFor` in `backend/src/orders/tax-pricing.ts`, called by both `quote` and `createOrder`; an order priced by it stores the base in `orders.tax_base` (null = taxed on the discounted price, as every earlier order), which the receipts ("Tax (16% on Rs 1,000)") and the FBR invoice (menu price as sale value, everything taken off it as the discount, the real rate) read. It applies to orders placed after the switch is saved — earlier orders keep their tax. Loyalty points are still earned on the order total, so a discounted order earns on the higher total.
+
 The POS calls a **quote** API as you add items or change the discount code, so the breakdown updates live. When you click **Create Order**, the server applies the same logic and saves the order with the discounted total.
 
 ## Applying a discount in POS

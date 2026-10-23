@@ -49,6 +49,7 @@ const BusinessSettings: React.FC = () => {
     legal_name: '',
     gst_rate_cash: '', // GST % for cash tender
     gst_rate_card: '', // GST % for card/digital tender (blank = same as cash)
+    tax_on_menu_price: false, // GST on the menu price instead of the discounted price
     loyalty_enabled: false,
     auto_print_invoices: false,
   });
@@ -94,6 +95,7 @@ const BusinessSettings: React.FC = () => {
         // API stores as fraction (0–1); UI shows percent (0–100).
         gst_rate_cash: settings.gst_rate_cash != null ? String(Number(settings.gst_rate_cash) * 100) : '',
         gst_rate_card: settings.gst_rate_card != null ? String(Number(settings.gst_rate_card) * 100) : '',
+        tax_on_menu_price: settings.tax_on_menu_price ?? false,
         loyalty_enabled: settings.loyalty_enabled ?? false,
         auto_print_invoices: settings.auto_print_invoices ?? false,
       });
@@ -108,6 +110,7 @@ const BusinessSettings: React.FC = () => {
         // UI uses percent (0–100); API expects fraction (0–1).
         gst_rate_cash: data.gst_rate_cash.trim() !== '' ? Number(data.gst_rate_cash) / 100 : null,
         gst_rate_card: data.gst_rate_card.trim() !== '' ? Number(data.gst_rate_card) / 100 : null,
+        tax_on_menu_price: data.tax_on_menu_price,
         loyalty_enabled: data.loyalty_enabled,
         auto_print_invoices: data.auto_print_invoices,
       }),
@@ -233,6 +236,18 @@ const BusinessSettings: React.FC = () => {
                   </div>
                 </div>
               ))}
+            </div>
+            <div className="mb-3.5">
+              <ToggleRow
+                title="Charge GST on the menu price"
+                on={formData.tax_on_menu_price}
+                onChange={(v) => setFormData({ ...formData, tax_on_menu_price: v })}
+              >
+                Off: GST is charged on the price after discounts. On: GST is charged on the full menu price of
+                everything ordered, extras included — discounts, vouchers, staff discount and loyalty points lower
+                the bill but not the tax. Deals are taxed at their deal price. Applies to orders placed after you
+                save; earlier orders keep the tax they were charged.
+              </ToggleRow>
             </div>
             <div className="flex items-start gap-2 rounded-[10px] bg-gray-50 px-3.5 py-3 dark:bg-slate-900/40">
               <MdInfoOutline size={15} className="mt-px flex-none text-gray-400 dark:text-slate-500" />
@@ -366,7 +381,7 @@ const BusinessSettings: React.FC = () => {
             <div className="mb-3.5 text-[12px] font-bold uppercase tracking-wider text-gray-400 dark:text-slate-500">Summary</div>
             <div className="flex flex-col gap-3">
               {summaryRow('Business', formData.name || '—')}
-              {summaryRow('GST', gstSummary)}
+              {summaryRow('GST', formData.tax_on_menu_price ? `${gstSummary} · on menu price` : gstSummary)}
               {summaryRow('Loyalty', formData.loyalty_enabled ? 'Enabled' : 'Disabled', formData.loyalty_enabled)}
               {summaryRow('Auto-print', formData.auto_print_invoices ? 'On' : 'Off', formData.auto_print_invoices)}
               {summaryRow(
