@@ -27,7 +27,7 @@ If you change any of those paths/ports, update the commands below accordingly.
 
 Every push to `main` (for example merging a PR) runs `.github/workflows/ci-cd.yml`. After the test jobs pass, the **Deploy to production** job:
 
-1. Copies the server's build settings (`frontend/.env*` and `consumer-web/.env*`) into the GitHub runner. They stay on the server and are never committed; the job stops before deploying anything if `VITE_API_URL` (frontend) or `NEXT_PUBLIC_TENANT_ID` (consumer web) is missing.
+1. Copies the server's build settings (`frontend/.env*` and `consumer-web/.env*`) into the GitHub runner. They stay on the server and are never committed; the job stops before deploying anything if `VITE_API_URL` (frontend) or `NEXT_PUBLIC_API_BASE_URL` (consumer web) is missing, because both builds would otherwise point at `http://127.0.0.1:3001/api`. On production both are `/api` (Nginx proxies it to the backend); the website's tenant comes from the backend's `TENANT_ID`, so `NEXT_PUBLIC_TENANT_ID` is optional.
 2. Builds the backend, the frontend and the consumer web **on GitHub** with Node 22.
 3. Moves the server checkout to exactly the pushed commit (`git merge --ff-only <sha>`).
 4. Copies `backend/node_modules` + `backend/dist`, `frontend/dist` (then into `/var/www/foodies`), and `consumer-web/node_modules` + `consumer-web/.next` to the server with `rsync --checksum`, so only changed files travel, and restarts `foodies-backend` and `website` in PM2.

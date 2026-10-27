@@ -145,7 +145,10 @@ jobs:
           ssh prod "cd '$REMOTE_REPO' && ls -1d frontend/.env* consumer-web/.env* 2>/dev/null | grep -v '\.example$' | tar cf - -T -" | tar xf -
           echo "Build settings found on the server:"
           ls -1a frontend/.env* consumer-web/.env* 2>/dev/null | grep -v '\.example$' || true
-          # Refuse to deploy a build that would point at the wrong API or tenant.
+          # Refuse to deploy a build that would point at the wrong API. Without these
+          # the builds fall back to http://127.0.0.1:3001/api, which only works on
+          # the developer's own machine. (The website's tenant is not needed here:
+          # the backend infers it from its own TENANT_ID.)
           has_var() {
             for f in "$1"/.env*; do
               case "$f" in *.example) continue ;; esac
@@ -153,7 +156,7 @@ jobs:
             done
             return 1
           }
-          for check in "frontend VITE_API_URL" "consumer-web NEXT_PUBLIC_TENANT_ID"; do
+          for check in "frontend VITE_API_URL" "consumer-web NEXT_PUBLIC_API_BASE_URL"; do
             set -- $check
             if ! has_var "$1" "$2"; then
               echo "::error::$2 is not set in any $1/.env* file on the server - stopping before anything is deployed."
