@@ -6,7 +6,6 @@ import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Geist_Mono } from "next/font/google";
 // import { Outfit, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import "leaflet/dist/leaflet.css";
 import { Providers } from "@/components/providers";
 import { RouteTransition } from "@/components/route-transition";
 import { getMediaOrigin } from "@/lib/media-image";
