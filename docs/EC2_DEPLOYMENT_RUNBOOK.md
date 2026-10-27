@@ -19,9 +19,23 @@ If you change any of those paths/ports, update the commands below accordingly.
 - **Do not develop on EC2.** Only `git pull` and build/restart services. Don’t commit/push from EC2.
 - **Backend restarts + migrations are the risky part.** Always take a DB backup before schema changes.
 - **Frontend “not reflecting” is usually because Nginx serves `/var/www/foodies`,** so you must publish your `dist/` there after each build.
-- **The database is on RDS, not on the EC2 box.** There is also an old, unused `foodies` database in the EC2's local PostgreSQL, left over from an earlier setup. `sudo -u postgres psql -d foodies` connects to **that stale copy** — it looks plausible (same name, same tables) but is months out of date. Every DB command in this runbook therefore connects to RDS explicitly. See **Database connection** below and never use `sudo -u postgres` for anything production.
+- **The database is on RDS, not on the EC2 box.** The EC2 box used to run its own PostgreSQL with an old, unused `foodies` copy from an earlier setup; it was dumped to `~/local-foodies-pre-rds-2026-10-27.dump` and the service stopped and disabled on 2026-10-27 (`sudo systemctl enable --now postgresql` brings it back). Every DB command in this runbook connects to RDS explicitly. See **Database connection** below and never use `sudo -u postgres` for anything production.
 
 ---
+
+## Automatic deploy (GitHub Actions)
+
+Every push to `main` (for example merging a PR) runs `.github/workflows/ci-cd.yml`. After the test jobs pass, the **Deploy to production** job:
+
+1. Copies the server's build settings (`frontend/.env*` and `consumer-web/.env*`) into the GitHub runner. They stay on the server and are never committed; the job stops before deploying anything if `VITE_API_URL` (frontend) or `NEXT_PUBLIC_TENANT_ID` (consumer web) is missing.
+2. Builds the backend, the frontend and the consumer web **on GitHub** with Node 22.
+3. Moves the server checkout to exactly the pushed commit (`git merge --ff-only <sha>`).
+4. Copies `backend/node_modules` + `backend/dist`, `frontend/dist` (then into `/var/www/foodies`), and `consumer-web/node_modules` + `consumer-web/.next` to the server with `rsync --checksum`, so only changed files travel, and restarts `foodies-backend` and `website` in PM2.
+5. Health-checks `127.0.0.1:3001/api/public/consumer/branches` and `127.0.0.1:3002/` for up to 90 s and fails the run if either is not 200.
+
+The server never runs `npm ci` or a build during an automatic deploy. Before this (until October 2026) it built all three apps itself, which pushed memory use to about 2 GB. Secrets used: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, optional `DEPLOY_REPO_PATH` (repo path on the server, default `~/foodies`).
+
+The manual steps below still work for a deploy by hand, but they build on the server; on a small instance run them outside trading hours.
 
 ## One-command deploy (typical update after pushing to GitHub)
 
@@ -80,7 +94,7 @@ curl -sS http://127.0.0.1/api/ && echo
 
 ## Consumer web (Next.js public site, port 3002)
 
-The public consumer site lives in `consumer-web/`. CI builds it on every merge, but **production deploy today only publishes the admin Vite SPA** to `/var/www/foodies`. To serve the consumer site (including the coming-soon gate) on your public domain:
+The public consumer site lives in `consumer-web/` and is deployed by the automatic deploy above (PM2 process `website`, port 3002). Since 2026-10-27 PM2 starts it directly with Node rather than through `npm start`, with a memory cap: `pm2 start node_modules/next/dist/bin/next --name website --cwd ~/foodies/consumer-web --node-args="--max-old-space-size=320" --max-memory-restart 450M -- start --port 3002` (then `pm2 save`). First-time setup on a new server:
 
 ### 1. Environment variables (PM2)
 

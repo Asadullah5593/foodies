@@ -95,58 +95,120 @@ jobs:
     needs: [backend, frontend, consumer-web]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     environment: production
+    timeout-minutes: 30
+    # Everything is built here on GitHub and only the finished files are copied
+    # to the server, so a deploy no longer runs `npm ci` or three builds on the
+    # live EC2 box (that peaked at ~2 GB of RAM and slowed the POS while it ran).
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      # Repo checkout on the server; relative paths are relative to the deploy
+      # user's home directory.
+      REMOTE_REPO: ${{ secrets.DEPLOY_REPO_PATH || 'foodies' }}
 
     steps:
-      - name: Deploy over SSH
-        uses: appleboy/ssh-action@v1.2.0
-        env:
-          DEPLOY_REPO_PATH: ${{ secrets.DEPLOY_REPO_PATH }}
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          script_stop: true
-          envs: DEPLOY_REPO_PATH
-          script: |
-            set -euo pipefail
-            REPO="${DEPLOY_REPO_PATH:-$HOME/foodies}"
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+            consumer-web/package-lock.json
 
-            # `npm ci` on this host intermittently aborts mid-reify with
-            # "ENOTEMPTY: rmdir .../node_modules/<pkg>/node_modules/<dep>/dist" (a known npm race /
-            # stale-cache issue). Wipe node_modules, and on failure clean the npm cache and retry
-            # once, so a transient install error doesn't fail the whole deploy.
-            npm_ci() {
-              rm -rf node_modules
-              if ! npm ci "$@"; then
-                echo "npm ci failed (ENOTEMPTY or similar) - wiping node_modules + npm cache and retrying once..."
-                rm -rf node_modules
-                npm cache clean --force || true
-                npm ci "$@"
-              fi
-            }
+      - name: Set up SSH to the server
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          {
+            echo "Host prod"
+            echo "  HostName $DEPLOY_HOST"
+            echo "  User $DEPLOY_USER"
+            echo "  IdentityFile ~/.ssh/deploy_key"
+            echo "  IdentitiesOnly yes"
+            echo "  StrictHostKeyChecking yes"
+            echo "  ServerAliveInterval 30"
+          } >> ~/.ssh/config
+          ssh prod 'echo "Connected to $(hostname)"'
 
-            cd "$REPO"
-            git fetch origin
-            git checkout main
-            git pull --ff-only origin main
+      # Vite and Next.js bake their VITE_* / NEXT_PUBLIC_* values into the build,
+      # so the build must see the server's own env files. They stay on the server
+      # (never in git); this copies them into the runner for the build only.
+      - name: Fetch build settings from the server
+        run: |
+          ssh prod "cd '$REMOTE_REPO' && ls -1d frontend/.env* consumer-web/.env* 2>/dev/null | grep -v '\.example$' | tar cf - -T -" | tar xf -
+          echo "Build settings found on the server:"
+          ls -1a frontend/.env* consumer-web/.env* 2>/dev/null | grep -v '\.example$' || true
+          # Refuse to deploy a build that would point at the wrong API or tenant.
+          has_var() {
+            for f in "$1"/.env*; do
+              case "$f" in *.example) continue ;; esac
+              [ -f "$f" ] && grep -q "^$2=" "$f" && return 0
+            done
+            return 1
+          }
+          for check in "frontend VITE_API_URL" "consumer-web NEXT_PUBLIC_TENANT_ID"; do
+            set -- $check
+            if ! has_var "$1" "$2"; then
+              echo "::error::$2 is not set in any $1/.env* file on the server - stopping before anything is deployed."
+              exit 1
+            fi
+          done
 
-            # Backend
-            cd "$REPO/backend"
-            npm_ci --legacy-peer-deps
-            npm run build
-            pm2 restart foodies-backend --update-env
+      - name: Build backend
+        working-directory: backend
+        run: |
+          npm ci --legacy-peer-deps
+          npm run build
 
-            # Frontend (admin/POS) -> served from /var/www/foodies
-            cd "$REPO/frontend"
-            npm_ci
-            npm run build
-            sudo rsync -a --delete dist/ /var/www/foodies/
+      - name: Build frontend (admin / POS)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
 
-            # Consumer web
-            cd "$REPO/consumer-web"
-            rm -rf .next
-            npm_ci
-            npm run build
-            pm2 restart website --update-env
+      - name: Build consumer web
+        working-directory: consumer-web
+        run: |
+          npm ci
+          rm -rf .next
+          npm run build
 
-            echo "Deploy finished OK."
+      - name: Update the code on the server
+        run: |
+          ssh prod "cd '$REMOTE_REPO' && git fetch -q origin && git checkout -q main && git merge -q --ff-only '${{ github.sha }}' && git log -1 --format='Server checkout now at %h %s'"
+
+      # --checksum compares file contents rather than timestamps (node_modules is
+      # reinstalled fresh on every run), so only what really changed is sent.
+      - name: Deploy backend
+        run: |
+          rsync -a --delete --checksum -z backend/node_modules/ "prod:$REMOTE_REPO/backend/node_modules/"
+          rsync -a --delete --checksum -z backend/dist/ "prod:$REMOTE_REPO/backend/dist/"
+          ssh prod "cd '$REMOTE_REPO/backend' && pm2 restart foodies-backend --update-env"
+
+      - name: Deploy frontend (admin / POS)
+        run: |
+          rsync -a --delete --checksum -z frontend/dist/ "prod:$REMOTE_REPO/frontend/dist/"
+          ssh prod "sudo rsync -a --delete '$REMOTE_REPO/frontend/dist/' /var/www/foodies/"
+
+      - name: Deploy consumer web
+        run: |
+          rsync -a --delete --checksum -z consumer-web/node_modules/ "prod:$REMOTE_REPO/consumer-web/node_modules/"
+          rsync -a --delete --checksum --delete-excluded --exclude=/cache/ -z consumer-web/.next/ "prod:$REMOTE_REPO/consumer-web/.next/"
+          ssh prod "cd '$REMOTE_REPO/consumer-web' && pm2 restart website --update-env"
+
+      - name: Health check
+        run: |
+          ssh prod 'for i in $(seq 1 30); do
+              api=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3001/api/public/consumer/branches || true)
+              web=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3002/ || true)
+              if [ "$api" = 200 ] && [ "$web" = 200 ]; then echo "API $api, website $web - deploy finished OK."; exit 0; fi
+              sleep 3
+            done
+            echo "API $api, website $web after 90 s"; pm2 status; exit 1'
