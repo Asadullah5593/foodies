@@ -20,6 +20,11 @@ export class OrderItemAddon {
     @Column()
     addonId: number;
 
+    /**
+     * `quantity` and `subtotal` are for ONE unit of the order line: a plain
+     * (non-deal) line of 3 bills the subtotal 3 times; a deal component row
+     * bills it once.
+     */
     @Column({ default: 1 })
     quantity: number;
 

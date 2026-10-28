@@ -9,6 +9,7 @@ import {
 } from './types';
 import { APP_QR_SVG } from './appQr';
 import { fbrLogoSrc, fbrQrSvg } from './fbr';
+import { orderLineExtrasUnits, savedAddonAmount, savedModifierBilling } from '../utils/modifierPricing';
 
 function esc(s: unknown): string {
   return String(s ?? '')
@@ -133,19 +134,6 @@ function splitModifiers(modList: NonNullable<InvoiceLineVM['modifiers']>) {
 }
 
 /**
- * What a modifier actually bills. The group's included allowance (first-N-free)
- * makes free_quantity units free, so only (quantity - free_quantity) are charged
- * — a topping picked 3× with 1 included bills 2 × unit_price. Fully-included
- * picks bill 0, printed per the template's zeroAmountDisplay setting.
- */
-function modifierBilling(m: NonNullable<InvoiceLineVM['modifiers']>[number]) {
-  const qty = Math.max(1, Number(m.quantity ?? 1));
-  const free = Math.min(qty, Math.max(0, Number(m.free_quantity ?? 0)));
-  const unit = Number(m.unit_price ?? 0);
-  return { qty, free, unit, amount: (qty - free) * unit };
-}
-
-/**
  * The amount cell for modifier / add-on / deal-component lines. Zero amounts
  * follow the template's zeroAmountDisplay: "0.00", "Included", or empty.
  */
@@ -181,11 +169,6 @@ function makeZeroAwareRate(cfg: InvoiceTemplateConfig) {
     if (Number(amount ?? 0) !== 0) return num(unit);
     return cfg.zeroAmountDisplay === 'zero' ? num(unit) : '';
   };
-}
-
-/** An add-on's billed amount (explicit subtotal wins over unit × qty). */
-function addonAmount(a: NonNullable<InvoiceLineVM['addons']>[number]): number {
-  return a.subtotal != null ? Number(a.subtotal) : Number(a.unit_price) * Number(a.quantity ?? 1);
 }
 
 /**
@@ -238,6 +221,7 @@ function itemsHtml(
    * what the kitchen cooks, so it must print in both cases.
    */
   const extrasHtml = (l: InvoiceLineVM, depth: 0 | 1): string => {
+    const units = orderLineExtrasUnits(l);
     const ownCls = depth === 0 ? 'sub' : 'sub sub2';
     const ownSpan = depth === 0 ? 'sub-l' : 'sub2-l';
     const nestCls = depth === 0 ? 'sub sub2' : 'sub sub3';
@@ -252,23 +236,24 @@ function itemsHtml(
     // when free items are off (paid ones always print).
     const addons = cfg.showModifiers
       ? (l.addons ?? [])
-          .filter((a) => cfg.showFreeItems || addonAmount(a) !== 0)
-          .map((a) =>
-            row(
-              `<span class="${ownSpan}">${plus}${esc(a.name ?? 'Add-on')}${Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</span>`,
-              zeroMoney(addonAmount(a)),
+          .filter((a) => cfg.showFreeItems || savedAddonAmount(a) !== 0)
+          .map((a) => {
+            const qty = Number(a.quantity ?? 1) * units;
+            return row(
+              `<span class="${ownSpan}">${plus}${esc(a.name ?? 'Add-on')}${qty !== 1 ? ` × ${qty}` : ''}</span>`,
+              zeroMoney(savedAddonAmount(a, units)),
               ownCls,
               'showModifiers',
-            ),
-          )
+            );
+          })
           .join('')
       : '';
     const modList = (l.modifiers ?? []).filter(
-      (m) => cfg.showFreeItems || modifierBilling(m).amount !== 0,
+      (m) => cfg.showFreeItems || savedModifierBilling(m).amount !== 0,
     );
     const { roots, children } = splitModifiers(modList);
     const modRow = (m: (typeof modList)[number], nested: boolean) => {
-      const b = modifierBilling(m);
+      const b = savedModifierBilling(m, units);
       const qty = b.qty !== 1 ? ` × ${b.qty}` : '';
       return nested
         ? row(
@@ -379,6 +364,7 @@ function itemsTableHtml(
    * what the kitchen cooks, so it must print in both cases.
    */
   const extrasCells = (l: InvoiceLineVM, depth: 0 | 1): string => {
+    const units = orderLineExtrasUnits(l);
     const own = depth === 0 ? 'ind' : 'ind2';
     const nest = depth === 0 ? 'ind2' : 'ind3';
     // Per-item note (kitchen instruction), spanning the item column only.
@@ -390,14 +376,14 @@ function itemsTableHtml(
     // when free items are off (paid ones always print).
     const addons = cfg.showModifiers
       ? (l.addons ?? [])
-          .filter((a) => cfg.showFreeItems || addonAmount(a) !== 0)
+          .filter((a) => cfg.showFreeItems || savedAddonAmount(a) !== 0)
           .map((a) => {
-            const qty = Number(a.quantity ?? 1);
+            const qty = Number(a.quantity ?? 1) * units;
             return cell(
               `<span class="${own}">${plus}${esc(a.name ?? 'Add-on')}</span>`,
               qty !== 1 ? String(qty) : '',
-              zeroRate(a.unit_price, addonAmount(a)),
-              zeroNum(addonAmount(a)),
+              zeroRate(a.unit_price, savedAddonAmount(a, units)),
+              zeroNum(savedAddonAmount(a, units)),
               '',
               'showModifiers',
             );
@@ -405,11 +391,11 @@ function itemsTableHtml(
           .join('')
       : '';
     const modList = (l.modifiers ?? []).filter(
-      (m) => cfg.showFreeItems || modifierBilling(m).amount !== 0,
+      (m) => cfg.showFreeItems || savedModifierBilling(m).amount !== 0,
     );
     const { roots, children } = splitModifiers(modList);
     const modCell = (m: (typeof modList)[number], nested: boolean) => {
-      const b = modifierBilling(m);
+      const b = savedModifierBilling(m, units);
       return cell(
         nested
           ? `<span class="${nest}">↳ ${esc(m.name ?? 'Modifier')}</span>`
