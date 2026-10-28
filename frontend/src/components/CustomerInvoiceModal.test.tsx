@@ -195,3 +195,42 @@ describe('CustomerInvoiceModal — single-order view keeps per-item notes', () =
     expect(screen.getByText('Wings Wednesday')).toBeInTheDocument();
   });
 });
+
+describe('CustomerInvoiceModal — extras are billed per unit of the line', () => {
+  it('shows 3 extra patties on 3 burgers, so the rows add up to the line total', async () => {
+    // Order #001, 28 Oct: Kiwi Kick × 3 with one extra patty each.
+    getOrderInvoice.mockResolvedValue({
+      order_id: 31,
+      order_number: 'A-31',
+      items: [
+        {
+          name: 'Kiwi Kick',
+          quantity: 3,
+          unit_price: 1199,
+          subtotal: 4347,
+          modifiers: [
+            { name: 'Add Extra single patty', group: 'Extras', unit_price: 250, quantity: 1, free_quantity: 0 },
+            { name: 'With Cheese', group: 'Cheese', unit_price: 0, quantity: 1, free_quantity: 0 },
+          ],
+          addons: [{ name: 'Garlic Dip', quantity: 1, unit_price: 60, subtotal: 60 }],
+        },
+      ],
+      subtotal: 4347,
+      total_amount: 4347,
+      template: { id: 1, layout: 'thermal_classic', config: {} },
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <ThemeProvider>
+        <QueryClientProvider client={qc}>
+          <CustomerInvoiceModal isOpen onClose={() => {}} orderId={31} />
+        </QueryClientProvider>
+      </ThemeProvider>,
+    );
+    const patty = await screen.findByText(/Add Extra single patty × 3/);
+    expect(patty.closest('tr')).toHaveTextContent('Rs. 750.00');
+    expect(screen.getByText(/Garlic Dip × 3/).closest('tr')).toHaveTextContent('Rs. 180.00');
+    // A free pick stays free, however many units.
+    expect(screen.getByText(/With Cheese × 3/).closest('tr')).toHaveTextContent('Rs. 0.00');
+  });
+});

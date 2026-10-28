@@ -6109,7 +6109,11 @@ export class OrdersService {
      * Deal lines carry a fully-resolved deal_unit_price from expandDealItems:
      * the variant/size price is already baked in (so it is not re-added) and
      * it is one price per emitted unit (so it is not scaled by quantity).
-     * Add-ons and modifiers are added for deal and non-deal lines alike.
+     *
+     * Add-ons and modifiers are chosen per unit: three burgers with an extra
+     * patty are three patties, so a plain line charges them × its quantity,
+     * the same as the till cart and the website's item screen show. A deal
+     * line is already one row per deal unit, so its picks are charged once.
      */
     private async priceOrderLine(
         branchId: number,
@@ -6164,27 +6168,27 @@ export class OrdersService {
                         (lineUnitCost ?? 0) + Number(variant.costPrice);
             }
         }
-        let itemSubtotal = isDeal
-            ? unitPrice
-            : unitPrice * (line.quantity ?? 1);
+        const units = isDeal ? 1 : (line.quantity ?? 1);
+        let extrasPerUnit = 0;
         if (line.addons?.length) {
             for (const addonLine of line.addons) {
                 const addon = menuItem.addons?.find(
                     (a) => a.id === addonLine.addon_id,
                 );
                 if (addon)
-                    itemSubtotal +=
+                    extrasPerUnit +=
                         Number(addon.price) * (addonLine.quantity ?? 1);
             }
         }
-        // Size-aware modifier pricing (per-size surcharge + "first N free");
-        // added once per line, not scaled by line quantity.
+        // Size-aware modifier pricing (per-size surcharge + "first N free"),
+        // for one unit of the line.
         const modifierPricing = priceModifiersForLine({
             modifierGroups: menuItem.modifierGroups,
             selections: line.modifiers,
             sizeKey: lineSizeKey,
         });
-        itemSubtotal += modifierPricing.total;
+        extrasPerUnit += modifierPricing.total;
+        const itemSubtotal = (unitPrice + extrasPerUnit) * units;
         return {
             unitPrice,
             itemSubtotal,
@@ -6338,24 +6342,26 @@ export class OrdersService {
                 }
             }
             const quantity = line.quantity ?? 1;
-            let itemSubtotal = unitPrice * quantity;
+            // Extras are per unit, as in priceOrderLine.
+            let extrasPerUnit = 0;
             if (line.addons?.length) {
                 for (const addonLine of line.addons) {
                     const addon = menuItem.addons?.find(
                         (a) => a.id === addonLine.addon_id,
                     );
                     if (addon)
-                        itemSubtotal +=
+                        extrasPerUnit +=
                             Number(addon.price) * (addonLine.quantity ?? 1);
                 }
             }
-            itemSubtotal += priceModifiersForLine({
+            extrasPerUnit += priceModifiersForLine({
                 modifierGroups: (
                     menuItem as { modifierGroups?: PricingModifierGroup[] }
                 ).modifierGroups,
                 selections: line.modifiers,
                 sizeKey: lineSizeKey,
             }).total;
+            const itemSubtotal = (unitPrice + extrasPerUnit) * quantity;
             subtotal += itemSubtotal;
             lineDetails.push({
                 menuItemId: menuItem.id,
