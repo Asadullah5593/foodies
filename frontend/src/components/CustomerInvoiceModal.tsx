@@ -6,6 +6,7 @@ import { formatCurrency } from '../utils/currency';
 import { printContent } from '../utils/print';
 import { getDeviceBottomFeedMm, setDeviceBottomFeedMm } from '../utils/printerSettings';
 import { renderInvoiceHtml } from '../invoices/renderInvoice';
+import { orderLineExtrasUnits, savedAddonAmount, savedModifierBilling } from '../utils/modifierPricing';
 import { InvoiceVM, InvoiceLayout } from '../invoices/types';
 import Modal from './Modal';
 import Loader from './Loader';
@@ -23,7 +24,15 @@ export type MainInvoiceLine = {
   deal_name?: string | null;
   notes?: string | null;
   addons?: Array<{ name?: string | null; quantity: number; unit_price: number; subtotal?: number }>;
-  modifiers?: Array<{ name?: string | null; unit_price: number; group?: string | null; triggered_by?: string | null }>;
+  /** quantity / free_quantity are per unit of the line (see savedModifierBilling). */
+  modifiers?: Array<{
+    name?: string | null;
+    unit_price: number;
+    group?: string | null;
+    triggered_by?: string | null;
+    quantity?: number;
+    free_quantity?: number;
+  }>;
 };
 
 export type MainInvoiceOrder = {
@@ -206,11 +215,6 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
     return Number(line.unit_price) * Number(line.quantity ?? 1);
   };
 
-  const addonTotal = (a: { quantity: number; unit_price: number; subtotal?: number }) => {
-    if (a.subtotal != null) return Number(a.subtotal);
-    return Number(a.unit_price) * Number(a.quantity ?? 1);
-  };
-
   /** Group invoice lines by deal_id for receipt: one row per deal (with optional component sub-rows), standalone items as-is. */
   const groupItemsForReceipt = (items: MainInvoiceLine[]): Array<{ dealId: number | null; lines: MainInvoiceLine[] }> => {
     const byDeal = new Map<number | 'standalone', MainInvoiceLine[]>();
@@ -245,16 +249,19 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
   ): React.ReactNode[] => {
     const pad = depth === 0 ? 'pl-4' : 'pl-8';
     const nestPad = depth === 0 ? 'pl-8' : 'pl-12';
+    // Extras are chosen per unit: × 3 burgers with an extra patty bills 3 patties.
+    const units = orderLineExtrasUnits(line);
+    const times = (n: number) => (n !== 1 ? ` × ${n}` : '');
     const rows: React.ReactNode[] = [];
     (line.addons ?? []).forEach((a, ai: number) => {
       rows.push(
         <tr key={`a-${keyPrefix}-${ai}`} className="border-b border-gray-100">
           <td className={`py-1 text-gray-500 ${pad}`}>
             Add-on: {a.name ?? '—'}
-            {Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}
+            {times(Number(a.quantity ?? 1) * units)}
           </td>
           <td className="py-1 text-right text-gray-600">
-            {formatCurrency(Number(addonTotal(a)))}
+            {formatCurrency(savedAddonAmount(a, units))}
           </td>
         </tr>,
       );
@@ -266,24 +273,27 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
       !!m.triggered_by && mods.some((x) => x !== m && (x.name ?? '') === m.triggered_by);
     const roots = mods.filter((m) => !isChild(m));
     roots.forEach((m, mi) => {
+      const b = savedModifierBilling(m, units);
       rows.push(
         <tr key={`m-${keyPrefix}-${mi}`} className="border-b border-gray-100">
           <td className={`py-1 text-gray-500 ${pad}`}>
             {m.group ?? 'Modifier'}: {m.name ?? '—'}
+            {times(b.qty)}
           </td>
           <td className="py-1 text-right text-gray-600">
-            {formatCurrency(Number(m.unit_price))}
+            {formatCurrency(b.amount)}
           </td>
         </tr>,
       );
       mods
         .filter((c) => isChild(c) && c.triggered_by === (m.name ?? ''))
         .forEach((c, ci) => {
+          const cb = savedModifierBilling(c, units);
           rows.push(
             <tr key={`mc-${keyPrefix}-${mi}-${ci}`} className="border-b border-gray-100">
-              <td className={`py-1 text-gray-500 ${nestPad}`}>↳ {c.name ?? '—'}</td>
+              <td className={`py-1 text-gray-500 ${nestPad}`}>↳ {c.name ?? '—'}{times(cb.qty)}</td>
               <td className="py-1 text-right text-gray-600">
-                {Number(c.unit_price) ? formatCurrency(Number(c.unit_price)) : (
+                {cb.amount ? formatCurrency(cb.amount) : (
                   <span className="text-emerald-600">Included</span>
                 )}
               </td>

@@ -1383,3 +1383,46 @@ describe('previewInvoice — the editor preview stands on a real branch', () => 
     expect(vm.header?.legal_name).toBe(rich.header?.legal_name);
   });
 });
+
+describe('extras on a line of several units', () => {
+  // Order #001, 28 Oct: Kiwi Kick × 3 with one extra patty each (and one deal
+  // component, whose picks are one deal unit and bill once).
+  const kiwiKick = () => {
+    const vm = sampleInvoice();
+    const lines: InvoiceLineVM[] = [
+      {
+        name_snapshot: 'Kiwi Kick',
+        quantity: 3,
+        unit_price: 1199,
+        subtotal: 4347,
+        modifiers: [{ name: 'Add Extra single patty', unit_price: 250, quantity: 1, free_quantity: 0 }],
+        addons: [{ name: 'Garlic Dip', quantity: 1, unit_price: 60, subtotal: 60 }],
+      },
+      {
+        name_snapshot: 'Zinger',
+        quantity: 2,
+        unit_price: 500,
+        subtotal: 640,
+        deal_id: 7,
+        deal_slot_index: 0,
+        deal_name: 'Duo Deal',
+        modifiers: [{ name: 'Spicy mayo', unit_price: 140, quantity: 1, free_quantity: 0 }],
+      },
+    ];
+    vm.orders[0].items = lines;
+    return vm;
+  };
+
+  it('prints each extra × the line quantity on row layouts', () => {
+    const html = renderInvoiceHtml(kiwiKick(), 'thermal_classic', cfg({ showModifiers: true })).html;
+    expect(html).toMatch(/Add Extra single patty × 3<\/span><\/span><span class="r">Rs\. 750\.00/);
+    expect(html).toMatch(/Garlic Dip × 3<\/span><\/span><span class="r">Rs\. 180\.00/);
+    // The deal component's pick bills once.
+    expect(html).toMatch(/Spicy mayo<\/span><\/span><span class="r">Rs\. 140\.00/);
+  });
+
+  it('puts the multiplied count and amount in the column layout', () => {
+    const html = renderInvoiceHtml(kiwiKick(), 'bill_bordered', cfg({ showModifiers: true })).html;
+    expect(html).toMatch(/Add Extra single patty<\/span><\/td><td class="cq">3<\/td>(<td class="cr">[^<]*<\/td>)?<td class="ca">750\.00/);
+  });
+});

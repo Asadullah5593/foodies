@@ -74,8 +74,12 @@ export class InventoryConsumptionService {
                 requiredByItemId,
             );
 
-            // Add-on recipes — scale with the add-on's own quantity (matches how
-            // add-ons are priced: independent of the line quantity).
+            // Add-ons and modifiers are chosen per unit, as they are priced: a
+            // plain line of 3 burgers with an extra patty uses 3 patties. A
+            // deal component row is one deal unit, so its picks count once.
+            const units = oi.dealId != null ? 1 : Number(oi.quantity);
+
+            // Add-on recipes — the add-on's own quantity, per unit.
             for (const addon of oi.addons ?? []) {
                 const addonRecipe = await this.findActiveAddonRecipe(
                     order.tenantId,
@@ -84,12 +88,12 @@ export class InventoryConsumptionService {
                 await this.accumulateRecipe(
                     order.tenantId,
                     addonRecipe,
-                    Number(addon.quantity ?? 1),
+                    Number(addon.quantity ?? 1) * units,
                     requiredByItemId,
                 );
             }
 
-            // Modifier recipes — scale with the modifier's own quantity.
+            // Modifier recipes — the modifier's own quantity, per unit.
             for (const modifier of oi.modifiers ?? []) {
                 if (modifier.modifierId == null) continue; // deleted modifier
                 const modRecipe = await this.findActiveModifierRecipe(
@@ -99,7 +103,7 @@ export class InventoryConsumptionService {
                 await this.accumulateRecipe(
                     order.tenantId,
                     modRecipe,
-                    Number(modifier.quantity ?? 1),
+                    Number(modifier.quantity ?? 1) * units,
                     requiredByItemId,
                 );
             }

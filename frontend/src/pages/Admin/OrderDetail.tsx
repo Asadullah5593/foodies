@@ -17,6 +17,7 @@ import { usePaymentRequiredPrompt } from '../../components/PaymentRequiredModal'
 import { formatTripDuration } from '../../utils/tripTime';
 import { groupOrderItems } from '../../utils/orderItemGrouping';
 import { orderModifiersWithNesting } from '../../utils/modifierNesting';
+import { orderLineExtrasUnits, savedAddonAmount, savedModifierBilling } from '../../utils/modifierPricing';
 import { orderSourceLabel } from '../../utils/orderSources';
 import { formatPhone, nameInitials } from '../../utils/customerDisplay';
 import { formatDay } from '../../utils/dateDisplay';
@@ -53,7 +54,15 @@ type OrderDetailItem = {
   deal_slot_index?: number | null;
   deal_name?: string | null;
   addons?: Array<{ name: string | null; unit_price: number; quantity: number; subtotal?: number }>;
-  modifiers?: Array<{ name: string | null; unit_price: number; group?: string | null; triggered_by?: string | null }>;
+  /** quantity / free_quantity are per unit of the line (see savedModifierBilling). */
+  modifiers?: Array<{
+    name: string | null;
+    unit_price: number;
+    group?: string | null;
+    triggered_by?: string | null;
+    quantity?: number;
+    free_quantity?: number;
+  }>;
 };
 
 type OrderRatingsResponse = {
@@ -246,6 +255,9 @@ const isRemoval = (name: string) => /^(no|without)\s/i.test(name.trim());
  * the same hierarchy the receipt, KDS and FOH print.
  */
 function optionGroups(item: OrderDetailItem): ChipGroup[] {
+  // Extras are chosen per unit: × 3 burgers with an extra patty bills 3 patties.
+  const units = orderLineExtrasUnits(item);
+  const times = (n: number) => (n !== 1 ? ` ×${n}` : '');
   const groups: ChipGroup[] = [];
   const push = (group: string, chip: Chip) => {
     let g = groups.find((x) => x.group === group);
@@ -256,19 +268,19 @@ function optionGroups(item: OrderDetailItem): ChipGroup[] {
     g.chips.push(chip);
   };
   for (const a of item.addons ?? []) {
-    const qty = Number(a.quantity ?? 1);
-    const total = a.subtotal != null ? Number(a.subtotal) : Number(a.unit_price) * qty;
-    push('Add-ons', { label: `${a.name ?? '—'}${qty !== 1 ? ` ×${qty}` : ''}${priceSuffix(total)}`, tone: 'plain' });
+    const qty = Number(a.quantity ?? 1) * units;
+    push('Add-ons', { label: `${a.name ?? '—'}${times(qty)}${priceSuffix(savedAddonAmount(a, units))}`, tone: 'plain' });
   }
   let lastGroup = 'Options';
   for (const { mod: m, nested } of orderModifiersWithNesting(item.modifiers ?? [])) {
     const name = m.name ?? '—';
-    const price = Number(m.unit_price) || 0;
+    const b = savedModifierBilling(m, units);
+    const price = b.amount || 0;
     if (!nested) {
       lastGroup = m.group?.trim() || 'Options';
-      push(lastGroup, { label: `${name}${priceSuffix(price)}`, tone: isRemoval(name) ? 'removal' : 'plain' });
+      push(lastGroup, { label: `${name}${times(b.qty)}${priceSuffix(price)}`, tone: isRemoval(name) ? 'removal' : 'plain' });
     } else if (price > 0) {
-      push(lastGroup, { label: `↳ ${name}${priceSuffix(price)}`, tone: 'plain' });
+      push(lastGroup, { label: `↳ ${name}${times(b.qty)}${priceSuffix(price)}`, tone: 'plain' });
     } else {
       push(lastGroup, { label: `↳ ${name} · Included`, tone: 'included' });
     }
@@ -394,19 +406,21 @@ const OrderDetail: React.FC = () => {
 
   const handlePrint = () => {
     const typeLabel = formatOrderType(orderType);
-    const addonTotal = (a: { quantity: number; unit_price: number; subtotal?: number }) =>
-      a.subtotal != null ? Number(a.subtotal) : Number(a.unit_price) * (a.quantity ?? 1);
     const itemsHtml = items
       .map((item) => {
+        // Extras are per unit: the line bills them × its units.
+        const units = orderLineExtrasUnits(item);
+        const times = (n: number) => (n !== 1 ? ` × ${n}` : '');
         const base = Number(item.unit_price ?? 0) * item.quantity;
         const baseRow = `<tr><td>${escapeHtml(String(item.name_snapshot ?? 'Item'))}${item.variant_name ? ` <span style="color:#666;">(Variant: ${escapeHtml(item.variant_name)})</span>` : ''} × ${item.quantity}</td><td class="text-right">${formatCurrency(base)}</td></tr>`;
-        const addonRows = (item.addons ?? []).map((a) => `<tr class="sub"><td style="padding-left:14px;">Add-on: ${escapeHtml(a.name ?? '—')}${Number(a.quantity ?? 1) !== 1 ? ` × ${a.quantity}` : ''}</td><td class="text-right">${formatCurrency(addonTotal(a))}</td></tr>`).join('');
+        const addonRows = (item.addons ?? []).map((a) => `<tr class="sub"><td style="padding-left:14px;">Add-on: ${escapeHtml(a.name ?? '—')}${times(Number(a.quantity ?? 1) * units)}</td><td class="text-right">${formatCurrency(savedAddonAmount(a, units))}</td></tr>`).join('');
         const modRows = orderModifiersWithNesting(item.modifiers ?? [])
-          .map(({ mod: m, nested }) =>
-            nested
-              ? `<tr class="sub"><td style="padding-left:28px;">↳ ${escapeHtml(m.name ?? '—')}</td><td class="text-right">${Number(m.unit_price) ? formatCurrency(Number(m.unit_price)) : '<span style="color:#067647;">Included</span>'}</td></tr>`
-              : `<tr class="sub"><td style="padding-left:14px;">${escapeHtml(m.group ?? 'Modifier')}: ${escapeHtml(m.name ?? '—')}</td><td class="text-right">${formatCurrency(Number(m.unit_price))}</td></tr>`,
-          )
+          .map(({ mod: m, nested }) => {
+            const b = savedModifierBilling(m, units);
+            return nested
+              ? `<tr class="sub"><td style="padding-left:28px;">↳ ${escapeHtml(m.name ?? '—')}${times(b.qty)}</td><td class="text-right">${b.amount ? formatCurrency(b.amount) : '<span style="color:#067647;">Included</span>'}</td></tr>`
+              : `<tr class="sub"><td style="padding-left:14px;">${escapeHtml(m.group ?? 'Modifier')}: ${escapeHtml(m.name ?? '—')}${times(b.qty)}</td><td class="text-right">${formatCurrency(b.amount)}</td></tr>`;
+          })
           .join('');
         const noteRow = item.notes ? `<tr class="sub"><td colspan="2" style="padding-left:28px; font-style:italic; color:#b45309;">Note: ${escapeHtml(item.notes)}</td></tr>` : '';
         const hasExtras = (item.addons?.length ?? 0) > 0 || (item.modifiers?.length ?? 0) > 0;

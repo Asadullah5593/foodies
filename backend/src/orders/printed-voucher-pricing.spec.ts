@@ -230,23 +230,34 @@ describe('meal voucher ("Classic Smashed Burger Meal for Rs 799")', () => {
         });
     });
 
-    it('covers one meal on a line of two burgers sharing one meal option', () => {
-        // The server prices extras once per line: 2 x 999 + 350.
-        const res = run(v, [
-            burger({
-                quantity: 2,
-                itemSubtotal: 2 * 999 + 350,
-                modifierCharges: [
-                    {
-                        modifierId: MEAL_OPTION,
-                        quantity: 1,
-                        freeQuantity: 0,
-                        charge: 350,
-                    },
-                ],
-            }),
-        ]);
-        expect(res).toMatchObject({ applies: true, amount: 550 });
+    // Extras are priced per unit: 2 burgers with the meal option are 2 meals,
+    // 2 x (999 + 350). modifierCharges stay those of one unit.
+    const twoMeals = () =>
+        burger({
+            quantity: 2,
+            itemSubtotal: 2 * (999 + 350),
+            modifierCharges: [
+                {
+                    modifierId: MEAL_OPTION,
+                    quantity: 1,
+                    freeQuantity: 0,
+                    charge: 350,
+                },
+            ],
+        });
+
+    it('covers one meal on a line of two burgers with the meal option', () => {
+        expect(run(v, [twoMeals()])).toMatchObject({
+            applies: true,
+            amount: 550,
+        });
+    });
+
+    it('covers both meals on that line with two papers', () => {
+        expect(runAll([[v, 2]], [twoMeals()])).toMatchObject({
+            applies: true,
+            amount: 1100,
+        });
     });
 
     it('covers nothing extra for an option the group already gave free', () => {

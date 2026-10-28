@@ -33,6 +33,8 @@ export class OrderItemModifier {
      * Of the `quantity` units selected, how many were included free by the modifier
      * group's allowance (`ModifierGroup.includedQuantity`/`includedBySize`).
      * Charged units = quantity - freeQuantity, each at `priceSnapshot`.
+     * Both counts are for ONE unit of the order line: a plain (non-deal) line
+     * of 3 bills them 3 times; a deal component row bills them once.
      */
     @Column({ name: 'free_quantity', default: 0 })
     freeQuantity: number;

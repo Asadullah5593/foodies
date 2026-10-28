@@ -146,7 +146,10 @@ describe('InventoryConsumptionService', () => {
         });
     });
 
-    it('additively consumes base dish + add-on + modifier recipes scaled by their own quantities', async () => {
+    /** Consumes one order line; returns the qty allocated per inventory item. */
+    const consumeLine = async (
+        line: Record<string, unknown>,
+    ): Promise<Record<string, number>> => {
         const inventoryService = {
             convertToItemBaseQty: jest.fn(async (_t: any, _i: any, qty: any) =>
                 Number(qty),
@@ -186,15 +189,7 @@ describe('InventoryConsumptionService', () => {
             })),
         } as any;
         const orderItemsRepo = {
-            find: jest.fn(async () => [
-                {
-                    menuItemId: 50,
-                    variantId: null,
-                    quantity: 2,
-                    addons: [{ addonId: 70, quantity: 3 }],
-                    modifiers: [{ modifierId: 80, quantity: 1 }],
-                },
-            ]),
+            find: jest.fn(async () => [line]),
         } as any;
         const recipesRepo = {
             findOne: jest.fn(async ({ where }: any) => {
@@ -252,11 +247,33 @@ describe('InventoryConsumptionService', () => {
         );
 
         await service.consumeForOrder(1);
-
-        // base item 9 -> 1×lineQty(2); add-on item 8 -> 1×addonQty(3); modifier item 7 -> 1×modQty(1)
-        const byItem = Object.fromEntries(
+        return Object.fromEntries(
             savedAllocations.map((a) => [a.inventoryItemId, a.qty]),
-        );
+        ) as Record<string, number>;
+    };
+
+    it('additively consumes base dish + add-on + modifier recipes, extras per unit of the line', async () => {
+        const byItem = await consumeLine({
+            menuItemId: 50,
+            variantId: null,
+            quantity: 2,
+            dealId: null,
+            addons: [{ addonId: 70, quantity: 3 }],
+            modifiers: [{ modifierId: 80, quantity: 1 }],
+        });
+        // base item 9 -> 1×lineQty(2); add-on item 8 -> 1×addonQty(3)×2; modifier item 7 -> 1×modQty(1)×2
+        expect(byItem).toEqual({ 9: 2, 8: 6, 7: 2 });
+    });
+
+    it("counts a deal component row's extras once (the row is one deal unit)", async () => {
+        const byItem = await consumeLine({
+            menuItemId: 50,
+            variantId: null,
+            quantity: 2,
+            dealId: 600,
+            addons: [{ addonId: 70, quantity: 3 }],
+            modifiers: [{ modifierId: 80, quantity: 1 }],
+        });
         expect(byItem).toEqual({ 9: 2, 8: 3, 7: 1 });
     });
 });

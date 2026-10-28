@@ -187,3 +187,39 @@ function fillWithTiers(tiers: Record<string, number>, keys: number[], n: number)
   }
   return round2(cost);
 }
+
+/**
+ * How many times a saved order line bills its add-ons and modifiers. Their
+ * stored quantities are for ONE unit: a plain line of 3 burgers with an extra
+ * patty bills 3 patties. A deal component row is one deal unit, so its picks
+ * bill once (the server's priceOrderLine rule).
+ */
+export function orderLineExtrasUnits(line: { quantity?: number | null; deal_id?: number | null }): number {
+  return line.deal_id != null ? 1 : Math.max(1, Number(line.quantity ?? 1));
+}
+
+/**
+ * What a saved modifier bills on its order line. The group's included allowance
+ * (first-N-free) makes free_quantity units free, so only (quantity -
+ * free_quantity) are charged — a topping picked 3× with 1 included bills
+ * 2 × unit_price. Both counts are per unit; `units` is orderLineExtrasUnits of
+ * the owning line. Older payloads without the counts read as a single unit.
+ */
+export function savedModifierBilling(
+  m: { unit_price: number; quantity?: number | null; free_quantity?: number | null },
+  units = 1,
+): { qty: number; free: number; unit: number; amount: number } {
+  const perUnit = Math.max(1, Number(m.quantity ?? 1));
+  const qty = perUnit * units;
+  const free = Math.min(perUnit, Math.max(0, Number(m.free_quantity ?? 0))) * units;
+  const unit = Number(m.unit_price ?? 0);
+  return { qty, free, unit, amount: (qty - free) * unit };
+}
+
+/** A saved add-on's billed amount (explicit subtotal wins over unit × qty), × the line's units. */
+export function savedAddonAmount(
+  a: { unit_price: number; quantity?: number | null; subtotal?: number | null },
+  units = 1,
+): number {
+  return (a.subtotal != null ? Number(a.subtotal) : Number(a.unit_price) * Number(a.quantity ?? 1)) * units;
+}
