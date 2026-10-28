@@ -21,7 +21,6 @@ import {
   MdOutlinePayments,
   MdOutlineLocalOffer,
   MdOutlineStarBorder,
-  MdOutlineVolunteerActivism,
   MdOutlineLock,
   MdOutlineHistory,
   MdOutlineReceiptLong,
@@ -396,6 +395,9 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       icon: MdOutlineLocalOffer,
       children: [
         { path: '/admin/discounts', label: 'Discounts' },
+        // A give-away by a cashier rather than an offer the cart earns; its
+        // own page, listed here so every money-off screen sits in one place.
+        { path: '/admin/staff-discounts', label: 'Staff Discounts' },
         { path: '/admin/product-promotions', label: 'Product Promotions' },
         { path: '/admin/coupons', label: 'Coupons' },
         // The paper coupon book — applied by a cashier at the till, one per order.
@@ -407,10 +409,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         { path: '/admin/offer-settings', label: 'Offer Settings' },
       ],
     },
-    // Deliberately outside Discounts & Promotions: an offer is earned by the
-    // cart, a staff discount is a give-away by a cashier. Grouping them made
-    // both screens ambiguous.
-    { path: '/admin/staff-discounts', label: 'Staff Discounts', icon: MdOutlineVolunteerActivism },
     { path: '/admin/loyalty-settings', label: 'Loyalty Settings', icon: MdOutlineStarBorder },
     ...(isTenantUser ? [{ path: '/admin/invoice-templates', label: 'Invoice Templates', icon: MdOutlineReceiptLong }] : []),
     { path: '/admin/delivery-tiers', label: 'Delivery Tiers', icon: MdOutlineDeliveryDining },

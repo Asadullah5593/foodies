@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import ResponsiveSelect from '../../components/ResponsiveSelect';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
-import { MdOutlineVolunteerActivism, MdEdit, MdDelete, MdInfoOutline } from 'react-icons/md';
+import { MdOutlineVolunteerActivism, MdEdit, MdDelete, MdInfoOutline, MdStorefront } from 'react-icons/md';
 import { adminService } from '../../services/api';
 import SegToggle from '../../components/SegToggle';
 import OfferModal, { offerInput, offerLabel } from '../../components/OfferModal';
@@ -29,6 +29,7 @@ const emptyForm = {
   value: '' as number | '',
   max_discount_amount: '' as number | '',
   eligibility_brand_ids: [] as number[],
+  eligibility_branch_ids: [] as number[],
   sort_order: '' as number | '',
   is_active: true,
 };
@@ -36,6 +37,12 @@ const emptyForm = {
 /** What the button will say at the till. */
 const buttonText = (p: { discount_type: string; value: number }): string =>
   p.discount_type === 'flat' ? `Rs. ${Number(p.value).toLocaleString('en-US')} off` : `${p.value}%`;
+
+/** Where the button shows: the first two branch names, then a count. */
+const branchReach = (ids: number[], nameById: Map<number, string>): string => {
+  const names = ids.map((id) => nameById.get(id) ?? `Branch #${id}`);
+  return names.length <= 2 ? names.join(', ') : `${names.slice(0, 2).join(', ')} +${names.length - 2} more`;
+};
 
 /**
  * Staff discounts — the give-away buttons a cashier sees on the POS checkout.
@@ -65,11 +72,28 @@ const StaffDiscounts: React.FC = () => {
       return res.data;
     },
   });
+  const { data: branches } = useQuery({
+    queryKey: ['branches'],
+    queryFn: async () => {
+      const res = await apiClient.get<Array<{ id: number; name: string; code?: string }>>('/admin/branches');
+      return res.data;
+    },
+  });
 
   const brandOptions: SearchableMultiSelectOption[] = (brands ?? []).map((b) => ({ id: b.id, name: b.name, inactive: isEntityInactive(b) }));
   const brandNameById = useMemo(
     () => new Map((brands ?? []).map((b) => [b.id, b.name])),
     [brands],
+  );
+  const branchOptions: SearchableMultiSelectOption[] = (branches ?? []).map((b) => ({
+    id: b.id,
+    name: b.name,
+    code: b.code,
+    inactive: isEntityInactive(b),
+  }));
+  const branchNameById = useMemo(
+    () => new Map((branches ?? []).map((b) => [b.id, b.name])),
+    [branches],
   );
 
   const close = () => {
@@ -96,6 +120,7 @@ const StaffDiscounts: React.FC = () => {
             ? null
             : Number(form.max_discount_amount),
         eligibility_brand_ids: form.eligibility_brand_ids,
+        eligibility_branch_ids: form.eligibility_branch_ids,
         sort_order: form.sort_order === '' ? 0 : Number(form.sort_order),
         is_active: form.is_active,
       };
@@ -137,6 +162,7 @@ const StaffDiscounts: React.FC = () => {
       value: p.value,
       max_discount_amount: p.max_discount_amount ?? '',
       eligibility_brand_ids: p.eligibility_brand_ids ?? [],
+      eligibility_branch_ids: p.eligibility_branch_ids ?? [],
       sort_order: p.sort_order ?? '',
       is_active: p.is_active,
     });
@@ -156,6 +182,10 @@ const StaffDiscounts: React.FC = () => {
     }
     if (form.discount_type === 'percentage' && Number(form.value) > 100) {
       toast.error('A percentage discount cannot exceed 100%.');
+      return;
+    }
+    if (form.eligibility_branch_ids.length === 0) {
+      toast.error('Pick at least one branch');
       return;
     }
     saveMutation.mutate();
@@ -222,6 +252,20 @@ const StaffDiscounts: React.FC = () => {
                     />
                   </div>
                   <div className="mt-2 truncate text-[15px] font-semibold text-gray-800">{p.name}</div>
+                  {p.eligibility_branch_ids?.length ? (
+                    <div
+                      className="mt-1 flex items-center gap-1 text-[12px] text-gray-500"
+                      title={p.eligibility_branch_ids.map((id) => branchNameById.get(id) ?? `Branch #${id}`).join(', ')}
+                    >
+                      <MdStorefront size={13} className="shrink-0" />
+                      <span className="truncate">{branchReach(p.eligibility_branch_ids, branchNameById)}</span>
+                    </div>
+                  ) : (
+                    <div className="mt-1 flex items-center gap-1 text-[12px] font-semibold text-amber-700">
+                      <MdStorefront size={13} className="shrink-0" />
+                      No branch picked — not shown at any till
+                    </div>
+                  )}
                   <BrandScopeNotice manageScope={p.manage_scope} noun="staff discount" />
                 </div>
                 <div className="flex flex-none gap-1.5">
@@ -367,6 +411,23 @@ const StaffDiscounts: React.FC = () => {
             <span className="font-medium text-gray-500">Roles → Staff discount limit</span>; a role has to be set to
             100 before its cashiers see the button. Your tenant&apos;s maximum-total-discount cap still applies on top.
           </p>
+
+          <div>
+            <SearchableMultiSelect
+              options={branchOptions}
+              selectedIds={form.eligibility_branch_ids}
+              onChange={(ids) => setForm({ ...form, eligibility_branch_ids: ids })}
+              placeholder="Pick branches"
+              label="Branches"
+              required
+              maxHeight="12rem"
+              getOptionLabel={(o) => (o.code ? `${o.name} (${o.code})` : o.name)}
+            />
+            <p className="mt-2 text-[12px] leading-snug text-gray-400">
+              The button shows only at the branches you pick. For every branch, use &ldquo;Select all in list&rdquo;;
+              a branch opened later has to be added here.
+            </p>
+          </div>
 
           {allowedBrandIds == null && (
             <div>
