@@ -70,6 +70,20 @@ describe('describeActivity', () => {
     ).toBe('Changed menu item "Pepperoni Pizza"');
   });
 
+  it('reads a business settings change as settings, not "business setting"', () => {
+    expect(
+      describeActivity(
+        row({
+          action: 'business-setting.edit',
+          http_method: 'PUT',
+          route: '/admin/business-settings',
+          entity_label: 'Foodies',
+          entity_id: '1',
+        })
+      )
+    ).toBe('Changed business settings "Foodies"');
+  });
+
   it('never claims a refused or failed action happened', () => {
     expect(
       describeActivity(
@@ -255,6 +269,8 @@ describe('labels', () => {
   it('reads field names, including namespaced ones', () => {
     expect(fieldLabel('base_price')).toBe('Base price');
     expect(fieldLabel('menu_item#12.base_price')).toBe('Menu item #12 · Base price');
+    expect(fieldLabel('tax_on_menu_price')).toBe('GST on the menu price');
+    expect(fieldLabel('gst_rate_cash')).toBe('GST rate (cash)');
   });
 
   it('recognises the device behind a browser string', () => {
