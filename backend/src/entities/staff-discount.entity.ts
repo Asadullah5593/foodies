@@ -66,7 +66,10 @@ export class StaffDiscount {
     })
     eligibilityBrandIds: number[] | null;
 
-    /** Order must be from one of these branches; null/empty = any. */
+    /**
+     * Order must be from one of these branches. Every save names at least one;
+     * null/empty (only rows saved before that rule) = offered at no branch.
+     */
     @Column({
         name: 'eligibility_branch_ids',
         type: 'simple-json',

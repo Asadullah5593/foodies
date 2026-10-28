@@ -6713,8 +6713,9 @@ export class OrdersService {
                 'That staff discount does not apply to this brand.',
             );
         }
+        // A preset names its branches; none means it is offered nowhere.
         const branchIds = (preset.eligibilityBranchIds ?? []).map(Number);
-        if (branchIds.length > 0 && !branchIds.includes(Number(branchId))) {
+        if (!branchIds.includes(Number(branchId))) {
             throw new BadRequestException(
                 'That staff discount does not apply to this branch.',
             );

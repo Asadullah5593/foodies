@@ -124,6 +124,39 @@ export class StaffDiscountsService {
                 'A maximum only applies to a percentage discount.',
             );
         }
+        // Branches are always named: a preset with none is offered nowhere,
+        // never read as "every branch".
+        if (!p.eligibilityBranchIds?.length) {
+            throw new BadRequestException(
+                'Pick at least one branch for this button.',
+            );
+        }
+    }
+
+    /** A branch belongs to the tenant through any of its brands. */
+    private async tenantBranchIds(tenantId: number): Promise<number[]> {
+        const rows: Array<{ branch_id: number | string }> =
+            await this.brandRepo.query(
+                `SELECT DISTINCT bb.branch_id
+                   FROM branch_brands bb
+                   JOIN brands br ON br.id = bb.brand_id
+                  WHERE br.tenant_id = $1`,
+                [tenantId],
+            );
+        return rows.map((r) => Number(r.branch_id));
+    }
+
+    private async assertTenantBranches(
+        tenantId: number,
+        branchIds: number[] | null,
+    ): Promise<void> {
+        if (!branchIds?.length) return;
+        const tenantBranches = await this.tenantBranchIds(tenantId);
+        if (branchIds.some((id) => !tenantBranches.includes(id))) {
+            throw new BadRequestException(
+                'One or more branches do not belong to this tenant',
+            );
+        }
     }
 
     private async tenantBrandIds(tenantId: number): Promise<number[]> {
@@ -183,7 +216,7 @@ export class StaffDiscountsService {
             preset.eligibilityBranchIds = Array.isArray(
                 dto.eligibility_branch_ids,
             )
-                ? dto.eligibility_branch_ids.map(Number)
+                ? [...new Set(dto.eligibility_branch_ids.map(Number))]
                 : null;
         if (dto.sort_order !== undefined)
             preset.sortOrder = Number(dto.sort_order ?? 0) || 0;
@@ -242,9 +275,10 @@ export class StaffDiscountsService {
                     !brandIds.includes(Number(opts.brandId))
                 )
                     return false;
+                // No branches = offered nowhere (see assertValid).
                 const branchIds = (p.eligibilityBranchIds ?? []).map(Number);
+                if (branchIds.length === 0) return false;
                 if (
-                    branchIds.length > 0 &&
                     opts.branchId != null &&
                     !branchIds.includes(Number(opts.branchId))
                 )
@@ -306,6 +340,7 @@ export class StaffDiscountsService {
         }
         preset.eligibilityBrandIds = brandIds;
         this.assertValid(preset);
+        await this.assertTenantBranches(tenantId, preset.eligibilityBranchIds);
         const saved = await this.repo.save(preset);
         return this.toResponse(saved);
     }
@@ -339,6 +374,11 @@ export class StaffDiscountsService {
             preset.eligibilityBrandIds = brandIds;
         }
         this.assertValid(preset);
+        if (dto.eligibility_branch_ids !== undefined)
+            await this.assertTenantBranches(
+                tenantId,
+                preset.eligibilityBranchIds,
+            );
         const saved = await this.repo.save(preset);
         return this.toResponse(saved);
     }
