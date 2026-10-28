@@ -36,6 +36,8 @@ export type MainInvoiceOrder = {
   subtotal: number;
   discount_amount: number;
   tax_amount: number;
+  /** What the GST was charged on, when Business Settings taxes the menu price; null = the discounted price. */
+  tax_base?: number | null;
   service_charge: number;
   delivery_fee: number;
   total_amount: number;
@@ -103,6 +105,7 @@ export function singleToPrintVM(s: Record<string, unknown>): InvoiceVM {
         discount_code: (s.discount_code as string) ?? null,
         tax_amount: (s.tax_amount as number) ?? 0,
         tax_rate: (s.tax_rate as number) ?? null,
+        tax_base: (s.tax_base as number) ?? null,
         service_charge: (s.service_charge as number) ?? 0,
         delivery_fee: (s.delivery_fee as number) ?? 0,
         total_amount: (s.total_amount as number) ?? 0,
@@ -540,7 +543,10 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                     </div>
                   )}
                   <div className="flex justify-between text-gray-600">
-                    <span>Tax</span>
+                    <span>
+                      Tax
+                      {o.tax_base != null && Number(o.tax_base) > 0 && ` (on ${formatCurrency(Number(o.tax_base))})`}
+                    </span>
                     <span>{formatCurrency(Number(o.tax_amount))}</span>
                   </div>
                   {Number(o.delivery_fee) > 0 && (

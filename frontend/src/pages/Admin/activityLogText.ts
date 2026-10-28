@@ -47,6 +47,18 @@ const SUBJECT_NAMES: Record<string, string> = {
 const subjectName = (subject: string): string =>
   SUBJECT_NAMES[subject] ?? words(subject);
 
+/** Record nouns whose singular would read wrongly ("Changed business setting"). */
+const NOUN_NAMES: Record<string, string> = {
+  'business-setting': 'business settings',
+};
+
+/** Field names that read wrongly once merely split into words. */
+const FIELD_NAMES: Record<string, string> = {
+  gst_rate_cash: 'GST rate (cash)',
+  gst_rate_card: 'GST rate (card)',
+  tax_on_menu_price: 'GST on the menu price',
+};
+
 /** verb → [what happened, what was attempted] */
 const VERBS: Record<string, [string, string]> = {
   view: ['Viewed', 'view'],
@@ -209,7 +221,7 @@ export const describeActivity = (row: Describable): string => {
   }
 
   const [rawNoun, ...rest] = row.action.split('.');
-  const noun = words(rawNoun);
+  const noun = NOUN_NAMES[rawNoun] ?? words(rawNoun);
   const verbKey = rest.join('.');
   const verb = VERBS[verbKey];
 
@@ -247,7 +259,7 @@ export const fieldLabel = (field: string): string => {
       words(field.slice(dot + 1))
     )}`;
   }
-  return capitalise(words(field));
+  return FIELD_NAMES[field] ?? capitalise(words(field));
 };
 
 /**

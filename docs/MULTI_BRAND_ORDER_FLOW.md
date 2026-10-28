@@ -145,7 +145,7 @@ When items in the cart can come from **different branches** (e.g. Branch 1 has B
 
 - **Discounts** (auto + coupon) are resolved at **full-cart** level, then **allocated to each line** (by existing scope/eligibility).
 - When splitting by brand, each brand’s **order** gets the **sum of allocated discount** for that brand’s lines.
-- **Tax** and **service charge** are applied **per order** (per brand) on that order’s (subtotal − discount).
+- **Tax** and **service charge** are applied **per order** (per brand) on that order’s (subtotal − discount) — or, for tax, on that order’s subtotal when Business Settings charges GST on the menu price (`taxBaseFor`, `docs/DISCOUNTS.md`).
 - **Delivery fee** is applied **once** to the **first** order in the group (by brand id order).
 
 ---

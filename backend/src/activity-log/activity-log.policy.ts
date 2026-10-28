@@ -98,6 +98,7 @@ const DIFF_EXPECTED_PREFIXES = [
     '/admin/brands',
     '/admin/branches',
     '/admin/shifts',
+    '/admin/business-settings',
 ];
 
 /** Actions written immediately instead of via the batch buffer. */
@@ -115,6 +116,7 @@ const CRITICAL_ACTIONS = [
     'menu-item.price',
     'branch-menu-item.',
     'discount.create',
+    'business-setting.',
     'activity-log.',
 ];
 

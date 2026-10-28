@@ -91,6 +91,8 @@ type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   /** One entry per voucher kind, with its paper count. */
   vouchers?: Array<{ name: string; quantity: number; discount_amount: number }>;
   tax_amount?: number;
+  /** What the GST was charged on when Business Settings taxes the menu price; null = the discounted price. */
+  tax_base?: number | null;
   service_charge?: number;
   delivery_fee?: number;
   total_amount?: number;
@@ -359,6 +361,10 @@ const OrderDetail: React.FC = () => {
   const subtotal = Number(o.subtotal ?? 0);
   const discountAmount = Number(o.discount_amount ?? 0);
   const taxAmount = Number(o.tax_amount ?? 0);
+  // Taxed on the menu price: say on what, or the line reads as the wrong
+  // percentage of the discounted amount above it.
+  const taxLabel =
+    o.tax_base != null && Number(o.tax_base) > 0 ? `Tax (on ${formatCurrency(Number(o.tax_base))})` : 'Tax';
   const serviceCharge = Number(o.service_charge ?? 0);
   const deliveryFee = Number(o.delivery_fee ?? 0);
   const hasDiscount = discountAmount > 0;
@@ -425,7 +431,7 @@ const OrderDetail: React.FC = () => {
       <h2>Totals</h2>
       <p class="py-2 border-t">Subtotal: ${formatCurrency(subtotal)}</p>
       ${hasDiscount ? `<p class="py-2">${voucherName ? `Voucher (${escapeHtml(voucherName)})` : `Discount${hasCoupon ? ` (${escapeHtml(o.discount_code ?? '')})` : ''}`}: -${formatCurrency(discountAmount)}</p>` : ''}
-      <p class="py-2">Tax: ${formatCurrency(taxAmount)}</p>
+      <p class="py-2">${taxLabel}: ${formatCurrency(taxAmount)}</p>
       ${serviceCharge > 0 ? `<p class="py-2">Service charge: ${formatCurrency(serviceCharge)}</p>` : ''}
       ${deliveryFee > 0 ? `<p class="py-2">Delivery fee: ${formatCurrency(deliveryFee)}</p>` : ''}
       ${(o.loyalty_points_earned ?? 0) > 0 ? `<p class="py-2 text-green-700">Points earned: ${o.loyalty_points_earned}</p>` : ''}
@@ -867,7 +873,7 @@ const OrderDetail: React.FC = () => {
         </div>
       )}
       {!hasDiscount && hasCoupon && row(`Coupon applied: ${o.discount_code}`, '—')}
-      {row('Tax', formatCurrency(taxAmount))}
+      {row(taxLabel, formatCurrency(taxAmount))}
       {serviceCharge > 0 && row('Service charge', formatCurrency(serviceCharge))}
       {deliveryFee > 0 && row('Delivery fee', formatCurrency(deliveryFee))}
       {(o.loyalty_points_earned ?? 0) > 0 && row('Points earned', <span className={`font-semibold ${cu.good}`}>+{o.loyalty_points_earned}</span>)}

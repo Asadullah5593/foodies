@@ -238,6 +238,7 @@ describe('activity log policy', () => {
             expect(isCriticalAction('auth.login.failed')).toBe(true);
             expect(isCriticalAction('role.update')).toBe(true);
             expect(isCriticalAction('shift.cash-out')).toBe(true);
+            expect(isCriticalAction('business-setting.edit')).toBe(true);
             expect(isCriticalAction('category.create')).toBe(false);
         });
 
@@ -245,6 +246,7 @@ describe('activity log policy', () => {
             expect(expectsDiff('PUT', '/admin/roles/2')).toBe(true);
             expect(expectsDiff('POST', '/admin/roles')).toBe(false);
             expect(expectsDiff('PATCH', '/admin/customers/2')).toBe(false);
+            expect(expectsDiff('PUT', '/admin/business-settings')).toBe(true);
         });
     });
 

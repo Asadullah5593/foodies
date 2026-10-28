@@ -57,6 +57,14 @@ export class Tenant {
     })
     gstRateCard: number | null;
 
+    /**
+     * Charge GST on the menu price of everything ordered (extras included)
+     * instead of the price after discounts. Off = tax on the discounted price.
+     * Business Settings; see tax-pricing.ts `taxBaseFor`.
+     */
+    @Column({ name: 'tax_on_menu_price', type: 'boolean', default: false })
+    taxOnMenuPrice: boolean;
+
     @Column({ type: 'decimal', precision: 5, scale: 4, default: 0 })
     defaultServiceCharge: number;
 

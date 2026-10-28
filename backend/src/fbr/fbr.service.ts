@@ -332,13 +332,32 @@ export class FbrService {
      * runs in production. Order-level figures are exact; per-line tax is
      * allocated proportionally to the line subtotal with the rounding
      * remainder on the last line.
+     *
+     * An order taxed on its menu price (`order.taxBase` set — the tenant's
+     * "tax on the menu price" rule) reports that price as the sale value and
+     * everything taken off it as the discount, so the rate FBR sees is the
+     * rate charged and Sale − Discount + Tax = Bill. Every other order keeps
+     * the figures below unchanged.
      */
     buildPayload(order: Order, branch: Branch): FbrInvoicePayload {
         const totalBill = r2(Number(order.totalAmount));
         const totalTax = r2(Number(order.taxAmount));
-        const discount = r2(Number(order.discountAmount));
-        const taxBase = r2(totalBill - totalTax);
-        const taxRatePct = taxBase > 0 ? r2((totalTax / taxBase) * 100) : 0;
+        const menuBase =
+            order.taxBase != null ? r2(Number(order.taxBase)) : null;
+        let discount = r2(Number(order.discountAmount));
+        let taxBase = r2(totalBill - totalTax);
+        let taxRatePct = taxBase > 0 ? r2((totalTax / taxBase) * 100) : 0;
+        if (menuBase != null) {
+            const extras = r2(
+                Number(order.deliveryFee ?? 0) +
+                    Number(order.serviceCharge ?? 0),
+            );
+            // What the goods were billed at after every discount and points.
+            const goodsBilled = r2(totalBill - totalTax - extras);
+            discount = r2(Math.max(0, menuBase - goodsBilled));
+            taxBase = r2(menuBase + extras);
+            taxRatePct = menuBase > 0 ? r2((totalTax / menuBase) * 100) : 0;
+        }
 
         const items = [...(order.orderItems ?? [])].sort((a, b) => a.id - b.id);
         const lineSubtotals = items.map((oi) => r2(Number(oi.subtotal)));

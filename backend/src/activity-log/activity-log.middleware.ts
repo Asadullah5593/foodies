@@ -243,7 +243,9 @@ export class ActivityLogMiddleware implements NestMiddleware {
             ip: clientIp(headers, req.ip),
             userAgent: this.header(headers, 'user-agent', 400),
             payloadTruncated: body.truncated || query.truncated,
-            diffExpected: expectsDiff(method, path),
+            // Owed a before/after and none was recorded. A recorded pair that
+            // came out equal is a save that changed nothing, not a gap.
+            diffExpected: expectsDiff(method, path) && !store.changes.length,
         };
 
         const rows = this.perRecordRows(row, store, path, piiMask);

@@ -219,6 +219,38 @@ describe('activity log subject', () => {
             expect(rows[1].requestBody).toBeNull();
         });
 
+        it('a save that changed nothing is not reported as a missing diff', () => {
+            const save = (record: boolean) =>
+                run(
+                    {
+                        method: 'PUT',
+                        originalUrl: '/api/admin/business-settings',
+                        user: staff(),
+                    },
+                    200,
+                    () => {
+                        if (!record) return;
+                        const same = { tax_on_menu_price: true };
+                        ActivityContext.recordChange(
+                            'business_setting',
+                            1,
+                            same,
+                            { ...same },
+                            'Foodies',
+                        );
+                    },
+                )[0];
+            expect(save(true)).toMatchObject({
+                changes: null,
+                diffExpected: false,
+            });
+            // The route recorded nothing at all: that is the gap to flag.
+            expect(save(false)).toMatchObject({
+                changes: null,
+                diffExpected: true,
+            });
+        });
+
         it('records a status change as before and after', () => {
             const rows = run(
                 {
