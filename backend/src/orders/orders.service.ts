@@ -3794,6 +3794,9 @@ export class OrdersService {
             loyalty_points_earned: order.loyaltyPointsEarned ?? 0,
             loyalty_points_redeemed: order.loyaltyPointsRedeemed ?? 0,
             tax_amount: Number(order.taxAmount),
+            // What the GST was charged on when Business Settings taxes the
+            // menu price; null = the discounted price (the old rule).
+            tax_base: order.taxBase != null ? Number(order.taxBase) : null,
             service_charge: Number(order.serviceCharge),
             delivery_fee: Number(order.deliveryFee),
             delivery_tier: order.deliveryTier ?? null,
