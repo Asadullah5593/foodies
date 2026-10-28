@@ -588,9 +588,14 @@ function totalsHtml(
   if (cfg.showTax) {
     const rate =
       cfg.showTaxRate && order.tax_rate != null && Number(order.tax_rate) > 0
-        ? ` (${(Number(order.tax_rate) * 100).toFixed(Number(order.tax_rate) * 100 % 1 === 0 ? 0 : 2)}%)`
+        ? `${(Number(order.tax_rate) * 100).toFixed(Number(order.tax_rate) * 100 % 1 === 0 ? 0 : 2)}%`
         : '';
-    parts.push(row(`Tax${rate}`, money(order.tax_amount), '', 'showTax'));
+    // Taxed on the menu price (Business Settings): say on what, or the line
+    // reads as the wrong percentage of the discounted amount above it.
+    const base =
+      order.tax_base != null && Number(order.tax_base) > 0 ? `on ${money(order.tax_base)}` : '';
+    const detail = [rate, base].filter(Boolean).join(' ');
+    parts.push(row(`Tax${detail ? ` (${detail})` : ''}`, money(order.tax_amount), '', 'showTax'));
   }
   if (cfg.showServiceCharge && Number(order.service_charge) > 0)
     parts.push(row('Service charge', money(order.service_charge), '', 'showServiceCharge'));

@@ -315,6 +315,15 @@ describe('OrderDetail — other kinds of order', () => {
     expect(totals).toContain('Free Drink-Rs. 100.00');
   });
 
+  it('an order taxed on the menu price says what the tax was on, on screen and in print', async () => {
+    currentOrder = { ...deliveryOrder, tax_base: 1098 };
+    renderPage();
+    await screen.findByRole('heading', { level: 1, name: 'Order #040' });
+    expect(card('totals-card').textContent ?? '').toContain('Tax (on Rs. 1098.00)Rs. 175.68');
+    fireEvent.click(screen.getByRole('button', { name: 'Print' }));
+    expect(String(printContent.mock.calls[0][0])).toContain('Tax (on Rs. 1098.00): Rs. 175.68');
+  });
+
   it('a completed order ticks every step', async () => {
     currentOrder = { ...deliveryOrder, status: 'completed' };
     renderPage();

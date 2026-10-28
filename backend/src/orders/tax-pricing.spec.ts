@@ -1,4 +1,4 @@
-import { resolveGstRates, computeTenderTax } from './tax-pricing';
+import { resolveGstRates, computeTenderTax, taxBaseFor } from './tax-pricing';
 
 describe('tax-pricing', () => {
     describe('resolveGstRates', () => {
@@ -97,3 +97,89 @@ describe('tax-pricing', () => {
 function round(n: number): number {
     return Math.round(n * 100) / 100;
 }
+
+describe('taxBaseFor', () => {
+    it('taxes the discounted price by default (rule off)', () => {
+        expect(
+            taxBaseFor({
+                menuPrice: 1000,
+                afterDiscount: 500,
+                taxOnMenuPrice: false,
+            }),
+        ).toBe(500);
+        expect(
+            taxBaseFor({
+                menuPrice: 1000,
+                afterDiscount: 500,
+                taxOnMenuPrice: undefined,
+            }),
+        ).toBe(500);
+    });
+
+    it('taxes the menu price when the business turns the rule on', () => {
+        expect(
+            taxBaseFor({
+                menuPrice: 1000,
+                afterDiscount: 500,
+                taxOnMenuPrice: true,
+            }),
+        ).toBe(1000);
+        // 50% off a Rs 1,000 item at 16%: 80 on the discounted price, 160 on the menu price.
+        const off = computeTenderTax(500, null, 0.16, 0.08);
+        const on = computeTenderTax(
+            taxBaseFor({
+                menuPrice: 1000,
+                afterDiscount: 500,
+                taxOnMenuPrice: true,
+            }),
+            null,
+            0.16,
+            0.08,
+        );
+        expect(off.taxAmount).toBe(80);
+        expect(on.taxAmount).toBe(160);
+    });
+
+    it('changes nothing for an order without a discount', () => {
+        expect(
+            taxBaseFor({
+                menuPrice: 750,
+                afterDiscount: 750,
+                taxOnMenuPrice: true,
+            }),
+        ).toBe(
+            taxBaseFor({
+                menuPrice: 750,
+                afterDiscount: 750,
+                taxOnMenuPrice: false,
+            }),
+        );
+    });
+
+    it('still taxes a fully discounted order on its menu price when the rule is on', () => {
+        expect(
+            taxBaseFor({
+                menuPrice: 999,
+                afterDiscount: 0,
+                taxOnMenuPrice: true,
+            }),
+        ).toBe(999);
+        expect(
+            taxBaseFor({
+                menuPrice: 999,
+                afterDiscount: 0,
+                taxOnMenuPrice: false,
+            }),
+        ).toBe(0);
+    });
+
+    it('never goes below zero', () => {
+        expect(
+            taxBaseFor({
+                menuPrice: 100,
+                afterDiscount: -5,
+                taxOnMenuPrice: false,
+            }),
+        ).toBe(0);
+    });
+});

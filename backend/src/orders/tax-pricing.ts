@@ -3,9 +3,12 @@
  * is exhaustively unit-tested. Rates are fractions (0.15 = 15%).
  *
  * Pakistan FBR/PRA/SRB give a REDUCED sales-tax rate on card/digital payments vs cash. We model
- * it as a tender-portioned tax: the cash-paid share of the (pre-tax, post-discount) base is taxed
- * at the cash rate, the card-paid share at the card rate, then summed. Single-tender orders are the
- * common case and exact; split (part-cash/part-card) bills partition the base by the tender ratio.
+ * it as a tender-portioned tax: the cash-paid share of the (pre-tax) base is taxed at the cash
+ * rate, the card-paid share at the card rate, then summed. Single-tender orders are the common
+ * case and exact; split (part-cash/part-card) bills partition the base by the tender ratio.
+ *
+ * The base is the price after discounts, or — when the business turns on "tax on the menu price"
+ * — the menu price before them (`taxBaseFor`).
  */
 
 export function round2(n: number): number {
@@ -55,7 +58,26 @@ export function resolveGstRates(
 }
 
 /**
- * Tender-portioned tax on `afterDiscount` (the pre-tax, post-discount, ex-delivery base).
+ * What GST is charged on (pre-tax, ex-delivery, ex-service-charge).
+ *  - Default: `afterDiscount`, the price after every discount and loyalty redemption — what the
+ *    customer pays for the goods.
+ *  - `taxOnMenuPrice` (Business Settings): `menuPrice`, the menu price of everything ordered,
+ *    extras included. Discounts, BOGO, coupons, card offers, staff discount, printed vouchers and
+ *    loyalty points then lower the bill but not the tax. A deal counts at its deal price — that is
+ *    its menu price, not a discount.
+ * Quote and createOrder must both call this, or the quoted total stops matching the charge.
+ */
+export function taxBaseFor(opts: {
+    menuPrice: number;
+    afterDiscount: number;
+    taxOnMenuPrice: boolean | null | undefined;
+}): number {
+    const base = opts.taxOnMenuPrice ? opts.menuPrice : opts.afterDiscount;
+    return round2(Math.max(0, Number(base) || 0));
+}
+
+/**
+ * Tender-portioned tax on `afterDiscount` (the pre-tax base from `taxBaseFor`, ex-delivery).
  *  - No tender info → whole base at the CASH rate (the higher one → never under-charges before
  *    the customer picks a tender).
  *  - Single tender → whole base at that tender's rate (exact).

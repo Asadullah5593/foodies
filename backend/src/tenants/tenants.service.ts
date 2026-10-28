@@ -13,6 +13,7 @@ import { User } from '../entities/user.entity';
 import { TenantUser } from '../entities/tenant-user.entity';
 import { Role } from '../entities/role.entity';
 import { RolesService } from '../roles/roles.service';
+import { ActivityContext } from '../activity-log/activity-context';
 
 @Injectable()
 export class TenantsService {
@@ -54,6 +55,7 @@ export class TenantsService {
             legal_name?: string;
             gst_rate_cash?: number | null;
             gst_rate_card?: number | null;
+            tax_on_menu_price?: boolean;
             loyalty_enabled?: boolean;
             auto_print_invoices?: boolean;
         },
@@ -176,12 +178,14 @@ export class TenantsService {
             default_timezone?: string;
             gst_rate_cash?: number | null;
             gst_rate_card?: number | null;
+            tax_on_menu_price?: boolean;
             loyalty_enabled?: boolean;
             auto_print_invoices?: boolean;
         },
     ) {
         const tenant = await this.repo.findOne({ where: { id } });
         if (!tenant) throw new NotFoundException('Tenant not found');
+        const auditBefore = this.auditSnapshot(tenant);
         if (dto.slug !== undefined) tenant.slug = dto.slug;
         else if (dto.name)
             tenant.slug = dto.name
@@ -200,6 +204,8 @@ export class TenantsService {
             tenant.gstRateCash = dto.gst_rate_cash;
         if (dto.gst_rate_card !== undefined)
             tenant.gstRateCard = dto.gst_rate_card;
+        if (typeof dto.tax_on_menu_price === 'boolean')
+            tenant.taxOnMenuPrice = dto.tax_on_menu_price;
         // defaultServiceCharge is deprecated; keep it at 0 for all tenants.
         tenant.defaultServiceCharge = 0;
         if (dto.loyalty_enabled !== undefined)
@@ -207,7 +213,38 @@ export class TenantsService {
         if (dto.auto_print_invoices !== undefined)
             tenant.autoPrintInvoices = dto.auto_print_invoices;
         await this.repo.save(tenant);
+        // Filed under the business whose settings changed, also when a super
+        // admin (no tenant of their own) made the change.
+        ActivityContext.setScope({ tenantId: tenant.id });
+        ActivityContext.recordChange(
+            'business_setting',
+            tenant.id,
+            auditBefore,
+            this.auditSnapshot(tenant),
+            tenant.name,
+        );
         return this.toResponse(tenant);
+    }
+
+    /**
+     * The fields worth recording when business settings change, under the
+     * names the Business Settings API uses. The GST rates and what GST is
+     * charged on matter most: each change alters every bill after it.
+     */
+    private auditSnapshot(t: Tenant): Record<string, unknown> {
+        return {
+            name: t.name ?? null,
+            legal_name: t.legalName ?? null,
+            slug: t.slug ?? null,
+            status: t.status ?? null,
+            default_currency: t.defaultCurrency ?? null,
+            default_timezone: t.defaultTimezone ?? null,
+            gst_rate_cash: t.gstRateCash ?? null,
+            gst_rate_card: t.gstRateCard ?? null,
+            tax_on_menu_price: !!t.taxOnMenuPrice,
+            loyalty_enabled: t.loyaltyEnabled ?? null,
+            auto_print_invoices: t.autoPrintInvoices ?? null,
+        };
     }
 
     /** Admin: tenant user can only delete own tenant (rare); super admin any */
@@ -329,6 +366,7 @@ export class TenantsService {
             legal_name: t.legalName,
             gst_rate_cash: t.gstRateCash != null ? Number(t.gstRateCash) : null,
             gst_rate_card: t.gstRateCard != null ? Number(t.gstRateCard) : null,
+            tax_on_menu_price: !!t.taxOnMenuPrice,
             default_service_charge: 0,
             loyalty_enabled: t.loyaltyEnabled,
             auto_print_invoices: t.autoPrintInvoices,

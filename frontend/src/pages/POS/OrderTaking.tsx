@@ -53,6 +53,7 @@ import { useHasPermission } from '../../hooks/useHasPermission';
 import { canPlaceOrder } from './checkoutGuards';
 import { computeModifiersPrice, resolveMinSelect, resolveMaxSelect, sizeKeyForSelection } from '../../utils/modifierPricing';
 import { isEntityInactive } from '../../utils/entityStatus';
+import { tenderPreviewOf } from './tenderPreview';
 
 /** What POST /pos/orders answers: one order per brand in the cart. */
 type PlacedOrderGroup = {
@@ -523,29 +524,8 @@ const OrderTaking: React.FC = () => {
    */
   const quote = quotePayload != null ? quoteData : undefined;
 
-  // Cash-vs-card preview: GST differs per tender (e.g. 16% cash / 5% card), so show the
-  // customer both outcomes before a tender is picked. Derived from the current quote's
-  // rates; the quote itself re-runs (discounts included) once the cashier toggles the tender,
-  // so this is a preview — the charged figures always come from the re-quoted totals.
-  const tenderPreview = (() => {
-    if (!quote) return null;
-    const rateCash = Number(quote.tax_rate_cash ?? 0);
-    const rateCard = Number(quote.tax_rate_card ?? 0);
-    if (rateCash === rateCard) return null; // same rate — nothing to compare
-    const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
-    const afterDiscount = Math.max(
-      0,
-      round2((Number(quote.subtotal) || 0) - (Number(quote.discount_amount) || 0) - (Number(quote.loyalty_discount) || 0)),
-    );
-    const extras = (Number(quote.service_charge) || 0) + (Number(quote.delivery_fee) || 0);
-    const cashTax = round2(afterDiscount * rateCash);
-    const cardTax = round2(afterDiscount * rateCard);
-    return {
-      rateCash, rateCard, cashTax, cardTax,
-      cashTotal: round2(afterDiscount + extras + cashTax),
-      cardTotal: round2(afterDiscount + extras + cardTax),
-    };
-  })();
+  // Cash-vs-card preview (tenderPreview.ts): both outcomes before a tender is picked.
+  const tenderPreview = tenderPreviewOf(quote);
 
   const renderTenderPreview = () =>
     tenderPreview && (

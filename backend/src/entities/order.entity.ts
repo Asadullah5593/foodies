@@ -286,6 +286,20 @@ export class Order {
     @Column({ name: 'tax_basis', type: 'varchar', length: 8, nullable: true })
     taxBasis: string | null;
 
+    /**
+     * What the GST was charged on, set only when the tenant's "tax on the menu
+     * price" rule priced the order (the menu price of its lines, before any
+     * discount). Null = taxed on the discounted price, as every earlier order.
+     */
+    @Column({
+        name: 'tax_base',
+        type: 'decimal',
+        precision: 12,
+        scale: 2,
+        nullable: true,
+    })
+    taxBase: number | null;
+
     @Column({ type: 'decimal', precision: 12, scale: 2, default: 0 })
     serviceCharge: number;
 

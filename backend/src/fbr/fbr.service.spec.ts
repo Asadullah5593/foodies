@@ -141,6 +141,72 @@ describe('FbrService.buildPayload', () => {
         // 12:00 UTC = 17:00 in Asia/Karachi (+05:00)
         expect(payload.DateTime).toBe('2026-07-19 17:00:00');
     });
+
+    describe('an order taxed on its menu price (tenant rule on)', () => {
+        // Menu 700 + 300 = 1,000, 50% off, 16% GST on the 1,000, delivery 150:
+        // bill = 500 + 160 + 150 = 810.
+        const menuPriced = (over: Partial<Order> = {}) =>
+            makeOrder({
+                taxBase: 1000,
+                taxAmount: 160,
+                discountAmount: 500,
+                deliveryFee: 150,
+                serviceCharge: 0,
+                totalAmount: 810,
+                ...over,
+            });
+
+        it('reports the menu price as the sale value and the real rate, not tax ÷ net', () => {
+            const payload = service.buildPayload(menuPriced(), makeBranch());
+            expect(payload.TotalSaleValue).toBe(1150); // 1,000 menu + 150 delivery
+            expect(payload.Discount).toBe(500);
+            expect(payload.TotalTaxCharged).toBe(160);
+            expect(payload.TotalBillAmount).toBe(810);
+            // 160 / 1,000 — the old formula would have sent 160 / 650 = 24.62%.
+            expect(payload.Items.map((l) => l.TaxRate)).toEqual([16, 16]);
+            expect(
+                payload.TotalSaleValue -
+                    payload.Discount +
+                    payload.TotalTaxCharged,
+            ).toBe(payload.TotalBillAmount);
+        });
+
+        it('allocates the tax over the menu-priced lines', () => {
+            const payload = service.buildPayload(menuPriced(), makeBranch());
+            expect(payload.Items[0].TaxCharged).toBe(112); // 700/1000 of 160
+            expect(payload.Items[1].TaxCharged).toBe(48);
+            expect(payload.Items[0].SaleValue).toBe(700);
+        });
+
+        it('counts redeemed loyalty points in the discount, so the sum still holds', () => {
+            // 300 off + 100 in points, no delivery: bill = 600 + 160 = 760.
+            const payload = service.buildPayload(
+                menuPriced({
+                    discountAmount: 300,
+                    deliveryFee: 0,
+                    totalAmount: 760,
+                }),
+                makeBranch(),
+            );
+            expect(payload.TotalSaleValue).toBe(1000);
+            expect(payload.Discount).toBe(400);
+            expect(
+                payload.TotalSaleValue -
+                    payload.Discount +
+                    payload.TotalTaxCharged,
+            ).toBe(760);
+        });
+    });
+
+    it('leaves an order taxed on its discounted price exactly as before', () => {
+        // tax_base null = every order placed before the rule and while it is off.
+        const before = service.buildPayload(makeOrder(), makeBranch());
+        const withNull = service.buildPayload(
+            makeOrder({ taxBase: null, deliveryFee: 150 }),
+            makeBranch(),
+        );
+        expect(withNull).toEqual(before);
+    });
 });
 
 describe('FbrService.fiscalizeOrder', () => {

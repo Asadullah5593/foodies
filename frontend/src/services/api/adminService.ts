@@ -1287,6 +1287,8 @@ export const adminService = {
     legal_name?: string;
     gst_rate_cash?: number | null;
     gst_rate_card?: number | null;
+    /** GST on the menu price (before discounts) instead of the discounted price. */
+    tax_on_menu_price?: boolean;
     loyalty_enabled?: boolean;
     auto_print_invoices?: boolean;
   }) => {

@@ -191,6 +191,9 @@ the `app` channel the payload is shaped so that:
   "loyalty_discount": 50,
   "loyalty_points_redeemed": 50,
   "tax_amount": 68, "tax_basis": "cash", "tax_rate_cash": 0.05, "tax_rate_card": 0.05,
+  // tax_amount is on the discounted price by default; when the business turns on
+  // "Charge GST on the menu price" it is on `subtotal` instead. Same fields, no new
+  // ones — just show tax_amount and total_amount as sent.
   "service_charge": 0,
   "delivery_fee": 150,
   "delivery_options": [ { "tier": "standard", "fee": 150, "etaMin": 30, "etaMax": 45 } ],

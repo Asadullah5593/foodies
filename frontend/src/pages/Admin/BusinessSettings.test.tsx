@@ -125,6 +125,26 @@ describe('Business Settings', () => {
     });
   });
 
+  it('saves "Charge GST on the menu price", off unless switched on', async () => {
+    renderPage();
+    await screen.findByDisplayValue('Foodies');
+    const rule = screen.getByRole('group', { name: 'Charge GST on the menu price' });
+    fireEvent.click(within(rule).getByRole('button', { name: 'On' }));
+    expect(within(summary()).getByText(/on menu price/)).toBeInTheDocument();
+
+    fireEvent.click(save());
+    await waitFor(() => expect(updateBusinessSettings).toHaveBeenCalled());
+    expect(updateBusinessSettings.mock.calls[0][0]).toMatchObject({ tax_on_menu_price: true });
+  });
+
+  it('sends the rule off by default', async () => {
+    renderPage();
+    await screen.findByDisplayValue('Foodies');
+    fireEvent.click(save());
+    await waitFor(() => expect(updateBusinessSettings).toHaveBeenCalled());
+    expect(updateBusinessSettings.mock.calls[0][0]).toMatchObject({ tax_on_menu_price: false });
+  });
+
   it('refuses to save a business with no name', async () => {
     renderPage();
     await screen.findByDisplayValue('Foodies');
