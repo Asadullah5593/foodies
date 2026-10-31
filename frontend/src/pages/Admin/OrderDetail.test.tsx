@@ -315,13 +315,22 @@ describe('OrderDetail — other kinds of order', () => {
     expect(totals).toContain('Free Drink-Rs. 100.00');
   });
 
-  it('an order taxed on the menu price says what the tax was on, on screen and in print', async () => {
-    currentOrder = { ...deliveryOrder, tax_base: 1098 };
+  it('the tax line shows the GST rate, not the amount it was charged on, on screen and in print', async () => {
+    currentOrder = { ...deliveryOrder, tax_base: 1098, tax_rate: 0.16 };
     renderPage();
     await screen.findByRole('heading', { level: 1, name: 'Order #040' });
-    expect(card('totals-card').textContent ?? '').toContain('Tax (on Rs. 1098.00)Rs. 175.68');
+    const totals = card('totals-card').textContent ?? '';
+    expect(totals).toContain('Tax (16%)Rs. 175.68');
+    expect(totals).not.toContain('on Rs.');
     fireEvent.click(screen.getByRole('button', { name: 'Print' }));
-    expect(String(printContent.mock.calls[0][0])).toContain('Tax (on Rs. 1098.00): Rs. 175.68');
+    expect(String(printContent.mock.calls[0][0])).toContain('Tax (16%): Rs. 175.68');
+  });
+
+  it('the tax line is plain "Tax" when the order has no rate', async () => {
+    currentOrder = { ...deliveryOrder, tax_rate: null };
+    renderPage();
+    await screen.findByRole('heading', { level: 1, name: 'Order #040' });
+    expect(card('totals-card').textContent ?? '').not.toContain('Tax (');
   });
 
   it('a completed order ticks every step', async () => {

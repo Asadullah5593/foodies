@@ -2,7 +2,7 @@ import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { orderService } from '../services/api';
-import { formatCurrency } from '../utils/currency';
+import { formatCurrency, taxLabel } from '../utils/currency';
 import { printContent } from '../utils/print';
 import { getDeviceBottomFeedMm, setDeviceBottomFeedMm } from '../utils/printerSettings';
 import { renderInvoiceHtml } from '../invoices/renderInvoice';
@@ -45,6 +45,8 @@ export type MainInvoiceOrder = {
   subtotal: number;
   discount_amount: number;
   tax_amount: number;
+  /** GST rate as a fraction (0.16), by the tender it was charged on. */
+  tax_rate?: number | null;
   /** What the GST was charged on, when Business Settings taxes the menu price; null = the discounted price. */
   tax_base?: number | null;
   service_charge: number;
@@ -553,10 +555,7 @@ const CustomerInvoiceModal: React.FC<CustomerInvoiceModalProps> = ({
                     </div>
                   )}
                   <div className="flex justify-between text-gray-600">
-                    <span>
-                      Tax
-                      {o.tax_base != null && Number(o.tax_base) > 0 && ` (on ${formatCurrency(Number(o.tax_base))})`}
-                    </span>
+                    <span>{taxLabel(o.tax_rate)}</span>
                     <span>{formatCurrency(Number(o.tax_amount))}</span>
                   </div>
                   {Number(o.delivery_fee) > 0 && (

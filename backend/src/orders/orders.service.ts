@@ -3794,6 +3794,7 @@ export class OrdersService {
             loyalty_points_earned: order.loyaltyPointsEarned ?? 0,
             loyalty_points_redeemed: order.loyaltyPointsRedeemed ?? 0,
             tax_amount: Number(order.taxAmount),
+            tax_rate: effectiveTaxRate(order),
             // What the GST was charged on when Business Settings taxes the
             // menu price; null = the discounted price (the old rule).
             tax_base: order.taxBase != null ? Number(order.taxBase) : null,
@@ -4167,7 +4168,8 @@ export class OrdersService {
                 where: { id: In(customerIds) },
                 select: { id: true, name: true },
             });
-            for (const c of found) recordNames.set(c.id, c.name?.trim() || null);
+            for (const c of found)
+                recordNames.set(c.id, c.name?.trim() || null);
         }
         // The tender an untendered order is due to be paid by, so the list reads
         // "COD" from the moment an app order arrives, not only once completion
