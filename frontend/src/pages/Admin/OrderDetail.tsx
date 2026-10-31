@@ -5,7 +5,7 @@ import { toast } from 'react-hot-toast';
 import apiClient from '../../utils/apiClient';
 import { Order } from '../../types';
 import Loader from '../../components/Loader';
-import { formatCurrency } from '../../utils/currency';
+import { formatCurrency, taxLabel as taxLabelFor } from '../../utils/currency';
 import { formatOrderType } from '../../utils/format';
 import { printContent } from '../../utils/print';
 import { ORDER_POLL_INTERVAL_MS } from '../../constants/polling';
@@ -100,6 +100,8 @@ type OrderDetailData = Omit<Order, 'items' | 'payments'> & {
   /** One entry per voucher kind, with its paper count. */
   vouchers?: Array<{ name: string; quantity: number; discount_amount: number }>;
   tax_amount?: number;
+  /** GST rate as a fraction (0.16), by the tender it was charged on. */
+  tax_rate?: number | null;
   /** What the GST was charged on when Business Settings taxes the menu price; null = the discounted price. */
   tax_base?: number | null;
   service_charge?: number;
@@ -373,10 +375,7 @@ const OrderDetail: React.FC = () => {
   const subtotal = Number(o.subtotal ?? 0);
   const discountAmount = Number(o.discount_amount ?? 0);
   const taxAmount = Number(o.tax_amount ?? 0);
-  // Taxed on the menu price: say on what, or the line reads as the wrong
-  // percentage of the discounted amount above it.
-  const taxLabel =
-    o.tax_base != null && Number(o.tax_base) > 0 ? `Tax (on ${formatCurrency(Number(o.tax_base))})` : 'Tax';
+  const taxLabel = taxLabelFor(o.tax_rate);
   const serviceCharge = Number(o.service_charge ?? 0);
   const deliveryFee = Number(o.delivery_fee ?? 0);
   const hasDiscount = discountAmount > 0;
